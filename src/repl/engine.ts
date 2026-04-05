@@ -74,7 +74,7 @@ export class ReplEngine {
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.cyan("shadxn > "),
+      prompt: chalk.cyan("agentx > "),
       terminal: true,
     })
 

@@ -25,11 +25,11 @@ export function createProvider(
       return new ClaudeProvider(apiKey)
     case "openai":
       throw new Error(
-        "OpenAI provider coming soon. Set provider to 'claude-code' or contribute at github.com/anis-marrouchi/shadxn"
+        "OpenAI provider coming soon. Set provider to 'claude-code' or contribute at github.com/anis-marrouchi/agentx"
       )
     case "ollama":
       throw new Error(
-        "Ollama provider coming soon. Set provider to 'claude-code' or contribute at github.com/anis-marrouchi/shadxn"
+        "Ollama provider coming soon. Set provider to 'claude-code' or contribute at github.com/anis-marrouchi/agentx"
       )
     default:
       throw new Error(`Unknown provider: ${resolvedName}. Supported: claude-code, claude`)

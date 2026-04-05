@@ -36,7 +36,7 @@ model
       const config = loadAuthConfig()
 
       if (!config) {
-        logger.warn("No configuration found. Run `shadxn model` to set up.")
+        logger.warn("No configuration found. Run `agentx model` to set up.")
         process.exit(0)
       }
 
@@ -46,7 +46,7 @@ model
       console.log(`  Provider:  ${chalk.cyan("anthropic")} (${config.authType})`)
       console.log(`  Model:     ${chalk.cyan(modelLabel)}`)
       console.log(`  Token:     ${chalk.dim(maskToken(config.token))}`)
-      console.log(`  File:      ${chalk.dim("~/.shadxn/auth.json")}`)
+      console.log(`  File:      ${chalk.dim("~/.agentx/auth.json")}`)
 
       if (process.env.ANTHROPIC_API_KEY) {
         console.log(chalk.yellow("\n  Note: ANTHROPIC_API_KEY env var is set (takes priority)"))

@@ -63,7 +63,7 @@ export class A2AServer {
     })
 
     server.listen(this.config.port, this.config.host, () => {
-      this.log(`\n  shadxn A2A server v0.1.0`)
+      this.log(`\n  agentx A2A server v0.1.0`)
       this.log(`  Listening on http://${this.config.host}:${this.config.port}`)
       this.log(`  Provider: ${this.config.provider}`)
       this.log(`  Working dir: ${this.config.cwd}`)
@@ -82,7 +82,7 @@ export class A2AServer {
 
   private getAgentCard(): AgentCard {
     return {
-      name: "shadxn",
+      name: "agentx",
       description:
         "AI-powered agentic code generation agent. Generates components, pages, APIs, documents, skills, and more for any tech stack.",
       url: `http://${this.config.host}:${this.config.port}`,

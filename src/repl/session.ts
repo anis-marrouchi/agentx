@@ -15,7 +15,7 @@ export interface Session {
   filesGenerated: string[]
 }
 
-const SESSIONS_DIR = path.join(os.homedir(), ".shadxn", "sessions")
+const SESSIONS_DIR = path.join(os.homedir(), ".agentx", "sessions")
 
 function ensureSessionsDir(): void {
   if (!existsSync(SESSIONS_DIR)) {

@@ -9,7 +9,7 @@ import { Command } from "commander"
 import ora from "ora"
 import prompts from "prompts"
 
-// --- `shadxn create` — template system for scaffolding entire projects ---
+// --- `agentx create` — template system for scaffolding entire projects ---
 
 interface Template {
   name: string
@@ -224,7 +224,7 @@ export const create = new Command()
           logger.error(
             `Template "${opts.template}" not found. Available: ${TEMPLATES.map((t) => t.name).join(", ")}`
           )
-          logger.info(`Run ${chalk.green("shadxn create --list")} to see all templates.`)
+          logger.info(`Run ${chalk.green("agentx create --list")} to see all templates.`)
           process.exit(1)
         }
       } else {
@@ -346,10 +346,10 @@ export const create = new Command()
       logger.info("Next steps:")
       console.log(`  ${chalk.green("cd")} ${name}`)
       console.log(
-        `  ${chalk.green("shadxn inspect")} — see what was generated`
+        `  ${chalk.green("agentx inspect")} — see what was generated`
       )
       console.log(
-        `  ${chalk.green("shadxn evolve")} — modify and extend`
+        `  ${chalk.green("agentx evolve")} — modify and extend`
       )
       logger.break()
 

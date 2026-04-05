@@ -46,7 +46,7 @@ export class ClaudeCodeProvider implements AgentProvider {
   private credential: AuthCredential
 
   constructor() {
-    // Stored config takes priority — if user ran `shadxn model` and chose OAuth,
+    // Stored config takes priority — if user ran `agentx model` and chose OAuth,
     // we use that regardless of ANTHROPIC_API_KEY env var (same as OpenClaw's clearEnv).
     const stored = loadAuthConfig()
     if (stored) {
@@ -59,7 +59,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       throw new Error(
         "No Claude credentials found.\n" +
           "Options:\n" +
-          "  1. Run `shadxn model` to configure credentials\n" +
+          "  1. Run `agentx model` to configure credentials\n" +
           "  2. Set ANTHROPIC_API_KEY environment variable\n" +
           "  3. Set ANTHROPIC_OAUTH_TOKEN environment variable"
       )

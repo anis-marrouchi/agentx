@@ -6,9 +6,9 @@ import { resolveOutputType } from "@/agent/outputs/types"
 import { generate } from "@/agent"
 import type { OutputType } from "@/agent/providers/types"
 
-// --- MCP Server: expose shadxn as a Model Context Protocol server ---
+// --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
-// shadxn's capabilities as tools.
+// agentx's capabilities as tools.
 
 // JSON-RPC types
 interface JsonRpcRequest {
@@ -33,7 +33,7 @@ interface JsonRpcNotification {
 
 // MCP protocol constants
 const SERVER_INFO = {
-  name: "shadxn",
+  name: "agentx",
   version: "0.1.0",
 }
 
@@ -46,7 +46,7 @@ const CAPABILITIES = {
 // Tool definitions
 const TOOLS = [
   {
-    name: "shadxn_generate",
+    name: "agentx_generate",
     description:
       "Generate code, components, pages, APIs, documents, tests, workflows, schemas, emails, diagrams, and more using AI. Understands the project's tech stack, schemas, and skills automatically.",
     inputSchema: {
@@ -76,7 +76,7 @@ const TOOLS = [
     },
   },
   {
-    name: "shadxn_inspect",
+    name: "agentx_inspect",
     description:
       "Analyze a project and return its tech stack, frameworks, databases, schemas, installed skills, and dependencies. Use this to understand a project before generating code.",
     inputSchema: {
@@ -90,7 +90,7 @@ const TOOLS = [
     },
   },
   {
-    name: "shadxn_skill_match",
+    name: "agentx_skill_match",
     description:
       "Find installed skills that are relevant to a given task description. Returns matched skills with relevance scores.",
     inputSchema: {
@@ -109,7 +109,7 @@ const TOOLS = [
     },
   },
   {
-    name: "shadxn_detect_output_type",
+    name: "agentx_detect_output_type",
     description:
       "Auto-detect the best output type for a given task description based on keyword analysis.",
     inputSchema: {
@@ -133,7 +133,7 @@ async function handleToolCall(
   const cwd = (args.cwd as string) || process.cwd()
 
   switch (name) {
-    case "shadxn_generate": {
+    case "agentx_generate": {
       const task = args.task as string
       const outputType = (args.type as string) || "auto"
       const outputDir = args.output_dir as string | undefined
@@ -171,7 +171,7 @@ async function handleToolCall(
       }
     }
 
-    case "shadxn_inspect": {
+    case "agentx_inspect": {
       const context = await createAgentContext(cwd, "inspect", {
         context7: { enabled: false },
       })
@@ -218,7 +218,7 @@ async function handleToolCall(
       }
     }
 
-    case "shadxn_skill_match": {
+    case "agentx_skill_match": {
       const task = args.task as string
       const skills = await loadLocalSkills(cwd)
       const matches = matchSkillsToTask(skills, task)
@@ -228,7 +228,7 @@ async function handleToolCall(
           content: [
             {
               type: "text",
-              text: "No matching skills found. Install skills with: shadxn skill install <owner/repo>",
+              text: "No matching skills found. Install skills with: agentx skill install <owner/repo>",
             },
           ],
         }
@@ -246,7 +246,7 @@ async function handleToolCall(
       }
     }
 
-    case "shadxn_detect_output_type": {
+    case "agentx_detect_output_type": {
       const task = args.task as string
       const type = resolveOutputType(undefined, task)
       return {
@@ -268,7 +268,7 @@ async function handleToolCall(
 
 export async function startMcpServer(): Promise<void> {
   // Use stderr for logging (stdout is reserved for JSON-RPC)
-  const log = (...args: unknown[]) => console.error("[shadxn-mcp]", ...args)
+  const log = (...args: unknown[]) => console.error("[agentx-mcp]", ...args)
 
   log("Starting MCP server (stdio transport)...")
 

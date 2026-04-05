@@ -20,7 +20,7 @@ import ora from "ora"
 import prompts from "prompts"
 import fg from "fast-glob"
 
-// --- `shadxn evolve` — modify existing code with AI ---
+// --- `agentx evolve` — modify existing code with AI ---
 
 interface FileChange {
   path: string
@@ -221,7 +221,7 @@ Transform these files according to the task. For each file that needs changes, u
       // Ensure credentials exist (auto-prompt if missing)
       const hasCredentials = await ensureCredentials(opts.apiKey)
       if (!hasCredentials) {
-        logger.error("No credentials configured. Run `shadxn model` to set up.")
+        logger.error("No credentials configured. Run `agentx model` to set up.")
         process.exit(1)
       }
 
@@ -503,7 +503,7 @@ Transform these files according to the task. For each file that needs changes, u
 function buildEvolveSystemPrompt(context: any, skills: any[]): string {
   const sections: string[] = []
 
-  sections.push(`You are shadxn evolve, an agentic code transformation tool. You modify existing code according to user instructions.
+  sections.push(`You are agentx evolve, an agentic code transformation tool. You modify existing code according to user instructions.
 
 Your primary tool is \`create_files\` — use it to output the COMPLETE updated content of each file that needs changes.
 If the request is ambiguous, use \`ask_user\` to ask a clarifying question.

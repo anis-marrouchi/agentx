@@ -184,7 +184,7 @@ export class GenerateTui {
     const spinner = spinnerFrames[Math.floor((nowMs() - this.startedAt) / 120) % spinnerFrames.length]
     const idleForMs = nowMs() - this.lastActivityAt
 
-    const header = chalk.bold("shadxn generate") + chalk.dim(`  ${formatDuration(nowMs() - this.startedAt)}`)
+    const header = chalk.bold("agentx generate") + chalk.dim(`  ${formatDuration(nowMs() - this.startedAt)}`)
     const meta1 = `${chalk.dim("Task:")} ${this.opts.task}`
     const meta2 =
       `${chalk.dim("Provider:")} ${this.opts.provider}` +

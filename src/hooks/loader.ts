@@ -5,14 +5,14 @@ import { HOOK_EVENTS, hookDefinitionSchema } from "./types"
 import { HookRegistry } from "./registry"
 import { logger } from "@/utils/logger"
 
-// --- Hook Loader: load hooks from config and .shadxn/hooks/ ---
+// --- Hook Loader: load hooks from config and .agentx/hooks/ ---
 
 interface HooksConfig {
   hooks?: Partial<Record<HookEvent, HookDefinition[]>>
 }
 
 /**
- * Load hooks from shadxn.config.json and .shadxn/hooks/ directory.
+ * Load hooks from agentx.config.json and .agentx/hooks/ directory.
  */
 export function loadHooks(cwd: string, registry: HookRegistry): void {
   loadHooksFromConfig(cwd, registry)
@@ -20,10 +20,10 @@ export function loadHooks(cwd: string, registry: HookRegistry): void {
 }
 
 /**
- * Load hook definitions from shadxn.config.json.
+ * Load hook definitions from agentx.config.json.
  */
 function loadHooksFromConfig(cwd: string, registry: HookRegistry): void {
-  const configPath = path.join(cwd, "shadxn.config.json")
+  const configPath = path.join(cwd, "agentx.config.json")
   if (!existsSync(configPath)) return
 
   try {
@@ -54,11 +54,11 @@ function loadHooksFromConfig(cwd: string, registry: HookRegistry): void {
 }
 
 /**
- * Load hook scripts from .shadxn/hooks/ directory.
+ * Load hook scripts from .agentx/hooks/ directory.
  * Files are named <event>.<name>.ts (e.g., pre-file-write.format.ts).
  */
 function loadHooksFromDirectory(cwd: string, registry: HookRegistry): void {
-  const hooksDir = path.join(cwd, ".shadxn", "hooks")
+  const hooksDir = path.join(cwd, ".agentx", "hooks")
   if (!existsSync(hooksDir)) return
 
   try {

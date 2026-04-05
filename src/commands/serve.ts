@@ -4,11 +4,11 @@ import { startMcpServer } from "@/mcp"
 import chalk from "chalk"
 import { Command } from "commander"
 
-// --- `shadxn serve` — run as MCP server for AI editors ---
+// --- `agentx serve` — run as MCP server for AI editors ---
 
 export const serve = new Command()
   .name("serve")
-  .description("run shadxn as an MCP server for AI editors (Claude Code, Cursor, Windsurf, etc.)")
+  .description("run agentx as an MCP server for AI editors (Claude Code, Cursor, Windsurf, etc.)")
   .option("--stdio", "use stdio transport (default)", true)
   .option(
     "-c, --cwd <cwd>",
@@ -23,13 +23,13 @@ export const serve = new Command()
       } else {
         logger.error("Only stdio transport is currently supported.")
         logger.info(
-          `Usage: ${chalk.green("shadxn serve --stdio")} or configure in your MCP client.`
+          `Usage: ${chalk.green("agentx serve --stdio")} or configure in your MCP client.`
         )
         logger.break()
         logger.info("Add to Claude Code:")
         logger.info(
           chalk.dim(
-            '  claude mcp add shadxn -- npx shadxn serve --stdio'
+            '  claude mcp add agentx -- npx agentx serve --stdio'
           )
         )
         logger.break()
@@ -39,9 +39,9 @@ export const serve = new Command()
             JSON.stringify(
               {
                 mcpServers: {
-                  shadxn: {
+                  agentx: {
                     command: "npx",
-                    args: ["shadxn", "serve", "--stdio"],
+                    args: ["agentx", "serve", "--stdio"],
                   },
                 },
               },

@@ -39,7 +39,7 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   cors: true,
 }
 
-export class ShadxnRuntime {
+export class AgentXRuntime {
   private config: RuntimeConfig
   private memory: Memory
   private healEngine: HealEngine
@@ -67,7 +67,7 @@ export class ShadxnRuntime {
       apiKey: this.config.apiKey,
     })
     this.pipeline = this.buildPipeline()
-    this.log = console.error.bind(console, "[shadxn]")
+    this.log = console.error.bind(console, "[agentx]")
   }
 
   private buildPipeline(): Pipeline {
@@ -113,7 +113,7 @@ export class ShadxnRuntime {
     })
 
     server.listen(this.config.port, this.config.host, () => {
-      this.log(`\n  shadxn runtime v0.1.0`)
+      this.log(`\n  agentx runtime v0.1.0`)
       this.log(`  Listening on http://${this.config.host}:${this.config.port}`)
       this.log(`  Provider: ${this.config.provider}`)
       this.log(`  Memory: ${this.config.memory.enabled ? "enabled" : "disabled"}`)
@@ -227,7 +227,7 @@ export class ShadxnRuntime {
 
     // Evolve uses the same pipeline but with file reading
     this.sendJson(res, 200, {
-      message: "Use the CLI for evolve: shadxn evolve \"" + body.task + "\" --glob \"" + body.glob + "\"",
+      message: "Use the CLI for evolve: agentx evolve \"" + body.task + "\" --glob \"" + body.glob + "\"",
       hint: "The evolve endpoint requires interactive diff review. Use the CLI for full functionality.",
     })
   }

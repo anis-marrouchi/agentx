@@ -203,7 +203,7 @@ export class HookRegistry {
           return String(context[key] ?? "")
         })
 
-        const systemPrompt = `You are a hook validator for shadxn. Analyze the following context and respond with ONLY a JSON object (no markdown, no code fences).
+        const systemPrompt = `You are a hook validator for agentx. Analyze the following context and respond with ONLY a JSON object (no markdown, no code fences).
 
 Response format:
 {"action": "allow", "message": "optional explanation"}

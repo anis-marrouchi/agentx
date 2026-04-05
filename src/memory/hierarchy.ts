@@ -10,9 +10,9 @@ export class MemoryHierarchy {
   private projectMemory: Memory
 
   constructor(private cwd: string) {
-    // User-level memory at ~/.shadxn/memory.json
+    // User-level memory at ~/.agentx/memory.json
     this.userMemory = new Memory(USER_MEMORY_DIR)
-    // Project-level memory at <cwd>/.shadxn/memory.json
+    // Project-level memory at <cwd>/.agentx/memory.json
     this.projectMemory = new Memory(cwd)
   }
 

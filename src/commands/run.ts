@@ -2,16 +2,16 @@ import { existsSync, promises as fs } from "fs"
 import path from "path"
 import { handleError } from "@/utils/handle-error"
 import { logger } from "@/utils/logger"
-import { ShadxnRuntime, type RuntimeConfig } from "@/runtime"
+import { AgentXRuntime, type RuntimeConfig } from "@/runtime"
 import chalk from "chalk"
 import { Command } from "commander"
 
-// --- `shadxn run` — start the intelligent runtime framework ---
+// --- `agentx run` — start the intelligent runtime framework ---
 
 export const run = new Command()
   .name("run")
   .description(
-    "start the shadxn runtime — an intelligent framework that receives requests, learns, auto-heals, and self-enhances"
+    "start the agentx runtime — an intelligent framework that receives requests, learns, auto-heals, and self-enhances"
   )
   .option("--port <port>", "server port", "3170")
   .option("--host <host>", "server host", "0.0.0.0")
@@ -41,16 +41,16 @@ export const run = new Command()
         process.exit(1)
       }
 
-      // Load config from shadxn.config.json if it exists
-      const configPath = path.resolve(cwd, "shadxn.config.json")
+      // Load config from agentx.config.json if it exists
+      const configPath = path.resolve(cwd, "agentx.config.json")
       let fileConfig: Partial<RuntimeConfig> = {}
       if (existsSync(configPath)) {
         try {
           const raw = await fs.readFile(configPath, "utf8")
           fileConfig = JSON.parse(raw)
-          logger.info(`Loaded config from ${chalk.dim("shadxn.config.json")}`)
+          logger.info(`Loaded config from ${chalk.dim("agentx.config.json")}`)
         } catch {
-          logger.warn("Failed to parse shadxn.config.json, using defaults")
+          logger.warn("Failed to parse agentx.config.json, using defaults")
         }
       }
 
@@ -78,11 +78,11 @@ export const run = new Command()
 
       // Banner
       console.log("")
-      console.log(chalk.bold.cyan("  ░░░ shadxn runtime ░░░"))
+      console.log(chalk.bold.cyan("  ░░░ agentx runtime ░░░"))
       console.log(chalk.dim("  the intelligent framework"))
       console.log("")
 
-      const runtime = new ShadxnRuntime(config)
+      const runtime = new AgentXRuntime(config)
       await runtime.start()
     } catch (error) {
       handleError(error)

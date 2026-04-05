@@ -10,7 +10,7 @@ import chalk from "chalk"
 import { Command } from "commander"
 import ora from "ora"
 
-// --- `shadxn inspect` — show what the agent sees ---
+// --- `agentx inspect` — show what the agent sees ---
 
 export const inspect = new Command()
   .name("inspect")
@@ -61,7 +61,7 @@ export const inspect = new Command()
 
       // Header
       logger.break()
-      console.log(chalk.bold.cyan("  shadxn inspect"))
+      console.log(chalk.bold.cyan("  agentx inspect"))
       console.log(chalk.dim(`  ${cwd}`))
       logger.break()
 
@@ -214,7 +214,7 @@ export const inspect = new Command()
       } else {
         console.log(chalk.bold("  Skills"))
         console.log(
-          `    ${chalk.dim("none installed")} — run ${chalk.green("shadxn skill install <owner/repo>")} or ${chalk.green("shadxn skill create <name>")}`
+          `    ${chalk.dim("none installed")} — run ${chalk.green("agentx skill install <owner/repo>")} or ${chalk.green("agentx skill create <name>")}`
         )
         logger.break()
       }

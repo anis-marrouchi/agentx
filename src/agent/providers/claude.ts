@@ -50,7 +50,7 @@ export class ClaudeProvider implements AgentProvider {
     }
     if (!this.apiKey) {
       throw new Error(
-        "Anthropic API key required. Run `shadxn model` to configure, set ANTHROPIC_API_KEY, or pass --api-key."
+        "Anthropic API key required. Run `agentx model` to configure, set ANTHROPIC_API_KEY, or pass --api-key."
       )
     }
   }

@@ -9,7 +9,7 @@ import type { UsageSummary } from "@/observability"
  */
 export function renderBanner(version: string, sessionId: string): void {
   console.log()
-  console.log(chalk.bold.cyan("  shadxn") + chalk.dim(` v${version}`))
+  console.log(chalk.bold.cyan("  agentx") + chalk.dim(` v${version}`))
   console.log(chalk.dim(`  Session: ${sessionId}`))
   console.log(chalk.dim("  Type /help for commands, /quit to exit"))
   console.log()

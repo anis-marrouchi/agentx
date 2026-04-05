@@ -5,7 +5,7 @@ import chalk from "chalk"
 import prompts from "prompts"
 import { logger } from "@/utils/logger"
 
-// --- Auth config stored at ~/.shadxn/auth.json ---
+// --- Auth config stored at ~/.agentx/auth.json ---
 
 export interface AuthConfig {
   provider: "claude" | "claude-code"
@@ -14,7 +14,7 @@ export interface AuthConfig {
   model: string
 }
 
-const AUTH_DIR = path.join(os.homedir(), ".shadxn")
+const AUTH_DIR = path.join(os.homedir(), ".agentx")
 const AUTH_FILE = path.join(AUTH_DIR, "auth.json")
 
 export function loadAuthConfig(): AuthConfig | null {
@@ -39,7 +39,7 @@ export function saveAuthConfig(config: AuthConfig): void {
 
 /**
  * Resolve a token for the Anthropic API.
- * Priority: (1) explicit token, (2) env vars, (3) ~/.shadxn/auth.json, (4) OpenClaw auth stores
+ * Priority: (1) explicit token, (2) env vars, (3) ~/.agentx/auth.json, (4) OpenClaw auth stores
  */
 export function resolveToken(explicitKey?: string): {
   token: string
@@ -300,7 +300,7 @@ export async function runModelSetup(): Promise<AuthConfig | null> {
   saveAuthConfig(config)
 
   logger.break()
-  logger.success("Configuration saved to ~/.shadxn/auth.json")
+  logger.success("Configuration saved to ~/.agentx/auth.json")
   console.log(`  Provider:  ${chalk.bold("anthropic")} (${config.authType})`)
   console.log(`  Model:     ${chalk.bold(ANTHROPIC_MODELS.find((m) => m.id === config.model)?.label || config.model)}`)
 

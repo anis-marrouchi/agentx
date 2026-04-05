@@ -70,7 +70,7 @@ skill
       if (!skills.length) {
         logger.info("No skills installed. Install one with:")
         console.log(
-          `  ${chalk.green("shadxn skill install")} ${chalk.dim("<owner/repo>")}`
+          `  ${chalk.green("agentx skill install")} ${chalk.dim("<owner/repo>")}`
         )
         return
       }
@@ -200,7 +200,7 @@ skill
         // AI-generated skill — ensure credentials first
         const hasCredentials = await ensureCredentials(opts.apiKey)
         if (!hasCredentials) {
-          logger.error("No credentials configured. Run `shadxn model` to set up.")
+          logger.error("No credentials configured. Run `agentx model` to set up.")
           process.exit(1)
         }
 
@@ -233,7 +233,7 @@ skill
       logger.break()
       logger.info("The skill will be automatically loaded for future generations.")
       logger.info(
-        `To share it, push to GitHub and others can install with: ${chalk.green(`shadxn skill install <your-username>/<your-repo>`)}`
+        `To share it, push to GitHub and others can install with: ${chalk.green(`agentx skill install <your-username>/<your-repo>`)}`
       )
     } catch (error) {
       handleError(error)
@@ -261,7 +261,7 @@ skill
 
       if (!found) {
         logger.error(`Skill "${name}" not found.`)
-        logger.info(`Run ${chalk.green("shadxn skill list")} to see installed skills.`)
+        logger.info(`Run ${chalk.green("agentx skill list")} to see installed skills.`)
         return
       }
 

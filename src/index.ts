@@ -54,7 +54,7 @@ export { ToolExecutor, type ToolCallInput, type ToolResult, type ToolExecutorOpt
 
 // Runtime
 export {
-  ShadxnRuntime,
+  AgentXRuntime,
   Memory,
   HealEngine,
   EnhanceEngine,

@@ -209,7 +209,7 @@ export class HealEngine {
     const messages: GenerationMessage[] = [
       {
         role: "system",
-        content: `You are shadxn auto-heal. You fix errors in generated code.
+        content: `You are agentx auto-heal. You fix errors in generated code.
 
 Project tech stack: ${formatTechStack(techStack)}
 

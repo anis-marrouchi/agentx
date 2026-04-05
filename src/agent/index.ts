@@ -177,7 +177,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   // 5. Ensure credentials exist (auto-prompt if missing)
   const hasCredentials = await ensureCredentials(apiKey)
   if (!hasCredentials) {
-    throw new Error("No credentials configured. Run `shadxn model` to set up.")
+    throw new Error("No credentials configured. Run `agentx model` to set up.")
   }
 
   // 6. Create provider
@@ -403,7 +403,7 @@ export async function* generateStream(
   // 5. Ensure credentials
   const hasCredentials = await ensureCredentials(apiKey)
   if (!hasCredentials) {
-    yield { type: "error", error: "No credentials configured. Run `shadxn model` to set up." }
+    yield { type: "error", error: "No credentials configured. Run `agentx model` to set up." }
     return
   }
 
@@ -829,7 +829,7 @@ function buildSystemPrompt(
   const sections: string[] = []
 
   // Identity — updated for agentic capabilities
-  sections.push(`You are shadxn, an agentic code generation tool. You generate high-quality, production-ready output for any tech stack.
+  sections.push(`You are agentx, an agentic code generation tool. You generate high-quality, production-ready output for any tech stack.
 
 Your primary tool is \`create_files\` — use it to output all generated code, documents, and configs as files.
 If the request is ambiguous or you need critical information to proceed correctly, use \`ask_user\` to ask a clarifying question.

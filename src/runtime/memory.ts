@@ -2,7 +2,7 @@ import { existsSync, promises as fs } from "fs"
 import path from "path"
 
 // --- Memory System: persistent learning from past generations ---
-// shadxn remembers what it generated, what worked, what failed,
+// agentx remembers what it generated, what worked, what failed,
 // user preferences, and successful patterns. Every interaction
 // makes it smarter.
 
@@ -53,7 +53,7 @@ export interface MemoryStore {
   }
 }
 
-const MEMORY_DIR = ".shadxn"
+const MEMORY_DIR = ".agentx"
 const MEMORY_FILE = "memory.json"
 const MAX_ENTRIES = 500
 const MEMORY_VERSION = 1
