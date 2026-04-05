@@ -22,6 +22,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private routes: WhatsAppRoute[]
   private handler?: (msg: IncomingMessage) => Promise<void>
   private sock: any = null
+  private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -188,14 +189,22 @@ export class WhatsAppAdapter implements ChannelAdapter {
         // Skip status broadcasts
         if (msg.key.remoteJid === "status@broadcast") continue
 
-        // For fromMe messages: only process if it's a self-chat
-        // (messaging yourself = talking to your agent, like OpenClaw)
-        // This prevents loops when chatting with other contacts.
+        // Skip messages we sent as replies (prevents loops)
+        if (msg.key.id && this.sentMessageIds.has(msg.key.id)) {
+          this.sentMessageIds.delete(msg.key.id)
+          continue
+        }
+
+        // For fromMe: only process self-chat (messaging yourself = talking to agent)
+        // WhatsApp uses both regular JID and LID (Linked ID) for self-chat.
         if (msg.key.fromMe) {
-          const myJid = this.sock?.user?.id?.replace(/:.*@/, "@") || ""
-          const myPhone = myJid.replace(/@.*$/, "")
-          const chatPhone = (msg.key.remoteJid || "").replace(/@.*$/, "")
-          const isSelfChat = chatPhone === myPhone
+          const me = this.sock?.user
+          const myIds = [
+            me?.id?.replace(/:.*@/, "@")?.replace(/@.*$/, ""),
+            me?.lid?.replace(/:.*@/, "@")?.replace(/@.*$/, ""),
+          ].filter(Boolean)
+          const chatId = (msg.key.remoteJid || "").replace(/:.*@/, "@").replace(/@.*$/, "")
+          const isSelfChat = myIds.some(p => p === chatId || chatId.endsWith(p!))
           if (!isSelfChat) continue
         }
 
@@ -250,7 +259,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
           channel: "whatsapp",
           accountId: "default",
           sender: {
-            id: senderPhone,
+            // For self-chat, use regular JID so replies go to the right place
+            id: msg.key.fromMe
+              ? (this.sock?.user?.id?.replace(/:.*@/, "") || senderPhone)
+              : senderPhone,
             name: senderName,
             username: senderPhone,
           },
@@ -291,7 +303,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     try {
       const sent = await this.sock.sendMessage(jid, { text: msg.text })
-      return sent?.key?.id || ""
+      const sentId = sent?.key?.id || ""
+      // Track to prevent loop (our own reply echoed back as fromMe)
+      if (sentId) this.sentMessageIds.add(sentId)
+      return sentId
     } catch (e: any) {
       this.log(`Send error: ${e.message}`)
       return ""
