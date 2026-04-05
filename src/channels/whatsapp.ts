@@ -185,9 +185,19 @@ export class WhatsAppAdapter implements ChannelAdapter {
         const hasText = !!(msg.message?.conversation || msg.message?.extendedTextMessage?.text)
         this.log(`WA msg: from=${jidShort} fromMe=${msg.key.fromMe} hasText=${hasText} type=${Object.keys(msg.message || {}).join(",")}`)
 
-        // Skip status broadcasts and own messages (prevents reply loops)
+        // Skip status broadcasts
         if (msg.key.remoteJid === "status@broadcast") continue
-        if (msg.key.fromMe) continue
+
+        // For fromMe messages: only process if it's a self-chat
+        // (messaging yourself = talking to your agent, like OpenClaw)
+        // This prevents loops when chatting with other contacts.
+        if (msg.key.fromMe) {
+          const myJid = this.sock?.user?.id?.replace(/:.*@/, "@") || ""
+          const myPhone = myJid.replace(/@.*$/, "")
+          const chatPhone = (msg.key.remoteJid || "").replace(/@.*$/, "")
+          const isSelfChat = chatPhone === myPhone
+          if (!isSelfChat) continue
+        }
 
         // Extract text content
         const text = msg.message?.conversation
