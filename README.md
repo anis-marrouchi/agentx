@@ -48,10 +48,10 @@ Each agent = a workspace directory. For Claude Code agents, permissions, hooks, 
 ## Quick start
 
 ```bash
-npm install -g @nooqta/agentx
+npm install -g agentx-cli
 
 # Copy and edit the example config
-cp node_modules/@nooqta/agentx/agentx.example.json agentx.json
+cp node_modules/agentx-cli/agentx.example.json agentx.json
 
 # Start the daemon
 agentx daemon
@@ -189,7 +189,7 @@ AgentX is designed as a drop-in replacement for OpenClaw's agent orchestration:
 1. **Stop OpenClaw**
    - macOS: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`
    - Linux: `systemctl --user stop openclaw-gateway openclaw-node`
-2. **Install AgentX**: `npm install -g @nooqta/agentx`
+2. **Install AgentX**: `npm install -g agentx-cli`
 3. **Convert config**: Map your `openclaw.json` agents, channels, and cron jobs to `agentx.json` (see `agentx.example.json`)
 4. **Set up workspaces**: Ensure each agent's workspace has a `.claude/` directory with permissions and hooks
 5. **Move secrets to `.env`**: Bot tokens, API keys — AgentX auto-loads `.env` from the working directory

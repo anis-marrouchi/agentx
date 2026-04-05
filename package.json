@@ -1,10 +1,7 @@
 {
-  "name": "@nooqta/agentx",
+  "name": "agentx-cli",
   "version": "0.2.0",
   "description": "Self-hosted multi-agent orchestrator — routes Telegram, WhatsApp, crons, and A2A mesh tasks to Claude Code, OpenAI, or any LLM provider",
-  "publishConfig": {
-    "access": "public"
-  },
   "license": "MIT",
   "author": {
     "name": "anis_marrouchi",
