@@ -1,0 +1,85 @@
+{
+  "node": {
+    "id": "my-machine",
+    "name": "My Machine",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "providers": {
+    "claude": {
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "defaultModel": "claude-opus-4-6"
+    },
+    "openai": {
+      "apiKey": "${OPENAI_API_KEY}",
+      "defaultModel": "gpt-4o"
+    },
+    "ollama": {
+      "baseUrl": "http://localhost:11434"
+    }
+  },
+
+  "agents": {
+    "assistant": {
+      "name": "Assistant",
+      "workspace": "/path/to/assistant-workspace",
+      "tier": "claude-code",
+      "model": "claude-opus-4-6",
+      "mentions": ["@assistant", "assistant"],
+      "maxConcurrent": 2,
+      "systemPrompt": "You are a helpful assistant."
+    },
+    "devops": {
+      "name": "DevOps",
+      "workspace": "/path/to/devops-workspace",
+      "tier": "claude-code",
+      "model": "claude-sonnet-4-6",
+      "mentions": ["@devops"],
+      "maxConcurrent": 1,
+      "permissionMode": "bypassPermissions"
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "accounts": {
+        "default": {
+          "token": "${TG_BOT_TOKEN}",
+          "agentBinding": "assistant"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    },
+    "whatsapp": {
+      "enabled": false,
+      "sessionDir": ".agentx/whatsapp-sessions",
+      "agentBinding": "assistant"
+    }
+  },
+
+  "crons": {
+    "daily-report": {
+      "enabled": false,
+      "schedule": "0 9 * * *",
+      "timezone": "UTC",
+      "agent": "assistant",
+      "prompt": "Generate today's status report.",
+      "timeout": 600,
+      "onError": "log"
+    }
+  },
+
+  "mesh": {
+    "enabled": false,
+    "peers": [],
+    "discovery": "static",
+    "healthCheck": {
+      "interval": 60,
+      "timeout": 10
+    }
+  }
+}

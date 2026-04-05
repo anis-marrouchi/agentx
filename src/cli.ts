@@ -10,6 +10,7 @@ import { serve } from "@/commands/serve"
 import { model } from "@/commands/model"
 import { git } from "@/commands/git"
 import { a2a } from "@/commands/a2a"
+import { daemon } from "@/commands/daemon"
 import { Command } from "commander"
 import { globalHooks, loadHooks } from "@/hooks"
 import { getPackageInfo } from "@/utils/get-package-info"
@@ -46,6 +47,7 @@ async function main() {
     .addCommand(serve)
     .addCommand(model)
     .addCommand(a2a)
+    .addCommand(daemon)
 
   // Default to chat when no command is given and stdin is a TTY
   const args = process.argv.slice(2)

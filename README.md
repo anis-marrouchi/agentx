@@ -1,537 +1,225 @@
-# agentx
+# AgentX
 
-General-purpose agentic code generation engine. Generate, evolve, and manage your codebase with AI from the terminal.
+**Self-hosted multi-agent orchestrator.** Routes messages from Telegram, WhatsApp, crons, and cross-machine A2A mesh to AI agents running on Claude Code, OpenAI, Ollama, or any LLM provider.
 
-agentx is a CLI and library that turns natural language into working code. It detects your tech stack, matches relevant skills, runs a multi-step agentic loop with tool use, and writes files directly to your project.
+> **Experimental.** This project is a rapid response to [Anthropic's updated terms of use](https://www.anthropic.com/policies) restricting third-party OAuth integrations (affecting tools like OpenClaw). AgentX is a self-hosted, bring-your-own-key alternative — you run it on your own machines with your own API keys or Claude subscription.
 
-## Install
+## How it works
+
+AgentX is **not** an AI runtime. It's a thin orchestration layer:
+
+```
+                     ┌──────────────┐
+  Telegram ──────────┤              │
+  WhatsApp ──────────┤   agentx     │──── claude -p "task" --cwd /workspace
+  Cron trigger ──────┤   daemon     │──── openai API call
+  A2A remote call ───┤              │──── ollama generate
+                     └──────┬───────┘
+                            │
+                    routes messages to
+                    the right workspace
+                    with the right prompt
+```
+
+Each agent = a workspace directory. For Claude Code agents, permissions, hooks, MCP servers, skills, and memory are all configured in the workspace's `.claude/` directory — no AgentX code needed.
+
+## Features
+
+- **Multi-channel**: Telegram (polling, multi-account), WhatsApp (planned)
+- **Multi-agent**: Named agents with custom permissions, concurrent limits, mention routing
+- **Cron scheduler**: Timezone-aware recurring tasks with run logging
+- **A2A mesh**: Cross-machine agent communication via HTTP, peer discovery, health checks
+- **Streaming**: Real-time response streaming to Telegram with progressive message edits
+- **Typing indicators**: Bots show typing status while processing
+- **Bot-to-bot**: Agents can mention each other to delegate tasks
+- **Session memory**: One conversation session per agent/chat/day for context continuity
+- **Hooks**: Pre/post hooks for channels, crons, and A2A tasks (command, script, or LLM-based)
+- **Provider abstraction**: Switch providers per-agent via config, with capability warnings
+- **Markdown rendering**: Claude's markdown output converted to Telegram MarkdownV2
+
+## Three execution tiers
+
+| Tier | How | Auth | Best for |
+|------|-----|------|----------|
+| `claude-code` | Spawns `claude` CLI | Subscription | Full power: subagents, MCP, skills, hooks, 1M context |
+| `sdk` | Claude Agent SDK | API key | Programmatic control, headless servers |
+| `orchestrator` | AgentX's own loop | Any provider key | Non-Claude providers (OpenAI, Ollama, Gemini) |
+
+## Quick start
 
 ```bash
-npm install -g agentx
+npm install -g @nooqta/agentx
+
+# Copy and edit the example config
+cp node_modules/@nooqta/agentx/agentx.example.json agentx.json
+
+# Start the daemon
+agentx daemon
 ```
 
-Or run directly:
+Or clone and run from source:
 
 ```bash
-npx agentx
-```
-
-## Quick Start
-
-```bash
-# Start an interactive coding session
-agentx
-
-# Generate a component
-agentx gen "a responsive pricing card with monthly/yearly toggle"
-
-# Evolve existing code
-agentx evolve "add dark mode support" --glob "src/components/**/*.tsx"
-
-# Scaffold a new project
-agentx create my-app --template saas-starter
-
-# AI-powered git commit
-agentx git commit --all
-```
-
-## Setup
-
-On first run, agentx will prompt you to configure your AI provider:
-
-```bash
-agentx model setup
-```
-
-**Claude subscription (default)** — Uses your Claude subscription via the `claude` CLI binary. No API key needed.
-
-**API key** — Direct API access with `ANTHROPIC_API_KEY`. Set it via the setup wizard or as an environment variable.
-
-```bash
-# Check current config
-agentx model show
-```
-
-## Commands
-
-### `generate` (aliases: `gen`, `g`)
-
-Generate any type of file from a natural language description.
-
-```bash
-# Auto-detect output type
-agentx gen "REST API for user management with CRUD endpoints"
-
-# Specify output type
-agentx gen "login page with email/password" --type page
-
-# Target a directory
-agentx gen "PostgreSQL schema for an e-commerce app" --type schema --output src/db
-
-# Dry run to preview
-agentx gen "unit tests for the auth module" --type test --dry-run
-
-# Use a specific model
-agentx gen "WebSocket chat server" --model claude-opus-4-20250514
-```
-
-**Supported output types:** `component`, `page`, `api`, `website`, `document`, `script`, `config`, `skill`, `media`, `report`, `test`, `workflow`, `schema`, `email`, `diagram`, `auto`
-
-When set to `auto` (the default), agentx detects the right type from your task description.
-
-**Key options:**
-| Flag | Description |
-|------|-------------|
-| `-t, --type <type>` | Output type (default: `auto`) |
-| `-o, --output <dir>` | Output directory |
-| `--dry-run` | Preview without writing files |
-| `--overwrite` | Overwrite existing files |
-| `-p, --provider <name>` | AI provider (`claude-code`, `claude`) |
-| `-m, --model <model>` | Model to use |
-| `--max-steps <n>` | Max agentic loop iterations (default: 5) |
-| `--heal` | Verify and auto-fix generated code |
-| `--build-cmd <cmd>` | Build command for heal verification |
-| `--test-cmd <cmd>` | Test command for heal verification |
-| `--no-context7` | Disable live documentation lookup |
-| `--debug` | Verbose logging |
-
-### `evolve` (aliases: `ev`, `transform`)
-
-Transform existing files using AI. Shows a diff preview for each file and lets you accept or skip changes.
-
-```bash
-# Add TypeScript types to JS files
-agentx evolve "convert to TypeScript with strict types" --glob "src/**/*.js"
-
-# Refactor with a pattern
-agentx evolve "replace axios with fetch" --glob "src/api/**/*.ts"
-
-# Migrate a framework
-agentx evolve "migrate from React class components to hooks" --glob "src/components/**/*.tsx"
-
-# Apply without confirmation
-agentx evolve "add JSDoc comments to all exported functions" --glob "src/utils/*.ts" --yes
-
-# Preview only
-agentx evolve "optimize database queries" --glob "src/models/*.ts" --dry-run
-```
-
-**Key options:**
-| Flag | Description |
-|------|-------------|
-| `-g, --glob <pattern>` | Files to evolve |
-| `--max-files <n>` | Max files to process (default: 10) |
-| `--dry-run` | Show diffs without writing |
-| `-y, --yes` | Apply all changes without confirmation |
-| `--heal` | Verify and auto-fix after changes |
-
-### `chat`
-
-Interactive REPL for multi-turn coding sessions with persistent history.
-
-```bash
-# Start a new session
-agentx chat
-
-# Resume the last session
-agentx chat --resume
-
-# Resume a specific session
-agentx chat --session abc123
-
-# List saved sessions
-agentx chat --list
-```
-
-Sessions are saved to `.shadxn/sessions/` and can be resumed across terminal restarts.
-
-**REPL commands:** `/help`, `/exit`, `/save`, `/load <id>`, `/files`
-
-### `create`
-
-Scaffold a new project from a curated template.
-
-```bash
-# Interactive template selection
-agentx create my-app
-
-# Use a specific template
-agentx create my-api --template api-service
-
-# List available templates
-agentx create --list
-```
-
-**Templates:**
-| Name | Description |
-|------|-------------|
-| `saas-starter` | Full-stack SaaS with auth, billing, dashboard |
-| `api-service` | REST API with auth, validation, tests |
-| `cli-tool` | CLI with commands, flags, config |
-| `component-library` | UI components with Storybook and tests |
-| `fullstack-app` | Full-stack app with DB, API, and UI |
-| `mobile-app` | Mobile app with navigation and native features |
-| `chrome-extension` | Extension with popup, content script, service worker |
-| `data-pipeline` | ETL pipeline with processing stages |
-
-### `skill`
-
-Manage reusable instruction sets that guide AI generation.
-
-```bash
-# Install a skill from skills.sh
-agentx skill install intellectronica/agent-skills
-
-# List installed skills
-agentx skill list
-
-# Create a skill with AI
-agentx skill create nextjs-api --description "Next.js API route conventions"
-
-# Create a blank template
-agentx skill create my-skill --no-ai
-
-# View skill details
-agentx skill inspect nextjs-api
-```
-
-Skills are markdown files with YAML frontmatter stored in `.skills/`:
-
-```markdown
----
-name: react-component
-description: React component conventions
-tags: [react, component, frontend]
----
-
-# Instructions
-
-- Use functional components with TypeScript
-- Export named components, not default exports
-- Co-locate styles using CSS modules
-- Write unit tests alongside components
-```
-
-agentx auto-matches relevant skills to your task based on keywords, tags, and content similarity.
-
-### `inspect` (aliases: `info`, `ctx`)
-
-Show what agentx knows about your project.
-
-```bash
-agentx inspect
-
-# JSON output
-agentx inspect --json
-
-# Full details
-agentx inspect --verbose
-```
-
-Detects: languages, frameworks, package manager, databases, styling, testing tools, deployment config, schemas, and installed skills.
-
-### `git`
-
-AI-powered git operations.
-
-```bash
-# Status with colored summary
-agentx git status
-
-# AI-generated commit message
-agentx git commit --all
-
-# Custom commit message
-agentx git commit -m "fix: resolve auth redirect loop"
-
-# View diff
-agentx git diff
-agentx git diff --staged
-
-# Recent commits
-agentx git log -n 20
-```
-
-### `model`
-
-Configure AI provider and credentials.
-
-```bash
-# Interactive setup
-agentx model setup
-
-# Show current config
-agentx model show
-```
-
-**Available models:**
-| Model | Description |
-|-------|-------------|
-| `claude-sonnet-4-20250514` | Claude Sonnet 4 (recommended) |
-| `claude-opus-4-20250514` | Claude Opus 4 (reasoning) |
-| `claude-haiku-4-20250514` | Claude Haiku 4 (fast) |
-
-### `run`
-
-Start the agentx runtime — an HTTP server that receives generation requests, learns from results, auto-heals failures, and self-enhances.
-
-```bash
-agentx run
-
-# Custom port
-agentx run --port 8080
-
-# Disable features
-agentx run --no-memory --no-heal
-
-# With verification
-agentx run --test-cmd "npm test" --build-cmd "npm run build"
-```
-
-The runtime exposes an HTTP API and runs a middleware pipeline:
-
-```
-Request → Memory → Context → Generate → Heal → Record → Enhance → Response
-```
-
-- **Memory** — Persistent store of past generations, patterns, preferences
-- **Heal** — Auto-detect build/test failures and regenerate fixes
-- **Enhance** — Distill recurring patterns into reusable skills
-
-### `serve`
-
-Run agentx as an MCP server for AI editors.
-
-```bash
-agentx serve --stdio
-```
-
-Register with Claude Code:
-
-```bash
-claude mcp add agentx -- npx agentx serve --stdio
-```
-
-**Exposed tools:** `shadxn_generate`, `shadxn_inspect`, `shadxn_skill_match`, `shadxn_detect_output_type`
-
-Works with Claude Code, Cursor, Windsurf, and any MCP-compatible client.
-
-### `a2a`
-
-Start an Agent-to-Agent protocol server for external agent integration.
-
-```bash
-agentx a2a
-
-# Custom port
-agentx a2a --port 4000
-```
-
-Implements the A2A protocol with JSON-RPC 2.0:
-- `tasks/send` — Synchronous task execution
-- `tasks/sendSubscribe` — Streaming execution via SSE
-- `tasks/get` — Retrieve task state
-- `tasks/cancel` — Cancel running tasks
-- `/.well-known/agent-card.json` — Agent discovery
-
-## Use Cases
-
-### Generate a full REST API
-
-```bash
-agentx gen "Express REST API for a blog with posts, comments, and auth.
-Use PostgreSQL with Prisma ORM, JWT auth, input validation with Zod,
-and proper error handling" --type api
-```
-
-### Scaffold and iterate on a project
-
-```bash
-# Create the project
-agentx create my-saas --template saas-starter
-
-# Add features
-cd my-saas
-agentx gen "Stripe billing integration with subscription plans"
-agentx gen "admin dashboard with user management and analytics"
-
-# Evolve existing code
-agentx evolve "add rate limiting to all API routes" --glob "src/api/**/*.ts"
-```
-
-### Migrate a codebase
-
-```bash
-# Convert JavaScript to TypeScript
-agentx evolve "convert to TypeScript with strict mode" --glob "src/**/*.js" --max-files 50
-
-# Update framework patterns
-agentx evolve "migrate from Express to Hono" --glob "src/routes/**/*.ts"
-
-# Modernize styles
-agentx evolve "replace styled-components with Tailwind CSS" --glob "src/components/**/*.tsx"
-```
-
-### Generate tests for existing code
-
-```bash
-agentx gen "comprehensive unit tests for the user service" --type test
-agentx gen "integration tests for the checkout API endpoint" --type test
-```
-
-### Create CI/CD pipelines
-
-```bash
-agentx gen "GitHub Actions workflow for Node.js: lint, test, build, deploy to Vercel" --type workflow
-agentx gen "GitLab CI pipeline with Docker build and Kubernetes deployment" --type workflow
-```
-
-### Generate documentation
-
-```bash
-agentx gen "API reference documentation from the source code" --type document
-agentx gen "architecture decision record for choosing PostgreSQL over MongoDB" --type document
-```
-
-### Interactive coding session
-
-```bash
-agentx chat
-
-# In the REPL:
-> build a user authentication system with email/password and OAuth
-> now add password reset with email verification
-> write tests for the auth service
-> /save
-```
-
-### Self-healing runtime
-
-```bash
-# Start the runtime with verification
-agentx run --test-cmd "pnpm test" --build-cmd "pnpm build"
-
-# Send requests via HTTP
-curl -X POST http://localhost:3170/generate \
-  -H "Content-Type: application/json" \
-  -d '{"task": "add pagination to the products API"}'
-```
-
-The runtime auto-heals: if generated code breaks the build or tests, it detects the failure, feeds errors back to the agent, and regenerates a fix.
-
-### Use as a library
-
-```typescript
-import { generate, createProvider, detectTechStack } from "agentx"
-
-const provider = createProvider("claude-code")
-const techStack = await detectTechStack(process.cwd())
-
-const result = await generate({
-  task: "React form component with validation",
-  type: "component",
-  provider,
-  techStack,
-})
-
-for (const file of result.files) {
-  console.log(`${file.path}: ${file.content.length} bytes`)
-}
-```
-
-### Build custom skills
-
-```bash
-# Generate a skill from your project's patterns
-agentx skill create our-api-conventions \
-  --description "REST API conventions: error handling, pagination, auth middleware"
-
-# Install community skills
-agentx skill install intellectronica/agent-skills
-
-# Skills are auto-matched to tasks
-agentx gen "user profile endpoint"  # ← matches our-api-conventions skill
-```
-
-### Integrate with AI editors via MCP
-
-```bash
-# Register agentx as an MCP server
-claude mcp add agentx -- npx agentx serve --stdio
-
-# Now Claude Code can use agentx tools:
-# - Generate code with project context
-# - Inspect project tech stack
-# - Match skills to tasks
-```
-
-### Agent-to-agent workflows
-
-```bash
-# Start the A2A server
-agentx a2a --port 3171
-
-# Other agents can discover and call agentx
-curl http://localhost:3171/.well-known/agent-card.json
-
-# Send a task
-curl -X POST http://localhost:3171/rpc \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "tasks/send",
-    "params": {
-      "task": { "instruction": "generate a login page" }
-    },
-    "id": 1
-  }'
+git clone https://github.com/nooqta/agentx.git
+cd agentx
+npm install && npm run build
+cp agentx.example.json agentx.json
+# Edit agentx.json with your agents, channels, etc.
+node dist/cli.js daemon
 ```
 
 ## Configuration
 
-### Project config (`shadxn.config.json`)
+AgentX uses a single `agentx.json` file. Environment variables are expanded (`${VAR_NAME}`).
 
-```json
+```jsonc
 {
-  "provider": "claude-code",
-  "model": "claude-sonnet-4-20250514",
-  "outputDir": "src",
-  "skills": [".skills/", "skills/"]
+  "node": {
+    "id": "my-machine",
+    "name": "My Machine",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "providers": {
+    "claude": { "apiKey": "${ANTHROPIC_API_KEY}" },
+    "openai": { "apiKey": "${OPENAI_API_KEY}" }
+  },
+
+  "agents": {
+    "assistant": {
+      "name": "Assistant",
+      "workspace": "/path/to/workspace",
+      "tier": "claude-code",
+      "model": "claude-sonnet-4-6",
+      "mentions": ["@my_bot"],
+      "maxConcurrent": 2,
+      "systemPrompt": "You are a helpful assistant.",
+      "permissionMode": "default"
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          "token": "${TG_BOT_TOKEN}",
+          "agentBinding": "assistant"
+        }
+      },
+      "policy": { "dm": "pair", "group": "mention-required" }
+    }
+  },
+
+  "crons": {
+    "daily-report": {
+      "enabled": true,
+      "schedule": "0 9 * * *",
+      "timezone": "UTC",
+      "agent": "assistant",
+      "prompt": "Generate today's status report.",
+      "timeout": 600
+    }
+  },
+
+  "mesh": {
+    "enabled": true,
+    "peers": [
+      { "url": "http://100.67.108.119:18800", "name": "server-2" }
+    ]
+  }
 }
 ```
 
-### Auth config (`~/.shadxn/auth.json`)
+### Agent workspace setup (Claude Code tier)
 
-Created by `agentx model setup`. Stores provider credentials.
+Each agent's workspace is a directory with Claude Code configuration:
 
-### Skills directories
-
-agentx loads skills from these directories (in order):
-- `.skills/`
-- `.claude/skills/`
-- `skills/`
-- Root `SKILL.md`
-
-### Hooks (`.agentx/hooks.json`)
-
-Lifecycle hooks that run shell commands on events:
-
-```json
-{
-  "pre:generate": "echo 'Starting generation...'",
-  "post:file-write": "prettier --write {{file}}",
-  "post:generate": "npm run lint:fix"
-}
+```
+my-workspace/
+├── .claude/
+│   ├── settings.json      # Permissions, hooks, model
+│   ├── .mcp.json          # MCP servers
+│   ├── agents/            # Subagents
+│   └── skills/            # Domain skills
+├── CLAUDE.md              # Agent identity & instructions
+└── ... (project files)
 ```
 
-## How It Works
+## HTTP API
 
-1. **Context gathering** — Detects your tech stack, schemas, dependencies, and matches relevant skills
-2. **System prompt construction** — Combines project context, skills, and output type instructions
-3. **Agentic loop** — Multi-step tool-calling loop where the AI can read files, search code, and create files
-4. **File writing** — Generated files are written to your project with deduplication
-5. **Healing** (optional) — Runs build/test commands, feeds errors back to the agent for auto-fix
-6. **Memory** — Records results for pattern learning and skill enhancement
+The daemon exposes a REST API:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | System status, agents, crons, mesh |
+| `/agents` | GET | List agents and their status |
+| `/crons` | GET | List cron jobs |
+| `/mesh` | GET | Mesh peer directory |
+| `/task` | POST | Execute a task: `{ "agent": "id", "message": "..." }` |
+| `/mesh/task` | POST | Send task to remote peer: `{ "peer": "name", "message": "..." }` |
+| `/.well-known/agent-card.json` | GET | A2A agent discovery |
+
+## A2A Mesh
+
+Run `agentx daemon` on multiple machines. Each node discovers peers and exposes agents via A2A agent cards. Tasks are routed to the correct node automatically.
+
+```
+MacBook (Nadia, DevOps)  ←─── Tailscale ───→  Server (Atlas, MTGL)
+        :18800                                        :18800
+```
+
+Peers communicate over HTTP. Use Tailscale or a VPN for secure cross-machine communication.
+
+## Migrating from OpenClaw
+
+AgentX is designed as a drop-in replacement for OpenClaw's agent orchestration:
+
+| OpenClaw | AgentX |
+|----------|--------|
+| `openclaw.json` agents | `agentx.json` agents section |
+| `openclaw.json` channels.telegram | `agentx.json` channels.telegram |
+| `cron/jobs.json` | `agentx.json` crons section |
+| `exec-approvals.json` | Workspace `.claude/settings.json` permissions |
+| Gateway + Node architecture | Single daemon per machine |
+| OAuth proxy | Direct API key or CLI subscription |
+
+### Migration steps
+
+1. **Stop OpenClaw**
+   - macOS: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`
+   - Linux: `systemctl --user stop openclaw-gateway openclaw-node`
+2. **Install AgentX**: `npm install -g @nooqta/agentx`
+3. **Convert config**: Map your `openclaw.json` agents, channels, and cron jobs to `agentx.json` (see `agentx.example.json`)
+4. **Set up workspaces**: Ensure each agent's workspace has a `.claude/` directory with permissions and hooks
+5. **Move secrets to `.env`**: Bot tokens, API keys — AgentX auto-loads `.env` from the working directory
+6. **Start daemon**: `agentx daemon`
+
+### Key differences from OpenClaw
+
+- **No OAuth proxy**: You run your own daemon with your own credentials
+- **Workspace = Agent**: Permissions, hooks, and tools live in the workspace `.claude/` dir
+- **Claude Code native**: `tier: "claude-code"` gives you the full Claude Code feature set (subagents, MCP, skills, hooks, memory, worktrees, 1M context)
+- **Provider-agnostic**: Switch any agent to OpenAI, Ollama, or other providers via config
+- **A2A mesh**: Agents across machines communicate natively (OpenClaw required a gateway)
+
+## Built with
+
+- [Claude Code CLI](https://claude.ai/code) — AI agent runtime (subscription or API)
+- [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) — Programmatic agent control
+- [Telegram Bot API](https://core.telegram.org/bots/api) — Channel adapter (zero dependencies)
+- [Zod](https://github.com/colinhacks/zod) — Config validation
+- [Commander](https://github.com/tj/commander.js) — CLI framework
+
+## Legal
+
+AgentX is a **self-hosted, bring-your-own-key** tool:
+
+- Each user provides their own API key or Claude subscription
+- No credentials are stored, shared, or proxied by AgentX
+- Built on official public packages: Claude API, Claude Agent SDK, Claude Code CLI
+- Provider-agnostic — works with any LLM, not locked to Anthropic
+- Same model as LangChain, CrewAI, AutoGen, Dify, n8n
 
 ## License
 

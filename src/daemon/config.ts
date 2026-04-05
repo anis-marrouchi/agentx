@@ -1,0 +1,238 @@
+import { z } from "zod"
+import { readFileSync, existsSync } from "fs"
+import { resolve } from "path"
+
+/**
+ * Load .env file into process.env (simple, no dependency).
+ */
+function loadDotEnv(dir: string): void {
+  const envPath = resolve(dir, ".env")
+  if (!existsSync(envPath)) return
+
+  const content = readFileSync(envPath, "utf-8")
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) continue
+    const eqIdx = trimmed.indexOf("=")
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    const value = trimmed.slice(eqIdx + 1).trim()
+    if (!process.env[key]) {
+      process.env[key] = value
+    }
+  }
+}
+
+// --- Daemon configuration schema & loader ---
+
+const providerConfigSchema = z.object({
+  apiKey: z.string().optional(),
+  defaultModel: z.string().optional(),
+  baseUrl: z.string().optional(),
+})
+
+const agentConfigSchema = z.object({
+  name: z.string(),
+  workspace: z.string(),
+  tier: z.enum(["claude-code", "sdk", "orchestrator"]).default("claude-code"),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  mentions: z.array(z.string()).default([]),
+  maxConcurrent: z.number().default(1),
+  permissionMode: z.string().default("default"),
+})
+
+const telegramAccountSchema = z.object({
+  token: z.string(),
+  agentBinding: z.string(),
+})
+
+const channelsConfigSchema = z.object({
+  telegram: z.object({
+    enabled: z.boolean().default(false),
+    accounts: z.record(z.string(), telegramAccountSchema).default({}),
+    policy: z.object({
+      dm: z.enum(["pair", "block"]).default("pair"),
+      group: z.enum(["mention-required", "all"]).default("mention-required"),
+    }).default({}),
+  }).default({}),
+  whatsapp: z.object({
+    enabled: z.boolean().default(false),
+    sessionDir: z.string().default(".agentx/whatsapp-sessions"),
+    agentBinding: z.string().optional(),
+  }).default({}),
+})
+
+const cronJobSchema = z.object({
+  enabled: z.boolean().default(true),
+  schedule: z.string(),
+  timezone: z.string().default("UTC"),
+  agent: z.string(),
+  prompt: z.string(),
+  timeout: z.number().default(600),
+  model: z.string().optional(),
+  onError: z.enum(["log", "notify", "disable"]).default("log"),
+})
+
+const meshPeerSchema = z.object({
+  url: z.string(),
+  name: z.string(),
+  token: z.string().optional(),
+})
+
+const meshConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  peers: z.array(meshPeerSchema).default([]),
+  discovery: z.enum(["static", "mdns"]).default("static"),
+  healthCheck: z.object({
+    interval: z.number().default(60),
+    timeout: z.number().default(10),
+  }).default({}),
+})
+
+export const daemonConfigSchema = z.object({
+  node: z.object({
+    id: z.string(),
+    name: z.string(),
+    bind: z.string().default("127.0.0.1:18800"),
+  }),
+  providers: z.record(z.string(), providerConfigSchema).default({}),
+  agents: z.record(z.string(), agentConfigSchema).default({}),
+  channels: channelsConfigSchema.default({}),
+  crons: z.record(z.string(), cronJobSchema).default({}),
+  mesh: meshConfigSchema.default({}),
+})
+
+export type DaemonConfig = z.infer<typeof daemonConfigSchema>
+export type AgentDef = z.infer<typeof agentConfigSchema>
+export type CronJobDef = z.infer<typeof cronJobSchema>
+export type MeshPeer = z.infer<typeof meshPeerSchema>
+
+/**
+ * Expand environment variables in strings: ${VAR_NAME} -> process.env.VAR_NAME
+ */
+function expandEnvVars(obj: unknown): unknown {
+  if (typeof obj === "string") {
+    return obj.replace(/\$\{(\w+)\}/g, (_match, name) => process.env[name] || "")
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(expandEnvVars)
+  }
+  if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      result[key] = expandEnvVars(value)
+    }
+    return result
+  }
+  return obj
+}
+
+/**
+ * Load daemon config from agentx.json, with env var expansion and validation.
+ */
+export function loadDaemonConfig(configPath?: string): DaemonConfig {
+  const paths = configPath
+    ? [configPath]
+    : [
+        resolve(process.cwd(), "agentx.json"),
+        resolve(process.cwd(), ".agentx/config.json"),
+      ]
+
+  // Load .env from same directory as config search
+  loadDotEnv(process.cwd())
+
+  let raw: string | undefined
+  let foundPath: string | undefined
+
+  for (const p of paths) {
+    if (existsSync(p)) {
+      raw = readFileSync(p, "utf-8")
+      foundPath = p
+      break
+    }
+  }
+
+  if (!raw || !foundPath) {
+    throw new Error(
+      `No config found. Create agentx.json or .agentx/config.json\n` +
+        `Searched: ${paths.join(", ")}`
+    )
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (e: any) {
+    throw new Error(`Invalid JSON in ${foundPath}: ${e.message}`)
+  }
+
+  // Expand environment variables
+  const expanded = expandEnvVars(parsed)
+
+  // Validate
+  const result = daemonConfigSchema.safeParse(expanded)
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((i) => `  ${i.path.join(".")}: ${i.message}`)
+      .join("\n")
+    throw new Error(`Config validation failed (${foundPath}):\n${issues}`)
+  }
+
+  return result.data
+}
+
+/**
+ * Validate agent workspace directories exist and have .claude/ setup.
+ */
+export function validateWorkspaces(config: DaemonConfig): string[] {
+  const warnings: string[] = []
+
+  for (const [id, agent] of Object.entries(config.agents)) {
+    if (!existsSync(agent.workspace)) {
+      warnings.push(`Agent "${id}": workspace not found at ${agent.workspace}`)
+      continue
+    }
+
+    if (agent.tier === "claude-code") {
+      const claudeDir = resolve(agent.workspace, ".claude")
+      if (!existsSync(claudeDir)) {
+        warnings.push(
+          `Agent "${id}": no .claude/ directory in workspace ${agent.workspace}. ` +
+            `Claude Code native features (hooks, MCP, skills) won't be available.`
+        )
+      }
+    }
+
+    // Check provider availability
+    const providerName = agent.provider || "claude"
+    const providerConfig = config.providers[providerName]
+    if (agent.tier !== "claude-code" && (!providerConfig || !providerConfig.apiKey)) {
+      warnings.push(
+        `Agent "${id}": provider "${providerName}" has no API key configured. ` +
+          `Set providers.${providerName}.apiKey in config or use tier "claude-code" for subscription.`
+      )
+    }
+  }
+
+  // Validate cron agent bindings
+  for (const [id, cron] of Object.entries(config.crons)) {
+    if (!config.agents[cron.agent]) {
+      warnings.push(`Cron "${id}": references unknown agent "${cron.agent}"`)
+    }
+  }
+
+  // Validate channel agent bindings
+  if (config.channels.telegram.enabled) {
+    for (const [name, account] of Object.entries(config.channels.telegram.accounts)) {
+      if (!config.agents[account.agentBinding]) {
+        warnings.push(
+          `Telegram account "${name}": references unknown agent "${account.agentBinding}"`
+        )
+      }
+    }
+  }
+
+  return warnings
+}

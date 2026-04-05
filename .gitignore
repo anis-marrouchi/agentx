@@ -2,3 +2,12 @@ dist
 node_modules/
 .turbo
 .DS_Store
+
+# AgentX runtime data
+.agentx/
+agentx.json
+.env
+
+# Editor
+*.swp
+*.swo

@@ -103,6 +103,34 @@ export type { ReplOptions, Session } from "./repl"
 export { A2AServer } from "./a2a"
 export type { A2AServerConfig, AgentCard, Task, TaskState, TaskMessage, TaskArtifact, TaskStatusUpdate } from "./a2a"
 
+// Daemon
+export { AgentXDaemon } from "./daemon"
+export { loadDaemonConfig, validateWorkspaces, daemonConfigSchema } from "./daemon/config"
+export type { DaemonConfig, AgentDef, CronJobDef, MeshPeer } from "./daemon/config"
+
+// Agent Registry
+export { AgentRegistry } from "./agents/registry"
+export { executeTask, executeClaudeCode, executeSdk, executeOrchestrator } from "./agents/runtime"
+export type { AgentTask, AgentResponse } from "./agents/runtime"
+
+// Channels
+export { MessageRouter } from "./channels/router"
+export { TelegramAdapter } from "./channels/telegram"
+export { WhatsAppAdapter } from "./channels/whatsapp"
+export type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./channels/types"
+
+// Crons
+export { CronScheduler } from "./crons/scheduler"
+export type { CronJobState, CronRunResult } from "./crons/types"
+
+// A2A Mesh
+export { A2AMesh } from "./a2a/mesh"
+export { A2AClient } from "./a2a/client"
+
+// Provider Capabilities
+export { PROVIDER_CAPABILITIES, checkCapabilities } from "./agent/providers/capabilities"
+export type { ProviderCapabilities } from "./agent/providers/capabilities"
+
 // Auth & Utils
 export {
   loadAuthConfig,

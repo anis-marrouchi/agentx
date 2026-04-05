@@ -1,0 +1,421 @@
+import { execa } from "execa"
+import { execFile, spawn } from "child_process"
+import type { AgentDef } from "@/daemon/config"
+
+// --- Agent execution runtime ---
+// Routes agent tasks to the correct execution tier:
+// - claude-code: spawns claude CLI (subscription, full features)
+// - sdk: uses Claude Agent SDK (API key, programmatic)
+// - orchestrator: uses agentx's own agentic loop (any provider)
+
+export interface AgentPeer {
+  id: string
+  name: string
+  handle?: string       // e.g. "@noqta_devops_bot"
+  role?: string         // from systemPrompt, first line
+}
+
+export interface AgentTask {
+  message: string
+  agentId: string
+  context?: {
+    channel?: string
+    sender?: string
+    group?: string
+    conversationHistory?: Array<{ role: string; content: string }>
+    /** This agent's own handle on the current channel */
+    myHandle?: string
+    /** Other available agents and their handles */
+    peers?: AgentPeer[]
+  }
+}
+
+export interface AgentResponse {
+  content: string
+  error?: string
+  tokensUsed?: number
+  duration?: number
+  claudeSessionId?: string  // Captured from Claude Code for session resumption
+}
+
+/** Callback for streaming text deltas */
+export type StreamCallback = (delta: string, fullText: string) => void
+
+/**
+ * Build the prompt from agent config + task context + conversation history.
+ */
+function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string): string {
+  const parts: string[] = []
+
+  if (agent.systemPrompt) {
+    parts.push(agent.systemPrompt)
+  }
+
+  // Inject environment context so the agent knows where it is and who else is available
+  if (task.context) {
+    const ctx = task.context
+    const envLines: string[] = ["", "[Environment]"]
+
+    if (ctx.channel) envLines.push(`Channel: ${ctx.channel}`)
+    if (ctx.group) envLines.push(`Group: ${ctx.group}`)
+    if (ctx.sender) envLines.push(`Message from: ${ctx.sender}`)
+    if (ctx.myHandle) envLines.push(`Your handle on this channel: ${ctx.myHandle}`)
+
+    if (ctx.peers?.length) {
+      envLines.push("")
+      envLines.push("[Team — other agents you can mention to delegate or collaborate]")
+      for (const peer of ctx.peers) {
+        const handle = peer.handle ? ` (mention: ${peer.handle})` : ""
+        const role = peer.role ? ` — ${peer.role}` : ""
+        envLines.push(`• ${peer.name}${handle}${role}`)
+      }
+      envLines.push("")
+      envLines.push("To involve another agent, mention their handle in your response and they will automatically see it and reply.")
+    }
+
+    parts.push(envLines.join("\n"))
+  }
+
+  // Inject conversation history for session continuity
+  if (historyContext) {
+    parts.push("")
+    parts.push(historyContext)
+  }
+
+  parts.push("")
+  parts.push(task.message)
+
+  return parts.join("\n")
+}
+
+/**
+ * Build CLI args for claude command.
+ */
+function buildClaudeArgs(
+  agent: AgentDef,
+  prompt: string,
+  streaming: boolean,
+  resumeSessionId?: string,
+): string[] {
+  const args: string[] = [
+    "-p", prompt,
+    "--output-format", streaming ? "stream-json" : "text",
+  ]
+
+  // Resume existing Claude session for conversation continuity
+  if (resumeSessionId) {
+    args.push("--resume", resumeSessionId)
+  }
+
+  if (agent.model) {
+    args.push("--model", agent.model)
+  }
+
+  if (agent.permissionMode === "bypassPermissions") {
+    args.push("--dangerously-skip-permissions")
+  }
+
+  return args
+}
+
+/**
+ * Extract Claude session ID from CLI output.
+ * Claude Code prints session info in stderr when using --verbose.
+ */
+function extractSessionId(stderr: string): string | undefined {
+  // Claude Code outputs: "Session: <id>" or similar in verbose mode
+  // Also check for session ID in the output format
+  const match = stderr.match(/session[:\s]+([a-f0-9-]{36})/i)
+    || stderr.match(/sessionId[:\s]+"?([a-f0-9-]{36})"?/i)
+  return match?.[1]
+}
+
+/**
+ * Execute a task using the Claude Code CLI (tier: "claude-code").
+ * Non-streaming — waits for full response.
+ */
+export async function executeClaudeCode(
+  agent: AgentDef,
+  task: AgentTask,
+  historyContext?: string,
+  resumeSessionId?: string,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  const prompt = buildPrompt(agent, task, resumeSessionId ? undefined : historyContext)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId)
+
+  try {
+    const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile("claude", args, {
+        cwd: agent.workspace,
+        timeout: 600_000,
+        maxBuffer: 10 * 1024 * 1024, // 10MB
+        env: process.env,
+      }, (error, stdout, stderr) => {
+        if (error && !stdout) {
+          reject(error)
+        } else {
+          resolve({ stdout: stdout || "", stderr: stderr || "" })
+        }
+      })
+    })
+
+    const capturedSessionId = extractSessionId(stderr)
+
+    return {
+      content: stdout,
+      duration: Date.now() - start,
+      claudeSessionId: capturedSessionId,
+    }
+  } catch (error: any) {
+    return {
+      content: "",
+      error: error.message || "Claude Code failed",
+      duration: Date.now() - start,
+    }
+  }
+}
+
+/**
+ * Execute with streaming — calls onDelta with text chunks as they arrive.
+ * Uses claude --output-format stream-json to get real-time output.
+ */
+export async function executeClaudeCodeStreaming(
+  agent: AgentDef,
+  task: AgentTask,
+  onDelta: StreamCallback,
+  historyContext?: string,
+  resumeSessionId?: string,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  const prompt = buildPrompt(agent, task, resumeSessionId ? undefined : historyContext)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId)
+
+  let fullText = ""
+
+  try {
+    const proc = execa("claude", args, {
+      cwd: agent.workspace,
+      timeout: 600_000, // 10 minutes
+      reject: false,
+      env: process.env,
+      // Don't buffer — we'll read stdout line by line
+      buffer: false,
+    })
+
+    // Parse stream-json output line by line
+    if (proc.stdout) {
+      let lineBuffer = ""
+
+      proc.stdout.on("data", (chunk: Buffer) => {
+        lineBuffer += chunk.toString()
+        const lines = lineBuffer.split("\n")
+        lineBuffer = lines.pop() || ""
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const event = JSON.parse(line)
+
+            // Claude stream-json emits different event types
+            // "assistant" messages with content contain the text
+            if (event.type === "assistant" && event.message?.content) {
+              for (const block of event.message.content) {
+                if (block.type === "text" && block.text) {
+                  const delta = block.text.slice(fullText.length)
+                  if (delta) {
+                    fullText = block.text
+                    onDelta(delta, fullText)
+                  }
+                }
+              }
+            }
+
+            // "content_block_delta" for streaming text
+            if (event.type === "content_block_delta" && event.delta?.text) {
+              fullText += event.delta.text
+              onDelta(event.delta.text, fullText)
+            }
+
+            // "result" event contains final text
+            if (event.type === "result" && event.result) {
+              const resultText = typeof event.result === "string"
+                ? event.result
+                : event.result
+              if (typeof resultText === "string" && resultText.length > fullText.length) {
+                const delta = resultText.slice(fullText.length)
+                fullText = resultText
+                if (delta) onDelta(delta, fullText)
+              }
+            }
+          } catch {
+            // Not JSON — could be raw text output, append it
+            if (line.trim() && !line.startsWith("{")) {
+              fullText += line + "\n"
+              onDelta(line + "\n", fullText)
+            }
+          }
+        }
+      })
+    }
+
+    const result = await proc
+
+    // If we got no streaming content, fall back to stdout
+    if (!fullText && result.stdout) {
+      fullText = typeof result.stdout === "string" ? result.stdout : ""
+    }
+
+    if (result.exitCode !== 0 && !fullText) {
+      const stderr = typeof result.stderr === "string" ? result.stderr : ""
+      return {
+        content: "",
+        error: stderr || `Claude Code exited with code ${result.exitCode}`,
+        duration: Date.now() - start,
+      }
+    }
+
+    return {
+      content: fullText,
+      duration: Date.now() - start,
+    }
+  } catch (error: any) {
+    return {
+      content: fullText || "",
+      error: error.message,
+      duration: Date.now() - start,
+    }
+  }
+}
+
+/**
+ * Execute a task using the Claude Agent SDK (tier: "sdk").
+ */
+export async function executeSdk(
+  agent: AgentDef,
+  task: AgentTask,
+  apiKey: string,
+): Promise<AgentResponse> {
+  const start = Date.now()
+
+  try {
+    // @ts-ignore — SDK may not be installed
+    const sdk = await import("@anthropic-ai/claude-agent-sdk")
+    const { query } = sdk
+
+    const prompt = agent.systemPrompt
+      ? `${agent.systemPrompt}\n\n${task.message}`
+      : task.message
+
+    let content = ""
+
+    const q = query({
+      prompt,
+      options: {
+        model: agent.model,
+        cwd: agent.workspace,
+        permissionMode: "bypassPermissions" as any,
+      },
+    })
+
+    for await (const message of q) {
+      if (message.type === "result" && message.subtype === "success") {
+        content = message.result || ""
+      }
+    }
+
+    return {
+      content,
+      duration: Date.now() - start,
+    }
+  } catch (error: any) {
+    return {
+      content: "",
+      error: `SDK error: ${error.message}`,
+      duration: Date.now() - start,
+    }
+  }
+}
+
+/**
+ * Execute a task using agentx's own orchestrator (tier: "orchestrator").
+ */
+export async function executeOrchestrator(
+  agent: AgentDef,
+  task: AgentTask,
+  apiKey?: string,
+): Promise<AgentResponse> {
+  const start = Date.now()
+
+  try {
+    const { generate } = await import("@/agent")
+    const providerName = agent.provider || "claude-code"
+
+    const result = await generate({
+      task: task.message,
+      cwd: agent.workspace,
+      provider: providerName as any,
+      model: agent.model,
+      apiKey,
+      overwrite: true,
+      interactive: false,
+      context7: false,
+    })
+
+    return {
+      content: result.content || "Done.",
+      tokensUsed: result.tokensUsed,
+      duration: Date.now() - start,
+    }
+  } catch (error: any) {
+    return {
+      content: "",
+      error: `Orchestrator error: ${error.message}`,
+      duration: Date.now() - start,
+    }
+  }
+}
+
+/**
+ * Route a task to the correct execution tier.
+ */
+export async function executeTask(
+  agent: AgentDef,
+  task: AgentTask,
+  providers: Record<string, { apiKey?: string }>,
+  onDelta?: StreamCallback,
+  historyContext?: string,
+  resumeSessionId?: string,
+): Promise<AgentResponse> {
+  switch (agent.tier) {
+    case "claude-code":
+      if (onDelta) {
+        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId)
+      }
+      return executeClaudeCode(agent, task, historyContext, resumeSessionId)
+
+    case "sdk": {
+      const providerName = agent.provider || "claude"
+      const apiKey = providers[providerName]?.apiKey
+      if (!apiKey) {
+        return {
+          content: "",
+          error: `No API key for provider "${providerName}". Configure providers.${providerName}.apiKey`,
+        }
+      }
+      return executeSdk(agent, task, apiKey)
+    }
+
+    case "orchestrator": {
+      const providerName = agent.provider || "claude-code"
+      const apiKey = providers[providerName]?.apiKey
+      return executeOrchestrator(agent, task, apiKey)
+    }
+
+    default:
+      return {
+        content: "",
+        error: `Unknown tier: ${agent.tier}`,
+      }
+  }
+}

@@ -1,0 +1,395 @@
+import type { DaemonConfig } from "@/daemon/config"
+import type { AgentRegistry } from "@/agents/registry"
+import type { ChannelAdapter, IncomingMessage } from "./types"
+import type { TelegramAdapter } from "./telegram"
+import type { HookRegistry } from "@/hooks"
+
+// --- Message Router ---
+// Routes channel messages to agents. Supports:
+// - Typing indicator while processing
+// - Streaming response edits
+// - Seen reaction (👀) on mention
+// - Bot-to-bot: if response mentions another agent, route it
+// - Correct bot account sends the reply (not always the first one)
+
+const STREAM_EDIT_INTERVAL_MS = 1500
+const TYPING_INTERVAL_MS = 4000
+
+export class MessageRouter {
+  private registry: AgentRegistry
+  private config: DaemonConfig
+  private channels: Map<string, ChannelAdapter> = new Map()
+  private hooks?: HookRegistry
+  private log: (...args: unknown[]) => void
+
+  constructor(
+    registry: AgentRegistry,
+    config: DaemonConfig,
+    hooks?: HookRegistry,
+    log: (...args: unknown[]) => void = console.error.bind(console, "[router]"),
+  ) {
+    this.registry = registry
+    this.config = config
+    this.hooks = hooks
+    this.log = log
+  }
+
+  addChannel(adapter: ChannelAdapter): void {
+    this.channels.set(adapter.name, adapter)
+    adapter.onMessage((msg) => this.handleMessage(adapter, msg))
+  }
+
+  async startAll(): Promise<void> {
+    for (const [name, adapter] of this.channels) {
+      this.log(`Starting channel: ${name}`)
+      await adapter.start()
+    }
+  }
+
+  async stopAll(): Promise<void> {
+    for (const [name, adapter] of this.channels) {
+      this.log(`Stopping channel: ${name}`)
+      await adapter.stop()
+    }
+  }
+
+  private async handleMessage(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+  ): Promise<void> {
+    // Pre-hook
+    if (this.hooks?.has("pre:channel-message" as any)) {
+      const hookResult = await this.hooks.execute("pre:channel-message" as any, {
+        event: "pre:channel-message" as any,
+        channel: msg.channel,
+        sender: msg.sender.name,
+        text: msg.text,
+        group: msg.group?.name,
+      })
+
+      if (hookResult.blocked) {
+        this.log(`Message blocked by hook: ${hookResult.message}`)
+        return
+      }
+
+      if (hookResult.modified?.text) {
+        msg = { ...msg, text: hookResult.modified.text as string }
+      }
+    }
+
+    // Resolve agent
+    const agentId = this.resolveAgent(msg)
+    if (!agentId) {
+      return
+    }
+
+    // Dedup: in groups, multiple bot accounts receive the same message.
+    // Only the account BOUND to this agent should handle it.
+    if (msg.group && msg.channel === "telegram") {
+      const boundAccount = this.getAccountForAgent(agentId)
+      if (boundAccount && boundAccount !== msg.accountId) {
+        return
+      }
+    }
+
+    const chatId = msg.group?.id || msg.sender.id
+    const agentDef = this.registry.getAgent(agentId)
+    const agentName = agentDef?.name || agentId
+
+    // Determine which bot account should send the response
+    const replyAccountId = this.getAccountForAgent(agentId) || msg.accountId
+
+    this.log(
+      `Routing [${msg.channel}/${msg.sender.name}] -> "${agentName}": ${msg.text.slice(0, 80)}`,
+    )
+
+    // React with 👀 to acknowledge
+    this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
+
+    // Start typing indicator loop (from the correct bot)
+    const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
+
+    // Streaming setup
+    const canStream = typeof adapter.editMessage === "function"
+    let sentMessageId: string | undefined
+    let lastEditTime = 0
+
+    const onDelta = canStream
+      ? async (_delta: string, fullText: string) => {
+          const now = Date.now()
+          if (now - lastEditTime < STREAM_EDIT_INTERVAL_MS) return
+
+          if (!sentMessageId) {
+            const preview = fullText.length > 20
+              ? fullText
+              : `_${agentName} is writing..._\n\n${fullText}`
+            try {
+              sentMessageId = await this.adapterSend(adapter, {
+                channel: msg.channel,
+                chatId,
+                text: preview,
+                replyTo: msg.id,
+                accountId: replyAccountId,
+              })
+              lastEditTime = now
+            } catch { /* retry next delta */ }
+          } else {
+            try {
+              await this.adapterEdit(adapter, chatId, sentMessageId, fullText, undefined, replyAccountId)
+              lastEditTime = now
+            } catch { /* retry next delta */ }
+          }
+        }
+      : undefined
+
+    // Execute agent task
+    const response = await this.registry.execute(
+      {
+        message: msg.text,
+        agentId,
+        context: {
+          channel: msg.channel,
+          sender: msg.sender.name,
+          group: msg.group?.name,
+        },
+      },
+      onDelta,
+    )
+
+    clearInterval(typingTimer)
+
+    if (response.error) {
+      this.log(`Agent error: ${response.error}`)
+      const errorText = `Error: ${response.error}`
+      if (sentMessageId) {
+        await this.adapterEdit(adapter, chatId, sentMessageId, errorText, "plain", replyAccountId)
+      } else {
+        await this.adapterSend(adapter, {
+          channel: msg.channel,
+          chatId,
+          text: errorText,
+          replyTo: msg.id,
+          parseMode: "plain",
+          accountId: replyAccountId,
+        })
+      }
+      return
+    }
+
+    // Post-hook
+    let responseText = response.content
+    if (this.hooks?.has("post:channel-message" as any)) {
+      const hookResult = await this.hooks.execute("post:channel-message" as any, {
+        event: "post:channel-message" as any,
+        channel: msg.channel,
+        sender: msg.sender.name,
+        response: responseText,
+        agentId,
+      })
+
+      if (hookResult.blocked) {
+        this.log(`Response blocked by hook: ${hookResult.message}`)
+        return
+      }
+
+      if (hookResult.modified?.response) {
+        responseText = hookResult.modified.response as string
+      }
+    }
+
+    // Final message
+    let sentResponseId: string | undefined
+    if (responseText) {
+      if (sentMessageId) {
+        await this.adapterEdit(adapter, chatId, sentMessageId, responseText, undefined, replyAccountId)
+        sentResponseId = sentMessageId
+      } else {
+        sentResponseId = await this.adapterSend(adapter, {
+          channel: msg.channel,
+          chatId,
+          text: responseText,
+          replyTo: msg.id,
+          accountId: replyAccountId,
+        })
+      }
+    }
+
+    // Bot-to-bot: if response mentions another agent, route it (fire-and-forget with error handling)
+    if (responseText && sentResponseId) {
+      this.handleBotToBotMentions(adapter, msg, agentId, responseText, sentResponseId).catch((e) => {
+        this.log(`Bot-to-bot error: ${e.message}`)
+      })
+    }
+  }
+
+  /**
+   * Check if an agent's response mentions another agent.
+   * If so, route the response as a new task to that agent.
+   */
+  private async handleBotToBotMentions(
+    adapter: ChannelAdapter,
+    originalMsg: IncomingMessage,
+    sourceAgentId: string,
+    responseText: string,
+    responseMessageId: string,
+  ): Promise<void> {
+    for (const [id, def] of Object.entries(this.config.agents)) {
+      if (id === sourceAgentId) continue
+
+      const mentioned = def.mentions.some((m: string) =>
+        responseText.toLowerCase().includes(m.toLowerCase()),
+      )
+      if (!mentioned) continue
+
+      this.log(`Bot-to-bot: "${sourceAgentId}" mentioned "${id}" — routing`)
+
+      const chatId = originalMsg.group?.id || originalMsg.sender.id
+      const targetAccountId = this.getAccountForAgent(id)
+
+      try {
+        // Seen reaction from the target bot on the source bot's message
+        this.adapterReact(adapter, chatId, responseMessageId, "👀", targetAccountId)
+
+        // Typing from the target bot
+        const typingTimer = this.startTypingLoop(adapter, chatId, targetAccountId)
+
+        const response = await this.registry.execute({
+          message: responseText,
+          agentId: id,
+          context: {
+            channel: originalMsg.channel,
+            sender: `agent:${sourceAgentId}`,
+            group: originalMsg.group?.name,
+          },
+        })
+
+        clearInterval(typingTimer)
+
+        if (response.content && !response.error) {
+          // Send as a new message (not a reply) to avoid "message to reply not found" errors
+          // when the target bot can't resolve the source bot's message ID
+          await this.adapterSend(adapter, {
+            channel: originalMsg.channel,
+            chatId,
+            text: response.content,
+            accountId: targetAccountId,
+          })
+        } else if (response.error) {
+          this.log(`Bot-to-bot "${id}" error: ${response.error}`)
+        }
+      } catch (e: any) {
+        this.log(`Bot-to-bot "${id}" failed: ${e.message}`)
+      }
+
+      break // Only route to first mentioned agent
+    }
+  }
+
+  // --- Adapter helpers that pass accountId for Telegram ---
+
+  private async adapterSend(
+    adapter: ChannelAdapter,
+    msg: { channel: string; chatId: string; text: string; replyTo?: string; parseMode?: string; accountId?: string },
+  ): Promise<string> {
+    // For Telegram, pass accountId so the correct bot sends the message
+    if (adapter.name === "telegram" && msg.accountId) {
+      return (adapter as TelegramAdapter).send({
+        ...msg,
+        parseMode: msg.parseMode as any,
+        accountId: msg.accountId,
+      }) as Promise<string>
+    }
+    return (adapter.send(msg as any) || "") as Promise<string>
+  }
+
+  private async adapterEdit(
+    adapter: ChannelAdapter,
+    chatId: string,
+    messageId: string,
+    text: string,
+    parseMode?: string,
+    accountId?: string,
+  ): Promise<boolean> {
+    if (adapter.name === "telegram" && accountId) {
+      return (adapter as TelegramAdapter).editMessage(chatId, messageId, text, parseMode, accountId)
+    }
+    return adapter.editMessage?.(chatId, messageId, text, parseMode) ?? false
+  }
+
+  private adapterReact(
+    adapter: ChannelAdapter,
+    chatId: string,
+    messageId: string,
+    emoji: string,
+    accountId?: string,
+  ): void {
+    if (adapter.name === "telegram" && accountId) {
+      (adapter as TelegramAdapter).react(chatId, messageId, emoji, accountId)
+    } else {
+      adapter.react?.(chatId, messageId, emoji)
+    }
+  }
+
+  private startTypingLoop(
+    adapter: ChannelAdapter,
+    chatId: string,
+    accountId?: string,
+  ): ReturnType<typeof setInterval> {
+    const sendTyping = () => {
+      if (adapter.name === "telegram" && accountId) {
+        (adapter as TelegramAdapter).sendTyping(chatId, accountId)
+      } else {
+        adapter.sendTyping?.(chatId)
+      }
+    }
+
+    sendTyping()
+    return setInterval(sendTyping, TYPING_INTERVAL_MS)
+  }
+
+  // --- Agent resolution ---
+
+  private getAccountForAgent(agentId: string): string | undefined {
+    for (const [accountId, account] of Object.entries(this.config.channels.telegram.accounts)) {
+      if (account.agentBinding === agentId) {
+        return accountId
+      }
+    }
+    return undefined
+  }
+
+  private resolveAgent(msg: IncomingMessage): string | undefined {
+    // DM: route to the account's bound agent
+    if (!msg.group) {
+      if (msg.channel === "telegram") {
+        const account = this.config.channels.telegram.accounts[msg.accountId]
+        return account?.agentBinding
+      }
+      if (msg.channel === "whatsapp") {
+        return this.config.channels.whatsapp.agentBinding
+      }
+      return undefined
+    }
+
+    // Group: check policy
+    if (msg.channel === "telegram") {
+      const policy = this.config.channels.telegram.policy
+      if (policy.group === "mention-required") {
+        const agentId = this.registry.findByMention(msg.text)
+        if (!agentId) return undefined
+        return agentId
+      }
+    }
+
+    // Default: mention matching, then account binding
+    const mentionAgent = this.registry.findByMention(msg.text)
+    if (mentionAgent) return mentionAgent
+
+    if (msg.channel === "telegram") {
+      const account = this.config.channels.telegram.accounts[msg.accountId]
+      return account?.agentBinding
+    }
+
+    return this.config.channels.whatsapp.agentBinding
+  }
+}

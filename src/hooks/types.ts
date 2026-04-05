@@ -13,6 +13,12 @@ export const HOOK_EVENTS = [
   "on:error",
   "pre:tool-call",
   "post:tool-call",
+  // Daemon events
+  "pre:channel-message",
+  "post:channel-message",
+  "pre:a2a-task",
+  "pre:cron-run",
+  "post:cron-run",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]
@@ -25,6 +31,11 @@ export const BLOCKING_EVENTS: HookEvent[] = [
   "post:response",
   "pre:command",
   "pre:tool-call",
+  // Daemon blocking events
+  "pre:channel-message",
+  "post:channel-message",
+  "pre:a2a-task",
+  "pre:cron-run",
 ]
 
 export type HookType = "command" | "prompt" | "script"

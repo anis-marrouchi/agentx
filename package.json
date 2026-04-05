@@ -1,7 +1,7 @@
 {
-  "name": "agentx",
-  "version": "0.1.0",
-  "description": "General-purpose agentic code generation engine — CLI + library for AI-powered file generation, evolution, and code management",
+  "name": "@nooqta/agentx",
+  "version": "0.2.0",
+  "description": "Self-hosted multi-agent orchestrator — routes Telegram, WhatsApp, crons, and A2A mesh tasks to Claude Code, OpenAI, or any LLM provider",
   "publishConfig": {
     "access": "public"
   },
@@ -27,18 +27,25 @@
     "agentx": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "agentx.example.json"
   ],
   "keywords": [
     "ai",
     "agent",
-    "skills",
-    "generation",
+    "multi-agent",
+    "orchestrator",
+    "claude-code",
     "claude",
-    "code-generation",
-    "agentic",
-    "context7",
-    "skills.sh"
+    "telegram",
+    "whatsapp",
+    "cron",
+    "a2a",
+    "mesh",
+    "swarm",
+    "mcp",
+    "self-hosted",
+    "bring-your-own-key"
   ],
   "scripts": {
     "build": "tsup",
@@ -47,7 +54,8 @@
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,mdx}\" --cache"
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,mdx}\" --cache",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "chalk": "5.2.0",
@@ -71,5 +79,8 @@
     "typescript": "^4.9.3",
     "vite-tsconfig-paths": "^4.3.1",
     "vitest": "^1.2.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
