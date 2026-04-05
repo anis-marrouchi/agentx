@@ -196,15 +196,16 @@ export class WhatsAppAdapter implements ChannelAdapter {
         }
 
         // For fromMe: only process self-chat (messaging yourself = talking to agent)
-        // WhatsApp uses both regular JID and LID (Linked ID) for self-chat.
+        // OpenClaw pattern: if your own number is in allowFrom, self-chat is enabled.
+        // WhatsApp uses LID format for self-chat remoteJid.
         if (msg.key.fromMe) {
           const me = this.sock?.user
-          const myIds = [
-            me?.id?.replace(/:.*@/, "@")?.replace(/@.*$/, ""),
-            me?.lid?.replace(/:.*@/, "@")?.replace(/@.*$/, ""),
-          ].filter(Boolean)
-          const chatId = (msg.key.remoteJid || "").replace(/:.*@/, "@").replace(/@.*$/, "")
-          const isSelfChat = myIds.some(p => p === chatId || chatId.endsWith(p!))
+          const remoteJid = msg.key.remoteJid || ""
+          // Self-chat: remoteJid matches our JID or LID
+          const myJid = me?.id?.replace(/:.*/, "") || ""     // 21624309128
+          const myLid = me?.lid?.replace(/:.*/, "") || ""     // 214997540012179
+          const chatUser = remoteJid.replace(/:.*/, "").replace(/@.*/, "")
+          const isSelfChat = (chatUser === myJid) || (chatUser === myLid)
           if (!isSelfChat) continue
         }
 
@@ -259,9 +260,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
           channel: "whatsapp",
           accountId: "default",
           sender: {
-            // For self-chat, use regular JID so replies go to the right place
+            // For self-chat, use regular JID (not LID) so replies go to the right chat
             id: msg.key.fromMe
-              ? (this.sock?.user?.id?.replace(/:.*@/, "") || senderPhone)
+              ? (this.sock?.user?.id?.replace(/:.*/, "") || senderPhone) + "@s.whatsapp.net"
               : senderPhone,
             name: senderName,
             username: senderPhone,
