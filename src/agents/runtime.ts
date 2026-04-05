@@ -99,7 +99,7 @@ function buildClaudeArgs(
 ): string[] {
   const args: string[] = [
     "-p", prompt,
-    "--output-format", streaming ? "stream-json" : "text",
+    "--output-format", streaming ? "stream-json" : "json",
   ]
 
   // stream-json requires --verbose in recent Claude Code versions
@@ -124,15 +124,20 @@ function buildClaudeArgs(
 }
 
 /**
- * Extract Claude session ID from CLI output.
- * Claude Code prints session info in stderr when using --verbose.
+ * Parse JSON output from `claude -p --output-format json`.
+ * Returns the text result and session_id.
  */
-function extractSessionId(stderr: string): string | undefined {
-  // Claude Code outputs: "Session: <id>" or similar in verbose mode
-  // Also check for session ID in the output format
-  const match = stderr.match(/session[:\s]+([a-f0-9-]{36})/i)
-    || stderr.match(/sessionId[:\s]+"?([a-f0-9-]{36})"?/i)
-  return match?.[1]
+function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string } {
+  try {
+    const data = JSON.parse(stdout)
+    return {
+      text: data.result || data.content || "",
+      sessionId: data.session_id,
+    }
+  } catch {
+    // Not JSON — return raw text (fallback for non-json output)
+    return { text: stdout }
+  }
 }
 
 /**
@@ -166,24 +171,22 @@ export async function executeClaudeCode(
       })
     })
 
-    const capturedSessionId = extractSessionId(stderr)
-
     if (!stdout && exitCode !== 0) {
-      // Log stderr for debugging
       const errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
-      console.error(`[runtime] claude error (code ${exitCode}): ${errMsg.slice(0, 500)}`)
       return {
         content: "",
         error: errMsg.slice(0, 300),
         duration: Date.now() - start,
-        claudeSessionId: capturedSessionId,
       }
     }
 
+    // Parse JSON output — gives us both text and session_id cleanly
+    const parsed = parseClaudeJsonOutput(stdout)
+
     return {
-      content: stdout,
+      content: parsed.text,
       duration: Date.now() - start,
-      claudeSessionId: capturedSessionId,
+      claudeSessionId: parsed.sessionId,
     }
   } catch (error: any) {
     console.error(`[runtime] execFile threw: ${error.message}`)

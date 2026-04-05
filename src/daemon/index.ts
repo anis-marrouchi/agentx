@@ -4,6 +4,7 @@ import { AgentRegistry } from "@/agents/registry"
 import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
+import { DiscordAdapter } from "@/channels/discord"
 import { CronScheduler } from "@/crons/scheduler"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -149,11 +150,25 @@ export class AgentXDaemon {
         {
           sessionDir: this.config.channels.whatsapp.sessionDir,
           agentBinding: this.config.channels.whatsapp.agentBinding,
+          allowFrom: this.config.channels.whatsapp.allowFrom,
         },
         this.log,
       )
       this.router.addChannel(whatsapp)
-      this.log("  WhatsApp: enabled (placeholder)")
+      this.log("  WhatsApp: enabled")
+    }
+
+    // Discord
+    if (this.config.channels.discord?.enabled && this.config.channels.discord.token) {
+      const discord = new DiscordAdapter(
+        {
+          token: this.config.channels.discord.token,
+          agentBinding: this.config.channels.discord.agentBinding,
+        },
+        this.log,
+      )
+      this.router.addChannel(discord)
+      this.log("  Discord: enabled")
     }
 
     await this.router.startAll()

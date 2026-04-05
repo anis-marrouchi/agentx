@@ -175,15 +175,18 @@ export class AgentRegistry {
     const wikiArticles = this.wiki.findRelevant(task.message, task.agentId, 3)
     const wikiContext = this.wiki.buildContext(wikiArticles)
 
-    // For claude-code tier: use native --resume with Claude session ID
-    // For other tiers: use manual history context
+    // Session continuity:
+    // - claude-code tier: --resume SESSION_ID (native, carries full context)
+    // - other tiers: inject conversation history as text
     const resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : undefined
-    // Combine wiki context with session history for non-claude-code tiers
-    const sessionHistory = state.def.tier !== "claude-code"
+
+    const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
+
+    // Combine wiki + history (wiki always included, history only when no --resume)
     const historyContext = [wikiContext, sessionHistory].filter(Boolean).join("\n\n") || undefined
 
     try {

@@ -1,21 +1,33 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import { existsSync, mkdirSync } from "fs"
+import { resolve } from "path"
 
-// --- WhatsApp adapter (placeholder — requires baileys or WA Business API) ---
-// This is a scaffold. Real implementation depends on chosen WhatsApp library.
+// --- WhatsApp adapter using Baileys (WhatsApp Web multi-device) ---
+// Baileys is an optional dependency. If not installed, adapter logs a warning.
+//
+// First run: displays QR code in terminal for pairing.
+// Subsequent runs: reconnects automatically using saved session.
 
 export class WhatsAppAdapter implements ChannelAdapter {
   readonly name = "whatsapp"
   private sessionDir: string
   private agentBinding?: string
+  private allowFrom?: string[]
   private handler?: (msg: IncomingMessage) => Promise<void>
+  private sock: any = null
   private log: (...args: unknown[]) => void
 
   constructor(
-    config: { sessionDir: string; agentBinding?: string },
+    config: {
+      sessionDir: string
+      agentBinding?: string
+      allowFrom?: string[]
+    },
     log: (...args: unknown[]) => void = console.error.bind(console, "[whatsapp]"),
   ) {
-    this.sessionDir = config.sessionDir
+    this.sessionDir = resolve(config.sessionDir)
     this.agentBinding = config.agentBinding
+    this.allowFrom = config.allowFrom
     this.log = log
   }
 
@@ -24,25 +36,182 @@ export class WhatsAppAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
-    this.log("WhatsApp adapter is a placeholder.")
-    this.log("To enable, install @whiskeysockets/baileys and implement the connection logic.")
-    this.log(`Session dir: ${this.sessionDir}`)
-    this.log(`Agent binding: ${this.agentBinding || "(none)"}`)
+    // Dynamic import — Baileys is optional
+    let makeWASocket: any
+    let useMultiFileAuthState: any
+    let DisconnectReason: any
 
-    // TODO: Implement with Baileys:
-    // 1. const { default: makeWASocket, useMultiFileAuthState } = await import("@whiskeysockets/baileys")
-    // 2. const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir)
-    // 3. const sock = makeWASocket({ auth: state })
-    // 4. sock.ev.on("messages.upsert", ...) -> convert to IncomingMessage -> this.handler(msg)
-    // 5. On first run, print QR code for pairing
+    try {
+      const baileys = await import("@whiskeysockets/baileys")
+      makeWASocket = baileys.default || baileys.makeWASocket
+      useMultiFileAuthState = baileys.useMultiFileAuthState
+      DisconnectReason = baileys.DisconnectReason
+    } catch {
+      this.log("WhatsApp requires @whiskeysockets/baileys. Install with:")
+      this.log("  npm install @whiskeysockets/baileys")
+      return
+    }
+
+    mkdirSync(this.sessionDir, { recursive: true })
+
+    const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir)
+
+    this.sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: true,
+      logger: { level: "silent", child: () => ({ level: "silent" }) } as any,
+    })
+
+    // Save credentials on update
+    this.sock.ev.on("creds.update", saveCreds)
+
+    // Handle connection updates
+    this.sock.ev.on("connection.update", (update: any) => {
+      const { connection, lastDisconnect, qr } = update
+
+      if (qr) {
+        this.log("Scan QR code with WhatsApp to connect")
+      }
+
+      if (connection === "close") {
+        const statusCode = lastDisconnect?.error?.output?.statusCode
+        const shouldReconnect = statusCode !== DisconnectReason?.loggedOut
+
+        if (shouldReconnect) {
+          this.log("Connection closed, reconnecting...")
+          this.start()
+        } else {
+          this.log("Logged out. Delete session dir and re-scan QR.")
+        }
+      }
+
+      if (connection === "open") {
+        this.log("WhatsApp connected")
+      }
+    })
+
+    // Handle incoming messages
+    this.sock.ev.on("messages.upsert", async (m: any) => {
+      if (!this.handler) return
+
+      for (const msg of m.messages || []) {
+        // Skip status broadcasts and own messages
+        if (msg.key.remoteJid === "status@broadcast") continue
+        if (msg.key.fromMe) continue
+
+        // Extract text content
+        const text = msg.message?.conversation
+          || msg.message?.extendedTextMessage?.text
+          || msg.message?.imageMessage?.caption
+          || msg.message?.videoMessage?.caption
+          || ""
+
+        if (!text) continue
+
+        const jid = msg.key.remoteJid || ""
+        const isGroup = jid.endsWith("@g.us")
+        const senderJid = isGroup ? (msg.key.participant || "") : jid
+        const senderPhone = senderJid.replace(/@.*$/, "")
+
+        // Allowlist check
+        if (this.allowFrom?.length) {
+          const allowed = this.allowFrom.some(p =>
+            senderPhone.includes(p.replace(/\+/g, ""))
+          )
+          if (!allowed) continue
+        }
+
+        const senderName = msg.pushName || senderPhone
+
+        const incoming: IncomingMessage = {
+          id: msg.key.id || String(Date.now()),
+          channel: "whatsapp",
+          accountId: "default",
+          sender: {
+            id: senderPhone,
+            name: senderName,
+            username: senderPhone,
+          },
+          group: isGroup ? {
+            id: jid,
+            name: jid,
+          } : undefined,
+          text,
+          replyTo: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
+          timestamp: new Date((msg.messageTimestamp || 0) * 1000),
+          raw: msg,
+        }
+
+        // Try to get group name
+        if (isGroup && this.sock) {
+          try {
+            const metadata = await this.sock.groupMetadata(jid)
+            if (incoming.group) {
+              incoming.group.name = metadata.subject || jid
+            }
+          } catch { /* group metadata unavailable */ }
+        }
+
+        this.handler(incoming).catch((e: any) => {
+          this.log(`Error handling message: ${e.message}`)
+        })
+      }
+    })
   }
 
   async stop(): Promise<void> {
-    // Close WhatsApp socket
+    if (this.sock) {
+      this.sock.end()
+      this.sock = null
+    }
   }
 
-  async send(msg: OutgoingMessage): Promise<void> {
-    this.log(`[send] Would send to ${msg.chatId}: ${msg.text.slice(0, 100)}...`)
-    // TODO: sock.sendMessage(msg.chatId, { text: msg.text })
+  async send(msg: OutgoingMessage): Promise<string> {
+    if (!this.sock) {
+      this.log("WhatsApp not connected")
+      return ""
+    }
+
+    const jid = msg.chatId.includes("@")
+      ? msg.chatId
+      : `${msg.chatId}@s.whatsapp.net`
+
+    try {
+      const sent = await this.sock.sendMessage(jid, { text: msg.text })
+      return sent?.key?.id || ""
+    } catch (e: any) {
+      this.log(`Send error: ${e.message}`)
+      return ""
+    }
+  }
+
+  async editMessage(chatId: string, messageId: string, text: string): Promise<boolean> {
+    if (!this.sock) return false
+    const jid = chatId.includes("@") ? chatId : `${chatId}@s.whatsapp.net`
+    try {
+      await this.sock.sendMessage(jid, {
+        text,
+        edit: { remoteJid: jid, id: messageId, fromMe: true },
+      })
+      return true
+    } catch { return false }
+  }
+
+  async sendTyping(chatId: string): Promise<void> {
+    if (!this.sock) return
+    const jid = chatId.includes("@") ? chatId : `${chatId}@s.whatsapp.net`
+    try {
+      await this.sock.sendPresenceUpdate("composing", jid)
+    } catch { /* best-effort */ }
+  }
+
+  async react(chatId: string, messageId: string, emoji: string = "👀"): Promise<void> {
+    if (!this.sock) return
+    const jid = chatId.includes("@") ? chatId : `${chatId}@s.whatsapp.net`
+    try {
+      await this.sock.sendMessage(jid, {
+        react: { text: emoji, key: { remoteJid: jid, id: messageId } },
+      })
+    } catch { /* best-effort */ }
   }
 }
