@@ -1,0 +1,9 @@
+src/
+test/
+tsup.config.ts
+tsconfig.json
+.env
+agentx.json
+.agentx/
+.gitignore
+*.test.ts

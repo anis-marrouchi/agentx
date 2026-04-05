@@ -11,6 +11,7 @@ import { model } from "@/commands/model"
 import { git } from "@/commands/git"
 import { a2a } from "@/commands/a2a"
 import { daemon } from "@/commands/daemon"
+import { init } from "@/commands/init"
 import { Command } from "commander"
 import { globalHooks, loadHooks } from "@/hooks"
 import { getPackageInfo } from "@/utils/get-package-info"
@@ -27,7 +28,7 @@ async function main() {
   const program = new Command()
     .name("agentx")
     .description(
-      "the AI coding agent — generate, evolve, chat, and manage your codebase with AI"
+      "self-hosted multi-agent orchestrator — Telegram, WhatsApp, crons, A2A mesh"
     )
     .version(
       packageInfo.version || "1.0.0",
@@ -48,6 +49,7 @@ async function main() {
     .addCommand(model)
     .addCommand(a2a)
     .addCommand(daemon)
+    .addCommand(init)
 
   // Default to chat when no command is given and stdin is a TTY
   const args = process.argv.slice(2)
