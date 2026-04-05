@@ -1,5 +1,5 @@
 {
-  "name": "agentx-cli",
+  "name": "agentix-cli",
   "version": "0.2.0",
   "description": "Self-hosted multi-agent orchestrator — routes Telegram, WhatsApp, crons, and A2A mesh tasks to Claude Code, OpenAI, or any LLM provider",
   "license": "MIT",
