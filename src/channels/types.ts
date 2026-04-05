@@ -17,6 +17,7 @@ export interface IncomingMessage {
   replyTo?: string      // message ID being replied to
   timestamp: Date
   raw?: unknown         // original platform message
+  resolvedAgent?: string // pre-resolved agent ID (for route-based channels like WhatsApp)
 }
 
 export interface OutgoingMessage {

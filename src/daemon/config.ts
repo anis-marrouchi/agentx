@@ -60,8 +60,13 @@ const channelsConfigSchema = z.object({
   whatsapp: z.object({
     enabled: z.boolean().default(false),
     sessionDir: z.string().default(".agentx/whatsapp-sessions"),
-    agentBinding: z.string().optional(),
+    defaultAgent: z.string().optional(),
     allowFrom: z.array(z.string()).optional(),
+    routes: z.array(z.object({
+      contact: z.string().optional(),
+      group: z.string().optional(),
+      agent: z.string(),
+    })).default([]),
   }).default({}),
   discord: z.object({
     enabled: z.boolean().default(false),

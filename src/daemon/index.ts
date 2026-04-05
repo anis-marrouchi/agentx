@@ -149,13 +149,14 @@ export class AgentXDaemon {
       const whatsapp = new WhatsAppAdapter(
         {
           sessionDir: this.config.channels.whatsapp.sessionDir,
-          agentBinding: this.config.channels.whatsapp.agentBinding,
+          defaultAgent: this.config.channels.whatsapp.defaultAgent,
           allowFrom: this.config.channels.whatsapp.allowFrom,
+          routes: this.config.channels.whatsapp.routes,
         },
         this.log,
       )
       this.router.addChannel(whatsapp)
-      this.log("  WhatsApp: enabled")
+      this.log(`  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes)`)
     }
 
     // Discord

@@ -439,6 +439,11 @@ export class MessageRouter {
   }
 
   private resolveAgent(msg: IncomingMessage): string | undefined {
+    // Pre-resolved by channel adapter (WhatsApp route-based, etc.)
+    if (msg.resolvedAgent) {
+      return msg.resolvedAgent
+    }
+
     // DM: route to the account's bound agent
     if (!msg.group) {
       if (msg.channel === "telegram") {
