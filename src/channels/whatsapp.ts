@@ -181,9 +181,12 @@ export class WhatsAppAdapter implements ChannelAdapter {
       if (!this.handler) return
 
       for (const msg of m.messages || []) {
-        // Skip status broadcasts and own messages
+        const jidShort = (msg.key.remoteJid || "").replace(/@.*/, "").slice(-6)
+        const hasText = !!(msg.message?.conversation || msg.message?.extendedTextMessage?.text)
+        this.log(`WA msg: from=${jidShort} fromMe=${msg.key.fromMe} hasText=${hasText} type=${Object.keys(msg.message || {}).join(",")}`)
+
+        // Skip status broadcasts
         if (msg.key.remoteJid === "status@broadcast") continue
-        if (msg.key.fromMe) continue
 
         // Extract text content
         const text = msg.message?.conversation
@@ -196,18 +199,24 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
         const jid = msg.key.remoteJid || ""
         const isGroup = jid.endsWith("@g.us")
+
+        // For DMs: remoteJid is the conversation partner
+        // For groups: participant is the sender
+        const chatPhone = jid.replace(/@.*$/, "")
         const senderJid = isGroup ? (msg.key.participant || "") : jid
         const senderPhone = senderJid.replace(/@.*$/, "")
 
-        // Allowlist check
-        if (this.allowFrom?.length) {
-          const allowed = this.allowFrom.some(p =>
-            senderPhone.includes(p.replace(/\+/g, ""))
-          )
+        // Allowlist check — match against chat (conversation partner) not just sender
+        // This allows the owner (fromMe) to talk to their agent via any contact
+        if (this.allowFrom?.length && !msg.key.fromMe) {
+          const allowed = this.allowFrom.some(p => {
+            const normalized = p.replace(/\+/g, "")
+            return senderPhone.includes(normalized) || chatPhone.includes(normalized)
+          })
           if (!allowed) continue
         }
 
-        const senderName = msg.pushName || senderPhone
+        const senderName = msg.key.fromMe ? "me" : (msg.pushName || senderPhone)
 
         // Get group name if available
         let groupName: string | undefined
