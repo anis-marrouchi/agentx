@@ -43,18 +43,26 @@ export class TelegramAdapter implements ChannelAdapter {
   async start(): Promise<void> {
     this.polling = true
 
-    for (const [accountId, config] of this.accounts) {
-      this.log(`Starting polling for account "${accountId}"`)
+    const entries = Array.from(this.accounts.entries())
+    this.log(`${entries.length} Telegram account(s) to start`)
+
+    for (let i = 0; i < entries.length; i++) {
+      const [accountId, config] = entries[i]
+      this.log(`Starting polling for account "${accountId}" (${i + 1}/${entries.length})`)
       try {
         const me = await this.apiCall(config.token, "getMe")
         this.log(`Bot @${me.result?.username} ready (account: ${accountId})`)
+        this.pollLoop(accountId, config)
       } catch (e: any) {
         this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
-        continue
       }
-
-      this.pollLoop(accountId, config)
+      // Small delay between account starts to avoid Telegram rate limits
+      if (i < entries.length - 1) {
+        await new Promise((r) => setTimeout(r, 300))
+      }
     }
+
+    this.log(`All ${entries.length} Telegram account(s) started`)
   }
 
   async stop(): Promise<void> {

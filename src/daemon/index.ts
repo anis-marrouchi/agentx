@@ -55,6 +55,7 @@ export class AgentXDaemon {
     // Initialize mesh (if enabled)
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
+      this.router.setMesh(this.mesh)
     }
   }
 
@@ -176,8 +177,20 @@ export class AgentXDaemon {
       await this.handleHttp(req, res)
     })
 
-    this.httpServer.listen(port, host || "127.0.0.1", () => {
-      this.log(`  HTTP API: http://${host || "127.0.0.1"}:${port}`)
+    this.httpServer.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        this.log(`  ERROR: Port ${port} is already in use. Retrying in 5s...`)
+        setTimeout(() => {
+          this.httpServer?.close()
+          this.httpServer?.listen(port, host || "0.0.0.0")
+        }, 5000)
+      } else {
+        this.log(`  HTTP error: ${err.message}`)
+      }
+    })
+
+    this.httpServer.listen(port, host || "0.0.0.0", () => {
+      this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
     })
   }
 

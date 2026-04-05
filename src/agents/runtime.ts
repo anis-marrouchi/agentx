@@ -102,6 +102,11 @@ function buildClaudeArgs(
     "--output-format", streaming ? "stream-json" : "text",
   ]
 
+  // stream-json requires --verbose in recent Claude Code versions
+  if (streaming) {
+    args.push("--verbose")
+  }
+
   // Resume existing Claude session for conversation continuity
   if (resumeSessionId) {
     args.push("--resume", resumeSessionId)
@@ -145,22 +150,35 @@ export async function executeClaudeCode(
   const args = buildClaudeArgs(agent, prompt, false, resumeSessionId)
 
   try {
-    const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      execFile("claude", args, {
+    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+      const proc = execFile("claude", args, {
         cwd: agent.workspace,
         timeout: 600_000,
-        maxBuffer: 10 * 1024 * 1024, // 10MB
-        env: process.env,
+        maxBuffer: 10 * 1024 * 1024,
+        env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "clawd") },
       }, (error, stdout, stderr) => {
-        if (error && !stdout) {
-          reject(error)
-        } else {
-          resolve({ stdout: stdout || "", stderr: stderr || "" })
-        }
+        // Always resolve — we handle errors ourselves based on stdout/stderr
+        resolve({
+          stdout: stdout || "",
+          stderr: stderr || "",
+          exitCode: error ? (error as any).code ?? 1 : 0,
+        })
       })
     })
 
     const capturedSessionId = extractSessionId(stderr)
+
+    if (!stdout && exitCode !== 0) {
+      // Log stderr for debugging
+      const errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
+      console.error(`[runtime] claude error (code ${exitCode}): ${errMsg.slice(0, 500)}`)
+      return {
+        content: "",
+        error: errMsg.slice(0, 300),
+        duration: Date.now() - start,
+        claudeSessionId: capturedSessionId,
+      }
+    }
 
     return {
       content: stdout,
@@ -168,6 +186,7 @@ export async function executeClaudeCode(
       claudeSessionId: capturedSessionId,
     }
   } catch (error: any) {
+    console.error(`[runtime] execFile threw: ${error.message}`)
     return {
       content: "",
       error: error.message || "Claude Code failed",

@@ -1,5 +1,6 @@
 import type { DaemonConfig } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
+import type { A2AMesh } from "@/a2a/mesh"
 import type { ChannelAdapter, IncomingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
@@ -20,6 +21,7 @@ export class MessageRouter {
   private config: DaemonConfig
   private channels: Map<string, ChannelAdapter> = new Map()
   private hooks?: HookRegistry
+  private mesh?: A2AMesh
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -32,6 +34,10 @@ export class MessageRouter {
     this.config = config
     this.hooks = hooks
     this.log = log
+  }
+
+  setMesh(mesh: A2AMesh): void {
+    this.mesh = mesh
   }
 
   addChannel(adapter: ChannelAdapter): void {
@@ -77,9 +83,13 @@ export class MessageRouter {
       }
     }
 
-    // Resolve agent
+    // Resolve agent — check local first, then mesh peers
     const agentId = this.resolveAgent(msg)
+
     if (!agentId) {
+      // No local agent matched.
+      // Don't mesh-route Telegram messages — remote agents with Telegram bots
+      // handle their own polling directly. Mesh is for API-to-API tasks only.
       return
     }
 
@@ -348,6 +358,76 @@ export class MessageRouter {
   }
 
   // --- Agent resolution ---
+
+  /**
+   * Handle a message by routing to a mesh peer's agent.
+   * Searches peer agent cards for mention matches.
+   */
+  private async handleViaMesh(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+  ): Promise<boolean> {
+    if (!this.mesh) return false
+
+    const textLower = msg.text.toLowerCase()
+    const directory = this.mesh.directory()
+
+    for (const peer of directory) {
+      if (!peer.healthy) continue
+
+      for (const skill of peer.skills) {
+        // Check if the message mentions this remote agent by name or ID
+        if (
+          textLower.includes(skill.id.toLowerCase()) ||
+          textLower.includes(skill.name.toLowerCase())
+        ) {
+          this.log(`Mesh routing [${msg.channel}/${msg.sender.name}] -> peer "${peer.peer}" agent "${skill.id}"`)
+
+          const chatId = msg.group?.id || msg.sender.id
+          const replyAccountId = msg.accountId
+
+          // React + typing
+          this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
+          const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
+
+          try {
+            const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id)
+
+            clearInterval(typingTimer)
+
+            if (response) {
+              // Prefix with remote agent name so user knows who's responding
+              const header = `**${skill.name}** _(${peer.peer})_:\n\n`
+              await this.adapterSend(adapter, {
+                channel: msg.channel,
+                chatId,
+                text: header + response,
+                replyTo: msg.id,
+                accountId: replyAccountId,
+              })
+            }
+
+            return true
+          } catch (e: any) {
+            clearInterval(typingTimer)
+            this.log(`Mesh routing error: ${e.message}`)
+
+            await this.adapterSend(adapter, {
+              channel: msg.channel,
+              chatId,
+              text: `Error from ${peer.peer}/${skill.name}: ${e.message}`,
+              replyTo: msg.id,
+              parseMode: "plain",
+              accountId: replyAccountId,
+            })
+            return true
+          }
+        }
+      }
+    }
+
+    return false
+  }
 
   private getAccountForAgent(agentId: string): string | undefined {
     for (const [accountId, account] of Object.entries(this.config.channels.telegram.accounts)) {
