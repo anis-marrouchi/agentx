@@ -451,7 +451,7 @@ export class MessageRouter {
         return account?.agentBinding
       }
       if (msg.channel === "whatsapp") {
-        return this.config.channels.whatsapp.agentBinding
+        return this.config.channels.whatsapp.defaultAgent
       }
       return undefined
     }
@@ -475,6 +475,6 @@ export class MessageRouter {
       return account?.agentBinding
     }
 
-    return this.config.channels.whatsapp.agentBinding
+    return this.config.channels.whatsapp.defaultAgent
   }
 }

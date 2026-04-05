@@ -93,31 +93,59 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     this.sock = makeWASocket({
       auth: state,
-      printQRInTerminal: true,
-      logger: { level: "silent", child: () => ({ level: "silent" }) } as any,
+      logger: {
+        level: "silent",
+        trace: () => {},
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: (...args: any[]) => this.log("WA error:", ...args),
+        fatal: () => {},
+        child: () => ({
+          level: "silent",
+          trace: () => {}, debug: () => {}, info: () => {},
+          warn: () => {}, error: () => {}, fatal: () => {},
+          child: () => ({ level: "silent", trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {} }),
+        }),
+      } as any,
     })
 
     // Save credentials on update
     this.sock.ev.on("creds.update", saveCreds)
 
     // Handle connection updates
-    this.sock.ev.on("connection.update", (update: any) => {
+    this.sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update
 
       if (qr) {
-        this.log("Scan QR code with WhatsApp to connect")
+        this.log("Scan QR code with WhatsApp to connect:")
+        // Render QR as text in terminal
+        try {
+          // @ts-ignore - no type declarations for qrcode-terminal
+          const { default: qrcode } = await import("qrcode-terminal") as any
+          qrcode.generate(qr, { small: true })
+        } catch {
+          // If qrcode-terminal not available, log raw QR string
+          this.log(`QR: ${qr}`)
+          this.log("Install qrcode-terminal for visual QR: npm install qrcode-terminal")
+        }
       }
 
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode
-        const shouldReconnect = statusCode !== DisconnectReason?.loggedOut
+        this.log(`WhatsApp connection closed (status: ${statusCode})`)
 
-        if (shouldReconnect) {
-          this.log("Connection closed, reconnecting...")
-          this.start()
-        } else {
-          this.log("Logged out. Delete session dir and re-scan QR.")
+        if (statusCode === 515) {
+          // Stream error — restart after delay
+          this.log("Stream error, reconnecting in 5s...")
+          setTimeout(() => this.start(), 5000)
+        } else if (statusCode === DisconnectReason?.loggedOut || statusCode === 401) {
+          this.log("Logged out. Delete session dir and restart to re-scan QR.")
+        } else if (statusCode !== undefined) {
+          this.log("Reconnecting in 3s...")
+          setTimeout(() => this.start(), 3000)
         }
+        // If statusCode is undefined, don't reconnect (likely startup failure)
       }
 
       if (connection === "open") {
