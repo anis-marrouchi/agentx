@@ -185,8 +185,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
         const hasText = !!(msg.message?.conversation || msg.message?.extendedTextMessage?.text)
         this.log(`WA msg: from=${jidShort} fromMe=${msg.key.fromMe} hasText=${hasText} type=${Object.keys(msg.message || {}).join(",")}`)
 
-        // Skip status broadcasts
+        // Skip status broadcasts and own messages (prevents reply loops)
         if (msg.key.remoteJid === "status@broadcast") continue
+        if (msg.key.fromMe) continue
 
         // Extract text content
         const text = msg.message?.conversation
