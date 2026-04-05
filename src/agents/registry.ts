@@ -1,6 +1,7 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
 import { SessionStore } from "./sessions"
+import { WikiStore } from "@/wiki"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -18,6 +19,7 @@ export class AgentRegistry {
   private config: DaemonConfig
   private providers: Record<string, { apiKey?: string }> = {}
   private sessions: SessionStore
+  private wiki: WikiStore
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -28,6 +30,7 @@ export class AgentRegistry {
     this.config = config
     this.providers = config.providers
     this.sessions = new SessionStore()
+    this.wiki = new WikiStore()
 
     for (const [id, def] of Object.entries(config.agents)) {
       this.agents.set(id, {
@@ -168,14 +171,20 @@ export class AgentRegistry {
     // Enrich task context with peer info and channel handles
     task = this.enrichTaskContext(task)
 
+    // Wiki: find relevant articles and inject as context (token-efficient)
+    const wikiArticles = this.wiki.findRelevant(task.message, task.agentId, 3)
+    const wikiContext = this.wiki.buildContext(wikiArticles)
+
     // For claude-code tier: use native --resume with Claude session ID
     // For other tiers: use manual history context
     const resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : undefined
-    const historyContext = state.def.tier !== "claude-code"
+    // Combine wiki context with session history for non-claude-code tiers
+    const sessionHistory = state.def.tier !== "claude-code"
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
+    const historyContext = [wikiContext, sessionHistory].filter(Boolean).join("\n\n") || undefined
 
     try {
       const response = await executeTask(state.def, task, this.providers, onDelta, historyContext, resumeSessionId)
@@ -190,7 +199,23 @@ export class AgentRegistry {
         // Store Claude session ID for future --resume
         if (response.claudeSessionId) {
           this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId)
-          this.log(`[${task.agentId}] session: ${response.claudeSessionId}`)
+        }
+
+        // Wiki: export conversation as raw entry for later absorption
+        if (response.content.length > 50) {
+          try {
+            const entryId = `${task.agentId}-${Date.now().toString(36)}`
+            this.wiki.addEntry({
+              id: entryId,
+              date: new Date().toISOString().slice(0, 10),
+              agentId: task.agentId,
+              source: channel,
+              sourceContext: task.context?.group || task.context?.sender,
+              content: `User: ${task.message}\n\nAgent: ${response.content}`,
+            })
+          } catch {
+            // Wiki export is best-effort
+          }
         }
 
         this.log(

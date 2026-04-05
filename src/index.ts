@@ -127,6 +127,10 @@ export type { CronJobState, CronRunResult } from "./crons/types"
 export { A2AMesh } from "./a2a/mesh"
 export { A2AClient } from "./a2a/client"
 
+// Wiki Knowledge Base
+export { WikiStore } from "./wiki"
+export type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./wiki"
+
 // Provider Capabilities
 export { PROVIDER_CAPABILITIES, checkCapabilities } from "./agent/providers/capabilities"
 export type { ProviderCapabilities } from "./agent/providers/capabilities"
