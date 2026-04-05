@@ -129,6 +129,11 @@ export class WhatsAppAdapter implements ChannelAdapter {
     // Save credentials on update
     this.sock.ev.on("creds.update", saveCreds)
 
+    // Debug: log all events to diagnose message reception
+    this.sock.ev.on("messaging-history.set", (data: any) => {
+      this.log(`WA history sync: ${data.messages?.length || 0} messages, ${data.isLatest ? "latest" : "partial"}`)
+    })
+
     // Handle connection updates
     this.sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update
@@ -171,6 +176,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     // Handle incoming messages
     this.sock.ev.on("messages.upsert", async (m: any) => {
+      this.log(`WA messages.upsert: ${m.messages?.length || 0} messages, type: ${m.type}`)
+
       if (!this.handler) return
 
       for (const msg of m.messages || []) {
