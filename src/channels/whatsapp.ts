@@ -76,8 +76,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
     let useMultiFileAuthState: any
     let DisconnectReason: any
 
+    let baileys: any
     try {
-      const baileys = await import("@whiskeysockets/baileys")
+      baileys = await import("@whiskeysockets/baileys")
       makeWASocket = baileys.default || baileys.makeWASocket
       useMultiFileAuthState = baileys.useMultiFileAuthState
       DisconnectReason = baileys.DisconnectReason
@@ -91,23 +92,38 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir)
 
+    // Fetch latest WhatsApp Web version (critical for avoiding 405 errors)
+    let version: [number, number, number] | undefined
+    try {
+      const { version: v } = await baileys.fetchLatestBaileysVersion()
+      version = v
+      this.log(`WhatsApp Web version: ${v.join(".")}`)
+    } catch {
+      this.log("Could not fetch WA version, using default")
+    }
+
+    // Silent logger with proper method stubs (Baileys v7 requires all methods)
+    const silentLogger = {
+      level: "silent",
+      trace: () => {}, debug: () => {}, info: () => {},
+      warn: () => {}, fatal: () => {},
+      error: (...args: any[]) => this.log("WA error:", ...args),
+      child: () => silentLogger,
+    } as any
+
     this.sock = makeWASocket({
-      auth: state,
-      logger: {
-        level: "silent",
-        trace: () => {},
-        debug: () => {},
-        info: () => {},
-        warn: () => {},
-        error: (...args: any[]) => this.log("WA error:", ...args),
-        fatal: () => {},
-        child: () => ({
-          level: "silent",
-          trace: () => {}, debug: () => {}, info: () => {},
-          warn: () => {}, error: () => {}, fatal: () => {},
-          child: () => ({ level: "silent", trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {} }),
-        }),
-      } as any,
+      auth: {
+        creds: state.creds,
+        keys: baileys.makeCacheableSignalKeyStore
+          ? baileys.makeCacheableSignalKeyStore(state.keys, silentLogger)
+          : state.keys,
+      },
+      ...(version ? { version } : {}),
+      logger: silentLogger,
+      printQRInTerminal: false,
+      browser: ["agentx", "server", "1.0"],
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
     })
 
     // Save credentials on update
