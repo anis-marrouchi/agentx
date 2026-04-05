@@ -1,18 +1,13 @@
 #!/usr/bin/env node
-import { chat } from "@/commands/chat"
-import { gen } from "@/commands/generate"
-import { evolve } from "@/commands/evolve"
-import { create } from "@/commands/create"
-import { run } from "@/commands/run"
-import { inspect } from "@/commands/inspect"
-import { skill } from "@/commands/skill"
-import { serve } from "@/commands/serve"
-import { model } from "@/commands/model"
-import { git } from "@/commands/git"
-import { a2a } from "@/commands/a2a"
+import { Command } from "commander"
 import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
-import { Command } from "commander"
+import { agent, channel, cron, mesh, skillCmd, hook, migrate } from "@/commands/manage"
+import { chat } from "@/commands/chat"
+import { gen } from "@/commands/generate"
+import { serve } from "@/commands/serve"
+import { a2a } from "@/commands/a2a"
+import { model } from "@/commands/model"
 import { globalHooks, loadHooks } from "@/hooks"
 import { getPackageInfo } from "@/utils/get-package-info"
 
@@ -28,7 +23,7 @@ async function main() {
   const program = new Command()
     .name("agentx")
     .description(
-      "self-hosted multi-agent orchestrator — Telegram, WhatsApp, crons, A2A mesh"
+      "self-hosted multi-agent orchestrator — Telegram, WhatsApp, crons, A2A mesh, wiki knowledge"
     )
     .version(
       packageInfo.version || "1.0.0",
@@ -37,24 +32,29 @@ async function main() {
     )
 
   program
-    .addCommand(chat)
-    .addCommand(gen)
-    .addCommand(evolve)
-    .addCommand(git)
-    .addCommand(create)
-    .addCommand(run)
-    .addCommand(inspect)
-    .addCommand(skill)
-    .addCommand(serve)
-    .addCommand(model)
-    .addCommand(a2a)
+    // Core daemon
     .addCommand(daemon)
     .addCommand(init)
+    // Management
+    .addCommand(agent)
+    .addCommand(channel)
+    .addCommand(cron)
+    .addCommand(mesh)
+    .addCommand(skillCmd)
+    .addCommand(hook)
+    .addCommand(migrate)
+    // Code generation (legacy)
+    .addCommand(chat)
+    .addCommand(gen)
+    .addCommand(serve)
+    .addCommand(a2a)
+    .addCommand(model)
 
-  // Default to chat when no command is given and stdin is a TTY
+  // Default: show help
   const args = process.argv.slice(2)
-  if (args.length === 0 && process.stdin.isTTY) {
-    process.argv.push("chat")
+  if (args.length === 0) {
+    program.outputHelp()
+    return
   }
 
   program.parse()
