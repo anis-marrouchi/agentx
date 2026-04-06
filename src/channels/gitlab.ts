@@ -97,6 +97,8 @@ export class GitLabAdapter implements ChannelAdapter {
   private config: GitLabChannelConfig
   private handler?: (msg: IncomingMessage) => Promise<void>
   private server?: ReturnType<typeof createServer>
+  private botUsername?: string  // resolved on first API call
+  private sentNoteIds: Set<string> = new Set()  // track our own comments
   private log: (...args: unknown[]) => void
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]")) {
@@ -109,6 +111,18 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
+    // Resolve bot username to skip own comments
+    try {
+      const res = await fetch(`${this.config.host}/api/v4/user`, {
+        headers: { "PRIVATE-TOKEN": this.config.token },
+      })
+      const data = await res.json() as any
+      this.botUsername = data.username
+      this.log(`Bot user: ${this.botUsername}`)
+    } catch (e: any) {
+      this.log(`Could not resolve bot user: ${e.message}`)
+    }
+
     this.server = createServer(async (req, res) => {
       if (req.method === "POST") {
         await this.handleWebhook(req, res)
@@ -174,7 +188,9 @@ export class GitLabAdapter implements ChannelAdapter {
       }
 
       const data = await res.json() as any
-      return String(data.id || "")
+      const noteId = String(data.id || "")
+      if (noteId) this.sentNoteIds.add(noteId)
+      return noteId
     } catch (e: any) {
       this.log(`GitLab send error: ${e.message}`)
       return ""
@@ -231,6 +247,19 @@ export class GitLabAdapter implements ChannelAdapter {
     const note = event.object_attributes.note
     const project = event.project.path_with_namespace
     const user = event.user
+    const noteId = String(event.object_attributes.id)
+
+    // Skip our own comments (prevents infinite loop)
+    if (this.botUsername && user.username === this.botUsername) {
+      this.log(`Skipping own comment from ${this.botUsername}`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
+    // Skip comments we already sent
+    if (this.sentNoteIds.has(noteId)) {
+      this.sentNoteIds.delete(noteId)
+      res.writeHead(200); res.end("ok"); return
+    }
 
     // Determine the noteable context
     let noteableType = ""
@@ -265,14 +294,6 @@ export class GitLabAdapter implements ChannelAdapter {
       raw: event,
       resolvedAgent: agentId,
     }
-
-    // Immediate acknowledgment — post "processing..." comment right away
-    const agentName = agentId || "agent"
-    this.send({
-      channel: "gitlab",
-      chatId,
-      text: `> ${note.slice(0, 100)}${note.length > 100 ? "..." : ""}\n\n_${agentName} is reviewing this..._`,
-    }).catch(() => {})
 
     this.handler(incoming).catch((e) => {
       this.log(`Error handling note: ${e.message}`)
