@@ -195,7 +195,21 @@ Total budget: 4000 tokens. Lower layers truncated if over budget.
 | `/task` | POST | `{ "agent": "id", "message": "..." }` |
 | `/mesh/task` | POST | `{ "peer": "name", "message": "..." }` |
 | `/webhook/:agentId[/:source]` | POST | Webhook callback (GitLab, GitHub, Stripe, Sentry) |
+| `/v1/chat/completions` | POST | OpenAI-compatible endpoint (ElevenLabs, Cursor, any client) |
+| `/llm/:agentId/v1/chat/completions` | POST | OpenAI-compatible with explicit agent |
 | `/.well-known/agent-card.json` | GET | A2A agent discovery |
+
+## OpenAI-Compatible Endpoint
+
+Any agent can be used as an LLM backend for ElevenLabs Conversational AI, Cursor, or any OpenAI-compatible client.
+
+```bash
+curl -X POST http://your-server:18800/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "atlas", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+Supports streaming (`"stream": true`) with SSE. The `model` field maps to the agent ID.
 
 ## Three execution tiers
 
