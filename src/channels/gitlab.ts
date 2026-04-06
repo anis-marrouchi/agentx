@@ -266,6 +266,14 @@ export class GitLabAdapter implements ChannelAdapter {
       resolvedAgent: agentId,
     }
 
+    // Immediate acknowledgment — post "processing..." comment right away
+    const agentName = agentId || "agent"
+    this.send({
+      channel: "gitlab",
+      chatId,
+      text: `> ${note.slice(0, 100)}${note.length > 100 ? "..." : ""}\n\n_${agentName} is reviewing this..._`,
+    }).catch(() => {})
+
     this.handler(incoming).catch((e) => {
       this.log(`Error handling note: ${e.message}`)
     })
