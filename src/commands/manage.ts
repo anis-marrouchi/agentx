@@ -125,7 +125,7 @@ agent
 
 export const channel = new Command()
   .name("channel")
-  .description("manage channels — add telegram bot, list")
+  .description("manage channels — add telegram/whatsapp/discord, list")
 
 channel
   .command("list")
@@ -134,6 +134,8 @@ channel
   .action(() => {
     const config = loadConfig()
     console.log()
+
+    // Telegram
     const tg = config.channels?.telegram
     if (tg?.enabled) {
       console.log(chalk.bold("  Telegram:"))
@@ -143,17 +145,36 @@ channel
     } else {
       console.log(chalk.dim("  Telegram: disabled"))
     }
+
+    // WhatsApp
     const wa = config.channels?.whatsapp
     if (wa?.enabled) {
       console.log(chalk.bold("  WhatsApp:"))
-      console.log(`    binding: ${wa.agentBinding || "(none)"}`)
+      console.log(`    default agent: ${wa.defaultAgent || "(none)"}`)
+      console.log(`    session: ${wa.sessionDir || ".agentx/whatsapp-sessions"}`)
+      for (const route of wa.routes || []) {
+        const target = route.contact ? `contact ${route.contact}` : `group "${route.group}"`
+        console.log(`    ${target} -> agent: ${route.agent}`)
+      }
+    } else {
+      console.log(chalk.dim("  WhatsApp: disabled"))
     }
+
+    // Discord
+    const dc = config.channels?.discord
+    if (dc?.enabled) {
+      console.log(chalk.bold("  Discord:"))
+      console.log(`    agent: ${dc.agentBinding || "(none)"}`)
+    } else {
+      console.log(chalk.dim("  Discord: disabled"))
+    }
+
     console.log()
   })
 
 channel
   .command("add")
-  .description("add a Telegram bot to an agent")
+  .description("add a channel (telegram, whatsapp, or discord)")
   .action(async () => {
     const config = loadConfig()
     const agentIds = Object.keys(config.agents || {})
@@ -162,43 +183,126 @@ channel
       return
     }
 
-    const answers = await prompts([
-      { type: "text", name: "accountName", message: "Account name (e.g. 'default', 'devops')" },
-      { type: "text", name: "token", message: "Telegram bot token (from @BotFather)" },
-      { type: "select", name: "agentBinding", message: "Bind to agent", choices: agentIds.map(id => ({ title: `${id} (${config.agents[id].name})`, value: id })) },
-    ])
+    const agentChoices = agentIds.map(id => ({ title: `${id} (${config.agents[id].name})`, value: id }))
 
-    if (!answers.accountName || !answers.token) return
+    const { channelType } = await prompts({
+      type: "select",
+      name: "channelType",
+      message: "Channel type",
+      choices: [
+        { title: "Telegram — bot via BotFather token", value: "telegram" },
+        { title: "WhatsApp — link via QR code (self-chat or contacts)", value: "whatsapp" },
+        { title: "Discord — bot via Discord developer portal", value: "discord" },
+      ],
+    })
 
-    // Verify token
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${answers.token}/getMe`)
-      const data = await res.json() as any
-      if (!data.ok) throw new Error(data.description)
-      console.log(chalk.green(`  Bot verified: @${data.result.username}`))
-
-      // Add @username to agent mentions if not already there
-      const botHandle = `@${data.result.username}`
-      const agentMentions = config.agents[answers.agentBinding].mentions || []
-      if (!agentMentions.includes(botHandle)) {
-        agentMentions.push(botHandle, data.result.username)
-        config.agents[answers.agentBinding].mentions = agentMentions
-      }
-    } catch (e: any) {
-      console.log(chalk.red(`  Invalid token: ${e.message}`))
-      return
-    }
+    if (!channelType) return
 
     config.channels = config.channels || {}
-    config.channels.telegram = config.channels.telegram || { enabled: false, accounts: {}, policy: { dm: "pair", group: "mention-required" } }
-    config.channels.telegram.enabled = true
-    config.channels.telegram.accounts[answers.accountName] = {
-      token: answers.token,
-      agentBinding: answers.agentBinding,
+
+    // --- Telegram ---
+    if (channelType === "telegram") {
+      const answers = await prompts([
+        { type: "text", name: "accountName", message: "Account name (e.g. 'default', 'devops')" },
+        { type: "text", name: "token", message: "Bot token (from @BotFather)" },
+        { type: "select", name: "agentBinding", message: "Bind to agent", choices: agentChoices },
+      ])
+
+      if (!answers.accountName || !answers.token) return
+
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${answers.token}/getMe`)
+        const data = await res.json() as any
+        if (!data.ok) throw new Error(data.description)
+        console.log(chalk.green(`  Bot verified: @${data.result.username}`))
+
+        const botHandle = `@${data.result.username}`
+        const agentMentions = config.agents[answers.agentBinding].mentions || []
+        if (!agentMentions.includes(botHandle)) {
+          agentMentions.push(botHandle, data.result.username)
+          config.agents[answers.agentBinding].mentions = agentMentions
+        }
+      } catch (e: any) {
+        console.log(chalk.red(`  Invalid token: ${e.message}`))
+        return
+      }
+
+      config.channels.telegram = config.channels.telegram || { enabled: false, accounts: {}, policy: { dm: "pair", group: "mention-required" } }
+      config.channels.telegram.enabled = true
+      config.channels.telegram.accounts[answers.accountName] = {
+        token: answers.token,
+        agentBinding: answers.agentBinding,
+      }
+
+      saveConfig(config)
+      console.log(chalk.green(`  Telegram "${answers.accountName}" added -> ${answers.agentBinding}`))
     }
 
-    saveConfig(config)
-    console.log(chalk.green(`  Telegram account "${answers.accountName}" added -> ${answers.agentBinding}`))
+    // --- WhatsApp ---
+    if (channelType === "whatsapp") {
+      const answers = await prompts([
+        { type: "select", name: "defaultAgent", message: "Default agent for WhatsApp messages", choices: agentChoices },
+        { type: "text", name: "sessionDir", message: "Session directory", initial: ".agentx/whatsapp-sessions" },
+        { type: "confirm", name: "addRoute", message: "Add a contact/group route?", initial: true },
+      ])
+
+      if (!answers.defaultAgent) return
+
+      const routes: any[] = []
+      let addMore = answers.addRoute
+
+      while (addMore) {
+        const route = await prompts([
+          { type: "select", name: "type", message: "Route type", choices: [
+            { title: "Contact (phone number)", value: "contact" },
+            { title: "Group (name match)", value: "group" },
+          ]},
+          { type: "text", name: "value", message: (prev: string) => prev === "contact" ? "Phone number (e.g. +21624309128)" : "Group name (partial match)" },
+          { type: "select", name: "agent", message: "Route to agent", choices: agentChoices },
+          { type: "confirm", name: "more", message: "Add another route?", initial: false },
+        ])
+
+        if (route.value && route.agent) {
+          routes.push({
+            [route.type]: route.value,
+            agent: route.agent,
+          })
+        }
+        addMore = route.more
+      }
+
+      config.channels.whatsapp = {
+        enabled: true,
+        sessionDir: answers.sessionDir,
+        defaultAgent: answers.defaultAgent,
+        routes,
+      }
+
+      saveConfig(config)
+      mkdirSync(resolve(process.cwd(), answers.sessionDir), { recursive: true })
+      console.log(chalk.green(`  WhatsApp enabled (${routes.length} routes, default: ${answers.defaultAgent})`))
+      console.log(chalk.dim("  Start daemon to scan QR code: agentx daemon start"))
+    }
+
+    // --- Discord ---
+    if (channelType === "discord") {
+      const answers = await prompts([
+        { type: "text", name: "token", message: "Discord bot token (from developer portal)" },
+        { type: "select", name: "agentBinding", message: "Bind to agent", choices: agentChoices },
+      ])
+
+      if (!answers.token) return
+
+      config.channels.discord = {
+        enabled: true,
+        token: answers.token,
+        agentBinding: answers.agentBinding,
+      }
+
+      saveConfig(config)
+      console.log(chalk.green(`  Discord added -> ${answers.agentBinding}`))
+    }
+
     console.log(chalk.dim("  Restart daemon to apply: agentx daemon stop && agentx daemon start"))
     console.log()
   })
