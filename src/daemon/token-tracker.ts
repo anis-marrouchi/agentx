@@ -5,7 +5,7 @@ import { resolve } from "path"
 // Tracks estimated token usage per agent per day.
 // Persisted to .agentx/usage/{YYYY-MM-DD}.json
 
-interface DailyUsage {
+export interface DailyUsage {
   date: string
   agents: Record<string, AgentUsage>
 }
