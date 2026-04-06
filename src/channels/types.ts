@@ -15,7 +15,13 @@ export interface IncomingMessage {
   }
   text: string
   replyTo?: string      // message ID being replied to
+  replyToText?: string  // text of the message being replied to
   timestamp: Date
+  media?: {              // attached media (image, audio, video, document)
+    path: string         // local file path after download
+    type: string         // MIME type
+    fileName?: string    // original filename
+  }
   raw?: unknown         // original platform message
   resolvedAgent?: string // pre-resolved agent ID (for route-based channels like WhatsApp)
 }

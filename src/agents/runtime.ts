@@ -22,6 +22,11 @@ export interface AgentTask {
     channel?: string
     sender?: string
     group?: string
+    /** Attached media file (image, audio, video, document) */
+    mediaPath?: string
+    mediaType?: string
+    /** Text of the message being replied to */
+    replyToText?: string
     conversationHistory?: Array<{ role: string; content: string }>
     /** This agent's own handle on the current channel */
     myHandle?: string
@@ -74,6 +79,28 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
     }
 
     parts.push(envLines.join("\n"))
+  }
+
+  // Reply-to context (when user replies to a specific message)
+  if (task.context?.replyToText) {
+    parts.push("")
+    parts.push(`[Replying to]: ${task.context.replyToText}`)
+  }
+
+  // Attached media
+  if (task.context?.mediaPath) {
+    parts.push("")
+    parts.push(`[Attached file: ${task.context.mediaPath}]`)
+    parts.push(`[File type: ${task.context.mediaType || "unknown"}]`)
+    if (task.context.mediaType?.startsWith("image/")) {
+      parts.push("Please read/view this image file and describe or respond to it.")
+    } else if (task.context.mediaType?.startsWith("audio/")) {
+      parts.push("Please transcribe this audio file and respond to its content.")
+    } else if (task.context.mediaType?.startsWith("video/")) {
+      parts.push("A video file is attached. Describe what you can determine about it.")
+    } else {
+      parts.push("Please read this file and respond based on its content.")
+    }
   }
 
   // Inject conversation history for session continuity

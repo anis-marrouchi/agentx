@@ -1,6 +1,7 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
-import { existsSync, mkdirSync } from "fs"
-import { resolve } from "path"
+import { existsSync, mkdirSync, writeFileSync } from "fs"
+import { resolve, join } from "path"
+import { randomUUID } from "crypto"
 
 // --- WhatsApp adapter using Baileys (WhatsApp Web multi-device) ---
 // Baileys is an optional dependency. If not installed, adapter logs a warning.
@@ -209,12 +210,30 @@ export class WhatsAppAdapter implements ChannelAdapter {
           if (!isSelfChat) continue
         }
 
-        // Extract text content
-        const text = msg.message?.conversation
+        // Extract text content + detect media
+        let text = msg.message?.conversation
           || msg.message?.extendedTextMessage?.text
           || msg.message?.imageMessage?.caption
           || msg.message?.videoMessage?.caption
           || ""
+
+        // Detect media type
+        const msgContent = msg.message || {}
+        const hasImage = !!msgContent.imageMessage
+        const hasAudio = !!msgContent.audioMessage
+        const hasVideo = !!msgContent.videoMessage
+        const hasDocument = !!msgContent.documentMessage
+        const hasSticker = !!msgContent.stickerMessage
+        const hasMedia = hasImage || hasAudio || hasVideo || hasDocument || hasSticker
+
+        // Add media placeholder to text if no caption
+        if (hasMedia && !text) {
+          if (hasImage) text = "[Image attached — please describe what you see]"
+          else if (hasAudio) text = "[Voice message attached — please transcribe and respond]"
+          else if (hasVideo) text = "[Video attached]"
+          else if (hasDocument) text = `[Document: ${msgContent.documentMessage?.fileName || "file"}]`
+          else if (hasSticker) text = "[Sticker]"
+        }
 
         if (!text) continue
 
@@ -255,12 +274,41 @@ export class WhatsAppAdapter implements ChannelAdapter {
           continue
         }
 
+        // Download and save media if present
+        let mediaInfo: IncomingMessage["media"] | undefined
+        if (hasMedia && this.sock) {
+          try {
+            const baileys = await import("@whiskeysockets/baileys")
+            const buffer = await baileys.downloadMediaMessage(msg, "buffer", {}, {
+              reuploadRequest: this.sock.updateMediaMessage,
+              logger: this.sock.logger,
+            })
+            if (buffer) {
+              const mime = msgContent.imageMessage?.mimetype
+                || msgContent.audioMessage?.mimetype || "audio/ogg"
+                || msgContent.videoMessage?.mimetype || "video/mp4"
+                || msgContent.documentMessage?.mimetype
+                || msgContent.stickerMessage?.mimetype || "image/webp"
+                || "application/octet-stream"
+              const ext = mime.split("/")[1]?.split(";")[0] || "bin"
+              const mediaDir = resolve(this.sessionDir, "../media/inbound")
+              mkdirSync(mediaDir, { recursive: true })
+              const fileName = msgContent.documentMessage?.fileName || `${randomUUID()}.${ext}`
+              const filePath = join(mediaDir, fileName)
+              writeFileSync(filePath, buffer)
+              mediaInfo = { path: filePath, type: mime, fileName }
+              this.log(`WA media saved: ${mime} -> ${filePath}`)
+            }
+          } catch (e: any) {
+            this.log(`WA media download failed: ${e.message}`)
+          }
+        }
+
         const incoming: IncomingMessage = {
           id: msg.key.id || String(Date.now()),
           channel: "whatsapp",
           accountId: "default",
           sender: {
-            // For self-chat, use regular JID (not LID) so replies go to the right chat
             id: msg.key.fromMe
               ? (this.sock?.user?.id?.replace(/:.*/, "") || senderPhone) + "@s.whatsapp.net"
               : senderPhone,
@@ -272,6 +320,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
             name: groupName || jid,
           } : undefined,
           text,
+          media: mediaInfo,
           replyTo: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
           timestamp: new Date((msg.messageTimestamp || 0) * 1000),
           raw: msg,

@@ -10,8 +10,15 @@ interface TelegramUpdate {
     from: { id: number; first_name: string; last_name?: string; username?: string }
     chat: { id: number; type: string; title?: string }
     text?: string
+    caption?: string
     date: number
-    reply_to_message?: { message_id: number }
+    reply_to_message?: { message_id: number; text?: string; caption?: string; from?: { first_name: string } }
+    photo?: Array<{ file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }>
+    voice?: { file_id: string; duration: number; mime_type?: string }
+    audio?: { file_id: string; duration: number; mime_type?: string; title?: string }
+    video?: { file_id: string; duration: number; mime_type?: string }
+    document?: { file_id: string; file_name?: string; mime_type?: string }
+    sticker?: { file_id: string; emoji?: string }
   }
 }
 
@@ -250,8 +257,79 @@ export class TelegramAdapter implements ChannelAdapter {
         for (const update of updates) {
           this.offsets.set(accountId, update.update_id + 1)
 
-          if (update.message?.text && this.handler) {
+          if (update.message && this.handler) {
             const msg = update.message
+
+            // Extract text from any message type
+            let text = msg.text || msg.caption || ""
+            let mediaInfo: IncomingMessage["media"] | undefined
+
+            // Handle media messages
+            const hasPhoto = msg.photo && msg.photo.length > 0
+            const hasVoice = !!msg.voice
+            const hasAudio = !!msg.audio
+            const hasVideo = !!msg.video
+            const hasDocument = !!msg.document
+            const hasMedia = hasPhoto || hasVoice || hasAudio || hasVideo || hasDocument
+
+            if (hasMedia) {
+              // Download media file
+              let fileId: string | undefined
+              let mime = "application/octet-stream"
+
+              if (hasPhoto) {
+                fileId = msg.photo![msg.photo!.length - 1].file_id // largest photo
+                mime = "image/jpeg"
+                if (!text) text = "[Photo attached — please describe what you see]"
+              } else if (hasVoice) {
+                fileId = msg.voice!.file_id
+                mime = msg.voice!.mime_type || "audio/ogg"
+                if (!text) text = "[Voice message — please transcribe and respond]"
+              } else if (hasAudio) {
+                fileId = msg.audio!.file_id
+                mime = msg.audio!.mime_type || "audio/mpeg"
+                if (!text) text = `[Audio: ${msg.audio!.title || "audio file"}]`
+              } else if (hasVideo) {
+                fileId = msg.video!.file_id
+                mime = msg.video!.mime_type || "video/mp4"
+                if (!text) text = "[Video attached]"
+              } else if (hasDocument) {
+                fileId = msg.document!.file_id
+                mime = msg.document!.mime_type || "application/octet-stream"
+                if (!text) text = `[Document: ${msg.document!.file_name || "file"}]`
+              }
+
+              if (fileId) {
+                try {
+                  // Get file path from Telegram
+                  const fileInfo = await this.apiCall(config.token, "getFile", { file_id: fileId })
+                  const filePath = fileInfo.result?.file_path
+                  if (filePath) {
+                    // Download file
+                    const fileUrl = `https://api.telegram.org/file/bot${config.token}/${filePath}`
+                    const res = await fetch(fileUrl)
+                    if (res.ok) {
+                      const buffer = Buffer.from(await res.arrayBuffer())
+                      const ext = mime.split("/")[1]?.split(";")[0] || "bin"
+                      const { mkdirSync, writeFileSync } = await import("fs")
+                      const { randomUUID } = await import("crypto")
+                      const { resolve, join } = await import("path")
+                      const mediaDir = resolve(process.cwd(), ".agentx/media/telegram")
+                      mkdirSync(mediaDir, { recursive: true })
+                      const fileName = msg.document?.file_name || `${randomUUID()}.${ext}`
+                      const localPath = join(mediaDir, fileName)
+                      writeFileSync(localPath, buffer)
+                      mediaInfo = { path: localPath, type: mime, fileName }
+                    }
+                  }
+                } catch (e: any) {
+                  this.log(`Media download failed: ${e.message}`)
+                }
+              }
+            }
+
+            if (!text) continue
+
             const incoming: IncomingMessage = {
               id: String(msg.message_id),
               channel: "telegram",
@@ -264,9 +342,13 @@ export class TelegramAdapter implements ChannelAdapter {
               group: msg.chat.type !== "private"
                 ? { id: String(msg.chat.id), name: msg.chat.title || "" }
                 : undefined,
-              text: msg.text!,
+              text,
+              media: mediaInfo,
               replyTo: msg.reply_to_message
                 ? String(msg.reply_to_message.message_id)
+                : undefined,
+              replyToText: msg.reply_to_message
+                ? (msg.reply_to_message.text || msg.reply_to_message.caption || `[message from ${msg.reply_to_message.from?.first_name || "unknown"}]`)
                 : undefined,
               timestamp: new Date(msg.date * 1000),
               raw: update,
