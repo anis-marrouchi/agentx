@@ -227,25 +227,34 @@ export class MessageRouter {
       }
     }
 
-    // Bot-to-bot: if response mentions another agent, route it (fire-and-forget with error handling)
+    // Bot-to-bot: if response mentions another agent, route it
     if (responseText && sentResponseId) {
-      this.handleBotToBotMentions(adapter, msg, agentId, responseText, sentResponseId).catch((e) => {
+      this.handleBotToBotChain(adapter, msg, agentId, responseText, sentResponseId, 0).catch((e) => {
         this.log(`Bot-to-bot error: ${e.message}`)
       })
     }
   }
 
+  private static readonly MAX_BOT_CHAIN_DEPTH = 3
+
   /**
-   * Check if an agent's response mentions another agent.
-   * If so, route the response as a new task to that agent.
+   * Bot-to-bot conversation chain.
+   * When an agent's response mentions another agent, route it and continue
+   * the chain if the target agent also mentions someone (up to MAX depth).
    */
-  private async handleBotToBotMentions(
+  private async handleBotToBotChain(
     adapter: ChannelAdapter,
     originalMsg: IncomingMessage,
     sourceAgentId: string,
     responseText: string,
     responseMessageId: string,
+    depth: number,
   ): Promise<void> {
+    if (depth >= MessageRouter.MAX_BOT_CHAIN_DEPTH) {
+      this.log(`Bot-to-bot: max chain depth (${depth}) reached, stopping`)
+      return
+    }
+
     for (const [id, def] of Object.entries(this.config.agents)) {
       if (id === sourceAgentId) continue
 
@@ -254,20 +263,26 @@ export class MessageRouter {
       )
       if (!mentioned) continue
 
-      this.log(`Bot-to-bot: "${sourceAgentId}" mentioned "${id}" — routing`)
+      this.log(`Bot-to-bot [${depth + 1}]: "${sourceAgentId}" -> "${id}"`)
 
       const chatId = originalMsg.group?.id || originalMsg.sender.id
       const targetAccountId = this.getAccountForAgent(id)
+      const sourceAccountId = this.getAccountForAgent(sourceAgentId)
 
       try {
-        // Seen reaction from the target bot on the source bot's message
+        // Target bot reacts 👀 to the source bot's message
         this.adapterReact(adapter, chatId, responseMessageId, "👀", targetAccountId)
 
-        // Typing from the target bot
+        // Target bot shows typing
         const typingTimer = this.startTypingLoop(adapter, chatId, targetAccountId)
 
+        // Include original user message as context so target bot knows the full picture
+        const contextMessage = depth === 0
+          ? `[Original from ${originalMsg.sender.name}]: ${originalMsg.text}\n\n[${sourceAgentId} said]: ${responseText}`
+          : responseText
+
         const response = await this.registry.execute({
-          message: responseText,
+          message: contextMessage,
           agentId: id,
           context: {
             channel: originalMsg.channel,
@@ -279,14 +294,19 @@ export class MessageRouter {
         clearInterval(typingTimer)
 
         if (response.content && !response.error) {
-          // Send as a new message (not a reply) to avoid "message to reply not found" errors
-          // when the target bot can't resolve the source bot's message ID
-          await this.adapterSend(adapter, {
+          const sentId = await this.adapterSend(adapter, {
             channel: originalMsg.channel,
             chatId,
             text: response.content,
             accountId: targetAccountId,
           })
+
+          // Chain: check if this response also mentions another agent
+          if (sentId && response.content) {
+            await this.handleBotToBotChain(
+              adapter, originalMsg, id, response.content, sentId as string, depth + 1,
+            )
+          }
         } else if (response.error) {
           this.log(`Bot-to-bot "${id}" error: ${response.error}`)
         }
@@ -294,7 +314,7 @@ export class MessageRouter {
         this.log(`Bot-to-bot "${id}" failed: ${e.message}`)
       }
 
-      break // Only route to first mentioned agent
+      break // Route to first mentioned agent per level
     }
   }
 
