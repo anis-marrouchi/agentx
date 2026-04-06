@@ -3,6 +3,7 @@ import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, t
 import { SessionStore } from "./sessions"
 import { WikiStore } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
+import { TokenTracker } from "@/daemon/token-tracker"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -22,6 +23,7 @@ export class AgentRegistry {
   private sessions: SessionStore
   private wiki: WikiStore
   private rateLimiter: RateLimiter
+  private tokenTracker: TokenTracker
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -34,6 +36,7 @@ export class AgentRegistry {
     this.sessions = new SessionStore()
     this.wiki = new WikiStore()
     this.rateLimiter = new RateLimiter()
+    this.tokenTracker = new TokenTracker()
 
     for (const [id, def] of Object.entries(config.agents)) {
       this.agents.set(id, {
@@ -231,6 +234,14 @@ export class AgentRegistry {
           }
         }
 
+        // Track token usage
+        this.tokenTracker.record(
+          task.agentId,
+          task.message.length,
+          response.content.length,
+          response.duration || 0,
+        )
+
         this.log(
           `[${task.agentId}] completed in ${response.duration}ms` +
             (response.tokensUsed ? ` (${response.tokensUsed} tokens)` : ""),
@@ -270,5 +281,19 @@ export class AgentRegistry {
       errors: s.errors,
       lastActive: s.lastActive,
     }))
+  }
+
+  /**
+   * Get token usage summary.
+   */
+  getUsage(days: number = 7) {
+    return this.tokenTracker.summary(days)
+  }
+
+  /**
+   * Get today's usage.
+   */
+  getTodayUsage() {
+    return this.tokenTracker.today()
   }
 }

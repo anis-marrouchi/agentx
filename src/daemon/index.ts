@@ -9,6 +9,7 @@ import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
+import { WebhookHandler } from "./webhooks"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 
@@ -28,6 +29,7 @@ export class AgentXDaemon {
   private mesh?: A2AMesh
   private hooks: HookRegistry
   private httpServer?: ReturnType<typeof createServer>
+  private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
 
   constructor(configPath?: string) {
@@ -53,6 +55,7 @@ export class AgentXDaemon {
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
+    this.webhooks = new WebhookHandler(this.registry, {}, this.log)
 
     // Initialize cron scheduler
     this.cron = new CronScheduler(this.config, this.registry, this.hooks, this.log)
@@ -265,6 +268,12 @@ export class AgentXDaemon {
     const path = url.pathname
 
     try {
+      // Dynamic routes (before static switch)
+      if (req.method === "POST" && path.startsWith("/webhook/")) {
+        await this.webhooks.handle(req, res, path)
+        return
+      }
+
       switch (`${req.method} ${path}`) {
         case "GET /health":
           this.json(res, 200, {
@@ -274,7 +283,12 @@ export class AgentXDaemon {
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
+            usage: this.registry.getTodayUsage(),
           })
+          break
+
+        case "GET /usage":
+          this.json(res, 200, this.registry.getUsage(7))
           break
 
         case "GET /agents":
@@ -352,6 +366,7 @@ export class AgentXDaemon {
               "GET  /mesh",
               "POST /task { agent, message, context? }",
               "POST /mesh/task { peer, message }",
+              "POST /webhook/:agentId[/:source]  — webhook callback",
               "GET  /.well-known/agent-card.json",
             ],
           })
