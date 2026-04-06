@@ -60,13 +60,27 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
   if (task.context) {
     const ctx = task.context
     const envLines: string[] = ["", "[Environment]"]
+    const isGitLab = ctx.channel === "gitlab" || ctx.channel?.startsWith("webhook:")
+    const isTelegram = ctx.channel === "telegram"
 
     if (ctx.channel) envLines.push(`Channel: ${ctx.channel}`)
     if (ctx.group) envLines.push(`Group: ${ctx.group}`)
     if (ctx.sender) envLines.push(`Message from: ${ctx.sender}`)
     if (ctx.myHandle) envLines.push(`Your handle on this channel: ${ctx.myHandle}`)
 
-    if (ctx.peers?.length) {
+    // Channel-specific instructions
+    if (isGitLab) {
+      envLines.push("")
+      envLines.push("[IMPORTANT: You are responding to a GitLab comment/event]")
+      envLines.push("- Reply with a focused, actionable GitLab comment")
+      envLines.push("- Use markdown (GitLab flavored) for formatting")
+      envLines.push("- Do NOT mention Telegram handles (@noqta_*) — they don't work on GitLab")
+      envLines.push("- Do NOT try to delegate to other agents — reply directly")
+      envLines.push("- Reference issues with #IID and MRs with !IID")
+    }
+
+    // Only show team roster on Telegram (where bot-to-bot works)
+    if (isTelegram && ctx.peers?.length) {
       envLines.push("")
       envLines.push("[Team — other agents you can mention to delegate or collaborate]")
       for (const peer of ctx.peers) {

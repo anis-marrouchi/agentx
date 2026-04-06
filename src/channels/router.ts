@@ -244,8 +244,8 @@ export class MessageRouter {
       this.groupLog.add(chatId, agentName, responseText)
     }
 
-    // Bot-to-bot: if response mentions another agent, route it
-    if (responseText && sentResponseId) {
+    // Bot-to-bot: only for Telegram (not GitLab/WhatsApp/Discord — would cause loops)
+    if (responseText && sentResponseId && msg.channel === "telegram") {
       this.handleBotToBotChain(adapter, msg, agentId, responseText, sentResponseId, 0).catch((e) => {
         this.log(`Bot-to-bot error: ${e.message}`)
       })
