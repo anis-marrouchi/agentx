@@ -250,19 +250,48 @@ daemon
   .option("-u, --user <user>", "SSH user", "clawd")
   .option("-p, --path <path>", "remote agentx path", "~/agentx")
   .option("--restart", "restart remote daemon after deploy", false)
+  .option("--skip-checks", "skip build and test before deploy", false)
   .action(async (host, opts) => {
     const { execSync } = await import("child_process")
     const sshKey = opts.identity ? `-e "ssh -i ${opts.identity}"` : ""
     const remote = `${opts.user}@${host}:${opts.path}/dist/`
 
+    // Pre-deploy checks
+    if (!opts.skipChecks) {
+      try {
+        console.log(chalk.dim("  Running tests..."))
+        execSync("npx vitest run --reporter=dot", { stdio: "pipe", cwd: process.cwd() })
+        console.log(chalk.green("  ✓ Tests passed"))
+      } catch (e: any) {
+        console.log(chalk.red("  ✗ Tests failed — aborting deploy"))
+        console.log(chalk.dim("  Use --skip-checks to deploy anyway"))
+        return
+      }
+
+      // Check dist exists and is recent
+      const { existsSync, statSync } = await import("fs")
+      const { resolve } = await import("path")
+      const cliPath = resolve(process.cwd(), "dist/cli.js")
+      if (!existsSync(cliPath)) {
+        console.log(chalk.red("  ✗ dist/ not found — run build first"))
+        return
+      }
+      const age = Date.now() - statSync(cliPath).mtimeMs
+      if (age > 300_000) {
+        console.log(chalk.yellow("  ⚠ dist/ is older than 5 minutes — rebuilding..."))
+        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd() })
+        console.log(chalk.green("  ✓ Build complete"))
+      }
+    }
+
     console.log(chalk.dim(`  Deploying to ${opts.user}@${host}:${opts.path}...`))
 
     try {
-      execSync(`rsync -avz --delete ${sshKey} dist/ ${remote}`, {
+      execSync(`rsync -avzL --delete ${sshKey} dist/ ${remote}`, {
         stdio: "inherit",
         cwd: process.cwd(),
       })
-      console.log(chalk.green("  Deploy complete"))
+      console.log(chalk.green("  ✓ Deploy complete"))
 
       if (opts.restart) {
         console.log(chalk.dim("  Restarting remote daemon..."))

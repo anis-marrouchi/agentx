@@ -8,6 +8,7 @@ import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
 import { CronScheduler } from "@/crons/scheduler"
+import { Logger } from "./logger"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 
@@ -30,7 +31,8 @@ export class AgentXDaemon {
   private log: (...args: unknown[]) => void
 
   constructor(configPath?: string) {
-    this.log = console.error.bind(console, "[agentx]")
+    const logger = new Logger("agentx")
+    this.log = logger.asConsoleLog()
 
     // Load config
     this.log("Loading configuration...")

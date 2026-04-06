@@ -243,6 +243,8 @@ export class TelegramAdapter implements ChannelAdapter {
   // --- Internal ---
 
   private async pollLoop(accountId: string, config: TelegramAccountConfig): Promise<void> {
+    let consecutiveErrors = 0
+
     while (this.polling) {
       try {
         const offset = this.offsets.get(accountId) || 0
@@ -362,9 +364,12 @@ export class TelegramAdapter implements ChannelAdapter {
             })
           }
         }
+        consecutiveErrors = 0
       } catch (e: any) {
-        this.log(`Poll error (${accountId}): ${e.message}`)
-        await new Promise((r) => setTimeout(r, 5000))
+        consecutiveErrors++
+        const backoff = Math.min(5000 * Math.pow(2, consecutiveErrors - 1), 60000)
+        this.log(`Poll error (${accountId}): ${e.message} [retry in ${backoff / 1000}s, errors: ${consecutiveErrors}]`)
+        await new Promise((r) => setTimeout(r, backoff))
       }
     }
   }

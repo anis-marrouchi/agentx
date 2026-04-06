@@ -2,6 +2,7 @@ import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
 import { SessionStore } from "./sessions"
 import { WikiStore } from "@/wiki"
+import { RateLimiter } from "@/daemon/rate-limit"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -20,6 +21,7 @@ export class AgentRegistry {
   private providers: Record<string, { apiKey?: string }> = {}
   private sessions: SessionStore
   private wiki: WikiStore
+  private rateLimiter: RateLimiter
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -31,6 +33,7 @@ export class AgentRegistry {
     this.providers = config.providers
     this.sessions = new SessionStore()
     this.wiki = new WikiStore()
+    this.rateLimiter = new RateLimiter()
 
     for (const [id, def] of Object.entries(config.agents)) {
       this.agents.set(id, {
@@ -152,6 +155,13 @@ export class AgentRegistry {
         content: "",
         error: `Agent "${task.agentId}" is busy (${state.activeTasks}/${state.def.maxConcurrent} tasks)`,
       }
+    }
+
+    // Rate limit check
+    const rateCheck = this.rateLimiter.check(task.agentId)
+    if (!rateCheck.allowed) {
+      this.log(`[${task.agentId}] ${rateCheck.reason}`)
+      return { content: "", error: rateCheck.reason }
     }
 
     state.activeTasks++
