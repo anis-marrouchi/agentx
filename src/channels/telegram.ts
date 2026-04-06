@@ -1,5 +1,5 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
-import { markdownToTelegramV2 } from "./telegram-format"
+import { markdownToTelegramHtml } from "./telegram-format"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
@@ -116,13 +116,13 @@ export class TelegramAdapter implements ChannelAdapter {
 
     // Convert markdown to Telegram MarkdownV2
     const formatted = msg.parseMode === "markdown" || msg.parseMode === undefined
-      ? markdownToTelegramV2(text)
+      ? markdownToTelegramHtml(text)
       : text
 
     const params: Record<string, unknown> = {
       chat_id: msg.chatId,
       text: formatted,
-      parse_mode: "MarkdownV2",
+      parse_mode: "HTML",
     }
 
     if (msg.replyTo) {
@@ -163,14 +163,14 @@ export class TelegramAdapter implements ChannelAdapter {
     const trimmed = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text
 
     const formatted = parseMode !== "html" && parseMode !== "plain"
-      ? markdownToTelegramV2(trimmed)
+      ? markdownToTelegramHtml(trimmed)
       : trimmed
 
     const params: Record<string, unknown> = {
       chat_id: chatId,
       message_id: parseInt(messageId, 10),
       text: formatted,
-      parse_mode: "MarkdownV2",
+      parse_mode: "HTML",
     }
 
     if (parseMode === "html") {

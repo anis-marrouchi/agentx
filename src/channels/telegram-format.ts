@@ -1,40 +1,37 @@
-// --- Convert standard Markdown (Claude output) to Telegram MarkdownV2 ---
+// --- Convert standard Markdown to Telegram HTML ---
 //
-// Telegram MarkdownV2 requires escaping 18 special chars outside entities:
-//   _ * [ ] ( ) ~ ` > # + - = | { } . !
+// Uses parse_mode: "HTML" (not MarkdownV2) — much simpler and more reliable.
+// Based on OpenClaw's approach: markdown → HTML tags.
 //
-// Supported entities: *bold*, _italic_, __underline__, ~strikethrough~,
-//   ||spoiler||, `code`, ```pre```, [link](url)
+// Supported Telegram HTML tags:
+//   <b>bold</b>, <i>italic</i>, <s>strikethrough</s>,
+//   <code>inline code</code>, <pre><code>code block</code></pre>,
+//   <a href="url">link</a>, <blockquote>quote</blockquote>,
+//   <tg-spoiler>spoiler</tg-spoiler>
+//
+// Tables are converted to bullet-point format (Telegram has no table support).
+// File extensions that look like TLDs are wrapped in <code> to prevent
+// Telegram generating spurious link previews.
 
-// Characters that must be escaped in normal text
-const SPECIAL = /([_*\[\]()~`>#+=|{}.!\-\\])/g
-
-/**
- * Escape special characters for MarkdownV2 plain text.
- */
-function esc(text: string): string {
-  return text.replace(SPECIAL, "\\$1")
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
 }
 
 /**
- * Escape only backtick and backslash inside code/pre blocks.
+ * Convert standard Markdown (Claude output) to Telegram HTML.
  */
-function escCode(text: string): string {
-  return text.replace(/([`\\])/g, "\\$1")
-}
-
-/**
- * Convert standard Markdown to Telegram MarkdownV2.
- *
- * Handles: headers, bold, italic, inline code, code blocks, links, lists, blockquotes.
- * Designed for Claude's output style.
- */
-export function markdownToTelegramV2(md: string): string {
+export function markdownToTelegramHtml(md: string): string {
   const lines = md.split("\n")
   const result: string[] = []
   let inCodeBlock = false
   let codeBlockLang = ""
   let codeBlockLines: string[] = []
+  let inBlockquote = false
+  let tableHeaders: string[] = []
+  let inTable = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -47,16 +44,12 @@ export function markdownToTelegramV2(md: string): string {
         codeBlockLines = []
         continue
       } else {
-        // Close code block
         inCodeBlock = false
-        const code = codeBlockLines.join("\n")
-        if (codeBlockLang) {
-          result.push("```" + escCode(codeBlockLang))
-        } else {
-          result.push("```")
-        }
-        result.push(escCode(code))
-        result.push("```")
+        const code = escapeHtml(codeBlockLines.join("\n"))
+        // Language hint as comment for context
+        const langHint = codeBlockLang ? `// ${codeBlockLang}\n` : ""
+        result.push(`<pre><code>${langHint}${code}</code></pre>`)
+        codeBlockLang = ""
         continue
       }
     }
@@ -66,11 +59,34 @@ export function markdownToTelegramV2(md: string): string {
       continue
     }
 
-    // Headers → bold text
+    // Close blockquote if we left it
+    if (inBlockquote && !line.trimStart().startsWith(">")) {
+      result.push("</blockquote>")
+      inBlockquote = false
+    }
+
+    // Close table if we left it
+    if (inTable && !line.trim().startsWith("|")) {
+      inTable = false
+      tableHeaders = []
+    }
+
+    // Blockquote
+    if (line.trimStart().startsWith("> ")) {
+      const content = line.replace(/^>\s*/, "")
+      if (!inBlockquote) {
+        result.push("<blockquote>")
+        inBlockquote = true
+      }
+      result.push(convertInline(content))
+      continue
+    }
+
+    // Headers → bold with blank line before
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/)
     if (headerMatch) {
       result.push("")
-      result.push("*" + escInline(headerMatch[2]) + "*")
+      result.push(`<b>${convertInline(headerMatch[2])}</b>`)
       continue
     }
 
@@ -80,10 +96,41 @@ export function markdownToTelegramV2(md: string): string {
       continue
     }
 
-    // Blockquote
-    if (line.trimStart().startsWith("> ")) {
-      const content = line.replace(/^>\s*/, "")
-      result.push(">" + convertInline(content))
+    // Table handling — convert to readable bullet format
+    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+      const cells = line.split("|").slice(1, -1).map(c => c.trim())
+
+      // Skip separator rows (|---|---|)
+      if (/^\|[\s\-:|]+\|$/.test(line.trim())) {
+        inTable = true
+        continue
+      }
+
+      if (!inTable) {
+        // This is the header row
+        tableHeaders = cells
+        inTable = true
+        continue
+      }
+
+      // Data row — render as bullet with header labels
+      if (tableHeaders.length > 0 && cells.length > 0) {
+        if (cells.length >= 2) {
+          // First cell as bold label, rest as key: value pairs
+          const parts: string[] = []
+          for (let c = 0; c < cells.length; c++) {
+            if (c === 0) {
+              parts.push(`<b>${convertInline(cells[c])}</b>`)
+            } else {
+              const header = tableHeaders[c] ? `${convertInline(tableHeaders[c])}: ` : ""
+              parts.push(`${header}${convertInline(cells[c])}`)
+            }
+          }
+          result.push(`• ${parts.join(" — ")}`)
+        } else {
+          result.push(`• ${convertInline(cells[0])}`)
+        }
+      }
       continue
     }
 
@@ -91,7 +138,7 @@ export function markdownToTelegramV2(md: string): string {
     const ulMatch = line.match(/^(\s*)[-*+]\s+(.+)$/)
     if (ulMatch) {
       const indent = ulMatch[1].length > 0 ? "  " : ""
-      result.push(indent + "• " + convertInline(ulMatch[2]))
+      result.push(`${indent}• ${convertInline(ulMatch[2])}`)
       continue
     }
 
@@ -100,7 +147,7 @@ export function markdownToTelegramV2(md: string): string {
     if (olMatch) {
       const indent = olMatch[1].length > 0 ? "  " : ""
       const num = line.match(/^(\s*)(\d+)/)?.[2] || "1"
-      result.push(indent + esc(num) + "\\. " + convertInline(olMatch[2]))
+      result.push(`${indent}${num}. ${convertInline(olMatch[2])}`)
       continue
     }
 
@@ -114,98 +161,79 @@ export function markdownToTelegramV2(md: string): string {
     result.push(convertInline(line))
   }
 
-  // Handle unclosed code block
+  // Close unclosed blocks
   if (inCodeBlock) {
-    result.push("```")
-    result.push(escCode(codeBlockLines.join("\n")))
-    result.push("```")
+    result.push(`<pre><code>${escapeHtml(codeBlockLines.join("\n"))}</code></pre>`)
+  }
+  if (inBlockquote) {
+    result.push("</blockquote>")
   }
 
-  return result.join("\n").trim()
+  let html = result.join("\n").trim()
+
+  // Wrap file extensions that look like TLDs to prevent Telegram link previews
+  // e.g., "config.ts" would get wrapped as "config<code>.ts</code>"
+  html = wrapFileRefsInCode(html)
+
+  return html
 }
 
 /**
- * Convert inline markdown elements: bold, italic, code, links.
+ * Convert inline markdown to HTML tags.
  */
 function convertInline(text: string): string {
-  // First, extract and protect inline code spans
-  const codeSpans: string[] = []
-  let processed = text.replace(/`([^`]+)`/g, (_match, code) => {
-    const idx = codeSpans.length
-    codeSpans.push("`" + escCode(code) + "`")
-    return `\x00CODE${idx}\x00`
-  })
+  let result = escapeHtml(text)
 
-  // Extract and protect @mentions (Telegram usernames contain letters, digits, underscores)
-  const mentions: string[] = []
-  processed = processed.replace(/@(\w{5,})/g, (_match, username) => {
-    const idx = mentions.length
-    mentions.push("@" + esc(username))
-    return `\x00MENTION${idx}\x00`
-  })
+  // Inline code (first, to protect content from further processing)
+  result = result.replace(/`([^`]+)`/g, "<code>$1</code>")
 
-  // Extract and protect links
-  const links: string[] = []
-  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, url) => {
-    const idx = links.length
-    links.push("[" + escInline(label) + "](" + url.replace(/([)\\])/g, "\\$1") + ")")
-    return `\x00LINK${idx}\x00`
-  })
+  // Links: [text](url) — must come before bold/italic to preserve URLs
+  result = result.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (_m, label, url) => `<a href="${escapeHtml(url)}">${label}</a>`,
+  )
 
-  // Bold+italic: ***text*** or ___text___
-  processed = processed.replace(/\*\*\*(.+?)\*\*\*/g, (_m, t) => "*_" + esc(t) + "_*")
+  // Bold+italic: ***text***
+  result = result.replace(/\*\*\*(.+?)\*\*\*/g, "<b><i>$1</i></b>")
 
-  // Bold: **text** → *text*
-  processed = processed.replace(/\*\*(.+?)\*\*/g, (_m, t) => "*" + esc(t) + "*")
+  // Bold: **text**
+  result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
 
-  // Italic: *text* or _text_ → _text_
-  // Be careful not to match already-converted bold markers
-  processed = processed.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, (_m, t) => "_" + esc(t) + "_")
-  processed = processed.replace(/(?<!_)_([^_]+?)_(?!_)/g, (_m, t) => "_" + esc(t) + "_")
+  // Italic: *text* or _text_ (not inside other tags)
+  result = result.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, "<i>$1</i>")
 
-  // Strikethrough: ~~text~~ → ~text~
-  processed = processed.replace(/~~(.+?)~~/g, (_m, t) => "~" + esc(t) + "~")
+  // Strikethrough: ~~text~~
+  result = result.replace(/~~(.+?)~~/g, "<s>$1</s>")
 
-  // Escape remaining plain text (but preserve our placeholders and already-formatted entities)
-  processed = escPlainSegments(processed)
+  // Spoiler: ||text||
+  result = result.replace(/\|\|(.+?)\|\|/g, "<tg-spoiler>$1</tg-spoiler>")
 
-  // Restore protected tokens
-  processed = processed.replace(/\x00CODE(\d+)\x00/g, (_m, idx) => codeSpans[parseInt(idx)])
-  processed = processed.replace(/\x00MENTION(\d+)\x00/g, (_m, idx) => mentions[parseInt(idx)])
-  processed = processed.replace(/\x00LINK(\d+)\x00/g, (_m, idx) => links[parseInt(idx)])
-
-  return processed
+  return result
 }
 
 /**
- * Escape text that appears inside a formatting entity (already wrapped in * or _).
+ * Wrap file extensions that share TLDs in <code> to prevent Telegram
+ * from generating spurious link previews (e.g., config.ts, main.py).
+ * Skips content already inside <code>, <pre>, or <a> tags.
  */
-function escInline(text: string): string {
-  return esc(text)
-}
+const FILE_EXT_TLDS = /(?<=\w)\.(ts|js|py|rs|go|rb|cs|sh|md|yml|yaml|toml|json|env|css|html|xml|sql|tf|hcl)(?=[\s,;:)\]}<]|$)/gi
 
-/**
- * Escape special chars in plain text segments only (not inside formatting markers).
- * This is a simplified approach: escape any special char that isn't part of a
- * formatting entity we already placed.
- */
-function escPlainSegments(text: string): string {
-  // Split on our formatting markers and placeholders (including MENTION)
-  const parts = text.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~|\x00\w+\d+\x00)/g)
+function wrapFileRefsInCode(html: string): string {
+  // Split on existing tags to avoid modifying content inside them
+  const parts = html.split(/(<\/?(?:code|pre|a)[^>]*>)/gi)
+  let insideTag = false
 
-  return parts
-    .map((part) => {
-      // Keep formatted entities and placeholders as-is
-      if (
-        /^\*[^*]+\*$/.test(part) ||
-        /^_[^_]+_$/.test(part) ||
-        /^~[^~]+~$/.test(part) ||
-        /^\x00/.test(part)
-      ) {
-        return part
-      }
-      // Escape plain text
-      return esc(part)
-    })
-    .join("")
+  return parts.map((part) => {
+    if (/<(?:code|pre|a)\b/i.test(part)) {
+      insideTag = true
+      return part
+    }
+    if (/<\/(?:code|pre|a)>/i.test(part)) {
+      insideTag = false
+      return part
+    }
+    if (insideTag) return part
+
+    return part.replace(FILE_EXT_TLDS, "<code>.$1</code>")
+  }).join("")
 }
