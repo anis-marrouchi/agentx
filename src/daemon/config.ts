@@ -73,6 +73,17 @@ const channelsConfigSchema = z.object({
     token: z.string().optional(),
     agentBinding: z.string().optional(),
   }).default({}),
+  gitlab: z.object({
+    enabled: z.boolean().default(false),
+    webhookPort: z.number().default(18810),
+    webhookSecret: z.string().optional(),
+    host: z.string().default("https://gitlab.com"),
+    token: z.string().optional(),
+    routes: z.array(z.object({
+      project: z.string(),
+      agent: z.string(),
+    })).default([]),
+  }).default({}),
 })
 
 const cronJobSchema = z.object({

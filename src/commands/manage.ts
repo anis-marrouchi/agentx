@@ -170,6 +170,19 @@ channel
       console.log(chalk.dim("  Discord: disabled"))
     }
 
+    // GitLab
+    const gl = config.channels?.gitlab
+    if (gl?.enabled) {
+      console.log(chalk.bold("  GitLab:"))
+      console.log(`    host: ${gl.host}`)
+      console.log(`    webhook: :${gl.webhookPort}`)
+      for (const route of gl.routes || []) {
+        console.log(`    ${route.project} -> agent: ${route.agent}`)
+      }
+    } else {
+      console.log(chalk.dim("  GitLab: disabled"))
+    }
+
     console.log()
   })
 
@@ -194,6 +207,7 @@ channel
         { title: "Telegram — bot via BotFather token", value: "telegram" },
         { title: "WhatsApp — link via QR code (self-chat or contacts)", value: "whatsapp" },
         { title: "Discord — bot via Discord developer portal", value: "discord" },
+        { title: "GitLab — webhook for issues, MRs, comments, pipelines", value: "gitlab" },
       ],
     })
 
@@ -302,6 +316,53 @@ channel
 
       saveConfig(config)
       console.log(chalk.green(`  Discord added -> ${answers.agentBinding}`))
+    }
+
+    // --- GitLab ---
+    if (channelType === "gitlab") {
+      const answers = await prompts([
+        { type: "text", name: "host", message: "GitLab instance URL", initial: "https://gitlab.noqta.tn" },
+        { type: "text", name: "token", message: "GitLab API token (PRIVATE-TOKEN)" },
+        { type: "number", name: "webhookPort", message: "Webhook listen port", initial: 18810 },
+        { type: "text", name: "webhookSecret", message: "Webhook secret (X-Gitlab-Token, optional)" },
+        { type: "confirm", name: "addRoute", message: "Add a project route?", initial: true },
+      ])
+
+      if (!answers.token) return
+
+      const routes: any[] = []
+      let addMore = answers.addRoute
+
+      while (addMore) {
+        const route = await prompts([
+          { type: "text", name: "project", message: "GitLab project path (e.g. noqta/mtgl-v2, or * for default)" },
+          { type: "select", name: "agent", message: "Route to agent", choices: agentChoices },
+          { type: "confirm", name: "more", message: "Add another route?", initial: false },
+        ])
+
+        if (route.project && route.agent) {
+          routes.push({ project: route.project, agent: route.agent })
+        }
+        addMore = route.more
+      }
+
+      config.channels.gitlab = {
+        enabled: true,
+        host: answers.host,
+        token: answers.token,
+        webhookPort: answers.webhookPort,
+        webhookSecret: answers.webhookSecret || undefined,
+        routes,
+      }
+
+      saveConfig(config)
+      console.log(chalk.green(`  GitLab enabled (${routes.length} routes, webhook :${answers.webhookPort})`))
+      console.log(chalk.dim(`  Add webhook in GitLab: ${answers.host}/<project>/-/hooks`))
+      console.log(chalk.dim(`  URL: http://your-server:${answers.webhookPort}/`))
+      if (answers.webhookSecret) {
+        console.log(chalk.dim(`  Secret token: ${answers.webhookSecret}`))
+      }
+      console.log(chalk.dim("  Events: Comments, Issues, Merge requests, Pipeline"))
     }
 
     console.log(chalk.dim("  Restart daemon to apply: agentx daemon stop && agentx daemon start"))

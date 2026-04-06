@@ -7,6 +7,7 @@ import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
+import { GitLabAdapter } from "@/channels/gitlab"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
@@ -223,6 +224,22 @@ export class AgentXDaemon {
       )
       this.router.addChannel(discord)
       this.log("  Discord: enabled")
+    }
+
+    // GitLab
+    if (this.config.channels.gitlab?.enabled && this.config.channels.gitlab.token) {
+      const gitlab = new GitLabAdapter(
+        {
+          webhookPort: this.config.channels.gitlab.webhookPort,
+          webhookSecret: this.config.channels.gitlab.webhookSecret,
+          host: this.config.channels.gitlab.host,
+          token: this.config.channels.gitlab.token,
+          routes: this.config.channels.gitlab.routes,
+        },
+        this.log,
+      )
+      this.router.addChannel(gitlab)
+      this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
 
     await this.router.startAll()
