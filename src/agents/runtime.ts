@@ -40,7 +40,8 @@ export interface AgentResponse {
   error?: string
   tokensUsed?: number
   duration?: number
-  claudeSessionId?: string  // Captured from Claude Code for session resumption
+  claudeSessionId?: string
+  usage?: TokenUsage  // Real token counts from Claude's JSON output
 }
 
 /** Callback for streaming text deltas */
@@ -168,15 +169,29 @@ function buildClaudeArgs(
  * Parse JSON output from `claude -p --output-format json`.
  * Returns the text result and session_id.
  */
-function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string } {
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
+}
+
+function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage } {
   try {
     const data = JSON.parse(stdout)
+    const usage = data.usage ? {
+      inputTokens: data.usage.input_tokens || 0,
+      outputTokens: data.usage.output_tokens || 0,
+      cacheReadTokens: data.usage.cache_read_input_tokens || 0,
+      cacheCreateTokens: data.usage.cache_creation_input_tokens || 0,
+    } : undefined
+
     return {
       text: data.result || data.content || "",
       sessionId: data.session_id,
+      usage,
     }
   } catch {
-    // Not JSON — return raw text (fallback for non-json output)
     return { text: stdout }
   }
 }
@@ -221,13 +236,13 @@ export async function executeClaudeCode(
       }
     }
 
-    // Parse JSON output — gives us both text and session_id cleanly
     const parsed = parseClaudeJsonOutput(stdout)
 
     return {
       content: parsed.text,
       duration: Date.now() - start,
       claudeSessionId: parsed.sessionId,
+      usage: parsed.usage,
     }
   } catch (error: any) {
     console.error(`[runtime] execFile threw: ${error.message}`)

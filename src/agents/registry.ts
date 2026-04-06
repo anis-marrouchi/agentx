@@ -248,12 +248,13 @@ export class AgentRegistry {
           }
         }
 
-        // Track token usage
+        // Track token usage (real counts if available, estimate otherwise)
         this.tokenTracker.record(
           task.agentId,
+          response.duration || 0,
+          response.usage,
           task.message.length,
           response.content.length,
-          response.duration || 0,
         )
 
         this.log(

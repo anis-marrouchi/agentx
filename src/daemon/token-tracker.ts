@@ -10,9 +10,12 @@ export interface DailyUsage {
   agents: Record<string, AgentUsage>
 }
 
-interface AgentUsage {
+export interface AgentUsage {
   tasks: number
-  estimatedTokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
   totalDuration: number
   errors: number
 }
@@ -27,20 +30,41 @@ export class TokenTracker {
   }
 
   /**
-   * Record a task execution.
+   * Record a task execution with real or estimated token counts.
    */
-  record(agentId: string, messageLength: number, responseLength: number, duration: number, error?: boolean): void {
-    const usage = this.today()
-    const agent = usage.agents[agentId] || { tasks: 0, estimatedTokens: 0, totalDuration: 0, errors: 0 }
+  record(
+    agentId: string,
+    duration: number,
+    realUsage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number },
+    messageLength?: number,
+    responseLength?: number,
+    error?: boolean,
+  ): void {
+    const daily = this.today()
+    const agent = daily.agents[agentId] || {
+      tasks: 0, inputTokens: 0, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreateTokens: 0, totalDuration: 0, errors: 0,
+    }
 
     agent.tasks++
     agent.totalDuration += duration
-    // Rough estimate: 1 token ≈ 4 chars for English text
-    agent.estimatedTokens += Math.ceil((messageLength + responseLength) / 4)
+
+    if (realUsage) {
+      // Real counts from Claude's JSON output
+      agent.inputTokens += realUsage.inputTokens
+      agent.outputTokens += realUsage.outputTokens
+      agent.cacheReadTokens += realUsage.cacheReadTokens
+      agent.cacheCreateTokens += realUsage.cacheCreateTokens
+    } else if (messageLength !== undefined && responseLength !== undefined) {
+      // Fallback estimate for non-Claude providers
+      agent.inputTokens += Math.ceil(messageLength / 4)
+      agent.outputTokens += Math.ceil(responseLength / 4)
+    }
+
     if (error) agent.errors++
 
-    usage.agents[agentId] = agent
-    this.save(usage)
+    daily.agents[agentId] = agent
+    this.save(daily)
   }
 
   /**
@@ -82,13 +106,21 @@ export class TokenTracker {
   summary(days: number = 7): {
     totalTasks: number
     totalTokens: number
+    totalInput: number
+    totalOutput: number
+    totalCacheRead: number
+    totalCacheCreate: number
+    cacheHitRatio: number
     totalErrors: number
-    byAgent: Record<string, { tasks: number; tokens: number; avgDuration: number }>
+    byAgent: Record<string, { tasks: number; input: number; output: number; cacheRead: number; cacheCreate: number; total: number; avgDuration: number }>
   } {
     let totalTasks = 0
-    let totalTokens = 0
+    let totalInput = 0
+    let totalOutput = 0
+    let totalCacheRead = 0
+    let totalCacheCreate = 0
     let totalErrors = 0
-    const byAgent: Record<string, { tasks: number; tokens: number; avgDuration: number; totalDuration: number }> = {}
+    const byAgent: Record<string, { tasks: number; input: number; output: number; cacheRead: number; cacheCreate: number; total: number; avgDuration: number; totalDuration: number }> = {}
 
     for (let i = 0; i < days; i++) {
       const date = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10)
@@ -97,19 +129,31 @@ export class TokenTracker {
 
       for (const [id, agent] of Object.entries(usage.agents)) {
         totalTasks += agent.tasks
-        totalTokens += agent.estimatedTokens
+        totalInput += agent.inputTokens || 0
+        totalOutput += agent.outputTokens || 0
+        totalCacheRead += agent.cacheReadTokens || 0
+        totalCacheCreate += agent.cacheCreateTokens || 0
         totalErrors += agent.errors
 
-        const existing = byAgent[id] || { tasks: 0, tokens: 0, avgDuration: 0, totalDuration: 0 }
+        const existing = byAgent[id] || { tasks: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, total: 0, avgDuration: 0, totalDuration: 0 }
         existing.tasks += agent.tasks
-        existing.tokens += agent.estimatedTokens
+        existing.input += agent.inputTokens || 0
+        existing.output += agent.outputTokens || 0
+        existing.cacheRead += agent.cacheReadTokens || 0
+        existing.cacheCreate += agent.cacheCreateTokens || 0
+        existing.total = existing.input + existing.output + existing.cacheRead + existing.cacheCreate
         existing.totalDuration += agent.totalDuration
         existing.avgDuration = existing.totalDuration / existing.tasks
         byAgent[id] = existing
       }
     }
 
-    return { totalTasks, totalTokens, totalErrors, byAgent }
+    const totalTokens = totalInput + totalOutput + totalCacheRead + totalCacheCreate
+    const cacheHitRatio = (totalCacheRead + totalCacheCreate) > 0
+      ? totalCacheRead / (totalCacheRead + totalCacheCreate)
+      : 0
+
+    return { totalTasks, totalTokens, totalInput, totalOutput, totalCacheRead, totalCacheCreate, cacheHitRatio, totalErrors, byAgent }
   }
 
   private filePath(date: string): string {
