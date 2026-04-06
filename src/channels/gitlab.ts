@@ -132,11 +132,15 @@ export class GitLabAdapter implements ChannelAdapter {
    * chatId format: "project:noteable_type:iid" (e.g. "noqta/mtgl-v2:issue:123")
    */
   async send(msg: OutgoingMessage): Promise<string> {
-    const [project, noteableType, iid] = msg.chatId.split(":")
-    if (!project || !noteableType || !iid) {
+    // chatId format: "group/project:type:iid" — split from the end
+    const parts = msg.chatId.split(":")
+    if (parts.length < 3) {
       this.log(`Invalid chatId for GitLab reply: ${msg.chatId}`)
       return ""
     }
+    const iid = parts.pop()!
+    const noteableType = parts.pop()!
+    const project = parts.join(":") // rejoin in case project path had colons
 
     const encodedProject = encodeURIComponent(project)
     let endpoint: string
@@ -245,28 +249,22 @@ export class GitLabAdapter implements ChannelAdapter {
     // Resolve which agent handles this project
     const agentId = this.resolveAgent(project)
 
+    const chatId = `${project}:${noteableType}:${noteableIid}`
+
     const incoming: IncomingMessage = {
       id: String(event.object_attributes.id),
       channel: "gitlab",
       accountId: "default",
       sender: {
-        id: user.username,
+        id: chatId,
         name: user.name,
         username: user.username,
-      },
-      group: {
-        id: project,
-        name: project,
       },
       text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
     }
-
-    // chatId for replies: "project:type:iid"
-    // Stored in sender.id for the router to use
-    incoming.sender.id = `${project}:${noteableType}:${noteableIid}`
 
     this.handler(incoming).catch((e) => {
       this.log(`Error handling note: ${e.message}`)
@@ -295,7 +293,7 @@ export class GitLabAdapter implements ChannelAdapter {
         name: event.user.name,
         username: event.user.username,
       },
-      group: { id: project, name: project },
+      // No group — sender.id has project:type:iid for reply routing
       text: `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
       timestamp: new Date(),
       raw: event,
@@ -326,7 +324,7 @@ export class GitLabAdapter implements ChannelAdapter {
         name: event.user.name,
         username: event.user.username,
       },
-      group: { id: project, name: project },
+      // No group — sender.id has project:type:iid for reply routing
       text: `[GitLab MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
       timestamp: new Date(),
       raw: event,
@@ -364,7 +362,7 @@ export class GitLabAdapter implements ChannelAdapter {
         name: event.user.name,
         username: event.user.username,
       },
-      group: { id: project, name: project },
+      // No group — sender.id has project:type:iid for reply routing
       text: `[GitLab Pipeline FAILED] Project: ${project}\nRef: ${attrs.ref}\nDuration: ${attrs.duration}s\nPlease investigate the failure.`,
       timestamp: new Date(),
       raw: event,
