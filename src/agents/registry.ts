@@ -4,6 +4,7 @@ import { SessionStore } from "./sessions"
 import { WikiStore } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker } from "@/daemon/token-tracker"
+import { buildAgentContext, type ContextInput } from "./context"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -98,6 +99,22 @@ export class AgentRegistry {
   }
 
   /**
+   * Build peer list for context engine.
+   */
+  private buildPeerList(agentId: string, channel?: string): Array<{ name: string; handle?: string; role?: string }> {
+    const peers: Array<{ name: string; handle?: string; role?: string }> = []
+    for (const [id, state] of this.agents) {
+      if (id === agentId) continue
+      peers.push({
+        name: state.def.name,
+        handle: this.getChannelHandle(id, channel),
+        role: state.def.systemPrompt?.split("\n")[0]?.slice(0, 80),
+      })
+    }
+    return peers
+  }
+
+  /**
    * Get the primary channel handle for an agent (e.g. "@noqta_devops_bot" on telegram).
    */
   private getChannelHandle(agentId: string, channel?: string): string | undefined {
@@ -111,37 +128,6 @@ export class AgentRegistry {
 
     // Fallback: first mention
     return agent.mentions[0]
-  }
-
-  /**
-   * Enrich the task context with peer roster and channel handles.
-   */
-  private enrichTaskContext(task: AgentTask): AgentTask {
-    const channel = task.context?.channel
-
-    // Build peer list (all agents except self)
-    const peers: AgentPeer[] = []
-    for (const [id, state] of this.agents) {
-      if (id === task.agentId) continue
-      peers.push({
-        id,
-        name: state.def.name,
-        handle: this.getChannelHandle(id, channel),
-        role: state.def.systemPrompt?.split("\n")[0]?.slice(0, 100),
-      })
-    }
-
-    // Get own handle
-    const myHandle = this.getChannelHandle(task.agentId, channel)
-
-    return {
-      ...task,
-      context: {
-        ...task.context,
-        myHandle,
-        peers,
-      },
-    }
   }
 
   /**
@@ -181,16 +167,10 @@ export class AgentRegistry {
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
-    // Enrich task context with peer info and channel handles
-    task = this.enrichTaskContext(task)
-
-    // Wiki: find relevant articles and inject as context (token-efficient)
+    // Build structured context using the context engine
     const wikiArticles = this.wiki.findRelevant(task.message, task.agentId, 3)
     const wikiContext = this.wiki.buildContext(wikiArticles)
 
-    // Session continuity:
-    // - claude-code tier: --resume SESSION_ID (native, carries full context)
-    // - other tiers: inject conversation history as text
     const resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : undefined
@@ -199,8 +179,29 @@ export class AgentRegistry {
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
 
-    // Combine wiki + history (wiki always included, history only when no --resume)
-    const historyContext = [wikiContext, sessionHistory].filter(Boolean).join("\n\n") || undefined
+    // Resolve peers for the context engine
+    const peers = this.buildPeerList(task.agentId, channel)
+
+    const contextInput: ContextInput = {
+      channel,
+      channelScope: task.context?.group ? "group" : (channel === "gitlab" ? "project" : "personal"),
+      groupName: task.context?.group,
+      agentId: task.agentId,
+      agentName: state.def.name,
+      agentHandle: this.getChannelHandle(task.agentId, channel),
+      systemPrompt: state.def.systemPrompt,
+      sender: senderName,
+      peers,
+      mediaPath: task.context?.mediaPath,
+      mediaType: task.context?.mediaType,
+      replyToText: task.context?.replyToText,
+      groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
+      sessionHistory,
+      wikiContext,
+      message: task.message,
+    }
+
+    const historyContext = buildAgentContext(contextInput)
 
     try {
       const response = await executeTask(state.def, task, this.providers, onDelta, historyContext, resumeSessionId)
