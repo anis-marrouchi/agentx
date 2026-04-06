@@ -83,6 +83,11 @@ const channelsConfigSchema = z.object({
       project: z.string(),
       agent: z.string(),
     })).default([]),
+    agentMappings: z.array(z.object({
+      agentId: z.string(),
+      gitlabUsernames: z.array(z.string()).default([]),
+      keywords: z.array(z.string()).default([]),
+    })).default([]),
   }).default({}),
 })
 

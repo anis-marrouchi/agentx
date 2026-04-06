@@ -24,12 +24,19 @@ export interface GitLabRoute {
   agent: string
 }
 
+export interface GitLabAgentMapping {
+  agentId: string
+  gitlabUsernames: string[]  // GitLab @usernames that map to this agent
+  keywords: string[]         // keywords in comments that trigger this agent (e.g. "coder", "devops")
+}
+
 export interface GitLabChannelConfig {
   webhookPort: number
   webhookSecret?: string
   host: string
   token: string
   routes: GitLabRoute[]
+  agentMappings?: GitLabAgentMapping[]  // @mention -> agent mappings
 }
 
 interface GitLabNoteEvent {
@@ -275,8 +282,8 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
-    // Resolve which agent handles this project
-    const agentId = this.resolveAgent(project)
+    // Resolve agent: check @mentions in comment first, fall back to project route
+    const agentId = this.resolveAgentFromMention(note) || this.resolveAgent(project)
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
@@ -401,6 +408,37 @@ export class GitLabAdapter implements ChannelAdapter {
     this.handler(incoming).catch((e) => this.log(`Error handling pipeline: ${e.message}`))
     res.writeHead(200)
     res.end("ok")
+  }
+
+  /**
+   * Resolve agent from @mentions in a comment.
+   * Checks agentMappings for GitLab usernames and keywords.
+   */
+  private resolveAgentFromMention(text: string): string | undefined {
+    if (!this.config.agentMappings?.length) return undefined
+
+    const lower = text.toLowerCase()
+    // Extract @mentions from the comment
+    const mentions = text.match(/@(\w+)/g)?.map(m => m.slice(1).toLowerCase()) || []
+
+    for (const mapping of this.config.agentMappings) {
+      // Check if any GitLab @username matches
+      for (const username of mapping.gitlabUsernames) {
+        if (mentions.includes(username.toLowerCase())) {
+          this.log(`Mention @${username} -> agent ${mapping.agentId}`)
+          return mapping.agentId
+        }
+      }
+      // Check keywords
+      for (const keyword of mapping.keywords) {
+        if (lower.includes(keyword.toLowerCase())) {
+          this.log(`Keyword "${keyword}" -> agent ${mapping.agentId}`)
+          return mapping.agentId
+        }
+      }
+    }
+
+    return undefined
   }
 
   /**

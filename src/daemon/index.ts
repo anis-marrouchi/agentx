@@ -235,6 +235,7 @@ export class AgentXDaemon {
           host: this.config.channels.gitlab.host,
           token: this.config.channels.gitlab.token,
           routes: this.config.channels.gitlab.routes,
+          agentMappings: this.config.channels.gitlab.agentMappings,
         },
         this.log,
       )
