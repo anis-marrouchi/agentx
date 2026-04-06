@@ -256,8 +256,10 @@ export class MessageRouter {
 
   /**
    * Bot-to-bot conversation chain.
-   * When an agent's response mentions another agent, route it and continue
-   * the chain if the target agent also mentions someone (up to MAX depth).
+   * Guards:
+   * 1. Max depth (default 3)
+   * 2. No agent called twice in the same chain (prevents A→B→A→B loops)
+   * 3. Only on channels that support it (Telegram)
    */
   private async handleBotToBotChain(
     adapter: ChannelAdapter,
@@ -266,14 +268,24 @@ export class MessageRouter {
     responseText: string,
     responseMessageId: string,
     depth: number,
+    visited: Set<string> = new Set(),
   ): Promise<void> {
     if (depth >= MessageRouter.MAX_BOT_CHAIN_DEPTH) {
-      this.log(`Bot-to-bot: max chain depth (${depth}) reached, stopping`)
+      this.log(`Bot-to-bot: max depth (${depth}) reached, stopping`)
       return
     }
 
+    // Track who's been in this chain
+    visited.add(sourceAgentId)
+
     for (const [id, def] of Object.entries(this.config.agents)) {
       if (id === sourceAgentId) continue
+
+      // Stop if this agent was already in the chain (prevents A→B→A loop)
+      if (visited.has(id)) {
+        this.log(`Bot-to-bot: "${id}" already participated, stopping chain`)
+        continue
+      }
 
       const mentioned = def.mentions.some((m: string) =>
         responseText.toLowerCase().includes(m.toLowerCase()),
@@ -321,7 +333,7 @@ export class MessageRouter {
           // Chain: check if this response also mentions another agent
           if (sentId && response.content) {
             await this.handleBotToBotChain(
-              adapter, originalMsg, id, response.content, sentId as string, depth + 1,
+              adapter, originalMsg, id, response.content, sentId as string, depth + 1, visited,
             )
           }
         } else if (response.error) {
