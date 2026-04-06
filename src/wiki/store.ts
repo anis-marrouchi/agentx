@@ -31,6 +31,9 @@ export class WikiStore {
 
     mkdirSync(this.rawDir, { recursive: true })
     mkdirSync(resolve(baseDir, "raw"), { recursive: true })
+
+    // Initialize schema if missing
+    this.ensureSchema()
   }
 
   // --- Permission checks ---
@@ -77,6 +80,7 @@ export class WikiStore {
     frontmatter.push("---", "", entry.content)
 
     writeFileSync(filepath, frontmatter.join("\n"))
+    this.appendLog("ingest", `${entry.id} from ${entry.agentId} via ${entry.source}`)
     return filename
   }
 
@@ -169,6 +173,8 @@ export class WikiStore {
     frontmatter.push("---", "", content)
 
     writeFileSync(fullPath, frontmatter.join("\n"))
+    const action = existing ? "update" : "create"
+    this.appendLog(action, `${meta.title} (${meta.type}) by ${agentId} at ${path}`)
     return true
   }
 
@@ -431,6 +437,7 @@ export class WikiStore {
     writeFileSync(resolve(this.baseDir, "WIKI.md"), md.join("\n"))
 
     this.log(`Index rebuilt: ${articles.length} articles`)
+    this.appendLog("rebuild-index", `${articles.length} articles indexed`)
     return index
   }
 
@@ -477,6 +484,285 @@ export class WikiStore {
   }
 
   // --- Helpers ---
+
+  // --- Log (chronological, append-only) ---
+
+  /**
+   * Append an entry to log.md.
+   * Format: ## [YYYY-MM-DD HH:MM] action | details
+   */
+  appendLog(action: string, details: string): void {
+    const logPath = resolve(this.baseDir, "log.md")
+    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16)
+    const entry = `## [${timestamp}] ${action} | ${details}\n\n`
+
+    if (!existsSync(logPath)) {
+      writeFileSync(logPath, "# Wiki Log\n\nChronological record of all wiki operations.\n\n")
+    }
+
+    const { appendFileSync } = require("fs") as typeof import("fs")
+    appendFileSync(logPath, entry)
+  }
+
+  /**
+   * Get recent log entries.
+   */
+  getLog(limit: number = 20): string[] {
+    const logPath = resolve(this.baseDir, "log.md")
+    if (!existsSync(logPath)) return []
+
+    const content = readFileSync(logPath, "utf-8")
+    const entries = content.split(/^## /m).filter(e => e.startsWith("[")).slice(-limit)
+    return entries.map(e => e.trim())
+  }
+
+  // --- Schema ---
+
+  /**
+   * Create _schema.md if it doesn't exist.
+   * This tells the LLM how to operate on the wiki.
+   */
+  private ensureSchema(): void {
+    const schemaPath = resolve(this.baseDir, "_schema.md")
+    if (existsSync(schemaPath)) return
+
+    const schema = `# Wiki Schema
+
+This file defines how agents operate on this wiki. Read this before any wiki operation.
+
+## Structure
+
+\`\`\`
+.agentx/wiki/
+  _schema.md       # This file — conventions and workflows
+  _index.json      # Machine-readable index
+  WIKI.md          # Human-readable index
+  log.md           # Chronological operation log (append-only)
+  raw/entries/     # Immutable raw sources (conversations, imports)
+  projects/        # Project knowledge
+  people/          # People and relationships
+  decisions/       # Key decisions with reasoning
+  patterns/        # Recurring patterns and insights
+  concepts/        # Technical concepts
+  {new dirs}/      # Create as needed — directories emerge from data
+\`\`\`
+
+## Conventions
+
+- Articles use YAML frontmatter: title, type, owner, access, related, sources, tags
+- Use \`[[wikilinks]]\` to link between articles
+- Every article must trace back to raw sources via the \`sources:\` field
+- Articles are organized by theme, not chronology
+- One topic per article — split when an article exceeds 100 lines
+- Quotes carry the voice; article text stays neutral and factual
+
+## Access Levels
+
+- \`public\` — all agents can read, owner writes (default)
+- \`shared\` — listed agents can read, owner writes
+- \`private\` — only owner reads and writes
+
+## Operations
+
+### Ingest
+Raw sources land in \`raw/entries/\`. Never modify raw sources.
+
+### Absorb
+Read raw entries, understand meaning, create or update articles.
+For each entry: match against index → update existing articles → create new ones → add wikilinks.
+Every 10 entries: rebuild index, check for bloated articles, audit new article count.
+
+### Query
+Read index first → find relevant articles → follow wikilinks 2-3 deep → synthesize.
+Never read raw entries for queries — the wiki IS the knowledge.
+
+### Lint
+Check for: contradictions, stale claims, orphan pages, missing wikilinks,
+articles over 100 lines that should split, concepts mentioned but lacking pages.
+
+### Log
+Every operation appends to log.md with timestamp and action type.
+`
+
+    writeFileSync(schemaPath, schema)
+    this.log("Created _schema.md")
+  }
+
+  // --- Wikilinks and Backlinks ---
+
+  /**
+   * Extract all [[wikilinks]] from article content.
+   */
+  extractWikilinks(content: string): string[] {
+    const matches = content.match(/\[\[([^\]]+)\]\]/g) || []
+    return matches.map(m => m.replace(/\[\[|\]\]/g, ""))
+  }
+
+  /**
+   * Build backlinks index: for each article, which other articles link to it.
+   */
+  buildBacklinks(): Record<string, string[]> {
+    const backlinks: Record<string, string[]> = {}
+
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_") || relPath === "WIKI.md" || relPath === "log.md") return
+
+      const content = readFileSync(filePath, "utf-8")
+      const links = this.extractWikilinks(content)
+
+      for (const link of links) {
+        if (!backlinks[link]) backlinks[link] = []
+        backlinks[link].push(relPath)
+      }
+    })
+
+    // Save
+    writeFileSync(
+      resolve(this.baseDir, "_backlinks.json"),
+      JSON.stringify(backlinks, null, 2),
+    )
+
+    return backlinks
+  }
+
+  /**
+   * Get backlinks for a specific article title.
+   */
+  getBacklinks(title: string): string[] {
+    const path = resolve(this.baseDir, "_backlinks.json")
+    if (!existsSync(path)) return []
+    try {
+      const data = JSON.parse(readFileSync(path, "utf-8"))
+      return data[title] || []
+    } catch {
+      return []
+    }
+  }
+
+  // --- Lint ---
+
+  /**
+   * Run a lint pass on the wiki. Returns issues found.
+   */
+  lint(): Array<{ type: string; article: string; message: string }> {
+    const issues: Array<{ type: string; article: string; message: string }> = []
+    const allTitles = new Set<string>()
+    const allLinks = new Map<string, string[]>() // article -> outbound links
+    const articlePaths = new Map<string, string>() // title -> path
+
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_") || relPath === "WIKI.md" || relPath === "log.md") return
+
+      const article = this.readArticle(relPath)
+      if (!article) return
+
+      allTitles.add(article.meta.title)
+      articlePaths.set(article.meta.title, relPath)
+
+      const links = this.extractWikilinks(article.content)
+      allLinks.set(relPath, links)
+
+      // Check: article too long
+      const lines = article.content.split("\n").length
+      if (lines > 100) {
+        issues.push({
+          type: "bloated",
+          article: relPath,
+          message: `${lines} lines — consider splitting`,
+        })
+      }
+
+      // Check: no sources
+      if (!article.meta.sources?.length) {
+        issues.push({
+          type: "unsourced",
+          article: relPath,
+          message: "No sources listed in frontmatter",
+        })
+      }
+
+      // Check: stub (too short)
+      if (lines < 10 && article.content.trim().length < 100) {
+        issues.push({
+          type: "stub",
+          article: relPath,
+          message: "Very short article — needs enrichment",
+        })
+      }
+    })
+
+    // Check: broken wikilinks
+    for (const [articlePath, links] of allLinks) {
+      for (const link of links) {
+        if (!allTitles.has(link)) {
+          issues.push({
+            type: "broken-link",
+            article: articlePath,
+            message: `[[${link}]] — target article not found`,
+          })
+        }
+      }
+    }
+
+    // Check: orphan articles (no inbound links)
+    const backlinks = this.buildBacklinks()
+    for (const [title, path] of articlePaths) {
+      if (!backlinks[title] || backlinks[title].length === 0) {
+        issues.push({
+          type: "orphan",
+          article: path,
+          message: `No other articles link to "${title}"`,
+        })
+      }
+    }
+
+    this.appendLog("lint", `Found ${issues.length} issues`)
+    return issues
+  }
+
+  // --- Absorb summary (for automated cron) ---
+
+  /**
+   * Get unabsorbed entries (entries not referenced by any article's sources field).
+   */
+  getUnabsorbedEntries(): WikiEntry[] {
+    const allSources = new Set<string>()
+
+    // Collect all source IDs referenced by articles
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_")) return
+
+      const article = this.readArticle(relPath)
+      if (article?.meta.sources) {
+        for (const s of article.meta.sources) allSources.add(s)
+      }
+    })
+
+    // Find entries not in any article's sources
+    const entries = this.listEntries()
+    return entries.filter(e => !allSources.has(e.id))
+  }
+
+  /**
+   * Build an absorb prompt for unprocessed entries.
+   * Returns a prompt string an agent can execute to compile entries into articles.
+   */
+  buildAbsorbPrompt(maxEntries: number = 20): string | null {
+    const unabsorbed = this.getUnabsorbedEntries().slice(0, maxEntries)
+    if (unabsorbed.length === 0) return null
+
+    const entrySummaries = unabsorbed.map(e =>
+      `[${e.date} ${e.agentId} via ${e.source}] ${e.content.slice(0, 200)}`
+    ).join("\n\n")
+
+    return `/wiki absorb\n\nThere are ${unabsorbed.length} unprocessed entries. Read each, understand what it means, and create or update wiki articles.\n\n${entrySummaries}`
+  }
 
   private walkDir(dir: string, callback: (filePath: string) => void): void {
     if (!existsSync(dir)) return

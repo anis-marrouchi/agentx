@@ -1,3 +1,4 @@
+import { resolve } from "path"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
 import { SessionStore } from "./sessions"
@@ -22,7 +23,7 @@ export class AgentRegistry {
   private config: DaemonConfig
   private providers: Record<string, { apiKey?: string }> = {}
   private sessions: SessionStore
-  private wiki: WikiStore
+  private wikis: Map<string, WikiStore> = new Map()
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private log: (...args: unknown[]) => void
@@ -35,7 +36,6 @@ export class AgentRegistry {
     this.config = config
     this.providers = config.providers
     this.sessions = new SessionStore()
-    this.wiki = new WikiStore()
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
 
@@ -96,6 +96,18 @@ export class AgentRegistry {
     }
 
     return found
+  }
+
+  /**
+   * Get or create per-agent wiki (Karpathy design: each agent has its own knowledge base).
+   */
+  private getWiki(agentId: string): WikiStore {
+    if (this.wikis.has(agentId)) return this.wikis.get(agentId)!
+    const agent = this.agents.get(agentId)?.def
+    const wikiDir = agent ? resolve(agent.workspace, ".wiki") : resolve(process.cwd(), ".agentx/wiki")
+    const wiki = new WikiStore(wikiDir)
+    this.wikis.set(agentId, wiki)
+    return wiki
   }
 
   /**
@@ -168,8 +180,9 @@ export class AgentRegistry {
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
     // Build structured context using the context engine
-    const wikiArticles = this.wiki.findRelevant(task.message, task.agentId, 3)
-    const wikiContext = this.wiki.buildContext(wikiArticles)
+    const agentWiki = this.getWiki(task.agentId)
+    const wikiArticles = agentWiki.findRelevant(task.message, task.agentId, 3)
+    const wikiContext = agentWiki.buildContext(wikiArticles)
 
     const resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
@@ -222,7 +235,7 @@ export class AgentRegistry {
         if (response.content.length > 50) {
           try {
             const entryId = `${task.agentId}-${Date.now().toString(36)}`
-            this.wiki.addEntry({
+            agentWiki.addEntry({
               id: entryId,
               date: new Date().toISOString().slice(0, 10),
               agentId: task.agentId,
