@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
+import { writeFileSync, existsSync, unlinkSync, mkdirSync } from "fs"
+import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry } from "@/agents/registry"
 import { MessageRouter } from "@/channels/router"
@@ -116,20 +118,66 @@ export class AgentXDaemon {
     this.log("  Ready.")
     this.log("")
 
+    // Write PID file
+    const pidFile = resolve(process.cwd(), ".agentx/daemon.pid")
+    mkdirSync(dirname(pidFile), { recursive: true })
+    writeFileSync(pidFile, String(process.pid))
+    this.log(`  PID: ${process.pid} (${pidFile})`)
+
+    // Catch unhandled errors — log but don't crash
+    process.on("uncaughtException", (err) => {
+      this.log(`UNCAUGHT EXCEPTION: ${err.message}`)
+      this.log(err.stack || "")
+    })
+    process.on("unhandledRejection", (reason) => {
+      this.log(`UNHANDLED REJECTION: ${reason}`)
+    })
+
     // Graceful shutdown
-    process.on("SIGINT", () => this.stop())
-    process.on("SIGTERM", () => this.stop())
+    let stopping = false
+    const shutdown = async (signal: string) => {
+      if (stopping) return
+      stopping = true
+      this.log(`\n  Received ${signal}, shutting down gracefully...`)
+      await this.stop()
+    }
+    process.on("SIGINT", () => shutdown("SIGINT"))
+    process.on("SIGTERM", () => shutdown("SIGTERM"))
   }
 
   async stop(): Promise<void> {
-    this.log("Shutting down...")
-    await this.router.stopAll()
-    await this.cron.stop()
-    if (this.mesh) await this.mesh.stop()
+    const start = Date.now()
+
+    try {
+      this.log("  Stopping channels...")
+      await Promise.race([this.router.stopAll(), new Promise(r => setTimeout(r, 5000))])
+    } catch (e: any) {
+      this.log(`  Channel stop error: ${e.message}`)
+    }
+
+    try {
+      this.log("  Stopping crons...")
+      await this.cron.stop()
+    } catch {}
+
+    try {
+      if (this.mesh) {
+        this.log("  Stopping mesh...")
+        await this.mesh.stop()
+      }
+    } catch {}
+
     if (this.httpServer) {
       this.httpServer.close()
     }
-    this.log("Goodbye.")
+
+    // Clean PID file
+    try {
+      const pidFile = resolve(process.cwd(), ".agentx/daemon.pid")
+      if (existsSync(pidFile)) unlinkSync(pidFile)
+    } catch {}
+
+    this.log(`  Shutdown complete (${Date.now() - start}ms)`)
     process.exit(0)
   }
 

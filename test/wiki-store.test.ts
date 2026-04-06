@@ -1,0 +1,202 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { WikiStore } from "../src/wiki/store"
+import { mkdirSync, rmSync, existsSync } from "fs"
+import { resolve } from "path"
+
+const TEST_DIR = resolve(__dirname, "../.test-wiki")
+
+describe("WikiStore", () => {
+  let store: WikiStore
+
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true })
+    store = new WikiStore(TEST_DIR)
+  })
+
+  afterEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true })
+  })
+
+  describe("entries", () => {
+    it("adds and retrieves raw entries", () => {
+      store.addEntry({
+        id: "test-1",
+        date: "2026-04-06",
+        agentId: "atlas",
+        source: "telegram",
+        content: "Hello from Atlas",
+      })
+
+      const entries = store.listEntries()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].agentId).toBe("atlas")
+      expect(entries[0].content).toBe("Hello from Atlas")
+    })
+
+    it("filters entries by agent", () => {
+      store.addEntry({ id: "a1", date: "2026-04-06", agentId: "atlas", source: "telegram", content: "from atlas" })
+      store.addEntry({ id: "n1", date: "2026-04-06", agentId: "nadia", source: "telegram", content: "from nadia" })
+
+      const atlas = store.listEntries({ agentId: "atlas" })
+      expect(atlas).toHaveLength(1)
+      expect(atlas[0].agentId).toBe("atlas")
+    })
+
+    it("filters entries by date", () => {
+      store.addEntry({ id: "e1", date: "2026-04-05", agentId: "a", source: "t", content: "old" })
+      store.addEntry({ id: "e2", date: "2026-04-06", agentId: "a", source: "t", content: "new" })
+
+      const recent = store.listEntries({ after: "2026-04-06" })
+      expect(recent).toHaveLength(1)
+      expect(recent[0].content).toBe("new")
+    })
+  })
+
+  describe("articles", () => {
+    it("writes and reads articles", () => {
+      const meta = {
+        title: "Test Article",
+        type: "concept",
+        owner: "atlas",
+        access: "public" as const,
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: ["test-1"],
+      }
+
+      store.writeArticle("concepts/test.md", meta, "This is a test article.", "atlas")
+      const article = store.readArticle("concepts/test.md")
+
+      expect(article).not.toBeNull()
+      expect(article!.meta.title).toBe("Test Article")
+      expect(article!.content).toBe("This is a test article.")
+    })
+
+    it("enforces write permissions", () => {
+      const meta = {
+        title: "Private",
+        type: "concept",
+        owner: "atlas",
+        access: "private" as const,
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }
+
+      store.writeArticle("private/mine.md", meta, "secret", "atlas")
+      const denied = store.writeArticle("private/mine.md", meta, "hacked", "nadia")
+      expect(denied).toBe(false)
+    })
+
+    it("enforces read permissions", () => {
+      const meta = {
+        title: "Private",
+        type: "concept",
+        owner: "atlas",
+        access: "private" as const,
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }
+
+      store.writeArticle("private/secret.md", meta, "secret content", "atlas")
+
+      expect(store.readArticleAs("private/secret.md", "atlas")).not.toBeNull()
+      expect(store.readArticleAs("private/secret.md", "nadia")).toBeNull()
+    })
+
+    it("allows shared access", () => {
+      const meta = {
+        title: "Shared",
+        type: "project",
+        owner: "atlas",
+        access: "shared" as const,
+        sharedWith: ["nadia"],
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }
+
+      store.writeArticle("projects/shared.md", meta, "shared content", "atlas")
+
+      expect(store.readArticleAs("projects/shared.md", "atlas")).not.toBeNull()
+      expect(store.readArticleAs("projects/shared.md", "nadia")).not.toBeNull()
+      expect(store.readArticleAs("projects/shared.md", "devops")).toBeNull()
+    })
+  })
+
+  describe("search", () => {
+    it("finds articles by keyword", () => {
+      store.writeArticle("concepts/deploy.md", {
+        title: "Deployment Guide",
+        type: "concept",
+        owner: "atlas",
+        access: "public",
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }, "How to deploy the MTGL application to staging.", "atlas")
+
+      const results = store.search("deploy", "atlas")
+      expect(results.length).toBeGreaterThan(0)
+      expect(results[0].meta.title).toBe("Deployment Guide")
+    })
+
+    it("respects permissions in search", () => {
+      store.writeArticle("private/secret.md", {
+        title: "Secret Plan",
+        type: "concept",
+        owner: "atlas",
+        access: "private",
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }, "Top secret deployment plan", "atlas")
+
+      expect(store.search("secret", "atlas")).toHaveLength(1)
+      expect(store.search("secret", "nadia")).toHaveLength(0)
+    })
+  })
+
+  describe("index", () => {
+    it("rebuilds index", () => {
+      store.writeArticle("concepts/test.md", {
+        title: "Test",
+        type: "concept",
+        owner: "atlas",
+        access: "public",
+        created: "2026-04-06",
+        lastUpdated: "2026-04-06",
+        related: [],
+        sources: [],
+      }, "content", "atlas")
+
+      const index = store.rebuildIndex()
+      expect(index.articles).toHaveLength(1)
+      expect(index.articles[0].title).toBe("Test")
+      expect(existsSync(resolve(TEST_DIR, "WIKI.md"))).toBe(true)
+    })
+  })
+
+  describe("stats", () => {
+    it("returns correct stats", () => {
+      store.addEntry({ id: "e1", date: "2026-04-06", agentId: "atlas", source: "t", content: "x" })
+      store.writeArticle("concepts/a.md", {
+        title: "A", type: "concept", owner: "atlas", access: "public",
+        created: "2026-04-06", lastUpdated: "2026-04-06", related: [], sources: [],
+      }, "content", "atlas")
+
+      const s = store.stats()
+      expect(s.totalEntries).toBe(1)
+      expect(s.totalArticles).toBe(1)
+      expect(s.articlesByType.concept).toBe(1)
+      expect(s.articlesByOwner.atlas).toBe(1)
+    })
+  })
+})

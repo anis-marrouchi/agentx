@@ -3,6 +3,7 @@ import chalk from "chalk"
 import prompts from "prompts"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "fs"
 import { resolve, join } from "path"
+import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
 
@@ -724,4 +725,84 @@ migrate
       console.log(chalk.green("\n  Migration complete! Review agentx.json and run: agentx daemon start"))
     }
     console.log()
+  })
+
+// ==================== agentx config ====================
+
+export const configCmd = new Command()
+  .name("config")
+  .description("validate and inspect configuration")
+
+configCmd
+  .command("check")
+  .description("validate agentx.json and check all workspaces")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (opts) => {
+    console.log()
+    try {
+      const config = loadDaemonConfig(opts.config)
+      console.log(chalk.green("  ✓ Config valid"))
+      console.log(chalk.dim(`    Node: ${config.node.name} (${config.node.id})`))
+      console.log(chalk.dim(`    Bind: ${config.node.bind}`))
+      console.log(chalk.dim(`    Agents: ${Object.keys(config.agents).length}`))
+      console.log(chalk.dim(`    Crons: ${Object.keys(config.crons).length}`))
+      console.log(chalk.dim(`    Mesh peers: ${config.mesh.peers.length}`))
+
+      // Channels
+      const tgAccounts = Object.keys(config.channels.telegram.accounts).length
+      console.log(chalk.dim(`    Telegram: ${config.channels.telegram.enabled ? `${tgAccounts} accounts` : "disabled"}`))
+      console.log(chalk.dim(`    WhatsApp: ${config.channels.whatsapp.enabled ? `${config.channels.whatsapp.routes.length} routes` : "disabled"}`))
+      console.log(chalk.dim(`    Discord: ${config.channels.discord?.enabled ? "enabled" : "disabled"}`))
+
+      // Warnings
+      const warnings = validateWorkspaces(config)
+      if (warnings.length) {
+        console.log()
+        console.log(chalk.yellow("  Warnings:"))
+        for (const w of warnings) {
+          console.log(chalk.yellow(`    ⚠ ${w}`))
+        }
+      } else {
+        console.log(chalk.green("  ✓ All workspaces valid"))
+      }
+
+      // Check agent workspaces
+      console.log()
+      for (const [id, agent] of Object.entries(config.agents)) {
+        const ws = agent.workspace
+        const hasClaudeDir = existsSync(resolve(ws, ".claude"))
+        const hasClaudeMd = existsSync(resolve(ws, "CLAUDE.md"))
+        const hasSettings = existsSync(resolve(ws, ".claude/settings.json"))
+        const skillCount = existsSync(resolve(ws, ".claude/skills"))
+          ? readdirSync(resolve(ws, ".claude/skills")).filter(f => !f.startsWith(".")).length
+          : 0
+
+        const checks = [
+          hasClaudeDir ? chalk.green("✓") : chalk.red("✗"),
+          ".claude",
+          hasClaudeMd ? chalk.green("✓") : chalk.yellow("○"),
+          "CLAUDE.md",
+          hasSettings ? chalk.green("✓") : chalk.yellow("○"),
+          "settings",
+          `${skillCount} skills`,
+        ]
+        console.log(`  ${chalk.cyan(id)}: ${checks.join(" ")}`)
+      }
+    } catch (e: any) {
+      console.log(chalk.red(`  ✗ ${e.message}`))
+    }
+    console.log()
+  })
+
+configCmd
+  .command("show")
+  .description("print the resolved configuration")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action((opts) => {
+    try {
+      const config = loadDaemonConfig(opts.config)
+      console.log(JSON.stringify(config, null, 2))
+    } catch (e: any) {
+      console.log(chalk.red(e.message))
+    }
   })

@@ -4,6 +4,7 @@ import type { A2AMesh } from "@/a2a/mesh"
 import type { ChannelAdapter, IncomingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
+import { GroupLog } from "./group-log"
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -16,23 +17,13 @@ import type { HookRegistry } from "@/hooks"
 const STREAM_EDIT_INTERVAL_MS = 1500
 const TYPING_INTERVAL_MS = 4000
 
-// Group conversation log entry
-interface GroupLogEntry {
-  sender: string    // "User Name" or "agent:agent-id"
-  text: string
-  timestamp: number
-}
-
-const GROUP_LOG_MAX_ENTRIES = 20
-const GROUP_LOG_MAX_CHARS = 6000
-
 export class MessageRouter {
   private registry: AgentRegistry
   private config: DaemonConfig
   private channels: Map<string, ChannelAdapter> = new Map()
   private hooks?: HookRegistry
   private mesh?: A2AMesh
-  private groupLogs: Map<string, GroupLogEntry[]> = new Map()  // chatId -> recent messages
+  private groupLog: GroupLog
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -45,6 +36,7 @@ export class MessageRouter {
     this.config = config
     this.hooks = hooks
     this.log = log
+    this.groupLog = new GroupLog()
   }
 
   setMesh(mesh: A2AMesh): void {
@@ -97,7 +89,7 @@ export class MessageRouter {
     // Log ALL group messages for conversation context (before agent resolution)
     if (msg.group) {
       const chatId = msg.group.id
-      this.logGroupMessage(chatId, msg.sender.name, msg.text)
+      this.groupLog.add(chatId, msg.sender.name, msg.text)
     }
 
     // Resolve agent — check local first, then mesh peers
@@ -167,7 +159,7 @@ export class MessageRouter {
       : undefined
 
     // Build group conversation context (recent messages from the group)
-    const groupContext = msg.group ? this.buildGroupContext(chatId) : ""
+    const groupContext = msg.group ? this.groupLog.buildContext(chatId) : ""
     const messageWithContext = groupContext
       ? `${groupContext}\n\n${msg.sender.name}: ${msg.text}`
       : msg.text
@@ -249,7 +241,7 @@ export class MessageRouter {
 
     // Log bot response in group conversation
     if (msg.group && responseText) {
-      this.logGroupMessage(chatId, agentName, responseText)
+      this.groupLog.add(chatId, agentName, responseText)
     }
 
     // Bot-to-bot: if response mentions another agent, route it
@@ -475,47 +467,6 @@ export class MessageRouter {
     }
 
     return false
-  }
-
-  // --- Group conversation log ---
-
-  /**
-   * Log a message in the group conversation history.
-   */
-  private logGroupMessage(chatId: string, sender: string, text: string): void {
-    if (!chatId) return
-    const log = this.groupLogs.get(chatId) || []
-    log.push({ sender, text: text.slice(0, 500), timestamp: Date.now() })
-
-    // Trim to max entries
-    while (log.length > GROUP_LOG_MAX_ENTRIES) log.shift()
-
-    this.groupLogs.set(chatId, log)
-  }
-
-  /**
-   * Build group conversation context for an agent.
-   * Returns recent messages from the group so the agent knows what's been discussed.
-   */
-  private buildGroupContext(chatId: string): string {
-    const log = this.groupLogs.get(chatId)
-    if (!log || log.length <= 1) return ""
-
-    const lines: string[] = ["[Recent group conversation]"]
-    let chars = 0
-
-    // Walk backwards from most recent, skip the very last (it's the current message)
-    for (let i = log.length - 2; i >= 0; i--) {
-      const entry = log[i]
-      const line = `${entry.sender}: ${entry.text}`
-      if (chars + line.length > GROUP_LOG_MAX_CHARS) break
-      lines.splice(1, 0, line) // Insert at position 1 (after header)
-      chars += line.length
-    }
-
-    if (lines.length <= 1) return ""
-    lines.push("[End of conversation — respond to the latest message]")
-    return lines.join("\n")
   }
 
   private getAccountForAgent(agentId: string): string | undefined {

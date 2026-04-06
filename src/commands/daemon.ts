@@ -47,23 +47,28 @@ daemon
   .command("stop")
   .description("stop the running daemon")
   .action(async () => {
-    const { readFileSync, existsSync } = await import("fs")
-    const pidFile = "/tmp/agentx-daemon.pid"
+    const { readFileSync, existsSync, unlinkSync } = await import("fs")
+    const { resolve } = await import("path")
 
-    if (!existsSync(pidFile)) {
-      console.log(chalk.yellow("No daemon PID file found. Trying to find process..."))
-    }
+    // Check both PID file locations
+    const pidFiles = [
+      resolve(process.cwd(), ".agentx/daemon.pid"),
+      "/tmp/agentx-daemon.pid",
+    ]
 
-    try {
-      // Try PID file first
-      if (existsSync(pidFile)) {
+    for (const pidFile of pidFiles) {
+      if (!existsSync(pidFile)) continue
+      try {
         const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10)
         process.kill(pid, "SIGTERM")
+        // Wait briefly for graceful shutdown
+        await new Promise(r => setTimeout(r, 2000))
+        try { unlinkSync(pidFile) } catch {}
         console.log(chalk.green(`Daemon stopped (PID: ${pid})`))
         return
+      } catch {
+        try { unlinkSync(pidFile) } catch {}
       }
-    } catch {
-      // PID might be stale
     }
 
     // Fallback: kill by process name
