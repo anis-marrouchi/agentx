@@ -4,6 +4,7 @@ import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
 import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
 import { usage } from "@/commands/usage"
+import { wiki } from "@/commands/wiki"
 import { getPackageInfo } from "@/utils/get-package-info"
 
 process.on("SIGINT", () => process.exit(0))
@@ -35,6 +36,7 @@ async function main() {
     .addCommand(migrate)
     .addCommand(configCmd)
     .addCommand(usage)
+    .addCommand(wiki)
 
   const args = process.argv.slice(2)
   if (args.length === 0) {

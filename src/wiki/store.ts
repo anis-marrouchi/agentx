@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { resolve, join, relative, dirname } from "path"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
 
@@ -500,7 +500,6 @@ export class WikiStore {
       writeFileSync(logPath, "# Wiki Log\n\nChronological record of all wiki operations.\n\n")
     }
 
-    const { appendFileSync } = require("fs") as typeof import("fs")
     appendFileSync(logPath, entry)
   }
 
