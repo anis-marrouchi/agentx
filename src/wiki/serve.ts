@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
-import { wikiTypeLabel, WIKI_TYPES } from "./types"
+import { nodeKindLabel, NODE_KINDS } from "./types"
 import type { AgentWikiSummary } from "./hub"
 
 // --- Lightweight Markdown → HTML (no deps) ---
@@ -155,14 +155,14 @@ function pageLayout(title: string, sidebar: string, content: string): string {
 
 // --- Hub Mode (all agents) ---
 
-function groupByType(articles: Array<{ title: string; path: string; type: string }>): Map<string, typeof articles> {
+function groupByKind(articles: Array<{ title: string; path: string; kind: string }>): Map<string, typeof articles> {
   // Use canonical type order
-  const typeOrder = Object.keys(WIKI_TYPES)
+  const typeOrder = Object.keys(NODE_KINDS)
   const byType = new Map<string, typeof articles>()
   for (const a of articles) {
-    const list = byType.get(a.type) || []
+    const list = byType.get(a.kind) || []
     list.push(a)
-    byType.set(a.type, list)
+    byType.set(a.kind, list)
   }
   // Sort by canonical order
   const sorted = new Map<string, typeof articles>()
@@ -188,9 +188,9 @@ function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
     html += `<h2><a href="${agentPrefix}" style="color:inherit;text-decoration:none">${escapeHtml(agent.agentId)}</a> <span class="agent-badge">${agent.totalArticles}</span></h2>`
 
     // Group articles by type
-    const byType = groupByType(agent.articles)
+    const byType = groupByKind(agent.articles)
     for (const [type, articles] of byType) {
-      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${wikiTypeLabel(type)}</div>`
+      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${nodeKindLabel(type)}</div>`
       for (const a of articles) {
         const fullPath = `${agent.agentId}/${a.path}`
         const isActive = fullPath === activePath
@@ -237,7 +237,7 @@ function hubHome(hub: WikiHub): string {
     if (agent.articles.length > 0) {
       content += '<div class="article-list">'
       for (const a of agent.articles) {
-        content += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"><span class="tag">${a.type}</span> ${escapeHtml(a.title)}</a> `
+        content += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"><span class="tag">${a.kind}</span> ${escapeHtml(a.title)}</a> `
       }
       content += '</div>'
     }
@@ -274,7 +274,7 @@ function hubAgentOverview(hub: WikiHub, agentId: string): string {
     for (const a of index.articles) {
       content += `<tr>
         <td><a href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td>
-        <td><span class="tag">${a.type}</span></td>
+        <td><span class="tag">${a.kind}</span></td>
         <td>${a.lastUpdated || ""}</td>
         <td>${a.sources?.length || 0}</td>
       </tr>`
@@ -327,7 +327,7 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string): str
 
   // Meta box
   content += '<dl class="meta">'
-  content += `<dt>Type</dt><dd><span class="tag">${article.meta.type}</span></dd>`
+  content += `<dt>Type</dt><dd><span class="tag">${article.meta.kind}</span></dd>`
   content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
   content += `<dt>Created</dt><dd>${article.meta.created}</dd>`
   content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
@@ -395,7 +395,7 @@ function hubSearch(hub: WikiHub, query: string): string {
       for (const r of results) {
         const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
         content += `<div class="entry-card">
-          <div class="meta-line"><span class="tag">${r.meta.type}</span></div>
+          <div class="meta-line"><span class="tag">${r.meta.kind}</span></div>
           <h3><a href="${prefix}/article/${encodeURIComponent(r.path)}">${escapeHtml(r.meta.title)}</a></h3>
           <p>${escapeHtml(r.content.slice(0, 200))}...</p>
         </div>`
@@ -413,7 +413,7 @@ function hubSearch(hub: WikiHub, query: string): string {
 
 function agentSidebar(store: WikiStore, agentId: string, activePath?: string): string {
   const index = store.rebuildIndex()
-  const byType = groupByType(index.articles.map(a => ({ title: a.title, path: a.path, type: a.type })))
+  const byType = groupByKind(index.articles.map(a => ({ title: a.title, path: a.path, kind: a.kind })))
 
   let html = `<a href="/" class="logo">${escapeHtml(agentId)}</a>`
   html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search..."></form>'
@@ -422,7 +422,7 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
   html += '<a href="/lint">Health Check</a>'
 
   for (const [type, articles] of byType) {
-    html += `<h2>${wikiTypeLabel(type)}</h2>`
+    html += `<h2>${nodeKindLabel(type)}</h2>`
     for (const a of articles) {
       const isActive = a.path === activePath
       html += `<a href="/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''}>${escapeHtml(a.title)}</a>`
@@ -460,7 +460,7 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
           if (index.articles.length > 0) {
             content += '<h2>Articles</h2><table><tr><th>Title</th><th>Type</th><th>Updated</th></tr>'
             for (const a of index.articles) {
-              content += `<tr><td><a href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td><td><span class="tag">${a.type}</span></td><td>${a.lastUpdated || ""}</td></tr>`
+              content += `<tr><td><a href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td><td><span class="tag">${a.kind}</span></td><td>${a.lastUpdated || ""}</td></tr>`
             }
             content += '</table>'
           }
@@ -474,7 +474,7 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
             for (const a of index.articles) titleToPath.set(a.title, a.path)
             let content = `<h1>${escapeHtml(article.meta.title)}</h1>`
             content += '<dl class="meta">'
-            content += `<dt>Type</dt><dd><span class="tag">${article.meta.type}</span></dd>`
+            content += `<dt>Type</dt><dd><span class="tag">${article.meta.kind}</span></dd>`
             content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
             if (article.meta.sources?.length) content += `<dt>Sources</dt><dd>${article.meta.sources.length} entries</dd>`
             content += '</dl>'

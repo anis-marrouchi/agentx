@@ -42,7 +42,7 @@ wiki
 
       if (agent.articles.length > 0) {
         for (const a of agent.articles.slice(0, 3)) {
-          console.log(chalk.dim(`      - ${a.title} (${a.type})`))
+          console.log(chalk.dim(`      - ${a.title} (${a.kind})`))
         }
         if (agent.articles.length > 3) {
           console.log(chalk.dim(`      ... and ${agent.articles.length - 3} more`))
@@ -138,43 +138,56 @@ wiki
         `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
       ).join("\n\n")
 
-      const prompt = `You are a wiki editor compiling knowledge for the "${agentId}" agent.
+      const prompt = `You are building a knowledge graph for the "${agentId}" agent.
 
-## Enforced Directory Hierarchy
+The wiki is a TREE — the path IS the hierarchy. Think of it as a mind map being filled in piece by piece.
 
-Every article MUST have exactly one type. The type determines the directory:
+## The Tree Structure
 
-| type | directory | use when |
-|------|-----------|----------|
-| concept | concepts/ | What something IS — definitions, architecture, identity |
-| project | projects/ | What we're BUILDING — active work, deliverables |
-| process | processes/ | How we DO things — workflows, runbooks, deploy steps |
-| decision | decisions/ | Why we CHOSE — key decisions with reasoning |
-| pattern | patterns/ | What RECURS — recurring behaviors, templates |
-| person | people/ | Who's WHO — team members, agents, stakeholders |
-| incident | incidents/ | What BROKE — outages, bugs, investigations |
-| report | reports/ | What HAPPENED — briefs, summaries, metrics |
+Articles are nodes. The path places them in the tree:
+- work/noqta/team/nadia.md — Nadia is part of Noqta's team
+- work/noqta/clients/mtgl/project.md — MTGL is a Noqta client project
+- events/2026-04-06/gitlab-token-expiry.md — an event that happened on that date
 
-The path MUST match: "<type-directory>/<slug>.md" (e.g., "concepts/agent-identity.md")
+## Node Kinds
+
+Entities (things that persist): person, agent, company, team, client, project, repo, server, service, domain
+Occurrences (things that happen): event, incident, deploy, decision
+Knowledge (what we know): process, pattern, concept, report
+
+## Key Principles
+
+1. Ask: "What ENTITY is this about? What HAPPENED? Where in the tree does it belong?"
+2. Entities go under their parent: an agent goes under the team, a server under the project
+3. Events go under events/YYYY-MM-DD/ and reference entities via "involves"
+4. Processes, patterns, reports go near the entity they describe
+5. The path hierarchy: work/<company>/<area>/<entity>.md
+6. Use [[wikilinks]] to cross-reference between nodes
+7. Synthesize — distill conversations into factual wiki content
+8. If an existing article covers the topic, produce an UPDATE with full merged content
 ${existingList}
-## Rules
-
-1. Group related entries into articles by topic
-2. Synthesize information — distill conversations into factual wiki content
-3. Use wikilinks [[Article Title]] to cross-reference related articles
-4. If an existing article covers the topic, produce an UPDATE with the full merged content
-5. Choose the MOST SPECIFIC type — "how to deploy" is a process, "what is X" is a concept, "weekly metrics" is a report
-6. Output ONLY valid JSON — no markdown fencing, no explanation
-
-## Output format (JSON array)
+## Output — ONLY valid JSON, no markdown fencing
 
 [
   {
-    "path": "processes/deploy-staging.md",
-    "title": "Deploy to Staging",
-    "type": "process",
-    "content": "Synthesized wiki content here...\\n\\nSee also [[MTGL Project]]",
-    "sources": ["entry-id-1", "entry-id-2"]
+    "path": "work/noqta/team/nadia.md",
+    "title": "Nadia — Marketing Agent",
+    "kind": "agent",
+    "parent": "work/noqta/team",
+    "content": "Nadia handles marketing, content, and SEO for [[Noqta]].",
+    "sources": ["entry-id-1"],
+    "date": null,
+    "involves": null
+  },
+  {
+    "path": "events/2026-04-06/gitlab-token-expiry.md",
+    "title": "GitLab Token Expiry",
+    "kind": "incident",
+    "parent": "events/2026-04-06",
+    "content": "The GITLAB_TOKEN expired, blocking deploys for [[MTGL]].",
+    "sources": ["entry-id-2"],
+    "date": "2026-04-06",
+    "involves": ["work/noqta/clients/mtgl"]
   }
 ]
 
@@ -243,7 +256,10 @@ ${entryTexts}`
         }
 
         const jsonStr = responseText.slice(arrayStart, arrayEnd)
-        let articles: Array<{ path: string; title: string; type: string; content: string; sources: string[] }>
+        let articles: Array<{
+          path: string; title: string; kind: string; parent?: string
+          content: string; sources: string[]; date?: string; involves?: string[]
+        }>
         try {
           articles = JSON.parse(jsonStr)
         } catch (parseErr: any) {
@@ -256,13 +272,16 @@ ${entryTexts}`
           const now = new Date().toISOString().slice(0, 10)
           agentWiki.writeArticle(article.path, {
             title: article.title,
-            type: article.type as any,
+            kind: article.kind || "concept",
+            parent: article.parent || undefined,
             owner: agentId,
-            access: "internal",
+            access: "public",
             created: now,
             lastUpdated: now,
-            related: [],
-            sources: article.sources,
+            refs: [],
+            sources: article.sources || [],
+            date: article.date || undefined,
+            involves: article.involves || undefined,
           }, article.content, agentId)
 
           console.log(`    ${chalk.green("+")} ${article.path}: ${article.title}`)
@@ -362,7 +381,7 @@ wiki
       if (results.length > 0) {
         console.log(chalk.bold(`  ${chalk.cyan(agentId)}:`))
         for (const r of results) {
-          console.log(`    ${r.meta.title} (${r.meta.type})`)
+          console.log(`    ${r.meta.title} (${r.meta.kind})`)
           console.log(chalk.dim(`      ${r.path} — ${r.content.slice(0, 100)}...`))
         }
         found += results.length

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { resolve, join, relative, dirname, basename } from "path"
-import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
+import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess, WikiTreeNode } from "./types"
 import { wikiTypeDir } from "./types"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
@@ -142,45 +142,54 @@ export class WikiStore {
     content: string,
     agentId: string,
   ): boolean {
-    // Enforce type → directory hierarchy
-    const expectedDir = wikiTypeDir(meta.type)
-    const fileName = basename(path)
-    const canonicalPath = `${expectedDir}/${fileName}`
-
-    // Check write permission if article exists (check both original and canonical path)
-    const existing = this.readArticle(canonicalPath) || this.readArticle(path)
+    // Path IS the hierarchy — no remapping. Path = position in the knowledge graph.
+    const existing = this.readArticle(path)
     if (existing && !this.canWrite(existing.meta, agentId)) {
-      this.log(`Permission denied: "${agentId}" cannot write "${canonicalPath}" (owner: ${existing.meta.owner})`)
+      this.log(`Permission denied: "${agentId}" cannot write "${path}" (owner: ${existing.meta.owner})`)
       return false
     }
 
-    const fullPath = resolve(this.baseDir, canonicalPath)
+    const fullPath = resolve(this.baseDir, path)
     mkdirSync(dirname(fullPath), { recursive: true })
+
+    // Support both old "type" and new "kind" field
+    const kind = meta.kind || (meta as any).type || "concept"
 
     const frontmatter = [
       "---",
       `title: "${meta.title}"`,
-      `type: ${meta.type}`,
+      `kind: ${kind}`,
+    ]
+    if (meta.parent) frontmatter.push(`parent: ${meta.parent}`)
+    frontmatter.push(
       `owner: ${meta.owner}`,
       `access: ${meta.access}`,
-    ]
+    )
     if (meta.sharedWith?.length) {
       frontmatter.push(`shared_with: [${meta.sharedWith.map(s => `"${s}"`).join(", ")}]`)
     }
     frontmatter.push(
       `created: ${meta.created}`,
       `last_updated: ${meta.lastUpdated}`,
-      `related: [${meta.related.map(r => `"${r}"`).join(", ")}]`,
+    )
+    if (meta.refs?.length) {
+      frontmatter.push(`refs: [${meta.refs.map(r => `"${r}"`).join(", ")}]`)
+    }
+    frontmatter.push(
       `sources: [${meta.sources.map(s => `"${s}"`).join(", ")}]`,
     )
     if (meta.tags?.length) {
       frontmatter.push(`tags: [${meta.tags.map(t => `"${t}"`).join(", ")}]`)
     }
+    if (meta.date) frontmatter.push(`date: ${meta.date}`)
+    if (meta.involves?.length) {
+      frontmatter.push(`involves: [${meta.involves.map(i => `"${i}"`).join(", ")}]`)
+    }
     frontmatter.push("---", "", content)
 
     writeFileSync(fullPath, frontmatter.join("\n"))
     const action = existing ? "update" : "create"
-    this.appendLog(action, `${meta.title} (${meta.type}) by ${agentId} at ${canonicalPath}`)
+    this.appendLog(action, `${meta.title} (${kind}) by ${agentId} at ${path}`)
     return true
   }
 
@@ -226,15 +235,18 @@ export class WikiStore {
     return {
       meta: {
         title: get("title"),
-        type: get("type"),
+        kind: get("kind") || get("type") || "concept",  // "kind" is primary, "type" is legacy fallback
+        parent: get("parent") || undefined,
         owner: get("owner"),
         access: (get("access") as WikiAccess) || "public",
         sharedWith: getArray("shared_with"),
         created: get("created"),
         lastUpdated: get("last_updated"),
-        related: getArray("related"),
+        refs: getArray("refs") || getArray("related"),  // "refs" is primary, "related" is legacy
         sources: getArray("sources"),
         tags: getArray("tags"),
+        date: get("date") || undefined,
+        involves: getArray("involves"),
       },
       content,
       path,
@@ -355,7 +367,7 @@ export class WikiStore {
 
     let totalChars = 0
     for (const article of articles) {
-      const header = `\n## ${article.meta.title} (${article.meta.type})`
+      const header = `\n## ${article.meta.title} (${article.meta.kind})`
       const body = article.content.length > 600
         ? article.content.slice(0, 600) + "..."
         : article.content
@@ -402,7 +414,8 @@ export class WikiStore {
       articles.push({
         path: relPath,
         title: article.meta.title,
-        type: article.meta.type,
+        kind: article.meta.kind,
+        parent: article.meta.parent,
         owner: article.meta.owner,
         access: article.meta.access,
         sharedWith: article.meta.sharedWith,
@@ -410,6 +423,8 @@ export class WikiStore {
         backlinks: backlinks.get(article.meta.title) || 0,
         sources: article.meta.sources,
         lastUpdated: article.meta.lastUpdated,
+        date: article.meta.date,
+        involves: article.meta.involves,
       })
     })
 
@@ -473,7 +488,7 @@ export class WikiStore {
       if (!article) return
 
       totalArticles++
-      byType[article.meta.type] = (byType[article.meta.type] || 0) + 1
+      byType[article.meta.kind] = (byType[article.meta.kind] || 0) + 1
       byAccess[article.meta.access] = (byAccess[article.meta.access] || 0) + 1
       byOwner[article.meta.owner] = (byOwner[article.meta.owner] || 0) + 1
     })
@@ -533,80 +548,105 @@ export class WikiStore {
     const schemaPath = resolve(this.baseDir, "_schema.md")
     if (existsSync(schemaPath)) return
 
-    const schema = `# Wiki Schema
+    const schema = `# Wiki Schema — Knowledge Graph
 
-This file defines how agents operate on this wiki. Read this before any wiki operation.
+This wiki is a **living knowledge graph** — a mind map that's always being filled in.
+Every article is a **node** in a tree. The path IS the hierarchy.
 
-## Structure (enforced hierarchy)
-
-Every article belongs to exactly ONE type. The type determines the directory.
-This hierarchy is enforced — articles are auto-routed to the correct directory.
+## The Graph
 
 \`\`\`
 wiki/
-  _schema.md        # This file
-  _index.json       # Machine-readable index
-  WIKI.md           # Human-readable index
-  log.md            # Chronological operation log (append-only)
-  raw/entries/      # Immutable raw sources (conversations, imports)
-  concepts/         # What things ARE — definitions, architecture, identity
-  projects/         # What we're BUILDING — active work, deliverables
-  processes/        # How we DO things — workflows, runbooks, procedures
-  decisions/        # Why we CHOSE — key decisions with reasoning and tradeoffs
-  patterns/         # What RECURS — recurring behaviors, templates, anti-patterns
-  people/           # Who's WHO — team members, agents, stakeholders
-  incidents/        # What BROKE — outages, bugs, post-mortems
-  reports/          # What HAPPENED — briefs, summaries, metrics snapshots
+  raw/entries/                    # Shared inbox — immutable raw sources
+  work/                           # Work context
+    noqta/                        # Company
+      team/                       # People and agents
+        anis.md                   # (kind: person)
+        nadia.md                  # (kind: agent)
+      clients/                    # Client entities
+        mtgl/                     # (kind: client)
+          project.md              # (kind: project)
+          repos/                  # Code repositories
+          servers/                # Infrastructure
+            staging.md            # (kind: server)
+      processes/                  # How we do things
+        deploy-staging.md         # (kind: process)
+  events/                         # Timeline — cross-cutting
+    2026-04-06/
+      gitlab-token-expiry.md      # (kind: incident, involves: [work/noqta/clients/mtgl])
 \`\`\`
 
-### Type Guide
+## Node Kinds
 
-| Type | Directory | Use when... |
-|------|-----------|------------|
-| concept | concepts/ | Explaining what something IS (agent identity, architecture) |
-| project | projects/ | Tracking active work or deliverables |
-| process | processes/ | Documenting how to DO something (deploy, review, onboard) |
-| decision | decisions/ | Recording a choice and its reasoning |
-| pattern | patterns/ | Capturing recurring behavior or templates |
-| person | people/ | Documenting a person, agent, or team |
-| incident | incidents/ | Post-mortem or issue investigation |
-| report | reports/ | Periodic summary, metrics, or status update |
+### Entities — things that persist and have identity
+| Kind | Use when |
+|------|----------|
+| person | A human being (employee, client contact) |
+| agent | An AI agent in the system |
+| company | A business entity |
+| team | A group of people/agents |
+| client | A customer or client |
+| project | A specific deliverable or product |
+| repo | A code repository |
+| server | A deployment target or infrastructure |
+| service | A running service or API |
+| domain | A web domain |
 
-## Conventions
+### Occurrences — things that happen (have a date)
+| Kind | Use when |
+|------|----------|
+| event | Something that happened |
+| incident | Something that broke |
+| deploy | A deployment action |
+| decision | A choice that was made, with reasoning |
 
-- Articles use YAML frontmatter: title, type, owner, access, related, sources, tags
+### Knowledge — what we know
+| Kind | Use when |
+|------|----------|
+| process | How to do something (workflow, runbook) |
+| pattern | A recurring behavior or template |
+| concept | A definition or explanation |
+| report | A periodic summary or metrics snapshot |
+
+## Article Frontmatter
+
+\`\`\`yaml
+---
+title: "MTGL Staging Server"
+kind: server
+parent: work/noqta/clients/mtgl/servers  # Position in tree
+owner: devops-agent
+access: public
+created: 2026-04-06
+last_updated: 2026-04-06
+refs: ["work/noqta/clients/mtgl/project"]  # Cross-references
+sources: ["entry-id-1"]
+date: 2026-04-06        # For events: when it happened
+involves: ["work/noqta/clients/mtgl"]  # For events: what entities
+---
+\`\`\`
+
+## Rules
+
+- The **path** is the hierarchy — \`work/noqta/team/nadia.md\` means Nadia is part of the Noqta team
 - Use \`[[wikilinks]]\` to link between articles
-- Every article must trace back to raw sources via the \`sources:\` field
-- Articles are organized by theme, not chronology
-- One topic per article — split when an article exceeds 100 lines
-- Quotes carry the voice; article text stays neutral and factual
-
-## Access Levels
-
-- \`public\` — all agents can read, owner writes (default)
-- \`shared\` — listed agents can read, owner writes
-- \`private\` — only owner reads and writes
+- Every article traces back to raw sources via \`sources:\`
+- Events always have a \`date\` and \`involves\` field
+- Entities are things; everything else describes entities
+- One topic per article — the graph grows by adding nodes, not by inflating articles
 
 ## Operations
 
-### Ingest
-Raw sources land in \`raw/entries/\`. Never modify raw sources.
-
 ### Absorb
-Read raw entries, understand meaning, create or update articles.
-For each entry: match against index → update existing articles → create new ones → add wikilinks.
-Every 10 entries: rebuild index, check for bloated articles, audit new article count.
+Read raw entries → identify entities and events → place in the graph.
+Ask: "What entity is this about? What happened? Where does it go in the tree?"
 
 ### Query
-Read index first → find relevant articles → follow wikilinks 2-3 deep → synthesize.
-Never read raw entries for queries — the wiki IS the knowledge.
+Navigate the tree → find relevant nodes → follow refs and wikilinks → synthesize.
 
 ### Lint
-Check for: contradictions, stale claims, orphan pages, missing wikilinks,
-articles over 100 lines that should split, concepts mentioned but lacking pages.
-
-### Log
-Every operation appends to log.md with timestamp and action type.
+Check for: orphan nodes, missing parents, events without dates,
+entities without descriptions, broken wikilinks.
 `
 
     writeFileSync(schemaPath, schema)
@@ -664,6 +704,80 @@ Every operation appends to log.md with timestamp and action type.
     } catch {
       return []
     }
+  }
+
+  // --- Knowledge Graph: Tree / Mind Map ---
+
+  /**
+   * Build a tree from article paths.
+   * The path IS the hierarchy: work/noqta/clients/mtgl.md → nested tree.
+   */
+  buildTree(): WikiTreeNode {
+    const index = this.rebuildIndex()
+    const root: WikiTreeNode = { path: "", title: "root", kind: "root", children: [], hasArticle: false }
+
+    for (const article of index.articles) {
+      // Parse path into segments: "work/noqta/team/nadia.md" → ["work", "noqta", "team", "nadia"]
+      const segments = article.path.replace(/\.md$/, "").split("/")
+      let current = root
+
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i]
+        let child = current.children.find(c => c.path === segments.slice(0, i + 1).join("/"))
+
+        if (!child) {
+          const isLeaf = i === segments.length - 1
+          child = {
+            path: segments.slice(0, i + 1).join("/"),
+            title: isLeaf ? article.title : segment.replace(/-/g, " "),
+            kind: isLeaf ? article.kind : "folder",
+            children: [],
+            articlePath: isLeaf ? article.path : undefined,
+            hasArticle: isLeaf,
+          }
+          current.children.push(child)
+        }
+
+        // Update if this is the article node
+        if (i === segments.length - 1) {
+          child.title = article.title
+          child.kind = article.kind
+          child.articlePath = article.path
+          child.hasArticle = true
+        }
+
+        current = child
+      }
+    }
+
+    return root
+  }
+
+  /**
+   * Get all events, sorted chronologically.
+   * Events are articles with kind: event|incident|deploy or with a date field.
+   */
+  getTimeline(): Array<{ date: string; title: string; kind: string; path: string; involves: string[] }> {
+    const index = this.rebuildIndex()
+    const events: Array<{ date: string; title: string; kind: string; path: string; involves: string[] }> = []
+
+    for (const article of index.articles) {
+      const eventDate = article.date || article.lastUpdated
+      if (!eventDate) continue
+
+      const isEvent = ["event", "incident", "deploy", "decision"].includes(article.kind)
+      if (isEvent || article.date) {
+        events.push({
+          date: eventDate,
+          title: article.title,
+          kind: article.kind,
+          path: article.path,
+          involves: article.involves || [],
+        })
+      }
+    }
+
+    return events.sort((a, b) => b.date.localeCompare(a.date))
   }
 
   // --- Lint ---

@@ -1,75 +1,116 @@
-// --- Wiki knowledge base types ---
+// --- Wiki knowledge graph types ---
+//
+// The wiki is a living knowledge graph, not a flat article list.
+// Every article is a NODE in a tree. The path IS the hierarchy.
+// Events are cross-cutting — they happen at any node.
+//
+// Example tree:
+//   work/noqta/                    (company entity)
+//   work/noqta/team/nadia          (person entity)
+//   work/noqta/clients/mtgl/       (client entity)
+//   work/noqta/clients/mtgl/repos/ (repo entities)
+//   events/2026-04-06/gitlab-token-expiry (event referencing noqta, mtgl)
 
 /**
- * Canonical article types with enforced directory mapping.
- * Each type maps to a directory and a human-readable label.
- * This is the Karpathy hierarchy — applied per agent.
+ * Node kinds — what IS this article?
+ *
+ * Entities persist and have identity. Everything else describes entities.
  */
-export const WIKI_TYPES = {
-  concept:    { dir: "concepts",    label: "Concepts",    icon: "?" },
-  project:    { dir: "projects",    label: "Projects",    icon: "P" },
-  process:    { dir: "processes",   label: "Processes",   icon: ">" },
-  decision:   { dir: "decisions",   label: "Decisions",   icon: "D" },
-  pattern:    { dir: "patterns",    label: "Patterns",    icon: "~" },
-  person:     { dir: "people",      label: "People",      icon: "@" },
-  incident:   { dir: "incidents",   label: "Incidents",   icon: "!" },
-  report:     { dir: "reports",     label: "Reports",     icon: "#" },
+export const NODE_KINDS = {
+  // Entities — things that exist and persist
+  person:       { label: "Person",       icon: "@", isEntity: true },
+  company:      { label: "Company",      icon: "C", isEntity: true },
+  team:         { label: "Team",         icon: "T", isEntity: true },
+  client:       { label: "Client",       icon: "$", isEntity: true },
+  project:      { label: "Project",      icon: "P", isEntity: true },
+  repo:         { label: "Repository",   icon: "R", isEntity: true },
+  server:       { label: "Server",       icon: "S", isEntity: true },
+  agent:        { label: "Agent",        icon: "A", isEntity: true },
+  service:      { label: "Service",      icon: "~", isEntity: true },
+  domain:       { label: "Domain",       icon: "D", isEntity: true },
+  // Occurrences — things that happen
+  event:        { label: "Event",        icon: "!", isEntity: false },
+  incident:     { label: "Incident",     icon: "X", isEntity: false },
+  deploy:       { label: "Deploy",       icon: ">", isEntity: false },
+  decision:     { label: "Decision",     icon: "?", isEntity: false },
+  // Knowledge — what we know
+  process:      { label: "Process",      icon: ">", isEntity: false },
+  pattern:      { label: "Pattern",      icon: "~", isEntity: false },
+  concept:      { label: "Concept",      icon: "i", isEntity: false },
+  report:       { label: "Report",       icon: "#", isEntity: false },
 } as const
 
-export type WikiType = keyof typeof WIKI_TYPES
+export type NodeKind = keyof typeof NODE_KINDS
 
-export function wikiTypeDir(type: string): string {
-  const entry = WIKI_TYPES[type as WikiType]
-  return entry ? entry.dir : type + "s"
+export function nodeKindLabel(kind: string): string {
+  const entry = NODE_KINDS[kind as NodeKind]
+  return entry ? entry.label : kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
-export function wikiTypeLabel(type: string): string {
-  const entry = WIKI_TYPES[type as WikiType]
-  return entry ? entry.label : type.charAt(0).toUpperCase() + type.slice(1)
+export function isEntityKind(kind: string): boolean {
+  const entry = NODE_KINDS[kind as NodeKind]
+  return entry?.isEntity ?? false
 }
 
 /**
- * Access levels for wiki articles:
- * - private: only the owning agent can read/write
- * - shared: specific agents listed in `sharedWith` can read, owner can write
- * - public: all agents on this node can read, owner can write
+ * Access levels for wiki articles.
  */
 export type WikiAccess = "private" | "shared" | "public"
 
+/**
+ * Article metadata — each article is a node in the knowledge graph.
+ */
 export interface WikiArticleMeta {
   title: string
-  type: string                  // person, project, concept, decision, pattern, etc.
-  owner: string                 // agent ID that created/owns this article
+  kind: string                    // NodeKind — what IS this (person, project, event, etc.)
+  parent?: string                 // Path to parent node (e.g., "work/noqta" for a team member)
+  owner: string                   // Agent ID that created/owns this article
   access: WikiAccess
-  sharedWith?: string[]         // agent IDs (only for access: "shared")
-  created: string               // ISO date
-  lastUpdated: string           // ISO date
-  related: string[]             // wikilinks to other articles
-  sources: string[]             // raw entry IDs
+  sharedWith?: string[]
+  created: string                 // ISO date
+  lastUpdated: string             // ISO date
+  refs: string[]                  // Paths to related entities (cross-references)
+  sources: string[]               // Raw entry IDs this was compiled from
   tags?: string[]
+  // Event-specific fields
+  date?: string                   // When the event occurred (ISO date)
+  involves?: string[]             // Entity paths involved in this event
 }
 
 export interface WikiArticle {
   meta: WikiArticleMeta
-  content: string               // markdown body
-  path: string                  // relative path within wiki dir
+  content: string
+  path: string                    // Path in tree = position in hierarchy
 }
 
 export interface WikiEntry {
   id: string
   date: string
   agentId: string
-  source: string                // "telegram", "cron", "api", "manual"
-  sourceContext?: string         // group name, cron job id, etc.
+  source: string
+  sourceContext?: string
   content: string
   meta?: Record<string, unknown>
+}
+
+/**
+ * Tree node for the knowledge graph.
+ */
+export interface WikiTreeNode {
+  path: string
+  title: string
+  kind: string
+  children: WikiTreeNode[]
+  articlePath?: string            // Path to the article file (if exists)
+  hasArticle: boolean
 }
 
 export interface WikiIndex {
   articles: Array<{
     path: string
     title: string
-    type: string
+    kind: string
+    parent?: string
     owner: string
     access: WikiAccess
     sharedWith?: string[]
@@ -77,6 +118,26 @@ export interface WikiIndex {
     backlinks: number
     sources?: string[]
     lastUpdated?: string
+    date?: string
+    involves?: string[]
   }>
   lastRebuilt: string
 }
+
+// --- Backward compat: map old "type" field to "kind" ---
+export function normalizeKind(typeOrKind: string): string {
+  return typeOrKind // kinds are now a superset of old types
+}
+
+// Legacy helpers (used by store.ts internals)
+export function wikiTypeDir(kind: string): string {
+  return kind
+}
+
+export function wikiTypeLabel(kind: string): string {
+  return nodeKindLabel(kind)
+}
+
+// Legacy alias
+export type WikiType = NodeKind
+export const WIKI_TYPES = NODE_KINDS

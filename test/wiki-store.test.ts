@@ -56,12 +56,12 @@ describe("WikiStore", () => {
     it("writes and reads articles", () => {
       const meta = {
         title: "Test Article",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "public" as const,
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: ["test-1"],
       }
 
@@ -76,12 +76,12 @@ describe("WikiStore", () => {
     it("enforces write permissions", () => {
       const meta = {
         title: "Private",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "private" as const,
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }
 
@@ -93,12 +93,12 @@ describe("WikiStore", () => {
     it("enforces read permissions", () => {
       const meta = {
         title: "Private",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "private" as const,
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }
 
@@ -111,13 +111,13 @@ describe("WikiStore", () => {
     it("allows shared access", () => {
       const meta = {
         title: "Shared",
-        type: "project",
+        kind: "project",
         owner: "atlas",
         access: "shared" as const,
         sharedWith: ["nadia"],
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }
 
@@ -133,12 +133,12 @@ describe("WikiStore", () => {
     it("finds articles by keyword", () => {
       store.writeArticle("concepts/deploy.md", {
         title: "Deployment Guide",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "public",
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }, "How to deploy the MTGL application to staging.", "atlas")
 
@@ -150,12 +150,12 @@ describe("WikiStore", () => {
     it("respects permissions in search", () => {
       store.writeArticle("concepts/secret.md", {
         title: "Secret Plan",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "private",
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }, "Top secret deployment plan", "atlas")
 
@@ -168,12 +168,12 @@ describe("WikiStore", () => {
     it("rebuilds index", () => {
       store.writeArticle("concepts/test.md", {
         title: "Test",
-        type: "concept",
+        kind: "concept",
         owner: "atlas",
         access: "public",
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
-        related: [],
+        refs: [],
         sources: [],
       }, "content", "atlas")
 
@@ -188,8 +188,8 @@ describe("WikiStore", () => {
     it("returns correct stats", () => {
       store.addEntry({ id: "e1", date: "2026-04-06", agentId: "atlas", source: "t", content: "x" })
       store.writeArticle("concepts/a.md", {
-        title: "A", type: "concept", owner: "atlas", access: "public",
-        created: "2026-04-06", lastUpdated: "2026-04-06", related: [], sources: [],
+        title: "A", kind: "concept", owner: "atlas", access: "public",
+        created: "2026-04-06", lastUpdated: "2026-04-06", refs: [], sources: [],
       }, "content", "atlas")
 
       const s = store.stats()
@@ -252,15 +252,15 @@ describe("WikiStore - wikilinks and backlinks", () => {
 
   it("builds backlinks index", () => {
     store.writeArticle("concepts/deploy.md", {
-      title: "Deploy Guide", type: "concept", owner: "atlas", access: "public",
+      title: "Deploy Guide", kind: "concept", owner: "atlas", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: [],
+      refs: [], sources: [],
     }, "How to deploy. See [[MTGL Project]].", "atlas")
 
     store.writeArticle("projects/mtgl.md", {
-      title: "MTGL Project", type: "project", owner: "atlas", access: "public",
+      title: "MTGL Project", kind: "project", owner: "atlas", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: [],
+      refs: [], sources: [],
     }, "The MTGL project.", "atlas")
 
     const backlinks = store.buildBacklinks()
@@ -282,9 +282,9 @@ describe("WikiStore - lint", () => {
 
   it("detects broken wikilinks", () => {
     store.writeArticle("test.md", {
-      title: "Test", type: "concept", owner: "a", access: "public",
+      title: "Test", kind: "concept", owner: "a", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: [],
+      refs: [], sources: [],
     }, "See [[Nonexistent Page]]", "a")
 
     const issues = store.lint()
@@ -293,9 +293,9 @@ describe("WikiStore - lint", () => {
 
   it("detects orphan articles", () => {
     store.writeArticle("orphan.md", {
-      title: "Orphan", type: "concept", owner: "a", access: "public",
+      title: "Orphan", kind: "concept", owner: "a", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: [],
+      refs: [], sources: [],
     }, "No one links here", "a")
 
     const issues = store.lint()
@@ -304,9 +304,9 @@ describe("WikiStore - lint", () => {
 
   it("detects unsourced articles", () => {
     store.writeArticle("unsourced.md", {
-      title: "Unsourced", type: "concept", owner: "a", access: "public",
+      title: "Unsourced", kind: "concept", owner: "a", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: [],
+      refs: [], sources: [],
     }, "Content without sources", "a")
 
     const issues = store.lint()
@@ -332,9 +332,9 @@ describe("WikiStore - absorb", () => {
 
     // e1 is referenced by an article, e2 is not
     store.writeArticle("test.md", {
-      title: "Test", type: "concept", owner: "a", access: "public",
+      title: "Test", kind: "concept", owner: "a", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
-      related: [], sources: ["e1"],
+      refs: [], sources: ["e1"],
     }, "Content from e1", "a")
 
     const unabsorbed = store.getUnabsorbedEntries()
