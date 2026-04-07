@@ -437,8 +437,8 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
 
 // --- Server ---
 
-export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = []): void {
-  const hub = new WikiHub(wikiDir)
+export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" = "graph"): void {
+  const hub = new WikiHub(wikiDir, undefined, mode)
   const mesh = peerUrls.length > 0 ? new MeshWikiClient(peerUrls) : null
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {

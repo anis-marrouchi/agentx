@@ -1,13 +1,19 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { WikiHub } from "@/wiki"
+import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
+import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { resolve } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync } from "fs"
 
-function getHub(dir?: string): WikiHub {
-  return new WikiHub(dir || resolve(process.cwd(), ".agentx/wiki"))
+function getHub(dir?: string, mode?: WikiMode): WikiHub {
+  return new WikiHub(dir || resolve(process.cwd(), ".agentx/wiki"), undefined, mode || "graph")
+}
+
+function modeLabel(mode: WikiMode): string {
+  return mode === "graph" ? "Knowledge Graph" : "Karpathy Flat"
 }
 
 export const wiki = new Command()
@@ -19,14 +25,16 @@ wiki
   .command("status")
   .description("show wiki status per agent")
   .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "compilation mode: graph (default) or flat", "graph")
   .action((opts) => {
-    const hub = getHub(opts.dir)
+    const mode = opts.mode as WikiMode
+    const hub = getHub(opts.dir, mode)
     const agents = hub.summary()
     const shared = hub.getSharedStore()
     const totalEntries = shared.listEntries().length
 
     console.log()
-    console.log(chalk.bold("  Wiki Hub Status"))
+    console.log(chalk.bold(`  Wiki Hub Status [${modeLabel(mode)}]`))
     console.log()
     console.log(`  Total raw entries: ${totalEntries}`)
     console.log(`  Agents: ${agents.length}`)
@@ -63,9 +71,10 @@ wiki
   .command("lint")
   .description("check wiki for issues per agent")
   .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph or flat", "graph")
   .option("--agent <id>", "lint a specific agent's wiki")
   .action((opts) => {
-    const hub = getHub(opts.dir)
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     let totalIssues = 0
 
@@ -98,11 +107,13 @@ wiki
   .command("absorb")
   .description("compile unabsorbed entries into per-agent wiki articles")
   .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph (default) or flat", "graph")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
   .option("--max <n>", "max entries per agent", "20")
   .action(async (opts) => {
-    const hub = getHub(opts.dir)
+    const mode = opts.mode as WikiMode
+    const hub = getHub(opts.dir, mode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     const maxEntries = parseInt(opts.max)
 
@@ -128,69 +139,15 @@ wiki
       // Get this agent's wiki store
       const agentWiki = hub.getAgentWiki(agentId)
 
-      // Build context: existing articles + worldview
+      // Build prompt using mode-specific template
       const existingIndex = agentWiki.rebuildIndex()
-      const existingList = existingIndex.articles.length > 0
-        ? `\nExisting articles:\n${existingIndex.articles.map(a => `- ${a.title} [${(a.tags || []).join(", ")}] (${a.path})`).join("\n")}\n`
-        : ""
-
-      // Read worldview from both agent wiki and shared wiki
       const worldview = agentWiki.getWorldview() || hub.getSharedStore().getWorldview() || ""
-      const worldviewSection = worldview
-        ? `\n## Worldview (the user's mental model — use this to understand context)\n\n${worldview}\n`
-        : ""
-
       const entryTexts = unabsorbed.map(e =>
         `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
       ).join("\n\n")
 
-      const prompt = `You are a wiki editor for the "${agentId}" agent. Compile raw entries into a personal wiki.
-
-## Karpathy Pattern
-
-- Plain markdown files. YOU choose the path and structure — it emerges from the data.
-- Tag AGGRESSIVELY. Tags are the #1 mechanism for context narrowing.
-- Use [[wikilinks]] to cross-reference between articles.
-- Synthesize — distill conversations into factual wiki articles, don't copy-paste.
-- If an existing article covers the topic, produce an UPDATE with full merged content.
-${worldviewSection}${existingList}
-## Tagging Rules
-
-Tag every article with ALL relevant dimensions:
-- WHO: people, agents, teams involved (e.g., "nadia", "devops-agent", "anis")
-- WHAT: project, client, topic, technology (e.g., "mtgl", "seo", "gitlab", "deploy")
-- WHEN: dates, periods (e.g., "2026-04-06", "week-14")
-- WHERE: server, environment, channel (e.g., "staging", "telegram", "production")
-- HOW: type of knowledge (e.g., "process", "incident", "report", "decision")
-
-Use section tags for subsections: \`<!-- tags: runbook, staging -->\`
-
-## Gap Detection
-
-After compiling, add a "gaps" array — topics MENTIONED but not yet covered.
-Example: if entries mention "production server" but no article exists for it, flag it.
-
-## Output — ONLY valid JSON, no markdown fencing
-
-{
-  "articles": [
-    {
-      "path": "mtgl/staging-deploy.md",
-      "title": "MTGL Staging Deployment",
-      "tags": ["mtgl", "deploy", "staging", "devops", "process", "2026-04-06"],
-      "content": "How we deploy MTGL to staging...\\n\\nSee also [[MTGL Project]]\\n\\n## Steps\\n<!-- tags: runbook, staging -->\\n1. ...",
-      "sources": ["entry-id-1", "entry-id-2"]
-    }
-  ],
-  "gaps": [
-    "MTGL production server — mentioned but no article exists",
-    "Hasana project — referenced but undocumented"
-  ]
-}
-
-ENTRIES:
-
-${entryTexts}`
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length)
+      console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
       const tmpDir = resolve(agentWiki["baseDir"], "_tmp")
@@ -346,9 +303,10 @@ wiki
   .command("serve")
   .description("start a local web server to browse agent wikis (local + mesh)")
   .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph (default) or flat", "graph")
   .option("--agent <id>", "serve only this agent's wiki")
   .option("--port <n>", "port number", "4200")
-  .option("--peer <urls...>", "mesh peer URLs to federate (e.g., http://100.67.108.119:19900)")
+  .option("--peer <urls...>", "mesh peer URLs to federate")
   .action(async (opts) => {
     const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
     const port = parseInt(opts.port)
@@ -379,7 +337,7 @@ wiki
     console.log(chalk.dim("  Press Ctrl+C to stop"))
     console.log()
 
-    startWikiServer(dir, port, opts.agent, peerUrls)
+    startWikiServer(dir, port, opts.agent, peerUrls, opts.mode as WikiMode)
   })
 
 // agentx wiki search <query>
@@ -387,9 +345,10 @@ wiki
   .command("search <query>")
   .description("search wiki articles")
   .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph or flat", "graph")
   .option("--agent <id>", "search specific agent's wiki")
   .action((query, opts) => {
-    const hub = getHub(opts.dir)
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
 
     console.log()
@@ -526,5 +485,110 @@ wiki
     } else {
       console.log(chalk.dim("  All peers up to date"))
     }
+    console.log()
+  })
+
+// agentx wiki compare — deterministic comparison of flat vs graph
+wiki
+  .command("compare")
+  .description("compare flat vs graph compilation for an agent")
+  .option("--dir <path>", "wiki directory")
+  .requiredOption("--agent <id>", "agent to compare")
+  .action((opts) => {
+    const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
+    const flatHub = new WikiHub(dir, undefined, "flat")
+    const graphHub = new WikiHub(dir, undefined, "graph")
+    const agentId = opts.agent
+
+    const flatWiki = flatHub.getAgentWiki(agentId)
+    const graphWiki = graphHub.getAgentWiki(agentId)
+    const flatIndex = flatWiki.rebuildIndex()
+    const graphIndex = graphWiki.rebuildIndex()
+    const entries = flatHub.getAgentEntries(agentId)
+    const flatUnabsorbed = flatHub.getUnabsorbedEntries(agentId)
+    const graphUnabsorbed = graphHub.getUnabsorbedEntries(agentId)
+
+    console.log()
+    console.log(chalk.bold(`  Wiki Compare: ${agentId}`))
+    console.log()
+    console.log(`  Raw entries: ${entries.length}`)
+    console.log()
+
+    // Side by side stats
+    const w = 35
+    console.log(`  ${"Karpathy Flat".padEnd(w)} ${"Knowledge Graph".padEnd(w)}`)
+    console.log(`  ${"─".repeat(w)} ${"─".repeat(w)}`)
+    console.log(`  ${"Articles: " + flatIndex.articles.length}${" ".repeat(w - ("Articles: " + flatIndex.articles.length).length)} ${"Articles: " + graphIndex.articles.length}`)
+    console.log(`  ${"Unabsorbed: " + flatUnabsorbed.length}${" ".repeat(w - ("Unabsorbed: " + flatUnabsorbed.length).length)} ${"Unabsorbed: " + graphUnabsorbed.length}`)
+
+    // Flat tags
+    const flatTags = new Set<string>()
+    for (const a of flatIndex.articles) for (const t of (a.tags || [])) flatTags.add(t)
+    const graphTags = new Set<string>()
+    for (const a of graphIndex.articles) for (const t of (a.tags || [])) graphTags.add(t)
+    console.log(`  ${"Unique tags: " + flatTags.size}${" ".repeat(w - ("Unique tags: " + flatTags.size).length)} ${"Unique tags: " + graphTags.size}`)
+
+    // Average tags per article
+    const flatAvg = flatIndex.articles.length > 0
+      ? (flatIndex.articles.reduce((s, a) => s + (a.tags?.length || 0), 0) / flatIndex.articles.length).toFixed(1)
+      : "0"
+    const graphAvg = graphIndex.articles.length > 0
+      ? (graphIndex.articles.reduce((s, a) => s + (a.tags?.length || 0), 0) / graphIndex.articles.length).toFixed(1)
+      : "0"
+    console.log(`  ${"Avg tags/article: " + flatAvg}${" ".repeat(w - ("Avg tags/article: " + flatAvg).length)} ${"Avg tags/article: " + graphAvg}`)
+
+    // Directory structure
+    const flatDirs = new Set(flatIndex.articles.map(a => a.path.includes("/") ? a.path.split("/")[0] : "/"))
+    const graphDirs = new Set(graphIndex.articles.map(a => a.path.includes("/") ? a.path.split("/")[0] : "/"))
+    console.log(`  ${"Directories: " + flatDirs.size}${" ".repeat(w - ("Directories: " + flatDirs.size).length)} ${"Directories: " + graphDirs.size}`)
+
+    console.log()
+
+    // List articles side by side
+    if (flatIndex.articles.length > 0 || graphIndex.articles.length > 0) {
+      console.log(chalk.bold("  Articles:"))
+      console.log()
+
+      const maxLen = Math.max(flatIndex.articles.length, graphIndex.articles.length)
+      for (let i = 0; i < maxLen; i++) {
+        const f = flatIndex.articles[i]
+        const g = graphIndex.articles[i]
+        const fStr = f ? `${f.title.slice(0, 30)}` : ""
+        const gStr = g ? `${g.title.slice(0, 30)}` : ""
+        console.log(`  ${fStr.padEnd(w)} ${gStr}`)
+        const fTags = f ? chalk.dim(`[${(f.tags || []).slice(0, 3).join(", ")}]`) : ""
+        const gTags = g ? chalk.dim(`[${(g.tags || []).slice(0, 3).join(", ")}]`) : ""
+        console.log(`  ${fTags}${"".padEnd(Math.max(0, w - (fTags.length - 10)))} ${gTags}`)
+      }
+    }
+
+    // Overlap: articles covering similar topics (by shared sources)
+    const flatSourceMap = new Map<string, string[]>()
+    for (const a of flatIndex.articles) {
+      for (const s of (a.sources || [])) {
+        const list = flatSourceMap.get(s) || []
+        list.push(a.title)
+        flatSourceMap.set(s, list)
+      }
+    }
+    const graphSourceMap = new Map<string, string[]>()
+    for (const a of graphIndex.articles) {
+      for (const s of (a.sources || [])) {
+        const list = graphSourceMap.get(s) || []
+        list.push(a.title)
+        graphSourceMap.set(s, list)
+      }
+    }
+
+    // Find entries covered by both
+    const bothCovered = [...flatSourceMap.keys()].filter(s => graphSourceMap.has(s))
+    const flatOnly = [...flatSourceMap.keys()].filter(s => !graphSourceMap.has(s))
+    const graphOnly = [...graphSourceMap.keys()].filter(s => !flatSourceMap.has(s))
+
+    console.log()
+    console.log(chalk.bold("  Coverage:"))
+    console.log(`  Entries covered by both: ${bothCovered.length}`)
+    console.log(`  Flat-only coverage:      ${flatOnly.length}`)
+    console.log(`  Graph-only coverage:     ${graphOnly.length}`)
     console.log()
   })

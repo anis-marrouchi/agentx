@@ -3,68 +3,67 @@ import { resolve } from "path"
 import { existsSync, readdirSync, mkdirSync } from "fs"
 import type { WikiEntry } from "./types"
 
+export type WikiMode = "flat" | "graph"
+
 /**
  * WikiHub: manages per-agent wikis with a shared raw entry pool.
+ * Supports two compilation modes:
+ *   - flat:  Karpathy pattern — tags, LLM-chosen paths, worldview, gap detection
+ *   - graph: Knowledge graph — kind, parent, hierarchy, events, entities
  *
- * Structure:
- *   .agentx/wiki/
- *     raw/entries/              # Shared inbox — all agent entries
- *     agents/
- *       marketing-agent/        # Nadia's compiled wiki (articles, index)
- *       devops-agent/           # DevOps compiled wiki
- *       ...
+ * Both modes share the same raw entries. Articles stored separately:
+ *   agents/<id>/flat/    ← Karpathy compilation
+ *   agents/<id>/graph/   ← Knowledge graph compilation
  */
 export class WikiHub {
   private baseDir: string
   private agentsDir: string
-  private sharedStore: WikiStore  // Manages raw entries
+  private mode: WikiMode
+  private sharedStore: WikiStore
   private agentStores: Map<string, WikiStore> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
     baseDir: string = resolve(process.cwd(), ".agentx/wiki"),
     log: (...args: unknown[]) => void = console.error.bind(console, "[wiki-hub]"),
+    mode: WikiMode = "graph",
   ) {
     this.baseDir = baseDir
     this.agentsDir = resolve(baseDir, "agents")
+    this.mode = mode
     this.log = log
 
     mkdirSync(this.agentsDir, { recursive: true })
-
-    // Shared store handles raw entry ingestion
     this.sharedStore = new WikiStore(baseDir, log)
   }
 
+  getMode(): WikiMode { return this.mode }
+
   /**
-   * Get or create the wiki store for a specific agent.
+   * Get or create the wiki store for a specific agent (mode-aware).
+   * flat:  agents/<id>/flat/
+   * graph: agents/<id>/graph/
    */
   getAgentWiki(agentId: string): WikiStore {
-    if (this.agentStores.has(agentId)) return this.agentStores.get(agentId)!
+    const key = `${agentId}:${this.mode}`
+    if (this.agentStores.has(key)) return this.agentStores.get(key)!
 
-    const agentDir = resolve(this.agentsDir, agentId)
+    const agentDir = resolve(this.agentsDir, agentId, this.mode)
     const store = new WikiStore(agentDir, this.log)
-    this.agentStores.set(agentId, store)
+    this.agentStores.set(key, store)
     return store
   }
 
-  /**
-   * Get the shared store (for raw entry operations).
-   */
   getSharedStore(): WikiStore {
     return this.sharedStore
   }
 
-  /**
-   * List all agent IDs that have entries or a wiki.
-   */
   listAgents(): string[] {
     const agents = new Set<string>()
 
-    // From raw entries
     const entries = this.sharedStore.listEntries()
     for (const e of entries) agents.add(e.agentId)
 
-    // From existing agent wiki directories
     if (existsSync(this.agentsDir)) {
       for (const dir of readdirSync(this.agentsDir)) {
         if (!dir.startsWith("_") && !dir.startsWith(".")) {
@@ -76,22 +75,14 @@ export class WikiHub {
     return [...agents].sort()
   }
 
-  /**
-   * Get entries for a specific agent (from shared pool).
-   */
   getAgentEntries(agentId: string): WikiEntry[] {
     return this.sharedStore.listEntries({ agentId })
   }
 
-  /**
-   * Get unabsorbed entries for a specific agent.
-   * An entry is "absorbed" if any article in that agent's wiki references it.
-   */
   getUnabsorbedEntries(agentId: string): WikiEntry[] {
     const agentWiki = this.getAgentWiki(agentId)
     const agentEntries = this.getAgentEntries(agentId)
 
-    // Collect all source IDs from this agent's articles
     const absorbedIds = new Set<string>()
     const index = agentWiki.rebuildIndex()
     for (const article of index.articles) {
@@ -103,9 +94,6 @@ export class WikiHub {
     return agentEntries.filter(e => !absorbedIds.has(e.id))
   }
 
-  /**
-   * Get a summary of all agents and their wiki state.
-   */
   summary(): AgentWikiSummary[] {
     const agents = this.listAgents()
     return agents.map(agentId => {
