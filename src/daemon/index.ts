@@ -381,6 +381,56 @@ export class AgentXDaemon {
           })
           break
 
+        // --- Wiki API (for mesh sync) ---
+
+        case "GET /wiki/agents": {
+          const hub = this.registry.getWikiHub()
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            agents: hub.summary(),
+          })
+          break
+        }
+
+        case "GET /wiki/entries": {
+          const hub = this.registry.getWikiHub()
+          const agentId = url.searchParams.get("agent") || undefined
+          const after = url.searchParams.get("after") || undefined
+          const entries = agentId
+            ? hub.getAgentEntries(agentId)
+            : hub.getSharedStore().listEntries({ after })
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            count: entries.length,
+            entries: entries.map(e => ({
+              id: e.id,
+              date: e.date,
+              agentId: e.agentId,
+              source: e.source,
+              sourceContext: e.sourceContext,
+              content: e.content,
+            })),
+          })
+          break
+        }
+
+        case "GET /wiki/articles": {
+          const hub = this.registry.getWikiHub()
+          const agentId = url.searchParams.get("agent")
+          if (!agentId) {
+            this.json(res, 400, { error: "?agent= required" })
+            break
+          }
+          const store = hub.getAgentWiki(agentId)
+          const index = store.rebuildIndex()
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            agentId,
+            articles: index.articles,
+          })
+          break
+        }
+
         default:
           this.json(res, 404, {
             error: "Not found",
@@ -389,6 +439,9 @@ export class AgentXDaemon {
               "GET  /agents",
               "GET  /crons",
               "GET  /mesh",
+              "GET  /wiki/agents",
+              "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",
+              "GET  /wiki/articles?agent=X",
               "POST /task { agent, message, context? }",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",

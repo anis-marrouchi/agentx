@@ -398,3 +398,119 @@ wiki
     if (found === 0) console.log(chalk.dim("  No matching articles"))
     console.log()
   })
+
+// agentx wiki sync — pull entries from mesh peers
+wiki
+  .command("sync")
+  .description("pull raw entries from mesh peers into local wiki")
+  .option("--dir <path>", "wiki directory")
+  .option("--peer <url>", "sync from a specific peer URL (e.g., http://100.67.108.119:19900)")
+  .option("--dry-run", "show what would be synced without writing")
+  .action(async (opts) => {
+    const hub = getHub(opts.dir)
+    const shared = hub.getSharedStore()
+
+    // Discover peers: from --peer flag, or from local daemon config
+    let peerUrls: string[] = []
+
+    if (opts.peer) {
+      peerUrls = [opts.peer]
+    } else {
+      // Try to read mesh peers from local daemon
+      try {
+        const { loadDaemonConfig } = await import("@/daemon/config")
+        const config = loadDaemonConfig()
+        peerUrls = (config.mesh?.peers || []).map((p: any) => p.url)
+      } catch {
+        console.log(chalk.red("  No --peer specified and no daemon config found"))
+        console.log(chalk.dim("  Usage: agentx wiki sync --peer http://100.67.108.119:19900"))
+        return
+      }
+    }
+
+    if (peerUrls.length === 0) {
+      console.log(chalk.dim("  No mesh peers configured"))
+      return
+    }
+
+    // Get existing entry IDs to avoid duplicates
+    const existingIds = new Set(shared.listEntries().map(e => e.id))
+
+    let totalSynced = 0
+
+    for (const peerUrl of peerUrls) {
+      console.log()
+      console.log(chalk.bold(`  Syncing from ${peerUrl}...`))
+
+      try {
+        // Fetch entries from peer
+        const res = await fetch(`${peerUrl}/wiki/entries`, { signal: AbortSignal.timeout(10000) })
+        if (!res.ok) {
+          console.log(chalk.red(`    HTTP ${res.status}`))
+          continue
+        }
+
+        const data = await res.json() as any
+        const entries = data.entries || []
+        const nodeId = data.nodeId || "unknown"
+
+        console.log(chalk.dim(`    Node: ${nodeId} — ${entries.length} entries`))
+
+        let newCount = 0
+        for (const entry of entries) {
+          if (existingIds.has(entry.id)) continue
+
+          if (!opts.dryRun) {
+            shared.addEntry({
+              id: entry.id,
+              date: entry.date,
+              agentId: entry.agentId,
+              source: `${entry.source}@${nodeId}`,  // Tag source with node
+              sourceContext: entry.sourceContext,
+              content: entry.content,
+            })
+            existingIds.add(entry.id)
+          }
+          newCount++
+        }
+
+        if (newCount > 0) {
+          console.log(chalk.green(`    ${newCount} new entries${opts.dryRun ? " (dry run)" : " synced"}`))
+        } else {
+          console.log(chalk.dim("    Already up to date"))
+        }
+
+        totalSynced += newCount
+
+        // Also show remote agents summary
+        try {
+          const agentsRes = await fetch(`${peerUrl}/wiki/agents`, { signal: AbortSignal.timeout(5000) })
+          if (agentsRes.ok) {
+            const agentsData = await agentsRes.json() as any
+            for (const agent of (agentsData.agents || [])) {
+              if (agent.totalEntries > 0) {
+                console.log(chalk.dim(`      ${agent.agentId}: ${agent.totalEntries} entries, ${agent.totalArticles} articles`))
+              }
+            }
+          }
+        } catch { /* optional */ }
+
+      } catch (e: any) {
+        if (e.cause?.code === "ECONNREFUSED") {
+          console.log(chalk.red(`    Connection refused`))
+        } else {
+          console.log(chalk.red(`    ${e.message}`))
+        }
+      }
+    }
+
+    console.log()
+    if (totalSynced > 0 && !opts.dryRun) {
+      console.log(chalk.green(`  ${totalSynced} entries synced. Run 'agentx wiki absorb' to compile.`))
+    } else if (totalSynced > 0) {
+      console.log(chalk.dim(`  ${totalSynced} entries would be synced (dry run)`))
+    } else {
+      console.log(chalk.dim("  All peers up to date"))
+    }
+    console.log()
+  })
