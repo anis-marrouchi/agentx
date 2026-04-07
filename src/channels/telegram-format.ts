@@ -24,7 +24,10 @@ function escapeHtml(text: string): string {
  * Convert standard Markdown (Claude output) to Telegram HTML.
  */
 export function markdownToTelegramHtml(md: string): string {
-  const lines = md.split("\n")
+  // Strip MarkdownV2 escape backslashes that Claude Code sometimes outputs
+  // e.g., \_ → _, \# → #, \| → |, \. → ., \! → !, \- → -, \( → (, \) → )
+  const cleaned = md.replace(/\\([_*\[\]()~`>#+=|{}.!\\-])/g, "$1")
+  const lines = cleaned.split("\n")
   const result: string[] = []
   let inCodeBlock = false
   let codeBlockLang = ""

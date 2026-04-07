@@ -158,6 +158,19 @@ export class MessageRouter {
         }
       : undefined
 
+    // Enrich channelMeta agents with handles from config
+    if (msg.channelMeta?.agents) {
+      for (const agent of msg.channelMeta.agents) {
+        if (!agent.handle) {
+          const def = this.registry.getAgent(agent.id)
+          if (def) {
+            agent.handle = def.mentions.find((m: string) => m.startsWith("@"))
+            agent.name = def.name
+          }
+        }
+      }
+    }
+
     // Build group conversation context (recent messages from the group)
     const groupContext = msg.group ? this.groupLog.buildContext(chatId) : ""
     const messageWithContext = groupContext
@@ -176,6 +189,7 @@ export class MessageRouter {
           mediaPath: msg.media?.path,
           mediaType: msg.media?.type,
           replyToText: msg.replyToText,
+          channelMeta: msg.channelMeta,
         },
       },
       onDelta,
@@ -287,7 +301,10 @@ export class MessageRouter {
         continue
       }
 
-      const mentioned = def.mentions.some((m: string) =>
+      // Only trigger bot-to-bot on explicit @-handle mentions (e.g. @noqta_devops_bot),
+      // not bare keywords like "hackathonat" which appear in normal conversation text.
+      const atMentions = def.mentions.filter((m: string) => m.startsWith("@"))
+      const mentioned = atMentions.some((m: string) =>
         responseText.toLowerCase().includes(m.toLowerCase()),
       )
       if (!mentioned) continue

@@ -254,31 +254,32 @@ function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSu
   const agentSummary = agents.find(a => a.agentId === agentId)
   if (!agentSummary) return pageLayout("Not Found", hubSidebar(agents), "<h1>Agent not found</h1>")
 
-  const store = hub.getAgentWiki(agentId)
+  // Use summary articles (may come from remote peer if it has more)
+  const isRemote = (agentSummary as any).peerUrl !== undefined
   const entries = hub.getAgentEntries(agentId)
-  const unabsorbed = hub.getUnabsorbedEntries(agentId)
-  const index = store.rebuildIndex()
+  const articles = agentSummary.articles || []
 
   let content = `<div class="breadcrumb"><a href="/">Hub</a> / ${escapeHtml(agentId)}</div>`
   content += `<h1>${escapeHtml(agentId)}</h1>`
+  if (isRemote) {
+    content += `<p><span class="tag" style="background:#fff3cd;color:#856404">remote @ ${escapeHtml((agentSummary as any).nodeId)}</span></p>`
+  }
 
   // Stats
   content += '<div class="stats">'
-  content += `<div class="stat-card"><div class="number">${index.articles.length}</div><div class="label">Articles</div></div>`
-  content += `<div class="stat-card"><div class="number">${entries.length}</div><div class="label">Entries</div></div>`
-  content += `<div class="stat-card"><div class="number">${unabsorbed.length}</div><div class="label">Unabsorbed</div></div>`
+  content += `<div class="stat-card"><div class="number">${agentSummary.totalArticles}</div><div class="label">Articles</div></div>`
+  content += `<div class="stat-card"><div class="number">${agentSummary.totalEntries}</div><div class="label">Entries</div></div>`
+  content += `<div class="stat-card"><div class="number">${agentSummary.unabsorbed}</div><div class="label">Unabsorbed</div></div>`
   content += '</div>'
 
   // Articles table
-  if (index.articles.length > 0) {
+  if (articles.length > 0) {
     content += '<h2>Articles</h2><table>'
-    content += '<tr><th>Title</th><th>Type</th><th>Updated</th><th>Sources</th></tr>'
-    for (const a of index.articles) {
+    content += '<tr><th>Title</th><th>Tags</th></tr>'
+    for (const a of articles) {
       content += `<tr>
         <td><a href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td>
-        <td><span class="tag">${(a.tags||[]).slice(0,3).join(", ")}</span></td>
-        <td>${a.lastUpdated || ""}</td>
-        <td>${a.sources?.length || 0}</td>
+        <td>${((a.tags || []) as string[]).slice(0, 4).map(t => `<span class="tag">${t}</span>`).join(" ")}</td>
       </tr>`
     }
     content += '</table>'
@@ -539,12 +540,30 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
         // Hub mode — merge local + remote agents
         const remoteAgents = mesh ? await mesh.getRemoteAgents() : []
         const localAgents = hub.summary()
-        // Merge: local agents + remote-only agents (skip duplicates)
-        const localIds = new Set(localAgents.map(a => a.agentId))
-        const allAgents: AgentWikiSummary[] = [...localAgents]
+        // Merge: prefer whichever has more articles (local or remote)
+        const localMap = new Map(localAgents.map(a => [a.agentId, a]))
+        const allAgents: AgentWikiSummary[] = []
+        const seen = new Set<string>()
+
+        for (const local of localAgents) {
+          const remote = remoteAgents.find(r => r.agentId === local.agentId)
+          if (remote && remote.totalArticles > local.totalArticles) {
+            // Remote has more articles — merge: keep remote articles, combine entry counts
+            allAgents.push({
+              ...remote,
+              totalEntries: Math.max(local.totalEntries, remote.totalEntries),
+              unabsorbed: Math.max(local.unabsorbed, remote.unabsorbed),
+            })
+          } else {
+            allAgents.push(local)
+          }
+          seen.add(local.agentId)
+        }
+        // Add remote-only agents
         for (const remote of remoteAgents) {
-          if (!localIds.has(remote.agentId)) {
-            allAgents.push({ ...remote, agentId: remote.agentId })
+          if (!seen.has(remote.agentId)) {
+            allAgents.push(remote)
+            seen.add(remote.agentId)
           }
         }
 

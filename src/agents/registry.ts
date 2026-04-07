@@ -202,6 +202,7 @@ export class AgentRegistry {
       systemPrompt: state.def.systemPrompt,
       sender: senderName,
       landscape: this.landscape?.getForAgent(task.agentId),
+      channelMeta: task.context?.channelMeta,
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,

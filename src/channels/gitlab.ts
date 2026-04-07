@@ -1,4 +1,4 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 
 // --- GitLab webhook channel adapter ---
@@ -287,6 +287,8 @@ export class GitLabAdapter implements ChannelAdapter {
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
+    const channelMeta = await this.getChannelMeta(chatId)
+
     const incoming: IncomingMessage = {
       id: String(event.object_attributes.id),
       channel: "gitlab",
@@ -300,6 +302,7 @@ export class GitLabAdapter implements ChannelAdapter {
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
+      channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
     }
 
     this.handler(incoming).catch((e) => {
@@ -451,6 +454,43 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     }
     return undefined
+  }
+
+  /**
+   * Get verified context for a GitLab project chat.
+   * chatId format: "project/path:issue:123" or "project/path:merge_request:456"
+   */
+  async getChannelMeta(chatId: string): Promise<ChannelMeta | undefined> {
+    const parts = chatId.split(":")
+    const project = parts[0]
+    const noteableType = parts[1]
+    const noteableIid = parts[2]
+
+    // Find all agents mapped to this project
+    const agents: ChannelMeta["agents"] = []
+    for (const route of this.config.routes) {
+      if (route.project === project || route.project === "*") {
+        agents.push({ id: route.agent, name: route.agent })
+      }
+    }
+    for (const mapping of this.config.agentMappings || []) {
+      if (!agents.some(a => a.id === mapping.agentId)) {
+        agents.push({ id: mapping.agentId, name: mapping.agentId })
+      }
+    }
+
+    const facts: string[] = [
+      "This is a GitLab webhook event — respond as a GitLab comment",
+      "Do NOT use Telegram handles or delegate to other agents",
+    ]
+
+    return {
+      channel: "gitlab",
+      agents,
+      project,
+      issue: noteableType && noteableIid ? { type: noteableType, iid: noteableIid, title: "" } : undefined,
+      facts,
+    }
   }
 
   private async readBody(req: HttpRequest): Promise<Record<string, unknown>> {

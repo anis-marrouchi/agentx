@@ -1,5 +1,7 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
 import { markdownToTelegramHtml } from "./telegram-format"
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
+import { resolve, dirname } from "path"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
@@ -20,11 +22,103 @@ interface TelegramUpdate {
     document?: { file_id: string; file_name?: string; mime_type?: string }
     sticker?: { file_id: string; emoji?: string }
   }
+  my_chat_member?: {
+    chat: { id: number; type: string; title?: string }
+    from: { id: number; first_name: string }
+    new_chat_member: {
+      user: { id: number; username?: string; is_bot?: boolean }
+      status: string // "member" | "administrator" | "left" | "kicked" | "creator"
+    }
+  }
 }
 
 interface TelegramAccountConfig {
   token: string
   agentBinding: string
+}
+
+// --- Persistent group membership store ---
+// Tracks which bots are in which groups, persisted to .agentx/telegram/groups.json
+// Updated via my_chat_member events and one-time API seed per group.
+
+interface GroupMembership {
+  /** groupId → { accountId → { username, status, updatedAt } } */
+  [groupId: string]: {
+    name?: string
+    bots: {
+      [accountId: string]: {
+        username: string
+        agentId: string
+        status: string // "member" | "administrator" | "left" | "kicked"
+        updatedAt: string
+      }
+    }
+  }
+}
+
+class TelegramGroupStore {
+  private data: GroupMembership = {}
+  private filePath: string
+  private dirty = false
+
+  constructor(dataDir: string) {
+    this.filePath = resolve(dataDir, ".agentx/telegram/groups.json")
+    this.load()
+  }
+
+  private load(): void {
+    try {
+      if (existsSync(this.filePath)) {
+        this.data = JSON.parse(readFileSync(this.filePath, "utf-8"))
+      }
+    } catch {
+      this.data = {}
+    }
+  }
+
+  private save(): void {
+    try {
+      mkdirSync(dirname(this.filePath), { recursive: true })
+      writeFileSync(this.filePath, JSON.stringify(this.data, null, 2))
+      this.dirty = false
+    } catch {
+      // best-effort
+    }
+  }
+
+  /** Record a bot's membership status in a group. */
+  setBotStatus(groupId: string, groupName: string | undefined, accountId: string, agentId: string, username: string, status: string): void {
+    if (!this.data[groupId]) {
+      this.data[groupId] = { name: groupName, bots: {} }
+    }
+    if (groupName) this.data[groupId].name = groupName
+    this.data[groupId].bots[accountId] = {
+      username,
+      agentId,
+      status,
+      updatedAt: new Date().toISOString(),
+    }
+    this.dirty = true
+    this.save()
+  }
+
+  /** Get all active bots in a group. */
+  getGroupBots(groupId: string): Array<{ accountId: string; agentId: string; username: string }> {
+    const group = this.data[groupId]
+    if (!group) return []
+    return Object.entries(group.bots)
+      .filter(([, info]) => info.status !== "left" && info.status !== "kicked")
+      .map(([accountId, info]) => ({
+        accountId,
+        agentId: info.agentId,
+        username: info.username,
+      }))
+  }
+
+  /** Check if we have data for a group. */
+  hasGroup(groupId: string): boolean {
+    return !!this.data[groupId]
+  }
 }
 
 export class TelegramAdapter implements ChannelAdapter {
@@ -41,6 +135,7 @@ export class TelegramAdapter implements ChannelAdapter {
   ) {
     this.accounts = new Map(Object.entries(accounts))
     this.log = log
+    this.groupStore = new TelegramGroupStore(process.cwd())
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -58,7 +153,12 @@ export class TelegramAdapter implements ChannelAdapter {
       this.log(`Starting polling for account "${accountId}" (${i + 1}/${entries.length})`)
       try {
         const me = await this.apiCall(config.token, "getMe")
-        this.log(`Bot @${me.result?.username} ready (account: ${accountId})`)
+        const botUserId = me.result?.id
+        const botUsername = me.result?.username
+        this.log(`Bot @${botUsername} ready (account: ${accountId})`)
+        if (botUserId) {
+          this.botInfo.set(accountId, { userId: botUserId, username: botUsername || accountId })
+        }
         this.pollLoop(accountId, config)
       } catch (e: any) {
         this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
@@ -106,6 +206,10 @@ export class TelegramAdapter implements ChannelAdapter {
 
   /** Track which account a chat was last seen on (for DMs) */
   private chatAccountMap: Map<string, string> = new Map()
+  // Bot user IDs and usernames resolved at startup (accountId → { userId, username })
+  private botInfo: Map<string, { userId: number; username: string }> = new Map()
+  // Persistent group membership store
+  private groupStore: TelegramGroupStore
 
   /**
    * Send a message. Returns the sent message ID.
@@ -251,7 +355,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const data = await this.apiCall(config.token, "getUpdates", {
           offset: offset || undefined,
           timeout: 30,
-          allowed_updates: ["message"],
+          allowed_updates: ["message", "my_chat_member"],
         })
 
         const updates: TelegramUpdate[] = data.result || []
@@ -332,6 +436,18 @@ export class TelegramAdapter implements ChannelAdapter {
 
             if (!text) continue
 
+            // Build channel meta for groups (verified bot membership)
+            const isGroup = msg.chat.type !== "private"
+            const groupId = String(msg.chat.id)
+            let channelMeta: ChannelMeta | undefined
+            if (isGroup) {
+              // Seed group membership on first encounter via API
+              if (!this.groupStore.hasGroup(groupId)) {
+                await this.seedGroupMembership(groupId, msg.chat.title)
+              }
+              channelMeta = this.getChannelMeta(groupId)
+            }
+
             const incoming: IncomingMessage = {
               id: String(msg.message_id),
               channel: "telegram",
@@ -341,8 +457,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 name: [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" "),
                 username: msg.from.username,
               },
-              group: msg.chat.type !== "private"
-                ? { id: String(msg.chat.id), name: msg.chat.title || "" }
+              group: isGroup
+                ? { id: groupId, name: msg.chat.title || "" }
                 : undefined,
               text,
               media: mediaInfo,
@@ -354,14 +470,36 @@ export class TelegramAdapter implements ChannelAdapter {
                 : undefined,
               timestamp: new Date(msg.date * 1000),
               raw: update,
+              channelMeta,
             }
 
             // Track chat→account mapping for DM replies
             this.chatAccountMap.set(String(msg.chat.id), accountId)
 
+
             this.handler(incoming).catch((e) => {
               this.log(`Error handling message: ${e.message}`)
             })
+          }
+
+          // Handle bot membership changes (added/removed from group)
+          if (update.my_chat_member) {
+            const mcm = update.my_chat_member
+            const chatId = String(mcm.chat.id)
+            const chatTitle = mcm.chat.title
+            const status = mcm.new_chat_member.status
+            const botUsername = mcm.new_chat_member.user.username || accountId
+
+            this.groupStore.setBotStatus(
+              chatId,
+              chatTitle,
+              accountId,
+              config.agentBinding,
+              botUsername,
+              status,
+            )
+
+            this.log(`Group membership: @${botUsername} is now "${status}" in "${chatTitle || chatId}"`)
           }
         }
         consecutiveErrors = 0
@@ -372,6 +510,68 @@ export class TelegramAdapter implements ChannelAdapter {
         await new Promise((r) => setTimeout(r, backoff))
       }
     }
+  }
+
+  /**
+   * Get verified context for a Telegram chat.
+   * Reads from persistent group store (fed by my_chat_member events + API seed).
+   */
+  getChannelMeta(chatId: string): ChannelMeta | undefined {
+    const bots = this.groupStore.getGroupBots(chatId)
+    if (!bots.length) return undefined
+
+    return {
+      channel: "telegram",
+      agents: bots.map(b => ({
+        id: b.agentId,
+        name: b.username,
+        handle: `@${b.username}`,
+      })),
+      facts: [`${bots.length} bot(s) verified in this group`],
+    }
+  }
+
+  /**
+   * Seed group membership by querying the Telegram API for each bot.
+   * Called once per group on first encounter, then maintained via my_chat_member events.
+   */
+  private async seedGroupMembership(groupId: string, groupTitle?: string): Promise<void> {
+    this.log(`Seeding group membership for "${groupTitle || groupId}"`)
+
+    for (const [accountId, config] of this.accounts) {
+      const info = this.botInfo.get(accountId)
+      if (!info) continue
+
+      try {
+        const res = await this.apiCall(config.token, "getChatMember", {
+          chat_id: Number(groupId),
+          user_id: info.userId,
+        })
+        const status = res.result?.status
+        if (status) {
+          this.groupStore.setBotStatus(
+            groupId,
+            groupTitle,
+            accountId,
+            config.agentBinding,
+            info.username,
+            status,
+          )
+        }
+      } catch {
+        // Bot not in group or API error — record as "left"
+        this.groupStore.setBotStatus(
+          groupId,
+          groupTitle,
+          accountId,
+          config.agentBinding,
+          info.username,
+          "left",
+        )
+      }
+    }
+
+    this.log(`Seeded: ${this.groupStore.getGroupBots(groupId).length} bot(s) in "${groupTitle || groupId}"`)
   }
 
   private async apiCall(

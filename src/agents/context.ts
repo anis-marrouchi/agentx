@@ -72,6 +72,14 @@ export interface ContextInput {
   // Landscape (cached world model from LandscapeBuilder)
   landscape?: string
 
+  // Channel meta (verified facts from the channel adapter — prevents hallucination)
+  channelMeta?: {
+    agents?: Array<{ id: string; name: string; handle?: string }>
+    project?: string
+    issue?: { type: string; iid: string; title: string }
+    facts?: string[]
+  }
+
   // Artifacts
   mediaPath?: string
   mediaType?: string
@@ -296,6 +304,26 @@ function buildScopeLayer(input: ContextInput, maxTokens: number): ContextLayer {
   } else if (input.channelScope === "personal") {
     lines.push("Direct message")
     tags.push("dm")
+  }
+
+  // Inject verified channel metadata (prevents hallucination)
+  if (input.channelMeta) {
+    const meta = input.channelMeta
+    if (meta.agents?.length) {
+      lines.push(`[Verified bots in this chat: ${meta.agents.map(a => a.handle || a.name || a.id).join(", ")}]`)
+      lines.push("Only mention these agents as group members — do NOT assume others are present.")
+    }
+    if (meta.project) {
+      lines.push(`Project: ${meta.project}`)
+    }
+    if (meta.issue) {
+      lines.push(`${meta.issue.type} #${meta.issue.iid}${meta.issue.title ? `: ${meta.issue.title}` : ""}`)
+    }
+    if (meta.facts?.length) {
+      for (const fact of meta.facts) {
+        lines.push(`• ${fact}`)
+      }
+    }
   }
 
   return { name: "scope", priority: 2, maxTokens, content: lines.join("\n"), tags }

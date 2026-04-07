@@ -66,7 +66,7 @@ export class LandscapeBuilder {
 
     // Local team
     const localAgents = Object.entries(this.config.agents).filter(([id]) => id !== selfId)
-    lines.push(`Team (${localAgents.length} agents):`)
+    lines.push(`Available agents on this node (${localAgents.length} — not all may be in the current group):`)
     for (const [id, def] of localAgents) {
       const handle = this.getPrimaryHandle(id)
       const cap = this.extractCapability(def)
@@ -95,6 +95,8 @@ export class LandscapeBuilder {
     const handles = [selfHandle, selfId].filter(Boolean).join(" / ")
     lines.push(`- Only respond when YOU (${handles}) are mentioned or this is a DM to you`)
     lines.push("- If another agent was mentioned and you were NOT, stay silent — they will handle it")
+    lines.push("- The agent list above shows all agents on the node — do NOT assume they are all in the current chat group")
+    lines.push("- When asked about group members, only mention agents you have seen in the conversation history")
     lines.push("- To delegate on Telegram: mention the agent's handle in your response")
     lines.push("- On GitLab: reply directly, no Telegram handles, no delegation")
     lines.push("- On WhatsApp: plain text only, no delegation")

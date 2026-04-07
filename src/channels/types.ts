@@ -1,5 +1,22 @@
 // --- Channel adapter interface ---
 
+/**
+ * Verified channel context — facts the channel adapter knows for certain.
+ * Prevents agents from hallucinating about their environment.
+ */
+export interface ChannelMeta {
+  /** Channel name */
+  channel: string
+  /** Verified agents/bots present in this chat/group/project */
+  agents?: Array<{ id: string; name: string; handle?: string }>
+  /** Project path (GitLab) or group topic */
+  project?: string
+  /** Issue/MR context (GitLab) */
+  issue?: { type: string; iid: string; title: string }
+  /** Channel-specific facts (e.g., pipeline status, group description) */
+  facts?: string[]
+}
+
 export interface IncomingMessage {
   id: string
   channel: string       // "telegram", "whatsapp"
@@ -24,6 +41,7 @@ export interface IncomingMessage {
   }
   raw?: unknown         // original platform message
   resolvedAgent?: string // pre-resolved agent ID (for route-based channels like WhatsApp)
+  channelMeta?: ChannelMeta // verified context from the channel adapter
 }
 
 export interface OutgoingMessage {
@@ -57,4 +75,7 @@ export interface ChannelAdapter {
 
   /** Register handler for incoming messages */
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void
+
+  /** Get verified context for a chat (optional — channels implement what they can) */
+  getChannelMeta?(chatId: string): Promise<ChannelMeta | undefined>
 }

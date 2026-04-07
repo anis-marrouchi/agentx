@@ -32,6 +32,13 @@ export interface AgentTask {
     myHandle?: string
     /** Other available agents and their handles */
     peers?: AgentPeer[]
+    /** Verified channel metadata (from adapter) */
+    channelMeta?: {
+      agents?: Array<{ id: string; name: string; handle?: string }>
+      project?: string
+      issue?: { type: string; iid: string; title: string }
+      facts?: string[]
+    }
   }
 }
 
