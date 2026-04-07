@@ -32,9 +32,12 @@ agentx daemon start        # Start
                     │
             Context Engine
          (8 layers, token-budgeted)
+                    │
+               Wiki (per-agent)
+         (Karpathy LLM knowledge base)
 ```
 
-Each agent = a workspace directory with Claude Code configuration (`.claude/`, `CLAUDE.md`, skills, hooks, MCP servers). AgentX orchestrates when and where agents run.
+Each agent = a workspace directory with Claude Code configuration (`.claude/`, `CLAUDE.md`, skills, hooks, MCP servers). AgentX orchestrates when and where agents run, and each agent builds a compounding personal wiki from its conversations.
 
 ## Features
 
@@ -48,20 +51,64 @@ Each agent = a workspace directory with Claude Code configuration (`.claude/`, `
 ### Core
 - **Multi-agent** — Named agents with custom permissions, concurrency limits, mention-based routing
 - **Context engine** — 8-layer structured context with per-layer token budgets (channel, scope, identity, peers, intent, artifacts, history, wiki)
-- **Wiki knowledge base** — Karpathy/Farzapedia-inspired Markdown wiki with permissions (private/shared/public). Agents compile conversations into articles.
 - **Session continuity** — `--resume SESSION_ID` for Claude Code, conversation history injection for other tiers
 - **Bot-to-bot** — Agents mention each other on Telegram, conversation chains with loop prevention (visited set + max depth)
 - **Group context** — Persistent group conversation log, agents see last 30 messages when mentioned
 - **Media handling** — Photos, voice messages, audio, video, documents downloaded and passed to agent
 - **Reply-to context** — When replying to a message, agent sees the original text
 
+### Wiki Knowledge Base (Karpathy Pattern)
+
+Each agent has its own personal wiki — a compounding knowledge artifact built from conversations. Inspired by [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) approach.
+
+**How it works:**
+1. **Ingest** — Every conversation is saved as a raw entry in `raw/entries/`
+2. **Absorb** — LLM compiles entries into wiki articles with aggressive tagging
+3. **Query** — Agents get relevant context filtered by tags (only MTGL articles when working on MTGL)
+4. **Lint** — Health checks for broken links, orphans, untagged articles
+
+**Key features:**
+- **Worldview** — Edit `worldview.md` to describe YOUR world (company, clients, team). The LLM reads it during absorb.
+- **Aggressive tagging** — Every article tagged with who, what, when, where, how. Section-level tags too (`<!-- tags: runbook, staging -->`).
+- **Gap detection** — Absorb identifies missing puzzle pieces ("MTGL production server mentioned but no article exists")
+- **LLM-chosen structure** — No rigid taxonomy. The LLM decides how to organize files. Structure emerges from data.
+- **Per-agent wikis** — Each agent has its own wiki. Hub view shows all agents.
+- **Wikipedia-style UI** — `agentx wiki serve` renders the wiki as a browsable website
+
+**Karpathy's 4 principles honored:**
+1. **Explicit** — Memory is navigable `.md` files, not hidden in weights
+2. **Yours** — Local files on your machine, not locked in a provider
+3. **File over app** — Universal markdown, Unix-compatible, works with Obsidian
+4. **BYOAI** — Plug in any AI. Absorb uses Sonnet but any model works
+
+```bash
+agentx wiki status                    # Per-agent article/entry counts
+agentx wiki absorb                    # Compile entries → articles (all agents)
+agentx wiki absorb --agent devops     # One agent only
+agentx wiki absorb --dry-run          # Preview without running
+agentx wiki serve                     # Browse at http://localhost:4200
+agentx wiki serve --agent devops      # Single agent view
+agentx wiki lint                      # Health check
+agentx wiki entries                   # List raw entries
+agentx wiki search "deploy"           # Search across all agent wikis
+```
+
+### Token Usage
+
+Real token counts from Claude's JSON output (not estimates). Cache hit ratios, per-agent breakdowns.
+
+```bash
+agentx usage                          # Today's summary from daemon
+agentx usage report                   # Full session analysis (parses JSONL)
+```
+
 ### Operations
 - **Cron scheduler** — Timezone-aware recurring tasks with run logging
 - **A2A mesh** — Cross-machine agent communication over Tailscale/VPN
 - **Rate limiting** — Per-agent, 10/min, 100/hour (configurable)
-- **Token tracking** — Estimated tokens per agent per day, 7-day summaries
+- **Token tracking** — Real token counts per agent per day, cache hit ratios, 7-day summaries
 - **Process management** — PID file, graceful shutdown, uncaught exception handlers
-- **72 unit tests** — Config, sessions, wiki, group log, context engine, telegram format
+- **83 unit tests** — Config, sessions, wiki, group log, context engine, telegram format, token tracker
 
 ## CLI Commands
 
@@ -74,6 +121,22 @@ agentx daemon logs [-f]              # Tail logs
 agentx daemon send <agent> <msg>     # Send task to agent
 agentx daemon send <agent> <msg> --peer server-2  # Remote agent
 agentx daemon deploy <host> -i key [--restart]    # Deploy (runs tests first)
+```
+
+### Wiki
+```bash
+agentx wiki status                   # Per-agent wiki status
+agentx wiki absorb [--agent X]       # Compile entries into articles
+agentx wiki serve [--agent X]        # Wikipedia-style web UI
+agentx wiki lint [--agent X]         # Health check
+agentx wiki entries [--agent X]      # List raw entries
+agentx wiki search <query>           # Search articles
+```
+
+### Usage
+```bash
+agentx usage                         # Token usage summary
+agentx usage report [--days 7]       # Full JSONL analysis
 ```
 
 ### Management
@@ -139,10 +202,6 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
       "routes": [
         { "project": "team/project-a", "agent": "pm-a" },
         { "project": "*", "agent": "atlas" }
-      ],
-      "agentMappings": [
-        { "agentId": "coder", "gitlabUsernames": ["coder-bot"], "keywords": ["coder"] },
-        { "agentId": "devops", "gitlabUsernames": ["devops-bot"], "keywords": ["deploy"] }
       ]
     }
   },
@@ -179,7 +238,7 @@ Every agent prompt is built from 8 structured layers, each with a token budget:
 | Intent | 5 | 200 | Extracted from message: deploy, review, bugfix... |
 | Artifacts | 6 | 500 | Media, reply-to text, issue/MR references |
 | History | 7 | 1200 | Group conversation or session history |
-| Wiki | 8 | 1000 | Relevant knowledge articles |
+| Wiki | 8 | 1000 | Tag-matched knowledge articles |
 
 Total budget: 4000 tokens. Lower layers truncated if over budget.
 
@@ -232,8 +291,9 @@ agentx migrate openclaw    # Auto-imports agents, channels, crons, skills
 - **WhatsApp assistant** — message yourself, agent replies in self-chat
 - **Scheduled content** — cron jobs generate blog posts, reports, social media drafts
 - **Multi-machine swarm** — agents on MacBook + server collaborate via mesh
-- **Webhook automation** — Sentry error → DevOps agent investigates, Stripe payment → billing agent processes
+- **Webhook automation** — Sentry error -> DevOps agent investigates, Stripe payment -> billing agent processes
 - **Bot-to-bot delegation** — Nadia mentions @devops, DevOps picks up and responds
+- **Personal wiki** — Every conversation compounds into searchable, tag-filtered knowledge
 
 ## Legal
 
