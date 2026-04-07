@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { WikiStore } from "@/wiki"
+import { startWikiServer } from "@/wiki/serve"
 import { resolve } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync } from "fs"
@@ -261,6 +262,27 @@ wiki
       console.log(chalk.dim(`  ... showing last 20 of ${entries.length}`))
     }
     console.log()
+  })
+
+// agentx wiki serve — Wikipedia-style web preview
+wiki
+  .command("serve")
+  .description("start a local web server to browse the wiki like Wikipedia")
+  .option("--dir <path>", "wiki directory")
+  .option("--port <n>", "port number", "4200")
+  .action((opts) => {
+    const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
+    const port = parseInt(opts.port)
+
+    console.log()
+    console.log(chalk.bold("  AgentX Wiki Server"))
+    console.log()
+    console.log(`  ${chalk.green(">")} http://localhost:${port}`)
+    console.log(chalk.dim(`  Wiki: ${dir}`))
+    console.log(chalk.dim("  Press Ctrl+C to stop"))
+    console.log()
+
+    startWikiServer(dir, port)
   })
 
 // agentx wiki search <query>
