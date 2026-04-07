@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
+import { wikiTypeLabel, WIKI_TYPES } from "./types"
 import type { AgentWikiSummary } from "./hub"
 
 // --- Lightweight Markdown → HTML (no deps) ---
@@ -154,6 +155,27 @@ function pageLayout(title: string, sidebar: string, content: string): string {
 
 // --- Hub Mode (all agents) ---
 
+function groupByType(articles: Array<{ title: string; path: string; type: string }>): Map<string, typeof articles> {
+  // Use canonical type order
+  const typeOrder = Object.keys(WIKI_TYPES)
+  const byType = new Map<string, typeof articles>()
+  for (const a of articles) {
+    const list = byType.get(a.type) || []
+    list.push(a)
+    byType.set(a.type, list)
+  }
+  // Sort by canonical order
+  const sorted = new Map<string, typeof articles>()
+  for (const t of typeOrder) {
+    if (byType.has(t)) sorted.set(t, byType.get(t)!)
+  }
+  // Add any remaining types not in canonical list
+  for (const [t, articles] of byType) {
+    if (!sorted.has(t)) sorted.set(t, articles)
+  }
+  return sorted
+}
+
 function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
   let html = '<a href="/" class="logo">AgentX Wiki</a>'
   html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search all wikis..."></form>'
@@ -162,12 +184,18 @@ function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
   html += '<a href="/entries">All Entries</a>'
 
   for (const agent of agents) {
-    html += `<h2>${escapeHtml(agent.agentId)}</h2>`
-    html += `<a href="/agent/${encodeURIComponent(agent.agentId)}">Overview <span class="agent-badge">${agent.totalArticles}</span></a>`
-    for (const a of agent.articles) {
-      const path = `${agent.agentId}/${a.path}`
-      const isActive = path === activePath
-      html += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''}>${escapeHtml(a.title)}</a>`
+    const agentPrefix = `/agent/${encodeURIComponent(agent.agentId)}`
+    html += `<h2><a href="${agentPrefix}" style="color:inherit;text-decoration:none">${escapeHtml(agent.agentId)}</a> <span class="agent-badge">${agent.totalArticles}</span></h2>`
+
+    // Group articles by type
+    const byType = groupByType(agent.articles)
+    for (const [type, articles] of byType) {
+      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${wikiTypeLabel(type)}</div>`
+      for (const a of articles) {
+        const fullPath = `${agent.agentId}/${a.path}`
+        const isActive = fullPath === activePath
+        html += `<a href="${agentPrefix}/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''} style="padding-left:16px;font-size:13px">${escapeHtml(a.title)}</a>`
+      }
     }
   }
 
@@ -385,17 +413,7 @@ function hubSearch(hub: WikiHub, query: string): string {
 
 function agentSidebar(store: WikiStore, agentId: string, activePath?: string): string {
   const index = store.rebuildIndex()
-  const byType = new Map<string, typeof index.articles>()
-  for (const a of index.articles) {
-    const list = byType.get(a.type) || []
-    list.push(a)
-    byType.set(a.type, list)
-  }
-
-  const typeLabels: Record<string, string> = {
-    project: "Projects", concept: "Concepts", process: "Processes", decision: "Decisions",
-    person: "People", pattern: "Patterns", incident: "Incidents", report: "Reports",
-  }
+  const byType = groupByType(index.articles.map(a => ({ title: a.title, path: a.path, type: a.type })))
 
   let html = `<a href="/" class="logo">${escapeHtml(agentId)}</a>`
   html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search..."></form>'
@@ -404,7 +422,7 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
   html += '<a href="/lint">Health Check</a>'
 
   for (const [type, articles] of byType) {
-    html += `<h2>${typeLabels[type] || type}</h2>`
+    html += `<h2>${wikiTypeLabel(type)}</h2>`
     for (const a of articles) {
       const isActive = a.path === activePath
       html += `<a href="/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''}>${escapeHtml(a.title)}</a>`

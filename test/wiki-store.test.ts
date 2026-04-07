@@ -85,8 +85,8 @@ describe("WikiStore", () => {
         sources: [],
       }
 
-      store.writeArticle("private/mine.md", meta, "secret", "atlas")
-      const denied = store.writeArticle("private/mine.md", meta, "hacked", "nadia")
+      store.writeArticle("concepts/mine.md", meta, "secret", "atlas")
+      const denied = store.writeArticle("concepts/mine.md", meta, "hacked", "nadia")
       expect(denied).toBe(false)
     })
 
@@ -102,10 +102,10 @@ describe("WikiStore", () => {
         sources: [],
       }
 
-      store.writeArticle("private/secret.md", meta, "secret content", "atlas")
+      store.writeArticle("concepts/secret.md", meta, "secret content", "atlas")
 
-      expect(store.readArticleAs("private/secret.md", "atlas")).not.toBeNull()
-      expect(store.readArticleAs("private/secret.md", "nadia")).toBeNull()
+      expect(store.readArticleAs("concepts/secret.md", "atlas")).not.toBeNull()
+      expect(store.readArticleAs("concepts/secret.md", "nadia")).toBeNull()
     })
 
     it("allows shared access", () => {
@@ -148,7 +148,7 @@ describe("WikiStore", () => {
     })
 
     it("respects permissions in search", () => {
-      store.writeArticle("private/secret.md", {
+      store.writeArticle("concepts/secret.md", {
         title: "Secret Plan",
         type: "concept",
         owner: "atlas",

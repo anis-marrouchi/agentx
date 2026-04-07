@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
-import { resolve, join, relative, dirname } from "path"
+import { resolve, join, relative, dirname, basename } from "path"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
+import { wikiTypeDir } from "./types"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -141,14 +142,19 @@ export class WikiStore {
     content: string,
     agentId: string,
   ): boolean {
-    // Check write permission if article exists
-    const existing = this.readArticle(path)
+    // Enforce type → directory hierarchy
+    const expectedDir = wikiTypeDir(meta.type)
+    const fileName = basename(path)
+    const canonicalPath = `${expectedDir}/${fileName}`
+
+    // Check write permission if article exists (check both original and canonical path)
+    const existing = this.readArticle(canonicalPath) || this.readArticle(path)
     if (existing && !this.canWrite(existing.meta, agentId)) {
-      this.log(`Permission denied: "${agentId}" cannot write "${path}" (owner: ${existing.meta.owner})`)
+      this.log(`Permission denied: "${agentId}" cannot write "${canonicalPath}" (owner: ${existing.meta.owner})`)
       return false
     }
 
-    const fullPath = resolve(this.baseDir, path)
+    const fullPath = resolve(this.baseDir, canonicalPath)
     mkdirSync(dirname(fullPath), { recursive: true })
 
     const frontmatter = [
@@ -174,7 +180,7 @@ export class WikiStore {
 
     writeFileSync(fullPath, frontmatter.join("\n"))
     const action = existing ? "update" : "create"
-    this.appendLog(action, `${meta.title} (${meta.type}) by ${agentId} at ${path}`)
+    this.appendLog(action, `${meta.title} (${meta.type}) by ${agentId} at ${canonicalPath}`)
     return true
   }
 
@@ -531,22 +537,40 @@ export class WikiStore {
 
 This file defines how agents operate on this wiki. Read this before any wiki operation.
 
-## Structure
+## Structure (enforced hierarchy)
+
+Every article belongs to exactly ONE type. The type determines the directory.
+This hierarchy is enforced — articles are auto-routed to the correct directory.
 
 \`\`\`
-.agentx/wiki/
-  _schema.md       # This file — conventions and workflows
-  _index.json      # Machine-readable index
-  WIKI.md          # Human-readable index
-  log.md           # Chronological operation log (append-only)
-  raw/entries/     # Immutable raw sources (conversations, imports)
-  projects/        # Project knowledge
-  people/          # People and relationships
-  decisions/       # Key decisions with reasoning
-  patterns/        # Recurring patterns and insights
-  concepts/        # Technical concepts
-  {new dirs}/      # Create as needed — directories emerge from data
+wiki/
+  _schema.md        # This file
+  _index.json       # Machine-readable index
+  WIKI.md           # Human-readable index
+  log.md            # Chronological operation log (append-only)
+  raw/entries/      # Immutable raw sources (conversations, imports)
+  concepts/         # What things ARE — definitions, architecture, identity
+  projects/         # What we're BUILDING — active work, deliverables
+  processes/        # How we DO things — workflows, runbooks, procedures
+  decisions/        # Why we CHOSE — key decisions with reasoning and tradeoffs
+  patterns/         # What RECURS — recurring behaviors, templates, anti-patterns
+  people/           # Who's WHO — team members, agents, stakeholders
+  incidents/        # What BROKE — outages, bugs, post-mortems
+  reports/          # What HAPPENED — briefs, summaries, metrics snapshots
 \`\`\`
+
+### Type Guide
+
+| Type | Directory | Use when... |
+|------|-----------|------------|
+| concept | concepts/ | Explaining what something IS (agent identity, architecture) |
+| project | projects/ | Tracking active work or deliverables |
+| process | processes/ | Documenting how to DO something (deploy, review, onboard) |
+| decision | decisions/ | Recording a choice and its reasoning |
+| pattern | patterns/ | Capturing recurring behavior or templates |
+| person | people/ | Documenting a person, agent, or team |
+| incident | incidents/ | Post-mortem or issue investigation |
+| report | reports/ | Periodic summary, metrics, or status update |
 
 ## Conventions
 

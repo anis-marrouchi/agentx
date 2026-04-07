@@ -138,27 +138,45 @@ wiki
         `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
       ).join("\n\n")
 
-      const prompt = `You are a wiki editor compiling knowledge for the "${agentId}" agent. Read these ${unabsorbed.length} conversation entries and produce structured wiki articles.
+      const prompt = `You are a wiki editor compiling knowledge for the "${agentId}" agent.
+
+## Enforced Directory Hierarchy
+
+Every article MUST have exactly one type. The type determines the directory:
+
+| type | directory | use when |
+|------|-----------|----------|
+| concept | concepts/ | What something IS — definitions, architecture, identity |
+| project | projects/ | What we're BUILDING — active work, deliverables |
+| process | processes/ | How we DO things — workflows, runbooks, deploy steps |
+| decision | decisions/ | Why we CHOSE — key decisions with reasoning |
+| pattern | patterns/ | What RECURS — recurring behaviors, templates |
+| person | people/ | Who's WHO — team members, agents, stakeholders |
+| incident | incidents/ | What BROKE — outages, bugs, investigations |
+| report | reports/ | What HAPPENED — briefs, summaries, metrics |
+
+The path MUST match: "<type-directory>/<slug>.md" (e.g., "concepts/agent-identity.md")
 ${existingList}
-Rules:
+## Rules
+
 1. Group related entries into articles by topic
-2. Synthesize information — don't just copy-paste conversations
+2. Synthesize information — distill conversations into factual wiki content
 3. Use wikilinks [[Article Title]] to cross-reference related articles
 4. If an existing article covers the topic, produce an UPDATE with the full merged content
-5. Output ONLY valid JSON — no markdown fencing, no explanation
+5. Choose the MOST SPECIFIC type — "how to deploy" is a process, "what is X" is a concept, "weekly metrics" is a report
+6. Output ONLY valid JSON — no markdown fencing, no explanation
 
-Output format (JSON array):
+## Output format (JSON array)
+
 [
   {
-    "path": "projects/example.md",
-    "title": "Example Article",
+    "path": "processes/deploy-staging.md",
+    "title": "Deploy to Staging",
     "type": "process",
-    "content": "Synthesized content here...",
+    "content": "Synthesized wiki content here...\\n\\nSee also [[MTGL Project]]",
     "sources": ["entry-id-1", "entry-id-2"]
   }
 ]
-
-Valid types: concept, process, project, decision, person, pattern, incident, report
 
 ENTRIES:
 
@@ -176,7 +194,7 @@ ${entryTexts}`
         let rawOutput: string
         try {
           rawOutput = execSync(
-            `cat '${promptPath}' | claude -p - --output-format json --max-turns 5`,
+            `cat '${promptPath}' | claude -p - --output-format json --max-turns 2 --disallowedTools "Bash,Read,Write,Edit,Glob,Grep,Agent"`,
             { encoding: "utf-8", timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
@@ -184,24 +202,55 @@ ${entryTexts}`
           if (!rawOutput) throw execErr
         }
 
-        let responseText: string
+        // Parse Claude's response — may be JSON envelope or raw text
+        let responseText = rawOutput
+
+        // Try to extract "result" from Claude's JSON envelope
         try {
-          const jsonOut = JSON.parse(rawOutput)
-          responseText = jsonOut.result || jsonOut.content || rawOutput
+          const envelope = JSON.parse(rawOutput)
+          responseText = envelope.result || envelope.content || ""
+          if (!responseText) {
+            console.log(chalk.dim(`    Claude envelope keys: ${Object.keys(envelope).join(", ")}`))
+            console.log(chalk.dim(`    is_error: ${envelope.is_error}, stop_reason: ${envelope.stop_reason}`))
+          }
         } catch {
-          responseText = rawOutput
+          // Not a JSON envelope — use as-is
         }
 
-        const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-        if (!jsonMatch) {
-          console.log(chalk.red(`    Claude didn't return valid JSON`))
-          console.log(chalk.dim(responseText.slice(0, 300)))
+        // Find the JSON array in the response text
+        // Use a balanced bracket approach to find the outermost array
+        let arrayStart = responseText.indexOf("[")
+        if (arrayStart === -1) {
+          console.log(chalk.red(`    No JSON array found in response`))
+          console.log(chalk.dim(responseText.slice(0, 500)))
           continue
         }
 
-        const articles = JSON.parse(jsonMatch[0]) as Array<{
-          path: string; title: string; type: string; content: string; sources: string[]
-        }>
+        // Find matching closing bracket
+        let depth = 0
+        let arrayEnd = -1
+        for (let i = arrayStart; i < responseText.length; i++) {
+          if (responseText[i] === "[") depth++
+          else if (responseText[i] === "]") {
+            depth--
+            if (depth === 0) { arrayEnd = i + 1; break }
+          }
+        }
+
+        if (arrayEnd === -1) {
+          console.log(chalk.red(`    Unbalanced JSON array`))
+          continue
+        }
+
+        const jsonStr = responseText.slice(arrayStart, arrayEnd)
+        let articles: Array<{ path: string; title: string; type: string; content: string; sources: string[] }>
+        try {
+          articles = JSON.parse(jsonStr)
+        } catch (parseErr: any) {
+          console.log(chalk.red(`    JSON parse error: ${parseErr.message}`))
+          console.log(chalk.dim(`    First 300 chars: ${jsonStr.slice(0, 300)}`))
+          continue
+        }
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)

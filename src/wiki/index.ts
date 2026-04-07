@@ -1,4 +1,5 @@
 export { WikiStore } from "./store"
 export { WikiHub } from "./hub"
 export type { AgentWikiSummary } from "./hub"
-export type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
+export { WIKI_TYPES, wikiTypeDir, wikiTypeLabel } from "./types"
+export type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess, WikiType } from "./types"
