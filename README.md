@@ -57,23 +57,38 @@ Each agent = a workspace directory with Claude Code configuration (`.claude/`, `
 - **Media handling** — Photos, voice messages, audio, video, documents downloaded and passed to agent
 - **Reply-to context** — When replying to a message, agent sees the original text
 
-### Wiki Knowledge Base (Karpathy Pattern)
+### Wiki Knowledge Base
 
-Each agent has its own personal wiki — a compounding knowledge artifact built from conversations. Inspired by [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) approach.
+Each agent has its own personal wiki — a compounding knowledge artifact built from conversations. Inspired by [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) approach, extended with entity-aware gap detection and mesh federation.
 
 **How it works:**
 1. **Ingest** — Every conversation is saved as a raw entry in `raw/entries/`
-2. **Absorb** — LLM compiles entries into wiki articles with aggressive tagging
+2. **Absorb** — LLM compiles entries into wiki articles with aggressive tagging and gap detection
 3. **Query** — Agents get relevant context filtered by tags (only MTGL articles when working on MTGL)
 4. **Lint** — Health checks for broken links, orphans, untagged articles
+5. **Sync** — Pull entries from mesh peers; federated wiki view across machines
+
+**Three compilation modes** (`--mode`):
+
+| Mode | Default | Strategy | Best at |
+|------|---------|----------|---------|
+| `unified` | Yes | Flat tags + entity thinking | Tag density (7.9/article), article count, gap specificity |
+| `flat` | No | Karpathy pure — tags only, LLM-chosen paths | Simplicity, directory spread |
+| `graph` | No | Knowledge graph — hierarchy, entities, events | Deep hierarchy, entity-level gaps |
+
+Same raw entries, separate article stores per mode. Compare deterministically:
+```bash
+agentx wiki compare --agent devops    # Side-by-side stats for all 3 modes
+```
 
 **Key features:**
 - **Worldview** — Edit `worldview.md` to describe YOUR world (company, clients, team). The LLM reads it during absorb.
-- **Aggressive tagging** — Every article tagged with who, what, when, where, how. Section-level tags too (`<!-- tags: runbook, staging -->`).
-- **Gap detection** — Absorb identifies missing puzzle pieces ("MTGL production server mentioned but no article exists")
+- **Aggressive tagging** — Every article tagged with who, what, when, where, how (min 6 tags). Section-level tags too (`<!-- tags: runbook, staging -->`).
+- **Gap detection** — Absorb identifies missing puzzle pieces with specificity ("Seif al-Arabi — MTGL stakeholder, issues deploy instructions via Telegram, no profile article")
 - **LLM-chosen structure** — No rigid taxonomy. The LLM decides how to organize files. Structure emerges from data.
 - **Per-agent wikis** — Each agent has its own wiki. Hub view shows all agents.
-- **Wikipedia-style UI** — `agentx wiki serve` renders the wiki as a browsable website
+- **Mesh federation** — `wiki sync` pulls entries from peers. `wiki serve --peer` shows remote articles live.
+- **Wikipedia-style UI** — `agentx wiki serve` renders the wiki as a browsable website with remote article support.
 
 **Karpathy's 4 principles honored:**
 1. **Explicit** — Memory is navigable `.md` files, not hidden in weights
@@ -85,9 +100,12 @@ Each agent has its own personal wiki — a compounding knowledge artifact built 
 agentx wiki status                    # Per-agent article/entry counts
 agentx wiki absorb                    # Compile entries → articles (all agents)
 agentx wiki absorb --agent devops     # One agent only
+agentx wiki absorb --mode flat        # Karpathy pure mode
 agentx wiki absorb --dry-run          # Preview without running
 agentx wiki serve                     # Browse at http://localhost:4200
-agentx wiki serve --agent devops      # Single agent view
+agentx wiki serve --peer http://...   # Federated view with mesh peers
+agentx wiki sync --peer http://...    # Pull entries from mesh peer
+agentx wiki compare --agent devops    # Compare all 3 modes side-by-side
 agentx wiki lint                      # Health check
 agentx wiki entries                   # List raw entries
 agentx wiki search "deploy"           # Search across all agent wikis
@@ -125,12 +143,15 @@ agentx daemon deploy <host> -i key [--restart]    # Deploy (runs tests first)
 
 ### Wiki
 ```bash
-agentx wiki status                   # Per-agent wiki status
-agentx wiki absorb [--agent X]       # Compile entries into articles
-agentx wiki serve [--agent X]        # Wikipedia-style web UI
+agentx wiki status [--mode M]        # Per-agent wiki status
+agentx wiki absorb [--agent X] [--mode M]  # Compile entries → articles
+agentx wiki serve [--mode M] [--peer URL]  # Wikipedia-style web UI (federated)
+agentx wiki sync [--peer URL]        # Pull entries from mesh peers
+agentx wiki compare --agent X        # Compare all 3 modes side-by-side
 agentx wiki lint [--agent X]         # Health check
 agentx wiki entries [--agent X]      # List raw entries
 agentx wiki search <query>           # Search articles
+# Modes: unified (default), flat, graph
 ```
 
 ### Usage
