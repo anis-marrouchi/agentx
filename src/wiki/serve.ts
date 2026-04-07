@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
-import { nodeKindLabel, NODE_KINDS } from "./types"
+// No rigid types — structure emerges from data
 import type { AgentWikiSummary } from "./hub"
 
 // --- Lightweight Markdown → HTML (no deps) ---
@@ -155,25 +155,20 @@ function pageLayout(title: string, sidebar: string, content: string): string {
 
 // --- Hub Mode (all agents) ---
 
-function groupByKind(articles: Array<{ title: string; path: string; kind: string }>): Map<string, typeof articles> {
-  // Use canonical type order
-  const typeOrder = Object.keys(NODE_KINDS)
-  const byType = new Map<string, typeof articles>()
+function groupByDir(articles: Array<{ title: string; path: string; tags?: string[] }>): Map<string, typeof articles> {
+  const byDir = new Map<string, typeof articles>()
   for (const a of articles) {
-    const list = byType.get(a.kind) || []
+    const dir = a.path.includes("/") ? a.path.split("/").slice(0, -1).join("/") : "/"
+    const list = byDir.get(dir) || []
     list.push(a)
-    byType.set(a.kind, list)
+    byDir.set(dir, list)
   }
-  // Sort by canonical order
-  const sorted = new Map<string, typeof articles>()
-  for (const t of typeOrder) {
-    if (byType.has(t)) sorted.set(t, byType.get(t)!)
-  }
-  // Add any remaining types not in canonical list
-  for (const [t, articles] of byType) {
-    if (!sorted.has(t)) sorted.set(t, articles)
-  }
-  return sorted
+  return new Map([...byDir].sort((a, b) => a[0].localeCompare(b[0])))
+}
+
+function dirLabel(dir: string): string {
+  if (dir === "/") return "Root"
+  return dir.split("/").pop()!.replace(/-/g, " ")
 }
 
 function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
@@ -188,9 +183,9 @@ function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
     html += `<h2><a href="${agentPrefix}" style="color:inherit;text-decoration:none">${escapeHtml(agent.agentId)}</a> <span class="agent-badge">${agent.totalArticles}</span></h2>`
 
     // Group articles by type
-    const byType = groupByKind(agent.articles)
+    const byType = groupByDir(agent.articles)
     for (const [type, articles] of byType) {
-      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${nodeKindLabel(type)}</div>`
+      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${dirLabel(type)}</div>`
       for (const a of articles) {
         const fullPath = `${agent.agentId}/${a.path}`
         const isActive = fullPath === activePath
@@ -237,7 +232,7 @@ function hubHome(hub: WikiHub): string {
     if (agent.articles.length > 0) {
       content += '<div class="article-list">'
       for (const a of agent.articles) {
-        content += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"><span class="tag">${a.kind}</span> ${escapeHtml(a.title)}</a> `
+        content += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"><span class="tag">${(a.tags||[]).slice(0,3).join(", ")}</span> ${escapeHtml(a.title)}</a> `
       }
       content += '</div>'
     }
@@ -274,7 +269,7 @@ function hubAgentOverview(hub: WikiHub, agentId: string): string {
     for (const a of index.articles) {
       content += `<tr>
         <td><a href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td>
-        <td><span class="tag">${a.kind}</span></td>
+        <td><span class="tag">${(a.tags||[]).slice(0,3).join(", ")}</span></td>
         <td>${a.lastUpdated || ""}</td>
         <td>${a.sources?.length || 0}</td>
       </tr>`
@@ -327,7 +322,7 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string): str
 
   // Meta box
   content += '<dl class="meta">'
-  content += `<dt>Type</dt><dd><span class="tag">${article.meta.kind}</span></dd>`
+  content += `<dt>Tags</dt><dd>${(article.meta.tags||[]).map(t => `<span class="tag">${t}</span>`).join(" ")}</dd>`
   content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
   content += `<dt>Created</dt><dd>${article.meta.created}</dd>`
   content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
@@ -395,7 +390,7 @@ function hubSearch(hub: WikiHub, query: string): string {
       for (const r of results) {
         const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
         content += `<div class="entry-card">
-          <div class="meta-line"><span class="tag">${r.meta.kind}</span></div>
+          <div class="meta-line">${(r.meta.tags||[]).slice(0,3).map(t => `<span class="tag">${t}</span>`).join(" ")}</div>
           <h3><a href="${prefix}/article/${encodeURIComponent(r.path)}">${escapeHtml(r.meta.title)}</a></h3>
           <p>${escapeHtml(r.content.slice(0, 200))}...</p>
         </div>`
@@ -413,7 +408,7 @@ function hubSearch(hub: WikiHub, query: string): string {
 
 function agentSidebar(store: WikiStore, agentId: string, activePath?: string): string {
   const index = store.rebuildIndex()
-  const byType = groupByKind(index.articles.map(a => ({ title: a.title, path: a.path, kind: a.kind })))
+  const byType = groupByDir(index.articles.map(a => ({ title: a.title, path: a.path, tags: a.tags })))
 
   let html = `<a href="/" class="logo">${escapeHtml(agentId)}</a>`
   html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search..."></form>'
@@ -422,7 +417,7 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
   html += '<a href="/lint">Health Check</a>'
 
   for (const [type, articles] of byType) {
-    html += `<h2>${nodeKindLabel(type)}</h2>`
+    html += `<h2>${dirLabel(type)}</h2>`
     for (const a of articles) {
       const isActive = a.path === activePath
       html += `<a href="/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''}>${escapeHtml(a.title)}</a>`
@@ -460,7 +455,7 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
           if (index.articles.length > 0) {
             content += '<h2>Articles</h2><table><tr><th>Title</th><th>Type</th><th>Updated</th></tr>'
             for (const a of index.articles) {
-              content += `<tr><td><a href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td><td><span class="tag">${a.kind}</span></td><td>${a.lastUpdated || ""}</td></tr>`
+              content += `<tr><td><a href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td><td><span class="tag">${(a.tags||[]).slice(0,3).join(", ")}</span></td><td>${a.lastUpdated || ""}</td></tr>`
             }
             content += '</table>'
           }
@@ -474,7 +469,7 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
             for (const a of index.articles) titleToPath.set(a.title, a.path)
             let content = `<h1>${escapeHtml(article.meta.title)}</h1>`
             content += '<dl class="meta">'
-            content += `<dt>Type</dt><dd><span class="tag">${article.meta.kind}</span></dd>`
+            content += `<dt>Tags</dt><dd>${(article.meta.tags||[]).map(t => `<span class="tag">${t}</span>`).join(" ")}</dd>`
             content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
             if (article.meta.sources?.length) content += `<dt>Sources</dt><dd>${article.meta.sources.length} entries</dd>`
             content += '</dl>'

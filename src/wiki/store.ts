@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
-import { resolve, join, relative, dirname, basename } from "path"
-import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess, WikiTreeNode } from "./types"
-import { wikiTypeDir } from "./types"
+import { resolve, join, relative, dirname } from "path"
+import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -142,7 +141,7 @@ export class WikiStore {
     content: string,
     agentId: string,
   ): boolean {
-    // Path IS the hierarchy — no remapping. Path = position in the knowledge graph.
+    // LLM picks the path. We just write the file.
     const existing = this.readArticle(path)
     if (existing && !this.canWrite(existing.meta, agentId)) {
       this.log(`Permission denied: "${agentId}" cannot write "${path}" (owner: ${existing.meta.owner})`)
@@ -152,44 +151,26 @@ export class WikiStore {
     const fullPath = resolve(this.baseDir, path)
     mkdirSync(dirname(fullPath), { recursive: true })
 
-    // Support both old "type" and new "kind" field
-    const kind = meta.kind || (meta as any).type || "concept"
-
     const frontmatter = [
       "---",
       `title: "${meta.title}"`,
-      `kind: ${kind}`,
-    ]
-    if (meta.parent) frontmatter.push(`parent: ${meta.parent}`)
-    frontmatter.push(
+      `tags: [${(meta.tags || []).map(t => `"${t}"`).join(", ")}]`,
       `owner: ${meta.owner}`,
       `access: ${meta.access}`,
-    )
+    ]
     if (meta.sharedWith?.length) {
       frontmatter.push(`shared_with: [${meta.sharedWith.map(s => `"${s}"`).join(", ")}]`)
     }
     frontmatter.push(
       `created: ${meta.created}`,
       `last_updated: ${meta.lastUpdated}`,
-    )
-    if (meta.refs?.length) {
-      frontmatter.push(`refs: [${meta.refs.map(r => `"${r}"`).join(", ")}]`)
-    }
-    frontmatter.push(
       `sources: [${meta.sources.map(s => `"${s}"`).join(", ")}]`,
     )
-    if (meta.tags?.length) {
-      frontmatter.push(`tags: [${meta.tags.map(t => `"${t}"`).join(", ")}]`)
-    }
-    if (meta.date) frontmatter.push(`date: ${meta.date}`)
-    if (meta.involves?.length) {
-      frontmatter.push(`involves: [${meta.involves.map(i => `"${i}"`).join(", ")}]`)
-    }
     frontmatter.push("---", "", content)
 
     writeFileSync(fullPath, frontmatter.join("\n"))
     const action = existing ? "update" : "create"
-    this.appendLog(action, `${meta.title} (${kind}) by ${agentId} at ${path}`)
+    this.appendLog(action, `${meta.title} [${(meta.tags || []).slice(0, 5).join(", ")}] by ${agentId} at ${path}`)
     return true
   }
 
@@ -232,21 +213,24 @@ export class WikiStore {
       return m[1].split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
     }
 
+    // Collect tags from all legacy fields + explicit tags
+    const tags = [
+      ...getArray("tags"),
+      // Pull legacy fields into tags for backwards compat
+      ...(get("kind") ? [get("kind")] : []),
+      ...(get("type") ? [get("type")] : []),
+    ].filter((v, i, a) => v && a.indexOf(v) === i) // dedupe
+
     return {
       meta: {
         title: get("title"),
-        kind: get("kind") || get("type") || "concept",  // "kind" is primary, "type" is legacy fallback
-        parent: get("parent") || undefined,
+        tags,
         owner: get("owner"),
         access: (get("access") as WikiAccess) || "public",
         sharedWith: getArray("shared_with"),
         created: get("created"),
         lastUpdated: get("last_updated"),
-        refs: getArray("refs") || getArray("related"),  // "refs" is primary, "related" is legacy
         sources: getArray("sources"),
-        tags: getArray("tags"),
-        date: get("date") || undefined,
-        involves: getArray("involves"),
       },
       content,
       path,
@@ -367,7 +351,7 @@ export class WikiStore {
 
     let totalChars = 0
     for (const article of articles) {
-      const header = `\n## ${article.meta.title} (${article.meta.kind})`
+      const header = `\n## ${article.meta.title} [${(article.meta.tags || []).slice(0, 3).join(", ")}]`
       const body = article.content.length > 600
         ? article.content.slice(0, 600) + "..."
         : article.content
@@ -414,8 +398,7 @@ export class WikiStore {
       articles.push({
         path: relPath,
         title: article.meta.title,
-        kind: article.meta.kind,
-        parent: article.meta.parent,
+        tags: article.meta.tags || [],
         owner: article.meta.owner,
         access: article.meta.access,
         sharedWith: article.meta.sharedWith,
@@ -423,8 +406,6 @@ export class WikiStore {
         backlinks: backlinks.get(article.meta.title) || 0,
         sources: article.meta.sources,
         lastUpdated: article.meta.lastUpdated,
-        date: article.meta.date,
-        involves: article.meta.involves,
       })
     })
 
@@ -488,7 +469,9 @@ export class WikiStore {
       if (!article) return
 
       totalArticles++
-      byType[article.meta.kind] = (byType[article.meta.kind] || 0) + 1
+      for (const tag of (article.meta.tags || [])) {
+        byType[tag] = (byType[tag] || 0) + 1
+      }
       byAccess[article.meta.access] = (byAccess[article.meta.access] || 0) + 1
       byOwner[article.meta.owner] = (byOwner[article.meta.owner] || 0) + 1
     })
@@ -548,105 +531,87 @@ export class WikiStore {
     const schemaPath = resolve(this.baseDir, "_schema.md")
     if (existsSync(schemaPath)) return
 
-    const schema = `# Wiki Schema — Knowledge Graph
+    const schema = `# Wiki Schema
 
-This wiki is a **living knowledge graph** — a mind map that's always being filled in.
-Every article is a **node** in a tree. The path IS the hierarchy.
+A personal wiki maintained by LLMs. Karpathy pattern: plain files, aggressive tagging,
+structure emerges from data. The wiki is a compounding artifact.
 
-## The Graph
+## Structure
 
 \`\`\`
 wiki/
-  raw/entries/                    # Shared inbox — immutable raw sources
-  work/                           # Work context
-    noqta/                        # Company
-      team/                       # People and agents
-        anis.md                   # (kind: person)
-        nadia.md                  # (kind: agent)
-      clients/                    # Client entities
-        mtgl/                     # (kind: client)
-          project.md              # (kind: project)
-          repos/                  # Code repositories
-          servers/                # Infrastructure
-            staging.md            # (kind: server)
-      processes/                  # How we do things
-        deploy-staging.md         # (kind: process)
-  events/                         # Timeline — cross-cutting
-    2026-04-06/
-      gitlab-token-expiry.md      # (kind: incident, involves: [work/noqta/clients/mtgl])
+  _schema.md         # This file
+  worldview.md       # YOUR mental model — the LLM reads this during absorb
+  raw/entries/       # Immutable raw sources (conversations, imports, anything)
+  [LLM-chosen dirs]  # Structure emerges from data — the LLM picks paths
 \`\`\`
 
-## Node Kinds
+The LLM decides how to organize articles. You describe YOUR world in worldview.md.
 
-### Entities — things that persist and have identity
-| Kind | Use when |
-|------|----------|
-| person | A human being (employee, client contact) |
-| agent | An AI agent in the system |
-| company | A business entity |
-| team | A group of people/agents |
-| client | A customer or client |
-| project | A specific deliverable or product |
-| repo | A code repository |
-| server | A deployment target or infrastructure |
-| service | A running service or API |
-| domain | A web domain |
-
-### Occurrences — things that happen (have a date)
-| Kind | Use when |
-|------|----------|
-| event | Something that happened |
-| incident | Something that broke |
-| deploy | A deployment action |
-| decision | A choice that was made, with reasoning |
-
-### Knowledge — what we know
-| Kind | Use when |
-|------|----------|
-| process | How to do something (workflow, runbook) |
-| pattern | A recurring behavior or template |
-| concept | A definition or explanation |
-| report | A periodic summary or metrics snapshot |
-
-## Article Frontmatter
+## Article Format
 
 \`\`\`yaml
 ---
-title: "MTGL Staging Server"
-kind: server
-parent: work/noqta/clients/mtgl/servers  # Position in tree
+title: "MTGL Staging Deployment"
+tags: ["mtgl", "deploy", "staging", "devops", "2026-04-06"]
 owner: devops-agent
 access: public
 created: 2026-04-06
 last_updated: 2026-04-06
-refs: ["work/noqta/clients/mtgl/project"]  # Cross-references
-sources: ["entry-id-1"]
-date: 2026-04-06        # For events: when it happened
-involves: ["work/noqta/clients/mtgl"]  # For events: what entities
+sources: ["entry-id-1", "entry-id-2"]
 ---
+
+Article content with [[wikilinks]] and section tags.
+
+## Deploy Steps
+<!-- tags: process, runbook, mtgl, staging -->
+Content specific to this section...
 \`\`\`
 
-## Rules
+## Tags
 
-- The **path** is the hierarchy — \`work/noqta/team/nadia.md\` means Nadia is part of the Noqta team
-- Use \`[[wikilinks]]\` to link between articles
-- Every article traces back to raw sources via \`sources:\`
-- Events always have a \`date\` and \`involves\` field
-- Entities are things; everything else describes entities
-- One topic per article — the graph grows by adding nodes, not by inflating articles
+Tags are the primary context-narrowing mechanism. The more tags, the better.
+
+Tag aggressively:
+- **Who**: people, agents, teams involved
+- **What**: project, client, topic, technology
+- **When**: dates, periods, milestones
+- **Where**: server, environment, channel
+- **How**: process, decision, pattern
+- **Your terms**: whatever vocabulary makes sense in YOUR world
+
+Section tags (\`<!-- tags: ... -->\`) let different parts of an article
+match different queries. A deploy article might have sections tagged
+"runbook" and "incident" separately.
 
 ## Operations
 
 ### Absorb
-Read raw entries → identify entities and events → place in the graph.
-Ask: "What entity is this about? What happened? Where does it go in the tree?"
+Read raw entries → read worldview.md → tag aggressively → create/update articles.
+Also identify GAPS: "We mention X but have no article for it."
 
 ### Query
-Navigate the tree → find relevant nodes → follow refs and wikilinks → synthesize.
+Match by tags first → then keyword within matched articles → synthesize.
+If agent is working on MTGL, only send MTGL-tagged content.
 
 ### Lint
-Check for: orphan nodes, missing parents, events without dates,
-entities without descriptions, broken wikilinks.
+Check for: orphan articles, broken [[wikilinks]], untagged articles,
+articles over 100 lines that should split, mentioned-but-missing topics.
+
+## Worldview
+
+Edit \`worldview.md\` to describe YOUR world. This is not a schema — it's your
+mental model. The LLM reads it during absorb to understand where things go.
+
+Example worldview.md:
+\`\`\`
+I'm Anis, founder of Noqta (noqta.tn).
+Noqta builds AI-powered solutions.
+Our agents: Nadia (marketing), DevOps, Atlas (coordination).
+Clients: MTGL (construction ERP), Hasana (website).
+Infrastructure: MacBook local, DigitalOcean clawd-server.
+We use GitLab at gitlab.noqta.tn.
+\`\`\`
 `
 
     writeFileSync(schemaPath, schema)
@@ -706,78 +671,88 @@ entities without descriptions, broken wikilinks.
     }
   }
 
-  // --- Knowledge Graph: Tree / Mind Map ---
+  // --- Tag-based filtering (Karpathy: tags are the context narrowing mechanism) ---
 
   /**
-   * Build a tree from article paths.
-   * The path IS the hierarchy: work/noqta/clients/mtgl.md → nested tree.
+   * Find articles matching ANY of the given tags.
+   * This is how agents get relevant context — only articles tagged with
+   * the client/project/topic they're working on.
    */
-  buildTree(): WikiTreeNode {
-    const index = this.rebuildIndex()
-    const root: WikiTreeNode = { path: "", title: "root", kind: "root", children: [], hasArticle: false }
+  findByTags(tags: string[], agentId?: string, limit: number = 10): WikiArticle[] {
+    const lowerTags = tags.map(t => t.toLowerCase())
+    const results: Array<{ article: WikiArticle; score: number }> = []
 
-    for (const article of index.articles) {
-      // Parse path into segments: "work/noqta/team/nadia.md" → ["work", "noqta", "team", "nadia"]
-      const segments = article.path.replace(/\.md$/, "").split("/")
-      let current = root
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_")) return
 
-      for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i]
-        let child = current.children.find(c => c.path === segments.slice(0, i + 1).join("/"))
+      const article = this.readArticle(relPath)
+      if (!article) return
+      if (agentId && !this.canRead(article.meta, agentId)) return
 
-        if (!child) {
-          const isLeaf = i === segments.length - 1
-          child = {
-            path: segments.slice(0, i + 1).join("/"),
-            title: isLeaf ? article.title : segment.replace(/-/g, " "),
-            kind: isLeaf ? article.kind : "folder",
-            children: [],
-            articlePath: isLeaf ? article.path : undefined,
-            hasArticle: isLeaf,
-          }
-          current.children.push(child)
-        }
+      // Score: how many of the requested tags match?
+      const articleTags = (article.meta.tags || []).map(t => t.toLowerCase())
+      // Also check section tags: <!-- tags: foo, bar -->
+      const sectionTags = (article.content.match(/<!--\s*tags?:\s*([^>]+)\s*-->/gi) || [])
+        .flatMap(m => m.replace(/<!--\s*tags?:\s*|\s*-->/gi, "").split(",").map(t => t.trim().toLowerCase()))
 
-        // Update if this is the article node
-        if (i === segments.length - 1) {
-          child.title = article.title
-          child.kind = article.kind
-          child.articlePath = article.path
-          child.hasArticle = true
-        }
+      const allTags = [...articleTags, ...sectionTags]
+      const score = lowerTags.filter(t => allTags.includes(t)).length
 
-        current = child
+      if (score > 0) {
+        results.push({ article, score })
       }
-    }
+    })
 
-    return root
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(r => r.article)
   }
 
   /**
-   * Get all events, sorted chronologically.
-   * Events are articles with kind: event|incident|deploy or with a date field.
+   * Get all unique tags across all articles.
    */
-  getTimeline(): Array<{ date: string; title: string; kind: string; path: string; involves: string[] }> {
-    const index = this.rebuildIndex()
-    const events: Array<{ date: string; title: string; kind: string; path: string; involves: string[] }> = []
+  getAllTags(): Map<string, number> {
+    const tagCounts = new Map<string, number>()
 
-    for (const article of index.articles) {
-      const eventDate = article.date || article.lastUpdated
-      if (!eventDate) continue
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_")) return
 
-      const isEvent = ["event", "incident", "deploy", "decision"].includes(article.kind)
-      if (isEvent || article.date) {
-        events.push({
-          date: eventDate,
-          title: article.title,
-          kind: article.kind,
-          path: article.path,
-          involves: article.involves || [],
-        })
+      const article = this.readArticle(relPath)
+      if (!article?.meta.tags) return
+
+      for (const tag of article.meta.tags) {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
       }
-    }
+    })
 
-    return events.sort((a, b) => b.date.localeCompare(a.date))
+    return tagCounts
+  }
+
+  // --- Worldview (user's mental model — input to absorb) ---
+
+  /**
+   * Get the worldview file. This is the user's description of their world —
+   * the LLM uses it during absorb to know where things go.
+   * Returns null if not set.
+   */
+  getWorldview(): string | null {
+    const path = resolve(this.baseDir, "worldview.md")
+    if (!existsSync(path)) return null
+    return readFileSync(path, "utf-8")
+  }
+
+  /**
+   * Set the worldview. The user describes their world: companies, clients,
+   * projects, team, processes. The LLM uses this as context during absorb.
+   */
+  setWorldview(content: string): void {
+    writeFileSync(resolve(this.baseDir, "worldview.md"), content)
+    this.appendLog("worldview", "Updated worldview")
   }
 
   // --- Lint ---

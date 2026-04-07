@@ -130,5 +130,5 @@ export interface AgentWikiSummary {
   totalEntries: number
   totalArticles: number
   unabsorbed: number
-  articles: Array<{ title: string; path: string; kind: string }>
+  articles: Array<{ title: string; path: string; tags?: string[] }>
 }

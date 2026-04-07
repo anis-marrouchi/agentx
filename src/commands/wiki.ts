@@ -42,7 +42,7 @@ wiki
 
       if (agent.articles.length > 0) {
         for (const a of agent.articles.slice(0, 3)) {
-          console.log(chalk.dim(`      - ${a.title} (${a.kind})`))
+          console.log(chalk.dim(`      - ${a.title} [${(a.tags || []).slice(0, 3).join(", ")}]`))
         }
         if (agent.articles.length > 3) {
           console.log(chalk.dim(`      ... and ${agent.articles.length - 3} more`))
@@ -128,68 +128,65 @@ wiki
       // Get this agent's wiki store
       const agentWiki = hub.getAgentWiki(agentId)
 
-      // Build prompt with existing articles for this agent
+      // Build context: existing articles + worldview
       const existingIndex = agentWiki.rebuildIndex()
       const existingList = existingIndex.articles.length > 0
-        ? `\nExisting articles in this agent's wiki:\n${existingIndex.articles.map(a => `- ${a.title} (${a.path})`).join("\n")}\n`
+        ? `\nExisting articles:\n${existingIndex.articles.map(a => `- ${a.title} [${(a.tags || []).join(", ")}] (${a.path})`).join("\n")}\n`
+        : ""
+
+      // Read worldview from both agent wiki and shared wiki
+      const worldview = agentWiki.getWorldview() || hub.getSharedStore().getWorldview() || ""
+      const worldviewSection = worldview
+        ? `\n## Worldview (the user's mental model — use this to understand context)\n\n${worldview}\n`
         : ""
 
       const entryTexts = unabsorbed.map(e =>
         `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
       ).join("\n\n")
 
-      const prompt = `You are building a knowledge graph for the "${agentId}" agent.
+      const prompt = `You are a wiki editor for the "${agentId}" agent. Compile raw entries into a personal wiki.
 
-The wiki is a TREE — the path IS the hierarchy. Think of it as a mind map being filled in piece by piece.
+## Karpathy Pattern
 
-## The Tree Structure
+- Plain markdown files. YOU choose the path and structure — it emerges from the data.
+- Tag AGGRESSIVELY. Tags are the #1 mechanism for context narrowing.
+- Use [[wikilinks]] to cross-reference between articles.
+- Synthesize — distill conversations into factual wiki articles, don't copy-paste.
+- If an existing article covers the topic, produce an UPDATE with full merged content.
+${worldviewSection}${existingList}
+## Tagging Rules
 
-Articles are nodes. The path places them in the tree:
-- work/noqta/team/nadia.md — Nadia is part of Noqta's team
-- work/noqta/clients/mtgl/project.md — MTGL is a Noqta client project
-- events/2026-04-06/gitlab-token-expiry.md — an event that happened on that date
+Tag every article with ALL relevant dimensions:
+- WHO: people, agents, teams involved (e.g., "nadia", "devops-agent", "anis")
+- WHAT: project, client, topic, technology (e.g., "mtgl", "seo", "gitlab", "deploy")
+- WHEN: dates, periods (e.g., "2026-04-06", "week-14")
+- WHERE: server, environment, channel (e.g., "staging", "telegram", "production")
+- HOW: type of knowledge (e.g., "process", "incident", "report", "decision")
 
-## Node Kinds
+Use section tags for subsections: \`<!-- tags: runbook, staging -->\`
 
-Entities (things that persist): person, agent, company, team, client, project, repo, server, service, domain
-Occurrences (things that happen): event, incident, deploy, decision
-Knowledge (what we know): process, pattern, concept, report
+## Gap Detection
 
-## Key Principles
+After compiling, add a "gaps" array — topics MENTIONED but not yet covered.
+Example: if entries mention "production server" but no article exists for it, flag it.
 
-1. Ask: "What ENTITY is this about? What HAPPENED? Where in the tree does it belong?"
-2. Entities go under their parent: an agent goes under the team, a server under the project
-3. Events go under events/YYYY-MM-DD/ and reference entities via "involves"
-4. Processes, patterns, reports go near the entity they describe
-5. The path hierarchy: work/<company>/<area>/<entity>.md
-6. Use [[wikilinks]] to cross-reference between nodes
-7. Synthesize — distill conversations into factual wiki content
-8. If an existing article covers the topic, produce an UPDATE with full merged content
-${existingList}
 ## Output — ONLY valid JSON, no markdown fencing
 
-[
-  {
-    "path": "work/noqta/team/nadia.md",
-    "title": "Nadia — Marketing Agent",
-    "kind": "agent",
-    "parent": "work/noqta/team",
-    "content": "Nadia handles marketing, content, and SEO for [[Noqta]].",
-    "sources": ["entry-id-1"],
-    "date": null,
-    "involves": null
-  },
-  {
-    "path": "events/2026-04-06/gitlab-token-expiry.md",
-    "title": "GitLab Token Expiry",
-    "kind": "incident",
-    "parent": "events/2026-04-06",
-    "content": "The GITLAB_TOKEN expired, blocking deploys for [[MTGL]].",
-    "sources": ["entry-id-2"],
-    "date": "2026-04-06",
-    "involves": ["work/noqta/clients/mtgl"]
-  }
-]
+{
+  "articles": [
+    {
+      "path": "mtgl/staging-deploy.md",
+      "title": "MTGL Staging Deployment",
+      "tags": ["mtgl", "deploy", "staging", "devops", "process", "2026-04-06"],
+      "content": "How we deploy MTGL to staging...\\n\\nSee also [[MTGL Project]]\\n\\n## Steps\\n<!-- tags: runbook, staging -->\\n1. ...",
+      "sources": ["entry-id-1", "entry-id-2"]
+    }
+  ],
+  "gaps": [
+    "MTGL production server — mentioned but no article exists",
+    "Hasana project — referenced but undocumented"
+  ]
+}
 
 ENTRIES:
 
@@ -207,7 +204,7 @@ ${entryTexts}`
         let rawOutput: string
         try {
           rawOutput = execSync(
-            `cat '${promptPath}' | claude -p - --output-format json --max-turns 2 --disallowedTools "Bash,Read,Write,Edit,Glob,Grep,Agent"`,
+            `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --allowedTools ""`,
             { encoding: "utf-8", timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
@@ -230,38 +227,41 @@ ${entryTexts}`
           // Not a JSON envelope — use as-is
         }
 
-        // Find the JSON array in the response text
-        // Use a balanced bracket approach to find the outermost array
-        let arrayStart = responseText.indexOf("[")
-        if (arrayStart === -1) {
-          console.log(chalk.red(`    No JSON array found in response`))
+        // Parse response — could be { articles: [...], gaps: [...] } or bare [...]
+        let articles: Array<{ path: string; title: string; tags: string[]; content: string; sources: string[] }>
+        let gaps: string[] = []
+
+        // Find outermost JSON object or array
+        const objStart = responseText.indexOf("{")
+        const arrStart = responseText.indexOf("[")
+        const jsonStart = (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) ? objStart : arrStart
+
+        if (jsonStart === -1) {
+          console.log(chalk.red(`    No JSON found in response`))
           console.log(chalk.dim(responseText.slice(0, 500)))
           continue
         }
 
-        // Find matching closing bracket
+        const openChar = responseText[jsonStart]
+        const closeChar = openChar === "{" ? "}" : "]"
         let depth = 0
-        let arrayEnd = -1
-        for (let i = arrayStart; i < responseText.length; i++) {
-          if (responseText[i] === "[") depth++
-          else if (responseText[i] === "]") {
-            depth--
-            if (depth === 0) { arrayEnd = i + 1; break }
-          }
+        let jsonEnd = -1
+        for (let i = jsonStart; i < responseText.length; i++) {
+          if (responseText[i] === openChar) depth++
+          else if (responseText[i] === closeChar) { depth--; if (depth === 0) { jsonEnd = i + 1; break } }
         }
 
-        if (arrayEnd === -1) {
-          console.log(chalk.red(`    Unbalanced JSON array`))
-          continue
-        }
+        if (jsonEnd === -1) { console.log(chalk.red(`    Unbalanced JSON`)); continue }
 
-        const jsonStr = responseText.slice(arrayStart, arrayEnd)
-        let articles: Array<{
-          path: string; title: string; kind: string; parent?: string
-          content: string; sources: string[]; date?: string; involves?: string[]
-        }>
+        const jsonStr = responseText.slice(jsonStart, jsonEnd)
         try {
-          articles = JSON.parse(jsonStr)
+          const parsed = JSON.parse(jsonStr)
+          if (Array.isArray(parsed)) {
+            articles = parsed
+          } else {
+            articles = parsed.articles || []
+            gaps = parsed.gaps || []
+          }
         } catch (parseErr: any) {
           console.log(chalk.red(`    JSON parse error: ${parseErr.message}`))
           console.log(chalk.dim(`    First 300 chars: ${jsonStr.slice(0, 300)}`))
@@ -272,20 +272,27 @@ ${entryTexts}`
           const now = new Date().toISOString().slice(0, 10)
           agentWiki.writeArticle(article.path, {
             title: article.title,
-            kind: article.kind || "concept",
-            parent: article.parent || undefined,
+            tags: article.tags || [],
             owner: agentId,
             access: "public",
             created: now,
             lastUpdated: now,
-            refs: [],
             sources: article.sources || [],
-            date: article.date || undefined,
-            involves: article.involves || undefined,
           }, article.content, agentId)
 
+          const tagStr = (article.tags || []).slice(0, 5).join(", ")
           console.log(`    ${chalk.green("+")} ${article.path}: ${article.title}`)
+          if (tagStr) console.log(chalk.dim(`       [${tagStr}]`))
           totalAbsorbed++
+        }
+
+        // Show gaps (missing puzzle pieces)
+        if (gaps.length > 0) {
+          console.log()
+          console.log(chalk.yellow(`    Gaps detected (${gaps.length} missing pieces):`))
+          for (const gap of gaps) {
+            console.log(chalk.yellow(`      ? ${gap}`))
+          }
         }
 
         agentWiki.rebuildIndex()
@@ -381,7 +388,7 @@ wiki
       if (results.length > 0) {
         console.log(chalk.bold(`  ${chalk.cyan(agentId)}:`))
         for (const r of results) {
-          console.log(`    ${r.meta.title} (${r.meta.kind})`)
+          console.log(`    ${r.meta.title} [${(r.meta.tags || []).slice(0, 3).join(", ")}]`)
           console.log(chalk.dim(`      ${r.path} — ${r.content.slice(0, 100)}...`))
         }
         found += results.length
