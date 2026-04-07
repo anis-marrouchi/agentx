@@ -3,7 +3,7 @@ import { resolve } from "path"
 import { existsSync, readdirSync, mkdirSync } from "fs"
 import type { WikiEntry } from "./types"
 
-export type WikiMode = "flat" | "graph"
+export type WikiMode = "flat" | "graph" | "unified"
 
 /**
  * WikiHub: manages per-agent wikis with a shared raw entry pool.

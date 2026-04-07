@@ -21,7 +21,8 @@ export function buildAbsorbPrompt(
     : ""
 
   if (mode === "flat") return buildFlatPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
-  return buildGraphPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
+  if (mode === "graph") return buildGraphPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
+  return buildUnifiedPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
 }
 
 // --- Karpathy Flat: tags, LLM-chosen paths, gap detection ---
@@ -140,6 +141,79 @@ After compiling, add a "gaps" array — entities or events MENTIONED but missing
     }
   ],
   "gaps": ["MTGL production server — entity mentioned but missing"]
+}
+
+ENTRIES (${count}):
+
+${entries}`
+}
+
+// --- Unified: best of both — flat's tags + graph's entity thinking ---
+
+function buildUnifiedPrompt(
+  agentId: string, worldview: string, existing: string, entries: string, count: number,
+): string {
+  return `You are compiling a personal wiki for the "${agentId}" agent.
+
+## Your Job
+
+Read ${count} raw conversation entries. For each, ask:
+1. **Who** is mentioned? (people, agents, companies, teams)
+2. **What** is this about? (project, server, tool, concept)
+3. **What happened?** (deploy, incident, decision, report)
+4. **What's missing?** (entities mentioned but undocumented)
+
+Then compile articles — one topic per article, synthesized (not copy-pasted).
+
+## How to Organize
+
+- YOU choose the file path. Let structure emerge from the data.
+- Use whatever directory names make sense: mtgl/, incidents/, agents/ — your call.
+- Use [[wikilinks]] to cross-reference between articles.
+- If an existing article covers the topic, produce an UPDATE with full merged content.
+${worldview}${existing}
+## How to Tag (CRITICAL)
+
+Tags are how agents find relevant context. Tag EVERY article with ALL dimensions:
+
+| Dimension | Examples |
+|-----------|----------|
+| **Who** | nadia, devops-agent, anis, seif, atlas |
+| **What** | mtgl, noqta-website, agentx, gitlab, seo |
+| **Type** | person, agent, server, project, incident, process, report, decision |
+| **When** | 2026-04-06, week-14, q2-2026 |
+| **Where** | staging, production, telegram, clawd-server |
+| **How** | deploy, runbook, spike, review |
+
+Minimum 6 tags per article. More is better.
+Use section-level tags too: \`<!-- tags: runbook, staging -->\`
+
+## How to Find Gaps
+
+After compiling, identify MISSING PIECES:
+- People mentioned but no article (e.g., "Seif gives deploy instructions but who is Seif?")
+- Servers referenced but undocumented (e.g., "167.99.0.229 — what is this?")
+- Processes implied but not written down (e.g., "deploy to staging — how exactly?")
+- Projects named but no overview (e.g., "KSI project — what is it?")
+
+Be specific. "X is undocumented" is useless. "Seif al-Arabi — MTGL stakeholder, gives deploy instructions via Telegram, no profile article" is useful.
+
+## Output — ONLY valid JSON, no markdown fencing
+
+{
+  "articles": [
+    {
+      "path": "agents/nadia.md",
+      "title": "Nadia — Marketing Agent",
+      "tags": ["nadia", "agent", "noqta", "marketing", "content", "seo"],
+      "content": "Nadia handles marketing, content, and SEO for [[Noqta]].\\n\\n## Capabilities\\n<!-- tags: capabilities, tools -->\\n...",
+      "sources": ["entry-id-1"]
+    }
+  ],
+  "gaps": [
+    "Seif al-Arabi — MTGL stakeholder who issues deploy instructions via Telegram, no profile article",
+    "167.99.0.229 — MTGL production server IP referenced but no infrastructure article"
+  ]
 }
 
 ENTRIES (${count}):

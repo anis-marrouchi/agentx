@@ -13,7 +13,9 @@ function getHub(dir?: string, mode?: WikiMode): WikiHub {
 }
 
 function modeLabel(mode: WikiMode): string {
-  return mode === "graph" ? "Knowledge Graph" : "Karpathy Flat"
+  if (mode === "graph") return "Knowledge Graph"
+  if (mode === "flat") return "Karpathy Flat"
+  return "Unified"
 }
 
 export const wiki = new Command()
@@ -25,7 +27,7 @@ wiki
   .command("status")
   .description("show wiki status per agent")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "compilation mode: graph (default) or flat", "graph")
+  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .action((opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -71,7 +73,7 @@ wiki
   .command("lint")
   .description("check wiki for issues per agent")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "graph or flat", "graph")
+  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .option("--agent <id>", "lint a specific agent's wiki")
   .action((opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
@@ -107,7 +109,7 @@ wiki
   .command("absorb")
   .description("compile unabsorbed entries into per-agent wiki articles")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "graph (default) or flat", "graph")
+  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
   .option("--max <n>", "max entries per agent", "20")
@@ -161,8 +163,8 @@ wiki
         let rawOutput: string
         try {
           rawOutput = execSync(
-            `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --allowedTools ""`,
-            { encoding: "utf-8", timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
+            `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
+            { encoding: "utf-8", timeout: 300_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
           rawOutput = execErr.stdout || ""
@@ -303,7 +305,7 @@ wiki
   .command("serve")
   .description("start a local web server to browse agent wikis (local + mesh)")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "graph (default) or flat", "graph")
+  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .option("--agent <id>", "serve only this agent's wiki")
   .option("--port <n>", "port number", "4200")
   .option("--peer <urls...>", "mesh peer URLs to federate")
@@ -345,7 +347,7 @@ wiki
   .command("search <query>")
   .description("search wiki articles")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "graph or flat", "graph")
+  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .option("--agent <id>", "search specific agent's wiki")
   .action((query, opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
@@ -488,107 +490,84 @@ wiki
     console.log()
   })
 
-// agentx wiki compare — deterministic comparison of flat vs graph
+// agentx wiki compare — deterministic comparison of all three modes
 wiki
   .command("compare")
-  .description("compare flat vs graph compilation for an agent")
+  .description("compare all wiki compilation modes for an agent")
   .option("--dir <path>", "wiki directory")
   .requiredOption("--agent <id>", "agent to compare")
   .action((opts) => {
     const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
-    const flatHub = new WikiHub(dir, undefined, "flat")
-    const graphHub = new WikiHub(dir, undefined, "graph")
     const agentId = opts.agent
+    const modes: WikiMode[] = ["flat", "graph", "unified"]
 
-    const flatWiki = flatHub.getAgentWiki(agentId)
-    const graphWiki = graphHub.getAgentWiki(agentId)
-    const flatIndex = flatWiki.rebuildIndex()
-    const graphIndex = graphWiki.rebuildIndex()
-    const entries = flatHub.getAgentEntries(agentId)
-    const flatUnabsorbed = flatHub.getUnabsorbedEntries(agentId)
-    const graphUnabsorbed = graphHub.getUnabsorbedEntries(agentId)
+    // Collect stats per mode
+    const stats = modes.map(mode => {
+      const hub = new WikiHub(dir, undefined, mode)
+      const wiki = hub.getAgentWiki(agentId)
+      const index = wiki.rebuildIndex()
+      const entries = hub.getAgentEntries(agentId)
+      const unabsorbed = hub.getUnabsorbedEntries(agentId)
+
+      const tags = new Set<string>()
+      let totalTags = 0
+      const sources = new Set<string>()
+      for (const a of index.articles) {
+        for (const t of (a.tags || [])) tags.add(t)
+        totalTags += (a.tags?.length || 0)
+        for (const s of (a.sources || [])) sources.add(s)
+      }
+      const dirs = new Set(index.articles.map(a => a.path.includes("/") ? a.path.split("/")[0] : "/"))
+
+      return {
+        mode,
+        label: modeLabel(mode),
+        articles: index.articles.length,
+        entries: entries.length,
+        unabsorbed: unabsorbed.length,
+        uniqueTags: tags.size,
+        avgTags: index.articles.length > 0 ? (totalTags / index.articles.length).toFixed(1) : "0",
+        dirs: dirs.size,
+        coverage: sources.size,
+        articleList: index.articles,
+      }
+    })
 
     console.log()
     console.log(chalk.bold(`  Wiki Compare: ${agentId}`))
-    console.log()
-    console.log(`  Raw entries: ${entries.length}`)
-    console.log()
-
-    // Side by side stats
-    const w = 35
-    console.log(`  ${"Karpathy Flat".padEnd(w)} ${"Knowledge Graph".padEnd(w)}`)
-    console.log(`  ${"─".repeat(w)} ${"─".repeat(w)}`)
-    console.log(`  ${"Articles: " + flatIndex.articles.length}${" ".repeat(w - ("Articles: " + flatIndex.articles.length).length)} ${"Articles: " + graphIndex.articles.length}`)
-    console.log(`  ${"Unabsorbed: " + flatUnabsorbed.length}${" ".repeat(w - ("Unabsorbed: " + flatUnabsorbed.length).length)} ${"Unabsorbed: " + graphUnabsorbed.length}`)
-
-    // Flat tags
-    const flatTags = new Set<string>()
-    for (const a of flatIndex.articles) for (const t of (a.tags || [])) flatTags.add(t)
-    const graphTags = new Set<string>()
-    for (const a of graphIndex.articles) for (const t of (a.tags || [])) graphTags.add(t)
-    console.log(`  ${"Unique tags: " + flatTags.size}${" ".repeat(w - ("Unique tags: " + flatTags.size).length)} ${"Unique tags: " + graphTags.size}`)
-
-    // Average tags per article
-    const flatAvg = flatIndex.articles.length > 0
-      ? (flatIndex.articles.reduce((s, a) => s + (a.tags?.length || 0), 0) / flatIndex.articles.length).toFixed(1)
-      : "0"
-    const graphAvg = graphIndex.articles.length > 0
-      ? (graphIndex.articles.reduce((s, a) => s + (a.tags?.length || 0), 0) / graphIndex.articles.length).toFixed(1)
-      : "0"
-    console.log(`  ${"Avg tags/article: " + flatAvg}${" ".repeat(w - ("Avg tags/article: " + flatAvg).length)} ${"Avg tags/article: " + graphAvg}`)
-
-    // Directory structure
-    const flatDirs = new Set(flatIndex.articles.map(a => a.path.includes("/") ? a.path.split("/")[0] : "/"))
-    const graphDirs = new Set(graphIndex.articles.map(a => a.path.includes("/") ? a.path.split("/")[0] : "/"))
-    console.log(`  ${"Directories: " + flatDirs.size}${" ".repeat(w - ("Directories: " + flatDirs.size).length)} ${"Directories: " + graphDirs.size}`)
-
+    console.log(`  Raw entries: ${stats[0].entries}`)
     console.log()
 
-    // List articles side by side
-    if (flatIndex.articles.length > 0 || graphIndex.articles.length > 0) {
-      console.log(chalk.bold("  Articles:"))
-      console.log()
+    // Table header
+    const w = 22
+    console.log(`  ${"".padEnd(20)} ${stats.map(s => s.label.padEnd(w)).join(" ")}`)
+    console.log(`  ${"─".repeat(20)} ${stats.map(() => "─".repeat(w)).join(" ")}`)
 
-      const maxLen = Math.max(flatIndex.articles.length, graphIndex.articles.length)
-      for (let i = 0; i < maxLen; i++) {
-        const f = flatIndex.articles[i]
-        const g = graphIndex.articles[i]
-        const fStr = f ? `${f.title.slice(0, 30)}` : ""
-        const gStr = g ? `${g.title.slice(0, 30)}` : ""
-        console.log(`  ${fStr.padEnd(w)} ${gStr}`)
-        const fTags = f ? chalk.dim(`[${(f.tags || []).slice(0, 3).join(", ")}]`) : ""
-        const gTags = g ? chalk.dim(`[${(g.tags || []).slice(0, 3).join(", ")}]`) : ""
-        console.log(`  ${fTags}${"".padEnd(Math.max(0, w - (fTags.length - 10)))} ${gTags}`)
-      }
+    const rows: Array<[string, (s: typeof stats[0]) => string]> = [
+      ["Articles", s => String(s.articles)],
+      ["Unabsorbed", s => String(s.unabsorbed)],
+      ["Unique tags", s => String(s.uniqueTags)],
+      ["Avg tags/article", s => s.avgTags],
+      ["Directories", s => String(s.dirs)],
+      ["Entry coverage", s => `${s.coverage}/${s.entries}`],
+    ]
+
+    for (const [label, fn] of rows) {
+      const vals = stats.map(s => fn(s).padEnd(w))
+      console.log(`  ${label.padEnd(20)} ${vals.join(" ")}`)
     }
 
-    // Overlap: articles covering similar topics (by shared sources)
-    const flatSourceMap = new Map<string, string[]>()
-    for (const a of flatIndex.articles) {
-      for (const s of (a.sources || [])) {
-        const list = flatSourceMap.get(s) || []
-        list.push(a.title)
-        flatSourceMap.set(s, list)
-      }
-    }
-    const graphSourceMap = new Map<string, string[]>()
-    for (const a of graphIndex.articles) {
-      for (const s of (a.sources || [])) {
-        const list = graphSourceMap.get(s) || []
-        list.push(a.title)
-        graphSourceMap.set(s, list)
-      }
-    }
-
-    // Find entries covered by both
-    const bothCovered = [...flatSourceMap.keys()].filter(s => graphSourceMap.has(s))
-    const flatOnly = [...flatSourceMap.keys()].filter(s => !graphSourceMap.has(s))
-    const graphOnly = [...graphSourceMap.keys()].filter(s => !flatSourceMap.has(s))
-
     console.log()
-    console.log(chalk.bold("  Coverage:"))
-    console.log(`  Entries covered by both: ${bothCovered.length}`)
-    console.log(`  Flat-only coverage:      ${flatOnly.length}`)
-    console.log(`  Graph-only coverage:     ${graphOnly.length}`)
+
+    // Best in each category
+    const best = (key: "uniqueTags" | "articles" | "coverage", label: string) => {
+      const max = Math.max(...stats.map(s => s[key] as number))
+      const winners = stats.filter(s => (s[key] as number) === max).map(s => s.label)
+      if (max > 0) console.log(chalk.dim(`  Best ${label}: ${winners.join(", ")} (${max})`))
+    }
+    best("uniqueTags", "tag richness")
+    best("articles", "article count")
+    best("coverage", "entry coverage")
+
     console.log()
   })

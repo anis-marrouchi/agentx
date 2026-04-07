@@ -37,7 +37,7 @@ export class AgentRegistry {
     this.config = config
     this.providers = config.providers
     this.sessions = new SessionStore()
-    this.wikiHub = new WikiHub()
+    this.wikiHub = new WikiHub(undefined, undefined, "unified")
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
 
