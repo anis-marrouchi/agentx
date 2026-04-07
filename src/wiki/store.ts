@@ -402,6 +402,8 @@ export class WikiStore {
         sharedWith: article.meta.sharedWith,
         aliases,
         backlinks: backlinks.get(article.meta.title) || 0,
+        sources: article.meta.sources,
+        lastUpdated: article.meta.lastUpdated,
       })
     })
 

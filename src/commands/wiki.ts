@@ -1,14 +1,13 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { WikiStore } from "@/wiki"
+import { WikiHub } from "@/wiki"
 import { startWikiServer } from "@/wiki/serve"
 import { resolve } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync } from "fs"
 
-function getWiki(wikiDir?: string): WikiStore {
-  const dir = wikiDir || resolve(process.cwd(), ".agentx/wiki")
-  return new WikiStore(dir)
+function getHub(dir?: string): WikiHub {
+  return new WikiHub(dir || resolve(process.cwd(), ".agentx/wiki"))
 }
 
 export const wiki = new Command()
@@ -18,34 +17,43 @@ export const wiki = new Command()
 // agentx wiki status
 wiki
   .command("status")
-  .description("show wiki status: entries, articles, unabsorbed count")
+  .description("show wiki status per agent")
   .option("--dir <path>", "wiki directory")
   .action((opts) => {
-    const store = getWiki(opts.dir)
-    const entries = store.listEntries()
-    const unabsorbed = store.getUnabsorbedEntries()
-    const index = store.rebuildIndex()
+    const hub = getHub(opts.dir)
+    const agents = hub.summary()
+    const shared = hub.getSharedStore()
+    const totalEntries = shared.listEntries().length
 
     console.log()
-    console.log(chalk.bold("  Wiki Status"))
+    console.log(chalk.bold("  Wiki Hub Status"))
     console.log()
-    console.log(`  Raw entries:     ${entries.length}`)
-    console.log(`  Articles:        ${index.articles.length}`)
-    console.log(`  Unabsorbed:      ${chalk.yellow(String(unabsorbed.length))}`)
+    console.log(`  Total raw entries: ${totalEntries}`)
+    console.log(`  Agents: ${agents.length}`)
     console.log()
 
-    if (unabsorbed.length > 0) {
-      console.log(chalk.dim("  Run 'agentx wiki absorb' to compile entries into articles"))
+    for (const agent of agents) {
+      const status = agent.unabsorbed > 0
+        ? chalk.yellow(`${agent.unabsorbed} unabsorbed`)
+        : chalk.green("up to date")
+
+      console.log(`  ${chalk.cyan(agent.agentId)}`)
+      console.log(`    Entries: ${agent.totalEntries}  Articles: ${agent.totalArticles}  ${status}`)
+
+      if (agent.articles.length > 0) {
+        for (const a of agent.articles.slice(0, 3)) {
+          console.log(chalk.dim(`      - ${a.title} (${a.type})`))
+        }
+        if (agent.articles.length > 3) {
+          console.log(chalk.dim(`      ... and ${agent.articles.length - 3} more`))
+        }
+      }
       console.log()
+    }
 
-      // Show unabsorbed by agent
-      const byAgent = new Map<string, number>()
-      for (const e of unabsorbed) {
-        byAgent.set(e.agentId, (byAgent.get(e.agentId) || 0) + 1)
-      }
-      for (const [agent, count] of byAgent) {
-        console.log(`    ${chalk.cyan(agent)}: ${count} unabsorbed entries`)
-      }
+    const totalUnabsorbed = agents.reduce((s, a) => s + a.unabsorbed, 0)
+    if (totalUnabsorbed > 0) {
+      console.log(chalk.dim("  Run 'agentx wiki absorb' to compile all, or 'agentx wiki absorb --agent <id>' for one agent"))
       console.log()
     }
   })
@@ -53,95 +61,99 @@ wiki
 // agentx wiki lint
 wiki
   .command("lint")
-  .description("check wiki for issues: broken links, orphans, stubs, unsourced")
+  .description("check wiki for issues per agent")
   .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "lint a specific agent's wiki")
   .action((opts) => {
-    const store = getWiki(opts.dir)
-    const issues = store.lint()
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    let totalIssues = 0
 
     console.log()
-    if (issues.length === 0) {
-      console.log(chalk.green("  No issues found"))
-    } else {
-      console.log(chalk.bold(`  ${issues.length} issues found:`))
-      console.log()
-      for (const issue of issues) {
-        const icon = issue.type === "broken-link" ? "x" : issue.type === "orphan" ? "?" : "!"
-        console.log(`  [${icon}] ${chalk.dim(issue.type)} ${issue.article}: ${issue.message}`)
+    for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      const issues = store.lint()
+      totalIssues += issues.length
+
+      if (issues.length === 0) {
+        console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("healthy")}`)
+      } else {
+        console.log(`  ${chalk.cyan(agentId)}: ${chalk.yellow(`${issues.length} issues`)}`)
+        for (const issue of issues) {
+          const icon = issue.type === "broken-link" ? "x" : issue.type === "orphan" ? "?" : "!"
+          console.log(`    [${icon}] ${chalk.dim(issue.type)} ${issue.article}: ${issue.message}`)
+        }
       }
+    }
+
+    console.log()
+    if (totalIssues === 0) {
+      console.log(chalk.green("  All agent wikis are healthy"))
     }
     console.log()
   })
 
-// agentx wiki absorb — compile unabsorbed entries into articles
+// agentx wiki absorb — per-agent compilation
 wiki
   .command("absorb")
-  .description("compile unabsorbed raw entries into wiki articles using Claude")
+  .description("compile unabsorbed entries into per-agent wiki articles")
   .option("--dir <path>", "wiki directory")
-  .option("--dry-run", "show what would be absorbed without running")
-  .option("--max <n>", "max entries to process", "20")
+  .option("--agent <id>", "absorb only this agent")
+  .option("--dry-run", "preview without running")
+  .option("--max <n>", "max entries per agent", "20")
   .action(async (opts) => {
-    const store = getWiki(opts.dir)
-    const unabsorbed = store.getUnabsorbedEntries().slice(0, parseInt(opts.max))
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const maxEntries = parseInt(opts.max)
 
-    if (unabsorbed.length === 0) {
-      console.log(chalk.green("  All entries are absorbed. Nothing to do."))
-      return
-    }
+    let totalAbsorbed = 0
 
-    console.log(chalk.bold(`  ${unabsorbed.length} entries to absorb`))
-    console.log()
+    for (const agentId of agents) {
+      const unabsorbed = hub.getUnabsorbedEntries(agentId).slice(0, maxEntries)
 
-    // Group by agent
-    const byAgent = new Map<string, typeof unabsorbed>()
-    for (const entry of unabsorbed) {
-      const list = byAgent.get(entry.agentId) || []
-      list.push(entry)
-      byAgent.set(entry.agentId, list)
-    }
+      if (unabsorbed.length === 0) {
+        console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("all absorbed")}`)
+        continue
+      }
 
-    for (const [agentId, entries] of byAgent) {
-      console.log(`  ${chalk.cyan(agentId)}: ${entries.length} entries`)
-      for (const e of entries.slice(0, 3)) {
+      console.log()
+      console.log(chalk.bold(`  ${chalk.cyan(agentId)}: ${unabsorbed.length} entries to absorb`))
+      for (const e of unabsorbed.slice(0, 3)) {
         console.log(chalk.dim(`    [${e.date} via ${e.source}] ${e.content.slice(0, 80)}...`))
       }
-      if (entries.length > 3) console.log(chalk.dim(`    ... and ${entries.length - 3} more`))
-    }
-    console.log()
+      if (unabsorbed.length > 3) console.log(chalk.dim(`    ... and ${unabsorbed.length - 3} more`))
 
-    if (opts.dryRun) {
-      console.log(chalk.dim("  Dry run — no changes made"))
-      return
-    }
+      if (opts.dryRun) continue
 
-    // Build the absorb prompt with full entry content
-    const existingArticles = store.rebuildIndex()
-    const existingList = existingArticles.articles.length > 0
-      ? `\nExisting articles:\n${existingArticles.articles.map(a => `- ${a.title} (${a.path})`).join("\n")}\n`
-      : ""
+      // Get this agent's wiki store
+      const agentWiki = hub.getAgentWiki(agentId)
 
-    const entryTexts = unabsorbed.map(e =>
-      `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
-    ).join("\n\n")
+      // Build prompt with existing articles for this agent
+      const existingIndex = agentWiki.rebuildIndex()
+      const existingList = existingIndex.articles.length > 0
+        ? `\nExisting articles in this agent's wiki:\n${existingIndex.articles.map(a => `- ${a.title} (${a.path})`).join("\n")}\n`
+        : ""
 
-    const prompt = `You are a wiki editor for an agent system. Your job is to compile raw conversation entries into structured wiki articles.
+      const entryTexts = unabsorbed.map(e =>
+        `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
+      ).join("\n\n")
 
-Read these ${unabsorbed.length} raw entries and produce wiki articles in JSON format.
+      const prompt = `You are a wiki editor compiling knowledge for the "${agentId}" agent. Read these ${unabsorbed.length} conversation entries and produce structured wiki articles.
 ${existingList}
 Rules:
-1. Group related entries into articles by topic (e.g., "Weekly Marketing Brief", "MTGL Deploy Process", "GitLab Token Issues")
-2. Each article should synthesize information, not just copy-paste
+1. Group related entries into articles by topic
+2. Synthesize information — don't just copy-paste conversations
 3. Use wikilinks [[Article Title]] to cross-reference related articles
-4. If an existing article covers the topic, produce an UPDATE with merged content
+4. If an existing article covers the topic, produce an UPDATE with the full merged content
 5. Output ONLY valid JSON — no markdown fencing, no explanation
 
 Output format (JSON array):
 [
   {
-    "path": "projects/mtgl-deploy.md",
-    "title": "MTGL Deploy Process",
+    "path": "projects/example.md",
+    "title": "Example Article",
     "type": "process",
-    "content": "How we deploy MTGL to staging...\n\nSee also [[GitLab Token Issues]]",
+    "content": "Synthesized content here...",
     "sources": ["entry-id-1", "entry-id-2"]
   }
 ]
@@ -152,99 +164,89 @@ ENTRIES:
 
 ${entryTexts}`
 
-    // Write prompt to temp file and run through Claude
-    const tmpDir = resolve(store["baseDir"], "_tmp")
-    mkdirSync(tmpDir, { recursive: true })
-    const promptPath = resolve(tmpDir, "absorb-prompt.txt")
-    writeFileSync(promptPath, prompt)
+      // Write prompt and run Claude
+      const tmpDir = resolve(agentWiki["baseDir"], "_tmp")
+      mkdirSync(tmpDir, { recursive: true })
+      const promptPath = resolve(tmpDir, "absorb-prompt.txt")
+      writeFileSync(promptPath, prompt)
 
-    console.log(chalk.dim("  Running Claude to compile articles..."))
+      console.log(chalk.dim(`    Compiling with Claude...`))
 
-    try {
-      let rawOutput: string
       try {
-        rawOutput = execSync(
-          `cat '${promptPath}' | claude -p - --output-format json --max-turns 5`,
-          { encoding: "utf-8", timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
-        )
-      } catch (execErr: any) {
-        // Claude exits non-zero on max_turns but stdout still has the result
-        rawOutput = execErr.stdout || ""
-        if (!rawOutput) throw execErr
+        let rawOutput: string
+        try {
+          rawOutput = execSync(
+            `cat '${promptPath}' | claude -p - --output-format json --max-turns 5`,
+            { encoding: "utf-8", timeout: 180_000, maxBuffer: 10 * 1024 * 1024 },
+          )
+        } catch (execErr: any) {
+          rawOutput = execErr.stdout || ""
+          if (!rawOutput) throw execErr
+        }
+
+        let responseText: string
+        try {
+          const jsonOut = JSON.parse(rawOutput)
+          responseText = jsonOut.result || jsonOut.content || rawOutput
+        } catch {
+          responseText = rawOutput
+        }
+
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/)
+        if (!jsonMatch) {
+          console.log(chalk.red(`    Claude didn't return valid JSON`))
+          console.log(chalk.dim(responseText.slice(0, 300)))
+          continue
+        }
+
+        const articles = JSON.parse(jsonMatch[0]) as Array<{
+          path: string; title: string; type: string; content: string; sources: string[]
+        }>
+
+        for (const article of articles) {
+          const now = new Date().toISOString().slice(0, 10)
+          agentWiki.writeArticle(article.path, {
+            title: article.title,
+            type: article.type as any,
+            owner: agentId,
+            access: "internal",
+            created: now,
+            lastUpdated: now,
+            related: [],
+            sources: article.sources,
+          }, article.content, agentId)
+
+          console.log(`    ${chalk.green("+")} ${article.path}: ${article.title}`)
+          totalAbsorbed++
+        }
+
+        agentWiki.rebuildIndex()
+      } catch (e: any) {
+        console.log(chalk.red(`    Absorb failed: ${e.message?.slice(0, 200)}`))
+        if (e.stderr) console.log(chalk.dim(String(e.stderr).slice(0, 300)))
+        if (e.stdout) console.log(chalk.dim("stdout: " + String(e.stdout).slice(0, 300)))
       }
-
-      // Parse Claude's JSON output
-      let responseText: string
-      try {
-        const jsonOut = JSON.parse(rawOutput)
-        responseText = jsonOut.result || jsonOut.content || rawOutput
-      } catch {
-        responseText = rawOutput
-      }
-
-      // Extract JSON array from response
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-      if (!jsonMatch) {
-        console.log(chalk.red("  Claude didn't return valid JSON. Raw output:"))
-        console.log(responseText.slice(0, 500))
-        return
-      }
-
-      const articles = JSON.parse(jsonMatch[0]) as Array<{
-        path: string
-        title: string
-        type: string
-        content: string
-        sources: string[]
-      }>
-
-      console.log(chalk.green(`  Claude produced ${articles.length} articles:`))
-      console.log()
-
-      for (const article of articles) {
-        const now = new Date().toISOString().slice(0, 10)
-        // Determine owner from the majority of source entries
-        const sourceAgents = article.sources
-          .map(sid => unabsorbed.find(e => e.id === sid)?.agentId)
-          .filter(Boolean) as string[]
-        const owner = sourceAgents[0] || unabsorbed[0]?.agentId || "system"
-
-        store.writeArticle(article.path, {
-          title: article.title,
-          type: article.type as any,
-          owner,
-          access: "internal",
-          created: now,
-          lastUpdated: now,
-          related: [],
-          sources: article.sources,
-        }, article.content, owner)
-
-        console.log(`  ${chalk.green("+")} ${article.path}: ${article.title}`)
-        console.log(chalk.dim(`    sources: ${article.sources.join(", ")}`))
-      }
-
-      // Rebuild index
-      store.rebuildIndex()
-      console.log()
-      console.log(chalk.green("  Index rebuilt. Done."))
-
-    } catch (e: any) {
-      console.log(chalk.red(`  Absorb failed: ${e.message?.slice(0, 200)}`))
-      if (e.stderr) console.log(chalk.dim(String(e.stderr).slice(0, 500)))
-      if (e.stdout) console.log(chalk.dim("stdout: " + String(e.stdout).slice(0, 500)))
     }
+
+    console.log()
+    if (opts.dryRun) {
+      console.log(chalk.dim("  Dry run — no changes made"))
+    } else if (totalAbsorbed > 0) {
+      console.log(chalk.green(`  ${totalAbsorbed} articles compiled across ${agents.length} agent(s)`))
+    }
+    console.log()
   })
 
-// agentx wiki entries — list raw entries
+// agentx wiki entries
 wiki
   .command("entries")
   .description("list raw entries")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "filter by agent")
   .action((opts) => {
-    const store = getWiki(opts.dir)
-    let entries = store.listEntries()
+    const hub = getHub(opts.dir)
+    const shared = hub.getSharedStore()
+    let entries = shared.listEntries()
 
     if (opts.agent) {
       entries = entries.filter(e => e.agentId === opts.agent)
@@ -264,11 +266,12 @@ wiki
     console.log()
   })
 
-// agentx wiki serve — Wikipedia-style web preview
+// agentx wiki serve
 wiki
   .command("serve")
-  .description("start a local web server to browse the wiki like Wikipedia")
+  .description("start a local web server to browse agent wikis")
   .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "serve only this agent's wiki")
   .option("--port <n>", "port number", "4200")
   .action((opts) => {
     const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
@@ -278,11 +281,16 @@ wiki
     console.log(chalk.bold("  AgentX Wiki Server"))
     console.log()
     console.log(`  ${chalk.green(">")} http://localhost:${port}`)
+    if (opts.agent) {
+      console.log(`  Agent: ${chalk.cyan(opts.agent)}`)
+    } else {
+      console.log(`  Mode: ${chalk.cyan("Hub")} (all agents)`)
+    }
     console.log(chalk.dim(`  Wiki: ${dir}`))
     console.log(chalk.dim("  Press Ctrl+C to stop"))
     console.log()
 
-    startWikiServer(dir, port)
+    startWikiServer(dir, port, opts.agent)
   })
 
 // agentx wiki search <query>
@@ -290,20 +298,28 @@ wiki
   .command("search <query>")
   .description("search wiki articles")
   .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "search specific agent's wiki")
   .action((query, opts) => {
-    const store = getWiki(opts.dir)
-    const results = store.findRelevant(query, undefined, 10)
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
 
     console.log()
-    if (results.length === 0) {
-      console.log(chalk.dim("  No matching articles"))
-    } else {
-      console.log(chalk.bold(`  ${results.length} results for "${query}":`))
-      console.log()
-      for (const r of results) {
-        console.log(`  ${chalk.cyan(r.meta.title)} (${r.meta.type})`)
-        console.log(chalk.dim(`    ${r.path} — ${r.content.slice(0, 100)}...`))
+    let found = 0
+
+    for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      const results = store.findRelevant(query, undefined, 10)
+
+      if (results.length > 0) {
+        console.log(chalk.bold(`  ${chalk.cyan(agentId)}:`))
+        for (const r of results) {
+          console.log(`    ${r.meta.title} (${r.meta.type})`)
+          console.log(chalk.dim(`      ${r.path} — ${r.content.slice(0, 100)}...`))
+        }
+        found += results.length
       }
     }
+
+    if (found === 0) console.log(chalk.dim("  No matching articles"))
     console.log()
   })

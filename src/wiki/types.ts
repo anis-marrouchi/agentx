@@ -47,6 +47,8 @@ export interface WikiIndex {
     sharedWith?: string[]
     aliases: string[]
     backlinks: number
+    sources?: string[]
+    lastUpdated?: string
   }>
   lastRebuilt: string
 }
