@@ -344,13 +344,24 @@ wiki
 // agentx wiki serve
 wiki
   .command("serve")
-  .description("start a local web server to browse agent wikis")
+  .description("start a local web server to browse agent wikis (local + mesh)")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "serve only this agent's wiki")
   .option("--port <n>", "port number", "4200")
-  .action((opts) => {
+  .option("--peer <urls...>", "mesh peer URLs to federate (e.g., http://100.67.108.119:19900)")
+  .action(async (opts) => {
     const dir = opts.dir || resolve(process.cwd(), ".agentx/wiki")
     const port = parseInt(opts.port)
+
+    // Auto-discover peers from daemon config if not specified
+    let peerUrls: string[] = opts.peer || []
+    if (peerUrls.length === 0) {
+      try {
+        const { loadDaemonConfig } = await import("@/daemon/config")
+        const config = loadDaemonConfig()
+        peerUrls = (config.mesh?.peers || []).map((p: any) => p.url)
+      } catch { /* no config */ }
+    }
 
     console.log()
     console.log(chalk.bold("  AgentX Wiki Server"))
@@ -361,11 +372,14 @@ wiki
     } else {
       console.log(`  Mode: ${chalk.cyan("Hub")} (all agents)`)
     }
+    if (peerUrls.length > 0) {
+      console.log(`  Mesh: ${chalk.cyan(peerUrls.length + " peer(s)")} — ${peerUrls.join(", ")}`)
+    }
     console.log(chalk.dim(`  Wiki: ${dir}`))
     console.log(chalk.dim("  Press Ctrl+C to stop"))
     console.log()
 
-    startWikiServer(dir, port, opts.agent)
+    startWikiServer(dir, port, opts.agent, peerUrls)
   })
 
 // agentx wiki search <query>

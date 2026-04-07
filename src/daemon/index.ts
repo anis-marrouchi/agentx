@@ -13,6 +13,7 @@ import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
+import { LandscapeBuilder } from "@/agents/landscape"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -29,6 +30,7 @@ export class AgentXDaemon {
   private cron: CronScheduler
   private mesh?: A2AMesh
   private hooks: HookRegistry
+  private landscape: LandscapeBuilder
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
@@ -51,8 +53,12 @@ export class AgentXDaemon {
     this.hooks = new HookRegistry()
     loadHooks(process.cwd(), this.hooks)
 
+    // Initialize landscape builder
+    this.landscape = new LandscapeBuilder(this.config)
+
     // Initialize agent registry
     this.registry = new AgentRegistry(this.config, this.log)
+    this.registry.setLandscape(this.landscape)
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
@@ -89,7 +95,16 @@ export class AgentXDaemon {
       await this.mesh.start()
     }
 
-    // 4. Start HTTP API
+    // 4. Build agent landscape (after mesh so remote peers are discovered)
+    const meshPeers = this.mesh?.directory().map(p => ({
+      peer: p.peer,
+      healthy: p.healthy,
+      skills: p.skills,
+    })) || []
+    this.landscape.build(meshPeers)
+    this.log(`  Landscape: built for ${Object.keys(this.config.agents).length} agents`)
+
+    // 5. Start HTTP API
     await this.startHttpApi()
 
     // Print agent summary
@@ -427,6 +442,35 @@ export class AgentXDaemon {
             nodeId: this.config.node.id,
             agentId,
             articles: index.articles,
+          })
+          break
+        }
+
+        case "GET /wiki/article": {
+          const hub = this.registry.getWikiHub()
+          const agentId = url.searchParams.get("agent")
+          const articlePath = url.searchParams.get("path")
+          if (!agentId || !articlePath) {
+            this.json(res, 400, { error: "?agent= and ?path= required" })
+            break
+          }
+          const store = hub.getAgentWiki(agentId)
+          const article = store.readArticle(articlePath)
+          if (!article) {
+            this.json(res, 404, { error: "Article not found" })
+            break
+          }
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            agentId,
+            path: article.path,
+            title: article.meta.title,
+            tags: article.meta.tags,
+            owner: article.meta.owner,
+            created: article.meta.created,
+            lastUpdated: article.meta.lastUpdated,
+            sources: article.meta.sources,
+            content: article.content,
           })
           break
         }

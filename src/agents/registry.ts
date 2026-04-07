@@ -5,6 +5,7 @@ import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
+import type { LandscapeBuilder } from "./landscape"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -25,6 +26,7 @@ export class AgentRegistry {
   private wikiHub: WikiHub
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
+  private landscape?: LandscapeBuilder
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -48,6 +50,13 @@ export class AgentRegistry {
         errors: 0,
       })
     }
+  }
+
+  /**
+   * Set landscape builder (called after mesh init).
+   */
+  setLandscape(builder: LandscapeBuilder): void {
+    this.landscape = builder
   }
 
   /**
@@ -183,9 +192,6 @@ export class AgentRegistry {
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
 
-    // Resolve peers for the context engine
-    const peers = this.buildPeerList(task.agentId, channel)
-
     const contextInput: ContextInput = {
       channel,
       channelScope: task.context?.group ? "group" : (channel === "gitlab" ? "project" : "personal"),
@@ -195,7 +201,7 @@ export class AgentRegistry {
       agentHandle: this.getChannelHandle(task.agentId, channel),
       systemPrompt: state.def.systemPrompt,
       sender: senderName,
-      peers,
+      landscape: this.landscape?.getForAgent(task.agentId),
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,

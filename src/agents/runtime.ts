@@ -57,8 +57,8 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
     parts.push(agent.systemPrompt)
   }
 
-  // Inject environment context so the agent knows where it is and who else is available
-  if (task.context) {
+  // Inject environment context — skip if historyContext is provided (context engine handles it)
+  if (task.context && !historyContext) {
     const ctx = task.context
     const envLines: string[] = ["", "[Environment]"]
     const isGitLab = ctx.channel === "gitlab" || ctx.channel?.startsWith("webhook:")
@@ -69,7 +69,6 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
     if (ctx.sender) envLines.push(`Message from: ${ctx.sender}`)
     if (ctx.myHandle) envLines.push(`Your handle on this channel: ${ctx.myHandle}`)
 
-    // Channel-specific instructions
     if (isGitLab) {
       envLines.push("")
       envLines.push("[IMPORTANT: You are responding to a GitLab comment/event]")
@@ -80,7 +79,6 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
       envLines.push("- Reference issues with #IID and MRs with !IID")
     }
 
-    // Only show team roster on Telegram (where bot-to-bot works)
     if (isTelegram && ctx.peers?.length) {
       envLines.push("")
       envLines.push("[Team — other agents you can mention to delegate or collaborate]")

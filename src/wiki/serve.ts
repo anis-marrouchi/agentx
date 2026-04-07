@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
-// No rigid types — structure emerges from data
+import { MeshWikiClient } from "./mesh"
 import type { AgentWikiSummary } from "./hub"
 
 // --- Lightweight Markdown → HTML (no deps) ---
@@ -197,12 +197,13 @@ function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
   return html
 }
 
-function hubHome(hub: WikiHub): string {
-  const agents = hub.summary()
+function hubHome(hub: WikiHub, allAgents?: AgentWikiSummary[], remoteAgents?: Array<AgentWikiSummary & { nodeId: string }>): string {
+  const agents = allAgents || hub.summary()
   const shared = hub.getSharedStore()
   const totalEntries = shared.listEntries().length
   const totalArticles = agents.reduce((s, a) => s + a.totalArticles, 0)
   const totalUnabsorbed = agents.reduce((s, a) => s + a.unabsorbed, 0)
+  const remoteIds = new Set((remoteAgents || []).map(r => r.agentId))
 
   let content = '<h1>AgentX Wiki Hub</h1>'
 
@@ -211,7 +212,10 @@ function hubHome(hub: WikiHub): string {
   content += `<div class="stat-card"><div class="number">${agents.length}</div><div class="label">Agents</div></div>`
   content += `<div class="stat-card"><div class="number">${totalArticles}</div><div class="label">Articles</div></div>`
   content += `<div class="stat-card"><div class="number">${totalEntries}</div><div class="label">Raw Entries</div></div>`
-  content += `<div class="stat-card"><div class="number">${totalUnabsorbed}</div><div class="label">Unabsorbed</div></div>`
+  if (remoteAgents && remoteAgents.length > 0) {
+    const nodes = new Set(remoteAgents.map(r => r.nodeId))
+    content += `<div class="stat-card"><div class="number">${nodes.size}</div><div class="label">Mesh Nodes</div></div>`
+  }
   content += '</div>'
 
   // Agent cards
@@ -221,8 +225,11 @@ function hubHome(hub: WikiHub): string {
       ? `<span style="color: #e6a700;">${agent.unabsorbed} unabsorbed</span>`
       : '<span style="color: green;">up to date</span>'
 
+    const isRemote = remoteIds.has(agent.agentId) && !hub.listAgents().includes(agent.agentId)
+    const remoteBadge = isRemote ? ' <span class="tag" style="background:#fff3cd;color:#856404">remote</span>' : ''
+
     content += `<div class="agent-card">`
-    content += `<h3><a href="/agent/${encodeURIComponent(agent.agentId)}">${escapeHtml(agent.agentId)}</a></h3>`
+    content += `<h3><a href="/agent/${encodeURIComponent(agent.agentId)}">${escapeHtml(agent.agentId)}</a>${remoteBadge}</h3>`
     content += `<div class="agent-stats">
       <span><strong>${agent.totalArticles}</strong> articles</span>
       <span><strong>${agent.totalEntries}</strong> entries</span>
@@ -242,8 +249,8 @@ function hubHome(hub: WikiHub): string {
   return pageLayout("Hub", hubSidebar(agents), content)
 }
 
-function hubAgentOverview(hub: WikiHub, agentId: string): string {
-  const agents = hub.summary()
+function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSummary[]): string {
+  const agents = allAgents || hub.summary()
   const agentSummary = agents.find(a => a.agentId === agentId)
   if (!agentSummary) return pageLayout("Not Found", hubSidebar(agents), "<h1>Agent not found</h1>")
 
@@ -303,12 +310,12 @@ function hubAgentOverview(hub: WikiHub, agentId: string): string {
   return pageLayout(agentId, hubSidebar(agents, agentId), content)
 }
 
-function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string): string | null {
+function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string, allAgents?: AgentWikiSummary[]): string | null {
   const store = hub.getAgentWiki(agentId)
   const article = store.readArticle(articlePath)
   if (!article) return null
 
-  const agents = hub.summary()
+  const agents = allAgents || hub.summary()
   const index = store.rebuildIndex()
   const titleToPath = new Map<string, string>()
   for (const a of index.articles) titleToPath.set(a.title, a.path)
@@ -345,8 +352,8 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string): str
   return pageLayout(article.meta.title, hubSidebar(agents, `${agentId}/${articlePath}`), content)
 }
 
-function hubEntries(hub: WikiHub): string {
-  const agents = hub.summary()
+function hubEntries(hub: WikiHub, allAgents?: AgentWikiSummary[]): string {
+  const agents = allAgents || hub.summary()
   const shared = hub.getSharedStore()
   const entries = shared.listEntries()
 
@@ -376,8 +383,8 @@ function hubEntries(hub: WikiHub): string {
   return pageLayout("All Entries", hubSidebar(agents), content)
 }
 
-function hubSearch(hub: WikiHub, query: string): string {
-  const agents = hub.summary()
+function hubSearch(hub: WikiHub, query: string, allAgents?: AgentWikiSummary[]): string {
+  const agents = allAgents || hub.summary()
   let content = `<h1>Search: "${escapeHtml(query)}"</h1>`
   let totalResults = 0
 
@@ -429,10 +436,11 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
 
 // --- Server ---
 
-export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string): void {
+export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = []): void {
   const hub = new WikiHub(wikiDir)
+  const mesh = peerUrls.length > 0 ? new MeshWikiClient(peerUrls) : null
 
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://localhost:${port}`)
     const path = decodeURIComponent(url.pathname)
 
@@ -440,7 +448,38 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
     let status = 200
 
     try {
-      if (agentFilter) {
+      // Handle remote article fetch: /remote/:peerIdx/:agentId/article/:path
+      if (path.startsWith("/remote/") && mesh) {
+        const parts = path.slice("/remote/".length).split("/article/")
+        if (parts.length === 2) {
+          const [peerAgent, articlePath] = parts
+          const slashIdx = peerAgent.indexOf("/")
+          const peerUrl = decodeURIComponent(peerAgent.slice(0, slashIdx))
+          const agentId = peerAgent.slice(slashIdx + 1)
+
+          const article = await mesh.getRemoteArticle(peerUrl, agentId, articlePath)
+          if (article) {
+            const remoteAgents = await mesh.getRemoteAgents()
+            const allAgents = [...hub.summary(), ...remoteAgents.map(r => ({ ...r, agentId: `${r.agentId} @${r.nodeId}` }))]
+
+            let content = `<div class="breadcrumb"><a href="/">Hub</a> / <span class="tag">remote</span> ${escapeHtml(agentId)} @ ${escapeHtml(peerUrl)}</div>`
+            content += `<h1>${escapeHtml(article.meta.title)}</h1>`
+            content += '<dl class="meta">'
+            content += `<dt>Tags</dt><dd>${(article.meta.tags||[]).map(t => `<span class="tag">${t}</span>`).join(" ")}</dd>`
+            content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
+            content += `<dt>Source</dt><dd><span class="tag">remote</span> ${escapeHtml(peerUrl)}</dd>`
+            content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
+            content += '</dl>'
+
+            const titleToPath = new Map<string, string>()
+            content += md(article.content, titleToPath)
+
+            html = pageLayout(article.meta.title, hubSidebar(allAgents), content)
+          }
+        }
+      }
+
+      if (!html && agentFilter) {
         // Single agent mode
         const store = hub.getAgentWiki(agentFilter)
 
@@ -497,24 +536,54 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
           html = pageLayout(`Search: ${q}`, agentSidebar(store, agentFilter), content)
         }
       } else {
-        // Hub mode
+        // Hub mode — merge local + remote agents
+        const remoteAgents = mesh ? await mesh.getRemoteAgents() : []
+        const localAgents = hub.summary()
+        // Merge: local agents + remote-only agents (skip duplicates)
+        const localIds = new Set(localAgents.map(a => a.agentId))
+        const allAgents: AgentWikiSummary[] = [...localAgents]
+        for (const remote of remoteAgents) {
+          if (!localIds.has(remote.agentId)) {
+            allAgents.push({ ...remote, agentId: remote.agentId })
+          }
+        }
+
         if (path === "/" || path === "") {
-          html = hubHome(hub)
+          html = hubHome(hub, allAgents, remoteAgents)
         } else if (path === "/entries") {
-          html = hubEntries(hub)
+          html = hubEntries(hub, allAgents)
         } else if (path === "/search") {
-          html = hubSearch(hub, url.searchParams.get("q") || "")
+          html = hubSearch(hub, url.searchParams.get("q") || "", allAgents)
         } else if (path.startsWith("/agent/")) {
           const rest = path.slice("/agent/".length)
           const slashIdx = rest.indexOf("/article/")
           if (slashIdx === -1) {
             // Agent overview
-            html = hubAgentOverview(hub, rest)
+            html = hubAgentOverview(hub, rest, allAgents)
           } else {
             // Agent article
             const agentId = rest.slice(0, slashIdx)
             const articlePath = rest.slice(slashIdx + "/article/".length)
-            html = hubArticlePage(hub, agentId, articlePath)
+            html = hubArticlePage(hub, agentId, articlePath, allAgents)
+
+            // If not found locally, try remote peers
+            if (!html && mesh) {
+              const remote = remoteAgents.find(r => r.agentId === agentId)
+              if (remote) {
+                const article = await mesh.getRemoteArticle(remote.peerUrl, agentId, articlePath)
+                if (article) {
+                  let content = `<div class="breadcrumb"><a href="/">Hub</a> / <span class="tag">remote @ ${escapeHtml(remote.nodeId)}</span> / ${escapeHtml(agentId)}</div>`
+                  content += `<h1>${escapeHtml(article.meta.title)}</h1>`
+                  content += '<dl class="meta">'
+                  content += `<dt>Tags</dt><dd>${(article.meta.tags||[]).map(t => `<span class="tag">${t}</span>`).join(" ")}</dd>`
+                  content += `<dt>Source</dt><dd><span class="tag">remote</span> ${escapeHtml(remote.nodeId)}</dd>`
+                  content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
+                  content += '</dl>'
+                  content += md(article.content, new Map())
+                  html = pageLayout(article.meta.title, hubSidebar(allAgents), content)
+                }
+              }
+            }
           }
         }
       }

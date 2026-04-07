@@ -6,8 +6,8 @@
 // Layers (highest priority first):
 //   1. Channel   — where the message came from + channel-specific rules
 //   2. Scope     — group/personal/project + scope-specific constraints
-//   3. Identity  — who the agent is, what it can do
-//   4. Peers     — other agents available (only on channels that support delegation)
+//   3. Landscape — world model: team roster, channels, rules (cached at startup)
+//   4. Identity  — who the agent is, what it can do
 //   5. Intent    — what the user is asking about (extracted from message)
 //   6. Artifacts — project, issue, MR, file references
 //   7. History   — group conversation log or session history
@@ -37,8 +37,8 @@ const DEFAULT_CONFIG: ContextConfig = {
   layerBudgets: {
     channel: 200,
     scope: 200,
-    identity: 300,
-    peers: 400,
+    landscape: 350,
+    identity: 200,
     intent: 200,
     artifacts: 500,
     history: 1200,
@@ -69,8 +69,8 @@ export interface ContextInput {
   sender: string
   senderRole?: string                // "user", "agent:atlas"
 
-  // Peers (other agents)
-  peers?: Array<{ name: string; handle?: string; role?: string }>
+  // Landscape (cached world model from LandscapeBuilder)
+  landscape?: string
 
   // Artifacts
   mediaPath?: string
@@ -142,20 +142,26 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   // 2. Scope layer
   layers.push(buildScopeLayer(input, budget("scope", 200)))
 
-  // 3. Identity (only first line of systemPrompt — agent already has CLAUDE.md)
-  if (input.systemPrompt) {
+  // 3. Landscape (cached world model — team, channels, rules)
+  if (input.landscape) {
     layers.push({
-      name: "identity",
+      name: "landscape",
       priority: 3,
-      maxTokens: budget("identity", 300),
-      content: input.systemPrompt.split("\n")[0],
-      tags: ["identity", input.agentId],
+      maxTokens: budget("landscape", 350),
+      content: input.landscape,
+      tags: ["landscape", "world-model"],
     })
   }
 
-  // 4. Peers (only on channels that support delegation)
-  if (input.peers?.length && supportsDelgation(input.channel)) {
-    layers.push(buildPeersLayer(input, budget("peers", 400)))
+  // 4. Identity (only first line of systemPrompt — agent already has CLAUDE.md)
+  if (input.systemPrompt) {
+    layers.push({
+      name: "identity",
+      priority: 4,
+      maxTokens: budget("identity", 200),
+      content: input.systemPrompt.split("\n")[0],
+      tags: ["identity", input.agentId],
+    })
   }
 
   // 5. Intent (extracted keywords from message)
@@ -296,20 +302,6 @@ function buildScopeLayer(input: ContextInput, maxTokens: number): ContextLayer {
 }
 
 /**
- * Build peers layer (only for channels that support bot-to-bot).
- */
-function buildPeersLayer(input: ContextInput, maxTokens: number): ContextLayer {
-  const lines = ["[Team — mention to delegate]"]
-  for (const peer of input.peers || []) {
-    const handle = peer.handle ? ` (${peer.handle})` : ""
-    const role = peer.role ? ` — ${peer.role}` : ""
-    lines.push(`• ${peer.name}${handle}${role}`)
-  }
-  lines.push("Mention their handle to involve them.")
-  return { name: "peers", priority: 4, maxTokens, content: lines.join("\n"), tags: ["peers", "team"] }
-}
-
-/**
  * Extract intent tags from message (lightweight, no LLM).
  */
 function extractIntentTags(message: string): string[] {
@@ -335,13 +327,6 @@ function extractIntentTags(message: string): string[] {
   if (/infra|server|docker|k8s|devops/.test(lower)) tags.push("devops")
 
   return tags
-}
-
-/**
- * Channels that support agent delegation (bot-to-bot mentions).
- */
-function supportsDelgation(channel: string): boolean {
-  return channel === "telegram"
 }
 
 /**
