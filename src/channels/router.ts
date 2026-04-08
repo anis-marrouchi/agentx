@@ -508,6 +508,18 @@ export class MessageRouter {
   }
 
   private resolveAgent(msg: IncomingMessage): string | undefined {
+    // For GitLab: try mention matching first (same registry used for Telegram),
+    // then fall back to the adapter's project-route resolution.
+    if (msg.channel === "gitlab") {
+      const mentionAgent = this.registry.findByMention(msg.text)
+      if (mentionAgent) {
+        this.log(`GitLab mention resolved: ${mentionAgent}`)
+        return mentionAgent
+      }
+      // Fall back to project route
+      return msg.resolvedAgent
+    }
+
     // Pre-resolved by channel adapter (WhatsApp route-based, etc.)
     if (msg.resolvedAgent) {
       return msg.resolvedAgent

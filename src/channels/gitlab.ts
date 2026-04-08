@@ -289,8 +289,10 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
-    // Resolve agent: check @mentions in comment first, fall back to project route
-    const agentId = this.resolveAgentFromMention(note) || this.resolveAgent(project)
+    // Resolve agent: project route is the fallback. @mention resolution is
+    // handled by the router via registry.findByMention() — which uses the
+    // agent's `mentions` array (single source of truth for all channels).
+    const projectAgent = this.resolveAgent(project)
 
     // React with 👀 to acknowledge we've seen the comment
     this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id).catch(() => {})
@@ -311,7 +313,7 @@ export class GitLabAdapter implements ChannelAdapter {
       text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note}`,
       timestamp: new Date(),
       raw: event,
-      resolvedAgent: agentId,
+      resolvedAgent: projectAgent,  // fallback only — router tries mention matching first
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
     }
 
