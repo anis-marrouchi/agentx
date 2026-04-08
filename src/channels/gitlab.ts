@@ -256,17 +256,24 @@ export class GitLabAdapter implements ChannelAdapter {
     const user = event.user
     const noteId = String(event.object_attributes.id)
 
-    // Skip our own comments (prevents infinite loop)
+    // Skip our own comments (prevents infinite loop).
+    // All agents share the same GitLab API token/user, so any agent's reply
+    // will come from this.botUsername — skip ALL of them.
     if (this.botUsername && user.username === this.botUsername) {
-      this.log(`Skipping own comment from ${this.botUsername}`)
+      this.log(`Skipping own comment from ${this.botUsername} (note ${noteId})`)
       res.writeHead(200); res.end("ok"); return
     }
 
-    // Skip comments we already sent
+    // Skip comments we already sent (belt-and-suspenders with above check)
     if (this.sentNoteIds.has(noteId)) {
       this.sentNoteIds.delete(noteId)
       res.writeHead(200); res.end("ok"); return
     }
+
+    // Additional loop protection: skip if comment was recently posted by any agent.
+    // sentNoteIds tracks IDs from send(), but webhook may arrive before send() returns.
+    // Use a time-based window: ignore notes from bot user within last 30s.
+    // (Already handled by botUsername check above, but keeping for clarity)
 
     // Determine the noteable context
     let noteableType = ""
@@ -415,27 +422,22 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /**
    * Resolve agent from @mentions in a comment.
-   * Checks agentMappings for GitLab usernames and keywords.
+   * Only checks agentMappings for explicit GitLab @username mentions.
+   * Keywords are NOT checked — they cause false positives when normal
+   * issue text contains words like "deploy", "test", "coder".
    */
   private resolveAgentFromMention(text: string): string | undefined {
     if (!this.config.agentMappings?.length) return undefined
 
-    const lower = text.toLowerCase()
     // Extract @mentions from the comment
-    const mentions = text.match(/@(\w+)/g)?.map(m => m.slice(1).toLowerCase()) || []
+    const mentions = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).toLowerCase()) || []
+    if (mentions.length === 0) return undefined
 
     for (const mapping of this.config.agentMappings) {
       // Check if any GitLab @username matches
       for (const username of mapping.gitlabUsernames) {
         if (mentions.includes(username.toLowerCase())) {
           this.log(`Mention @${username} -> agent ${mapping.agentId}`)
-          return mapping.agentId
-        }
-      }
-      // Check keywords
-      for (const keyword of mapping.keywords) {
-        if (lower.includes(keyword.toLowerCase())) {
-          this.log(`Keyword "${keyword}" -> agent ${mapping.agentId}`)
           return mapping.agentId
         }
       }
@@ -482,6 +484,8 @@ export class GitLabAdapter implements ChannelAdapter {
     const facts: string[] = [
       "This is a GitLab webhook event — respond as a GitLab comment",
       "Do NOT use Telegram handles or delegate to other agents",
+      "Do NOT mention other agents by name — you are the only agent responding to this event",
+      "Stay in your role — do not act as or speak for other agents",
     ]
 
     return {
