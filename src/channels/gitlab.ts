@@ -105,6 +105,7 @@ export class GitLabAdapter implements ChannelAdapter {
   private handler?: (msg: IncomingMessage) => Promise<void>
   private server?: ReturnType<typeof createServer>
   private botUsername?: string  // resolved on first API call
+  private botUsernames: Set<string> = new Set()  // all known bot users (to prevent cascading)
   private sentNoteIds: Set<string> = new Set()  // track our own comments
   private log: (...args: unknown[]) => void
 
@@ -125,9 +126,21 @@ export class GitLabAdapter implements ChannelAdapter {
       })
       const data = await res.json() as any
       this.botUsername = data.username
+      this.botUsernames.add(data.username)
       this.log(`Bot user: ${this.botUsername}`)
     } catch (e: any) {
       this.log(`Could not resolve bot user: ${e.message}`)
+    }
+
+    // Also register all GitLab usernames from agentMappings as bot users
+    // to prevent cascading when agents post via different tokens
+    for (const mapping of this.config.agentMappings || []) {
+      for (const username of mapping.gitlabUsernames) {
+        this.botUsernames.add(username)
+      }
+    }
+    if (this.botUsernames.size > 1) {
+      this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
     }
 
     this.server = createServer(async (req, res) => {
@@ -256,24 +269,29 @@ export class GitLabAdapter implements ChannelAdapter {
     const user = event.user
     const noteId = String(event.object_attributes.id)
 
-    // Skip our own comments (prevents infinite loop).
-    // All agents share the same GitLab API token/user, so any agent's reply
-    // will come from this.botUsername — skip ALL of them.
-    if (this.botUsername && user.username === this.botUsername) {
-      this.log(`Skipping own comment from ${this.botUsername} (note ${noteId})`)
+    // Skip comments from any known bot user (prevents cascading loops).
+    // Agents may post via different GitLab users (webhook token user, workspace
+    // token user, etc.). Track all of them.
+    if (this.isBotUser(user.username)) {
+      this.log(`Skipping bot comment from ${user.username} (note ${noteId})`)
       res.writeHead(200); res.end("ok"); return
     }
 
-    // Skip comments we already sent (belt-and-suspenders with above check)
+    // Skip comments we already sent (belt-and-suspenders)
     if (this.sentNoteIds.has(noteId)) {
       this.sentNoteIds.delete(noteId)
       res.writeHead(200); res.end("ok"); return
     }
 
-    // Additional loop protection: skip if comment was recently posted by any agent.
-    // sentNoteIds tracks IDs from send(), but webhook may arrive before send() returns.
-    // Use a time-based window: ignore notes from bot user within last 30s.
-    // (Already handled by botUsername check above, but keeping for clarity)
+    // Only process notes that contain an explicit @mention.
+    // Without this, every human comment falls through to the project route
+    // and triggers the PM agent, which then cascades to devops, etc.
+    // The router will resolve which agent the @mention maps to.
+    const mentions = note.match(/@(\w[\w.-]*)/g)
+    if (!mentions || mentions.length === 0) {
+      this.log(`No @mention in note ${noteId}, skipping`)
+      res.writeHead(200); res.end("ok"); return
+    }
 
     // Determine the noteable context
     let noteableType = ""
@@ -289,10 +307,8 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
-    // Resolve agent: project route is the fallback. @mention resolution is
-    // handled by the router via registry.findByMention() — which uses the
-    // agent's `mentions` array (single source of truth for all channels).
-    const projectAgent = this.resolveAgent(project)
+    // For notes: no project-route fallback. Only explicit @mentions route.
+    // This prevents PM from being triggered by every comment on the project.
 
     // React with 👀 to acknowledge we've seen the comment
     this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id).catch(() => {})
@@ -313,7 +329,7 @@ export class GitLabAdapter implements ChannelAdapter {
       text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note}`,
       timestamp: new Date(),
       raw: event,
-      resolvedAgent: projectAgent,  // fallback only — router tries mention matching first
+      // No resolvedAgent — router resolves via registry.findByMention() only
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
     }
 
@@ -327,9 +343,15 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /**
    * Handle issue events (opened, updated, closed).
+   * Only routes events from human users, not bot-triggered updates.
    */
   private async handleIssue(event: GitLabIssueEvent, res: ServerResponse): Promise<void> {
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
+
+    // Skip bot-triggered issue updates (label changes, assignments by agents)
+    if (this.isBotUser(event.user.username)) {
+      res.writeHead(200); res.end("ok"); return
+    }
 
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
@@ -500,6 +522,13 @@ export class GitLabAdapter implements ChannelAdapter {
       issue: noteableType && noteableIid ? { type: noteableType, iid: noteableIid, title: "" } : undefined,
       facts,
     }
+  }
+
+  /**
+   * Check if a username belongs to a known bot/agent user.
+   */
+  private isBotUser(username: string): boolean {
+    return this.botUsernames.has(username)
   }
 
   /**
