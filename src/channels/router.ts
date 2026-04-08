@@ -237,6 +237,12 @@ export class MessageRouter {
       }
     }
 
+    // For GitLab: prefix response with agent identity since all agents
+    // share a single GitLab API user. This makes it clear which agent responded.
+    if (msg.channel === "gitlab" && responseText) {
+      responseText = `> **${agentName}** (${agentId})\n\n${responseText}`
+    }
+
     // Final message
     let sentResponseId: string | undefined
     if (responseText) {
