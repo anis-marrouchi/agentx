@@ -52,6 +52,9 @@
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,mdx}\" --cache",
+    "eval": "vitest run test/eval/",
+    "eval:track": "TRACK_SCORES=1 vitest run test/eval/real-data-eval.test.ts",
+    "usage:track": "tsx src/scripts/track-usage.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

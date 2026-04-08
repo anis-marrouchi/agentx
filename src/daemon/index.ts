@@ -112,7 +112,10 @@ export class AgentXDaemon {
     this.landscape.build(meshPeers)
     this.log(`  Landscape: built for ${Object.keys(this.config.agents).length} agents`)
 
-    // 5. Start HTTP API
+    // 5. Schedule midnight cost tracking hook
+    this.scheduleMidnightHook()
+
+    // 6. Start HTTP API
     await this.startHttpApi()
 
     // Print agent summary
@@ -196,6 +199,8 @@ export class AgentXDaemon {
       }
     } catch {}
 
+    if (this.midnightTimer) clearTimeout(this.midnightTimer)
+
     if (this.httpServer) {
       this.httpServer.close()
     }
@@ -208,6 +213,49 @@ export class AgentXDaemon {
 
     this.log(`  Shutdown complete (${Date.now() - start}ms)`)
     process.exit(0)
+  }
+
+  private midnightTimer?: ReturnType<typeof setTimeout>
+
+  private scheduleMidnightHook(): void {
+    const scheduleNext = () => {
+      const now = new Date()
+      // Next midnight in Africa/Tunis (5s buffer to ensure day rollover)
+      const tunisStr = now.toLocaleString("en-US", { timeZone: "Africa/Tunis" })
+      const tunisNow = new Date(tunisStr)
+
+      const target = new Date(tunisNow)
+      target.setDate(target.getDate() + 1)
+      target.setHours(0, 0, 5, 0)
+
+      const tunisOffset = tunisNow.getTime() - now.getTime()
+      const delay = target.getTime() - tunisOffset - now.getTime()
+
+      this.log(`  Cost tracking: next run in ${Math.round(delay / 60_000)}min`)
+
+      this.midnightTimer = setTimeout(async () => {
+        await this.runDailyCostReport()
+        scheduleNext()
+      }, Math.max(delay, 60_000)) // min 1 minute guard
+    }
+
+    scheduleNext()
+  }
+
+  private async runDailyCostReport(): Promise<void> {
+    const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
+    const tracker = this.registry.getTokenTracker()
+    const report = tracker.generateDailyReport(yesterday)
+
+    if (!report || report.totalTasks === 0) {
+      this.log(`  Cost tracking: no usage for ${yesterday}, skipping`)
+      return
+    }
+
+    tracker.appendToTokenCosts(report)
+    this.log(
+      `  Cost tracking: ${yesterday} — ${report.totalTasks} tasks, $${report.totalCost.toFixed(4)} (top: ${report.topAgent} $${report.topCost.toFixed(4)})`,
+    )
   }
 
   private async startChannels(): Promise<void> {

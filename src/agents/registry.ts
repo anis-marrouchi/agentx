@@ -283,6 +283,8 @@ export class AgentRegistry {
           response.usage,
           task.message.length,
           response.content.length,
+          false,
+          state.def.model,
         )
 
         this.log(
@@ -338,5 +340,12 @@ export class AgentRegistry {
    */
   getTodayUsage() {
     return this.tokenTracker.today()
+  }
+
+  /**
+   * Get the token tracker instance (for daemon hooks).
+   */
+  getTokenTracker(): TokenTracker {
+    return this.tokenTracker
   }
 }

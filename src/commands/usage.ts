@@ -61,6 +61,16 @@ usage
     }
   })
 
+// agentx usage serve — web dashboard
+usage
+  .command("serve")
+  .description("start a web dashboard for token usage visualization")
+  .option("--port <n>", "port number", "4201")
+  .action(async (opts) => {
+    const { startUsageDashboard } = await import("@/daemon/usage-dashboard")
+    startUsageDashboard(parseInt(opts.port))
+  })
+
 // agentx usage report — run Python analyzer
 usage
   .command("report")

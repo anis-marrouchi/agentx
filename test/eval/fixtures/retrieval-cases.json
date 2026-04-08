@@ -1,0 +1,306 @@
+[
+  {
+    "name": "exact-deploy-staging",
+    "query": "deploy to staging",
+    "corpus": [
+      "The deployment process involves pushing code to the staging environment using our CI pipeline. Run deploy-staging.sh to trigger.",
+      "Our marketing strategy for Q2 focuses on expanding into new markets across Europe and Asia.",
+      "Database backup procedures should be run weekly using pg_dump with the --clean flag.",
+      "The team meeting schedule has been updated to every Tuesday at 10am in the main conference room."
+    ],
+    "expected_top": 0,
+    "tags": ["exact"]
+  },
+  {
+    "name": "exact-nginx-config",
+    "query": "nginx configuration",
+    "corpus": [
+      "User authentication is handled via JWT tokens with a 24-hour expiry window.",
+      "The nginx configuration file is located at /etc/nginx/sites-available/default. Update server_name and proxy_pass directives.",
+      "Python virtual environments should be created using python -m venv and activated before installing packages.",
+      "The Redis cache layer handles session storage with a TTL of 3600 seconds."
+    ],
+    "expected_top": 1,
+    "tags": ["exact"]
+  },
+  {
+    "name": "exact-api-rate-limit",
+    "query": "API rate limiting",
+    "corpus": [
+      "Rate limiting on the API is enforced at 100 requests per minute per API key. Exceeding this triggers a 429 response.",
+      "The frontend uses React with TypeScript and Tailwind CSS for styling components.",
+      "Git branching strategy follows GitFlow with feature, develop, and main branches.",
+      "Monitoring dashboards are available at grafana.internal with alerts configured for high latency."
+    ],
+    "expected_top": 0,
+    "tags": ["exact"]
+  },
+  {
+    "name": "exact-docker-compose",
+    "query": "docker compose services",
+    "corpus": [
+      "Employee onboarding requires completing forms HR-1 through HR-5 within the first week.",
+      "The project roadmap for H2 includes three major features: real-time sync, offline mode, and team spaces.",
+      "Docker Compose defines three services: postgres, redis, and the application server. Use docker compose up -d to start.",
+      "Code review guidelines require at least two approvals before merging to the main branch."
+    ],
+    "expected_top": 2,
+    "tags": ["exact"]
+  },
+  {
+    "name": "exact-ssl-certificate",
+    "query": "SSL certificate renewal",
+    "corpus": [
+      "SSL certificates are managed by Certbot and auto-renew every 90 days. Check renewal status with certbot certificates.",
+      "The data pipeline processes CSV uploads through validation, transformation, and loading stages.",
+      "Sprint retrospectives are held bi-weekly on Friday afternoons in the team Slack channel.",
+      "Elasticsearch indexes are configured with 3 primary shards and 1 replica for redundancy."
+    ],
+    "expected_top": 0,
+    "tags": ["exact"]
+  },
+
+  {
+    "name": "partial-server-setup",
+    "query": "how to configure the web server",
+    "corpus": [
+      "The nginx server block configuration handles SSL termination and reverse proxy to the Node.js application on port 3000.",
+      "Quarterly OKR planning sessions determine team priorities for the next three months.",
+      "The mobile app uses React Native with Expo for cross-platform development.",
+      "Database migrations are versioned and applied automatically during deployment."
+    ],
+    "expected_top": 0,
+    "tags": ["partial"]
+  },
+  {
+    "name": "partial-auth-tokens",
+    "query": "user login authentication",
+    "corpus": [
+      "The color palette uses primary blue (#2563EB) and secondary gray (#6B7280) across all UI components.",
+      "Authentication tokens are generated upon successful login using bcrypt password verification and JWT signing.",
+      "Load balancer health checks ping /health every 30 seconds and remove unhealthy instances.",
+      "The changelog is auto-generated from conventional commit messages during the release process."
+    ],
+    "expected_top": 1,
+    "tags": ["partial"]
+  },
+  {
+    "name": "partial-test-coverage",
+    "query": "running unit tests",
+    "corpus": [
+      "Internationalization supports English, French, and Arabic with RTL layout switching.",
+      "Performance benchmarks should target sub-200ms response times for the 95th percentile.",
+      "Unit test coverage is measured using Vitest with c8 reporter. Run npm test to execute the full test suite with coverage output.",
+      "The webhook system retries failed deliveries up to 3 times with exponential backoff."
+    ],
+    "expected_top": 2,
+    "tags": ["partial"]
+  },
+  {
+    "name": "partial-env-variables",
+    "query": "setting environment variables",
+    "corpus": [
+      "Environment configuration uses .env files parsed by dotenv. Required variables: DATABASE_URL, REDIS_URL, JWT_SECRET, API_KEY.",
+      "The design system follows atomic design principles with atoms, molecules, and organisms.",
+      "Incident response runbook: acknowledge in PagerDuty, join the war room channel, assess blast radius.",
+      "GraphQL schema is defined in schema.graphql and resolvers live in src/resolvers/."
+    ],
+    "expected_top": 0,
+    "tags": ["partial"]
+  },
+  {
+    "name": "partial-error-logs",
+    "query": "debugging application errors",
+    "corpus": [
+      "Brand guidelines specify Helvetica Neue for headings and Inter for body text.",
+      "Customer support tickets are triaged in Zendesk with SLA targets of 4h for critical and 24h for normal.",
+      "Application errors are logged to stdout in JSON format and collected by Fluentd into Elasticsearch for debugging and analysis.",
+      "The CDN cache invalidation API accepts wildcard paths and processes within 60 seconds globally."
+    ],
+    "expected_top": 2,
+    "tags": ["partial"]
+  },
+
+  {
+    "name": "tf-deploy-frequency",
+    "query": "deployment pipeline",
+    "corpus": [
+      "The CI/CD deployment pipeline runs on every merge to main. The deployment pipeline validates, builds, tests, and deploys. Pipeline stages include linting, unit tests, integration tests, and finally deployment to production. The deployment process is fully automated.",
+      "We use Slack for team communication.",
+      "The deployment script exists but is rarely used manually.",
+      "Company policy requires annual security training for all employees."
+    ],
+    "expected_top": 0,
+    "tags": ["tf"]
+  },
+  {
+    "name": "tf-kubernetes-mentions",
+    "query": "kubernetes cluster management",
+    "corpus": [
+      "The blog post schedule is maintained in Notion with drafts due one week before publication.",
+      "Kubernetes cluster runs 12 nodes across 3 availability zones. Kubernetes pod autoscaling is configured based on CPU and memory. Kubernetes ingress handles routing. Kubernetes secrets store sensitive configuration. Kubernetes namespaces isolate environments.",
+      "We occasionally check the kubernetes dashboard for status.",
+      "Office WiFi password is posted on the bulletin board near reception."
+    ],
+    "expected_top": 1,
+    "tags": ["tf"]
+  },
+  {
+    "name": "tf-redis-caching",
+    "query": "redis caching strategy",
+    "corpus": [
+      "Redis is used extensively for caching. The redis cache layer handles session data, API response caching, and rate limit counters. Redis keys use a namespace prefix. Redis TTL defaults to 1 hour. Redis cluster mode is enabled for high availability.",
+      "The redis connection string is in the config file.",
+      "Frontend assets are served from CloudFront CDN with 24-hour cache headers.",
+      "Terraform state is stored in S3 with DynamoDB locking to prevent concurrent modifications."
+    ],
+    "expected_top": 0,
+    "tags": ["tf"]
+  },
+  {
+    "name": "tf-postgres-queries",
+    "query": "postgresql database optimization",
+    "corpus": [
+      "The company handbook covers PTO policy, remote work guidelines, and expense reporting.",
+      "Sentry captures frontend errors with source maps and groups them by stack trace fingerprint.",
+      "PostgreSQL database performance is critical. Optimize postgresql queries with proper indexing. PostgreSQL vacuum runs nightly. PostgreSQL connection pooling via PgBouncer handles 200 concurrent connections. PostgreSQL replication provides read replicas. Database query plans should be analyzed with EXPLAIN ANALYZE.",
+      "A postgresql backup runs daily."
+    ],
+    "expected_top": 2,
+    "tags": ["tf"]
+  },
+  {
+    "name": "tf-monitoring-alerts",
+    "query": "monitoring and alerting setup",
+    "corpus": [
+      "Monitoring infrastructure uses Prometheus for metrics collection, Grafana for visualization, and Alertmanager for alerting. Monitoring covers CPU, memory, disk, and network. Alert rules trigger for high error rates, latency spikes, and resource exhaustion. Monitoring dashboards are organized by service.",
+      "We have some monitoring in place.",
+      "The onboarding checklist includes setting up development environment and reading architecture docs.",
+      "API documentation is generated from OpenAPI specs and hosted at docs.example.com."
+    ],
+    "expected_top": 0,
+    "tags": ["tf"]
+  },
+
+  {
+    "name": "short-query-nginx",
+    "query": "nginx",
+    "corpus": [
+      "The nginx reverse proxy configuration handles SSL termination, load balancing across upstream servers, and serves static assets directly from the filesystem.",
+      "Our comprehensive infrastructure documentation covers everything from server provisioning to monitoring setup, including load balancers, databases, caching layers, message queues, and container orchestration across multiple cloud providers with detailed runbooks for each component. The nginx mention is buried deep in a section about optional proxy configurations that were considered but not implemented.",
+      "Apache configuration uses mod_rewrite for URL rewriting and mod_proxy for reverse proxying to application servers.",
+      "HAProxy provides TCP and HTTP load balancing with health checks and automatic failover between backend servers."
+    ],
+    "expected_top": 0,
+    "tags": ["short-query"]
+  },
+  {
+    "name": "short-query-redis",
+    "query": "redis",
+    "corpus": [
+      "Memcached is used for simple key-value caching with automatic eviction based on LRU policy.",
+      "Redis serves as both a cache and a message broker. It handles pub/sub for real-time notifications and sorted sets for leaderboards.",
+      "The entire technology stack documentation spans hundreds of pages covering every tool and service we use, from version control to deployment automation, including a brief note that redis was evaluated during the initial architecture review phase but details are scattered across many unrelated sections.",
+      "DynamoDB provides a fully managed NoSQL database with single-digit millisecond performance at any scale."
+    ],
+    "expected_top": 1,
+    "tags": ["short-query"]
+  },
+  {
+    "name": "short-query-docker",
+    "query": "docker",
+    "corpus": [
+      "Virtual machines are provisioned using Vagrant with VirtualBox as the provider for local development environments.",
+      "Podman provides a daemonless container engine compatible with OCI standards for running isolated workloads.",
+      "Docker containers are built using multi-stage Dockerfiles. Docker Compose orchestrates local development. Docker images are pushed to our private registry.",
+      "The deployment history log for the past year includes hundreds of entries across all environments with various tools and methods used, and somewhere in there docker was mentioned in passing during a retrospective meeting note."
+    ],
+    "expected_top": 2,
+    "tags": ["short-query"]
+  },
+  {
+    "name": "short-query-grafana",
+    "query": "grafana",
+    "corpus": [
+      "Grafana dashboards visualize metrics from Prometheus with custom panels for API latency, error rates, and throughput.",
+      "The complete observability guide describes our entire monitoring philosophy from first principles, touching on dozens of tools and approaches, and includes a footnote referencing grafana as one of many visualization options considered.",
+      "Kibana provides log visualization and exploration through Elasticsearch with saved searches and dashboard templates.",
+      "Datadog offers unified monitoring with APM traces, infrastructure metrics, and log management in a single platform."
+    ],
+    "expected_top": 0,
+    "tags": ["short-query"]
+  },
+  {
+    "name": "short-query-terraform",
+    "query": "terraform",
+    "corpus": [
+      "CloudFormation templates define AWS infrastructure as YAML with nested stacks for modularity.",
+      "Pulumi uses real programming languages like TypeScript and Python for infrastructure as code definitions.",
+      "Ansible playbooks automate server configuration with idempotent tasks organized into roles and collections.",
+      "Terraform modules manage cloud infrastructure. Terraform state is stored remotely in S3. Terraform plans are reviewed before applying changes to production."
+    ],
+    "expected_top": 3,
+    "tags": ["short-query"]
+  },
+
+  {
+    "name": "synonym-cost-pricing",
+    "query": "how much does it cost",
+    "corpus": [
+      "Pricing tiers include Free, Pro at $29/month, and Enterprise with custom pricing based on usage volume.",
+      "The deployment pipeline runs on every merge to the main branch automatically.",
+      "User feedback is collected through in-app surveys and NPS scoring quarterly.",
+      "The color system uses CSS custom properties for theming with light and dark mode support."
+    ],
+    "expected_top": 0,
+    "tags": ["synonym"]
+  },
+  {
+    "name": "synonym-error-bug",
+    "query": "application errors and crashes",
+    "corpus": [
+      "The style guide mandates consistent spacing of 8px increments across all UI elements.",
+      "Known bugs are tracked in the issue tracker. Recent bug fixes addressed null pointer exceptions and race conditions in the queue processor.",
+      "Database schema changes require a migration file with both up and down methods.",
+      "The onboarding flow guides new users through profile setup and feature discovery."
+    ],
+    "expected_top": 1,
+    "tags": ["synonym"]
+  },
+  {
+    "name": "synonym-fast-performance",
+    "query": "make the application faster",
+    "corpus": [
+      "Performance optimization reduced API response times from 800ms to 120ms through query indexing, connection pooling, and response caching.",
+      "The README documents project setup steps and contribution guidelines for new developers.",
+      "Slack integration sends notifications for deployments, incidents, and PR reviews to the team channel.",
+      "Feature flags are managed through LaunchDarkly with percentage rollouts and user targeting."
+    ],
+    "expected_top": 0,
+    "tags": ["synonym"]
+  },
+  {
+    "name": "synonym-credentials-auth",
+    "query": "where are the credentials stored",
+    "corpus": [
+      "Meeting notes from the architecture review are stored in Confluence under the Engineering space.",
+      "API documentation follows OpenAPI 3.0 specification with examples for each endpoint.",
+      "Secrets and authentication tokens are stored in HashiCorp Vault with automatic rotation every 30 days.",
+      "The CI pipeline caches node_modules between runs to speed up the install step."
+    ],
+    "expected_top": 2,
+    "tags": ["synonym"]
+  },
+  {
+    "name": "synonym-users-customers",
+    "query": "how many users do we have",
+    "corpus": [
+      "Customer analytics dashboard shows 45,000 active customers with 12% month-over-month growth.",
+      "The test suite includes 2,400 unit tests and 180 integration tests with 94% code coverage.",
+      "Infrastructure costs are tracked in a shared spreadsheet updated monthly by the DevOps team.",
+      "The release cadence is every two weeks with a code freeze on Wednesday before the Thursday release."
+    ],
+    "expected_top": 0,
+    "tags": ["synonym"]
+  }
+]

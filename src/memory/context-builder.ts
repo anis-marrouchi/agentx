@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "fs"
 import path from "path"
+import { buildIndex, scoreAll } from "./bm25"
 
 interface ContextSection {
   label: string
@@ -53,25 +54,6 @@ function estimateTokens(content: string): number {
   return Math.ceil(content.length / 4)
 }
 
-/**
- * Score a section's relevance to a task via word overlap.
- */
-function scoreRelevance(section: string, task: string): number {
-  const taskWords = new Set(
-    task.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
-  )
-  if (taskWords.size === 0) return 0
-
-  const sectionWords = new Set(
-    section.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
-  )
-  let overlap = 0
-  for (const w of taskWords) {
-    if (sectionWords.has(w)) overlap++
-  }
-  return overlap / taskWords.size
-}
-
 export class ContextBuilder {
   private sections: ContextSection[] = []
 
@@ -86,10 +68,15 @@ export class ContextBuilder {
   buildContext(task: string, maxTokens = 12000): string {
     if (this.sections.length === 0) return ""
 
-    // Score each section by priority + relevance
-    const scored = this.sections.map((s) => ({
+    // Score each section via BM25
+    const docs = this.sections.map((s) => s.content)
+    const index = buildIndex(docs)
+    const bm25Results = scoreAll(task, index)
+    const scoreMap = new Map(bm25Results.map((r) => [r.docIndex, r.score]))
+
+    const scored = this.sections.map((s, i) => ({
       ...s,
-      relevance: scoreRelevance(s.content, task),
+      relevance: scoreMap.get(i) ?? 0,
       tokens: estimateTokens(s.content),
     }))
 

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs"
 import { resolve } from "path"
+import { buildIndex, scoreAll } from "../memory/bm25"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -19,16 +20,6 @@ export interface MemoryFact {
 const MAX_MEMORIES = 200
 const TASK_STATE_TTL_DAYS = 7
 
-const STOP_WORDS = new Set([
-  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-  "have", "has", "had", "do", "does", "did", "will", "would", "could",
-  "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-  "on", "with", "at", "by", "from", "as", "into", "about", "through",
-  "and", "but", "or", "not", "no", "if", "then", "so", "what", "how",
-  "when", "where", "who", "which", "that", "this", "it", "i", "you",
-  "we", "they", "he", "she", "me", "my", "your", "our", "their",
-  "please", "just", "also", "very", "much", "some", "any", "all",
-])
 
 export class MemoryStore {
   private memoryDir: string
@@ -71,35 +62,27 @@ export class MemoryStore {
     const memories = this.getAll(agentId)
     if (memories.length === 0) return []
 
-    const words = message.toLowerCase()
-      .replace(/[^a-z0-9\s@_-]/g, " ")
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+    // BM25 over keywords + content
+    const docs = memories.map((m) => `${m.keywords.join(" ")} ${m.content}`)
+    const index = buildIndex(docs)
+    const bm25Scores = scoreAll(message, index)
+    const scoreMap = new Map(bm25Scores.map((r) => [r.docIndex, r.score]))
 
-    if (words.length === 0) return memories.slice(-limit) // fallback: recent memories
-
-    const scored = memories.map(m => {
-      let score = 0
-      const contentLower = m.content.toLowerCase()
-      const keywordsLower = m.keywords.map(k => k.toLowerCase())
-
-      for (const word of words) {
-        if (keywordsLower.some(k => k.includes(word))) score += 3
-        if (contentLower.includes(word)) score += 1
-      }
-
-      // Boost secrets and commitments (more important to recall)
-      if (m.category === "secret") score += 2
-      if (m.category === "commitment") score += 1
-
-      return { memory: m, score }
+    const scored = memories.map((m, i) => {
+      let s = scoreMap.get(i) ?? 0
+      // Category boosts (preserved from original)
+      if (m.category === "secret") s += 2
+      if (m.category === "commitment") s += 1
+      return { memory: m, score: s }
     })
 
-    return scored
-      .filter(s => s.score > 0)
+    const matched = scored.filter((s) => s.score > 0)
+    if (matched.length === 0) return memories.slice(-limit) // fallback: recent
+
+    return matched
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(s => s.memory)
+      .map((s) => s.memory)
   }
 
   buildContext(memories: MemoryFact[]): string {

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { resolve, join, relative, dirname } from "path"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
+import { buildIndex, scoreAll } from "../memory/bm25"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -262,7 +263,7 @@ export class WikiStore {
    */
   search(query: string, agentId: string, maxResults: number = 10): WikiArticle[] {
     const queryLower = query.toLowerCase()
-    const results: Array<{ article: WikiArticle; score: number }> = []
+    const articles: WikiArticle[] = []
 
     this.walkDir(this.baseDir, (filePath) => {
       if (!filePath.endsWith(".md")) return
@@ -271,28 +272,30 @@ export class WikiStore {
 
       const article = this.readArticle(relPath)
       if (!article || !this.canRead(article.meta, agentId)) return
+      articles.push(article)
+    })
 
-      let score = 0
-      const titleLower = article.meta.title.toLowerCase()
-      const contentLower = article.content.toLowerCase()
+    if (articles.length === 0) return []
 
-      // Title match scores highest
-      if (titleLower.includes(queryLower)) score += 10
-      // Tag match
+    // BM25 over article content
+    const docs = articles.map((a) => a.content)
+    const index = buildIndex(docs)
+    const bm25Scores = scoreAll(query, index)
+    const scoreMap = new Map(bm25Scores.map((r) => [r.docIndex, r.score]))
+
+    const results = articles.map((article, i) => {
+      let score = scoreMap.get(i) ?? 0
+      // Additive bonuses for title and tag matches
+      if (article.meta.title.toLowerCase().includes(queryLower)) score += 10
       if (article.meta.tags?.some(t => t.toLowerCase().includes(queryLower))) score += 5
-      // Content match (count occurrences, cap at 5)
-      const occurrences = (contentLower.match(new RegExp(queryLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length
-      score += Math.min(occurrences, 5)
-
-      if (score > 0) {
-        results.push({ article, score })
-      }
+      return { article, score }
     })
 
     return results
+      .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, maxResults)
-      .map(r => r.article)
+      .map((r) => r.article)
   }
 
   /**
@@ -300,44 +303,30 @@ export class WikiStore {
    * Extracts keywords from the message and searches the wiki.
    */
   findRelevant(message: string, agentId: string, maxArticles: number = 3): WikiArticle[] {
-    // Extract meaningful keywords (skip common words)
-    const stopWords = new Set([
-      "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-      "have", "has", "had", "do", "does", "did", "will", "would", "could",
-      "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-      "on", "with", "at", "by", "from", "as", "into", "about", "through",
-      "and", "but", "or", "not", "no", "if", "then", "so", "what", "how",
-      "when", "where", "who", "which", "that", "this", "it", "i", "you",
-      "we", "they", "he", "she", "me", "my", "your", "our", "their",
-      "please", "just", "also", "very", "much", "some", "any", "all",
-    ])
+    const articles: WikiArticle[] = []
 
-    const words = message.toLowerCase()
-      .replace(/[^a-z0-9\s@_-]/g, " ")
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !stopWords.has(w))
+    this.walkDir(this.baseDir, (filePath) => {
+      if (!filePath.endsWith(".md")) return
+      const relPath = relative(this.baseDir, filePath)
+      if (relPath.startsWith("raw/") || relPath.startsWith("_")) return
 
-    if (words.length === 0) return []
+      const article = this.readArticle(relPath)
+      if (!article || !this.canRead(article.meta, agentId)) return
+      articles.push(article)
+    })
 
-    // Score articles by keyword matches
-    const articleScores = new Map<string, { article: WikiArticle; score: number }>()
+    if (articles.length === 0) return []
 
-    for (const word of words) {
-      const matches = this.search(word, agentId, 5)
-      for (const article of matches) {
-        const existing = articleScores.get(article.path)
-        if (existing) {
-          existing.score += 1
-        } else {
-          articleScores.set(article.path, { article, score: 1 })
-        }
-      }
-    }
+    // Single BM25 pass over title + tags + content
+    const docs = articles.map(
+      (a) => `${a.meta.title} ${(a.meta.tags || []).join(" ")} ${a.content}`,
+    )
+    const index = buildIndex(docs)
+    const scored = scoreAll(message, index)
 
-    return Array.from(articleScores.values())
-      .sort((a, b) => b.score - a.score)
+    return scored
       .slice(0, maxArticles)
-      .map(r => r.article)
+      .map((s) => articles[s.docIndex])
   }
 
   /**
