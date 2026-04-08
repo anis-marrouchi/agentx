@@ -67,6 +67,8 @@ export interface ContextInput {
 
   // Participants
   sender: string
+  senderId?: string                  // platform user ID (e.g. Telegram user ID)
+  senderUsername?: string            // platform username (e.g. @username)
   senderRole?: string                // "user", "agent:other-agent"
 
   // Landscape (cached world model from LandscapeBuilder)
@@ -273,6 +275,8 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
     case "telegram":
       if (input.agentHandle) lines.push(`Your handle: ${input.agentHandle}`)
       lines.push(`From: ${input.sender}`)
+      if (input.senderId) lines.push(`Telegram user ID: ${input.senderId}`)
+      if (input.senderUsername) lines.push(`Username: @${input.senderUsername}`)
       rules.push("Format responses using Telegram-compatible markdown")
       rules.push("Be brief — 2-4 sentences max for the main point. Humans scan, not read")
       rules.push("Lead with the action or answer, skip preamble")

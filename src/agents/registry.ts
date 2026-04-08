@@ -220,6 +220,8 @@ export class AgentRegistry {
       agentHandle: this.getChannelHandle(task.agentId, channel),
       systemPrompt: state.def.systemPrompt,
       sender: senderName,
+      senderId: task.context?.senderId,
+      senderUsername: task.context?.senderUsername,
       landscape: this.landscape?.getForAgent(task.agentId),
       channelMeta: task.context?.channelMeta,
       mediaPath: task.context?.mediaPath,
