@@ -21,8 +21,8 @@ describe("buildAgentContext", () => {
   })
 
   it("includes agent handle on telegram", () => {
-    const ctx = buildAgentContext({ ...baseInput, agentHandle: "@noqta_nadia_bot" })
-    expect(ctx).toContain("@noqta_nadia_bot")
+    const ctx = buildAgentContext({ ...baseInput, agentHandle: "@test_bot" })
+    expect(ctx).toContain("@test_bot")
   })
 
   it("adds gitlab-specific rules", () => {
@@ -36,9 +36,9 @@ describe("buildAgentContext", () => {
     const ctx = buildAgentContext({
       ...baseInput,
       channelScope: "group",
-      groupName: "Noqta Team",
+      groupName: "Dev Team",
     })
-    expect(ctx).toContain("Group: Noqta Team")
+    expect(ctx).toContain("Group: Dev Team")
   })
 
   it("includes project scope", () => {
@@ -46,20 +46,20 @@ describe("buildAgentContext", () => {
       ...baseInput,
       channel: "gitlab",
       channelScope: "project",
-      projectPath: "mtgl/mtgl-system-v2",
+      projectPath: "org/my-project",
     })
-    expect(ctx).toContain("Project: mtgl/mtgl-system-v2")
+    expect(ctx).toContain("Project: org/my-project")
   })
 
   it("includes peers only on telegram", () => {
-    const peers = [{ name: "DevOps", handle: "@noqta_devops_bot", role: "infrastructure" }]
+    const peers = [{ name: "DevOps", handle: "@devops_bot", role: "infrastructure" }]
 
     const tgCtx = buildAgentContext({ ...baseInput, channel: "telegram", peers })
     expect(tgCtx).toContain("DevOps")
-    expect(tgCtx).toContain("@noqta_devops_bot")
+    expect(tgCtx).toContain("@devops_bot")
 
     const glCtx = buildAgentContext({ ...baseInput, channel: "gitlab", peers })
-    expect(glCtx).not.toContain("@noqta_devops_bot")
+    expect(glCtx).not.toContain("@devops_bot")
   })
 
   it("extracts intent tags", () => {
@@ -79,8 +79,8 @@ describe("buildAgentContext", () => {
   })
 
   it("includes wiki context", () => {
-    const ctx = buildAgentContext({ ...baseInput, wikiContext: "[Wiki Knowledge]\n## MTGL Deploy\nStaging on port 3000" })
-    expect(ctx).toContain("MTGL Deploy")
+    const ctx = buildAgentContext({ ...baseInput, wikiContext: "[Wiki Knowledge]\n## Staging Deploy\nStaging on port 3000" })
+    expect(ctx).toContain("Staging Deploy")
   })
 
   it("includes group history", () => {

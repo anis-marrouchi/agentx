@@ -67,7 +67,7 @@ export class AgentRegistry {
   }
 
   /**
-   * Find agent by mention pattern (e.g., "@nadia" -> "marketing-agent").
+   * Find agent by mention pattern (e.g., "@my_bot" -> "my-agent").
    * Returns the agent with the longest (most specific) mention match.
    */
   findByMention(text: string): string | undefined {
@@ -127,7 +127,7 @@ export class AgentRegistry {
   }
 
   /**
-   * Get the primary channel handle for an agent (e.g. "@noqta_devops_bot" on telegram).
+   * Get the primary channel handle for an agent (e.g. "@my_bot" on telegram).
    */
   private getChannelHandle(agentId: string, channel?: string): string | undefined {
     const agent = this.agents.get(agentId)?.def

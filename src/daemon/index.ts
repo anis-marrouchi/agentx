@@ -514,7 +514,8 @@ export class AgentXDaemon {
 
     // Resolve agent ID: from URL path or "model" field
     const pathMatch = path.match(/^\/llm\/([^/]+)\//)
-    const agentId = pathMatch?.[1] || (body.model as string) || "atlas"
+    const fallbackAgent = Object.keys(this.config.agents)[0] || "default"
+    const agentId = pathMatch?.[1] || (body.model as string) || fallbackAgent
 
     // Extract messages — use the last user message as the task
     const messages = (body.messages as Array<{ role: string; content: string }>) || []

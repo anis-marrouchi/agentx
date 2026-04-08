@@ -552,8 +552,8 @@ The LLM decides how to organize articles. You describe YOUR world in worldview.m
 
 \`\`\`yaml
 ---
-title: "MTGL Staging Deployment"
-tags: ["mtgl", "deploy", "staging", "devops", "2026-04-06"]
+title: "Staging Deployment Process"
+tags: ["deploy", "staging", "devops", "process", "2026-04-06"]
 owner: devops-agent
 access: public
 created: 2026-04-06
@@ -564,7 +564,7 @@ sources: ["entry-id-1", "entry-id-2"]
 Article content with [[wikilinks]] and section tags.
 
 ## Deploy Steps
-<!-- tags: process, runbook, mtgl, staging -->
+<!-- tags: process, runbook, staging -->
 Content specific to this section...
 \`\`\`
 
@@ -592,7 +592,7 @@ Also identify GAPS: "We mention X but have no article for it."
 
 ### Query
 Match by tags first → then keyword within matched articles → synthesize.
-If agent is working on MTGL, only send MTGL-tagged content.
+If agent is working on a specific project, only send content tagged for that project.
 
 ### Lint
 Check for: orphan articles, broken [[wikilinks]], untagged articles,
@@ -605,12 +605,12 @@ mental model. The LLM reads it during absorb to understand where things go.
 
 Example worldview.md:
 \`\`\`
-I'm Anis, founder of Noqta (noqta.tn).
-Noqta builds AI-powered solutions.
-Our agents: Nadia (marketing), DevOps, Atlas (coordination).
-Clients: MTGL (construction ERP), Hasana (website).
-Infrastructure: MacBook local, DigitalOcean clawd-server.
-We use GitLab at gitlab.noqta.tn.
+I'm the founder of Acme Corp.
+We build software products.
+Our agents: Marketing Bot, DevOps Bot, Coordinator.
+Clients: ClientA (enterprise), ClientB (startup).
+Infrastructure: local dev machine, cloud server.
+We use GitLab for version control.
 \`\`\`
 `
 

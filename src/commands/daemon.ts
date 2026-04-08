@@ -247,7 +247,7 @@ daemon
   .command("deploy <host>")
   .description("deploy agentx to a remote server via rsync")
   .option("-i, --identity <key>", "SSH identity file")
-  .option("-u, --user <user>", "SSH user", "clawd")
+  .option("-u, --user <user>", "SSH user", "root")
   .option("-p, --path <path>", "remote agentx path", "~/agentx")
   .option("--restart", "restart remote daemon after deploy", false)
   .option("--skip-checks", "skip build and test before deploy", false)

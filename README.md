@@ -64,7 +64,7 @@ Each agent has its own personal wiki — a compounding knowledge artifact built 
 **How it works:**
 1. **Ingest** — Every conversation is saved as a raw entry in `raw/entries/`
 2. **Absorb** — LLM compiles entries into wiki articles with aggressive tagging and gap detection
-3. **Query** — Agents get relevant context filtered by tags (only MTGL articles when working on MTGL)
+3. **Query** — Agents get relevant context filtered by tags (only project-specific articles when working on that project)
 4. **Lint** — Health checks for broken links, orphans, untagged articles
 5. **Sync** — Pull entries from mesh peers; federated wiki view across machines
 
@@ -84,7 +84,7 @@ agentx wiki compare --agent devops    # Side-by-side stats for all 3 modes
 **Key features:**
 - **Worldview** — Edit `worldview.md` to describe YOUR world (company, clients, team). The LLM reads it during absorb.
 - **Aggressive tagging** — Every article tagged with who, what, when, where, how (min 6 tags). Section-level tags too (`<!-- tags: runbook, staging -->`).
-- **Gap detection** — Absorb identifies missing puzzle pieces with specificity ("Seif al-Arabi — MTGL stakeholder, issues deploy instructions via Telegram, no profile article")
+- **Gap detection** — Absorb identifies missing puzzle pieces with specificity ("Alice — stakeholder who issues deploy instructions via Telegram, no profile article")
 - **LLM-chosen structure** — No rigid taxonomy. The LLM decides how to organize files. Structure emerges from data.
 - **Per-agent wikis** — Each agent has its own wiki. Hub view shows all agents.
 - **Mesh federation** — `wiki sync` pulls entries from peers. `wiki serve --peer` shows remote articles live.

@@ -301,8 +301,8 @@ export class MessageRouter {
         continue
       }
 
-      // Only trigger bot-to-bot on explicit @-handle mentions (e.g. @noqta_devops_bot),
-      // not bare keywords like "hackathonat" which appear in normal conversation text.
+      // Only trigger bot-to-bot on explicit @-handle mentions (e.g. @my_bot),
+      // not bare keywords which appear in normal conversation text.
       const atMentions = def.mentions.filter((m: string) => m.startsWith("@"))
       const mentioned = atMentions.some((m: string) =>
         responseText.toLowerCase().includes(m.toLowerCase()),

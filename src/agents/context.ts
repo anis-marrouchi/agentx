@@ -56,18 +56,18 @@ export interface ContextInput {
 
   // Scope layer
   groupName?: string
-  projectPath?: string               // "mtgl/mtgl-system-v2"
+  projectPath?: string               // "org/my-project"
   issueMR?: { type: string; iid: string; title: string }
 
   // Identity layer
   agentId: string
   agentName: string
-  agentHandle?: string               // "@noqta_pm_mtgl_bot"
+  agentHandle?: string               // "@my_bot"
   systemPrompt?: string
 
   // Participants
   sender: string
-  senderRole?: string                // "user", "agent:atlas"
+  senderRole?: string                // "user", "agent:other-agent"
 
   // Landscape (cached world model from LandscapeBuilder)
   landscape?: string
@@ -260,7 +260,7 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
     case "gitlab":
       lines.push(`From: ${input.sender}`)
       rules.push("Reply as a GitLab comment with GitLab-flavored markdown")
-      rules.push("Do NOT mention Telegram handles (@noqta_*)")
+      rules.push("Do NOT mention Telegram handles — they don't work on GitLab")
       rules.push("Do NOT delegate to other agents")
       rules.push("Reference issues with #IID and merge requests with !IID")
       rules.push("Be specific and actionable — this is a code review context")

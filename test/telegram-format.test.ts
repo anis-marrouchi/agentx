@@ -68,8 +68,8 @@ describe("markdownToTelegramHtml", () => {
   })
 
   it("preserves @mentions", () => {
-    const result = markdownToTelegramHtml("hello @noqta_devops_bot")
-    expect(result).toContain("@noqta_devops_bot")
+    const result = markdownToTelegramHtml("hello @devops_bot")
+    expect(result).toContain("@devops_bot")
   })
 
   it("wraps file extensions in code to prevent TLD previews", () => {

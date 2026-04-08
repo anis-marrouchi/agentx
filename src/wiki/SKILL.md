@@ -50,12 +50,12 @@ title: "Article Title"
 type: project | person | concept | decision | pattern | event
 owner: marketing-agent
 access: public | shared | private
-shared_with: ["devops-agent", "atlas"]
+shared_with: ["devops-agent", "coordinator"]
 created: 2026-04-05
 last_updated: 2026-04-05
 related: ["[[Other Article]]", "[[Another]]"]
 sources: ["entry-id-1", "entry-id-2"]
-tags: ["mtgl", "deployment"]
+tags: ["project-name", "deployment"]
 ---
 ```
 
@@ -76,7 +76,7 @@ Choose access level based on content:
 
 - Write like Wikipedia. Flat, factual, encyclopedic.
 - **This is not Wikipedia about the thing. This is about the thing's role in our work.**
-- A page about MTGL isn't a product description. It's about deployment patterns, decisions made, issues encountered.
+- A page about a project isn't a product description. It's about deployment patterns, decisions made, issues encountered.
 - Let facts imply significance. No peacock words.
 - Articles organized by **theme, not chronology**.
 - Maximum 2 direct quotes per article.

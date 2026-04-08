@@ -135,7 +135,7 @@ describe("WikiStore", () => {
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
         sources: [],
-      }, "How to deploy the MTGL application to staging.", "atlas")
+      }, "How to deploy the Acme application to staging.", "atlas")
 
       const results = store.search("deploy", "atlas")
       expect(results.length).toBeGreaterThan(0)
@@ -208,12 +208,12 @@ describe("WikiStore - log", () => {
 
   it("creates and appends to log.md", () => {
     store.appendLog("ingest", "test entry from atlas")
-    store.appendLog("create", "New article: MTGL Deploy")
+    store.appendLog("create", "New article: Acme Deploy")
 
     const log = store.getLog()
     expect(log).toHaveLength(2)
     expect(log[0]).toContain("ingest")
-    expect(log[1]).toContain("MTGL Deploy")
+    expect(log[1]).toContain("Acme Deploy")
   })
 
   it("logs ingest operations automatically", () => {
@@ -239,8 +239,8 @@ describe("WikiStore - wikilinks and backlinks", () => {
   })
 
   it("extracts wikilinks", () => {
-    const links = store.extractWikilinks("See [[MTGL Deploy]] and [[KSI Architecture]]")
-    expect(links).toEqual(["MTGL Deploy", "KSI Architecture"])
+    const links = store.extractWikilinks("See [[Acme Deploy]] and [[Backend Architecture]]")
+    expect(links).toEqual(["Acme Deploy", "Backend Architecture"])
   })
 
   it("builds backlinks index", () => {
@@ -248,16 +248,16 @@ describe("WikiStore - wikilinks and backlinks", () => {
       title: "Deploy Guide", tags: ["concept"], owner: "atlas", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
       sources: [],
-    }, "How to deploy. See [[MTGL Project]].", "atlas")
+    }, "How to deploy. See [[Acme Project]].", "atlas")
 
     store.writeArticle("projects/mtgl.md", {
-      title: "MTGL Project", tags: ["project"], owner: "atlas", access: "public",
+      title: "Acme Project", tags: ["project"], owner: "atlas", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
       sources: [],
-    }, "The MTGL project.", "atlas")
+    }, "The Acme project.", "atlas")
 
     const backlinks = store.buildBacklinks()
-    expect(backlinks["MTGL Project"]).toContain("concepts/deploy.md")
+    expect(backlinks["Acme Project"]).toContain("concepts/deploy.md")
   })
 })
 

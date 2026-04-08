@@ -37,7 +37,7 @@ export class WebhookHandler {
    * URL format: /webhook/:agentId or /webhook/:agentId/:source
    */
   async handle(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-    // Parse path: /webhook/atlas or /webhook/atlas/gitlab
+    // Parse path: /webhook/<agentId> or /webhook/<agentId>/<source>
     const parts = path.replace(/^\/webhook\/?/, "").split("/").filter(Boolean)
     const agentId = parts[0]
     const sourceHint = parts[1] // optional: "gitlab", "github", "stripe", "sentry"

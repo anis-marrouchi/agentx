@@ -321,7 +321,7 @@ channel
     // --- GitLab ---
     if (channelType === "gitlab") {
       const answers = await prompts([
-        { type: "text", name: "host", message: "GitLab instance URL", initial: "https://gitlab.noqta.tn" },
+        { type: "text", name: "host", message: "GitLab instance URL", initial: "https://gitlab.example.com" },
         { type: "text", name: "token", message: "GitLab API token (PRIVATE-TOKEN)" },
         { type: "number", name: "webhookPort", message: "Webhook listen port", initial: 18810 },
         { type: "text", name: "webhookSecret", message: "Webhook secret (X-Gitlab-Token, optional)" },
@@ -335,7 +335,7 @@ channel
 
       while (addMore) {
         const route = await prompts([
-          { type: "text", name: "project", message: "GitLab project path (e.g. noqta/mtgl-v2, or * for default)" },
+          { type: "text", name: "project", message: "GitLab project path (e.g. group/project, or * for default)" },
           { type: "select", name: "agent", message: "Route to agent", choices: agentChoices },
           { type: "confirm", name: "more", message: "Add another route?", initial: false },
         ])
@@ -717,7 +717,7 @@ migrate
     for (const a of agents) {
       if (a.workspace?.startsWith("/data")) continue // skip remote devices
 
-      const axId = a.id.replace(/-agent$/, "").replace(/^main$/, "atlas")
+      const axId = a.id.replace(/-agent$/, "").replace(/^main$/, "main-agent")
       const mentions = a.groupChat?.mentionPatterns || []
       if (!mentions.some((m: string) => m === axId)) mentions.push(axId)
 
@@ -745,7 +745,7 @@ migrate
     for (const [name, acc] of Object.entries(tgAccounts) as any) {
       if (!acc.botToken) continue
       const boundAgent = bindMap[name]
-      const axAgentId = boundAgent?.replace(/-agent$/, "").replace(/^main$/, "atlas") || "atlas"
+      const axAgentId = boundAgent?.replace(/-agent$/, "").replace(/^main$/, "main-agent") || "default"
 
       config.channels.telegram.accounts[name] = {
         token: acc.botToken,
@@ -763,7 +763,7 @@ migrate
       let cronCount = 0
       for (const job of cronData.jobs || []) {
         const axId = job.name || job.id
-        const agentId = job.agentId?.replace(/-agent$/, "").replace(/^main$/, "atlas") || "atlas"
+        const agentId = job.agentId?.replace(/-agent$/, "").replace(/^main$/, "main-agent") || "default"
         config.crons[axId] = {
           enabled: job.enabled || false,
           schedule: job.schedule?.expr || "0 9 * * *",

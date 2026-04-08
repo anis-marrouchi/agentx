@@ -11,7 +11,7 @@ import type { AgentDef } from "@/daemon/config"
 export interface AgentPeer {
   id: string
   name: string
-  handle?: string       // e.g. "@noqta_devops_bot"
+  handle?: string       // e.g. "@my_bot"
   role?: string         // from systemPrompt, first line
 }
 
@@ -81,7 +81,7 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
       envLines.push("[IMPORTANT: You are responding to a GitLab comment/event]")
       envLines.push("- Reply with a focused, actionable GitLab comment")
       envLines.push("- Use markdown (GitLab flavored) for formatting")
-      envLines.push("- Do NOT mention Telegram handles (@noqta_*) — they don't work on GitLab")
+      envLines.push("- Do NOT mention Telegram handles — they don't work on GitLab")
       envLines.push("- Do NOT try to delegate to other agents — reply directly")
       envLines.push("- Reference issues with #IID and MRs with !IID")
     }
@@ -221,7 +221,7 @@ export async function executeClaudeCode(
         cwd: agent.workspace,
         timeout: 600_000,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "clawd") },
+        env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "user") },
       }, (error, stdout, stderr) => {
         // Always resolve — we handle errors ourselves based on stdout/stderr
         resolve({

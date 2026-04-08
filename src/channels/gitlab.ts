@@ -11,13 +11,13 @@ import { createServer, type IncomingMessage as HttpRequest, type ServerResponse 
 //     enabled: true
 //     webhookPort: 18810          # separate port for GitLab webhooks
 //     webhookSecret: "secret"     # validates X-Gitlab-Token header
-//     host: "https://gitlab.noqta.tn"
+//     host: "https://gitlab.example.com"
 //     token: "${GITLAB_TOKEN}"    # for posting comments back
 //     routes:
-//       - project: "noqta/mtgl-v2"
-//         agent: "pm-mtgl"
+//       - project: "org/my-project"
+//         agent: "pm-agent"
 //       - project: "*"
-//         agent: "atlas"           # default for unmatched projects
+//         agent: "default-agent"   # default for unmatched projects
 
 export interface GitLabRoute {
   project: string  // "group/project" or "*" for default
@@ -150,7 +150,7 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /**
    * Send a reply — posts a comment back to GitLab via API.
-   * chatId format: "project:noteable_type:iid" (e.g. "noqta/mtgl-v2:issue:123")
+   * chatId format: "project:noteable_type:iid" (e.g. "org/project:issue:123")
    */
   async send(msg: OutgoingMessage): Promise<string> {
     // chatId format: "group/project:type:iid" — split from the end
