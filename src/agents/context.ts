@@ -88,6 +88,7 @@ export interface ContextInput {
   // History
   groupHistory?: string              // from GroupLog.buildContext()
   sessionHistory?: string            // from SessionStore.buildHistoryContext()
+  crossChatContext?: string           // from SessionStore.getCrossSessionSummary()
 
   // Wiki
   wikiContext?: string               // from WikiStore.buildContext()
@@ -218,6 +219,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("history", 1200),
       content: history,
       tags: ["history", "conversation"],
+    })
+  }
+
+  // 7b. Cross-chat context (bridges DM ↔ group amnesia)
+  if (input.crossChatContext) {
+    layers.push({
+      name: "cross-chat",
+      priority: 7,
+      maxTokens: budget("cross-chat", 800),
+      content: input.crossChatContext,
+      tags: ["history", "cross-chat"],
     })
   }
 

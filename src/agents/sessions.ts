@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs"
 import { resolve } from "path"
 
 // --- Conversation session store ---
@@ -27,6 +27,7 @@ export interface Session {
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
 const MAX_MESSAGES = 30          // Keep last 30 messages max
+const STALE_SESSION_MINUTES = 15 // Resume sessions idle for less than this; rebuild if older
 
 export class SessionStore {
   private sessionsDir: string
@@ -171,6 +172,81 @@ export class SessionStore {
     lines.push("")
 
     return lines.join("\n")
+  }
+
+  /**
+   * Check if a Claude session is stale (idle too long for --resume to be useful).
+   * When stale, the resumed context will be too far behind — better to start fresh.
+   */
+  isSessionStale(agentId: string, channel: string, chatId: string): boolean {
+    const session = this.getSession(agentId, channel, chatId)
+    if (!session.claudeSessionId) return false
+    const elapsed = Date.now() - new Date(session.updatedAt).getTime()
+    return elapsed > STALE_SESSION_MINUTES * 60 * 1000
+  }
+
+  /**
+   * Build a summary of recent messages from OTHER sessions for the same agent today.
+   * This bridges the cross-chat amnesia gap — if someone shared info in a DM,
+   * the group session gets a hint about it.
+   */
+  getCrossSessionSummary(agentId: string, channel: string, chatId: string): string {
+    const day = new Date().toISOString().slice(0, 10)
+    const currentKey = this.sessionKey(agentId, channel, chatId)
+
+    try {
+      const files = readdirSync(this.sessionsDir).filter(f =>
+        f.startsWith(agentId.replace(/[^a-zA-Z0-9_:-]/g, "_")) &&
+        f.includes(day) &&
+        f.endsWith(".json")
+      )
+
+      const hints: string[] = []
+
+      for (const file of files) {
+        try {
+          const data = JSON.parse(readFileSync(resolve(this.sessionsDir, file), "utf-8")) as Session
+          if (data.id === currentKey) continue // skip own session
+          if (data.messages.length === 0) continue
+
+          // Only include sessions updated after the current session's last update
+          const currentSession = this.getSession(agentId, channel, chatId)
+          if (new Date(data.updatedAt) <= new Date(currentSession.updatedAt)) continue
+
+          // Take the last few messages as a hint
+          const recent = data.messages.slice(-4)
+          const scope = data.chatId === data.channel ? "DM" : data.chatId
+          const lines = recent.map(m => {
+            const time = m.timestamp.slice(11, 16)
+            return `  [${time}] ${m.name || m.role}: ${m.content.slice(0, 200)}`
+          })
+          hints.push(`From ${scope} (${data.channel}):\n${lines.join("\n")}`)
+        } catch {
+          // Skip corrupted files
+        }
+      }
+
+      if (hints.length === 0) return ""
+
+      return [
+        "[Cross-chat context — recent activity from your other conversations today]",
+        ...hints,
+        "[End cross-chat context — the user in THIS chat may be referring to actions from above]",
+        "",
+      ].join("\n")
+    } catch {
+      return ""
+    }
+  }
+
+  /**
+   * Clear the stored Claude session ID so next invocation starts fresh.
+   */
+  clearClaudeSessionId(agentId: string, channel: string, chatId: string): void {
+    const session = this.getSession(agentId, channel, chatId)
+    delete session.claudeSessionId
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
   }
 
   /**

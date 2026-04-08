@@ -184,13 +184,24 @@ export class AgentRegistry {
     const wikiArticles = agentWiki.findRelevant(task.message, task.agentId, 3)
     const wikiContext = agentWiki.buildContext(wikiArticles)
 
-    const resumeSessionId = state.def.tier === "claude-code"
+    // Decide whether to resume or start fresh
+    let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : undefined
+
+    // If session is stale (idle > 15min), start fresh with full context rebuild
+    if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
+      this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
+      this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      resumeSessionId = undefined
+    }
 
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
+
+    // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group)
+    const crossChatContext = this.sessions.getCrossSessionSummary(task.agentId, channel, chatId)
 
     const contextInput: ContextInput = {
       channel,
@@ -208,6 +219,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       sessionHistory,
+      crossChatContext: crossChatContext || undefined,
       wikiContext,
       message: task.message,
     }
