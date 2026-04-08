@@ -273,28 +273,42 @@ export class GitLabAdapter implements ChannelAdapter {
     const user = event.user
     const noteId = String(event.object_attributes.id)
 
-    // Skip comments from any known bot user (prevents cascading loops).
-    // Agents may post via different GitLab users (webhook token user, workspace
-    // token user, etc.). Track all of them.
-    if (this.isBotUser(user.username)) {
-      this.log(`Skipping bot comment from ${user.username} (note ${noteId})`)
-      res.writeHead(200); res.end("ok"); return
-    }
-
-    // Skip comments we already sent (belt-and-suspenders)
+    // Skip comments we already sent
     if (this.sentNoteIds.has(noteId)) {
       this.sentNoteIds.delete(noteId)
       res.writeHead(200); res.end("ok"); return
     }
 
     // Only process notes that contain an explicit @mention.
-    // Without this, every human comment falls through to the project route
-    // and triggers the PM agent, which then cascades to devops, etc.
-    // The router will resolve which agent the @mention maps to.
-    const mentions = note.match(/@(\w[\w.-]*)/g)
-    if (!mentions || mentions.length === 0) {
+    const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
+    if (mentions.length === 0) {
       this.log(`No @mention in note ${noteId}, skipping`)
       res.writeHead(200); res.end("ok"); return
+    }
+
+    // Bot-user comments: only allow if they @mention a DIFFERENT agent.
+    // This enables agent-to-agent handoff (QA pings devops) while preventing
+    // self-echo loops (agent sees its own comment and responds to itself).
+    if (this.isBotUser(user.username)) {
+      const mentionsSelf = mentions.some(m => {
+        // Check if the mention matches the same bot user who posted
+        const mapping = this.config.agentMappings?.find(am =>
+          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase())
+        )
+        return mapping?.gitlabUsernames.some(u => u.toLowerCase() === user.username.toLowerCase())
+      })
+      const mentionsOther = mentions.some(m =>
+        !this.isBotUser(m) || // mentions a human (always route)
+        this.config.agentMappings?.some(am =>
+          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase()) &&
+          !am.gitlabUsernames.some(u => u.toLowerCase() === user.username.toLowerCase())
+        )
+      )
+      if (!mentionsOther) {
+        this.log(`Bot comment from ${user.username} with no cross-agent mention, skipping (note ${noteId})`)
+        res.writeHead(200); res.end("ok"); return
+      }
+      this.log(`Bot-to-bot handoff: ${user.username} mentions another agent (note ${noteId})`)
     }
 
     // Determine the noteable context
@@ -314,8 +328,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // For notes: no project-route fallback. Only explicit @mentions route.
     // This prevents PM from being triggered by every comment on the project.
 
-    // React with 👀 to acknowledge we've seen the comment
-    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id).catch(() => {})
+    // React with 👀 using the mentioned agent's token (not the global webhook token)
+    const mentionedAgentToken = this.getTokenForMentionedAgent(note)
+    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, mentionedAgentToken).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
@@ -546,9 +561,24 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   /**
-   * React to a GitLab note with an emoji (👀 eyes) to acknowledge receipt.
+   * Find the per-agent token for the first @mentioned agent in note text.
    */
-  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number): Promise<void> {
+  private getTokenForMentionedAgent(text: string): string | undefined {
+    if (!this.config.agentMappings?.length) return undefined
+    const mentionedUsers = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).toLowerCase()) || []
+    for (const mapping of this.config.agentMappings) {
+      if (mapping.token && mapping.gitlabUsernames.some(u => mentionedUsers.includes(u.toLowerCase()))) {
+        return mapping.token
+      }
+    }
+    return undefined
+  }
+
+  /**
+   * React to a GitLab note with an emoji (👀 eyes) to acknowledge receipt.
+   * Uses the agent's own token when available.
+   */
+  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string): Promise<void> {
     const encodedProject = encodeURIComponent(project)
     let endpoint: string
 
@@ -568,7 +598,7 @@ export class GitLabAdapter implements ChannelAdapter {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "PRIVATE-TOKEN": this.config.token,
+          "PRIVATE-TOKEN": agentToken || this.config.token,
         },
         body: JSON.stringify({ name: "eyes" }),
       })
