@@ -189,6 +189,61 @@ daemon
     }
   })
 
+// agentx daemon watch — live stream of agent activity
+daemon
+  .command("watch")
+  .description("stream live agent activity (SSE)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (opts) => {
+    const config = loadDaemonConfig(opts.config)
+    const bind = config.node.bind || "127.0.0.1:18800"
+    const url = `http://${bind.replace("0.0.0.0", "127.0.0.1")}/events`
+
+    console.log(chalk.dim(`  Connecting to ${url}...`))
+    console.log(chalk.dim("  Press Ctrl+C to stop\n"))
+
+    try {
+      const res = await fetch(url)
+      if (!res.ok || !res.body) {
+        console.log(chalk.red(`  Failed: ${res.status}`))
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              const time = new Date(data.time).toLocaleTimeString()
+              const msg = data.message?.replace(/^\[agentx\]\s*/, "") || ""
+              // Color-code by content
+              if (msg.includes("executing")) console.log(`${chalk.dim(time)} ${chalk.cyan("▶")} ${msg}`)
+              else if (msg.includes("completed")) console.log(`${chalk.dim(time)} ${chalk.green("✓")} ${msg}`)
+              else if (msg.includes("error") || msg.includes("Error")) console.log(`${chalk.dim(time)} ${chalk.red("✗")} ${msg}`)
+              else if (msg.includes("Routing")) console.log(`${chalk.dim(time)} ${chalk.yellow("→")} ${msg}`)
+              else if (msg.includes("mention")) console.log(`${chalk.dim(time)} ${chalk.magenta("@")} ${msg}`)
+              else if (msg.includes("Skipping")) console.log(`${chalk.dim(time)} ${chalk.dim("⊘")} ${chalk.dim(msg)}`)
+              else console.log(`${chalk.dim(time)}   ${msg}`)
+            } catch { /* skip malformed */ }
+          } else if (line.startsWith("event: status")) {
+            // First event — show current state
+          }
+        }
+      }
+    } catch (e: any) {
+      console.log(chalk.red(`  Connection failed: ${e.message}`))
+      console.log(chalk.dim("  Is the daemon running? Try: agentx daemon status"))
+    }
+  })
+
 // agentx daemon send — send a task to an agent
 daemon
   .command("send <agent> <message...>")

@@ -34,10 +34,18 @@ export class AgentXDaemon {
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
+  private sseClients: Set<ServerResponse> = new Set()
 
   constructor(configPath?: string) {
     const logger = new Logger("agentx")
-    this.log = logger.asConsoleLog()
+    const baseLog = logger.asConsoleLog()
+
+    // Wrap log to also broadcast to SSE clients
+    this.log = (...args: unknown[]) => {
+      baseLog(...args)
+      const line = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")
+      this.broadcastSSE("log", line)
+    }
 
     // Load config
     this.log("Loading configuration...")
@@ -296,11 +304,54 @@ export class AgentXDaemon {
     })
   }
 
+  /**
+   * Broadcast an SSE event to all connected clients.
+   */
+  private broadcastSSE(event: string, data: string): void {
+    if (this.sseClients.size === 0) return
+    const payload = `event: ${event}\ndata: ${JSON.stringify({ time: new Date().toISOString(), message: data })}\n\n`
+    for (const client of this.sseClients) {
+      try { client.write(payload) } catch { this.sseClients.delete(client) }
+    }
+  }
+
+  /**
+   * Handle SSE connection for live event streaming.
+   * GET /events — streams daemon logs in real-time.
+   */
+  private handleSSE(req: IncomingMessage, res: ServerResponse): void {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    })
+
+    // Send current status as first event
+    const agents = this.registry.list()
+    const active = agents.filter(a => a.active > 0)
+    res.write(`event: status\ndata: ${JSON.stringify({
+      node: this.config.node.name,
+      agents: agents.length,
+      active: active.map(a => ({ id: a.id, name: a.name, tasks: a.active })),
+      mesh: this.mesh?.directory().map(p => ({ peer: p.peer, healthy: p.healthy })) || [],
+    })}\n\n`)
+
+    this.sseClients.add(res)
+    req.on("close", () => this.sseClients.delete(res))
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
 
     try {
+      // SSE live event stream
+      if (req.method === "GET" && path === "/events") {
+        this.handleSSE(req, res)
+        return
+      }
+
       // Dynamic routes (before static switch)
       if (req.method === "POST" && path.startsWith("/webhook/")) {
         await this.webhooks.handle(req, res, path)
