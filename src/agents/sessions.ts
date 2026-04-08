@@ -209,13 +209,10 @@ export class SessionStore {
           if (data.id === currentKey) continue // skip own session
           if (data.messages.length === 0) continue
 
-          // Only include sessions updated after the current session's last update
-          const currentSession = this.getSession(agentId, channel, chatId)
-          if (new Date(data.updatedAt) <= new Date(currentSession.updatedAt)) continue
-
           // Take the last few messages as a hint
           const recent = data.messages.slice(-4)
-          const scope = data.chatId === data.channel ? "DM" : data.chatId
+          const isDM = !data.chatId.startsWith("-") && /^\d+$/.test(data.chatId)
+          const scope = isDM ? "DM" : data.chatId
           const lines = recent.map(m => {
             const time = m.timestamp.slice(11, 16)
             return `  [${time}] ${m.name || m.role}: ${m.content.slice(0, 200)}`
