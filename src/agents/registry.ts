@@ -5,6 +5,8 @@ import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
+import { MemoryStore } from "./memory-store"
+import { extractMemories } from "./memory-extract"
 import type { LandscapeBuilder } from "./landscape"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
@@ -24,6 +26,7 @@ export class AgentRegistry {
   private providers: Record<string, { apiKey?: string }> = {}
   private sessions: SessionStore
   private wikiHub: WikiHub
+  private memoryStore: MemoryStore
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
@@ -38,6 +41,7 @@ export class AgentRegistry {
     this.providers = config.providers
     this.sessions = new SessionStore()
     this.wikiHub = new WikiHub(undefined, undefined, "unified")
+    this.memoryStore = new MemoryStore()
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
 
@@ -184,6 +188,10 @@ export class AgentRegistry {
     const wikiArticles = agentWiki.findRelevant(task.message, task.agentId, 3)
     const wikiContext = agentWiki.buildContext(wikiArticles)
 
+    // Load persistent agent memory (cross-session facts)
+    const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, 8)
+    const memoryContext = this.memoryStore.buildContext(relevantMemories)
+
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
@@ -219,6 +227,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       sessionHistory,
+      memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       wikiContext,
       message: task.message,
@@ -256,6 +265,15 @@ export class AgentRegistry {
           } catch {
             // Wiki export is best-effort
           }
+
+          // Memory: extract and store memorable facts via Haiku (fire-and-forget)
+          extractMemories(
+            task.agentId,
+            task.message,
+            response.content,
+            { channel, chatId, sender: senderName },
+            this.memoryStore,
+          ).catch(() => {})
         }
 
         // Track token usage (real counts if available, estimate otherwise)

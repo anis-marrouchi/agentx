@@ -85,6 +85,9 @@ export interface ContextInput {
   mediaType?: string
   replyToText?: string
 
+  // Memory (persistent cross-session facts)
+  memoryContext?: string              // from MemoryStore.buildContext()
+
   // History
   groupHistory?: string              // from GroupLog.buildContext()
   sessionHistory?: string            // from SessionStore.buildHistoryContext()
@@ -207,6 +210,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("artifacts", 500),
       content: artifactLines.join("\n"),
       tags: ["artifacts", ...(input.mediaType ? ["media"] : [])],
+    })
+  }
+
+  // 6.5 Agent memory (persistent cross-session facts from Haiku extraction)
+  if (input.memoryContext) {
+    layers.push({
+      name: "memory",
+      priority: 6.5,
+      maxTokens: budget("memory", 600),
+      content: input.memoryContext,
+      tags: ["memory", "persistent"],
     })
   }
 
