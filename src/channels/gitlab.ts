@@ -403,6 +403,11 @@ export class GitLabAdapter implements ChannelAdapter {
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
+    // Skip bot-triggered MR updates
+    if (this.isBotUser(event.user.username)) {
+      res.writeHead(200); res.end("ok"); return
+    }
+
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
     const agentId = this.resolveAgent(project)
