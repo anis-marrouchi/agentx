@@ -22,6 +22,8 @@ export interface AgentTask {
     channel?: string
     sender?: string
     group?: string
+    /** Stable chat ID for session keying (e.g. "project:issue:123" for GitLab) */
+    chatId?: string
     /** Attached media file (image, audio, video, document) */
     mediaPath?: string
     mediaType?: string

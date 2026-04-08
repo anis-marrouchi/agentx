@@ -173,7 +173,7 @@ export class AgentRegistry {
 
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
-    const chatId = task.context?.group || task.context?.sender || "default"
+    const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
 
     // Record user message in session

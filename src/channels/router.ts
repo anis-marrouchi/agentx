@@ -186,6 +186,7 @@ export class MessageRouter {
           channel: msg.channel,
           sender: msg.sender.name,
           group: msg.group?.name,
+          chatId,  // stable ID for session keying (issue path for GitLab, group ID for Telegram)
           mediaPath: msg.media?.path,
           mediaType: msg.media?.type,
           replyToText: msg.replyToText,
