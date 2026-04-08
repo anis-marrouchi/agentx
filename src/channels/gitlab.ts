@@ -292,6 +292,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // Resolve agent: check @mentions in comment first, fall back to project route
     const agentId = this.resolveAgentFromMention(note) || this.resolveAgent(project)
 
+    // React with 👀 to acknowledge we've seen the comment
+    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id).catch(() => {})
+
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
     const channelMeta = await this.getChannelMeta(chatId)
@@ -494,6 +497,38 @@ export class GitLabAdapter implements ChannelAdapter {
       project,
       issue: noteableType && noteableIid ? { type: noteableType, iid: noteableIid, title: "" } : undefined,
       facts,
+    }
+  }
+
+  /**
+   * React to a GitLab note with an emoji (👀 eyes) to acknowledge receipt.
+   */
+  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number): Promise<void> {
+    const encodedProject = encodeURIComponent(project)
+    let endpoint: string
+
+    switch (noteableType) {
+      case "issue":
+        endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/issues/${noteableIid}/notes/${noteId}/award_emoji`
+        break
+      case "merge_request":
+        endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
+        break
+      default:
+        return
+    }
+
+    try {
+      await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "PRIVATE-TOKEN": this.config.token,
+        },
+        body: JSON.stringify({ name: "eyes" }),
+      })
+    } catch (e: any) {
+      this.log(`Failed to react to note ${noteId}: ${e.message}`)
     }
   }
 
