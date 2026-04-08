@@ -81,8 +81,9 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
     if (isGitLab) {
       envLines.push("")
       envLines.push("[IMPORTANT: You are responding to a GitLab comment/event]")
-      envLines.push("- Reply with a focused, actionable GitLab comment")
-      envLines.push("- Use markdown (GitLab flavored) for formatting")
+      envLines.push("- Keep it short — 3-5 lines for the main message. Humans scan, not read")
+      envLines.push("- Lead with the result or action, not a narration of what you plan to do")
+      envLines.push("- Use <details><summary>Details</summary>\\n\\ncontent\\n</details> for verbose output (logs, full commands, step-by-step)")
       envLines.push("- Do NOT mention Telegram handles — they don't work on GitLab")
       envLines.push("- Do NOT try to delegate to other agents — reply directly")
       envLines.push("- Reference issues with #IID and MRs with !IID")

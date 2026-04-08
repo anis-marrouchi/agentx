@@ -248,28 +248,32 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
       if (input.agentHandle) lines.push(`Your handle: ${input.agentHandle}`)
       lines.push(`From: ${input.sender}`)
       rules.push("Format responses using Telegram-compatible markdown")
-      rules.push("Keep responses concise for mobile reading")
+      rules.push("Be brief — 2-4 sentences max for the main point. Humans scan, not read")
+      rules.push("Lead with the action or answer, skip preamble")
       break
 
     case "whatsapp":
       lines.push(`From: ${input.sender}`)
-      rules.push("Keep responses concise — WhatsApp is mobile-first")
+      rules.push("Be brief — 2-3 sentences max. WhatsApp is mobile-first")
       rules.push("No rich formatting — plain text only")
+      rules.push("Lead with the action or answer, skip preamble")
       break
 
     case "gitlab":
       lines.push(`From: ${input.sender}`)
-      rules.push("Reply as a GitLab comment with GitLab-flavored markdown")
+      rules.push("Reply as a short, actionable GitLab comment — 3-5 lines for the main message")
       rules.push("Do NOT mention Telegram handles — they don't work on GitLab")
       rules.push("Do NOT delegate to other agents")
       rules.push("Reference issues with #IID and merge requests with !IID")
-      rules.push("Be specific and actionable — this is a code review context")
+      rules.push("Put verbose details (logs, full commands, step-by-step) inside collapsible sections: <details><summary>Title</summary>\\n\\ncontent\\n</details>")
+      rules.push("Never narrate what you are about to do — just do it and report the result")
       tags.push("code-review")
       break
 
     case "discord":
       lines.push(`From: ${input.sender}`)
       rules.push("Use Discord markdown for formatting")
+      rules.push("Be brief — 2-4 sentences for the main point")
       break
 
     default:
