@@ -214,7 +214,8 @@ export class GitLabAdapter implements ChannelAdapter {
           "Content-Type": "application/json",
           "PRIVATE-TOKEN": token,
         },
-        body: JSON.stringify({ body: msg.text }),
+        // Append hidden signature so we can detect our own comments on webhook
+        body: JSON.stringify({ body: `${msg.text}\n\n<!-- agentx:${msg.agentId || "unknown"} -->` }),
       })
 
       if (!res.ok) {
@@ -285,42 +286,45 @@ export class GitLabAdapter implements ChannelAdapter {
     const user = event.user
     const noteId = String(event.object_attributes.id)
 
-    // Skip comments we already sent
+    // PRIMARY CASCADE PREVENTION: Check for AgentX signature.
+    // Every comment posted by AgentX has <!-- agentx:AGENT_ID --> appended.
+    // This is the most reliable check — immune to race conditions and
+    // username misconfiguration.
+    const signatureMatch = note.match(/<!-- agentx:(\S+) -->/)
+    if (signatureMatch) {
+      const sourceAgent = signatureMatch[1]
+      // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
+      const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
+      const mentionsDifferentAgent = mentions.some(m => {
+        const mapping = this.config.agentMappings?.find(am =>
+          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase())
+        )
+        return mapping && mapping.agentId !== sourceAgent
+      })
+      if (!mentionsDifferentAgent) {
+        this.log(`AgentX comment from ${sourceAgent}, no cross-agent mention, skipping (note ${noteId})`)
+        res.writeHead(200); res.end("ok"); return
+      }
+      this.log(`Bot-to-bot handoff: ${sourceAgent} → ${mentions.join(", ")} (note ${noteId})`)
+    }
+
+    // SECONDARY: Also check sentNoteIds (catches race with signature)
     if (this.sentNoteIds.has(noteId)) {
       this.sentNoteIds.delete(noteId)
       res.writeHead(200); res.end("ok"); return
     }
 
-    // Only process notes that contain an explicit @mention.
+    // TERTIARY: Skip comments from known bot users that have no @mentions
+    // (catches comments posted via CLI tools without the signature)
     const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
     if (mentions.length === 0) {
       this.log(`No @mention in note ${noteId}, skipping`)
       res.writeHead(200); res.end("ok"); return
     }
 
-    // Bot-user comments: only allow if they @mention a DIFFERENT agent.
-    // This enables agent-to-agent handoff (QA pings devops) while preventing
-    // self-echo loops (agent sees its own comment and responds to itself).
-    if (this.isBotUser(user.username)) {
-      const mentionsSelf = mentions.some(m => {
-        // Check if the mention matches the same bot user who posted
-        const mapping = this.config.agentMappings?.find(am =>
-          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase())
-        )
-        return mapping?.gitlabUsernames.some(u => u.toLowerCase() === user.username.toLowerCase())
-      })
-      const mentionsOther = mentions.some(m =>
-        !this.isBotUser(m) || // mentions a human (always route)
-        this.config.agentMappings?.some(am =>
-          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase()) &&
-          !am.gitlabUsernames.some(u => u.toLowerCase() === user.username.toLowerCase())
-        )
-      )
-      if (!mentionsOther) {
-        this.log(`Bot comment from ${user.username} with no cross-agent mention, skipping (note ${noteId})`)
-        res.writeHead(200); res.end("ok"); return
-      }
-      this.log(`Bot-to-bot handoff: ${user.username} mentions another agent (note ${noteId})`)
+    if (this.isBotUser(user.username) && !signatureMatch) {
+      this.log(`Bot comment from ${user.username} without signature, skipping (note ${noteId})`)
+      res.writeHead(200); res.end("ok"); return
     }
 
     // Determine the noteable context
@@ -357,7 +361,7 @@ export class GitLabAdapter implements ChannelAdapter {
         name: user.name,
         username: user.username,
       },
-      text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note}`,
+      text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note.replace(/\n*<!-- agentx:\S+ -->/g, "")}`,
       timestamp: new Date(),
       raw: event,
       // No resolvedAgent — router resolves via registry.findByMention() only
