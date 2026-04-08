@@ -28,6 +28,7 @@ export interface GitLabAgentMapping {
   agentId: string
   gitlabUsernames: string[]  // GitLab @usernames that map to this agent
   keywords: string[]         // keywords in comments that trigger this agent (e.g. "coder", "devops")
+  token?: string             // per-agent GitLab PAT — posts comments as this agent's user
 }
 
 export interface GitLabChannelConfig {
@@ -191,12 +192,15 @@ export class GitLabAdapter implements ChannelAdapter {
         return ""
     }
 
+    // Use per-agent token if available, otherwise fall back to global token
+    const token = this.getAgentToken(msg.agentId) || this.config.token
+
     try {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "PRIVATE-TOKEN": this.config.token,
+          "PRIVATE-TOKEN": token,
         },
         body: JSON.stringify({ body: msg.text }),
       })
@@ -529,6 +533,16 @@ export class GitLabAdapter implements ChannelAdapter {
    */
   private isBotUser(username: string): boolean {
     return this.botUsernames.has(username)
+  }
+
+  /**
+   * Get the per-agent GitLab token from agentMappings.
+   * Falls back to undefined if no per-agent token is configured.
+   */
+  getAgentToken(agentId?: string): string | undefined {
+    if (!agentId || !this.config.agentMappings?.length) return undefined
+    const mapping = this.config.agentMappings.find(m => m.agentId === agentId)
+    return mapping?.token
   }
 
   /**

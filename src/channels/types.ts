@@ -50,6 +50,7 @@ export interface OutgoingMessage {
   text: string
   replyTo?: string
   parseMode?: "markdown" | "html" | "plain"
+  agentId?: string  // used by GitLab to select per-agent token
 }
 
 export interface ChannelAdapter {

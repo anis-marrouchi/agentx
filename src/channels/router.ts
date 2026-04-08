@@ -237,10 +237,14 @@ export class MessageRouter {
       }
     }
 
-    // For GitLab: prefix response with agent identity since all agents
-    // share a single GitLab API user. This makes it clear which agent responded.
+    // For GitLab: prefix response with agent identity if no per-agent token
+    // is configured (all agents sharing a single GitLab user).
     if (msg.channel === "gitlab" && responseText) {
-      responseText = `> **${agentName}** (${agentId})\n\n${responseText}`
+      const adapter = this.channels.get("gitlab") as any
+      const hasOwnToken = adapter?.getAgentToken?.(agentId)
+      if (!hasOwnToken) {
+        responseText = `> **${agentName}** (${agentId})\n\n${responseText}`
+      }
     }
 
     // Final message
@@ -256,6 +260,7 @@ export class MessageRouter {
           text: responseText,
           replyTo: msg.id,
           accountId: replyAccountId,
+          agentId,
         })
       }
     }
