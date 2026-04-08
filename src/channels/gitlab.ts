@@ -153,6 +153,18 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     })
 
+    this.server.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        this.log(`GitLab webhook port ${this.config.webhookPort} in use, retrying in 5s...`)
+        setTimeout(() => {
+          this.server?.close()
+          this.server?.listen(this.config.webhookPort)
+        }, 5000)
+      } else {
+        this.log(`GitLab webhook server error: ${err.message}`)
+      }
+    })
+
     this.server.listen(this.config.webhookPort, () => {
       this.log(`GitLab webhook listening on :${this.config.webhookPort}`)
     })
