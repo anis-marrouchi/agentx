@@ -38,6 +38,28 @@ daemon
       return
     }
 
+    // Single-instance guard — only one daemon can run at a time.
+    // If another process is alive with the recorded PID, exit immediately.
+    const { readFileSync, writeFileSync, mkdirSync, existsSync } = await import("fs")
+    const { resolve } = await import("path")
+    const lockDir = resolve(process.cwd(), ".agentx")
+    if (!existsSync(lockDir)) mkdirSync(lockDir, { recursive: true })
+    const pidPath = resolve(lockDir, "daemon.pid")
+
+    if (existsSync(pidPath)) {
+      const oldPid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10)
+      if (oldPid && oldPid !== process.pid) {
+        try {
+          process.kill(oldPid, 0) // throws if process doesn't exist
+          console.error(`Another agentx daemon is already running (PID ${oldPid}). Exiting.`)
+          process.exit(0)
+        } catch {
+          // Old process is dead — we can proceed
+        }
+      }
+    }
+    writeFileSync(pidPath, String(process.pid))
+
     const d = new AgentXDaemon(opts.config)
     await d.start()
   })

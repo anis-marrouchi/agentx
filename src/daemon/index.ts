@@ -37,7 +37,6 @@ export class AgentXDaemon {
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
-  private orphanCheckTimer?: ReturnType<typeof setInterval>
 
   constructor(configPath?: string) {
     const logger = new Logger("agentx")
@@ -127,15 +126,6 @@ export class AgentXDaemon {
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
-
-    // Kill any orphan daemon processes before starting
-    // (prevents port conflicts from systemd restart races)
-    await this.killOrphans()
-
-    // Periodically check for orphans (catches late-spawning ones from systemd restart races)
-    this.orphanCheckTimer = setInterval(() => {
-      this.killOrphans().catch(() => {})
-    }, 30_000)
 
     // 1. Start channels
     await this.startChannels()
@@ -250,7 +240,6 @@ export class AgentXDaemon {
     } catch {}
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
-    if (this.orphanCheckTimer) clearInterval(this.orphanCheckTimer)
 
     if (this.httpServer) {
       this.httpServer.close()
@@ -307,48 +296,6 @@ export class AgentXDaemon {
     this.log(
       `  Cost tracking: ${yesterday} — ${report.totalTasks} tasks, $${report.totalCost.toFixed(4)} (top: ${report.topAgent} $${report.topCost.toFixed(4)})`,
     )
-  }
-
-  /**
-   * Kill orphan daemon processes left from previous runs.
-   * Only kills processes whose parent is PID 1 (true orphans),
-   * NOT processes managed by systemd (whose ppid is the systemd user PID).
-   */
-  private async killOrphans(): Promise<void> {
-    try {
-      const { execSync } = await import("child_process")
-      const myPid = process.pid
-
-      // Find other agentx daemon processes with their ppid
-      const result = execSync(
-        `ps -eo pid,ppid,cmd 2>/dev/null | grep "cli.js daemon" | grep -v grep`,
-        { encoding: "utf-8", timeout: 5000 },
-      ).trim()
-
-      if (!result) return
-
-      const orphanPids: number[] = []
-      for (const line of result.split("\n")) {
-        const parts = line.trim().split(/\s+/)
-        const pid = parseInt(parts[0], 10)
-        const ppid = parseInt(parts[1], 10)
-        // Only kill true orphans (ppid=1), skip self and systemd-managed processes
-        if (pid && pid !== myPid && ppid === 1) {
-          orphanPids.push(pid)
-        }
-      }
-
-      if (orphanPids.length > 0) {
-        this.log(`  Killing ${orphanPids.length} orphan daemon process(es): ${orphanPids.join(", ")}`)
-        for (const pid of orphanPids) {
-          try { process.kill(pid, "SIGKILL") } catch {}
-        }
-        // Wait for ports to free
-        await new Promise(r => setTimeout(r, 1000))
-      }
-    } catch {
-      // Best-effort — may fail on platforms without ps
-    }
   }
 
   private async startChannels(): Promise<void> {
