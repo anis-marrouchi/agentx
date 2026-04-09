@@ -23,6 +23,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private routes: WhatsAppRoute[]
   private handler?: (msg: IncomingMessage) => Promise<void>
   private sock: any = null
+  private reconnectAttempts = 0
   private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
   private log: (...args: unknown[]) => void
 
@@ -92,6 +93,12 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     mkdirSync(this.sessionDir, { recursive: true })
 
+    // Close existing socket before creating a new one (prevents multiple connections)
+    if (this.sock) {
+      try { this.sock.end(undefined) } catch {}
+      this.sock = null
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(this.sessionDir)
 
     // Fetch latest WhatsApp Web version (critical for avoiding 405 errors)
@@ -156,14 +163,23 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode
-        this.log(`WhatsApp connection closed (status: ${statusCode})`)
+        const reason = lastDisconnect?.error?.output?.payload?.message || ""
+        this.log(`WhatsApp connection closed (status: ${statusCode}, reason: ${reason})`)
 
-        if (statusCode === 515) {
+        if (statusCode === DisconnectReason?.loggedOut || statusCode === 401) {
+          this.log("Logged out. Delete session dir and restart to re-scan QR.")
+        } else if (statusCode === 440 || statusCode === 408) {
+          // 440 = conflict:replaced (another session took over)
+          // 408 = connection timed out (QR not scanned)
+          // Don't reconnect immediately — exponential backoff to avoid loop
+          this.reconnectAttempts = (this.reconnectAttempts || 0) + 1
+          const delay = Math.min(5000 * Math.pow(2, this.reconnectAttempts - 1), 120_000) // max 2 min
+          this.log(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})...`)
+          setTimeout(() => this.start(), delay)
+        } else if (statusCode === 515) {
           // Stream error — restart after delay
           this.log("Stream error, reconnecting in 5s...")
           setTimeout(() => this.start(), 5000)
-        } else if (statusCode === DisconnectReason?.loggedOut || statusCode === 401) {
-          this.log("Logged out. Delete session dir and restart to re-scan QR.")
         } else if (statusCode !== undefined) {
           this.log("Reconnecting in 3s...")
           setTimeout(() => this.start(), 3000)
@@ -172,6 +188,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
       }
 
       if (connection === "open") {
+        this.reconnectAttempts = 0
         this.log("WhatsApp connected")
       }
     })

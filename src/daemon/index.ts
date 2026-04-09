@@ -532,6 +532,29 @@ export class AgentXDaemon {
           this.json(res, 200, this.mesh?.directory() || [])
           break
 
+        case "GET /debug": {
+          const { getDebugState, getDebugLogs } = await import("@/observability/debug")
+          this.json(res, 200, { ...getDebugState(), recentLogs: getDebugLogs(50) })
+          break
+        }
+
+        case "POST /debug/on": {
+          const { setDebug } = await import("@/observability/debug")
+          const cats = url.searchParams.get("categories")?.split(",") || ["all"]
+          setDebug(true, cats as any)
+          this.log(`Debug enabled: ${cats.join(", ")}`)
+          this.json(res, 200, { enabled: true, categories: cats })
+          break
+        }
+
+        case "POST /debug/off": {
+          const { setDebug } = await import("@/observability/debug")
+          setDebug(false)
+          this.log("Debug disabled")
+          this.json(res, 200, { enabled: false })
+          break
+        }
+
         case "POST /task": {
           const body = await readBody(req)
           if (!body.agent || !body.message) {

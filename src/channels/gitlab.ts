@@ -1,5 +1,6 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
+import { debug } from "@/observability/debug"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -248,7 +249,7 @@ export class GitLabAdapter implements ChannelAdapter {
     // Use per-agent token — fall back to global only as last resort
     const agentToken = this.getAgentToken(msg.agentId)
     const token = agentToken || this.config.token
-    this.log(`[send] agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL-FALLBACK(" + this.botUsername + ")"} chatId=${msg.chatId}`)
+    debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
     try {
       const res = await fetch(endpoint, {
@@ -383,11 +384,10 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
-    this.log(`[handleNote] mentions in note ${noteId}: ${mentions.join(", ")}`)
-    this.log(`[handleNote] usernameToAgent map has ${this.usernameToAgent.size} entries: ${[...this.usernameToAgent.entries()].map(([u,a]) => `${u}->${a}`).join(", ")}`)
+    debug.webhook("gitlab", "handleNote", `noteId=${noteId} mentions=[${mentions.join(",")}] user=${user.username}`)
 
     const resolvedAgentId = this.resolveAgentFromMention(note)
-    this.log(`[handleNote] resolvedAgentId = ${resolvedAgentId ?? "NONE"}`)
+    debug.webhook("gitlab", "resolve", `agentId=${resolvedAgentId ?? "NONE"}`)
 
     if (!resolvedAgentId) {
       this.log(`[handleNote] @mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
@@ -399,7 +399,7 @@ export class GitLabAdapter implements ChannelAdapter {
     // React with 👀 using the RESOLVED agent's own token (deterministic identity)
     const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
     const agentToken = agentMapping?.token
-    this.log(`[handleNote] targetAgent="${targetAgentId}" agentMapping=${agentMapping ? "found" : "NOT FOUND"} hasToken=${!!agentToken}`)
+    debug.webhook("gitlab", "token", `agent="${targetAgentId}" mapping=${agentMapping ? "found" : "MISSING"} hasToken=${!!agentToken}`)
     this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`

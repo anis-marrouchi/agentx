@@ -152,6 +152,10 @@ export class TelegramAdapter implements ChannelAdapter {
       const [accountId, config] = entries[i]
       this.log(`Starting polling for account "${accountId}" (${i + 1}/${entries.length})`)
       try {
+        // Drop any stale webhook/long-poll session from a previous run.
+        // This prevents 409 conflicts when restarting.
+        await this.apiCall(config.token, "deleteWebhook", { drop_pending_updates: false }).catch(() => {})
+
         const me = await this.apiCall(config.token, "getMe")
         const botUserId = me.result?.id
         const botUsername = me.result?.username
@@ -174,6 +178,17 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     this.polling = false
+    // Abort in-flight long-poll requests by making a short getUpdates call
+    // with offset=-1 on each account. This immediately releases Telegram's
+    // server-side session so the next start won't get 409 conflicts.
+    const aborts = Array.from(this.accounts.entries()).map(async ([accountId, config]) => {
+      try {
+        await this.apiCall(config.token, "getUpdates", { offset: -1, timeout: 0 })
+      } catch {
+        // Best-effort
+      }
+    })
+    await Promise.allSettled(aborts)
   }
 
   /**
