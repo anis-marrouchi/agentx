@@ -85,6 +85,9 @@ export class ToolExecutor {
         case "ask_user":
           result = await this.askUser(call)
           break
+        case "spawn_agent":
+          result = await this.spawnAgent(call)
+          break
         default:
           result = {
             tool_use_id: call.id,
@@ -359,6 +362,64 @@ export class ToolExecutor {
       tool_use_id: call.id,
       content: input.summary || `Queued ${files.length} file(s) for creation.`,
       files,
+    }
+  }
+
+  private async spawnAgent(call: ToolCallInput): Promise<ToolResult> {
+    const agentId = String(call.input.agent_id || "")
+    const prompt = String(call.input.prompt || "")
+    const timeoutSeconds = Number(call.input.timeout_seconds) || 300
+
+    if (!agentId || !prompt) {
+      return {
+        tool_use_id: call.id,
+        content: "agent_id and prompt are required.",
+        is_error: true,
+      }
+    }
+
+    try {
+      // Dynamically import to avoid circular dependency
+      const { SubAgentManager } = await import("@/agents/subagent")
+
+      // Get the global registry from the daemon (if running)
+      const { getGlobalRegistry } = await import("@/agents/registry")
+      const registry = getGlobalRegistry()
+
+      if (!registry) {
+        return {
+          tool_use_id: call.id,
+          content: "Sub-agent spawning requires the daemon to be running.",
+          is_error: true,
+        }
+      }
+
+      const manager = new SubAgentManager(registry)
+      const result = await manager.spawn({
+        targetAgentId: agentId,
+        prompt,
+        parentAgentId: "orchestrator",
+        timeout: timeoutSeconds * 1000,
+      })
+
+      if (result.success) {
+        return {
+          tool_use_id: call.id,
+          content: `Sub-agent "${agentId}" completed (${Math.round(result.duration / 1000)}s):\n\n${result.content}`,
+        }
+      } else {
+        return {
+          tool_use_id: call.id,
+          content: `Sub-agent "${agentId}" failed: ${result.error}`,
+          is_error: true,
+        }
+      }
+    } catch (error: any) {
+      return {
+        tool_use_id: call.id,
+        content: `Failed to spawn sub-agent: ${error.message}`,
+        is_error: true,
+      }
     }
   }
 

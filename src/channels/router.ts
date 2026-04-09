@@ -5,6 +5,7 @@ import type { ChannelAdapter, IncomingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
+import { BlockStream } from "./block-stream"
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -125,36 +126,43 @@ export class MessageRouter {
     // Start typing indicator loop (from the correct bot)
     const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
-    // Streaming setup
+    // Streaming setup with smart block streaming
     const canStream = typeof adapter.editMessage === "function"
     let sentMessageId: string | undefined
-    let lastEditTime = 0
+    let fullStreamText = ""
 
-    const onDelta = canStream
-      ? async (_delta: string, fullText: string) => {
-          const now = Date.now()
-          if (now - lastEditTime < STREAM_EDIT_INTERVAL_MS) return
+    // Smart block streamer handles chunking, code fence protection, and pacing
+    const blockStream = canStream
+      ? new BlockStream(
+          async (block: string) => {
+            fullStreamText += block
+            if (!sentMessageId) {
+              const preview = fullStreamText.length > 20
+                ? fullStreamText
+                : `_${agentName} is writing..._\n\n${fullStreamText}`
+              try {
+                sentMessageId = await this.adapterSend(adapter, {
+                  channel: msg.channel,
+                  chatId,
+                  text: preview,
+                  replyTo: msg.id,
+                  accountId: replyAccountId,
+                })
+              } catch { /* retry next block */ }
+            } else {
+              try {
+                await this.adapterEdit(adapter, chatId, sentMessageId, fullStreamText, undefined, replyAccountId)
+              } catch { /* retry next block */ }
+            }
+          },
+          undefined,
+          msg.channel,
+        )
+      : undefined
 
-          if (!sentMessageId) {
-            const preview = fullText.length > 20
-              ? fullText
-              : `_${agentName} is writing..._\n\n${fullText}`
-            try {
-              sentMessageId = await this.adapterSend(adapter, {
-                channel: msg.channel,
-                chatId,
-                text: preview,
-                replyTo: msg.id,
-                accountId: replyAccountId,
-              })
-              lastEditTime = now
-            } catch { /* retry next delta */ }
-          } else {
-            try {
-              await this.adapterEdit(adapter, chatId, sentMessageId, fullText, undefined, replyAccountId)
-              lastEditTime = now
-            } catch { /* retry next delta */ }
-          }
+    const onDelta = blockStream
+      ? (_delta: string, _fullText: string) => {
+          blockStream.push(_delta)
         }
       : undefined
 
@@ -200,7 +208,17 @@ export class MessageRouter {
 
     clearInterval(typingTimer)
 
+    // Flush any remaining streamed content
+    blockStream?.flush()
+
     if (response.error) {
+      // Queued messages are not errors — the message will be processed later
+      if (response.error.startsWith("__queued__")) {
+        clearInterval(typingTimer)
+        this.log(`Message queued for ${agentName}`)
+        return
+      }
+
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`
       if (sentMessageId) {

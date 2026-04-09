@@ -41,6 +41,13 @@ const agentConfigSchema = z.object({
   mentions: z.array(z.string()).default([]),
   maxConcurrent: z.number().default(1),
   permissionMode: z.string().default("default"),
+  queueMode: z.enum(["collect", "followup", "drop"]).default("collect"),
+  heartbeat: z.object({
+    enabled: z.boolean().default(false),
+    intervalMinutes: z.number().default(30),
+    prompt: z.string().default("Check inbox, pending tasks, and system health. Report anything that needs attention."),
+    channel: z.string().default("heartbeat"),
+  }).default({}),
 })
 
 const telegramAccountSchema = z.object({

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync } from "fs"
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
-import { AgentRegistry } from "@/agents/registry"
+import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -14,6 +14,7 @@ import { WebhookHandler } from "./webhooks"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
+import { HeartbeatManager } from "@/agents/heartbeat"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -31,6 +32,7 @@ export class AgentXDaemon {
   private mesh?: A2AMesh
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
+  private heartbeat: HeartbeatManager
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
@@ -66,7 +68,16 @@ export class AgentXDaemon {
 
     // Initialize agent registry
     this.registry = new AgentRegistry(this.config, this.log)
+    setGlobalRegistry(this.registry)
     this.registry.setLandscape(this.landscape)
+
+    // Initialize heartbeat manager
+    this.heartbeat = new HeartbeatManager(this.registry, this.log)
+    for (const [id, agent] of Object.entries(this.config.agents)) {
+      if (agent.heartbeat?.enabled) {
+        this.heartbeat.register(id, agent.heartbeat)
+      }
+    }
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
@@ -190,6 +201,11 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping crons...")
       await this.cron.stop()
+    } catch {}
+
+    try {
+      this.log("  Stopping heartbeats...")
+      this.heartbeat.stopAll()
     } catch {}
 
     try {

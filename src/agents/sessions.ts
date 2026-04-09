@@ -29,6 +29,9 @@ const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in co
 const MAX_MESSAGES = 30          // Keep last 30 messages max
 const STALE_SESSION_MINUTES = 15 // Resume sessions idle for less than this; rebuild if older
 
+/** Session has a compacted summary prepended to its messages */
+const COMPACTION_MARKER = "[Compacted conversation summary"
+
 export class SessionStore {
   private sessionsDir: string
   private cache: Map<string, Session> = new Map()
@@ -234,6 +237,43 @@ export class SessionStore {
     } catch {
       return ""
     }
+  }
+
+  /**
+   * Check if session history needs compaction and compact if so.
+   * Call this after adding messages. Returns true if compaction was performed.
+   */
+  async compactIfNeeded(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    memoryStore?: import("./memory-store").MemoryStore,
+  ): Promise<boolean> {
+    const session = this.getSession(agentId, channel, chatId)
+    const { needsCompaction, compactSession, applyCompaction } = await import("./compaction")
+
+    if (!needsCompaction(session.messages)) return false
+
+    const result = await compactSession(session.messages, agentId, memoryStore)
+    if (result.compactedCount === 0) return false
+
+    session.messages = applyCompaction(session.messages, result)
+    session.updatedAt = new Date().toISOString()
+
+    // Clear Claude session ID — the compacted context needs a fresh session
+    delete session.claudeSessionId
+
+    this.save(session)
+    return true
+  }
+
+  /**
+   * Check if current session already has a compacted summary.
+   */
+  hasCompaction(agentId: string, channel: string, chatId: string): boolean {
+    const session = this.getSession(agentId, channel, chatId)
+    return session.messages.length > 0 &&
+      session.messages[0].content.startsWith(COMPACTION_MARKER)
   }
 
   /**

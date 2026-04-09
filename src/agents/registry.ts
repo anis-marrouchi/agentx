@@ -7,9 +7,22 @@ import { TokenTracker } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { MemoryStore } from "./memory-store"
 import { extractMemories } from "./memory-extract"
+import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
+import { loadBootstrapFiles, buildBootstrapContext } from "./bootstrap"
 import type { LandscapeBuilder } from "./landscape"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
+
+/** Global singleton for sub-agent spawning from tools */
+let globalRegistry: AgentRegistry | undefined
+
+export function setGlobalRegistry(registry: AgentRegistry): void {
+  globalRegistry = registry
+}
+
+export function getGlobalRegistry(): AgentRegistry | undefined {
+  return globalRegistry
+}
 
 interface AgentState {
   id: string
@@ -30,6 +43,7 @@ export class AgentRegistry {
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
+  private messageQueue: MessageQueue
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -44,6 +58,7 @@ export class AgentRegistry {
     this.memoryStore = new MemoryStore()
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
+    this.messageQueue = new MessageQueue()
 
     for (const [id, def] of Object.entries(config.agents)) {
       this.agents.set(id, {
@@ -155,10 +170,34 @@ export class AgentRegistry {
       return { content: "", error: `Unknown agent: ${task.agentId}` }
     }
 
+    // Build session key for queue management
+    const qChannel = task.context?.channel || "api"
+    const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+
     if (state.activeTasks >= state.def.maxConcurrent) {
-      return {
-        content: "",
-        error: `Agent "${task.agentId}" is busy (${state.activeTasks}/${state.def.maxConcurrent} tasks)`,
+      // Agent is busy — try to queue the message instead of rejecting
+      const mode = (state.def.queueMode as QueueMode) || "collect"
+      const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
+        text: task.message,
+        sender: task.context?.sender || "User",
+        timestamp: Date.now(),
+        channel: qChannel,
+        chatId: qChatId,
+        originalContext: task.context as Record<string, unknown>,
+      })
+
+      if (queued === "drop") {
+        this.log(`[${task.agentId}] busy, message dropped (mode: drop)`)
+        return { content: "", error: `Agent "${task.agentId}" is busy — message dropped` }
+      }
+
+      if (queued) {
+        const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+        this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
+        return {
+          content: "",
+          error: `__queued__:${queued}:${pending}`,
+        }
       }
     }
 
@@ -172,6 +211,9 @@ export class AgentRegistry {
     state.activeTasks++
     state.totalTasks++
     state.lastActive = new Date()
+
+    // Mark session as running in the message queue
+    this.messageQueue.markRunning(task.agentId, qChannel, qChatId)
 
     this.log(`[${task.agentId}] executing task (${state.activeTasks}/${state.def.maxConcurrent})`)
 
@@ -204,12 +246,29 @@ export class AgentRegistry {
       resumeSessionId = undefined
     }
 
+    // Compact session if history is getting too long (summarize older messages)
+    try {
+      const compacted = await this.sessions.compactIfNeeded(
+        task.agentId, channel, chatId, this.memoryStore,
+      )
+      if (compacted) {
+        this.log(`[${task.agentId}] session compacted for ${channel}:${chatId}`)
+        resumeSessionId = undefined
+      }
+    } catch (e: any) {
+      this.log(`[${task.agentId}] compaction failed (non-fatal): ${e.message}`)
+    }
+
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
 
     // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group)
     const crossChatContext = this.sessions.getCrossSessionSummary(task.agentId, channel, chatId)
+
+    // Load bootstrap identity files (SOUL.md, IDENTITY.md, etc.) from workspace
+    const bootstrapFiles = loadBootstrapFiles(state.def.workspace)
+    const bootstrapContext = buildBootstrapContext(bootstrapFiles)
 
     const contextInput: ContextInput = {
       channel,
@@ -227,6 +286,7 @@ export class AgentRegistry {
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,
+      bootstrapContext: bootstrapContext || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       sessionHistory,
       memoryContext: memoryContext || undefined,
@@ -302,6 +362,30 @@ export class AgentRegistry {
       return { content: "", error: error.message }
     } finally {
       state.activeTasks--
+
+      // Flush queued messages that arrived while this run was in progress
+      this.messageQueue.markDone(task.agentId, qChannel, qChatId)
+        .then((queued) => {
+          if (queued.length === 0) return
+          this.log(`[${task.agentId}] flushing ${queued.length} queued message(s)`)
+          // Re-execute each queued message as a new task
+          for (const qm of queued) {
+            this.execute({
+              message: qm.text,
+              agentId: task.agentId,
+              context: (qm.originalContext as AgentTask["context"]) || {
+                channel: qm.channel,
+                sender: qm.sender,
+                chatId: qm.chatId,
+              },
+            }).catch((e) => {
+              this.log(`[${task.agentId}] queued message failed: ${e.message}`)
+            })
+          }
+        })
+        .catch((e) => {
+          this.log(`[${task.agentId}] queue flush failed: ${e.message}`)
+        })
     }
   }
 

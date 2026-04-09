@@ -54,6 +54,9 @@ export interface ContextInput {
   channel: string                    // "telegram", "whatsapp", "gitlab", "discord"
   channelScope?: "group" | "personal" | "project"
 
+  // Bootstrap identity files (from workspace)
+  bootstrapContext?: string          // from buildBootstrapContext()
+
   // Scope layer
   groupName?: string
   projectPath?: string               // "org/my-project"
@@ -175,6 +178,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("identity", 200),
       content: input.systemPrompt.split("\n")[0],
       tags: ["identity", input.agentId],
+    })
+  }
+
+  // 4.5 Bootstrap identity files (SOUL.md, IDENTITY.md, USER.md, AGENTS.md)
+  if (input.bootstrapContext) {
+    layers.push({
+      name: "bootstrap",
+      priority: 4.5,
+      maxTokens: budget("bootstrap", 500),
+      content: input.bootstrapContext,
+      tags: ["bootstrap", "identity", "personality"],
     })
   }
 

@@ -197,6 +197,30 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     permission: "file-write",
   },
+  {
+    name: "spawn_agent",
+    description:
+      "Spawn a sub-agent to handle a task in the background. The sub-agent runs in its own session and returns results. Use this for parallel research, long-running tasks, or delegating work to a specialized agent.",
+    input_schema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The ID of the agent to spawn (must be a registered agent)",
+        },
+        prompt: {
+          type: "string",
+          description: "The task description for the sub-agent",
+        },
+        timeout_seconds: {
+          type: "number",
+          description: "Maximum time to wait for completion in seconds. Default: 300 (5 minutes).",
+        },
+      },
+      required: ["agent_id", "prompt"],
+    },
+    permission: "none",
+  },
 ]
 
 /**

@@ -21,6 +21,10 @@ export interface AgentTask {
   context?: {
     channel?: string
     sender?: string
+    /** Platform user ID (e.g. Telegram user ID) */
+    senderId?: string
+    /** Platform username (e.g. @username) */
+    senderUsername?: string
     group?: string
     /** Stable chat ID for session keying (e.g. "project:issue:123" for GitLab) */
     chatId?: string
