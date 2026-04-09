@@ -33,15 +33,18 @@ export interface ContextConfig {
 }
 
 const DEFAULT_CONFIG: ContextConfig = {
-  totalBudget: 4000,
+  totalBudget: 6000,
   layerBudgets: {
     channel: 200,
     scope: 200,
-    landscape: 350,
+    landscape: 800,
     identity: 200,
+    bootstrap: 500,
     intent: 200,
     artifacts: 500,
+    memory: 600,
     history: 1200,
+    "cross-chat": 800,
     wiki: 1000,
   },
 }
