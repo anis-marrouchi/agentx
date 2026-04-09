@@ -89,13 +89,22 @@ function getNextCronDate(expression: string, after: Date, timezone: string): Dat
   throw new Error(`No next run found for cron "${expression}" within 1 year`)
 }
 
+// Retry config (inspired by OpenClaw's exponential backoff)
+const MAX_RETRIES = 5
+const RETRY_DELAYS = [30_000, 60_000, 300_000, 900_000, 3_600_000] // 30s, 1m, 5m, 15m, 60m
+
+/** Notification callback — injected by daemon to send alerts via channels */
+export type CronNotifyCallback = (jobId: string, agent: string, error: string, consecutiveErrors: number) => Promise<void>
+
 export class CronScheduler {
   private jobs: Map<string, CronJobState> = new Map()
   private timers: Map<string, ReturnType<typeof setTimeout>> = new Map()
   private registry: AgentRegistry
   private hooks?: HookRegistry
   private runsDir: string
+  private lastRunFile: string
   private running = false
+  private notifyCallback?: CronNotifyCallback
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -108,6 +117,7 @@ export class CronScheduler {
     this.hooks = hooks
     this.log = log
     this.runsDir = resolve(process.cwd(), ".agentx/cron/runs")
+    this.lastRunFile = resolve(process.cwd(), ".agentx/cron/last-runs.json")
 
     for (const [id, def] of Object.entries(config.crons)) {
       this.jobs.set(id, {
@@ -122,8 +132,17 @@ export class CronScheduler {
         onError: def.onError,
         consecutiveErrors: 0,
         totalRuns: 0,
+        totalFailures: 0,
       })
     }
+  }
+
+  /**
+   * Set a notification callback for failed crons.
+   * Called when onError is "notify" or after multiple consecutive failures.
+   */
+  setNotifyCallback(cb: CronNotifyCallback): void {
+    this.notifyCallback = cb
   }
 
   async start(): Promise<void> {
@@ -131,6 +150,19 @@ export class CronScheduler {
 
     if (!existsSync(this.runsDir)) {
       mkdirSync(this.runsDir, { recursive: true })
+    }
+
+    // Detect missed runs before scheduling
+    const missedRuns = this.detectMissedRuns()
+    if (missedRuns.length > 0) {
+      this.log(`Detected ${missedRuns.length} missed cron run(s) while daemon was down:`)
+      for (const { jobId, missedAt } of missedRuns) {
+        this.log(`  "${jobId}" should have run at ${missedAt.toISOString()}`)
+      }
+      // Execute missed runs (fire-and-forget, don't block startup)
+      this.executeMissedRuns(missedRuns).catch((e) => {
+        this.log(`Error executing missed runs: ${e.message}`)
+      })
     }
 
     for (const [id, job] of this.jobs) {
@@ -150,15 +182,23 @@ export class CronScheduler {
       clearTimeout(timer)
     }
     this.timers.clear()
+
+    // Persist last run times for missed run detection on next start
+    this.saveLastRuns()
   }
 
   private scheduleNext(jobId: string): void {
     const job = this.jobs.get(jobId)
     if (!job || !job.enabled || !this.running) return
 
+    // Clear any existing timer
+    const existing = this.timers.get(jobId)
+    if (existing) clearTimeout(existing)
+
     try {
       const nextRun = getNextCronDate(job.schedule, new Date(), job.timezone)
       job.nextRun = nextRun
+      job.retryPending = false
       const delay = nextRun.getTime() - Date.now()
 
       this.log(`Job "${jobId}" next run: ${nextRun.toISOString()} (in ${Math.round(delay / 1000)}s)`)
@@ -170,9 +210,29 @@ export class CronScheduler {
     }
   }
 
-  private async executeJob(jobId: string): Promise<void> {
+  private scheduleRetry(jobId: string, attempt: number): void {
+    const job = this.jobs.get(jobId)
+    if (!job || !job.enabled || !this.running) return
+    if (attempt >= MAX_RETRIES) {
+      this.log(`Job "${jobId}" exhausted all ${MAX_RETRIES} retries, scheduling next regular run`)
+      this.scheduleNext(jobId)
+      return
+    }
+
+    const delay = RETRY_DELAYS[attempt] || RETRY_DELAYS[RETRY_DELAYS.length - 1]
+    job.retryPending = true
+
+    this.log(`Job "${jobId}" retry ${attempt + 1}/${MAX_RETRIES} in ${Math.round(delay / 1000)}s`)
+
+    const timer = setTimeout(() => this.executeJob(jobId, attempt + 1), delay)
+    this.timers.set(jobId, timer)
+  }
+
+  private async executeJob(jobId: string, retryAttempt: number = 0): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job || !this.running) return
+
+    const isRetry = retryAttempt > 0
 
     // Pre-hook
     if (this.hooks?.has("pre:cron-run" as any)) {
@@ -189,7 +249,7 @@ export class CronScheduler {
       }
     }
 
-    this.log(`Executing job "${jobId}" -> agent "${job.agent}"`)
+    this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`)
     const startedAt = new Date()
     job.lastRun = startedAt
     job.totalRuns++
@@ -209,18 +269,38 @@ export class CronScheduler {
         response: response.content,
         error: response.error,
         duration: response.duration || Date.now() - startedAt.getTime(),
+        isRetry,
+        retryAttempt,
       }
 
       if (response.error) {
         job.consecutiveErrors++
+        job.totalFailures++
+        job.lastError = response.error
         this.log(`Job "${jobId}" failed (${job.consecutiveErrors} consecutive): ${response.error}`)
+
+        // Notify on failure
+        await this.notifyFailure(job, response.error)
 
         if (job.onError === "disable" && job.consecutiveErrors >= 3) {
           job.enabled = false
           this.log(`Job "${jobId}" disabled after ${job.consecutiveErrors} consecutive errors`)
+          await this.notifyDisabled(job)
         }
+
+        // Retry
+        this.logRun(result)
+        this.scheduleRetry(jobId, retryAttempt)
+        return
       } else {
+        // Success — reset error state
+        if (job.consecutiveErrors > 0) {
+          this.log(`Job "${jobId}" recovered after ${job.consecutiveErrors} failure(s)`)
+        }
         job.consecutiveErrors = 0
+        job.lastSuccess = new Date()
+        job.lastError = undefined
+        job.retryPending = false
         this.log(`Job "${jobId}" completed in ${result.duration}ms`)
       }
 
@@ -239,11 +319,159 @@ export class CronScheduler {
       }
     } catch (e: any) {
       job.consecutiveErrors++
+      job.totalFailures++
+      job.lastError = e.message
       this.log(`Job "${jobId}" threw: ${e.message}`)
+
+      await this.notifyFailure(job, e.message)
+      this.scheduleRetry(jobId, retryAttempt)
+      return
     }
 
-    // Schedule next run
+    // Persist last run time
+    this.saveLastRuns()
+
+    // Schedule next regular run
     this.scheduleNext(jobId)
+  }
+
+  // --- Missed run detection ---
+
+  /**
+   * Detect cron jobs that should have fired while the daemon was down.
+   * Compares saved last-run times against the cron schedule.
+   */
+  private detectMissedRuns(): Array<{ jobId: string; missedAt: Date }> {
+    const missed: Array<{ jobId: string; missedAt: Date }> = []
+
+    const lastRuns = this.loadLastRuns()
+    if (!lastRuns) return missed // First boot — no history
+
+    for (const [jobId, job] of this.jobs) {
+      if (!job.enabled) continue
+
+      const lastRunStr = lastRuns[jobId]
+      if (!lastRunStr) continue // Never ran before
+
+      const lastRun = new Date(lastRunStr)
+      try {
+        // What SHOULD the next run have been after the last recorded run?
+        const shouldHaveRun = getNextCronDate(job.schedule, lastRun, job.timezone)
+        if (shouldHaveRun.getTime() < Date.now()) {
+          missed.push({ jobId, missedAt: shouldHaveRun })
+        }
+      } catch {
+        // Invalid schedule — skip
+      }
+    }
+
+    return missed
+  }
+
+  /**
+   * Execute missed runs (catch-up). Runs sequentially to avoid overwhelming agents.
+   */
+  private async executeMissedRuns(missed: Array<{ jobId: string; missedAt: Date }>): Promise<void> {
+    for (const { jobId, missedAt } of missed) {
+      const job = this.jobs.get(jobId)
+      if (!job || !job.enabled) continue
+
+      this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
+
+      try {
+        const response = await this.registry.execute({
+          message: `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
+          agentId: job.agent,
+          context: { channel: "cron" },
+        })
+
+        const result: CronRunResult = {
+          jobId,
+          startedAt: new Date(),
+          completedAt: new Date(),
+          success: !response.error,
+          response: response.content,
+          error: response.error,
+          duration: response.duration || 0,
+          isRetry: false,
+        }
+
+        this.logRun(result)
+
+        if (response.error) {
+          this.log(`Missed job "${jobId}" failed: ${response.error}`)
+        } else {
+          this.log(`Missed job "${jobId}" completed`)
+          job.lastSuccess = new Date()
+        }
+        job.lastRun = new Date()
+        job.totalRuns++
+      } catch (e: any) {
+        this.log(`Missed job "${jobId}" threw: ${e.message}`)
+      }
+    }
+
+    this.saveLastRuns()
+  }
+
+  // --- Notification ---
+
+  private async notifyFailure(job: CronJobState, error: string): Promise<void> {
+    if (job.onError !== "notify" && job.consecutiveErrors < 2) return
+    if (!this.notifyCallback) {
+      this.log(`[ALERT] Cron "${job.id}" failed (${job.consecutiveErrors}x): ${error.slice(0, 200)}`)
+      return
+    }
+
+    try {
+      await this.notifyCallback(job.id, job.agent, error, job.consecutiveErrors)
+    } catch {
+      // Don't fail on notification errors
+    }
+  }
+
+  private async notifyDisabled(job: CronJobState): Promise<void> {
+    if (!this.notifyCallback) {
+      this.log(`[ALERT] Cron "${job.id}" has been DISABLED after ${job.consecutiveErrors} consecutive failures`)
+      return
+    }
+
+    try {
+      await this.notifyCallback(
+        job.id,
+        job.agent,
+        `AUTO-DISABLED after ${job.consecutiveErrors} consecutive failures. Last error: ${job.lastError || "unknown"}`,
+        job.consecutiveErrors,
+      )
+    } catch {
+      // Don't fail on notification errors
+    }
+  }
+
+  // --- Persistence ---
+
+  private saveLastRuns(): void {
+    try {
+      const data: Record<string, string> = {}
+      for (const [id, job] of this.jobs) {
+        if (job.lastRun) data[id] = job.lastRun.toISOString()
+      }
+      const dir = resolve(process.cwd(), ".agentx/cron")
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(this.lastRunFile, JSON.stringify(data, null, 2))
+    } catch {
+      // Best-effort
+    }
+  }
+
+  private loadLastRuns(): Record<string, string> | null {
+    try {
+      if (!existsSync(this.lastRunFile)) return null
+      const { readFileSync } = require("fs")
+      return JSON.parse(readFileSync(this.lastRunFile, "utf-8"))
+    } catch {
+      return null
+    }
   }
 
   private logRun(result: CronRunResult): void {
@@ -264,9 +492,30 @@ export class CronScheduler {
   }
 
   /**
-   * List all jobs and their status.
+   * List all jobs and their status (including failure info).
    */
   list(): CronJobState[] {
     return Array.from(this.jobs.values())
+  }
+
+  /**
+   * Get a health summary of cron jobs.
+   */
+  health(): { healthy: number; failing: number; disabled: number; missed: number; jobs: Array<{ id: string; status: string; consecutiveErrors: number; lastError?: string }> } {
+    const jobs = Array.from(this.jobs.values())
+    const missed = this.detectMissedRuns()
+
+    return {
+      healthy: jobs.filter(j => j.enabled && j.consecutiveErrors === 0).length,
+      failing: jobs.filter(j => j.enabled && j.consecutiveErrors > 0).length,
+      disabled: jobs.filter(j => !j.enabled).length,
+      missed: missed.length,
+      jobs: jobs.map(j => ({
+        id: j.id,
+        status: !j.enabled ? "disabled" : j.retryPending ? "retrying" : j.consecutiveErrors > 0 ? "failing" : "healthy",
+        consecutiveErrors: j.consecutiveErrors,
+        lastError: j.lastError,
+      })),
+    }
   }
 }

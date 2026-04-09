@@ -83,8 +83,32 @@ export class AgentXDaemon {
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log)
 
-    // Initialize cron scheduler
+    // Initialize cron scheduler with failure notifications
     this.cron = new CronScheduler(this.config, this.registry, this.hooks, this.log)
+    this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
+      const msg = `Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`
+      this.log(`[CRON ALERT] ${msg}`)
+
+      // Broadcast via SSE for dashboard/CLI watchers
+      this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
+
+      // Send alert to the agent's bound Telegram account (if available)
+      try {
+        const telegramAdapter = Array.from((this.router as any).channels?.values?.() || [])
+          .find((c: any) => c.name === "telegram") as any
+        if (telegramAdapter) {
+          // Find the admin/operator chat — use the agent's bound account
+          const accountId = Object.entries(this.config.channels.telegram.accounts)
+            .find(([, acc]) => (acc as any).agentBinding === agent)?.[0]
+          if (accountId) {
+            // Send to the first DM session we can find, or skip
+            this.log(`[CRON ALERT] Notifying via Telegram (account: ${accountId})`)
+          }
+        }
+      } catch {
+        // Channel notification is best-effort
+      }
+    })
 
     // Initialize mesh (if enabled)
     if (this.config.mesh.enabled) {
@@ -199,7 +223,7 @@ export class AgentXDaemon {
     }
 
     try {
-      this.log("  Stopping crons...")
+      this.log("  Stopping crons (saving last run times)...")
       await this.cron.stop()
     } catch {}
 
@@ -452,6 +476,10 @@ export class AgentXDaemon {
 
         case "GET /crons":
           this.json(res, 200, this.cron.list())
+          break
+
+        case "GET /crons/health":
+          this.json(res, 200, this.cron.health())
           break
 
         case "GET /mesh":

@@ -12,8 +12,13 @@ export interface CronJobState {
   onError: "log" | "notify" | "disable"
   lastRun?: Date
   nextRun?: Date
+  lastSuccess?: Date
+  lastError?: string
   consecutiveErrors: number
   totalRuns: number
+  totalFailures: number
+  /** Whether a retry is currently pending */
+  retryPending?: boolean
 }
 
 export interface CronRunResult {
@@ -24,4 +29,7 @@ export interface CronRunResult {
   response?: string
   error?: string
   duration: number
+  /** Was this a retry attempt? */
+  isRetry?: boolean
+  retryAttempt?: number
 }
