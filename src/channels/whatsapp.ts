@@ -24,6 +24,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private handler?: (msg: IncomingMessage) => Promise<void>
   private sock: any = null
   private reconnectAttempts = 0
+  /** Generation counter — incremented on each start() to ignore stale socket events */
+  private generation = 0
   private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
   private log: (...args: unknown[]) => void
 
@@ -93,16 +95,13 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     mkdirSync(this.sessionDir, { recursive: true })
 
-    // Close existing socket before creating a new one (prevents multiple connections)
-    // Remove all listeners first to prevent old socket's close event from re-triggering
+    // Increment generation — stale socket events from previous start() calls
+    // will see a mismatched generation and be ignored
+    const myGeneration = ++this.generation
+
+    // Close existing socket before creating a new one
     if (this.sock) {
-      try {
-        this.sock.ev.removeAllListeners("connection.update")
-        this.sock.ev.removeAllListeners("creds.update")
-        this.sock.ev.removeAllListeners("messages.upsert")
-        this.sock.ev.removeAllListeners("messaging-history.set")
-        this.sock.end(undefined)
-      } catch {}
+      try { this.sock.end(undefined) } catch {}
       this.sock = null
     }
 
@@ -150,8 +149,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
       this.log(`WA history sync: ${data.messages?.length || 0} messages, ${data.isLatest ? "latest" : "partial"}`)
     })
 
-    // Handle connection updates
+    // Handle connection updates (ignore events from stale sockets via generation check)
     this.sock.ev.on("connection.update", async (update: any) => {
+      if (myGeneration !== this.generation) return // stale socket event
       const { connection, lastDisconnect, qr } = update
 
       if (qr) {
