@@ -152,11 +152,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     // Handle connection updates (ignore events from stale sockets via generation check)
     this.sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update
-      this.log(`[WA TRACE] event=${connection||"qr"} gen=${myGeneration}/${this.generation} attempts=${this.reconnectAttempts}`)
-      if (myGeneration !== this.generation) {
-        this.log(`[WA TRACE] IGNORING stale event (gen ${myGeneration} != ${this.generation})`)
-        return
-      }
+      if (myGeneration !== this.generation) return // stale socket event
 
       if (qr) {
         this.log("Scan QR code with WhatsApp to connect:")
@@ -183,7 +179,6 @@ export class WhatsAppAdapter implements ChannelAdapter {
           // 440 = conflict:replaced (another session took over)
           // 408 = connection timed out (QR not scanned)
           this.reconnectAttempts++
-          this.log(`[WA DEBUG] reconnectAttempts=${this.reconnectAttempts} generation=${myGeneration}/${this.generation}`)
 
           if (this.reconnectAttempts >= 5) {
             this.log(`WhatsApp: giving up after ${this.reconnectAttempts} conflict attempts. Another session is active for this number — close it or re-scan QR.`)
