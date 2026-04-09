@@ -94,8 +94,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
     mkdirSync(this.sessionDir, { recursive: true })
 
     // Close existing socket before creating a new one (prevents multiple connections)
+    // Remove all listeners first to prevent old socket's close event from re-triggering
     if (this.sock) {
-      try { this.sock.end(undefined) } catch {}
+      try {
+        this.sock.ev.removeAllListeners("connection.update")
+        this.sock.ev.removeAllListeners("creds.update")
+        this.sock.ev.removeAllListeners("messages.upsert")
+        this.sock.ev.removeAllListeners("messaging-history.set")
+        this.sock.end(undefined)
+      } catch {}
       this.sock = null
     }
 
