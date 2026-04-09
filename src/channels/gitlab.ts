@@ -120,29 +120,54 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
-    // Resolve bot username to skip own comments
-    try {
-      const res = await fetch(`${this.config.host}/api/v4/user`, {
-        headers: { "PRIVATE-TOKEN": this.config.token },
-      })
-      const data = await res.json() as any
-      this.botUsername = data.username
-      this.botUsernames.add(data.username)
-      this.log(`Bot user: ${this.botUsername}`)
-    } catch (e: any) {
-      this.log(`Could not resolve bot user: ${e.message}`)
+    // Resolve bot usernames from ALL tokens (global + per-agent)
+    // This is critical for cascade prevention — we must know every username
+    // that posts on behalf of an agent.
+    const tokensToResolve: Array<{ label: string; token: string }> = []
+
+    if (this.config.token) {
+      tokensToResolve.push({ label: "global", token: this.config.token })
+    }
+    for (const mapping of this.config.agentMappings || []) {
+      if (mapping.token) {
+        tokensToResolve.push({ label: mapping.agentId, token: mapping.token })
+      }
     }
 
-    // Also register all GitLab usernames from agentMappings as bot users
-    // to prevent cascading when agents post via different tokens
+    // Resolve usernames from all tokens in parallel
+    const resolutions = await Promise.allSettled(
+      tokensToResolve.map(async ({ label, token }) => {
+        const res = await fetch(`${this.config.host}/api/v4/user`, {
+          headers: { "PRIVATE-TOKEN": token },
+        })
+        if (!res.ok) throw new Error(`${res.status}`)
+        const data = await res.json() as any
+        return { label, username: data.username as string }
+      })
+    )
+
+    for (const result of resolutions) {
+      if (result.status === "fulfilled") {
+        const { label, username } = result.value
+        this.botUsernames.add(username)
+        if (label === "global") {
+          this.botUsername = username
+          this.log(`Global bot user: ${username}`)
+        } else {
+          this.log(`Agent "${label}" GitLab user: ${username}`)
+        }
+      }
+    }
+
+    // Also register all configured GitLab usernames from agentMappings
+    // (in case token resolution failed or username differs from config)
     for (const mapping of this.config.agentMappings || []) {
       for (const username of mapping.gitlabUsernames) {
         this.botUsernames.add(username)
       }
     }
-    if (this.botUsernames.size > 1) {
-      this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
-    }
+
+    this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
 
     this.server = createServer(async (req, res) => {
       if (req.method === "POST") {
@@ -341,12 +366,24 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
-    // For notes: no project-route fallback. Only explicit @mentions route.
-    // This prevents PM from being triggered by every comment on the project.
+    // Resolve agent deterministically from GitLab @mention -> agentMappings
+    const resolvedAgentId = this.resolveAgentFromMention(note)
+    if (!resolvedAgentId) {
+      // No agent matched the @mention — try project route fallback
+      const fallbackAgent = this.resolveAgent(project)
+      if (!fallbackAgent) {
+        this.log(`No agent matched @mentions in note ${noteId}, skipping`)
+        res.writeHead(200); res.end("ok"); return
+      }
+      this.log(`No agent mapping for @mentions, falling back to project route: ${fallbackAgent}`)
+    }
 
-    // React with 👀 using the mentioned agent's token (not the global webhook token)
-    const mentionedAgentToken = this.getTokenForMentionedAgent(note)
-    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, mentionedAgentToken).catch(() => {})
+    const targetAgentId = resolvedAgentId || this.resolveAgent(project)
+
+    // React with 👀 using the RESOLVED agent's own token (deterministic identity)
+    const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
+    const agentToken = agentMapping?.token
+    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
@@ -364,7 +401,8 @@ export class GitLabAdapter implements ChannelAdapter {
       text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note.replace(/\n*<!-- agentx:\S+ -->/g, "")}`,
       timestamp: new Date(),
       raw: event,
-      // No resolvedAgent — router resolves via registry.findByMention() only
+      // Deterministic: resolvedAgent comes from agentMappings, not registry.findByMention()
+      resolvedAgent: targetAgentId,
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
     }
 

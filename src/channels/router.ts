@@ -400,7 +400,7 @@ export class MessageRouter {
 
   private async adapterSend(
     adapter: ChannelAdapter,
-    msg: { channel: string; chatId: string; text: string; replyTo?: string; parseMode?: string; accountId?: string },
+    msg: { channel: string; chatId: string; text: string; replyTo?: string; parseMode?: string; accountId?: string; agentId?: string },
   ): Promise<string> {
     // For Telegram, pass accountId so the correct bot sends the message
     if (adapter.name === "telegram" && msg.accountId) {
@@ -540,16 +540,15 @@ export class MessageRouter {
   }
 
   private resolveAgent(msg: IncomingMessage): string | undefined {
-    // For GitLab: try mention matching first (same registry used for Telegram),
-    // then fall back to the adapter's project-route resolution.
+    // For GitLab: the adapter resolves agents deterministically via agentMappings
+    // (GitLab @username -> agentId). Don't use registry.findByMention() here
+    // because that matches Telegram handles, not GitLab usernames.
     if (msg.channel === "gitlab") {
-      const mentionAgent = this.registry.findByMention(msg.text)
-      if (mentionAgent) {
-        this.log(`GitLab mention resolved: ${mentionAgent}`)
-        return mentionAgent
+      if (msg.resolvedAgent) {
+        this.log(`GitLab agent resolved by adapter: ${msg.resolvedAgent}`)
+        return msg.resolvedAgent
       }
-      // Fall back to project route
-      return msg.resolvedAgent
+      return undefined
     }
 
     // Pre-resolved by channel adapter (WhatsApp route-based, etc.)
