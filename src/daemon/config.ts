@@ -94,6 +94,7 @@ const channelsConfigSchema = z.object({
       agentId: z.string(),
       gitlabUsernames: z.array(z.string()).default([]),
       keywords: z.array(z.string()).default([]),
+      token: z.string().optional(),
     })).default([]),
   }).default({}),
 })
