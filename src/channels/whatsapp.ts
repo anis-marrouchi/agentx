@@ -205,20 +205,20 @@ export class WhatsAppAdapter implements ChannelAdapter {
       }
 
       if (connection === "open") {
-        // Only reset reconnect counter if this generation is still current
-        // after 60s (meaning the connection actually survived)
-        const openGen = myGeneration
-        setTimeout(() => {
-          if (openGen === this.generation) {
-            this.reconnectAttempts = 0
-          }
-        }, 60_000)
+        // Don't reset reconnectAttempts here — it gets reset on first
+        // successful message send/receive (proving connection is stable)
         this.log("WhatsApp connected")
       }
     })
 
     // Handle incoming messages
     this.sock.ev.on("messages.upsert", async (m: any) => {
+      // Connection is confirmed stable — reset reconnect backoff
+      if (this.reconnectAttempts > 0) {
+        this.log(`WhatsApp connection stable, resetting reconnect counter (was ${this.reconnectAttempts})`)
+        this.reconnectAttempts = 0
+      }
+
       this.log(`WA messages.upsert: ${m.messages?.length || 0} messages, type: ${m.type}`)
 
       if (!this.handler) return
