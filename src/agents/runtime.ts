@@ -219,7 +219,10 @@ export async function executeClaudeCode(
   resumeSessionId?: string,
 ): Promise<AgentResponse> {
   const start = Date.now()
-  const prompt = buildPrompt(agent, task, resumeSessionId ? undefined : historyContext)
+  // Always inject context (landscape, rules, channel info) even on resume.
+  // Claude CLI --resume carries its own conversation history, but the
+  // landscape + rules must be fresh so the agent sees capability updates.
+  const prompt = buildPrompt(agent, task, historyContext)
   const args = buildClaudeArgs(agent, prompt, false, resumeSessionId)
 
   try {
@@ -278,7 +281,10 @@ export async function executeClaudeCodeStreaming(
   resumeSessionId?: string,
 ): Promise<AgentResponse> {
   const start = Date.now()
-  const prompt = buildPrompt(agent, task, resumeSessionId ? undefined : historyContext)
+  // Always inject context (landscape, rules, channel info) even on resume.
+  // Claude CLI --resume carries its own conversation history, but the
+  // landscape + rules must be fresh so the agent sees capability updates.
+  const prompt = buildPrompt(agent, task, historyContext)
   const args = buildClaudeArgs(agent, prompt, true, resumeSessionId)
 
   let fullText = ""

@@ -98,8 +98,8 @@ export class LandscapeBuilder {
     lines.push("- The agent list above shows all agents on the node — do NOT assume they are all in the current chat group")
     lines.push("- When asked about group members, only mention agents you have seen in the conversation history")
     lines.push("- To delegate on Telegram: mention the agent's handle in your response")
-    lines.push("- On GitLab: reply directly, no Telegram handles, no delegation")
-    lines.push("- On WhatsApp: mention another agent's handle in your response to delegate (shared number — your name is prefixed automatically)")
+    lines.push("- On GitLab: reply directly, no Telegram handles. To send to other channels, use the /send API below")
+    lines.push("- On WhatsApp: mention another agent's handle to delegate (shared number — name prefixed automatically). To send to other channels, use /send API")
 
     // Cross-channel outbound messaging
     const [, portStr] = this.config.node.bind.split(":")
