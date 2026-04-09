@@ -289,14 +289,18 @@ export class MessageRouter {
       }
     }
 
-    // For GitLab: prefix response with agent identity if no per-agent token
-    // is configured (all agents sharing a single GitLab user).
+    // Prefix response with agent identity on shared-identity channels.
+    // GitLab: when no per-agent token (all share one user)
+    // WhatsApp: always (single phone number, all agents share it)
     if (msg.channel === "gitlab" && responseText) {
-      const adapter = this.channels.get("gitlab") as any
-      const hasOwnToken = adapter?.getAgentToken?.(agentId)
+      const gitlabAdapter = this.channels.get("gitlab") as any
+      const hasOwnToken = gitlabAdapter?.getAgentToken?.(agentId)
       if (!hasOwnToken) {
         responseText = `> **${agentName}** (${agentId})\n\n${responseText}`
       }
+    }
+    if (msg.channel === "whatsapp" && responseText) {
+      responseText = `*${agentName}*\n\n${responseText}`
     }
 
     // Final message
@@ -322,8 +326,10 @@ export class MessageRouter {
       this.groupLog.add(chatId, agentName, responseText)
     }
 
-    // Bot-to-bot: only for Telegram (not GitLab/WhatsApp/Discord — would cause loops)
-    if (responseText && sentResponseId && msg.channel === "telegram") {
+    // Bot-to-bot delegation: if response mentions another agent, route to them.
+    // Works on Telegram, WhatsApp, and Discord. Not GitLab (uses its own @mention webhook flow).
+    const delegationChannels = ["telegram", "whatsapp", "discord"]
+    if (responseText && sentResponseId && delegationChannels.includes(msg.channel)) {
       this.handleBotToBotChain(adapter, msg, agentId, responseText, sentResponseId, 0).catch((e) => {
         this.log(`Bot-to-bot error: ${e.message}`)
       })
@@ -337,7 +343,7 @@ export class MessageRouter {
    * Guards:
    * 1. Max depth (default 3)
    * 2. No agent called twice in the same chain (prevents A→B→A→B loops)
-   * 3. Only on channels that support it (Telegram)
+   * Works on Telegram (multi-account), WhatsApp (shared number), Discord.
    */
   private async handleBotToBotChain(
     adapter: ChannelAdapter,
@@ -404,10 +410,16 @@ export class MessageRouter {
         clearInterval(typingTimer)
 
         if (response.content && !response.error) {
+          // Prefix with agent identity on shared-number channels
+          let replyText = response.content
+          if (originalMsg.channel === "whatsapp") {
+            replyText = `*${def.name}*\n\n${replyText}`
+          }
+
           const sentId = await this.adapterSend(adapter, {
             channel: originalMsg.channel,
             chatId,
-            text: response.content,
+            text: replyText,
             accountId: targetAccountId,
           })
 

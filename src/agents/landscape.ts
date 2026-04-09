@@ -99,7 +99,7 @@ export class LandscapeBuilder {
     lines.push("- When asked about group members, only mention agents you have seen in the conversation history")
     lines.push("- To delegate on Telegram: mention the agent's handle in your response")
     lines.push("- On GitLab: reply directly, no Telegram handles, no delegation")
-    lines.push("- On WhatsApp: plain text only, no delegation")
+    lines.push("- On WhatsApp: mention another agent's handle in your response to delegate (shared number — your name is prefixed automatically)")
 
     // Cross-channel outbound messaging
     const [, portStr] = this.config.node.bind.split(":")
