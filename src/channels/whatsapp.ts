@@ -178,7 +178,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
         } else if (statusCode === 440 || statusCode === 408) {
           // 440 = conflict:replaced (another session took over)
           // 408 = connection timed out (QR not scanned)
-          this.reconnectAttempts = (this.reconnectAttempts || 0) + 1
+          this.reconnectAttempts++
+          this.log(`[WA DEBUG] reconnectAttempts=${this.reconnectAttempts} generation=${myGeneration}/${this.generation}`)
 
           if (this.reconnectAttempts >= 5) {
             this.log(`WhatsApp: giving up after ${this.reconnectAttempts} conflict attempts. Another session is active for this number — close it or re-scan QR.`)
