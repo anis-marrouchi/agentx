@@ -127,6 +127,10 @@ export class AgentXDaemon {
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
 
+    // Kill any orphan daemon processes before starting
+    // (prevents port conflicts from systemd restart races)
+    await this.killOrphans()
+
     // 1. Start channels
     await this.startChannels()
 
@@ -296,6 +300,38 @@ export class AgentXDaemon {
     this.log(
       `  Cost tracking: ${yesterday} — ${report.totalTasks} tasks, $${report.totalCost.toFixed(4)} (top: ${report.topAgent} $${report.topCost.toFixed(4)})`,
     )
+  }
+
+  /**
+   * Kill any orphan daemon processes left from previous runs.
+   * Prevents port conflicts caused by systemd restart races.
+   */
+  private async killOrphans(): Promise<void> {
+    try {
+      const { execSync } = await import("child_process")
+      const myPid = process.pid
+
+      // Find other agentx daemon processes (exclude self)
+      const result = execSync(
+        `ps -eo pid,cmd 2>/dev/null | grep "cli.js daemon" | grep -v grep | awk '{print $1}'`,
+        { encoding: "utf-8", timeout: 5000 },
+      ).trim()
+
+      if (!result) return
+
+      const pids = result.split("\n").map(p => parseInt(p.trim(), 10)).filter(p => p && p !== myPid)
+
+      if (pids.length > 0) {
+        this.log(`  Killing ${pids.length} orphan daemon process(es): ${pids.join(", ")}`)
+        for (const pid of pids) {
+          try { process.kill(pid, "SIGKILL") } catch {}
+        }
+        // Wait for ports to free
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    } catch {
+      // Best-effort — may fail on platforms without ps
+    }
   }
 
   private async startChannels(): Promise<void> {
