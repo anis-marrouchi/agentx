@@ -42,8 +42,9 @@ export class WikiStore {
   /**
    * Check if an agent can read an article.
    */
-  canRead(article: WikiArticleMeta, agentId: string): boolean {
+  canRead(article: WikiArticleMeta, agentId?: string): boolean {
     if (article.access === "public") return true
+    if (!agentId) return false
     if (article.owner === agentId) return true
     if (article.access === "shared" && article.sharedWith?.includes(agentId)) return true
     return false
@@ -302,7 +303,7 @@ export class WikiStore {
    * Find articles relevant to a message (for context injection).
    * Extracts keywords from the message and searches the wiki.
    */
-  findRelevant(message: string, agentId: string, maxArticles: number = 3): WikiArticle[] {
+  findRelevant(message: string, agentId?: string, maxArticles: number = 3): WikiArticle[] {
     const articles: WikiArticle[] = []
 
     this.walkDir(this.baseDir, (filePath) => {
@@ -413,9 +414,10 @@ export class WikiStore {
     const md = ["# Wiki Index", "", `Last rebuilt: ${index.lastRebuilt}`, ""]
     const byType = new Map<string, typeof articles>()
     for (const a of articles) {
-      const list = byType.get(a.type) || []
+      const type = (a as any).type || a.access || "public"
+      const list = byType.get(type) || []
       list.push(a)
-      byType.set(a.type, list)
+      byType.set(type, list)
     }
 
     for (const [type, list] of Array.from(byType.entries()).sort()) {

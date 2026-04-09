@@ -29,6 +29,7 @@ export class DiscordAdapter implements ChannelAdapter {
     let Discord: any
 
     try {
+      // @ts-ignore — optional dependency, not always installed
       Discord = await import("discord.js")
     } catch {
       this.log("Discord requires discord.js. Install with:")

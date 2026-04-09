@@ -274,7 +274,7 @@ export class GitLabAdapter implements ChannelAdapter {
 
     const body = await this.readBody(req)
     const event = body as GitLabEvent
-    const objectKind = (event.object_kind || event.event_type || "unknown") as string
+    const objectKind = ((event as any).object_kind || (event as any).event_type || "unknown") as string
 
     this.log(`Event: ${objectKind} from ${(event as any).project?.path_with_namespace || "unknown"}`)
 

@@ -404,7 +404,7 @@ export class MessageRouter {
   ): Promise<string> {
     // For Telegram, pass accountId so the correct bot sends the message
     if (adapter.name === "telegram" && msg.accountId) {
-      return (adapter as TelegramAdapter).send({
+      return (adapter as unknown as TelegramAdapter).send({
         ...msg,
         parseMode: msg.parseMode as any,
         accountId: msg.accountId,
@@ -422,7 +422,7 @@ export class MessageRouter {
     accountId?: string,
   ): Promise<boolean> {
     if (adapter.name === "telegram" && accountId) {
-      return (adapter as TelegramAdapter).editMessage(chatId, messageId, text, parseMode, accountId)
+      return (adapter as unknown as TelegramAdapter).editMessage(chatId, messageId, text, parseMode, accountId)
     }
     return adapter.editMessage?.(chatId, messageId, text, parseMode) ?? false
   }
@@ -435,7 +435,7 @@ export class MessageRouter {
     accountId?: string,
   ): void {
     if (adapter.name === "telegram" && accountId) {
-      (adapter as TelegramAdapter).react(chatId, messageId, emoji, accountId)
+      (adapter as unknown as TelegramAdapter).react(chatId, messageId, emoji, accountId)
     } else {
       adapter.react?.(chatId, messageId, emoji)
     }
@@ -448,7 +448,7 @@ export class MessageRouter {
   ): ReturnType<typeof setInterval> {
     const sendTyping = () => {
       if (adapter.name === "telegram" && accountId) {
-        (adapter as TelegramAdapter).sendTyping(chatId, accountId)
+        (adapter as unknown as TelegramAdapter).sendTyping(chatId, accountId)
       } else {
         adapter.sendTyping?.(chatId)
       }

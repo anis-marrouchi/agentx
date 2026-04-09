@@ -298,7 +298,8 @@ function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSu
   }
 
   // Lint
-  const issues = store.lint()
+  const agentStore = hub.getAgentWiki(agentId)
+  const issues = agentStore.lint()
   if (issues.length > 0) {
     content += `<h2>Health Issues (${issues.length})</h2><table>`
     content += '<tr><th>Type</th><th>Article</th><th>Issue</th></tr>'

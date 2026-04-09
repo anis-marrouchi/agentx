@@ -445,7 +445,7 @@ export class TelegramAdapter implements ChannelAdapter {
               if (!this.groupStore.hasGroup(groupId)) {
                 await this.seedGroupMembership(groupId, msg.chat.title)
               }
-              channelMeta = this.getChannelMeta(groupId)
+              channelMeta = await this.getChannelMeta(groupId)
             }
 
             const incoming: IncomingMessage = {
@@ -516,7 +516,7 @@ export class TelegramAdapter implements ChannelAdapter {
    * Get verified context for a Telegram chat.
    * Reads from persistent group store (fed by my_chat_member events + API seed).
    */
-  getChannelMeta(chatId: string): ChannelMeta | undefined {
+  async getChannelMeta(chatId: string): Promise<ChannelMeta | undefined> {
     const bots = this.groupStore.getGroupBots(chatId)
     if (!bots.length) return undefined
 
