@@ -338,7 +338,7 @@ export class GitLabAdapter implements ChannelAdapter {
     if (signatureMatch) {
       const sourceAgent = signatureMatch[1]
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
-      const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
+      const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
       const mentionsDifferentAgent = mentions.some(m => {
         const targetAgent = this.usernameToAgent.get(m.toLowerCase())
         return targetAgent && targetAgent !== sourceAgent
@@ -358,7 +358,7 @@ export class GitLabAdapter implements ChannelAdapter {
 
     // TERTIARY: Skip comments from known bot users that have no @mentions
     // (catches comments posted via CLI tools without the signature)
-    const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
+    const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
     if (mentions.length === 0) {
       this.log(`No @mention in note ${noteId}, skipping`)
       res.writeHead(200); res.end("ok"); return
@@ -548,8 +548,8 @@ export class GitLabAdapter implements ChannelAdapter {
    * at startup) — not the manually configured gitlabUsernames which may be wrong.
    */
   private resolveAgentFromMention(text: string): string | undefined {
-    // Extract @mentions from the comment
-    const mentions = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).toLowerCase()) || []
+    // Extract @mentions from the comment, strip trailing dots/punctuation
+    const mentions = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
     if (mentions.length === 0) return undefined
 
     // Check against the authoritative username->agent map (resolved from tokens)
@@ -637,7 +637,7 @@ export class GitLabAdapter implements ChannelAdapter {
    */
   private getTokenForMentionedAgent(text: string): string | undefined {
     if (!this.config.agentMappings?.length) return undefined
-    const mentionedUsers = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).toLowerCase()) || []
+    const mentionedUsers = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
     for (const mapping of this.config.agentMappings) {
       if (mapping.token && mapping.gitlabUsernames.some(u => mentionedUsers.includes(u.toLowerCase()))) {
         return mapping.token
