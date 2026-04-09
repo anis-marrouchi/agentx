@@ -171,10 +171,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
         } else if (statusCode === 440 || statusCode === 408) {
           // 440 = conflict:replaced (another session took over)
           // 408 = connection timed out (QR not scanned)
-          // Don't reconnect immediately — exponential backoff to avoid loop
           this.reconnectAttempts = (this.reconnectAttempts || 0) + 1
-          const delay = Math.min(5000 * Math.pow(2, this.reconnectAttempts - 1), 120_000) // max 2 min
-          this.log(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})...`)
+
+          if (this.reconnectAttempts >= 5) {
+            this.log(`WhatsApp: giving up after ${this.reconnectAttempts} conflict attempts. Another session is active for this number — close it or re-scan QR.`)
+            return // Stop reconnecting
+          }
+
+          const delay = Math.min(10_000 * Math.pow(2, this.reconnectAttempts - 1), 120_000)
+          this.log(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/5)...`)
           setTimeout(() => this.start(), delay)
         } else if (statusCode === 515) {
           // Stream error — restart after delay
