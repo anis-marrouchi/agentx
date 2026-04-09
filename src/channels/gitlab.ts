@@ -108,6 +108,10 @@ export class GitLabAdapter implements ChannelAdapter {
   private botUsername?: string  // resolved on first API call
   private botUsernames: Set<string> = new Set()  // all known bot users (to prevent cascading)
   private sentNoteIds: Set<string> = new Set()  // track our own comments
+  /** Maps actual GitLab username -> agentId (resolved from tokens at startup) */
+  private usernameToAgent: Map<string, string> = new Map()
+  /** Maps agentId -> actual GitLab username (resolved from tokens at startup) */
+  private agentToUsername: Map<string, string> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]")) {
@@ -154,20 +158,32 @@ export class GitLabAdapter implements ChannelAdapter {
           this.botUsername = username
           this.log(`Global bot user: ${username}`)
         } else {
-          this.log(`Agent "${label}" GitLab user: ${username}`)
+          // Map actual username <-> agentId (authoritative — from API, not config)
+          this.usernameToAgent.set(username.toLowerCase(), label)
+          this.agentToUsername.set(label, username.toLowerCase())
+          this.log(`Agent "${label}" -> GitLab user @${username}`)
         }
       }
     }
 
-    // Also register all configured GitLab usernames from agentMappings
-    // (in case token resolution failed or username differs from config)
+    // Also register configured gitlabUsernames for cascade prevention
+    // AND as fallback mention matching (if token resolution failed)
     for (const mapping of this.config.agentMappings || []) {
       for (const username of mapping.gitlabUsernames) {
         this.botUsernames.add(username)
+        // Only set if not already resolved from token (API is authoritative)
+        if (!this.usernameToAgent.has(username.toLowerCase())) {
+          this.usernameToAgent.set(username.toLowerCase(), mapping.agentId)
+        }
+      }
+      // Fallback: if token resolution didn't set agentToUsername, use first configured username
+      if (!this.agentToUsername.has(mapping.agentId) && mapping.gitlabUsernames.length > 0) {
+        this.agentToUsername.set(mapping.agentId, mapping.gitlabUsernames[0].toLowerCase())
       }
     }
 
     this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
+    this.log(`Username->Agent map: ${[...this.usernameToAgent.entries()].map(([u, a]) => `@${u}->${a}`).join(", ")}`)
 
     this.server = createServer(async (req, res) => {
       if (req.method === "POST") {
@@ -229,8 +245,13 @@ export class GitLabAdapter implements ChannelAdapter {
         return ""
     }
 
-    // Use per-agent token if available, otherwise fall back to global token
-    const token = this.getAgentToken(msg.agentId) || this.config.token
+    // Use per-agent token — fall back to global only as last resort
+    // WARNING: global token is devops-mtgl, so replies will appear as wrong user
+    const agentToken = this.getAgentToken(msg.agentId)
+    const token = agentToken || this.config.token
+    if (!agentToken && msg.agentId) {
+      this.log(`WARNING: No per-agent token for "${msg.agentId}" — replying as global user (${this.botUsername}). Add a token in agentMappings.`)
+    }
 
     try {
       const res = await fetch(endpoint, {
@@ -527,24 +548,20 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /**
    * Resolve agent from @mentions in a comment.
-   * Only checks agentMappings for explicit GitLab @username mentions.
-   * Keywords are NOT checked — they cause false positives when normal
-   * issue text contains words like "deploy", "test", "coder".
+   * Uses the authoritative usernameToAgent map (built from API token resolution
+   * at startup) — not the manually configured gitlabUsernames which may be wrong.
    */
   private resolveAgentFromMention(text: string): string | undefined {
-    if (!this.config.agentMappings?.length) return undefined
-
     // Extract @mentions from the comment
     const mentions = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).toLowerCase()) || []
     if (mentions.length === 0) return undefined
 
-    for (const mapping of this.config.agentMappings) {
-      // Check if any GitLab @username matches
-      for (const username of mapping.gitlabUsernames) {
-        if (mentions.includes(username.toLowerCase())) {
-          this.log(`Mention @${username} -> agent ${mapping.agentId}`)
-          return mapping.agentId
-        }
+    // Check against the authoritative username->agent map (resolved from tokens)
+    for (const mention of mentions) {
+      const agentId = this.usernameToAgent.get(mention)
+      if (agentId) {
+        this.log(`Mention @${mention} -> agent "${agentId}" (resolved from token)`)
+        return agentId
       }
     }
 
@@ -635,9 +652,15 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /**
    * React to a GitLab note with an emoji (👀 eyes) to acknowledge receipt.
-   * Uses the agent's own token when available.
+   * ONLY uses the agent's own token — never the global token (which may
+   * belong to a different agent user, causing the wrong identity to react).
    */
   private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string): Promise<void> {
+    if (!agentToken) {
+      this.log(`No agent token for reaction on note ${noteId} — skipping (would react as wrong user)`)
+      return
+    }
+
     const encodedProject = encodeURIComponent(project)
     let endpoint: string
 
@@ -653,14 +676,17 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     try {
-      await fetch(endpoint, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "PRIVATE-TOKEN": agentToken || this.config.token,
+          "PRIVATE-TOKEN": agentToken,
         },
         body: JSON.stringify({ name: "eyes" }),
       })
+      if (!res.ok) {
+        this.log(`Reaction failed on note ${noteId}: ${res.status}`)
+      }
     } catch (e: any) {
       this.log(`Failed to react to note ${noteId}: ${e.message}`)
     }
