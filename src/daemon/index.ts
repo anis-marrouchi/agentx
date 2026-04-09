@@ -37,6 +37,7 @@ export class AgentXDaemon {
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
+  private orphanCheckTimer?: ReturnType<typeof setInterval>
 
   constructor(configPath?: string) {
     const logger = new Logger("agentx")
@@ -130,6 +131,11 @@ export class AgentXDaemon {
     // Kill any orphan daemon processes before starting
     // (prevents port conflicts from systemd restart races)
     await this.killOrphans()
+
+    // Periodically check for orphans (catches late-spawning ones from systemd restart races)
+    this.orphanCheckTimer = setInterval(() => {
+      this.killOrphans().catch(() => {})
+    }, 30_000)
 
     // 1. Start channels
     await this.startChannels()
@@ -244,6 +250,7 @@ export class AgentXDaemon {
     } catch {}
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
+    if (this.orphanCheckTimer) clearInterval(this.orphanCheckTimer)
 
     if (this.httpServer) {
       this.httpServer.close()
