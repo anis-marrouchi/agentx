@@ -303,27 +303,37 @@ export class AgentXDaemon {
   }
 
   /**
-   * Kill any orphan daemon processes left from previous runs.
-   * Prevents port conflicts caused by systemd restart races.
+   * Kill orphan daemon processes left from previous runs.
+   * Only kills processes whose parent is PID 1 (true orphans),
+   * NOT processes managed by systemd (whose ppid is the systemd user PID).
    */
   private async killOrphans(): Promise<void> {
     try {
       const { execSync } = await import("child_process")
       const myPid = process.pid
 
-      // Find other agentx daemon processes (exclude self)
+      // Find other agentx daemon processes with their ppid
       const result = execSync(
-        `ps -eo pid,cmd 2>/dev/null | grep "cli.js daemon" | grep -v grep | awk '{print $1}'`,
+        `ps -eo pid,ppid,cmd 2>/dev/null | grep "cli.js daemon" | grep -v grep`,
         { encoding: "utf-8", timeout: 5000 },
       ).trim()
 
       if (!result) return
 
-      const pids = result.split("\n").map(p => parseInt(p.trim(), 10)).filter(p => p && p !== myPid)
+      const orphanPids: number[] = []
+      for (const line of result.split("\n")) {
+        const parts = line.trim().split(/\s+/)
+        const pid = parseInt(parts[0], 10)
+        const ppid = parseInt(parts[1], 10)
+        // Only kill true orphans (ppid=1), skip self and systemd-managed processes
+        if (pid && pid !== myPid && ppid === 1) {
+          orphanPids.push(pid)
+        }
+      }
 
-      if (pids.length > 0) {
-        this.log(`  Killing ${pids.length} orphan daemon process(es): ${pids.join(", ")}`)
-        for (const pid of pids) {
+      if (orphanPids.length > 0) {
+        this.log(`  Killing ${orphanPids.length} orphan daemon process(es): ${orphanPids.join(", ")}`)
+        for (const pid of orphanPids) {
           try { process.kill(pid, "SIGKILL") } catch {}
         }
         // Wait for ports to free
