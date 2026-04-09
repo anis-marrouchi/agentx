@@ -151,8 +151,12 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
     // Handle connection updates (ignore events from stale sockets via generation check)
     this.sock.ev.on("connection.update", async (update: any) => {
-      if (myGeneration !== this.generation) return // stale socket event
       const { connection, lastDisconnect, qr } = update
+      this.log(`[WA TRACE] event=${connection||"qr"} gen=${myGeneration}/${this.generation} attempts=${this.reconnectAttempts}`)
+      if (myGeneration !== this.generation) {
+        this.log(`[WA TRACE] IGNORING stale event (gen ${myGeneration} != ${this.generation})`)
+        return
+      }
 
       if (qr) {
         this.log("Scan QR code with WhatsApp to connect:")
