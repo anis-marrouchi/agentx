@@ -246,12 +246,9 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     // Use per-agent token — fall back to global only as last resort
-    // WARNING: global token is devops-mtgl, so replies will appear as wrong user
     const agentToken = this.getAgentToken(msg.agentId)
     const token = agentToken || this.config.token
-    if (!agentToken && msg.agentId) {
-      this.log(`WARNING: No per-agent token for "${msg.agentId}" — replying as global user (${this.botUsername}). Add a token in agentMappings.`)
-    }
+    this.log(`[send] agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL-FALLBACK(" + this.botUsername + ")"} chatId=${msg.chatId}`)
 
     try {
       const res = await fetch(endpoint, {
@@ -386,10 +383,14 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
-    // If the @mentioned user isn't a known agent, it's a human — skip entirely.
+    this.log(`[handleNote] mentions in note ${noteId}: ${mentions.join(", ")}`)
+    this.log(`[handleNote] usernameToAgent map has ${this.usernameToAgent.size} entries: ${[...this.usernameToAgent.entries()].map(([u,a]) => `${u}->${a}`).join(", ")}`)
+
     const resolvedAgentId = this.resolveAgentFromMention(note)
+    this.log(`[handleNote] resolvedAgentId = ${resolvedAgentId ?? "NONE"}`)
+
     if (!resolvedAgentId) {
-      this.log(`@mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
+      this.log(`[handleNote] @mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
       res.writeHead(200); res.end("ok"); return
     }
 
@@ -398,6 +399,7 @@ export class GitLabAdapter implements ChannelAdapter {
     // React with 👀 using the RESOLVED agent's own token (deterministic identity)
     const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
     const agentToken = agentMapping?.token
+    this.log(`[handleNote] targetAgent="${targetAgentId}" agentMapping=${agentMapping ? "found" : "NOT FOUND"} hasToken=${!!agentToken}`)
     this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
