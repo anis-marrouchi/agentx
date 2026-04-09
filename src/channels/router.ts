@@ -1,7 +1,7 @@
 import type { DaemonConfig } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
-import type { ChannelAdapter, IncomingMessage } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
@@ -47,6 +47,38 @@ export class MessageRouter {
   addChannel(adapter: ChannelAdapter): void {
     this.channels.set(adapter.name, adapter)
     adapter.onMessage((msg) => this.handleMessage(adapter, msg))
+  }
+
+  /**
+   * Send an outbound message to any registered channel.
+   * Used for agent-initiated messages, cron notifications, cross-channel routing.
+   *
+   * If accountId is not provided for Telegram, auto-resolves from agentId binding.
+   */
+  async sendOutbound(msg: OutgoingMessage & { accountId?: string }): Promise<string | void> {
+    const adapter = this.channels.get(msg.channel)
+    if (!adapter) {
+      throw new Error(`Unknown channel: "${msg.channel}". Available: ${[...this.channels.keys()].join(", ")}`)
+    }
+
+    // Auto-resolve Telegram accountId from agentId if not provided
+    let accountId = msg.accountId
+    if (adapter.name === "telegram" && !accountId && msg.agentId) {
+      accountId = this.getAccountForAgent(msg.agentId)
+    }
+
+    this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
+
+    if (adapter.name === "telegram" && accountId) {
+      return this.adapterSend(adapter, { ...msg, accountId })
+    }
+
+    return adapter.send(msg)
+  }
+
+  /** List registered channel names. */
+  getChannelNames(): string[] {
+    return [...this.channels.keys()]
   }
 
   async startAll(): Promise<void> {

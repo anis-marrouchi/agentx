@@ -108,6 +108,11 @@ const cronJobSchema = z.object({
   timeout: z.number().default(600),
   model: z.string().optional(),
   onError: z.enum(["log", "notify", "disable"]).default("log"),
+  notify: z.object({
+    channel: z.string(),
+    chatId: z.string(),
+    accountId: z.string().optional(),
+  }).optional(),
 })
 
 const meshPeerSchema = z.object({

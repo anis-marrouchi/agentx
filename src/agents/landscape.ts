@@ -101,6 +101,20 @@ export class LandscapeBuilder {
     lines.push("- On GitLab: reply directly, no Telegram handles, no delegation")
     lines.push("- On WhatsApp: plain text only, no delegation")
 
+    // Cross-channel outbound messaging
+    const [, portStr] = this.config.node.bind.split(":")
+    const port = portStr || "19900"
+    lines.push("")
+    lines.push("[Cross-Channel Messaging]")
+    lines.push(`You can send messages to ANY channel proactively (not just reply):`)
+    lines.push(`  curl -X POST http://localhost:${port}/send -H "Content-Type: application/json" -d '{"channel":"<channel>","chatId":"<id>","text":"<message>"}'`)
+    lines.push("Channels: telegram, whatsapp, gitlab, discord")
+    lines.push("ChatId formats:")
+    lines.push('  telegram: numeric (e.g. "-1001234567890" for group, "123456" for DM)')
+    lines.push('  gitlab: "group/project:issue:123" or "group/project:merge_request:45"')
+    lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
+    lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
+
     return lines.join("\n")
   }
 

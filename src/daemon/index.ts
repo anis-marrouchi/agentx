@@ -88,25 +88,22 @@ export class AgentXDaemon {
     this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
       const msg = `Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`
       this.log(`[CRON ALERT] ${msg}`)
-
-      // Broadcast via SSE for dashboard/CLI watchers
       this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
 
-      // Send alert to the agent's bound Telegram account (if available)
-      try {
-        const telegramAdapter = Array.from((this.router as any).channels?.values?.() || [])
-          .find((c: any) => c.name === "telegram") as any
-        if (telegramAdapter) {
-          // Find the admin/operator chat — use the agent's bound account
-          const accountId = Object.entries(this.config.channels.telegram.accounts)
-            .find(([, acc]) => (acc as any).agentBinding === agent)?.[0]
-          if (accountId) {
-            // Send to the first DM session we can find, or skip
-            this.log(`[CRON ALERT] Notifying via Telegram (account: ${accountId})`)
-          }
+      // Send to the cron job's configured notify destination (if set)
+      const cronDef = this.config.crons[jobId]
+      if (cronDef?.notify) {
+        try {
+          await this.router.sendOutbound({
+            channel: cronDef.notify.channel,
+            chatId: cronDef.notify.chatId,
+            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+            agentId: agent,
+            accountId: cronDef.notify.accountId,
+          })
+        } catch (e: any) {
+          this.log(`[CRON ALERT] notify send failed: ${e.message}`)
         }
-      } catch {
-        // Channel notification is best-effort
       }
     })
 
@@ -508,6 +505,33 @@ export class AgentXDaemon {
           this.json(res, 200, { enabled: false })
           break
         }
+
+        case "POST /send": {
+          const body = await readBody(req)
+          if (!body.channel || !body.chatId || !body.text) {
+            this.json(res, 400, { error: "Required: channel, chatId, text" })
+            return
+          }
+          try {
+            const messageId = await this.router.sendOutbound({
+              channel: body.channel as string,
+              chatId: body.chatId as string,
+              text: body.text as string,
+              replyTo: body.replyTo as string | undefined,
+              parseMode: body.parseMode as any,
+              agentId: body.agentId as string | undefined,
+              accountId: body.accountId as string | undefined,
+            })
+            this.json(res, 200, { ok: true, messageId: messageId || null })
+          } catch (e: any) {
+            this.json(res, 400, { error: e.message })
+          }
+          break
+        }
+
+        case "GET /channels":
+          this.json(res, 200, this.router.getChannelNames())
+          break
 
         case "POST /task": {
           const body = await readBody(req)
