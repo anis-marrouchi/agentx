@@ -342,10 +342,8 @@ export class GitLabAdapter implements ChannelAdapter {
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
       const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1)) || []
       const mentionsDifferentAgent = mentions.some(m => {
-        const mapping = this.config.agentMappings?.find(am =>
-          am.gitlabUsernames.some(u => u.toLowerCase() === m.toLowerCase())
-        )
-        return mapping && mapping.agentId !== sourceAgent
+        const targetAgent = this.usernameToAgent.get(m.toLowerCase())
+        return targetAgent && targetAgent !== sourceAgent
       })
       if (!mentionsDifferentAgent) {
         this.log(`AgentX comment from ${sourceAgent}, no cross-agent mention, skipping (note ${noteId})`)
@@ -387,19 +385,15 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
-    // Resolve agent deterministically from GitLab @mention -> agentMappings
+    // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
+    // If the @mentioned user isn't a known agent, it's a human — skip entirely.
     const resolvedAgentId = this.resolveAgentFromMention(note)
     if (!resolvedAgentId) {
-      // No agent matched the @mention — try project route fallback
-      const fallbackAgent = this.resolveAgent(project)
-      if (!fallbackAgent) {
-        this.log(`No agent matched @mentions in note ${noteId}, skipping`)
-        res.writeHead(200); res.end("ok"); return
-      }
-      this.log(`No agent mapping for @mentions, falling back to project route: ${fallbackAgent}`)
+      this.log(`@mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
+      res.writeHead(200); res.end("ok"); return
     }
 
-    const targetAgentId = resolvedAgentId || this.resolveAgent(project)
+    const targetAgentId = resolvedAgentId
 
     // React with 👀 using the RESOLVED agent's own token (deterministic identity)
     const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
