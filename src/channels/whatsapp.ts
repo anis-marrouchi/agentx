@@ -205,14 +205,14 @@ export class WhatsAppAdapter implements ChannelAdapter {
       }
 
       if (connection === "open") {
-        // Only reset reconnect counter if connection stays open for > 30s
-        // (prevents reset on brief connect → immediate 440 conflict cycles)
-        const openTime = Date.now()
+        // Only reset reconnect counter if this generation is still current
+        // after 60s (meaning the connection actually survived)
+        const openGen = myGeneration
         setTimeout(() => {
-          if (this.sock && Date.now() - openTime > 25_000) {
+          if (openGen === this.generation) {
             this.reconnectAttempts = 0
           }
-        }, 30_000)
+        }, 60_000)
         this.log("WhatsApp connected")
       }
     })
