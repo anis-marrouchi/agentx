@@ -8,7 +8,8 @@ import { buildAgentContext, type ContextInput } from "./context"
 import { MemoryStore } from "./memory-store"
 import { extractMemories } from "./memory-extract"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
-import { loadBootstrapFiles, buildBootstrapContext } from "./bootstrap"
+import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
+import { PatternStore, extractPatterns } from "./patterns"
 import type { LandscapeBuilder } from "./landscape"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
@@ -40,10 +41,13 @@ export class AgentRegistry {
   private sessions: SessionStore
   private wikiHub: WikiHub
   private memoryStore: MemoryStore
+  private patternStore: PatternStore
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
   private messageQueue: MessageQueue
+  /** Active soul profile per agent+chat session: "agentId:channel:chatId" → profile name */
+  private activeSouls: Map<string, string> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -56,6 +60,7 @@ export class AgentRegistry {
     this.sessions = new SessionStore()
     this.wikiHub = new WikiHub(undefined, undefined, "unified")
     this.memoryStore = new MemoryStore()
+    this.patternStore = new PatternStore()
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
@@ -234,6 +239,20 @@ export class AgentRegistry {
     const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, 8)
     const memoryContext = this.memoryStore.buildContext(relevantMemories)
 
+    // Load behavioral patterns (self-improving loop)
+    const relevantPatterns = this.patternStore.findRelevant(task.message, task.agentId, 5)
+    const patternContext = this.patternStore.buildContext(relevantPatterns)
+
+    // Auto-inject skills matched to current message
+    let skillInjection = ""
+    try {
+      const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
+      const skills = await loadLocalSkills(state.def.workspace)
+      skillInjection = getAutoInjectSkills(skills, task.message)
+    } catch {
+      // Skill loading is optional
+    }
+
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
@@ -266,8 +285,22 @@ export class AgentRegistry {
     // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group)
     const crossChatContext = this.sessions.getCrossSessionSummary(task.agentId, channel, chatId)
 
-    // Load bootstrap identity files (SOUL.md, IDENTITY.md, etc.) from workspace
-    const bootstrapFiles = loadBootstrapFiles(state.def.workspace)
+    // Soul switching: detect /soul command and track active profile
+    const soulSessionKey = `${task.agentId}:${channel}:${chatId}`
+    const soulSwitch = detectSoulSwitch(task.message)
+    if (soulSwitch) {
+      if (soulSwitch === "default") {
+        this.activeSouls.delete(soulSessionKey)
+        this.log(`[${task.agentId}] Soul reset to default`)
+      } else {
+        this.activeSouls.set(soulSessionKey, soulSwitch)
+        this.log(`[${task.agentId}] Soul switched to: ${soulSwitch}`)
+      }
+    }
+    const activeSoul = this.activeSouls.get(soulSessionKey)
+
+    // Load bootstrap identity files (SOUL.md or SOUL.{profile}.md)
+    const bootstrapFiles = loadBootstrapFiles(state.def.workspace, activeSoul)
     const bootstrapContext = buildBootstrapContext(bootstrapFiles)
 
     const contextInput: ContextInput = {
@@ -287,6 +320,8 @@ export class AgentRegistry {
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,
       bootstrapContext: bootstrapContext || undefined,
+      patternContext: patternContext || undefined,
+      skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       sessionHistory,
       memoryContext: memoryContext || undefined,
@@ -335,6 +370,15 @@ export class AgentRegistry {
             response.content,
             { channel, chatId, sender: senderName },
             this.memoryStore,
+          ).catch(() => {})
+
+          // Patterns: extract behavioral patterns (fire-and-forget)
+          extractPatterns(
+            task.agentId,
+            task.message,
+            response.content,
+            { channel, date: new Date().toISOString().slice(0, 10) },
+            this.patternStore,
           ).catch(() => {})
         }
 

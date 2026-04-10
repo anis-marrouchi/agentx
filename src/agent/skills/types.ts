@@ -18,6 +18,8 @@ export const skillFrontmatterSchema = z.object({
       })
     )
     .optional(),
+  /** If true, skill is auto-injected into context when triggers match (per-turn) */
+  autoInject: z.boolean().optional(),
 })
 
 export type SkillFrontmatter = z.infer<typeof skillFrontmatterSchema>

@@ -60,6 +60,12 @@ export interface ContextInput {
   // Bootstrap identity files (from workspace)
   bootstrapContext?: string          // from buildBootstrapContext()
 
+  // Behavioral patterns (self-improving loop)
+  patternContext?: string            // from PatternStore.buildContext()
+
+  // Auto-injected skills (matched to current message)
+  skillInjection?: string            // from getAutoInjectSkills()
+
   // Scope layer
   groupName?: string
   projectPath?: string               // "org/my-project"
@@ -229,6 +235,28 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("artifacts", 500),
       content: artifactLines.join("\n"),
       tags: ["artifacts", ...(input.mediaType ? ["media"] : [])],
+    })
+  }
+
+  // 6.2 Auto-injected skills (matched to current task)
+  if (input.skillInjection) {
+    layers.push({
+      name: "skills",
+      priority: 6.2,
+      maxTokens: budget("skills", 2000),
+      content: input.skillInjection,
+      tags: ["skills", "auto-inject"],
+    })
+  }
+
+  // 6.3 Behavioral patterns (self-improving loop)
+  if (input.patternContext) {
+    layers.push({
+      name: "patterns",
+      priority: 6.3,
+      maxTokens: budget("patterns", 400),
+      content: input.patternContext,
+      tags: ["patterns", "behavioral", "self-improving"],
     })
   }
 

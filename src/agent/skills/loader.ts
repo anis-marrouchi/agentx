@@ -202,3 +202,35 @@ export function matchSkillsToTask(
 
   return matches.sort((a, b) => b.relevance - a.relevance)
 }
+
+/**
+ * Find auto-injectable skills that match the current message.
+ * Only skills with `autoInject: true` in frontmatter participate.
+ * Returns skill content to inject into context, capped at maxTokens.
+ */
+export function getAutoInjectSkills(
+  skills: Skill[],
+  message: string,
+  maxTokens: number = 2000,
+): string {
+  const autoSkills = skills.filter(s => s.frontmatter.autoInject)
+  if (autoSkills.length === 0) return ""
+
+  const matches = matchSkillsToTask(autoSkills, message)
+  if (matches.length === 0) return ""
+
+  // Inject matched skills within token budget
+  const maxChars = maxTokens * 4
+  const sections: string[] = ["[Auto-Injected Skills — matched to current task]"]
+  let totalChars = sections[0].length
+
+  for (const match of matches) {
+    const content = `\n## ${match.skill.frontmatter.name} (${Math.round(match.relevance * 100)}% match)\n${match.skill.instructions}`
+    if (totalChars + content.length > maxChars) break
+    sections.push(content)
+    totalChars += content.length
+  }
+
+  if (sections.length === 1) return "" // no skills fit in budget
+  return sections.join("\n")
+}

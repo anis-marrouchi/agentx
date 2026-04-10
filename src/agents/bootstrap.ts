@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, unlinkSync } from "fs"
+import { readFileSync, existsSync, unlinkSync, readdirSync } from "fs"
 import { resolve } from "path"
 
 // --- Bootstrap Identity Files ---
@@ -7,14 +7,19 @@ import { resolve } from "path"
 // These files live in the agent's workspace and are auto-loaded into context.
 //
 // Supported files:
-//   SOUL.md      — personality, tone, boundaries (persistent)
-//   IDENTITY.md  — name, role, emoji, tagline (persistent)
-//   USER.md      — user profile, preferences (persistent)
-//   AGENTS.md    — operating rules, standing orders (persistent)
-//   BOOTSTRAP.md — one-time first-run ritual (auto-deleted after first load)
+//   SOUL.md            — default personality, tone, boundaries
+//   SOUL.{profile}.md  — named soul profiles (e.g. SOUL.finance.md, SOUL.legal.md)
+//   IDENTITY.md        — name, role, emoji, tagline (persistent)
+//   USER.md            — user profile, preferences (persistent)
+//   AGENTS.md          — operating rules, standing orders (persistent)
+//   BOOTSTRAP.md       — one-time first-run ritual (auto-deleted after first load)
+//
+// Soul switching: send "/soul finance" to swap to SOUL.finance.md mid-session.
 
 export interface BootstrapFiles {
   soul?: string
+  /** Active soul profile name (undefined = default SOUL.md) */
+  soulProfile?: string
   identity?: string
   user?: string
   agents?: string
@@ -31,9 +36,9 @@ const BOOTSTRAP_FILE_NAMES = [
 
 /**
  * Load bootstrap identity files from an agent's workspace.
- * Returns content keyed by file type. Missing files are omitted.
+ * @param soulProfile — optional soul profile name (e.g. "finance" loads SOUL.finance.md)
  */
-export function loadBootstrapFiles(workspace: string): BootstrapFiles {
+export function loadBootstrapFiles(workspace: string, soulProfile?: string): BootstrapFiles {
   const result: BootstrapFiles = {}
 
   const tryLoad = (filename: string): string | undefined => {
@@ -47,7 +52,20 @@ export function loadBootstrapFiles(workspace: string): BootstrapFiles {
     }
   }
 
-  result.soul = tryLoad("SOUL.md")
+  // Load soul: profile-specific if requested, fallback to default
+  if (soulProfile) {
+    const profileSoul = tryLoad(`SOUL.${soulProfile}.md`)
+    if (profileSoul) {
+      result.soul = profileSoul
+      result.soulProfile = soulProfile
+    } else {
+      // Profile not found — fall back to default and note it
+      result.soul = tryLoad("SOUL.md")
+    }
+  } else {
+    result.soul = tryLoad("SOUL.md")
+  }
+
   result.identity = tryLoad("IDENTITY.md")
   result.user = tryLoad("USER.md")
   result.agents = tryLoad("AGENTS.md")
@@ -104,4 +122,31 @@ export function listBootstrapFiles(workspace: string): string[] {
   return BOOTSTRAP_FILE_NAMES.filter((name) =>
     existsSync(resolve(workspace, name))
   )
+}
+
+/**
+ * List available soul profiles in a workspace.
+ * Returns profile names (e.g. ["finance", "legal", "creative"]).
+ */
+export function listSoulProfiles(workspace: string): string[] {
+  try {
+    return readdirSync(workspace)
+      .filter(f => f.startsWith("SOUL.") && f.endsWith(".md") && f !== "SOUL.md")
+      .map(f => f.slice(5, -3)) // "SOUL.finance.md" → "finance"
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Detect a /soul command in a message.
+ * Returns the requested profile name, or null if no /soul command found.
+ * "/soul finance" → "finance"
+ * "/soul" or "/soul default" → "default" (reset to SOUL.md)
+ */
+export function detectSoulSwitch(message: string): string | null {
+  const match = message.match(/\/soul\s+(\w+)/i)
+  if (match) return match[1].toLowerCase()
+  if (/\/soul\s*$/i.test(message)) return "default"
+  return null
 }
