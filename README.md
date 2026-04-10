@@ -2,8 +2,6 @@
 
 **Self-hosted multi-agent orchestrator.** Routes messages from Telegram, WhatsApp, Discord, GitLab, crons, webhooks, and cross-machine mesh to AI agents running on Claude Code, OpenAI, Ollama, or any LLM provider.
 
-> **Early stage — not production-ready.** We're actively building and looking for contributors. See [Contributing](#contributing) below.
-
 ## Why AgentX?
 
 Existing multi-agent frameworks (CrewAI, AutoGen, LangGraph) are SDK-first, Python-heavy, and cloud-dependent. AgentX is **infrastructure-first** — closer to systemd for AI agents than to another framework.
@@ -12,8 +10,9 @@ Existing multi-agent frameworks (CrewAI, AutoGen, LangGraph) are SDK-first, Pyth
 - **Agents = directories** — Each agent is a workspace with config files. No code required
 - **Mesh federation** — Agents on different machines collaborate over Tailscale/VPN
 - **Channel routing** — Telegram, GitLab, WhatsApp, Discord, webhooks — built in
+- **Cross-channel messaging** — Agents receive on one channel, send to another via `/send` API
 - **Wiki memory** — Agents build compounding knowledge from conversations
-- **Live monitoring** — Real-time SSE event stream of all agent activity
+- **Live monitoring** — Real-time SSE event stream + debug mode with categories
 
 ## Install
 
@@ -43,13 +42,40 @@ agentx daemon watch            # Live activity feed (color-coded)
   A2A mesh ──┘
                     │
             Context Engine
-         (8 layers, token-budgeted)
+       (10 layers, token-budgeted)
                     │
-               Wiki (per-agent)
-         (Karpathy LLM knowledge base)
+          ┌─────────┼─────────┐
+       Wiki    Memory    Bootstrap
+   (per-agent) (Haiku)  (SOUL.md)
 ```
 
-Each agent = a workspace directory with Claude Code configuration (`.claude/`, `CLAUDE.md`, skills, hooks, MCP servers). AgentX orchestrates when and where agents run. Each agent builds a compounding personal wiki from its conversations.
+Each agent = a workspace directory with Claude Code configuration (`.claude/`, `CLAUDE.md`, skills, hooks, MCP servers). AgentX orchestrates when and where agents run.
+
+## Communication Matrix
+
+AgentX supports every communication path: human-to-agent, agent-to-human, agent-to-agent, and cross-channel — across all channels.
+
+| Path | Telegram | WhatsApp | Discord | GitLab | API |
+|------|:--------:|:--------:|:-------:|:------:|:---:|
+| **H2A** (human to agent) | mention/DM | route | mention/DM | @username | POST /task |
+| **A2H reply** | streaming | text | text | per-agent token | JSON |
+| **A2H initiate** | /send | /send | /send | /send | - |
+| **A2A delegation** | per-account bot chain | shared number + name prefix | shared + name prefix | @mention webhook | - |
+| **Cross-channel** | /send | /send | /send | /send | - |
+| **Cross-mesh** | mesh task | mesh task | mesh task | mesh task | mesh task |
+
+### Cross-Channel Messaging
+
+Agents can send messages to ANY channel proactively — not just reply:
+
+```bash
+# Agent on GitLab sends a notification to Telegram
+curl -X POST http://localhost:19900/send \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"telegram","chatId":"-1001234567890","text":"Deploy complete!","agentId":"devops"}'
+```
+
+This enables **H2A2H chains**: a human asks an agent on GitLab to notify someone on WhatsApp. The agent calls `/send` to deliver the message cross-channel.
 
 ## Features
 
@@ -58,89 +84,167 @@ Each agent = a workspace directory with Claude Code configuration (`.claude/`, `
 | Channel | Highlights |
 |---------|-----------|
 | **Telegram** | Multi-account bots, streaming edits, bot-to-bot delegation, media handling |
-| **WhatsApp** | Baileys integration, QR pairing, per-contact/group routing |
-| **Discord** | Mention-based routing, DM support |
-| **GitLab** | Webhook-driven: issues, MRs, pipeline events. Per-agent tokens — each agent posts as its own GitLab user. @mention routing, bot-to-bot handoff, eye reaction acknowledgment |
+| **WhatsApp** | Baileys integration, QR pairing, per-contact/group routing, agent delegation (shared number, name-prefixed) |
+| **Discord** | Mention-based routing, DM support, agent delegation |
+| **GitLab** | Per-agent identity via PAT tokens, @mention routing resolved from API, bot-to-bot handoff, cascade prevention |
 | **Webhooks** | Generic `POST /webhook/:agentId` for Stripe, Sentry, GitHub, etc. |
 
 ### GitLab Integration
 
 Agents participate in GitLab as first-class team members:
-- **Per-agent identity** — Each agent has its own GitLab user and PAT. Comments show the correct author, not a shared bot account
-- **@mention routing** — `@coding-agent` in a comment routes to that agent using the same registry as Telegram
+- **Per-agent identity** — Each agent has its own GitLab user and PAT. Agent usernames resolved from tokens at startup via API (not manual config)
+- **Deterministic @mention routing** — `@coding-agent` routes to that agent. Username-to-agent map built from token resolution
 - **Bot-to-bot handoff** — QA agent can `@mention` devops in its review, devops picks it up automatically
-- **Eye reaction** — Agents react with 👀 on comments they're processing (using their own token)
-- **Cascade prevention** — Bot comments only route when they @mention a *different* agent. No echo loops
-- **Brevity rules** — Agents respond in 3-5 lines with `<details>` collapsible sections for verbose output
+- **Eye reaction** — Agents react with 👀 using their own token (never the global token)
+- **Cascade prevention** — Hidden signature `<!-- agentx:agentId -->`, sent-note dedup, bot-user detection
+- **Human mention filtering** — If @mentioned user isn't a known agent, the note is ignored
 
-### Core
+### Context Compaction
 
-- **Multi-agent** — Named agents with permissions, concurrency limits, mention-based routing
-- **Context engine** — 8-layer structured context with per-layer token budgets
-- **Session continuity** — `--resume SESSION_ID` for Claude Code, history injection for other tiers
-- **Stable session keying** — Sessions keyed by chat context (e.g. issue path), not sender name
-- **Bot-to-bot** — Agents mention each other on Telegram, conversation chains with loop prevention
-- **Group context** — Persistent group conversation log, agents see last 30 messages
-- **Media handling** — Photos, voice, audio, video, documents downloaded and passed to agent
-- **Reply-to context** — When replying to a message, agent sees the original text
-- **Brevity by default** — Agents lead with action/result, skip preamble. Channel-specific formatting rules
+Long conversations don't lose context. When session history exceeds threshold:
+1. **Memory flush** — Haiku extracts memorable facts before compaction
+2. **Summarize** — Older messages compressed into a structured summary
+3. **Preserve** — Last 6 messages kept verbatim, tool call pairs kept intact
+
+### Message Queue
+
+When an agent is busy, incoming messages are queued instead of dropped:
+
+| Mode | Behavior |
+|------|----------|
+| `collect` (default) | Batch all messages, deliver as one when agent finishes |
+| `followup` | Process each queued message as a separate follow-up turn |
+| `drop` | Silently discard (for non-critical channels) |
+
+Configure per agent: `agents.<id>.queueMode`
+
+### Sub-Agent Spawning
+
+Agents can spawn background sub-agents for parallel work:
+- `spawn_agent` tool available in orchestrator tier
+- Depth-limited (max 3 levels) to prevent infinite chains
+- Timeout enforcement per spawn
+- Results returned to parent agent
+
+### Bootstrap Identity Files
+
+Structured workspace files loaded into agent context automatically:
+
+| File | Purpose | Lifecycle |
+|------|---------|-----------|
+| `SOUL.md` | Personality, tone, boundaries | Persistent |
+| `IDENTITY.md` | Name, role, tagline | Persistent |
+| `USER.md` | User profile, preferences | Persistent |
+| `AGENTS.md` | Operating rules, standing orders | Persistent |
+| `BOOTSTRAP.md` | First-run ritual | Auto-deleted after first load |
+
+### Heartbeat
+
+Periodic in-session check-ins (unlike cron which creates isolated sessions):
+
+```jsonc
+"agents": {
+  "assistant": {
+    "heartbeat": {
+      "enabled": true,
+      "intervalMinutes": 30,
+      "prompt": "Check inbox, pending tasks, and system health."
+    }
+  }
+}
+```
+
+Heartbeat runs in the agent's existing session context, preserving conversation history and memory.
+
+### Cron with Retry & Missed Run Detection
+
+Scheduled jobs with production-grade reliability:
+- **Exponential backoff** on failure: 30s, 1m, 5m, 15m, 60m (up to 5 retries)
+- **Missed run detection** — On startup, compares saved last-run times against schedule and catches up
+- **Failure notifications** — Configure per-job `notify` destination (any channel)
+- **Auto-disable** after 3 consecutive failures (`onError: "disable"`)
+- **Health endpoint** — `GET /crons/health` returns healthy/failing/disabled/missed counts
+
+```jsonc
+"crons": {
+  "daily-report": {
+    "schedule": "0 9 * * *",
+    "agent": "assistant",
+    "prompt": "Generate today's status report.",
+    "notify": {
+      "channel": "telegram",
+      "chatId": "-1001234567890"
+    }
+  }
+}
+```
+
+### Smart Block Streaming
+
+Intelligent chunking for message delivery across channels:
+- **minChars** threshold — no fragment spam
+- **Paragraph-aware breaks** — never splits inside code fences
+- **Per-channel defaults** — Telegram (60 chars), WhatsApp (40 chars + human pacing), Discord (80 chars)
+- **Coalescing** — idle debounce merges consecutive small blocks
+
+### Observability & Debug Mode
+
+Toggle verbose debug logging at runtime:
+
+```bash
+# Enable debug for specific categories
+curl -X POST http://localhost:19900/debug/on?categories=webhook,agent
+
+# Check debug state + recent log entries
+curl http://localhost:19900/debug
+
+# Disable
+curl -X POST http://localhost:19900/debug/off
+
+# Or via environment variable
+AGENTX_DEBUG=webhook,agent agentx daemon start
+```
+
+**Categories:** `webhook`, `agent`, `channel`, `cron`, `mesh`, `context`, `memory`, `config`, `all`
 
 ### Live Monitoring
 
-Real-time visibility into what agents are doing right now:
-
 ```bash
 agentx daemon watch            # Color-coded live feed
-# ▶ [devops-mtgl] executing task (1/1)
-# → Routing [gitlab/Anis] -> "DevOps MTGL"
-# ✓ [devops-mtgl] completed in 35652ms
-# ✗ [pm-mtgl] error: Agent busy
 ```
 
-Or connect directly via SSE:
+Or connect via SSE:
 ```bash
-curl -N http://localhost:18800/events
+curl -N http://localhost:19900/events
 ```
-
-Every routing decision, execution, completion, and error streams in real-time.
 
 ### Wiki Knowledge Base
 
-Each agent has its own personal wiki — a compounding knowledge artifact built from conversations. Inspired by [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), extended with entity-aware gap detection and mesh federation.
+Each agent has a personal wiki — a compounding knowledge artifact built from conversations.
 
-**How it works:**
-1. **Ingest** — Every conversation is saved as a raw entry
-2. **Absorb** — LLM compiles entries into wiki articles with aggressive tagging and gap detection
+1. **Ingest** — Every conversation saved as raw entry
+2. **Absorb** — LLM compiles entries into wiki articles
 3. **Query** — Agents get relevant context filtered by tags
-4. **Sync** — Pull entries from mesh peers; federated wiki view across machines
+4. **Sync** — Federated wiki view across mesh peers
 
-**Three compilation modes** (`--mode`):
+Three compilation modes: `unified` (default), `flat`, `graph`. Wikipedia-style UI at `agentx wiki serve`.
 
-| Mode | Strategy | Best at |
-|------|----------|---------|
-| `unified` (default) | Flat tags + entity thinking | Tag density, article count, gap specificity |
-| `flat` | Karpathy pure — tags only, LLM-chosen paths | Simplicity |
-| `graph` | Knowledge graph — hierarchy, entities, events | Deep hierarchy, entity-level gaps |
+### Persistent Agent Memory
 
-**Key features:**
-- **Worldview** — Edit `worldview.md` to describe YOUR world. The LLM reads it during absorb.
-- **Aggressive tagging** — Every article tagged with who, what, when, where, how. Section-level tags too.
-- **Gap detection** — Absorb identifies missing pieces with specificity
-- **LLM-chosen structure** — No rigid taxonomy. Structure emerges from data.
-- **Mesh federation** — `wiki sync` pulls entries from peers. `wiki serve --peer` shows remote articles live.
-- **Wikipedia-style UI** — `agentx wiki serve` at http://localhost:4200
+Haiku-powered cross-session memory:
+- Facts, preferences, commitments extracted after each conversation
+- BM25 full-text search across memories
+- Injected into context for future conversations
+- Auto-pruning with configurable expiry
 
 ### Skills
 
 Reusable capabilities installed per-agent or globally:
 
 ```bash
-agentx skill add skills/my-skill --all    # Install to all agents
-agentx skill add skills/my-skill --agent devops  # One agent
-agentx skill list                          # List per agent
+agentx skill add skills/my-skill --all
+agentx skill list
 ```
-
-Skills are markdown files (`SKILL.md`) with frontmatter (name, tags, triggers). Agents auto-load skills from `.claude/skills/` in their workspace. Share skills across the mesh — agents discover each other's capabilities.
 
 ### Mesh Federation
 
@@ -154,16 +258,7 @@ agentx daemon send devops "check disk space" --peer server-2
 - Static or mDNS peer discovery
 - Health checks every 60s
 - Wiki sync across peers
-- Cross-machine agent delegation via HTTP
-
-### Token Usage
-
-Real token counts from Claude's JSON output (not estimates).
-
-```bash
-agentx usage                   # Today's summary
-agentx usage report --days 7   # Per-agent breakdown
-```
+- Cross-machine agent delegation via A2A protocol
 
 ## CLI Reference
 
@@ -172,7 +267,7 @@ agentx usage report --days 7   # Per-agent breakdown
 agentx daemon start [--detach]
 agentx daemon stop
 agentx daemon status
-agentx daemon watch              # Live activity stream (NEW)
+agentx daemon watch
 agentx daemon logs [-f]
 agentx daemon send <agent> <msg> [--peer <name>]
 agentx daemon deploy <host> -i key [--restart]
@@ -206,7 +301,7 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
 
 ```jsonc
 {
-  "node": { "id": "my-machine", "name": "My Machine", "bind": "0.0.0.0:18800" },
+  "node": { "id": "my-machine", "name": "My Machine", "bind": "0.0.0.0:19900" },
 
   "agents": {
     "assistant": {
@@ -216,7 +311,13 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
       "model": "claude-sonnet-4-6",
       "mentions": ["@my_bot", "my-gitlab-user"],
       "maxConcurrent": 2,
-      "systemPrompt": "You are a helpful assistant."
+      "queueMode": "collect",       // "followup" or "drop"
+      "systemPrompt": "You are a helpful assistant.",
+      "heartbeat": {
+        "enabled": false,
+        "intervalMinutes": 30,
+        "prompt": "Check inbox and pending tasks."
+      }
     }
   },
 
@@ -241,7 +342,6 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
         {
           "agentId": "coder",
           "gitlabUsernames": ["coder-bot"],
-          "keywords": [],
           "token": "${CODER_GITLAB_TOKEN}"
         }
       ]
@@ -254,7 +354,12 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
       "schedule": "0 9 * * *",
       "timezone": "UTC",
       "agent": "assistant",
-      "prompt": "Generate today's status report."
+      "prompt": "Generate today's status report.",
+      "onError": "notify",
+      "notify": {
+        "channel": "telegram",
+        "chatId": "-1001234567890"
+      }
     }
   },
 
@@ -272,28 +377,40 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Status, agents, crons, mesh, usage |
-| `/events` | GET | **SSE live event stream** — all agent activity in real-time |
+| `/events` | GET | SSE live event stream |
 | `/agents` | GET | List agents |
+| `/channels` | GET | List registered channels |
+| `/crons` | GET | List cron jobs |
+| `/crons/health` | GET | Cron health: healthy/failing/disabled/missed |
 | `/task` | POST | `{ "agent": "id", "message": "..." }` |
+| `/send` | POST | `{ "channel": "telegram", "chatId": "...", "text": "...", "agentId": "..." }` |
 | `/mesh/task` | POST | `{ "peer": "name", "message": "..." }` |
 | `/webhook/:agentId[/:source]` | POST | Webhook callback |
 | `/v1/chat/completions` | POST | OpenAI-compatible endpoint |
+| `/debug` | GET | Debug state + recent log entries |
+| `/debug/on` | POST | Enable debug (`?categories=webhook,agent`) |
+| `/debug/off` | POST | Disable debug |
 | `/.well-known/agent-card.json` | GET | A2A agent discovery |
 
 ## Context Engine
 
-Every agent prompt is built from 8 structured layers, each with a token budget:
+Every agent prompt is built from structured layers, each with a token budget:
 
 | Layer | Priority | Budget | Content |
 |-------|----------|--------|---------|
 | Channel | 1 | 200 | Channel type + formatting rules |
 | Scope | 2 | 200 | Group name, project path, or DM |
-| Identity | 3 | 300 | Agent system prompt |
-| Peers | 4 | 400 | Team roster with handles |
+| Landscape | 3 | 800 | Team roster, mesh peers, rules, /send API docs |
+| Identity | 4 | 200 | Agent system prompt |
+| Bootstrap | 4.5 | 500 | SOUL.md, IDENTITY.md, AGENTS.md |
 | Intent | 5 | 200 | Extracted: deploy, review, bugfix... |
 | Artifacts | 6 | 500 | Media, reply-to text, issue refs |
+| Memory | 6.5 | 600 | Cross-session facts (Haiku-extracted) |
 | History | 7 | 1200 | Conversation or session history |
+| Cross-chat | 7 | 800 | Context from other active chats |
 | Wiki | 8 | 1000 | Tag-matched knowledge articles |
+
+Total budget: 6000 tokens. Context always injected, even on resumed sessions.
 
 ## Three Execution Tiers
 
@@ -303,53 +420,45 @@ Every agent prompt is built from 8 structured layers, each with a token budget:
 | `sdk` | Claude Agent SDK | API key | Programmatic control, headless servers |
 | `orchestrator` | AgentX's own loop | Any provider key | Non-Claude providers (OpenAI, Ollama) |
 
+## Daemon Management
+
+Single-instance guard via PID file — prevents orphan processes on restart:
+
+```bash
+agentx daemon start            # Checks .agentx/daemon.pid, exits if another is running
+agentx daemon stop              # Graceful shutdown, saves cron last-run times
+systemctl --user restart agentx-daemon.service  # Safe — PID guard prevents duplicates
+```
+
 ## Use Cases
 
 - **Team of Telegram bots** — each project gets its own bot + agent
 - **GitLab CI/CD team** — coder, QA, devops, PM agents collaborate on issues via @mentions
-- **WhatsApp assistant** — message yourself, agent replies in self-chat
-- **Scheduled automation** — cron jobs generate reports, content, social media drafts
+- **Cross-channel notifications** — GitLab agent notifies humans on Telegram/WhatsApp
+- **WhatsApp delegation** — shared phone number, agents identified by name prefix
+- **Scheduled automation** — cron jobs with retry, missed-run catch-up, failure alerts
 - **Multi-machine swarm** — agents on laptop + server collaborate via mesh
-- **Webhook automation** — Sentry error → DevOps investigates, Stripe payment → billing processes
+- **Webhook automation** — Sentry error -> DevOps investigates, Stripe payment -> billing processes
 - **Personal wiki** — Every conversation compounds into searchable knowledge
 
-## Current Status
-
-AgentX is in active development. It works and we use it daily, but expect rough edges:
-
-- GitLab per-agent identity is functional but recently added
-- Session management was recently overhauled
-- The DTS build has pre-existing type errors (ESM build works fine)
-- Some error handling is still being hardened (e.g., port conflicts now retry instead of crashing)
-- Test coverage exists for core paths but needs expansion
-
 ## Contributing
-
-We're looking for contributors in these areas:
-
-- **Testing** — Unit and integration tests for GitLab routing, session management, bot-to-bot chains
-- **Documentation** — Getting-started guide, skill authoring guide, deployment guide
-- **Channels** — Slack adapter, Microsoft Teams adapter
-- **Providers** — Better OpenAI/Ollama tier support
-- **Dashboard** — Web UI for the `/events` SSE stream and agent management
-- **Security** — Audit of token handling, webhook validation, permission boundaries
-
-To contribute:
 
 ```bash
 git clone https://github.com/anis-marrouchi/agentx.git
 cd agentx
 npm install
-npm run build              # ESM build (ignore DTS warnings)
+npm run build              # ESM build via tsup
 npm test                   # Run tests
 agentx init --force        # Create local config
 agentx daemon start        # Start dev daemon
 agentx daemon watch        # See what's happening
 ```
 
-## Legal
-
-Self-hosted, bring-your-own-key. No credentials stored or proxied. Built on official public packages (Claude API, Claude Agent SDK, Claude Code CLI).
+Areas we're looking for help:
+- **Testing** — Unit and integration tests
+- **Channels** — Slack, Microsoft Teams adapters
+- **Dashboard** — Web UI for agent management
+- **Security** — Audit of token handling and permission boundaries
 
 ## License
 
