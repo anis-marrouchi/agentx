@@ -6,6 +6,7 @@ import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { BlockStream } from "./block-stream"
+import type { ServiceMatcher } from "@/services/matcher"
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -24,6 +25,7 @@ export class MessageRouter {
   private channels: Map<string, ChannelAdapter> = new Map()
   private hooks?: HookRegistry
   private mesh?: A2AMesh
+  private serviceMatcher?: ServiceMatcher
   private groupLog: GroupLog
   private log: (...args: unknown[]) => void
 
@@ -42,6 +44,10 @@ export class MessageRouter {
 
   setMesh(mesh: A2AMesh): void {
     this.mesh = mesh
+  }
+
+  setServiceMatcher(matcher: ServiceMatcher): void {
+    this.serviceMatcher = matcher
   }
 
   addChannel(adapter: ChannelAdapter): void {
@@ -123,6 +129,31 @@ export class MessageRouter {
     if (msg.group) {
       const chatId = msg.group.id
       this.groupLog.add(chatId, msg.sender.name, msg.text)
+    }
+
+    // Check if message matches a defined service (before agent routing)
+    if (this.serviceMatcher) {
+      const chatId = msg.group?.id || msg.sender.id
+      const matched = this.serviceMatcher.match(msg.text, msg.sender.id, msg.channel)
+      if (matched) {
+        this.log(`Service matched: "${matched.service.name}" for ${msg.sender.name} (trigger: ${matched.trigger})`)
+        const replyAccountId = msg.accountId
+        this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
+        const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
+
+        await this.serviceMatcher.execute(
+          matched.service,
+          this.registry,
+          { channel: msg.channel, sender: msg.sender.name, chatId },
+          async (text) => {
+            clearInterval(typingTimer)
+            await this.adapterSend(adapter, {
+              channel: msg.channel, chatId, text, replyTo: msg.id, accountId: replyAccountId,
+            })
+          },
+        )
+        return
+      }
     }
 
     // Resolve agent — check local first, then mesh peers

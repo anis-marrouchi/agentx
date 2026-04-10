@@ -15,6 +15,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { HeartbeatManager } from "@/agents/heartbeat"
+import { ServiceMatcher } from "@/services/matcher"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -82,6 +83,12 @@ export class AgentXDaemon {
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log)
+
+    // Initialize service matcher (automated client services)
+    if (Object.keys(this.config.services).length > 0) {
+      const serviceMatcher = new ServiceMatcher(this.config.services, this.log)
+      this.router.setServiceMatcher(serviceMatcher)
+    }
 
     // Initialize cron scheduler with failure notifications
     this.cron = new CronScheduler(this.config, this.registry, this.hooks, this.log)
@@ -531,6 +538,10 @@ export class AgentXDaemon {
 
         case "GET /channels":
           this.json(res, 200, this.router.getChannelNames())
+          break
+
+        case "GET /services":
+          this.json(res, 200, (this.router as any).serviceMatcher?.list() || [])
           break
 
         case "POST /task": {

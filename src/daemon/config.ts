@@ -115,6 +115,24 @@ const cronJobSchema = z.object({
   }).optional(),
 })
 
+const serviceSchema = z.object({
+  name: z.string(),
+  triggers: z.array(z.object({
+    pattern: z.string(),
+    channel: z.string().optional(),
+  })),
+  allowedContacts: z.array(z.string()).optional(),
+  agent: z.string(),
+  prompt: z.string(),
+  schedule: z.string().optional(),
+  timezone: z.string().default("UTC"),
+  notify: z.object({
+    channel: z.string(),
+    chatId: z.string(),
+    accountId: z.string().optional(),
+  }).optional(),
+})
+
 const meshPeerSchema = z.object({
   url: z.string(),
   name: z.string(),
@@ -141,6 +159,7 @@ export const daemonConfigSchema = z.object({
   agents: z.record(z.string(), agentConfigSchema).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
+  services: z.record(z.string(), serviceSchema).default({}),
   mesh: meshConfigSchema.default({}),
 })
 
