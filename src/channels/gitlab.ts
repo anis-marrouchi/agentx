@@ -406,6 +406,10 @@ export class GitLabAdapter implements ChannelAdapter {
 
     const channelMeta = await this.getChannelMeta(chatId)
 
+    // Download any images attached in the comment
+    const noteClean = note.replace(/\n*<!-- agentx:\S+ -->/g, "")
+    const imageAttachment = await this.downloadNoteImages(noteClean, project, agentToken || this.config.token)
+
     const incoming: IncomingMessage = {
       id: String(event.object_attributes.id),
       channel: "gitlab",
@@ -415,12 +419,12 @@ export class GitLabAdapter implements ChannelAdapter {
         name: user.name,
         username: user.username,
       },
-      text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${note.replace(/\n*<!-- agentx:\S+ -->/g, "")}`,
+      text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${noteClean}`,
       timestamp: new Date(),
       raw: event,
-      // Deterministic: resolvedAgent comes from agentMappings, not registry.findByMention()
       resolvedAgent: targetAgentId,
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
+      media: imageAttachment,
     }
 
     this.handler(incoming).catch((e) => {
@@ -685,6 +689,68 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     } catch (e: any) {
       this.log(`Failed to react to note ${noteId}: ${e.message}`)
+    }
+  }
+
+  /**
+   * Extract and download images from a GitLab comment.
+   * GitLab markdown images: ![alt](/uploads/hash/filename.png)
+   * Returns the first image found as media attachment, or undefined.
+   */
+  private async downloadNoteImages(
+    note: string,
+    project: string,
+    token: string,
+  ): Promise<IncomingMessage["media"] | undefined> {
+    // Match GitLab upload paths: ![...](/uploads/...) or full URLs
+    const imagePattern = /!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif|webp|svg))\)/gi
+    const matches = [...note.matchAll(imagePattern)]
+    if (matches.length === 0) return undefined
+
+    const imagePath = matches[0][1] // First image
+    let imageUrl: string
+
+    if (imagePath.startsWith("http")) {
+      imageUrl = imagePath
+    } else {
+      // Relative path — resolve against GitLab project
+      const encodedProject = encodeURIComponent(project)
+      imageUrl = `${this.config.host}/${project}${imagePath}`
+    }
+
+    try {
+      const res = await fetch(imageUrl, {
+        headers: { "PRIVATE-TOKEN": token },
+      })
+      if (!res.ok) {
+        this.log(`Failed to download image: ${res.status} ${imageUrl}`)
+        return undefined
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer())
+      const contentType = res.headers.get("content-type") || "image/png"
+      const ext = contentType.split("/")[1]?.split(";")[0] || "png"
+
+      // Save to disk
+      const { mkdirSync, writeFileSync } = await import("fs")
+      const { resolve } = await import("path")
+      const { randomUUID } = await import("crypto")
+      const mediaDir = resolve(process.cwd(), ".agentx/media/gitlab")
+      mkdirSync(mediaDir, { recursive: true })
+      const fileName = `${randomUUID().slice(0, 8)}.${ext}`
+      const filePath = resolve(mediaDir, fileName)
+      writeFileSync(filePath, buffer)
+
+      this.log(`Downloaded GitLab image: ${filePath} (${buffer.length} bytes)`)
+
+      return {
+        path: filePath,
+        type: contentType,
+        fileName: imagePath.split("/").pop() || fileName,
+      }
+    } catch (e: any) {
+      this.log(`Image download error: ${e.message}`)
+      return undefined
     }
   }
 
