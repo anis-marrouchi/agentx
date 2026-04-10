@@ -1,4 +1,5 @@
 import type { AgentRegistry } from "./registry"
+import type { MemoryStore } from "./memory-store"
 
 // --- Heartbeat System ---
 //
@@ -40,15 +41,18 @@ interface HeartbeatState {
  */
 export class HeartbeatManager {
   private registry: AgentRegistry
+  private memoryStore?: MemoryStore
   private states: Map<string, HeartbeatState> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
     registry: AgentRegistry,
     log: (...args: unknown[]) => void = console.error.bind(console, "[heartbeat]"),
+    memoryStore?: MemoryStore,
   ) {
     this.registry = registry
     this.log = log
+    this.memoryStore = memoryStore
   }
 
   /**
@@ -114,8 +118,17 @@ export class HeartbeatManager {
     const channel = config.channel || "heartbeat"
 
     try {
+      // Inject memory recall context if memories are due for review
+      let prompt = config.prompt
+      if (this.memoryStore) {
+        const recallContext = this.memoryStore.buildRecallContext(agentId)
+        if (recallContext) {
+          prompt = `${recallContext}\n\n${prompt}`
+        }
+      }
+
       const response = await this.registry.execute({
-        message: config.prompt,
+        message: prompt,
         agentId,
         context: {
           channel,

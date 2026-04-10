@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs"
 import { resolve } from "path"
-import { buildIndex, scoreAll } from "../memory/bm25"
+import { buildIndexCached, scoreAll } from "../memory/bm25"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -15,6 +15,12 @@ export interface MemoryFact {
   source: { channel: string; chatId: string; sender: string; date: string }
   createdAt: string
   expiresAt?: string
+  // Spaced repetition fields
+  accessCount?: number
+  lastAccessed?: string
+  nextReview?: string
+  /** Review interval in days — doubles on each successful recall */
+  intervalDays?: number
 }
 
 const MAX_MEMORIES = 200
@@ -62,9 +68,10 @@ export class MemoryStore {
     const memories = this.getAll(agentId)
     if (memories.length === 0) return []
 
-    // BM25 over keywords + content
+    // BM25 over keywords + content (cached)
     const docs = memories.map((m) => `${m.keywords.join(" ")} ${m.content}`)
-    const index = buildIndex(docs)
+    const cachePath = resolve(this.memoryDir, `${agentId}_bm25_cache.json`)
+    const index = buildIndexCached(docs, cachePath)
     const bm25Scores = scoreAll(message, index)
     const scoreMap = new Map(bm25Scores.map((r) => [r.docIndex, r.score]))
 
@@ -79,10 +86,17 @@ export class MemoryStore {
     const matched = scored.filter((s) => s.score > 0)
     if (matched.length === 0) return memories.slice(-limit) // fallback: recent
 
-    return matched
+    const selected = matched
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((s) => s.memory)
+
+    // Track access for spaced repetition (fire-and-forget)
+    if (selected.length > 0) {
+      try { this.recordAccess(agentId, selected.map(m => m.id)) } catch {}
+    }
+
+    return selected
   }
 
   buildContext(memories: MemoryFact[]): string {
@@ -102,6 +116,81 @@ export class MemoryStore {
     }
 
     lines.push("[End Memory]")
+    return lines.join("\n")
+  }
+
+  /**
+   * Record that memories were accessed (for spaced repetition tracking).
+   */
+  recordAccess(agentId: string, memoryIds: string[]): void {
+    if (memoryIds.length === 0) return
+    const memories = this.getAll(agentId)
+    const idSet = new Set(memoryIds)
+    let changed = false
+
+    for (const m of memories) {
+      if (idSet.has(m.id)) {
+        m.accessCount = (m.accessCount || 0) + 1
+        m.lastAccessed = new Date().toISOString()
+        // Double the review interval (spaced repetition: 1 → 2 → 4 → 8 → 16 days)
+        const currentInterval = m.intervalDays || 1
+        m.intervalDays = Math.min(currentInterval * 2, 30)
+        m.nextReview = new Date(Date.now() + m.intervalDays * 86400000).toISOString()
+        changed = true
+      }
+    }
+
+    if (changed) {
+      writeFileSync(
+        this.filePath(agentId),
+        memories.map(m => JSON.stringify(m)).join("\n") + "\n",
+      )
+    }
+  }
+
+  /**
+   * Get memories due for review (spaced repetition).
+   * Returns facts whose nextReview date has passed or that have never been reviewed.
+   */
+  getDueForReview(agentId: string, limit: number = 5): MemoryFact[] {
+    const memories = this.getAll(agentId)
+    const now = Date.now()
+
+    return memories
+      .filter(m => {
+        // Skip task-state (ephemeral)
+        if (m.category === "task-state") return false
+        // Never reviewed → due
+        if (!m.nextReview) return true
+        // Past review date → due
+        return new Date(m.nextReview).getTime() <= now
+      })
+      .sort((a, b) => {
+        // Prioritize: never reviewed, then oldest nextReview, then most accessed
+        if (!a.nextReview && b.nextReview) return -1
+        if (a.nextReview && !b.nextReview) return 1
+        if (a.nextReview && b.nextReview) {
+          return new Date(a.nextReview).getTime() - new Date(b.nextReview).getTime()
+        }
+        return (a.accessCount || 0) - (b.accessCount || 0)
+      })
+      .slice(0, limit)
+  }
+
+  /**
+   * Build a recall prompt for memories due for review.
+   * Injected into heartbeat context so the agent proactively recalls facts.
+   */
+  buildRecallContext(agentId: string): string {
+    const due = this.getDueForReview(agentId, 5)
+    if (due.length === 0) return ""
+
+    const lines = ["[Memory Recall — facts due for review, verify they are still accurate]"]
+    for (const m of due) {
+      const age = Math.round((Date.now() - new Date(m.createdAt).getTime()) / 86400000)
+      lines.push(`- [${m.category}] ${m.content} (${age}d old, accessed ${m.accessCount || 0}x)`)
+    }
+    lines.push("[If any fact is outdated, note the correction. Otherwise, acknowledge recall.]")
     return lines.join("\n")
   }
 

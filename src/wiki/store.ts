@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { resolve, join, relative, dirname } from "path"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
-import { buildIndex, scoreAll } from "../memory/bm25"
+import { buildIndex, buildIndexCached, scoreAll } from "../memory/bm25"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -151,6 +151,12 @@ export class WikiStore {
     }
 
     const fullPath = resolve(this.baseDir, path)
+
+    // Version the previous content before overwriting (immutable history)
+    if (existing) {
+      this.saveVersion(path, fullPath)
+    }
+
     mkdirSync(dirname(fullPath), { recursive: true })
 
     const frontmatter = [
@@ -174,6 +180,67 @@ export class WikiStore {
     const action = existing ? "update" : "create"
     this.appendLog(action, `${meta.title} [${(meta.tags || []).slice(0, 5).join(", ")}] by ${agentId} at ${path}`)
     return true
+  }
+
+  // --- Article Versioning ---
+
+  /**
+   * Save current article content as an immutable version before overwriting.
+   * Versions stored in _versions/{article-path}/{timestamp}.md
+   */
+  private saveVersion(articlePath: string, fullPath: string): void {
+    try {
+      if (!existsSync(fullPath)) return
+      const content = readFileSync(fullPath, "utf-8")
+      const ts = new Date().toISOString().replace(/[:.]/g, "-")
+      const versionDir = resolve(this.baseDir, "_versions", articlePath.replace(/\.md$/, ""))
+      mkdirSync(versionDir, { recursive: true })
+      writeFileSync(resolve(versionDir, `${ts}.md`), content)
+    } catch {
+      // Version save is best-effort
+    }
+  }
+
+  /**
+   * List all versions of an article (newest first).
+   */
+  getVersions(articlePath: string): Array<{ timestamp: string; path: string }> {
+    const versionDir = resolve(this.baseDir, "_versions", articlePath.replace(/\.md$/, ""))
+    if (!existsSync(versionDir)) return []
+
+    try {
+      return readdirSync(versionDir)
+        .filter(f => f.endsWith(".md"))
+        .sort()
+        .reverse()
+        .map(f => ({
+          timestamp: f.replace(/\.md$/, "").replace(/-/g, (m, i) => i < 19 ? (i === 10 ? "T" : i === 13 || i === 16 ? ":" : "-") : m),
+          path: resolve(versionDir, f),
+        }))
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Restore a specific version of an article.
+   */
+  restoreVersion(articlePath: string, versionTimestamp: string): boolean {
+    const versions = this.getVersions(articlePath)
+    const version = versions.find(v => v.timestamp.startsWith(versionTimestamp))
+    if (!version) return false
+
+    try {
+      const content = readFileSync(version.path, "utf-8")
+      const fullPath = resolve(this.baseDir, articlePath)
+      // Save current as a version too before restoring
+      this.saveVersion(articlePath, fullPath)
+      writeFileSync(fullPath, content)
+      this.appendLog("restore", `${articlePath} restored to ${versionTimestamp}`)
+      return true
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -278,9 +345,10 @@ export class WikiStore {
 
     if (articles.length === 0) return []
 
-    // BM25 over article content
+    // BM25 over article content (cached to disk)
     const docs = articles.map((a) => a.content)
-    const index = buildIndex(docs)
+    const cachePath = resolve(this.baseDir, "_bm25_cache.json")
+    const index = buildIndexCached(docs, cachePath)
     const bm25Scores = scoreAll(query, index)
     const scoreMap = new Map(bm25Scores.map((r) => [r.docIndex, r.score]))
 
@@ -318,11 +386,12 @@ export class WikiStore {
 
     if (articles.length === 0) return []
 
-    // Single BM25 pass over title + tags + content
+    // Single BM25 pass over title + tags + content (cached)
     const docs = articles.map(
       (a) => `${a.meta.title} ${(a.meta.tags || []).join(" ")} ${a.content}`,
     )
-    const index = buildIndex(docs)
+    const cachePath = resolve(this.baseDir, "_bm25_relevance_cache.json")
+    const index = buildIndexCached(docs, cachePath)
     const scored = scoreAll(message, index)
 
     return scored

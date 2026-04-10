@@ -137,3 +137,81 @@ export function scoreAll(
 
   return results.sort((a, b) => b.score - a.score)
 }
+
+// --- Cached BM25 Index ---
+// Persists the index to _index.json alongside a content hash.
+// Rebuilds only when documents change.
+
+import { createHash } from "crypto"
+import { readFileSync, writeFileSync, existsSync } from "fs"
+
+interface SerializedIndex {
+  hash: string
+  docCount: number
+  avgDocLen: number
+  df: Record<string, number>
+  tf: Record<string, Record<string, number>>
+  docLens: number[]
+}
+
+function hashDocs(docs: string[]): string {
+  const h = createHash("sha256")
+  for (const d of docs) h.update(d)
+  return h.digest("hex").slice(0, 16)
+}
+
+function serializeIndex(index: BM25Index, hash: string): SerializedIndex {
+  const df: Record<string, number> = {}
+  for (const [k, v] of index.df) df[k] = v
+
+  const tf: Record<string, Record<string, number>> = {}
+  for (const [docIdx, termMap] of index.tf) {
+    const terms: Record<string, number> = {}
+    for (const [t, f] of termMap) terms[t] = f
+    tf[String(docIdx)] = terms
+  }
+
+  return { hash, docCount: index.docCount, avgDocLen: index.avgDocLen, df, tf, docLens: index.docLens }
+}
+
+function deserializeIndex(data: SerializedIndex): BM25Index {
+  const df = new Map(Object.entries(data.df).map(([k, v]) => [k, v]))
+  const tf = new Map<number, Map<string, number>>()
+  for (const [docIdx, terms] of Object.entries(data.tf)) {
+    tf.set(Number(docIdx), new Map(Object.entries(terms)))
+  }
+
+  return { docCount: data.docCount, avgDocLen: data.avgDocLen, df, tf, docLens: data.docLens }
+}
+
+/**
+ * Build a BM25 index with disk caching.
+ * Stores the index in `cachePath` and only rebuilds when the content hash changes.
+ */
+export function buildIndexCached(docs: string[], cachePath: string): BM25Index {
+  const hash = hashDocs(docs)
+
+  // Try loading cached index
+  if (existsSync(cachePath)) {
+    try {
+      const cached: SerializedIndex = JSON.parse(readFileSync(cachePath, "utf-8"))
+      if (cached.hash === hash && cached.docCount === docs.length) {
+        return deserializeIndex(cached)
+      }
+    } catch {
+      // Corrupted cache — rebuild
+    }
+  }
+
+  // Build fresh index
+  const index = buildIndex(docs)
+
+  // Save to disk (best-effort)
+  try {
+    writeFileSync(cachePath, JSON.stringify(serializeIndex(index, hash)))
+  } catch {
+    // Can't write cache — still return the index
+  }
+
+  return index
+}
