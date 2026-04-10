@@ -46,6 +46,10 @@ export interface CompactionResult {
   keptCount: number
   /** Whether memory flush was performed before compaction */
   memoryFlushed: boolean
+  /** Quality score: percentage of key entities preserved in summary (0-100) */
+  qualityScore?: number
+  /** Entities that were lost in compaction */
+  lostEntities?: string[]
 }
 
 /**
@@ -108,12 +112,90 @@ export async function compactSession(
   const historyText = formatMessagesForSummary(toCompact)
   const summary = await summarize(historyText)
 
+  // Step 3: Verify compaction quality — check entity preservation
+  const { qualityScore, lostEntities } = verifyCompactionQuality(historyText, summary)
+
   return {
     summary,
     compactedCount: toCompact.length,
     keptCount: toKeep.length,
     memoryFlushed,
+    qualityScore,
+    lostEntities: lostEntities.length > 0 ? lostEntities : undefined,
   }
+}
+
+/**
+ * Verify compaction quality by checking entity preservation.
+ * Extracts key entities (names, IDs, URLs, decisions) from the original
+ * and checks how many survived in the summary.
+ */
+function verifyCompactionQuality(
+  original: string,
+  summary: string,
+): { qualityScore: number; lostEntities: string[] } {
+  const entities = extractEntities(original)
+  if (entities.length === 0) return { qualityScore: 100, lostEntities: [] }
+
+  const summaryLower = summary.toLowerCase()
+  const preserved: string[] = []
+  const lost: string[] = []
+
+  for (const entity of entities) {
+    if (summaryLower.includes(entity.toLowerCase())) {
+      preserved.push(entity)
+    } else {
+      lost.push(entity)
+    }
+  }
+
+  const score = Math.round((preserved.length / entities.length) * 100)
+  return { qualityScore: score, lostEntities: lost }
+}
+
+/**
+ * Extract key entities from text: names, IDs, URLs, file paths, decisions.
+ */
+function extractEntities(text: string): string[] {
+  const entities: string[] = []
+  const seen = new Set<string>()
+
+  const add = (entity: string) => {
+    const key = entity.toLowerCase().trim()
+    if (key.length < 3 || seen.has(key)) return
+    seen.add(key)
+    entities.push(entity.trim())
+  }
+
+  // URLs
+  const urls = text.match(/https?:\/\/[^\s<>)"]+/g) || []
+  for (const url of urls) add(url.slice(0, 80))
+
+  // File paths
+  const paths = text.match(/(?:\/[\w.-]+){2,}/g) || []
+  for (const p of paths) add(p)
+
+  // Ticket/issue references (#123, !456)
+  const refs = text.match(/[#!]\d{2,}/g) || []
+  for (const r of refs) add(r)
+
+  // Email addresses
+  const emails = text.match(/[\w.-]+@[\w.-]+\.\w+/g) || []
+  for (const e of emails) add(e)
+
+  // Quoted strings (potential names, IDs, keys)
+  const quoted = text.match(/"([^"]{3,40})"/g) || []
+  for (const q of quoted) add(q.slice(1, -1))
+
+  // Capitalized proper nouns (2+ words starting with uppercase)
+  const properNouns = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/g) || []
+  for (const n of properNouns) add(n)
+
+  // UUIDs and hashes
+  const ids = text.match(/[a-f0-9]{8,}/gi) || []
+  for (const id of ids.slice(0, 5)) add(id) // cap to avoid noise
+
+  return entities.slice(0, 30) // max 30 entities to check
 }
 
 /**

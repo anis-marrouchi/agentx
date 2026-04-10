@@ -139,6 +139,66 @@ export function listSoulProfiles(workspace: string): string[] {
 }
 
 /**
+ * Generate a standard AGENTS.md for a new agent workspace.
+ * Follows the agents.md community convention (https://agents.md/).
+ * Readable by Claude Code, Codex, Cursor, Amp, Gemini CLI, etc.
+ */
+export function generateAgentsMd(agent: {
+  name: string
+  id: string
+  role?: string
+  workspace: string
+  tier?: string
+}): string {
+  return `# ${agent.name}
+
+> Agent ID: \`${agent.id}\` | Tier: ${agent.tier || "claude-code"}
+
+## Role
+
+${agent.role || "AI agent managed by AgentX orchestrator."}
+
+## Setup
+
+This workspace is managed by AgentX. The agent runs via:
+\`\`\`bash
+# Direct execution
+agentx daemon send ${agent.id} "your task here"
+
+# Or via any connected channel (Telegram, WhatsApp, GitLab)
+\`\`\`
+
+## Code Style
+
+- Follow existing patterns in the codebase
+- Use the language and framework conventions already present
+- Keep changes minimal and focused
+
+## Testing
+
+Run tests before committing:
+\`\`\`bash
+npm test    # or the project's test command
+\`\`\`
+
+## PR Guidelines
+
+- One logical change per commit
+- Reference issue numbers when applicable
+- Keep PR descriptions concise
+
+## AgentX Integration
+
+This agent is part of an AgentX mesh. It can:
+- Receive tasks from messaging channels (Telegram, WhatsApp, Discord)
+- Respond to GitLab @mentions on issues and MRs
+- Delegate to other agents by mentioning their handles
+- Send cross-channel messages via the /send API
+- Access its wiki knowledge base for context
+`
+}
+
+/**
  * Detect a /soul command in a message.
  * Returns the requested profile name, or null if no /soul command found.
  * "/soul finance" → "finance"

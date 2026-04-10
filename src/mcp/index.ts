@@ -41,7 +41,56 @@ const PROTOCOL_VERSION = "2024-11-05"
 
 const CAPABILITIES = {
   tools: {},
+  elicitation: { form: {} },
 }
+
+/** Counter for elicitation request IDs */
+let elicitationIdCounter = 0
+
+/**
+ * Request information from the user via MCP elicitation.
+ * Returns the user's response or null if declined/cancelled.
+ */
+async function elicit(
+  message: string,
+  schema: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const id = ++elicitationIdCounter
+
+  // Send elicitation request (server → client)
+  send({
+    jsonrpc: "2.0",
+    id: `elicit-${id}`,
+    method: "elicitation/create",
+    params: {
+      mode: "form",
+      message,
+      requestedSchema: schema,
+    },
+  } as any)
+
+  // Wait for response (blocking — MCP is request/response)
+  return new Promise((resolve) => {
+    elicitationResolvers.set(`elicit-${id}`, (result: any) => {
+      if (result?.action === "accept" && result.content) {
+        resolve(result.content)
+      } else {
+        resolve(null)
+      }
+    })
+
+    // Timeout after 60s
+    setTimeout(() => {
+      if (elicitationResolvers.has(`elicit-${id}`)) {
+        elicitationResolvers.delete(`elicit-${id}`)
+        resolve(null)
+      }
+    }, 60_000)
+  })
+}
+
+/** Pending elicitation response handlers */
+const elicitationResolvers = new Map<string, (result: any) => void>()
 
 // Default daemon URL (local)
 const DAEMON_URL = process.env.AGENTX_DAEMON_URL || "http://localhost:19900"
@@ -360,15 +409,37 @@ async function handleToolCall(
     // --- Daemon tools ---
 
     case "agentx_send": {
+      let channel = args.channel as string | undefined
+      let chatId = args.chatId as string | undefined
+      let text = args.text as string | undefined
+
+      // Elicit missing required params
+      if (!channel || !chatId || !text) {
+        const channelsRes = await fetch(`${DAEMON_URL}/channels`).catch(() => null)
+        const channels = channelsRes ? await channelsRes.json() as string[] : ["telegram", "whatsapp", "gitlab", "discord"]
+
+        const response = await elicit(
+          "Please provide the message details:",
+          {
+            type: "object",
+            properties: {
+              channel: { type: "string", title: "Channel", description: "Target channel", enum: channels, default: channel || channels[0] },
+              chatId: { type: "string", title: "Chat ID", description: "Telegram: numeric ID. GitLab: group/project:issue:123", default: chatId || "" },
+              text: { type: "string", title: "Message", description: "Message text to send", default: text || "" },
+            },
+            required: ["channel", "chatId", "text"],
+          },
+        )
+        if (!response) return { content: [{ type: "text", text: "Send cancelled." }] }
+        channel = response.channel as string
+        chatId = response.chatId as string
+        text = response.text as string
+      }
+
       const res = await fetch(`${DAEMON_URL}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          channel: args.channel,
-          chatId: args.chatId,
-          text: args.text,
-          agentId: args.agentId,
-        }),
+        body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
       })
       const data = await res.json() as any
       if (!res.ok) {
@@ -378,10 +449,34 @@ async function handleToolCall(
     }
 
     case "agentx_task": {
+      let agent = args.agent as string | undefined
+      let message = args.message as string | undefined
+
+      // Elicit missing params
+      if (!agent || !message) {
+        const agentsRes = await fetch(`${DAEMON_URL}/agents`).catch(() => null)
+        const agentList = agentsRes ? (await agentsRes.json() as any[]).map((a: any) => a.id) : []
+
+        const response = await elicit(
+          "Which agent should handle this task?",
+          {
+            type: "object",
+            properties: {
+              agent: { type: "string", title: "Agent", description: "Agent ID", ...(agentList.length ? { enum: agentList } : {}), default: agent || "" },
+              message: { type: "string", title: "Task", description: "Task message for the agent", default: message || "" },
+            },
+            required: ["agent", "message"],
+          },
+        )
+        if (!response) return { content: [{ type: "text", text: "Task cancelled." }] }
+        agent = response.agent as string
+        message = response.message as string
+      }
+
       const res = await fetch(`${DAEMON_URL}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent: args.agent, message: args.message }),
+        body: JSON.stringify({ agent, message }),
       })
       const data = await res.json() as any
       if (data.error) {
@@ -487,7 +582,16 @@ export async function startMcpServer(): Promise<void> {
 
       try {
         const msg = JSON.parse(body)
-        handleMessage(msg, log).catch((e) => log("Error:", e))
+        // Check if this is a response to an elicitation request
+        if (msg.id && typeof msg.id === "string" && msg.id.startsWith("elicit-") && msg.result) {
+          const resolver = elicitationResolvers.get(msg.id)
+          if (resolver) {
+            elicitationResolvers.delete(msg.id)
+            resolver(msg.result)
+          }
+        } else {
+          handleMessage(msg, log).catch((e) => log("Error:", e))
+        }
       } catch (e) {
         log("Failed to parse message:", e)
       }

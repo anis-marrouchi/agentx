@@ -267,11 +267,16 @@ export class AgentRegistry {
 
     // Compact session if history is getting too long (summarize older messages)
     try {
-      const compacted = await this.sessions.compactIfNeeded(
+      const compactResult = await this.sessions.compactIfNeeded(
         task.agentId, channel, chatId, this.memoryStore,
       )
-      if (compacted) {
-        this.log(`[${task.agentId}] session compacted for ${channel}:${chatId}`)
+      if (compactResult.compacted) {
+        const quality = compactResult.qualityScore ?? "?"
+        const lost = compactResult.lostEntities?.length ?? 0
+        this.log(`[${task.agentId}] session compacted for ${channel}:${chatId} (quality: ${quality}%, ${lost} entities lost)`)
+        if (compactResult.lostEntities?.length) {
+          this.log(`[${task.agentId}] lost entities: ${compactResult.lostEntities.slice(0, 5).join(", ")}`)
+        }
         resumeSessionId = undefined
       }
     } catch (e: any) {

@@ -248,14 +248,14 @@ export class SessionStore {
     channel: string,
     chatId: string,
     memoryStore?: import("./memory-store").MemoryStore,
-  ): Promise<boolean> {
+  ): Promise<{ compacted: boolean; qualityScore?: number; lostEntities?: string[] }> {
     const session = this.getSession(agentId, channel, chatId)
     const { needsCompaction, compactSession, applyCompaction } = await import("./compaction")
 
-    if (!needsCompaction(session.messages)) return false
+    if (!needsCompaction(session.messages)) return { compacted: false }
 
     const result = await compactSession(session.messages, agentId, memoryStore)
-    if (result.compactedCount === 0) return false
+    if (result.compactedCount === 0) return { compacted: false }
 
     session.messages = applyCompaction(session.messages, result)
     session.updatedAt = new Date().toISOString()
@@ -264,7 +264,11 @@ export class SessionStore {
     delete session.claudeSessionId
 
     this.save(session)
-    return true
+    return {
+      compacted: true,
+      qualityScore: result.qualityScore,
+      lostEntities: result.lostEntities,
+    }
   }
 
   /**
