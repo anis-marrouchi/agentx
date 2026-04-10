@@ -77,6 +77,32 @@ curl -X POST http://localhost:19900/send \
 
 This enables **H2A2H chains**: a human asks an agent on GitLab to notify someone on WhatsApp. The agent calls `/send` to deliver the message cross-channel.
 
+### Automated Client Services
+
+Define predictable request-response services that intercept messages BEFORE agent routing — no LLM needed for known patterns:
+
+```jsonc
+"services": {
+  "monthly-report": {
+    "name": "Monthly Client Report",
+    "triggers": [
+      { "pattern": "monthly report|client records|تقرير الشهر", "channel": "whatsapp" }
+    ],
+    "allowedContacts": ["+966"],
+    "agent": "atlas",
+    "prompt": "Run the monthly report SQL query and export as CSV...",
+    "schedule": "0 9 1 * *",
+    "notify": { "channel": "whatsapp", "chatId": "+966...@s.whatsapp.net" }
+  }
+}
+```
+
+- **Regex triggers** with optional channel filter (Arabic + English patterns)
+- **Contact allowlist** — only authorized contacts can trigger
+- **Predefined prompt** — service sends a known prompt, not the user's raw message
+- **Optional cron schedule** — also runs automatically on a schedule
+- **Cross-channel notify** — results delivered to any channel
+
 ## Features
 
 ### Channels
@@ -86,7 +112,7 @@ This enables **H2A2H chains**: a human asks an agent on GitLab to notify someone
 | **Telegram** | Multi-account bots, streaming edits, bot-to-bot delegation, media handling |
 | **WhatsApp** | Baileys integration, QR pairing, per-contact/group routing, agent delegation (shared number, name-prefixed) |
 | **Discord** | Mention-based routing, DM support, agent delegation |
-| **GitLab** | Per-agent identity via PAT tokens, @mention routing resolved from API, bot-to-bot handoff, cascade prevention |
+| **GitLab** | Per-agent identity via PAT tokens, @mention routing, bot-to-bot handoff, image attachments, cascade prevention |
 | **Webhooks** | Generic `POST /webhook/:agentId` for Stripe, Sentry, GitHub, etc. |
 
 ### GitLab Integration
@@ -98,6 +124,7 @@ Agents participate in GitLab as first-class team members:
 - **Eye reaction** — Agents react with 👀 using their own token (never the global token)
 - **Cascade prevention** — Hidden signature `<!-- agentx:agentId -->`, sent-note dedup, bot-user detection
 - **Human mention filtering** — If @mentioned user isn't a known agent, the note is ignored
+- **Image attachments** — Screenshots and diagrams in comments are downloaded and passed to agents for analysis
 
 ### Context Compaction
 
@@ -260,6 +287,28 @@ agentx daemon send devops "check disk space" --peer server-2
 - Wiki sync across peers
 - Cross-machine agent delegation via A2A protocol
 
+### MCP Server
+
+AgentX exposes its full capabilities as MCP tools, usable from Claude Code, Cursor, or Windsurf:
+
+| Tool | Description |
+|------|-------------|
+| `agentx_generate` | Generate code/components/APIs with tech stack awareness |
+| `agentx_inspect` | Analyze project tech stack and schemas |
+| `agentx_send` | Send messages to any channel (cross-channel routing) |
+| `agentx_task` | Delegate work to a specific agent |
+| `agentx_agents` | List agents and their status |
+| `agentx_health` | Daemon health check |
+| `agentx_crons` | Cron job health with error details |
+| `agentx_debug` | Toggle debug mode with categories |
+
+```bash
+# Start the MCP server (stdio transport)
+agentx mcp
+```
+
+Configure in Claude Code's `.claude/settings.json` or Cursor's MCP settings.
+
 ## CLI Reference
 
 ```bash
@@ -382,6 +431,7 @@ Single `agentx.json`. Environment variables expanded (`${VAR_NAME}`). Auto-loads
 | `/channels` | GET | List registered channels |
 | `/crons` | GET | List cron jobs |
 | `/crons/health` | GET | Cron health: healthy/failing/disabled/missed |
+| `/services` | GET | List registered automated services |
 | `/task` | POST | `{ "agent": "id", "message": "..." }` |
 | `/send` | POST | `{ "channel": "telegram", "chatId": "...", "text": "...", "agentId": "..." }` |
 | `/mesh/task` | POST | `{ "peer": "name", "message": "..." }` |
