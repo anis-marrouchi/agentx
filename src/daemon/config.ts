@@ -149,6 +149,23 @@ const meshConfigSchema = z.object({
   }).default({}),
 })
 
+const notificationsSchema = z.object({
+  /** Send notification when task takes longer than this (seconds). 0 = disabled. */
+  longTaskThreshold: z.number().default(30),
+  /** Where to send notifications */
+  destination: z.object({
+    channel: z.string(),
+    chatId: z.string(),
+    accountId: z.string().optional(),
+  }).optional(),
+  /** Notify on these events */
+  on: z.object({
+    taskComplete: z.boolean().default(true),
+    taskError: z.boolean().default(true),
+    taskQueued: z.boolean().default(false),
+  }).default({}),
+}).default({})
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -160,6 +177,7 @@ export const daemonConfigSchema = z.object({
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
   services: z.record(z.string(), serviceSchema).default({}),
+  notifications: notificationsSchema,
   mesh: meshConfigSchema.default({}),
 })
 

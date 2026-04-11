@@ -357,6 +357,34 @@ export class MessageRouter {
       this.groupLog.add(chatId, agentName, responseText)
     }
 
+    // Notify on long-running task completion (cross-channel)
+    const notifyConfig = this.config.notifications
+    if (notifyConfig?.destination && response.duration) {
+      const thresholdMs = (notifyConfig.longTaskThreshold || 30) * 1000
+      const shouldNotify =
+        (response.duration >= thresholdMs && !response.error && notifyConfig.on?.taskComplete) ||
+        (response.error && notifyConfig.on?.taskError)
+
+      if (shouldNotify) {
+        const durSec = Math.round(response.duration / 1000)
+        const status = response.error ? "failed" : "completed"
+        const preview = response.error
+          ? response.error.slice(0, 100)
+          : response.content.slice(0, 100)
+        const notifyText = `${status === "failed" ? "🔴" : "✅"} **${agentName}** ${status} (${durSec}s)\n${msg.channel}/${msg.sender.name}: ${msg.text.slice(0, 80)}\n${preview}`
+
+        this.sendOutbound({
+          channel: notifyConfig.destination.channel,
+          chatId: notifyConfig.destination.chatId,
+          text: notifyText,
+          agentId,
+          accountId: notifyConfig.destination.accountId,
+        }).catch((e) => {
+          this.log(`Task notification failed: ${e.message}`)
+        })
+      }
+    }
+
     // GitLab: auto-log time spent on the issue/MR
     if (msg.channel === "gitlab" && response.duration && !response.error) {
       const gitlabAdapter = this.channels.get("gitlab") as any
