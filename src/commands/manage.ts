@@ -66,16 +66,23 @@ agent
     const ws = answers.workspace.endsWith(answers.id) ? answers.workspace : join(answers.workspace, answers.id)
     mkdirSync(resolve(ws, ".claude/skills"), { recursive: true })
 
-    // Create CLAUDE.md
-    const claudeMd = `# ${answers.name}\n\n${answers.systemPrompt}\n`
-    writeFileSync(resolve(ws, "CLAUDE.md"), claudeMd)
+    const agentDef = {
+      name: answers.name,
+      workspace: ws,
+      tier: answers.tier,
+      model: answers.model,
+      mentions: answers.mentions?.map((m: string) => m.trim()).filter(Boolean) || [],
+      maxConcurrent: answers.maxConcurrent,
+      systemPrompt: answers.systemPrompt,
+      permissionMode: "default",
+    }
 
-    // Create default settings.json
-    writeFileSync(resolve(ws, ".claude/settings.json"), JSON.stringify({
-      permissions: {
-        allow: ["Bash(git *)", "Bash(curl *)", "Bash(node *)", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"],
-      },
-    }, null, 2))
+    // Set up workspace with Claude Code best practices
+    // (CLAUDE.md, AGENTS.md, .claude/settings.json, .claude/rules/)
+    const { setupWorkspace } = await import("@/agents/workspace-setup")
+    const setup = setupWorkspace(answers.id, agentDef as any, "19900", (...args: unknown[]) => {
+      console.log(chalk.dim(`  ${args.join(" ")}`))
+    })
 
     // Install wiki skill
     const wikiSkillSrc = resolve(process.cwd(), "src/wiki/SKILL.md")
@@ -88,22 +95,12 @@ agent
 
     // Add to config
     config.agents = config.agents || {}
-    config.agents[answers.id] = {
-      name: answers.name,
-      workspace: ws,
-      tier: answers.tier,
-      model: answers.model,
-      mentions: answers.mentions?.map((m: string) => m.trim()).filter(Boolean) || [],
-      maxConcurrent: answers.maxConcurrent,
-      systemPrompt: answers.systemPrompt,
-      permissionMode: "default",
-    }
+    config.agents[answers.id] = agentDef
 
     saveConfig(config)
     console.log(chalk.green(`\n  Agent "${answers.id}" added`))
     console.log(chalk.dim(`  Workspace: ${ws}`))
-    console.log(chalk.dim(`  Wiki skill installed`))
-    console.log(chalk.dim(`  CLAUDE.md + settings.json created`))
+    console.log(chalk.dim(`  Created: ${setup.created.length} files (CLAUDE.md, AGENTS.md, settings, rules)`))
     console.log()
   })
 
@@ -735,9 +732,12 @@ migrate
 
       if (!opts.dryRun) {
         mkdirSync(resolve(a.workspace, ".claude/skills"), { recursive: true })
+        // Set up workspace with Claude Code best practices
+        const { setupWorkspace } = await import("@/agents/workspace-setup")
+        setupWorkspace(axId, config.agents[axId] as any)
       }
     }
-    console.log(`  ${chalk.green(agentCount)} agents imported`)
+    console.log(`  ${chalk.green(agentCount)} agents imported (workspaces set up with Claude Code best practices)`)
 
     // Import Telegram accounts
     const tgAccounts = oc.channels?.telegram?.accounts || {}
