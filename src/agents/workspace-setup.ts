@@ -109,6 +109,9 @@ function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: string): s
 function generateSettings(agentId: string, def: AgentDef): Record<string, unknown> {
   const settings: Record<string, unknown> = {
     autoMemoryEnabled: true,
+    env: {
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+    },
   }
 
   // Permission mode
@@ -308,6 +311,43 @@ export function setupWorkspace(
 }
 
 /**
+ * Patch existing .claude/settings.json to add missing keys (non-destructive).
+ * Used to enable new features (like agent teams) on workspaces that already have settings.
+ */
+function patchSettings(workspace: string, patches: Record<string, unknown>): boolean {
+  const settingsPath = resolve(workspace, ".claude/settings.json")
+  if (!existsSync(settingsPath)) return false
+
+  try {
+    const existing = JSON.parse(readFileSync(settingsPath, "utf-8"))
+    let changed = false
+
+    for (const [key, value] of Object.entries(patches)) {
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        // Merge objects (e.g. env: { KEY: "value" })
+        if (!existing[key]) existing[key] = {}
+        for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
+          if (existing[key][subKey] === undefined) {
+            existing[key][subKey] = subValue
+            changed = true
+          }
+        }
+      } else if (existing[key] === undefined) {
+        existing[key] = value
+        changed = true
+      }
+    }
+
+    if (changed) {
+      writeFileSync(settingsPath, JSON.stringify(existing, null, 2))
+    }
+    return changed
+  } catch {
+    return false
+  }
+}
+
+/**
  * Set up all agent workspaces on daemon start.
  */
 export function setupAllWorkspaces(
@@ -316,11 +356,23 @@ export function setupAllWorkspaces(
   log: (...args: unknown[]) => void = console.error,
 ): void {
   let totalCreated = 0
+  let totalPatched = 0
   for (const [id, def] of Object.entries(agents)) {
+    if (def.tier !== "claude-code") continue
     const result = setupWorkspace(id, def, daemonPort, log)
     totalCreated += result.created.length
+
+    // Patch existing settings with new features (agent teams, etc.)
+    if (patchSettings(def.workspace, {
+      env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
+    })) {
+      totalPatched++
+    }
   }
   if (totalCreated > 0) {
     log(`Workspace setup: ${totalCreated} file(s) created across agent workspaces`)
+  }
+  if (totalPatched > 0) {
+    log(`Workspace patch: ${totalPatched} workspace(s) updated with agent teams support`)
   }
 }

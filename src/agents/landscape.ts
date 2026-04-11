@@ -115,6 +115,16 @@ export class LandscapeBuilder {
     lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
     lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
 
+    // Agent Teams capability
+    lines.push("")
+    lines.push("[Agent Teams]")
+    lines.push("For complex tasks that benefit from parallel work, you can spawn an agent team:")
+    lines.push("- Tell Claude Code to 'create an agent team' with specialized teammates")
+    lines.push("- Each teammate works independently with its own context window")
+    lines.push("- Teammates coordinate via shared task list and direct messaging")
+    lines.push("- Best for: code review (security + performance + tests), debugging with competing hypotheses, multi-module features")
+    lines.push("- Use teams when work can be parallelized. Use single session for sequential/simple tasks.")
+
     return lines.join("\n")
   }
 
