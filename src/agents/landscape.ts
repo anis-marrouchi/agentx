@@ -115,6 +115,15 @@ export class LandscapeBuilder {
     lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
     lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
 
+    // Background monitoring capability
+    lines.push("")
+    lines.push("[Background Monitoring]")
+    lines.push("You can watch things in the background while continuing to work:")
+    lines.push("- Tail log files and react to errors as they appear")
+    lines.push("- Poll CI/CD pipelines and report when status changes")
+    lines.push("- Watch directories for file changes")
+    lines.push("Use the Monitor tool for this — it runs a script in the background and streams output to you.")
+
     // Agent Teams capability
     lines.push("")
     lines.push("[Agent Teams]")
