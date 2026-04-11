@@ -391,6 +391,7 @@ export async function executeSdk(
   agent: AgentDef,
   task: AgentTask,
   apiKey: string,
+  historyContext?: string,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -399,9 +400,8 @@ export async function executeSdk(
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const { query } = sdk
 
-    const prompt = agent.systemPrompt
-      ? `${agent.systemPrompt}\n\n${task.message}`
-      : task.message
+    // Build prompt with full context (landscape, memory, patterns, etc.)
+    const prompt = buildPrompt(agent, task, historyContext)
 
     let content = ""
 
@@ -440,6 +440,7 @@ export async function executeOrchestrator(
   agent: AgentDef,
   task: AgentTask,
   apiKey?: string,
+  historyContext?: string,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -447,8 +448,13 @@ export async function executeOrchestrator(
     const { generate } = await import("@/agent")
     const providerName = agent.provider || "claude-code"
 
+    // Build full prompt with context (landscape, memory, patterns, etc.)
+    const fullTask = historyContext
+      ? `${historyContext}\n\n${task.message}`
+      : task.message
+
     const result = await generate({
-      task: task.message,
+      task: fullTask,
       cwd: agent.workspace,
       provider: providerName as any,
       model: agent.model,
@@ -499,13 +505,13 @@ export async function executeTask(
           error: `No API key for provider "${providerName}". Configure providers.${providerName}.apiKey`,
         }
       }
-      return executeSdk(agent, task, apiKey)
+      return executeSdk(agent, task, apiKey, historyContext)
     }
 
     case "orchestrator": {
       const providerName = agent.provider || "claude-code"
       const apiKey = providers[providerName]?.apiKey
-      return executeOrchestrator(agent, task, apiKey)
+      return executeOrchestrator(agent, task, apiKey, historyContext)
     }
 
     default:
