@@ -693,6 +693,53 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   /**
+   * Log time spent on a GitLab issue/MR after agent completes work.
+   * Uses the /add_spent_time API endpoint.
+   * chatId format: "project:type:iid" (e.g. "mtgl/mtgl-system-v2:issue:646")
+   */
+  async logTimeSpent(chatId: string, durationMs: number, agentId?: string): Promise<void> {
+    const parts = chatId.split(":")
+    if (parts.length < 3) return
+
+    const iid = parts.pop()!
+    const noteableType = parts.pop()!
+    const project = parts.join(":")
+
+    // Convert ms to GitLab duration string (minimum 1m)
+    const totalSeconds = Math.max(60, Math.round(durationMs / 1000))
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.ceil((totalSeconds % 3600) / 60)
+    const duration = hours > 0 ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}` : `${minutes}m`
+
+    const encodedProject = encodeURIComponent(project)
+    const typeSegment = noteableType === "merge_request" ? "merge_requests" : "issues"
+    const endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/${typeSegment}/${iid}/add_spent_time`
+
+    // Use per-agent token if available
+    const token = this.getAgentToken(agentId) || this.config.token
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "PRIVATE-TOKEN": token,
+        },
+        body: JSON.stringify({ duration }),
+      })
+
+      if (res.ok) {
+        this.log(`Time logged: ${duration} on ${project} ${noteableType} #${iid} (${agentId || "global"})`)
+      } else {
+        const text = await res.text()
+        this.log(`Time log failed (${res.status}): ${text.slice(0, 100)}`)
+      }
+    } catch (e: any) {
+      this.log(`Time log error: ${e.message}`)
+    }
+  }
+
+  /**
    * Extract and download images from a GitLab comment.
    * GitLab markdown images: ![alt](/uploads/hash/filename.png)
    * Returns the first image found as media attachment, or undefined.

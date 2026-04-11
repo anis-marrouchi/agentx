@@ -357,6 +357,16 @@ export class MessageRouter {
       this.groupLog.add(chatId, agentName, responseText)
     }
 
+    // GitLab: auto-log time spent on the issue/MR
+    if (msg.channel === "gitlab" && response.duration && !response.error) {
+      const gitlabAdapter = this.channels.get("gitlab") as any
+      if (gitlabAdapter) {
+        gitlabAdapter.logTimeSpent(chatId, response.duration, agentId).catch((e: any) => {
+          this.log(`GitLab time tracking failed: ${e.message}`)
+        })
+      }
+    }
+
     // Bot-to-bot delegation: if response mentions another agent, route to them.
     // Works on Telegram, WhatsApp, and Discord. Not GitLab (uses its own @mention webhook flow).
     const delegationChannels = ["telegram", "whatsapp", "discord"]
