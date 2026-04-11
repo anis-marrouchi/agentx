@@ -15,6 +15,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { HeartbeatManager } from "@/agents/heartbeat"
+import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { ServiceMatcher } from "@/services/matcher"
 
 // --- AgentX Daemon: the thin orchestration layer ---
@@ -59,6 +60,10 @@ export class AgentXDaemon {
     for (const w of warnings) {
       this.log(`  ⚠ ${w}`)
     }
+
+    // Set up agent workspaces with Claude Code best practices (non-destructive)
+    const [, portStr] = this.config.node.bind.split(":")
+    setupAllWorkspaces(this.config.agents, portStr || "19900", this.log)
 
     // Initialize hooks
     this.hooks = new HookRegistry()
