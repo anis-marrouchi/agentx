@@ -248,7 +248,7 @@ export class SessionStore {
     channel: string,
     chatId: string,
     memoryStore?: import("./memory-store").MemoryStore,
-  ): Promise<{ compacted: boolean; qualityScore?: number; lostEntities?: string[] }> {
+  ): Promise<{ compacted: boolean; qualityScore?: number; lostEntities?: string[]; drift?: import("./drift-detection").DriftReport }> {
     const session = this.getSession(agentId, channel, chatId)
     const { needsCompaction, compactSession, applyCompaction } = await import("./compaction")
 
@@ -268,6 +268,7 @@ export class SessionStore {
       compacted: true,
       qualityScore: result.qualityScore,
       lostEntities: result.lostEntities,
+      drift: result.drift,
     }
   }
 

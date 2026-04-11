@@ -277,6 +277,11 @@ export class AgentRegistry {
         if (compactResult.lostEntities?.length) {
           this.log(`[${task.agentId}] lost entities: ${compactResult.lostEntities.slice(0, 5).join(", ")}`)
         }
+        if (compactResult.drift) {
+          const d = compactResult.drift
+          this.log(`[${task.agentId}] DRIFT DETECTED: score=${d.overallScore} (lexicon=${d.lexiconDecay}, tools=${d.toolShift}, semantic=${d.semanticDrift})`)
+          if (d.lostWords.length) this.log(`[${task.agentId}] lost domain words: ${d.lostWords.slice(0, 5).join(", ")}`)
+        }
         resumeSessionId = undefined
       }
     } catch (e: any) {

@@ -1,5 +1,6 @@
 import type { SessionMessage } from "./sessions"
 import type { MemoryStore } from "./memory-store"
+import { buildFingerprint, detectDrift, saveFingerprint, loadFingerprint, type DriftReport } from "./drift-detection"
 
 // --- Context Compaction ---
 //
@@ -50,6 +51,8 @@ export interface CompactionResult {
   qualityScore?: number
   /** Entities that were lost in compaction */
   lostEntities?: string[]
+  /** Behavioral drift report (compared to pre-compaction baseline) */
+  drift?: DriftReport
 }
 
 /**
@@ -97,6 +100,10 @@ export async function compactSession(
     }
   }
 
+  // Step 0: Capture behavioral fingerprint BEFORE compaction (drift baseline)
+  const preFingerprint = buildFingerprint(toCompact)
+  saveFingerprint(agentId, preFingerprint)
+
   // Step 1: Memory flush — extract facts from messages about to be compacted
   let memoryFlushed = false
   if (memoryStore) {
@@ -115,6 +122,19 @@ export async function compactSession(
   // Step 3: Verify compaction quality — check entity preservation
   const { qualityScore, lostEntities } = verifyCompactionQuality(historyText, summary)
 
+  // Step 4: Check for behavioral drift — compare summary against pre-compaction baseline
+  let drift: DriftReport | undefined
+  const summaryMessages: SessionMessage[] = [{
+    role: "agent" as const,
+    content: summary,
+    timestamp: new Date().toISOString(),
+  }]
+  const postFingerprint = buildFingerprint(summaryMessages)
+  const baseline = loadFingerprint(agentId)
+  if (baseline) {
+    drift = detectDrift(baseline, postFingerprint)
+  }
+
   return {
     summary,
     compactedCount: toCompact.length,
@@ -122,6 +142,7 @@ export async function compactSession(
     memoryFlushed,
     qualityScore,
     lostEntities: lostEntities.length > 0 ? lostEntities : undefined,
+    drift: drift && drift.overallScore > 0.1 ? drift : undefined,
   }
 }
 
