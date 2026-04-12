@@ -568,7 +568,8 @@ export class AgentXDaemon {
         case "POST /ask":
         case "GET /ask": {
           // Voice-optimized endpoint for Siri/voice assistants
-          // Accepts message via body.message (POST) or ?q= (GET)
+          // Uses a fast model (Haiku) directly — bypasses the heavier claude-code tier
+          // to stay within Siri's ~30s timeout.
           const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           if (req.method === "POST") {
@@ -576,33 +577,44 @@ export class AgentXDaemon {
             message = (body.message as string) || (body.q as string) || message
           }
 
-          const agentId = this.config.node.defaultAgent
-          if (!agentId) {
-            this.json(res, 400, { error: "No defaultAgent configured in node config" })
-            return
-          }
           if (!message) {
             this.json(res, 400, { error: "Missing message (pass as ?q=... or {message:...})" })
             return
           }
 
-          // Prepend instruction so the agent responds in a TTS-friendly way
-          const voicePrompt = `[VOICE MODE — Your response will be spoken aloud by a TTS engine. Keep it to 2-3 short sentences. Use plain language, no markdown, no code blocks, no bullet points, no URLs. Speak conversationally.]\n\n${message}`
+          const start = Date.now()
+          let content = ""
+          let error: string | undefined
 
-          const response = await this.registry.execute({
-            agentId,
-            message: voicePrompt,
-            context: { channel: "voice", sender: "Siri" },
-          })
+          try {
+            // Use Haiku directly for sub-5s responses
+            const { createProvider } = await import("@/agent/providers")
+            const provider = createProvider("claude")
 
-          // Convert response to speakable text (TTS-friendly)
-          const speakable = toSpeakable(response.content)
+            const agentId = this.config.node.defaultAgent
+            const agentDef = agentId ? this.config.agents[agentId] : undefined
+            const systemPrompt = agentDef?.systemPrompt || "You are a helpful voice assistant."
 
-          this.json(res, response.error ? 500 : 200, {
+            const voiceSystem = `${systemPrompt}\n\n[VOICE MODE] Your response will be spoken aloud by a TTS engine. Keep it to 1-2 short sentences. Use plain conversational language. No markdown, no code, no bullets, no URLs.`
+
+            const result = await provider.generate(
+              [
+                { role: "system", content: voiceSystem },
+                { role: "user", content: message },
+              ],
+              { model: "claude-haiku-4-20250514", maxTokens: 300 },
+            )
+            content = result.content
+          } catch (e: any) {
+            error = e.message
+          }
+
+          const speakable = toSpeakable(content)
+          this.json(res, error ? 500 : 200, {
             text: speakable,
-            full: response.content,
-            error: response.error,
-            duration: response.duration,
+            full: content,
+            error,
+            duration: Date.now() - start,
           })
           break
         }
