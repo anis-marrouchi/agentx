@@ -7,6 +7,7 @@ import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { BlockStream } from "./block-stream"
 import type { ServiceMatcher } from "@/services/matcher"
+import type { BusinessLayer } from "@/business"
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -26,6 +27,7 @@ export class MessageRouter {
   private hooks?: HookRegistry
   private mesh?: A2AMesh
   private serviceMatcher?: ServiceMatcher
+  private business?: BusinessLayer
   private groupLog: GroupLog
   private log: (...args: unknown[]) => void
 
@@ -48,6 +50,10 @@ export class MessageRouter {
 
   setServiceMatcher(matcher: ServiceMatcher): void {
     this.serviceMatcher = matcher
+  }
+
+  setBusiness(business: BusinessLayer): void {
+    this.business = business
   }
 
   addChannel(adapter: ChannelAdapter): void {
@@ -383,6 +389,16 @@ export class MessageRouter {
           this.log(`Task notification failed: ${e.message}`)
         })
       }
+    }
+
+    // Business layer: record task completion for KPI utilization tracking.
+    if (this.business && response.duration) {
+      this.business.recordTaskCompletion(
+        agentId,
+        Math.round(response.duration / 1000),
+        !response.error,
+        msg.channel,
+      )
     }
 
     // GitLab: auto-log time spent on the issue/MR

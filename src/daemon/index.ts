@@ -17,6 +17,7 @@ import { LandscapeBuilder } from "@/agents/landscape"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { ServiceMatcher } from "@/services/matcher"
+import { BusinessLayer } from "@/business"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -35,6 +36,7 @@ export class AgentXDaemon {
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
+  private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
@@ -124,6 +126,22 @@ export class AgentXDaemon {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
     }
+
+    // Initialize business layer (if enabled)
+    if (this.config.business?.enabled) {
+      try {
+        this.business = new BusinessLayer(
+          this.config.business,
+          this.config,
+          this.registry,
+          this.router,
+          this.log,
+        )
+        this.router.setBusiness(this.business)
+      } catch (e: any) {
+        this.log(`[business] initialization failed: ${e.message}`)
+      }
+    }
   }
 
   async start(): Promise<void> {
@@ -158,6 +176,12 @@ export class AgentXDaemon {
 
     // 5. Schedule midnight cost tracking hook
     this.scheduleMidnightHook()
+
+    // 5b. Start business layer day cycle (if configured)
+    if (this.business) {
+      this.business.start()
+      this.log(`  ${this.business.summary()}`)
+    }
 
     // 6. Start HTTP API
     await this.startHttpApi()
@@ -239,6 +263,13 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping heartbeats...")
       this.heartbeat.stopAll()
+    } catch {}
+
+    try {
+      if (this.business) {
+        this.log("  Stopping business layer...")
+        this.business.stop()
+      }
     } catch {}
 
     try {
@@ -460,6 +491,12 @@ export class AgentXDaemon {
       if (req.method === "POST" && (path === "/v1/chat/completions" || path.match(/^\/llm\/[^/]+\/v1\/chat\/completions$/))) {
         await this.handleOpenAICompat(req, res, path)
         return
+      }
+
+      // Business layer endpoints (/business/status, /business/work, ...)
+      if (this.business && path.startsWith("/business")) {
+        const handled = await this.business.handleHttp(`${req.method} ${path}`, req, res)
+        if (handled) return
       }
 
       switch (`${req.method} ${path}`) {

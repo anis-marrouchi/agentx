@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
+import { businessConfigSchema } from "@/business/config"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -107,7 +108,10 @@ const cronJobSchema = z.object({
   prompt: z.string(),
   timeout: z.number().default(600),
   model: z.string().optional(),
-  onError: z.enum(["log", "notify", "disable"]).default("log"),
+  onError: z.union([
+    z.enum(["log", "notify", "disable"]),
+    z.array(z.enum(["log", "notify", "disable"])),
+  ]).default("log").transform(v => Array.isArray(v) ? v : [v]),
   notify: z.object({
     channel: z.string(),
     chatId: z.string(),
@@ -181,6 +185,7 @@ export const daemonConfigSchema = z.object({
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   mesh: meshConfigSchema.default({}),
+  business: businessConfigSchema.optional(),
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>

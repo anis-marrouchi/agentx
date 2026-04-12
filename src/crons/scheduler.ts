@@ -282,7 +282,7 @@ export class CronScheduler {
         // Notify on failure
         await this.notifyFailure(job, response.error)
 
-        if (job.onError === "disable" && job.consecutiveErrors >= 3) {
+        if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
           job.enabled = false
           this.log(`Job "${jobId}" disabled after ${job.consecutiveErrors} consecutive errors`)
           await this.notifyDisabled(job)
@@ -417,7 +417,7 @@ export class CronScheduler {
   // --- Notification ---
 
   private async notifyFailure(job: CronJobState, error: string): Promise<void> {
-    if (job.onError !== "notify" && job.consecutiveErrors < 2) return
+    if (!job.onError.includes("notify") && job.consecutiveErrors < 2) return
     if (!this.notifyCallback) {
       this.log(`[ALERT] Cron "${job.id}" failed (${job.consecutiveErrors}x): ${error.slice(0, 200)}`)
       return

@@ -417,7 +417,7 @@ cron
       agent: answers.agent,
       prompt: answers.prompt,
       timeout: answers.timeout,
-      onError: "log",
+      onError: ["log"],
     }
 
     saveConfig(config)
@@ -771,7 +771,7 @@ migrate
           agent: agentId,
           prompt: job.payload?.message || "",
           timeout: job.payload?.timeoutSeconds || 600,
-          onError: "log",
+          onError: ["log"],
         }
         cronCount++
       }

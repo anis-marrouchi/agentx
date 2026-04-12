@@ -9,7 +9,7 @@ export interface CronJobState {
   prompt: string
   timeout: number
   model?: string
-  onError: "log" | "notify" | "disable"
+  onError: Array<"log" | "notify" | "disable">
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date
