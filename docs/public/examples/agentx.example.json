@@ -1,0 +1,167 @@
+{
+  "$schema": "Anonymized production-shape config. Replace every ${VAR} in your .env and every chatId / URL with your own.",
+  "node": {
+    "id": "laptop",
+    "name": "Laptop",
+    "bind": "0.0.0.0:18800",
+    "defaultAgent": "devops"
+  },
+  "providers": {
+    "claude": {
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "defaultModel": "claude-sonnet-4-6"
+    }
+  },
+  "agents": {
+    "marketing": {
+      "name": "Marketing",
+      "workspace": "./agents/marketing",
+      "tier": "claude-code",
+      "model": "claude-sonnet-4-6",
+      "mentions": ["@marketing_bot", "@marketing"],
+      "maxConcurrent": 2,
+      "permissionMode": "default"
+    },
+    "devops": {
+      "name": "DevOps",
+      "workspace": "./agents/devops",
+      "tier": "claude-code",
+      "model": "claude-sonnet-4-6",
+      "mentions": ["@devops_bot", "@devops"],
+      "maxConcurrent": 1,
+      "permissionMode": "default"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          "token": "${TG_MARKETING_BOT_TOKEN}",
+          "agentBinding": "marketing"
+        },
+        "devops": {
+          "token": "${TG_DEVOPS_BOT_TOKEN}",
+          "agentBinding": "devops"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    },
+    "whatsapp": { "enabled": false },
+    "discord": { "enabled": false },
+    "gitlab": { "enabled": false }
+  },
+  "crons": {
+    "morning-standup": {
+      "enabled": true,
+      "schedule": "0 9 * * *",
+      "timezone": "Africa/Tunis",
+      "agent": "devops",
+      "timeout": 600,
+      "model": "claude-sonnet-4-6",
+      "onError": ["notify", "disable"],
+      "notify": {
+        "channel": "telegram",
+        "chatId": "-1001234567890",
+        "accountId": "devops"
+      },
+      "prompt": "Post the morning standup: pipeline status, new issues, deploys, alerts, top 3 priorities. Keep each line under 15 words."
+    },
+    "wiki-absorb-midnight": {
+      "enabled": true,
+      "schedule": "0 0 * * *",
+      "timezone": "Africa/Tunis",
+      "agent": "devops",
+      "timeout": 600,
+      "model": "claude-sonnet-4-6",
+      "onError": ["notify", "disable"],
+      "notify": {
+        "channel": "telegram",
+        "chatId": "-1001234567890",
+        "accountId": "devops"
+      },
+      "prompt": "Run: node dist/cli.js wiki absorb --max 20. Report how many entries were absorbed per agent."
+    }
+  },
+  "mesh": {
+    "enabled": true,
+    "peers": [
+      {
+        "name": "vps",
+        "url": "http://100.0.0.1:19900",
+        "token": "${MESH_TOKEN}"
+      }
+    ],
+    "discovery": "static",
+    "healthCheck": {
+      "interval": 60,
+      "timeout": 10
+    }
+  },
+  "business": {
+    "enabled": true,
+    "timezone": "Africa/Tunis",
+    "mainChannel": {
+      "channel": "telegram",
+      "chatId": "-1001234567890",
+      "accountId": "default"
+    },
+    "workSource": {
+      "type": "backlog",
+      "path": ".agentx/backlog.md"
+    },
+    "workTickMinutes": 15,
+    "roles": {
+      "marketing": {
+        "title": "Marketing Lead",
+        "responsibilities": [
+          "Content creation (blog, tutorials, social)",
+          "SEO monitoring",
+          "Lead triage"
+        ],
+        "kpis": [
+          "Published pieces per week",
+          "SEO position delta",
+          "Response latency"
+        ]
+      },
+      "devops": {
+        "title": "DevOps / Infrastructure",
+        "responsibilities": [
+          "Server management",
+          "CI/CD pipelines",
+          "Monitoring and incident response"
+        ],
+        "kpis": [
+          "Uptime",
+          "Deploy success rate",
+          "Incident MTTR"
+        ]
+      }
+    },
+    "orgChart": {
+      "marketing": {
+        "role": "marketing",
+        "schedule": {
+          "days": ["mon", "tue", "wed", "thu", "fri"],
+          "start": "09:00",
+          "end": "17:00"
+        },
+        "utilizationTarget": 0.75
+      },
+      "devops": {
+        "role": "devops",
+        "schedule": {
+          "days": ["mon", "tue", "wed", "thu", "fri"],
+          "start": "09:00",
+          "end": "18:00",
+          "lunch": { "start": "12:30", "end": "13:30" }
+        },
+        "utilizationTarget": 0.8
+      }
+    }
+  }
+}

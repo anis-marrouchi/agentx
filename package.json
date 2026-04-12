@@ -1,6 +1,6 @@
 {
   "name": "agentix-cli",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Self-hosted multi-agent orchestrator — routes Telegram, WhatsApp, crons, and A2A mesh tasks to Claude Code, OpenAI, or any LLM provider",
   "license": "MIT",
   "author": {
@@ -55,6 +55,9 @@
     "eval": "vitest run test/eval/",
     "eval:track": "TRACK_SCORES=1 vitest run test/eval/real-data-eval.test.ts",
     "usage:track": "tsx src/scripts/track-usage.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -74,12 +77,15 @@
   "devDependencies": {
     "@types/fs-extra": "^11.0.1",
     "@types/prompts": "^2.4.2",
+    "mermaid": "^11.14.0",
     "prettier": "^3.0.0",
     "rimraf": "^4.1.3",
     "tsup": "^6.6.3",
     "type-fest": "^3.8.0",
     "typescript": "^4.9.3",
     "vite-tsconfig-paths": "^4.3.1",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-mermaid": "^2.0.17",
     "vitest": "^1.2.2"
   },
   "engines": {

@@ -14,3 +14,7 @@ agentx.json
 # Editor
 *.swp
 *.swo
+
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
