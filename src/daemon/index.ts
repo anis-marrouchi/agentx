@@ -605,7 +605,7 @@ User: ${message}`
               "claude",
               [
                 "-p", voicePrompt,
-                "--model", "claude-haiku-4-20250514",
+                "--model", "claude-haiku-4-5",
                 "--output-format", "json",
                 "--dangerously-skip-permissions",
               ],
