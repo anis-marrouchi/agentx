@@ -214,12 +214,12 @@ Team utilization: 73% (target 75%)
 1. Set each agent's `schedule.start` to a minute from now, `end` five minutes later.
 2. Watch the daemon:
    ```
-   🌅 [business] standup firing for alice
-   ▶ [alice] executing standup prompt
-   ⚙  [business] work-tick for alice (queue: 0)
+   [business] STANDUP → alice
+   [alice] executing standup prompt
+   [business] WORK-TICK → alice (3 open)
    …
-   🌆 [business] wrap firing for alice
-   📊 [business] daily summary posted to telegram:-1001234567890
+   [business] WRAP → alice
+   [business] daily summary posted to telegram:-1001234567890
    ```
 3. Check `.agentx/backlog.md` — the items the agents claimed should be marked `[x]`.
 

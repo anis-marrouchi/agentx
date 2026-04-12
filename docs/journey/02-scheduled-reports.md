@@ -73,9 +73,9 @@ curl -X POST http://localhost:19900/cron/run/morning-standup
 1. Set the schedule to `* * * * *` temporarily (every minute) to see it fire.
 2. `agentx daemon watch` shows:
    ```
-   ⏰ [cron] morning-standup starting (agent: devops)
-   ▶ [devops] executing task
-   ✓ [cron] morning-standup completed in 18s
+   [cron] morning-standup starting (agent: devops)
+   [devops] executing task
+   [cron] morning-standup completed in 18s
    ```
 3. Restore the 9am schedule.
 
@@ -84,17 +84,17 @@ curl -X POST http://localhost:19900/cron/run/morning-standup
 Temporarily change the prompt to something that will error (e.g. reference a missing tool) and watch the retry + notify path:
 
 ```
-⏰ [cron] morning-standup starting
-✗ [cron] morning-standup failed (1 consecutive): <error>
-⏳ [cron] retry scheduled in 30s (attempt 1/5)
+[cron] morning-standup starting
+[cron] morning-standup failed (1 consecutive): <error>
+[cron] retry scheduled in 30s (attempt 1/5)
 …
-📣 [cron] notifying telegram:-1001234567890 — morning-standup failed (2x)
+[CRON ALERT] Cron "morning-standup" failed (2x)
 ```
 
 After three straight failures you'll also see:
 
 ```
-🛑 [cron] morning-standup DISABLED after 3 consecutive failures
+[cron] morning-standup DISABLED after 3 consecutive failures
 ```
 
 Re-enable with `agentx cron enable morning-standup` after fixing the prompt.
