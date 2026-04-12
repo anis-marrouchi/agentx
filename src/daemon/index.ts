@@ -551,16 +551,61 @@ export class AgentXDaemon {
 
         case "POST /task": {
           const body = await readBody(req)
-          if (!body.agent || !body.message) {
-            this.json(res, 400, { error: "Missing: agent, message" })
+          const agentId = (body.agent as string) || this.config.node.defaultAgent
+          if (!agentId || !body.message) {
+            this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
             return
           }
           const response = await this.registry.execute({
-            agentId: body.agent as string,
+            agentId,
             message: body.message as string,
             context: body.context as any,
           })
           this.json(res, response.error ? 500 : 200, response)
+          break
+        }
+
+        case "POST /ask":
+        case "GET /ask": {
+          // Voice-optimized endpoint for Siri/voice assistants
+          // Accepts message via body.message (POST) or ?q= (GET)
+          const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
+          let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
+          if (req.method === "POST") {
+            const body = await readBody(req)
+            message = (body.message as string) || (body.q as string) || message
+          }
+
+          const agentId = this.config.node.defaultAgent
+          if (!agentId) {
+            this.json(res, 400, { error: "No defaultAgent configured in node config" })
+            return
+          }
+          if (!message) {
+            this.json(res, 400, { error: "Missing message (pass as ?q=... or {message:...})" })
+            return
+          }
+
+          const response = await this.registry.execute({
+            agentId,
+            message,
+            context: { channel: "voice", sender: "Siri" },
+          })
+
+          // Strip markdown for speech
+          const speakable = response.content
+            .replace(/```[\s\S]*?```/g, "code block omitted")
+            .replace(/\*\*(.*?)\*\*/g, "$1")
+            .replace(/[*_`]/g, "")
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+            .slice(0, 800) // keep it short for voice
+
+          this.json(res, response.error ? 500 : 200, {
+            text: speakable,
+            full: response.content,
+            error: response.error,
+            duration: response.duration,
+          })
           break
         }
 

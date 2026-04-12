@@ -171,6 +171,8 @@ export const daemonConfigSchema = z.object({
     id: z.string(),
     name: z.string(),
     bind: z.string().default("127.0.0.1:18800"),
+    /** Default agent for voice/API calls that don't specify one (e.g. Siri) */
+    defaultAgent: z.string().optional(),
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
