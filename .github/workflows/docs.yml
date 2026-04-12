@@ -50,13 +50,23 @@ jobs:
           path: docs/.vitepress/dist
           retention-days: 7
 
-      - name: Deploy to Cloudflare Pages
+      - name: Ensure Cloudflare Pages project exists
         if: ${{ vars.DEPLOY_TO_CLOUDFLARE == 'true' }}
-        uses: cloudflare/pages-action@v1
+        continue-on-error: true  # safe to ignore — it just means the project already exists
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: agentx-docs
-          directory: docs/.vitepress/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.head_ref || github.ref_name }}
+          command: pages project create agentx-docs --production-branch=master
+
+      - name: Deploy to Cloudflare Pages
+        if: ${{ vars.DEPLOY_TO_CLOUDFLARE == 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: >-
+            pages deploy docs/.vitepress/dist
+            --project-name=agentx-docs
+            --branch=${{ github.head_ref || github.ref_name }}
+            --commit-dirty=true
