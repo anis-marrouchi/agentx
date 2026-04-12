@@ -568,8 +568,7 @@ export class AgentXDaemon {
         case "POST /ask":
         case "GET /ask": {
           // Voice-optimized endpoint for Siri/voice assistants
-          // Uses a fast model (Haiku) directly — bypasses the heavier claude-code tier
-          // to stay within Siri's ~30s timeout.
+          // Accepts message via body.message (POST) or ?q= (GET)
           const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           if (req.method === "POST") {
@@ -577,66 +576,33 @@ export class AgentXDaemon {
             message = (body.message as string) || (body.q as string) || message
           }
 
+          const agentId = this.config.node.defaultAgent
+          if (!agentId) {
+            this.json(res, 400, { error: "No defaultAgent configured in node config" })
+            return
+          }
           if (!message) {
             this.json(res, 400, { error: "Missing message (pass as ?q=... or {message:...})" })
             return
           }
 
-          const start = Date.now()
-          let content = ""
-          let error: string | undefined
+          // Prepend instruction so the agent responds in a TTS-friendly way
+          const voicePrompt = `[VOICE MODE — Your response will be spoken aloud by a TTS engine. Keep it to 2-3 short sentences. Use plain language, no markdown, no code blocks, no bullet points, no URLs. Speak conversationally.]\n\n${message}`
 
-          try {
-            // Use Claude CLI with Haiku for fast voice responses (no API key required)
-            const { execa } = await import("execa")
+          const response = await this.registry.execute({
+            agentId,
+            message: voicePrompt,
+            context: { channel: "voice", sender: "Siri" },
+          })
 
-            const agentId = this.config.node.defaultAgent
-            const agentDef = agentId ? this.config.agents[agentId] : undefined
-            const systemPrompt = agentDef?.systemPrompt || "You are a helpful voice assistant."
+          // Convert response to speakable text (TTS-friendly)
+          const speakable = toSpeakable(response.content)
 
-            const voicePrompt = `[VOICE MODE — Your response will be spoken aloud by TTS. Keep it to 1-2 short sentences. Plain conversational language. No markdown, no code, no bullets, no URLs.]
-
-Role: ${systemPrompt.slice(0, 200)}
-
-User: ${message}`
-
-            // --append-system-prompt for role, haiku for speed, 20s hard timeout
-            const result = await execa(
-              "claude",
-              [
-                "-p", voicePrompt,
-                "--model", "claude-haiku-4-5",
-                "--output-format", "json",
-                "--dangerously-skip-permissions",
-              ],
-              {
-                cwd: agentDef?.workspace || process.cwd(),
-                timeout: 20_000,
-                reject: false,
-                env: process.env,
-              },
-            )
-
-            if (result.stdout) {
-              try {
-                const parsed = JSON.parse(String(result.stdout))
-                content = parsed.result || parsed.content || ""
-              } catch {
-                content = String(result.stdout)
-              }
-            } else if (result.exitCode !== 0) {
-              error = String(result.stderr || "Claude CLI failed").slice(0, 300)
-            }
-          } catch (e: any) {
-            error = e.message
-          }
-
-          const speakable = toSpeakable(content)
-          this.json(res, error ? 500 : 200, {
+          this.json(res, response.error ? 500 : 200, {
             text: speakable,
-            full: content,
-            error,
-            duration: Date.now() - start,
+            full: response.content,
+            error: response.error,
+            duration: response.duration,
           })
           break
         }
