@@ -40,7 +40,10 @@ jobs:
           node-version: "20"
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Rewrite git+ssh deps to https
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm docs:build
 
       - name: Upload artifact
