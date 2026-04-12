@@ -587,24 +587,46 @@ export class AgentXDaemon {
           let error: string | undefined
 
           try {
-            // Use Haiku directly for sub-5s responses
-            const { createProvider } = await import("@/agent/providers")
-            const provider = createProvider("claude")
+            // Use Claude CLI with Haiku for fast voice responses (no API key required)
+            const { execa } = await import("execa")
 
             const agentId = this.config.node.defaultAgent
             const agentDef = agentId ? this.config.agents[agentId] : undefined
             const systemPrompt = agentDef?.systemPrompt || "You are a helpful voice assistant."
 
-            const voiceSystem = `${systemPrompt}\n\n[VOICE MODE] Your response will be spoken aloud by a TTS engine. Keep it to 1-2 short sentences. Use plain conversational language. No markdown, no code, no bullets, no URLs.`
+            const voicePrompt = `[VOICE MODE — Your response will be spoken aloud by TTS. Keep it to 1-2 short sentences. Plain conversational language. No markdown, no code, no bullets, no URLs.]
 
-            const result = await provider.generate(
+Role: ${systemPrompt.slice(0, 200)}
+
+User: ${message}`
+
+            // --append-system-prompt for role, haiku for speed, 20s hard timeout
+            const result = await execa(
+              "claude",
               [
-                { role: "system", content: voiceSystem },
-                { role: "user", content: message },
+                "-p", voicePrompt,
+                "--model", "claude-haiku-4-20250514",
+                "--output-format", "json",
+                "--dangerously-skip-permissions",
               ],
-              { model: "claude-haiku-4-20250514", maxTokens: 300 },
+              {
+                cwd: agentDef?.workspace || process.cwd(),
+                timeout: 20_000,
+                reject: false,
+                env: process.env,
+              },
             )
-            content = result.content
+
+            if (result.stdout) {
+              try {
+                const parsed = JSON.parse(String(result.stdout))
+                content = parsed.result || parsed.content || ""
+              } catch {
+                content = String(result.stdout)
+              }
+            } else if (result.exitCode !== 0) {
+              error = String(result.stderr || "Claude CLI failed").slice(0, 300)
+            }
           } catch (e: any) {
             error = e.message
           }
