@@ -43,7 +43,19 @@ The CLI binary is `agentx`. The npm package is `agentix-cli`.
 | Command | Description |
 |---|---|
 | `agentx channel list` (alias `ls`) | List channels + agent bindings |
-| `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) |
+| `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) — legacy path |
+
+## Connect (pairing flows, recommended)
+
+Browser-cooperating pairing flows that replace manual token + chatId + `.env` editing.
+
+| Command | Description |
+|---|---|
+| `agentx connect telegram [--agent <id>] [--account <label>] [--skip-chat-capture]` | Open BotFather, verify token via `getMe`, bind to an agent, optionally listen for the first inbound message to auto-fill `notifications.destination`. Token persists to `.env` as `TG_<ACCOUNT>_BOT_TOKEN` |
+| `agentx connect mesh invite [--url <routable>]` | Emit `agentx-mesh://join/<base64>` for another node. Auto-generates `MESH_TOKEN` if missing |
+| `agentx connect mesh join <link>` | Accept a mesh invite. Writes shared `MESH_TOKEN` + adds peer. Health-checks the peer's agent card |
+
+WhatsApp / Discord / GitLab flows are on the roadmap.
 
 ## Schedule (natural-language cron)
 

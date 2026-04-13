@@ -20,43 +20,60 @@ Agent-to-agent traffic is un-TLS'd JSON over HTTP. You must not expose the mesh 
 - AgentX installed on both (see [install](/install))
 - A shared `MESH_TOKEN` secret in both `.env` files — required for peer auth
 
-## Set up via CLI
-
-### Machine A (laptop)
+## Pair the two nodes — one command each side
 
 ```bash
-agentx init
-agentx agent add     # run twice — marketing, support
-agentx config set node.id laptop
+# On Node A (laptop, already running)
+agentx connect mesh invite
+# If the auto-detected URL is 127.0.0.1 or 0.0.0.0, you'll be prompted
+# for the routable address (e.g. http://100.x.x.x:18800 over Tailscale).
+# Output:
+#   agentx-mesh://join/<base64-payload>
+```
+
+Copy the link, then:
+
+```bash
+# On Node B (VPS)
+agentx connect mesh join "agentx-mesh://join/<...>"
+# ✓ Joined mesh
+#   Peer: laptop @ http://100.x.x.x:18800
+#   Shared token stored in .env as MESH_TOKEN
+#   Reachable — laptop exposes 2 agents
+```
+
+That's the whole pairing. `connect mesh invite` auto-generates a 64-char hex `MESH_TOKEN` (if one doesn't exist yet) and saves it to the inviter's `.env`; `connect mesh join` writes the same token to the other node's `.env` and adds the peer to `mesh.peers`. No manual token copying.
+
+### What `connect mesh invite` actually does
+
+1. Reads (or generates) `MESH_TOKEN` in `.env`
+2. Confirms the URL peers should reach this node on (prompts if `node.bind` is `0.0.0.0` or `127.0.0.1`)
+3. Flips `mesh.enabled` on via `applyConfigMutation`
+4. Emits `agentx-mesh://join/<base64url(JSON{url,token,name,version})>`
+
+### What `connect mesh join <link>` does
+
+1. Decodes the payload
+2. Prompts before overwriting a different existing `MESH_TOKEN`
+3. Writes token to `.env`
+4. Adds `mesh.peers[<name>] = { url, token: "${MESH_TOKEN}" }`
+5. Health-checks the peer's `/.well-known/agent-card.json` for immediate feedback
+
+### Workspace setup stays per-machine
+
+`agentx connect mesh` only handles the mesh pairing — each node still needs its own agents configured:
+
+```bash
+# On each machine
+agentx init                         # if not already
+agentx agent add                    # run per agent
+agentx config set node.id laptop    # set a human node name (used in invites)
 agentx config set node.bind 0.0.0.0:18800
-
-# Mesh: name + url + token placeholder that resolves from .env
-agentx config set mesh.enabled true
-agentx mesh add     # interactive: name=clawd-server, url=http://100.67.108.119:19900, token=${MESH_TOKEN}
 ```
 
-Drop a matching `MESH_TOKEN` in `.env` (any long random string; must match on both machines):
-
-```bash
-openssl rand -hex 32 | tee -a .env | awk '{print "MESH_TOKEN="$1}'   # one-liner
-# or edit .env manually — it's a single line
-```
-
-### Machine B (VPS, e.g. `clawd-server`)
-
-```bash
-agentx init
-agentx agent add     # run twice — devops, qa-forensics
-agentx config set node.id clawd-server
-agentx config set node.bind 0.0.0.0:19900
-
-agentx config set mesh.enabled true
-agentx mesh add      # peer: name=laptop, url=http://100.x.x.x:18800, token=${MESH_TOKEN}
-```
-
-Put the **same** `MESH_TOKEN` in this machine's `.env`.
-
-> PR 4 of the UX v2 roadmap introduces `agentx mesh invite` / `agentx mesh join <url>` so this token exchange happens via a single-use link. For now: copy the same secret to both `.env` files.
+::: tip Security
+Share the invite link over a trusted channel only (DM, not a public room). Whoever holds it can join your mesh. Rotate with `agentx connect mesh invite` again to emit a fresh token.
+:::
 
 ## Start both daemons
 
