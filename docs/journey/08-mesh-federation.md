@@ -20,57 +20,43 @@ Agent-to-agent traffic is un-TLS'd JSON over HTTP. You must not expose the mesh 
 - AgentX installed on both (see [install](/install))
 - A shared `MESH_TOKEN` secret in both `.env` files — required for peer auth
 
-## Config — Machine A (laptop)
+## Set up via CLI
 
-```json
-{
-  "node": {
-    "id": "laptop",
-    "bind": "0.0.0.0:18800"
-  },
-  "agents": {
-    "marketing": { "name": "Marketing", "workspace": "./agents/marketing", "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@marketing"] },
-    "support":   { "name": "Support",   "workspace": "./agents/support",   "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@support"] }
-  },
-  "mesh": {
-    "enabled": true,
-    "peers": [
-      { "name": "clawd-server", "url": "http://100.67.108.119:19900", "token": "${MESH_TOKEN}" }
-    ],
-    "discovery": "static",
-    "healthCheck": { "interval": 60, "timeout": 10 }
-  }
-}
-```
-
-## Config — Machine B (VPS, e.g. `clawd-server`)
-
-```json
-{
-  "node": {
-    "id": "clawd-server",
-    "bind": "0.0.0.0:19900"
-  },
-  "agents": {
-    "devops":         { "name": "DevOps",         "workspace": "./agents/devops",         "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@devops"] },
-    "qa-forensics":   { "name": "QA Forensics",   "workspace": "./agents/qa-forensics",   "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@qa"] }
-  },
-  "mesh": {
-    "enabled": true,
-    "peers": [
-      { "name": "laptop", "url": "http://100.x.x.x:18800", "token": "${MESH_TOKEN}" }
-    ],
-    "discovery": "static",
-    "healthCheck": { "interval": 60, "timeout": 10 }
-  }
-}
-```
-
-Both `.env` files:
+### Machine A (laptop)
 
 ```bash
-MESH_TOKEN=<long random string, same on both machines>
+agentx init
+agentx agent add     # run twice — marketing, support
+agentx config set node.id laptop
+agentx config set node.bind 0.0.0.0:18800
+
+# Mesh: name + url + token placeholder that resolves from .env
+agentx config set mesh.enabled true
+agentx mesh add     # interactive: name=clawd-server, url=http://100.67.108.119:19900, token=${MESH_TOKEN}
 ```
+
+Drop a matching `MESH_TOKEN` in `.env` (any long random string; must match on both machines):
+
+```bash
+openssl rand -hex 32 | tee -a .env | awk '{print "MESH_TOKEN="$1}'   # one-liner
+# or edit .env manually — it's a single line
+```
+
+### Machine B (VPS, e.g. `clawd-server`)
+
+```bash
+agentx init
+agentx agent add     # run twice — devops, qa-forensics
+agentx config set node.id clawd-server
+agentx config set node.bind 0.0.0.0:19900
+
+agentx config set mesh.enabled true
+agentx mesh add      # peer: name=laptop, url=http://100.x.x.x:18800, token=${MESH_TOKEN}
+```
+
+Put the **same** `MESH_TOKEN` in this machine's `.env`.
+
+> PR 4 of the UX v2 roadmap introduces `agentx mesh invite` / `agentx mesh join <url>` so this token exchange happens via a single-use link. For now: copy the same secret to both `.env` files.
 
 ## Start both daemons
 

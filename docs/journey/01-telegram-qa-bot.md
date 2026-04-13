@@ -12,9 +12,29 @@ A small team wants a Telegram bot that answers technical questions and can read 
 - Claude Code CLI authenticated (`claude --version`)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 
-## Config
+## Commands
 
-In your `agentx.json`:
+Every step below is a CLI verb — no file editing.
+
+```bash
+agentx init
+agentx agent add       # interactive: id, workspace, model, mentions
+agentx channel add     # interactive: pick Telegram, paste token from BotFather
+agentx daemon start
+agentx daemon watch    # color-coded activity in another terminal
+```
+
+Give the agent its personality in `agents/support/CLAUDE.md` (created by `agent add`):
+
+```markdown
+# Support
+
+You are a concise technical assistant. Answer in 2–4 sentences unless the user asks for depth. Prefer code examples over prose.
+```
+
+## What just got written
+
+For reference — the wizards produced this in `agentx.json`:
 
 ```json
 {
@@ -36,41 +56,23 @@ In your `agentx.json`:
           "agentBinding": "support"
         }
       },
-      "policy": {
-        "dm": "pair",
-        "group": "mention-required"
-      }
+      "policy": { "dm": "pair", "group": "mention-required" }
     }
   }
 }
 ```
 
-Put the token in `.env`:
+The bot token lives in `.env` under `TG_SUPPORT_BOT_TOKEN` (the `channel add` wizard stores it for you via the secret-preserving dotenv writer).
+
+### Tweak later without re-running the wizards
 
 ```bash
-TG_SUPPORT_BOT_TOKEN=123456:ABC-your-bot-token
+agentx config set agents.support.model claude-haiku-4-5
+agentx config set agents.support.mentions '["@support_bot","@support","@help"]'
+agentx config set channels.telegram.policy.group all
 ```
 
-Give the agent an identity in `agents/support/CLAUDE.md`:
-
-```markdown
-# Support
-
-You are a concise technical assistant. Answer in 2–4 sentences unless the user asks for depth. Prefer code examples over prose.
-```
-
-## Commands
-
-```bash
-# First-time setup (or use the interactive wizards from the install guide)
-agentx init
-agentx agent add       # interactive — produces the agents.support block above
-agentx channel add     # interactive — produces the channels.telegram block
-
-# Start + watch
-agentx daemon start
-agentx daemon watch    # color-coded activity in another terminal
-```
+All three hot-reload the daemon on the spot.
 
 ## Verify
 

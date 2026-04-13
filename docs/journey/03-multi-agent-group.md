@@ -16,32 +16,32 @@ Humans mention the one they need. The bots can also mention each other to hand w
 
 Each Telegram bot is a distinct account with its own `@handle` and avatar. In a group chat, that's what lets a human see **which AI is replying**. AgentX's `accounts` map supports this directly: one account per agent, each with its own token and `agentBinding`.
 
-## Config
+## Commands
+
+Three agents + three bot accounts — all via CLI:
+
+```bash
+# Create three bots in @BotFather first, then:
+
+agentx agent add     # run three times — sales, support, pm
+agentx channel add   # pick telegram, paste each bot token in turn
+
+agentx daemon start
+agentx daemon watch
+```
+
+Each `channel add` invocation saves the token to `.env` (under `TG_<NAME>_BOT_TOKEN`) and writes the account into `channels.telegram.accounts`. No file editing.
+
+### What got written
+
+For reference — the three wizards produced:
 
 ```json
 {
   "agents": {
-    "sales": {
-      "name": "Sales",
-      "workspace": "./agents/sales",
-      "tier": "claude-code",
-      "model": "claude-sonnet-4-6",
-      "mentions": ["@sales_bot", "@sales"]
-    },
-    "support": {
-      "name": "Support",
-      "workspace": "./agents/support",
-      "tier": "claude-code",
-      "model": "claude-sonnet-4-6",
-      "mentions": ["@support_bot", "@support"]
-    },
-    "pm": {
-      "name": "PM",
-      "workspace": "./agents/pm",
-      "tier": "claude-code",
-      "model": "claude-sonnet-4-6",
-      "mentions": ["@pm_bot", "@pm"]
-    }
+    "sales":   { "name": "Sales",   "workspace": "./agents/sales",   "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@sales_bot","@sales"]     },
+    "support": { "name": "Support", "workspace": "./agents/support", "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@support_bot","@support"] },
+    "pm":      { "name": "PM",      "workspace": "./agents/pm",      "tier": "claude-code", "model": "claude-sonnet-4-6", "mentions": ["@pm_bot","@pm"]           }
   },
   "channels": {
     "telegram": {
@@ -51,10 +51,7 @@ Each Telegram bot is a distinct account with its own `@handle` and avatar. In a 
         "support": { "token": "${TG_SUPPORT_BOT_TOKEN}", "agentBinding": "support" },
         "pm":      { "token": "${TG_PM_BOT_TOKEN}",      "agentBinding": "pm"      }
       },
-      "policy": {
-        "dm": "pair",
-        "group": "mention-required"
-      }
+      "policy": { "dm": "pair", "group": "mention-required" }
     }
   }
 }
@@ -86,18 +83,6 @@ When I don't know something, I @mention the agent who does.
 
 AgentX automatically injects a **landscape** into every agent's context — the roster of other agents in the config, their mentions, and which mesh peers are online. That's why `@pm` can write `"@support — please verify reproduction steps"` and it just works: the router sees the mention and forwards to `support`.
 
-## Commands
-
-```bash
-# Create three Telegram bots with @BotFather — one per agent
-# Put their tokens in .env
-
-agentx agent add     # run three times
-agentx channel add   # pick telegram, add each account
-
-agentx daemon start
-agentx daemon watch
-```
 
 ## Verify
 
