@@ -18,6 +18,8 @@ export interface AgentPeer {
 export interface AgentTask {
   message: string
   agentId: string
+  /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
+  model?: string
   context?: {
     channel?: string
     sender?: string
@@ -150,6 +152,7 @@ function buildClaudeArgs(
   prompt: string,
   streaming: boolean,
   resumeSessionId?: string,
+  modelOverride?: string,
 ): string[] {
   const args: string[] = [
     "-p", prompt,
@@ -166,8 +169,9 @@ function buildClaudeArgs(
     args.push("--resume", resumeSessionId)
   }
 
-  if (agent.model) {
-    args.push("--model", agent.model)
+  const model = modelOverride || agent.model
+  if (model) {
+    args.push("--model", model)
   }
 
   if (agent.permissionMode === "bypassPermissions") {
@@ -223,7 +227,7 @@ export async function executeClaudeCode(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model)
 
   try {
     const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
@@ -240,6 +244,10 @@ export async function executeClaudeCode(
           exitCode: error ? (error as any).code ?? 1 : 0,
         })
       })
+      // Close stdin immediately. Claude CLI otherwise waits 3s for input then
+      // proceeds with a warning; in cron retries that cascade invalidates the
+      // prompt cache between attempts (5× input cost on cache-create).
+      proc.stdin?.end()
     })
 
     if (!stdout && exitCode !== 0) {
@@ -285,7 +293,7 @@ export async function executeClaudeCodeStreaming(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model)
 
   let fullText = ""
 
@@ -297,6 +305,8 @@ export async function executeClaudeCodeStreaming(
       env: process.env,
       // Don't buffer — we'll read stdout line by line
       buffer: false,
+      // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
+      stdin: "ignore",
     })
 
     // Parse stream-json output line by line
@@ -408,7 +418,7 @@ export async function executeSdk(
     const q = query({
       prompt,
       options: {
-        model: agent.model,
+        model: task.model || agent.model,
         cwd: agent.workspace,
         permissionMode: "bypassPermissions" as any,
       },
@@ -457,7 +467,7 @@ export async function executeOrchestrator(
       task: fullTask,
       cwd: agent.workspace,
       provider: providerName as any,
-      model: agent.model,
+      model: task.model || agent.model,
       apiKey,
       overwrite: true,
       interactive: false,

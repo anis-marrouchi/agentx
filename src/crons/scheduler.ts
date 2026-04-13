@@ -4,6 +4,7 @@ import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
 import { writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve } from "path"
+import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -258,6 +259,7 @@ export class CronScheduler {
       const response = await this.registry.execute({
         message: job.prompt,
         agentId: job.agent,
+        model: job.model,
         context: { channel: "cron" },
       })
 
@@ -285,6 +287,20 @@ export class CronScheduler {
         if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
           job.enabled = false
           this.log(`Job "${jobId}" disabled after ${job.consecutiveErrors} consecutive errors`)
+          // Persist to agentx.json so a daemon restart doesn't resurrect the
+          // broken cron (previously this was in-memory only — a repeatedly
+          // failing cron would keep burning money across restarts).
+          try {
+            const res = await applyConfigMutation(
+              (cfg) => setAtPath(cfg, `crons.${jobId}.enabled`, false),
+              { reload: false },
+            )
+            if (!res.success) {
+              this.log(`Failed to persist disable for "${jobId}": ${res.error}`)
+            }
+          } catch (e: any) {
+            this.log(`Failed to persist disable for "${jobId}": ${e.message}`)
+          }
           await this.notifyDisabled(job)
         }
 
