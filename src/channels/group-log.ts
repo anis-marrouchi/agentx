@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { resolve } from "path"
+import { ellipsize } from "@/utils/ellipsize"
 
 // --- Persistent group conversation log ---
 // Stores recent messages per group chat in .agentx/groups/{chatId}.jsonl
@@ -13,6 +14,7 @@ export interface GroupLogEntry {
 
 const MAX_ENTRIES = 30
 const MAX_CONTEXT_CHARS = 6000
+const MAX_ENTRY_CHARS = 1500
 
 export class GroupLog {
   private dir: string
@@ -28,7 +30,7 @@ export class GroupLog {
    */
   add(chatId: string, sender: string, text: string): void {
     const log = this.load(chatId)
-    log.push({ sender, text: text.slice(0, 500), timestamp: Date.now() })
+    log.push({ sender, text: ellipsize(text, MAX_ENTRY_CHARS), timestamp: Date.now() })
 
     // Trim
     while (log.length > MAX_ENTRIES) log.shift()

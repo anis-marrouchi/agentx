@@ -6,6 +6,7 @@ import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { BlockStream } from "./block-stream"
+import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
 
@@ -374,10 +375,14 @@ export class MessageRouter {
       if (shouldNotify) {
         const durSec = Math.round(response.duration / 1000)
         const status = response.error ? "failed" : "completed"
+        // Preserve line boundaries so pipeline/MR bodies aren't chopped
+        // mid-word (e.g., "Duration: 328s\nPipeline #369" shouldn't become
+        // "Duration: 328s\nP"). Keep the first few lines + more chars.
+        const trigger = firstLines(msg.text, 6, 300)
         const preview = response.error
-          ? response.error.slice(0, 100)
-          : response.content.slice(0, 100)
-        const notifyText = `${status === "failed" ? "🔴" : "✅"} **${agentName}** ${status} (${durSec}s)\n${msg.channel}/${msg.sender.name}: ${msg.text.slice(0, 80)}\n${preview}`
+          ? ellipsize(response.error, 300)
+          : firstLines(response.content, 6, 400)
+        const notifyText = `${status === "failed" ? "🔴" : "✅"} **${agentName}** ${status} (${durSec}s)\n${msg.channel}/${msg.sender.name}: ${trigger}\n${preview}`
 
         this.sendOutbound({
           channel: notifyConfig.destination.channel,
