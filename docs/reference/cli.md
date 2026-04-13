@@ -45,12 +45,35 @@ The CLI binary is `agentx`. The npm package is `agentix-cli`.
 | `agentx channel list` (alias `ls`) | List channels + agent bindings |
 | `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) |
 
-## Crons
+## Schedule (natural-language cron)
+
+Recommended for most users — takes English phrases and generates the cron entry for you.
+
+| Command | Description |
+|---|---|
+| `agentx schedule "<english>" --agent <id> --do "<prompt>" [--notify me] [--on-error log,notify,disable] [--id <name>] [--timezone <tz>] [--model <m>] [--disabled] [--dry-run]` | Add a scheduled job from a natural-language phrase |
+| `agentx schedule list` (alias `ls`) | List all jobs with cronstrue human-readable text |
+| `agentx schedule on <id>` | Enable a scheduled job |
+| `agentx schedule off <id>` | Disable a scheduled job |
+| `agentx schedule remove <id>` (alias `rm`) | Remove a scheduled job |
+| `agentx schedule parse "<english>"` | Preview a parse without writing anything |
+
+**Supported phrasings:** `every morning at 9`, `weekdays at 6pm`, `every 15 minutes`, `every hour` / `hourly`, `every 2 hours`, `every monday at 10am`, `every tuesday and friday at 3pm`, `1st of every month at noon`, `daily at 9:30am`, `at midnight`, `at noon`.
+
+**`--notify me`** resolves to `notifications.destination` from the config. Pass `channel:chatId[:accountId]` for a one-off target.
+
+**`--on-error`** accepts any combination of `log`, `notify`, `disable` (comma-separated). Adding `--notify` auto-includes `notify`.
+
+Every change validates against the Zod schema and signals `POST /reload` to the running daemon — crons hot-swap without restart.
+
+## Crons (low-level, raw syntax)
+
+The escape hatch for ops who want to write cron syntax directly. Same underlying storage as `schedule`.
 
 | Command | Description |
 |---|---|
 | `agentx cron list` (alias `ls`) | List cron jobs (schedule, agent, status) |
-| `agentx cron add` | Add a cron interactively |
+| `agentx cron add` | Add a cron interactively (raw cron syntax) |
 | `agentx cron enable <id>` | Enable a cron job |
 | `agentx cron disable <id>` | Disable a cron job |
 
@@ -106,6 +129,19 @@ Supported events (PreToolUse, PostToolUse, SessionStart, Notification, Stop); ty
 |---|---|
 | `agentx config check` | Validate `agentx.json` + workspaces |
 | `agentx config show` | Print the resolved configuration (env expanded) |
+| `agentx config get <path> [--raw] [--json]` | Read a value by dot-path (e.g. `agents.devops.model`). `--raw` preserves `${VAR}` tokens; `--json` emits machine-readable output |
+| `agentx config set <path> <value> [--string] [--dry-run]` | Write a value by dot-path. Parses as JSON first (numbers, booleans, arrays, objects), falls back to string. `"a,b,c"` shorthand produces an array. `--string` forces literal string. Validates against the Zod schema and hot-reloads the daemon |
+| `agentx config unset <path> [--dry-run]` | Remove a value by dot-path (no-op on missing paths). Hot-reloads on success |
+
+**Examples:**
+
+```bash
+agentx config get crons.wiki-absorb-midnight.onError --json
+agentx config set crons.wiki-absorb-midnight.timeout 900
+agentx config set crons.wiki-absorb-midnight.onError "notify,disable"
+agentx config set agents.devops.model claude-sonnet-4-6
+agentx config unset crons.test-cron
+```
 
 ## Migration
 
@@ -134,6 +170,7 @@ Summary — full schemas in [Communication matrix](/reference/communication-matr
 | `POST` | `/mesh/task` | Cross-mesh delegation |
 | `POST` | `/ask` | Short-form voice/Siri endpoint |
 | `POST` | `/webhook/:agentId[/:source]` | Generic webhook receiver |
+| `POST` | `/reload` | Re-read `agentx.json`; hot-swaps crons, flags sections that still need a restart. Fired automatically by `agentx config set` / `agentx schedule` / the `fs.watch` on `agentx.json` (disable with `AGENTX_AUTO_RELOAD=false`) |
 | `GET`  | `/events` | SSE event stream |
 | `GET`  | `/health` | Health check |
 | `GET`  | `/.well-known/agent-card.json` | Agent card for mesh peers |

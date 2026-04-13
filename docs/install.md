@@ -120,6 +120,17 @@ agentx config show     # Print resolved configuration
 
 DM your Telegram bot — the reply should arrive within a couple of seconds.
 
+::: tip No manual JSON edits required
+From now on every config change has a CLI verb:
+
+```bash
+agentx config set agents.support.model claude-sonnet-4-6
+agentx schedule "every morning at 9" --agent support --do "..."
+```
+
+The daemon hot-reloads crons automatically. Sections that still need a restart (agents, channels, mesh) are flagged in the output.
+:::
+
 ## Run in the background
 
 ```bash

@@ -126,6 +126,12 @@ When a message lands while the agent is already working:
 - `agentx usage today` / `agentx usage serve` — token + cost dashboard
 - `AGENTX_DEBUG=webhook,cron,mesh` — verbose categories (`agent`, `channel`, `cron`, `mesh`, `context`, `memory`, `webhook`, `config`, `all`)
 
+## Hot-reload
+
+Every CLI change that mutates `agentx.json` validates against the Zod schema first, then signals `POST /reload` to the running daemon. Cron jobs hot-swap in place; `agents`, `channels`, `mesh`, `providers`, `node`, and `services` sections still need a restart — the daemon prints `[reload] restart required to apply changes in: …` so you know.
+
+The daemon also watches `agentx.json` directly via `fs.watch`, so external edits (or a `git pull`) trigger the same path without a restart. Opt out with `AGENTX_AUTO_RELOAD=false` if you prefer explicit restarts.
+
 ## Further reading
 
 - [Communication matrix](/reference/communication-matrix) — every path H2A / A2H / A2A / cross-channel / cross-mesh

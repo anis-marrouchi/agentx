@@ -23,8 +23,8 @@ UX v2 eliminates those moments. Every change flows through a validated CLI comma
 | # | Title | Status | Depends on | Approx LOC |
 |---|---|---|---|---|
 | 1 | Config mutator + daemon reload | **shipped** (`10bc216`) | — | ~400 |
-| 2 | `agentx config get/set/unset` | queued | PR 1 | ~150 |
-| 3 | Natural-language scheduling | queued | PR 1 | ~200 |
+| 2 | `agentx config get/set/unset` | **shipped** (`06e00a3`) | PR 1 | ~200 |
+| 3 | Natural-language scheduling | **shipped** (`ffd1ef5`) | PR 1 | ~400 |
 | 4 | `agentx connect <channel>` | queued | PR 1 | ~700 (split-able) |
 | 5 | `agentx setup` unified wizard | queued | PR 4 | ~300 |
 | 6 | `agentx doctor` + `agentx fix` | queued | PR 1 | ~400 |
@@ -65,11 +65,11 @@ Acceptance:
 
 ---
 
-## PR 2 — `agentx config get/set/unset`
+## PR 2 — `agentx config get/set/unset` ✓ shipped
 
-**Depends on:** PR 1
+**Landed:** commit `06e00a3`
 
-### UX
+### UX (as shipped)
 
 ```bash
 agentx config get crons.wiki-absorb-midnight.onError
@@ -95,20 +95,22 @@ agentx config get crons.wiki-absorb-midnight   # prints the full object as JSON
 - Pretty-print the path + new value on success; print full Zod error on failure
 - `--json` flag: emit machine-readable output for `get`
 
-### Tests
+### Acceptance (verified live)
 
-- `config set` rejects paths that violate the schema
-- `config unset` is a no-op when the path doesn't exist
-- `config get` respects env-expanded vs raw form (`--raw` flag shows `${VAR}` tokens)
+- ✓ `config set` rejects Zod violations and leaves on-disk file untouched
+- ✓ `config unset` is a no-op on missing paths
+- ✓ `config get --raw` preserves `${VAR}` tokens; default view env-expands
+- ✓ Valid writes trigger `POST /reload`; output notes "Daemon hot-reloaded."
+- ✓ 16 unit tests green
 
 ---
 
-## PR 3 — Natural-language scheduling
+## PR 3 — Natural-language scheduling ✓ shipped
 
-**Depends on:** PR 1
-**New deps:** `chrono-node`, `cronstrue`
+**Landed:** commit `ffd1ef5`
+**Dep added:** `cronstrue` (for human-readable rendering)
 
-### UX
+### UX (as shipped)
 
 ```bash
 agentx schedule "every morning at 9" \
@@ -143,12 +145,13 @@ agentx schedule remove morning-standup-devops
 - Each generated cron gets a deterministic id: `<slug-of-prompt>-<agent>`
 - `cron` command stays as low-level alias for ops who want raw cron syntax
 
-### Tests
+### Acceptance (verified live)
 
-- English → cron mapping for the 10 most common phrasings
-- Unknown phrasing → error with "try `X` instead" suggestion
-- `schedule list` output matches `agentx cron list`
-- `schedule off/on/remove` hot-reload via PR 1
+- ✓ 24 English → cron mappings green, plus am/pm + unknown-phrase null tests
+- ✓ Unknown phrasing prints suggestion list instead of guessing
+- ✓ `schedule list` renders cronstrue text for every job
+- ✓ `schedule off/on/remove` hot-reload via PR 1
+- ✓ Tested end-to-end against live daemon with `--id nl-test` round-trip
 
 ---
 

@@ -1,10 +1,10 @@
 # 2. Scheduled reports that page you on failure
 
-> **Difficulty:** beginner · **Time:** 10 minutes · **Ends at:** a daily cron that compiles a report — and alerts Telegram if it fails three times
+> **Difficulty:** beginner · **Time:** 5 minutes · **Ends at:** a daily job that compiles a report — and alerts Telegram if it fails three days in a row
 
 ## Scenario
 
-Every morning at 9am Africa/Tunis, the `devops` agent should check pipeline health, open issues in GitLab, and post a 5-line summary to the team's Telegram group. If it fails **three days in a row**, AgentX should disable the job and DM the on-call engineer.
+Every morning at 9am Africa/Tunis, the `devops` agent should check pipeline health, open issues in GitLab, and post a 5-line summary to the team's Telegram group. If it fails **three days in a row**, AgentX should auto-disable the job and DM the on-call engineer.
 
 ## Prerequisites
 
@@ -18,90 +18,161 @@ Every morning at 9am Africa/Tunis, the `devops` agent should check pipeline heal
 3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
 4. Copy the `chat.id` (group IDs start with `-100…`)
 
-## Config
+## Set a default notification target (once)
 
-Add to `agentx.json` under `crons`:
+So you can type `--notify me` from now on:
 
-```json
-{
-  "crons": {
-    "morning-standup": {
-      "enabled": true,
-      "schedule": "0 9 * * *",
-      "timezone": "Africa/Tunis",
-      "agent": "devops",
-      "timeout": 600,
-      "model": "claude-sonnet-4-6",
-      "onError": ["notify", "disable"],
-      "notify": {
-        "channel": "telegram",
-        "chatId": "-1001234567890",
-        "accountId": "default"
-      },
-      "prompt": "Post the morning standup to the team chat:\n1. Pipeline status (GitLab projects <list>)\n2. New issues opened in last 24h\n3. Deployments since yesterday\n4. Any alerts pending\n5. Top 3 priorities today\nKeep each line under 15 words."
-    }
-  }
-}
+```bash
+agentx config set notifications.destination.channel telegram
+agentx config set notifications.destination.chatId -1001234567890
+agentx config set notifications.destination.accountId default
 ```
+
+## Add the cron — natural language
+
+```bash
+agentx schedule "every morning at 9" \
+  --agent devops \
+  --do "Post the morning standup to the team chat:\n1. Pipeline status\n2. New issues opened in last 24h\n3. Deployments since yesterday\n4. Alerts pending\n5. Top 3 priorities today\nKeep each line under 15 words." \
+  --notify me \
+  --on-error notify,disable \
+  --timezone Africa/Tunis
+```
+
+What prints:
+
+```
+  ✓ Added cron every-morning-at-9-devops
+    Schedule: 0 9 * * *  (At 09:00 AM, Africa/Tunis)
+    Agent: devops
+    Notify: telegram -1001234567890
+    On error: log, notify, disable
+    Daemon hot-reloaded.
+```
+
+No JSON edits. No cron-syntax memorization. No daemon restart.
+
+### What each flag means
+
+| Flag | Purpose |
+|---|---|
+| `--agent devops` | Which agent runs each tick |
+| `--do "..."` | The prompt sent on every firing |
+| `--notify me` | Failure alerts go to `notifications.destination` (set once above) |
+| `--on-error notify,disable` | Page **and** auto-disable after 3 consecutive failures |
+| `--timezone` | IANA zone — cron fires on local wall-clock time |
+
+`--notify` also accepts `channel:chatId[:accountId]` for an ad-hoc target.
+
+### Supported English phrasings
+
+```text
+every morning at 9              → 0 9 * * *
+every evening / every night     → 0 18 * * *  /  0 22 * * *
+weekdays at 6pm                 → 0 18 * * 1-5
+weekends at 10am                → 0 10 * * 0,6
+every monday at 10am            → 0 10 * * 1
+every tuesday and friday at 3pm → 0 15 * * 2,5
+every 15 minutes                → */15 * * * *
+every hour / hourly             → 0 * * * *
+every 2 hours                   → 0 */2 * * *
+1st of every month at noon      → 0 12 1 * *
+daily at 9:30am                 → 30 9 * * *
+at midnight / at noon           → 0 0 * * *  /  0 12 * * *
+```
+
+Preview any phrase without writing:
+
+```bash
+agentx schedule parse "every tuesday and friday at 3pm"
+#   → 0 15 * * 2,5
+#   → At 03:00 PM, only on Tuesday and Friday
+```
+
+## Manage jobs
+
+```bash
+agentx schedule list                        # human-readable table
+agentx schedule off every-morning-at-9-devops
+agentx schedule on every-morning-at-9-devops
+agentx schedule remove every-morning-at-9-devops
+```
+
+Each action hot-reloads the daemon — the cron is rescheduled immediately.
 
 ## The `onError` pipeline
 
-`onError` accepts either a single string or an array of actions. Combine them freely:
+`onError` takes any combination of three actions:
 
 | Value | Meaning |
 |---|---|
-| `"log"` | Write failures to the daemon log (default; also always happens) |
-| `"notify"` | Push to the `notify` channel. Triggers on first failure if set alone, or after 2 consecutive failures otherwise. |
-| `"disable"` | Auto-disable the job after 3 consecutive failures |
-| `["notify", "disable"]` | Both — page me **and** stop after 3 fails |
+| `log` | Write failures to the daemon log (always happens, regardless of this setting) |
+| `notify` | Push to the `notify` channel. Triggers on first failure if set; otherwise after 2 consecutive failures. |
+| `disable` | Auto-disable the job after 3 consecutive failures |
 
 Retry schedule on failure: **30s → 1m → 5m → 15m → 60m**. Once a run succeeds, the counter resets.
 
-## Commands
-
-```bash
-agentx cron list                    # see schedule + status
-agentx cron enable morning-standup
-agentx cron disable morning-standup
-
-# Trigger manually (doesn't wait for cron time) — edit the daemon over HTTP:
-curl -X POST http://localhost:19900/cron/run/morning-standup
-```
-
 ## Verify
 
-1. Set the schedule to `* * * * *` temporarily (every minute) to see it fire.
-2. `agentx daemon watch` shows:
-   ```
-   [cron] morning-standup starting (agent: devops)
-   [devops] executing task
-   [cron] morning-standup completed in 18s
-   ```
-3. Restore the 9am schedule.
+Temporarily speed up the schedule to watch it fire:
+
+```bash
+agentx config set crons.every-morning-at-9-devops.schedule "* * * * *"   # every minute
+agentx daemon watch
+```
+
+You'll see:
+
+```
+[cron] every-morning-at-9-devops starting (agent: devops)
+[devops] executing task
+[cron] every-morning-at-9-devops completed in 18s
+```
+
+Restore the original schedule when done:
+
+```bash
+agentx schedule remove every-morning-at-9-devops
+agentx schedule "every morning at 9" --agent devops --do "..." --notify me --on-error notify,disable
+```
 
 ### Simulate a failure
 
-Temporarily change the prompt to something that will error (e.g. reference a missing tool) and watch the retry + notify path:
+Point the prompt at something that will error (e.g. reference a missing tool) and watch the retry + notify + disable path:
 
 ```
-[cron] morning-standup starting
-[cron] morning-standup failed (1 consecutive): <error>
+[cron] every-morning-at-9-devops starting
+[cron] every-morning-at-9-devops failed (1 consecutive): <error>
 [cron] retry scheduled in 30s (attempt 1/5)
 …
-[CRON ALERT] Cron "morning-standup" failed (2x)
+[CRON ALERT] Cron "every-morning-at-9-devops" failed (2x)
+…
+[cron] every-morning-at-9-devops DISABLED after 3 consecutive failures
 ```
 
-After three straight failures you'll also see:
+Re-enable once you've fixed the prompt:
 
+```bash
+agentx schedule on every-morning-at-9-devops
 ```
-[cron] morning-standup DISABLED after 3 consecutive failures
-```
-
-Re-enable with `agentx cron enable morning-standup` after fixing the prompt.
 
 ## Missed-run catch-up
 
 If the daemon was down when the cron should have fired, AgentX detects it on startup and runs the missed job once (not for every missed slot). Useful for laptops that sleep overnight.
+
+## Escape hatch — raw cron syntax
+
+If you already know cron syntax and want to skip the English layer:
+
+```bash
+agentx cron add   # interactive, raw syntax
+# or directly
+agentx config set crons.raw-job.schedule "0 9 * * *"
+agentx config set crons.raw-job.agent devops
+agentx config set crons.raw-job.prompt "..."
+```
+
+Both paths write the same `crons.<id>` shape — you can mix and match.
 
 ## What's next
 
