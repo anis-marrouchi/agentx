@@ -196,7 +196,7 @@ export type MeshPeer = z.infer<typeof meshPeerSchema>
 /**
  * Expand environment variables in strings: ${VAR_NAME} -> process.env.VAR_NAME
  */
-function expandEnvVars(obj: unknown): unknown {
+export function expandEnvVars(obj: unknown): unknown {
   if (typeof obj === "string") {
     return obj.replace(/\$\{(\w+)\}/g, (_match, name) => process.env[name] || "")
   }

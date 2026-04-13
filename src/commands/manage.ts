@@ -4,6 +4,7 @@ import prompts from "prompts"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "fs"
 import { resolve, join } from "path"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
+import { applyConfigMutation } from "@/daemon/config-mutator"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
 
@@ -13,8 +14,27 @@ function loadConfig(): any {
   return JSON.parse(readFileSync(p, "utf-8"))
 }
 
-function saveConfig(config: any): void {
-  writeFileSync(resolve(process.cwd(), "agentx.json"), JSON.stringify(config, null, 2))
+/**
+ * Persist a mutated config. Goes through applyConfigMutation so every caller
+ * gets pre-save Zod validation and an automatic daemon hot-reload when one is
+ * running. Returns a promise; callers inside async .action handlers should
+ * await it so the reload signal lands before the CLI process exits.
+ */
+function saveConfig(config: any): Promise<void> {
+  return applyConfigMutation((current) => {
+    for (const k of Object.keys(current)) delete current[k]
+    Object.assign(current, config)
+  }).then((result) => {
+    if (!result.success) {
+      console.error(chalk.red(`  Config save failed: ${result.error}`))
+      return
+    }
+    if (result.reloaded) {
+      console.error(chalk.dim("  (daemon hot-reloaded)"))
+    } else if (result.reloadSkipped && !/ECONNREFUSED|unreachable|fetch failed/i.test(result.reloadSkipped)) {
+      console.error(chalk.dim(`  (daemon reload skipped: ${result.reloadSkipped})`))
+    }
+  })
 }
 
 // ==================== agentx agent ====================
@@ -97,7 +117,7 @@ agent
     config.agents = config.agents || {}
     config.agents[answers.id] = agentDef
 
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`\n  Agent "${answers.id}" added`))
     console.log(chalk.dim(`  Workspace: ${ws}`))
     console.log(chalk.dim(`  Created: ${setup.created.length} files (CLAUDE.md, AGENTS.md, settings, rules)`))
@@ -108,14 +128,14 @@ agent
   .command("remove <id>")
   .alias("rm")
   .description("remove an agent from config (keeps workspace)")
-  .action((id) => {
+  .action(async (id) => {
     const config = loadConfig()
     if (!config.agents?.[id]) {
       console.log(chalk.red(`  Agent "${id}" not found`))
       return
     }
     delete config.agents[id]
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Agent "${id}" removed from config (workspace preserved)`))
   })
 
@@ -246,7 +266,7 @@ channel
         agentBinding: answers.agentBinding,
       }
 
-      saveConfig(config)
+      await saveConfig(config)
       console.log(chalk.green(`  Telegram "${answers.accountName}" added -> ${answers.agentBinding}`))
     }
 
@@ -290,7 +310,7 @@ channel
         routes,
       }
 
-      saveConfig(config)
+      await saveConfig(config)
       mkdirSync(resolve(process.cwd(), answers.sessionDir), { recursive: true })
       console.log(chalk.green(`  WhatsApp enabled (${routes.length} routes, default: ${answers.defaultAgent})`))
       console.log(chalk.dim("  Start daemon to scan QR code: agentx daemon start"))
@@ -311,7 +331,7 @@ channel
         agentBinding: answers.agentBinding,
       }
 
-      saveConfig(config)
+      await saveConfig(config)
       console.log(chalk.green(`  Discord added -> ${answers.agentBinding}`))
     }
 
@@ -352,7 +372,7 @@ channel
         routes,
       }
 
-      saveConfig(config)
+      await saveConfig(config)
       console.log(chalk.green(`  GitLab enabled (${routes.length} routes, webhook :${answers.webhookPort})`))
       console.log(chalk.dim(`  Add webhook in GitLab: ${answers.host}/<project>/-/hooks`))
       console.log(chalk.dim(`  URL: http://your-server:${answers.webhookPort}/`))
@@ -420,7 +440,7 @@ cron
       onError: ["log"],
     }
 
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Cron "${answers.id}" added (${answers.enabled ? "enabled" : "disabled"})`))
     console.log()
   })
@@ -428,22 +448,22 @@ cron
 cron
   .command("enable <id>")
   .description("enable a cron job")
-  .action((id) => {
+  .action(async (id) => {
     const config = loadConfig()
     if (!config.crons?.[id]) { console.log(chalk.red(`  Cron "${id}" not found`)); return }
     config.crons[id].enabled = true
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Cron "${id}" enabled`))
   })
 
 cron
   .command("disable <id>")
   .description("disable a cron job")
-  .action((id) => {
+  .action(async (id) => {
     const config = loadConfig()
     if (!config.crons?.[id]) { console.log(chalk.red(`  Cron "${id}" not found`)); return }
     config.crons[id].enabled = false
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Cron "${id}" disabled`))
   })
 
@@ -510,7 +530,7 @@ mesh
       ...(answers.token ? { token: answers.token } : {}),
     })
 
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Peer "${answers.name}" added`))
     console.log()
   })
@@ -519,12 +539,12 @@ mesh
   .command("remove <name>")
   .alias("rm")
   .description("remove a mesh peer")
-  .action((name) => {
+  .action(async (name) => {
     const config = loadConfig()
     if (!config.mesh?.peers) return
     config.mesh.peers = config.mesh.peers.filter((p: any) => p.name !== name)
     if (config.mesh.peers.length === 0) config.mesh.enabled = false
-    saveConfig(config)
+    await saveConfig(config)
     console.log(chalk.green(`  Peer "${name}" removed`))
   })
 
@@ -782,7 +802,7 @@ migrate
       console.log(chalk.yellow("\n  Dry run — nothing written"))
       console.log(JSON.stringify(config, null, 2))
     } else {
-      saveConfig(config)
+      await saveConfig(config)
       console.log(chalk.green("\n  Migration complete! Review agentx.json and run: agentx daemon start"))
     }
     console.log()

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
-import { writeFileSync, existsSync, unlinkSync, mkdirSync } from "fs"
+import { writeFileSync, existsSync, unlinkSync, mkdirSync, watch, type FSWatcher } from "fs"
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
@@ -41,6 +41,9 @@ export class AgentXDaemon {
   private webhooks: WebhookHandler
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
+  private configPath?: string
+  private configWatcher?: FSWatcher
+  private reloadTimer?: ReturnType<typeof setTimeout>
 
   constructor(configPath?: string) {
     const logger = new Logger("agentx")
@@ -55,6 +58,7 @@ export class AgentXDaemon {
 
     // Load config
     this.log("Loading configuration...")
+    this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
 
     // Validate
@@ -214,6 +218,11 @@ export class AgentXDaemon {
       }
     }
 
+    // Start config file watcher (opt-out via AGENTX_AUTO_RELOAD=false)
+    if (process.env.AGENTX_AUTO_RELOAD !== "false") {
+      this.startConfigWatcher()
+    }
+
     this.log("")
     this.log("  Ready.")
     this.log("")
@@ -281,6 +290,11 @@ export class AgentXDaemon {
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
 
+    if (this.reloadTimer) clearTimeout(this.reloadTimer)
+    if (this.configWatcher) {
+      try { this.configWatcher.close() } catch { /* best effort */ }
+    }
+
     if (this.httpServer) {
       this.httpServer.close()
     }
@@ -296,6 +310,98 @@ export class AgentXDaemon {
   }
 
   private midnightTimer?: ReturnType<typeof setTimeout>
+
+  /**
+   * Watch agentx.json for external edits (e.g. `agentx config set ...`) and
+   * reload cron jobs + in-memory config. Channels / agents / mesh changes
+   * still require a restart — we log a warning so the operator knows.
+   */
+  private startConfigWatcher(): void {
+    const path = this.configPath || resolve(process.cwd(), "agentx.json")
+    if (!existsSync(path)) return
+    try {
+      this.configWatcher = watch(path, { persistent: false }, (eventType) => {
+        if (eventType !== "change") return
+        if (this.reloadTimer) clearTimeout(this.reloadTimer)
+        this.reloadTimer = setTimeout(() => {
+          this.reload().catch((e) => this.log(`[reload] failed: ${e?.message || e}`))
+        }, 500) // debounce
+      })
+      this.log(`  Watching ${path} for config changes`)
+    } catch (e: any) {
+      this.log(`  Config watcher failed to start: ${e.message}`)
+    }
+  }
+
+  /**
+   * Re-read agentx.json, diff against the in-memory config, apply what we
+   * can hot-reload (crons, notify-destination, business metadata), and warn
+   * about sections that require a daemon restart (channels, agents, mesh,
+   * node.bind, providers).
+   */
+  async reload(): Promise<{ applied: string[]; restartRequired: string[]; error?: string }> {
+    let next: DaemonConfig
+    try {
+      next = loadDaemonConfig(this.configPath)
+    } catch (e: any) {
+      this.log(`[reload] config invalid, keeping previous: ${e.message}`)
+      return { applied: [], restartRequired: [], error: e.message }
+    }
+
+    const applied: string[] = []
+    const restartRequired: string[] = []
+
+    // 1. Crons — safe to hot-swap (stop + reinit)
+    if (JSON.stringify(this.config.crons) !== JSON.stringify(next.crons)) {
+      try {
+        await this.cron.stop()
+        this.cron = new CronScheduler(next, this.registry, this.hooks, this.log)
+        this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
+          this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x) — ${error.slice(0, 200)}`)
+          this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
+          const cronDef = next.crons[jobId]
+          if (cronDef?.notify) {
+            try {
+              await this.router.sendOutbound({
+                channel: cronDef.notify.channel,
+                chatId: cronDef.notify.chatId,
+                text: `Cron "${jobId}" failed (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+                agentId: agent,
+                accountId: cronDef.notify.accountId,
+              })
+            } catch (e: any) {
+              this.log(`[CRON ALERT] notify send failed: ${e.message}`)
+            }
+          }
+        })
+        await this.cron.start()
+        applied.push("crons")
+      } catch (e: any) {
+        this.log(`[reload] cron reload failed: ${e.message}`)
+      }
+    }
+
+    // 2. Sections that require a restart
+    const restartKeys: Array<keyof DaemonConfig> = ["agents", "channels", "mesh", "providers", "node", "services"]
+    for (const k of restartKeys) {
+      if (JSON.stringify((this.config as any)[k]) !== JSON.stringify((next as any)[k])) {
+        restartRequired.push(String(k))
+      }
+    }
+
+    // 3. Swap in the new config so read-only endpoints (GET /crons etc.) reflect it
+    this.config = next
+
+    if (applied.length) this.log(`[reload] applied: ${applied.join(", ")}`)
+    if (restartRequired.length) {
+      this.log(`[reload] restart required to apply changes in: ${restartRequired.join(", ")}`)
+      this.broadcastSSE("reload-partial", JSON.stringify({ applied, restartRequired }))
+    } else if (applied.length) {
+      this.broadcastSSE("reload-complete", JSON.stringify({ applied }))
+    }
+
+    return { applied, restartRequired }
+  }
 
   private scheduleMidnightHook(): void {
     const scheduleNext = () => {
@@ -555,6 +661,16 @@ export class AgentXDaemon {
           break
         }
 
+        case "POST /reload": {
+          try {
+            const result = await this.reload()
+            this.json(res, 200, { ok: true, ...result })
+          } catch (e: any) {
+            this.json(res, 500, { ok: false, error: e?.message || String(e) })
+          }
+          break
+        }
+
         case "POST /send": {
           const body = await readBody(req)
           if (!body.channel || !body.chatId || !body.text) {
@@ -775,6 +891,7 @@ export class AgentXDaemon {
               "POST /task { agent, message, context? }",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
+              "POST /reload  — re-read agentx.json (hot-swaps crons)",
               "GET  /.well-known/agent-card.json",
             ],
           })
