@@ -13,6 +13,12 @@ export interface WorkItem {
   estimatedSeconds?: number
   url?: string
   priority?: number               // lower = higher priority
+  /** Board stage derived from labels (kanban column id). */
+  stage?: "triage" | "todo" | "doing" | "onhold" | "review" | "done"
+  /** Raw labels from the source (GitLab). Empty array if source doesn't support labels. */
+  labels?: string[]
+  /** ISO timestamp of last update on the source. */
+  updatedAt?: string
 }
 
 export interface WorkReport {
@@ -22,11 +28,52 @@ export interface WorkReport {
   blocker?: string
 }
 
+/** What a WorkSource can do beyond the minimal listOpen/claim/report triple. */
+export interface WorkSourceCapabilities {
+  /** Enumerate items beyond assignee filter — required for a board view. */
+  listAll: boolean
+  /** Create new items (e.g. POST GitLab issue). */
+  create: boolean
+  /** Arbitrary column transitions (label add/remove pair). */
+  transition: boolean
+  /** Surfaces labels[] on returned items. */
+  labels: boolean
+  /** Server-side text search. */
+  search: boolean
+}
+
+export interface WorkCreateInput {
+  title: string
+  description?: string
+  /** agentId */
+  assignee?: string
+  labels?: string[]
+  /** For sources that span multiple projects (gitlab): "group/project". */
+  projectHint?: string
+}
+
+export interface ListAllOpts {
+  sinceDays?: number
+  labels?: string[]
+  search?: string
+  assignee?: string
+}
+
 export interface WorkSource {
   type: string
+  capabilities: WorkSourceCapabilities
   listOpen(agentId: string): Promise<WorkItem[]>
   claim(agentId: string, itemId: string): Promise<void>
   report(itemId: string, update: WorkReport): Promise<void>
+  /** Optional — gated by capabilities.listAll. */
+  listAll?(opts: ListAllOpts): Promise<WorkItem[]>
+  /** Optional — gated by capabilities.create. */
+  create?(input: WorkCreateInput): Promise<WorkItem>
+  /**
+   * Optional — gated by capabilities.transition. Add `toLabel` and remove
+   * `fromLabel` (if provided) from the item. Used by the kanban board on drag.
+   */
+  transition?(itemId: string, toLabel: string, fromLabel?: string): Promise<void>
 }
 
 // ---------- BacklogWorkSource: GFM checklist file ----------
@@ -51,6 +98,9 @@ function parseDuration(s: string): number {
 
 export class BacklogWorkSource implements WorkSource {
   type = "backlog"
+  capabilities: WorkSourceCapabilities = {
+    listAll: false, create: false, transition: false, labels: false, search: false,
+  }
   constructor(private path: string) {}
 
   private read(): string[] {
@@ -120,6 +170,9 @@ export class BacklogWorkSource implements WorkSource {
 
 export class WikiWorkSource implements WorkSource {
   type = "wiki"
+  capabilities: WorkSourceCapabilities = {
+    listAll: false, create: false, transition: false, labels: false, search: false,
+  }
   constructor(private root: string, private glob: string) {}
 
   private walk(dir: string, out: string[]): void {
@@ -177,6 +230,9 @@ export class WikiWorkSource implements WorkSource {
 
 export class GitLabWorkSource implements WorkSource {
   type = "gitlab"
+  capabilities: WorkSourceCapabilities = {
+    listAll: true, create: true, transition: true, labels: true, search: true,
+  }
 
   constructor(
     private host: string,
@@ -186,6 +242,32 @@ export class GitLabWorkSource implements WorkSource {
     private agentUsernames: Record<string, string[]>,
     private log: (...args: unknown[]) => void,
   ) {}
+
+  /** Reverse lookup: GitLab username -> agentId. Used when resolving board items
+   *  back to an agent (for the reconciler and card display). */
+  private usernameToAgent(username: string): string | undefined {
+    for (const [agentId, names] of Object.entries(this.agentUsernames)) {
+      if (names.some((n) => n.toLowerCase() === username.toLowerCase())) return agentId
+    }
+    return undefined
+  }
+
+  private mapIssue(issue: any, project: string): WorkItem {
+    const ns = issue.references?.full?.split("#")[0] || project
+    const labels: string[] = Array.isArray(issue.labels) ? issue.labels : []
+    const assigneeUsername = issue.assignee?.username || issue.assignees?.[0]?.username
+    return {
+      id: `gitlab:${ns}:issue:${issue.iid}`,
+      title: issue.title,
+      description: issue.description || undefined,
+      assignee: assigneeUsername ? this.usernameToAgent(assigneeUsername) : undefined,
+      url: issue.web_url,
+      priority: issue.weight ?? 99,
+      estimatedSeconds: issue.time_stats?.time_estimate || undefined,
+      labels,
+      updatedAt: issue.updated_at,
+    }
+  }
 
   private async api(path: string, init: RequestInit = {}): Promise<any> {
     const res = await fetch(`${this.host}/api/v4${path}`, {
@@ -218,16 +300,10 @@ export class GitLabWorkSource implements WorkSource {
             : `/projects/${encodeURIComponent(project)}/issues?${q}`
           const issues = await this.api(path)
           for (const issue of issues) {
-            const ns = issue.references?.full?.split("#")[0] || project
-            items.push({
-              id: `gitlab:${ns}:issue:${issue.iid}`,
-              title: issue.title,
-              description: issue.description,
-              assignee: agentId,
-              url: issue.web_url,
-              priority: issue.weight ?? 99,
-              estimatedSeconds: issue.time_stats?.time_estimate || undefined,
-            })
+            const item = this.mapIssue(issue, project)
+            // Force assignee to the agent we queried for (listOpen is per-agent).
+            item.assignee = agentId
+            items.push(item)
           }
         } catch (e: any) {
           this.log(`[business] GitLab listOpen failed for ${username} on ${project}: ${e.message}`)
@@ -299,6 +375,78 @@ export class GitLabWorkSource implements WorkSource {
         this.log(`[business] report note failed: ${e.message}`)
       }
     }
+  }
+
+  async listAll(opts: ListAllOpts = {}): Promise<WorkItem[]> {
+    const sinceDays = opts.sinceDays ?? 30
+    const updatedAfter = new Date(Date.now() - sinceDays * 24 * 3600_000).toISOString()
+
+    const params = new URLSearchParams()
+    params.set("state", "all")
+    params.set("updated_after", updatedAfter)
+    params.set("scope", "all")
+    params.set("per_page", "100")
+    if (opts.labels?.length) params.set("labels", opts.labels.join(","))
+    if (opts.search) params.set("search", opts.search)
+
+    const projectList = this.projects.length ? this.projects : ["__ALL__"]
+    const items: WorkItem[] = []
+    for (const project of projectList) {
+      try {
+        const path = project === "__ALL__"
+          ? `/issues?${params.toString()}`
+          : `/projects/${encodeURIComponent(project)}/issues?${params.toString()}`
+        const issues = await this.api(path)
+        for (const issue of issues) items.push(this.mapIssue(issue, project))
+      } catch (e: any) {
+        this.log(`[business] GitLab listAll failed on ${project}: ${e.message}`)
+      }
+    }
+    return items
+  }
+
+  async create(input: WorkCreateInput): Promise<WorkItem> {
+    const project = input.projectHint || this.projects[0]
+    if (!project) throw new Error("GitLabWorkSource.create requires projectHint or configured projects")
+
+    // Resolve assignee (agentId) → GitLab user id via cached /users?username=X
+    let assignee_ids: number[] | undefined
+    if (input.assignee) {
+      const usernames = this.agentUsernames[input.assignee]
+      if (usernames?.length) {
+        try {
+          const users = await this.api(`/users?username=${encodeURIComponent(usernames[0])}`)
+          if (Array.isArray(users) && users[0]?.id) assignee_ids = [users[0].id]
+        } catch (e: any) {
+          this.log(`[business] GitLab user lookup failed for ${usernames[0]}: ${e.message}`)
+        }
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      title: input.title,
+      description: input.description,
+      labels: (input.labels || []).join(","),
+    }
+    if (assignee_ids) body.assignee_ids = assignee_ids
+
+    const issue = await this.api(`/projects/${encodeURIComponent(project)}/issues`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    })
+    return this.mapIssue(issue, project)
+  }
+
+  async transition(itemId: string, toLabel: string, fromLabel?: string): Promise<void> {
+    const { project, iid, type } = this.parseId(itemId)
+    const seg = type === "issue" ? "issues" : "merge_requests"
+    const params = new URLSearchParams()
+    params.set("add_labels", toLabel)
+    if (fromLabel && fromLabel !== toLabel) params.set("remove_labels", fromLabel)
+    await this.api(
+      `/projects/${encodeURIComponent(project)}/${seg}/${iid}?${params.toString()}`,
+      { method: "PUT" },
+    )
   }
 
   private parseId(itemId: string): { project: string; type: "issue" | "mr"; iid: string } {

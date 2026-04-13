@@ -6,6 +6,7 @@ import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
+import { board } from "@/commands/board"
 import { wiki } from "@/commands/wiki"
 import { getPackageInfo } from "@/utils/get-package-info"
 
@@ -40,6 +41,7 @@ async function main() {
     .addCommand(migrate)
     .addCommand(configCmd)
     .addCommand(usage)
+    .addCommand(board)
     .addCommand(wiki)
 
   const args = process.argv.slice(2)

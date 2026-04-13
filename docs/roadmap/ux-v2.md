@@ -29,6 +29,7 @@ UX v2 eliminates those moments. Every change flows through a validated CLI comma
 | 5 | `agentx setup` unified wizard | queued | PR 4 | ~300 |
 | 6 | `agentx doctor` + `agentx fix` | queued | PR 1 | ~400 |
 | 7 | Aliases + tab completion | queued | — | ~150 |
+| 8 | Kanban board dashboard | **Phase 1 shipped** — GitLab read + drag; Phase 2-4 queued | PR 1 | ~1500 total |
 
 ### Dependency graph
 

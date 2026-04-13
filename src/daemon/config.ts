@@ -2,6 +2,7 @@ import { z } from "zod"
 import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
+import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -186,6 +187,8 @@ export const daemonConfigSchema = z.object({
   notifications: notificationsSchema,
   mesh: meshConfigSchema.default({}),
   business: businessConfigSchema.optional(),
+  boards: boardsConfigSchema,
+  dashboard: dashboardConfigSchema,
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>
