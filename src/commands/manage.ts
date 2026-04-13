@@ -887,3 +887,119 @@ configCmd
       console.log(chalk.red(e.message))
     }
   })
+
+// --- config get/set/unset — dot-path edits with Zod validation + hot-reload ---
+
+function parseValue(raw: string, asString: boolean): unknown {
+  if (asString) return raw
+  // Try JSON first — handles numbers, booleans, arrays, objects, quoted strings.
+  try { return JSON.parse(raw) } catch { /* fall through */ }
+  // Treat "a,b,c" as an array of trimmed strings (common shorthand).
+  if (raw.includes(",") && !raw.includes(" ")) {
+    return raw.split(",").map(s => s.trim()).filter(Boolean)
+  }
+  return raw
+}
+
+function formatValue(v: unknown): string {
+  if (v === undefined) return chalk.dim("(unset)")
+  if (typeof v === "string") return v
+  return JSON.stringify(v, null, 2)
+}
+
+configCmd
+  .command("get <path>")
+  .description("read a config value by dot-path (e.g. agents.devops.model)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .option("--raw", "show ${VAR} tokens instead of env-expanded values")
+  .option("--json", "output as JSON (for scripting)")
+  .action(async (path: string, opts) => {
+    const { readFileSync, existsSync } = await import("fs")
+    const { resolve } = await import("path")
+    const { getAtPath } = await import("@/daemon/config-mutator")
+    const { expandEnvVars } = await import("@/daemon/config")
+
+    const cfgPath = opts.config || resolve(process.cwd(), "agentx.json")
+    if (!existsSync(cfgPath)) {
+      console.log(chalk.red(`  No config at ${cfgPath}`))
+      process.exit(1)
+    }
+    const raw = JSON.parse(readFileSync(cfgPath, "utf-8"))
+    const source = opts.raw ? raw : expandEnvVars(raw)
+    const value = getAtPath(source, path)
+    if (opts.json) {
+      console.log(JSON.stringify(value))
+    } else {
+      console.log(formatValue(value))
+    }
+  })
+
+configCmd
+  .command("set <path> <value>")
+  .description("write a config value by dot-path; validates against schema and hot-reloads the daemon")
+  .option("-c, --config <path>", "path to agentx.json")
+  .option("--string", "treat the value as a literal string (skip JSON parsing)")
+  .option("--dry-run", "validate and diff without writing")
+  .action(async (path: string, value: string, opts) => {
+    const { applyConfigMutation, setAtPath, getAtPath } = await import("@/daemon/config-mutator")
+    const parsed = parseValue(value, !!opts.string)
+
+    const result = await applyConfigMutation((cfg) => {
+      setAtPath(cfg, path, parsed)
+    }, { configPath: opts.config, dryRun: !!opts.dryRun })
+
+    if (!result.success) {
+      console.log(chalk.red(`  ✗ ${result.error}`))
+      process.exit(1)
+    }
+
+    const written = getAtPath(result.after, path)
+    if (opts.dryRun) {
+      console.log(chalk.yellow(`  (dry-run) ${chalk.cyan(path)} would become: ${formatValue(written)}`))
+    } else {
+      console.log(chalk.green(`  ✓ ${chalk.cyan(path)} = ${formatValue(written)}`))
+      if (result.reloaded) {
+        console.log(chalk.dim("    Daemon hot-reloaded."))
+      } else if (result.reloadSkipped && !/ECONNREFUSED|unreachable|fetch failed/i.test(result.reloadSkipped)) {
+        console.log(chalk.dim(`    (daemon reload skipped: ${result.reloadSkipped})`))
+      }
+    }
+  })
+
+configCmd
+  .command("unset <path>")
+  .description("remove a config value by dot-path (validates + hot-reloads)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .option("--dry-run", "validate without writing")
+  .action(async (path: string, opts) => {
+    const { applyConfigMutation, getAtPath, unsetAtPath } = await import("@/daemon/config-mutator")
+
+    const result = await applyConfigMutation((cfg) => {
+      if (getAtPath(cfg, path) === undefined) {
+        // No-op — still succeeds, writes nothing meaningful, but keeps the
+        // caller's flow consistent.
+        return
+      }
+      unsetAtPath(cfg, path)
+    }, { configPath: opts.config, dryRun: !!opts.dryRun })
+
+    if (!result.success) {
+      console.log(chalk.red(`  ✗ ${result.error}`))
+      process.exit(1)
+    }
+
+    const stillThere = getAtPath(result.after, path)
+    if (stillThere !== undefined) {
+      console.log(chalk.dim(`  (no-op) ${chalk.cyan(path)} was not set`))
+      return
+    }
+
+    if (opts.dryRun) {
+      console.log(chalk.yellow(`  (dry-run) ${chalk.cyan(path)} would be removed`))
+    } else {
+      console.log(chalk.green(`  ✓ ${chalk.cyan(path)} removed`))
+      if (result.reloaded) {
+        console.log(chalk.dim("    Daemon hot-reloaded."))
+      }
+    }
+  })

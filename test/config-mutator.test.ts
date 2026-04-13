@@ -111,6 +111,91 @@ describe("dot-path helpers", () => {
     unsetAtPath(obj, "a.b.c")
     expect(obj.a.b.c).toBeUndefined()
   })
+
+  it("unset is a no-op on missing paths", () => {
+    const obj: any = { a: { b: 1 } }
+    const before = JSON.stringify(obj)
+    unsetAtPath(obj, "a.nope.really.gone")
+    expect(JSON.stringify(obj)).toBe(before)
+  })
+})
+
+describe("config set/unset via applyConfigMutation", () => {
+  let dir: string
+  let configPath: string
+
+  beforeEach(() => {
+    dir = makeTempProject()
+    configPath = join(dir, "agentx.json")
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("set writes a simple value at a dot-path", async () => {
+    const r = await applyConfigMutation(
+      (cfg) => setAtPath(cfg, "agents.demo.model", "claude-haiku-4-5"),
+      { configPath },
+    )
+    expect(r.success).toBe(true)
+    const onDisk = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(onDisk.agents.demo.model).toBe("claude-haiku-4-5")
+  })
+
+  it("set rejects a schema violation without touching disk", async () => {
+    const before = readFileSync(configPath, "utf-8")
+    const r = await applyConfigMutation(
+      (cfg) => setAtPath(cfg, "agents.demo.tier", "fake-tier"),
+      { configPath },
+    )
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/Validation failed/)
+    expect(readFileSync(configPath, "utf-8")).toBe(before)
+  })
+
+  it("set can install a whole new nested object (crons.newJob)", async () => {
+    const r = await applyConfigMutation(
+      (cfg) => setAtPath(cfg, "crons.newJob", {
+        enabled: true,
+        schedule: "0 9 * * *",
+        timezone: "UTC",
+        agent: "demo",
+        prompt: "hi",
+        timeout: 600,
+      }),
+      { configPath },
+    )
+    expect(r.success).toBe(true)
+    const onDisk = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(onDisk.crons.newJob.schedule).toBe("0 9 * * *")
+  })
+
+  it("unset removes a value; no-op on missing paths", async () => {
+    // Install a job first
+    await applyConfigMutation(
+      (cfg) => setAtPath(cfg, "crons.delete-me", {
+        enabled: false, schedule: "0 0 * * *", timezone: "UTC",
+        agent: "demo", prompt: "x", timeout: 60,
+      }),
+      { configPath },
+    )
+    // Now unset
+    const r = await applyConfigMutation(
+      (cfg) => unsetAtPath(cfg, "crons.delete-me"),
+      { configPath },
+    )
+    expect(r.success).toBe(true)
+    const onDisk = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(onDisk.crons["delete-me"]).toBeUndefined()
+
+    // Unset on missing path still succeeds, writes nothing meaningful
+    const r2 = await applyConfigMutation(
+      (cfg) => unsetAtPath(cfg, "crons.never-existed"),
+      { configPath },
+    )
+    expect(r2.success).toBe(true)
+  })
 })
 
 describe("dotenv-mutator", () => {
