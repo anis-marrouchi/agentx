@@ -4,6 +4,7 @@ import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
 import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
 import { schedule } from "@/commands/schedule"
+import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
 import { wiki } from "@/commands/wiki"
 import { getPackageInfo } from "@/utils/get-package-info"
@@ -30,6 +31,7 @@ async function main() {
     .addCommand(init)
     .addCommand(agent)
     .addCommand(channel)
+    .addCommand(connect)
     .addCommand(cron)
     .addCommand(schedule)
     .addCommand(mesh)
