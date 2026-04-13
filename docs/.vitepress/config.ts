@@ -62,6 +62,12 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: "Roadmap",
+          items: [
+            { text: "UX v2 — zero manual config edits", link: "/roadmap/ux-v2" },
+          ],
+        },
+        {
           text: "Meta",
           items: [
             { text: "Migrate from OpenClaw", link: "/migration/from-openclaw" },
