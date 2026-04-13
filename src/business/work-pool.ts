@@ -17,8 +17,43 @@ export interface WorkItem {
   stage?: "triage" | "todo" | "doing" | "onhold" | "review" | "done"
   /** Raw labels from the source (GitLab). Empty array if source doesn't support labels. */
   labels?: string[]
+  /** Label name+color when the source returns colored labels (GitLab with_labels_details). */
+  labelDetails?: Array<{ name: string; color: string; text_color?: string }>
   /** ISO timestamp of last update on the source. */
   updatedAt?: string
+  /** Open/closed state from the source. */
+  state?: "opened" | "closed"
+  /** Optional milestone title (GitLab: issue.milestone.title). */
+  milestone?: string
+  /** GitLab assignees (0..n). `assignee` above is the agentId alias for assignees[0]. */
+  assignees?: Array<{ username: string; name?: string; avatarUrl?: string }>
+}
+
+/** Member of a source (GitLab project members) — used for assignee pickers. */
+export interface WorkMember {
+  username: string
+  name?: string
+  avatarUrl?: string
+}
+
+/** Milestone on a source — used for milestone pickers. */
+export interface WorkMilestone {
+  id: number | string
+  title: string
+  state?: "active" | "closed"
+  dueDate?: string
+}
+
+/** Full issue detail — a superset of WorkItem for the detail view. */
+export interface WorkDetail extends WorkItem {
+  /** Raw body, may be markdown. */
+  descriptionHtml?: string
+  /** ISO timestamp of creation. */
+  createdAt?: string
+  /** Author (issue reporter). */
+  author?: { username: string; name?: string; avatarUrl?: string }
+  /** Full labels list (all of them). */
+  allLabels?: string[]
 }
 
 export interface WorkReport {
@@ -47,7 +82,11 @@ export interface WorkCreateInput {
   description?: string
   /** agentId */
   assignee?: string
+  /** Raw GitLab usernames — bypass agentId resolution for UI-driven creates. */
+  assigneeUsernames?: string[]
   labels?: string[]
+  /** Milestone title (resolved to id). */
+  milestoneTitle?: string
   /** For sources that span multiple projects (gitlab): "group/project". */
   projectHint?: string
 }
@@ -55,8 +94,16 @@ export interface WorkCreateInput {
 export interface ListAllOpts {
   sinceDays?: number
   labels?: string[]
+  /** Exclude items carrying any of these labels (client-side filter). */
+  notLabels?: string[]
+  /** Exclude items whose labels carry this scoped prefix (e.g. "Status"). */
+  withoutScopedPrefix?: string
   search?: string
   assignee?: string
+  /** GitLab issue state. Defaults to "opened" (boards hide closed issues). */
+  state?: "opened" | "closed" | "all"
+  /** Milestone filter (GitLab "milestone" query param). */
+  milestone?: string
 }
 
 export interface WorkSource {
@@ -254,18 +301,42 @@ export class GitLabWorkSource implements WorkSource {
 
   private mapIssue(issue: any, project: string): WorkItem {
     const ns = issue.references?.full?.split("#")[0] || project
-    const labels: string[] = Array.isArray(issue.labels) ? issue.labels : []
-    const assigneeUsername = issue.assignee?.username || issue.assignees?.[0]?.username
+    // `labels` may be a string[] or, with with_labels_details=true, an object[].
+    let labels: string[] = []
+    let labelDetails: Array<{ name: string; color: string; text_color?: string }> | undefined
+    if (Array.isArray(issue.labels)) {
+      if (issue.labels.length && typeof issue.labels[0] === "object") {
+        labelDetails = issue.labels.map((l: any) => ({
+          name: l.name, color: l.color, text_color: l.text_color,
+        }))
+        labels = labelDetails!.map((l) => l.name)
+      } else {
+        labels = issue.labels
+      }
+    }
+    const rawAssignees: any[] = Array.isArray(issue.assignees) && issue.assignees.length
+      ? issue.assignees
+      : (issue.assignee ? [issue.assignee] : [])
+    const assignees = rawAssignees.map((a) => ({
+      username: a.username, name: a.name, avatarUrl: a.avatar_url,
+    }))
+    const firstUsername = assignees[0]?.username
     return {
       id: `gitlab:${ns}:issue:${issue.iid}`,
       title: issue.title,
       description: issue.description || undefined,
-      assignee: assigneeUsername ? this.usernameToAgent(assigneeUsername) : undefined,
+      // Prefer configured agentId mapping; fall back to the raw GitLab username
+      // so cards still render an assignee even without agentMappings configured.
+      assignee: firstUsername ? (this.usernameToAgent(firstUsername) || firstUsername) : undefined,
+      assignees,
       url: issue.web_url,
       priority: issue.weight ?? 99,
       estimatedSeconds: issue.time_stats?.time_estimate || undefined,
       labels,
+      labelDetails,
       updatedAt: issue.updated_at,
+      state: issue.state === "closed" ? "closed" : "opened",
+      milestone: issue.milestone?.title || undefined,
     }
   }
 
@@ -382,11 +453,19 @@ export class GitLabWorkSource implements WorkSource {
     const updatedAfter = new Date(Date.now() - sinceDays * 24 * 3600_000).toISOString()
 
     const params = new URLSearchParams()
-    params.set("state", "all")
+    const state = opts.state ?? "opened"
+    params.set("state", state)
+    // `updated_after` makes sense for the Closed column (bounded window) and for
+    // keeping the open list recent; for "opened" we pass it too but GitLab treats
+    // the window loosely (any issue updated since counts, regardless of open-age).
     params.set("updated_after", updatedAfter)
     params.set("scope", "all")
     params.set("per_page", "100")
+    params.set("with_labels_details", "true")
+    params.set("order_by", "updated_at")
+    params.set("sort", "desc")
     if (opts.labels?.length) params.set("labels", opts.labels.join(","))
+    if (opts.milestone) params.set("milestone", opts.milestone)
     if (opts.search) params.set("search", opts.search)
 
     const projectList = this.projects.length ? this.projects : ["__ALL__"]
@@ -402,24 +481,198 @@ export class GitLabWorkSource implements WorkSource {
         this.log(`[business] GitLab listAll failed on ${project}: ${e.message}`)
       }
     }
-    return items
+
+    // Client-side negative-label filter (GitLab API supports `not[labels]` only
+    // via the `not[]` nested query form, which isn't convenient via URLSearchParams).
+    let result = items
+    if (opts.notLabels?.length) {
+      const deny = new Set(opts.notLabels)
+      result = result.filter((i) => !(i.labels || []).some((l) => deny.has(l)))
+    }
+    if (opts.withoutScopedPrefix) {
+      const prefix = opts.withoutScopedPrefix + "::"
+      result = result.filter((i) => !(i.labels || []).some((l) => l.startsWith(prefix)))
+    }
+    return result
+  }
+
+  /** Close or reopen an issue via state_event. */
+  async setState(itemId: string, to: "close" | "reopen"): Promise<void> {
+    const { project, iid, type } = this.parseId(itemId)
+    const seg = type === "issue" ? "issues" : "merge_requests"
+    await this.api(
+      `/projects/${encodeURIComponent(project)}/${seg}/${iid}?state_event=${to}`,
+      { method: "PUT" },
+    )
+  }
+
+  /** Fetch a single issue's full detail. */
+  async getItem(itemId: string): Promise<WorkDetail | null> {
+    const { project, iid } = this.parseId(itemId)
+    try {
+      const issue = await this.api(
+        `/projects/${encodeURIComponent(project)}/issues/${iid}?with_labels_details=true`,
+      )
+      const base = this.mapIssue(issue, project)
+      return {
+        ...base,
+        descriptionHtml: issue.description_html || undefined,
+        createdAt: issue.created_at,
+        author: issue.author ? {
+          username: issue.author.username, name: issue.author.name, avatarUrl: issue.author.avatar_url,
+        } : undefined,
+        allLabels: Array.isArray(issue.labels)
+          ? (typeof issue.labels[0] === "object" ? issue.labels.map((l: any) => l.name) : issue.labels)
+          : [],
+      }
+    } catch (e: any) {
+      this.log(`[board] GitLab getItem failed for ${itemId}: ${e.message}`)
+      return null
+    }
+  }
+
+  /** Update fields on an issue. Accepts string usernames for assignees. */
+  async updateItem(
+    itemId: string,
+    patch: {
+      title?: string
+      description?: string
+      labels?: string[]
+      addLabels?: string[]
+      removeLabels?: string[]
+      assigneeUsernames?: string[]
+      milestoneTitle?: string | null
+    },
+  ): Promise<WorkItem> {
+    const { project, iid } = this.parseId(itemId)
+
+    // Resolve assignee usernames → user ids (parallel).
+    let assigneeIds: number[] | undefined
+    if (patch.assigneeUsernames) {
+      const results = await Promise.all(patch.assigneeUsernames.map(async (u) => {
+        try {
+          const users = await this.api(`/users?username=${encodeURIComponent(u)}`)
+          return Array.isArray(users) && users[0]?.id ? users[0].id : null
+        } catch { return null }
+      }))
+      assigneeIds = results.filter((x): x is number => typeof x === "number")
+    }
+
+    // Resolve milestone title → id (null clears the milestone).
+    let milestoneId: number | 0 | undefined
+    if (patch.milestoneTitle !== undefined) {
+      if (patch.milestoneTitle === null || patch.milestoneTitle === "") {
+        milestoneId = 0
+      } else {
+        try {
+          const ms = await this.api(
+            `/projects/${encodeURIComponent(project)}/milestones?title=${encodeURIComponent(patch.milestoneTitle)}`,
+          )
+          if (Array.isArray(ms) && ms[0]?.id) milestoneId = ms[0].id
+        } catch (e: any) {
+          this.log(`[board] milestone lookup failed for "${patch.milestoneTitle}": ${e.message}`)
+        }
+      }
+    }
+
+    const body: Record<string, unknown> = {}
+    if (patch.title !== undefined) body.title = patch.title
+    if (patch.description !== undefined) body.description = patch.description
+    if (patch.labels !== undefined) body.labels = patch.labels.join(",")
+    if (patch.addLabels?.length) body.add_labels = patch.addLabels.join(",")
+    if (patch.removeLabels?.length) body.remove_labels = patch.removeLabels.join(",")
+    if (assigneeIds !== undefined) body.assignee_ids = assigneeIds
+    if (milestoneId !== undefined) body.milestone_id = milestoneId
+
+    const issue = await this.api(`/projects/${encodeURIComponent(project)}/issues/${iid}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    })
+    return this.mapIssue(issue, project)
+  }
+
+  /** List project members (direct + inherited). Deduped by username across projects. */
+  async listMembers(): Promise<WorkMember[]> {
+    const byUsername = new Map<string, WorkMember>()
+    for (const project of this.projects) {
+      try {
+        const members = await this.api(
+          `/projects/${encodeURIComponent(project)}/members/all?per_page=100`,
+        )
+        for (const m of members) {
+          if (m.username && !byUsername.has(m.username)) {
+            byUsername.set(m.username, {
+              username: m.username, name: m.name, avatarUrl: m.avatar_url,
+            })
+          }
+        }
+      } catch (e: any) {
+        this.log(`[board] listMembers failed for ${project}: ${e.message}`)
+      }
+    }
+    return [...byUsername.values()].sort((a, b) => a.username.localeCompare(b.username))
+  }
+
+  /** List milestones (active first, then closed). Deduped by title across projects. */
+  async listMilestones(): Promise<WorkMilestone[]> {
+    const byTitle = new Map<string, WorkMilestone>()
+    for (const project of this.projects) {
+      try {
+        const ms = await this.api(
+          `/projects/${encodeURIComponent(project)}/milestones?per_page=100`,
+        )
+        for (const m of ms) {
+          if (m.title && !byTitle.has(m.title)) {
+            byTitle.set(m.title, {
+              id: m.id, title: m.title, state: m.state, dueDate: m.due_date,
+            })
+          }
+        }
+      } catch (e: any) {
+        this.log(`[board] listMilestones failed for ${project}: ${e.message}`)
+      }
+    }
+    const all = [...byTitle.values()]
+    all.sort((a, b) => {
+      if (a.state !== b.state) return a.state === "active" ? -1 : 1
+      return a.title.localeCompare(b.title)
+    })
+    return all
   }
 
   async create(input: WorkCreateInput): Promise<WorkItem> {
     const project = input.projectHint || this.projects[0]
     if (!project) throw new Error("GitLabWorkSource.create requires projectHint or configured projects")
 
-    // Resolve assignee (agentId) → GitLab user id via cached /users?username=X
+    // Resolve assignee usernames → user ids. Prefer explicit `assigneeUsernames`,
+    // fall back to agentId → configured mapping for legacy callers.
     let assignee_ids: number[] | undefined
-    if (input.assignee) {
-      const usernames = this.agentUsernames[input.assignee]
-      if (usernames?.length) {
+    const usernames = input.assigneeUsernames?.length
+      ? input.assigneeUsernames
+      : (input.assignee ? (this.agentUsernames[input.assignee] || []).slice(0, 1) : [])
+    if (usernames.length) {
+      const results = await Promise.all(usernames.map(async (u) => {
         try {
-          const users = await this.api(`/users?username=${encodeURIComponent(usernames[0])}`)
-          if (Array.isArray(users) && users[0]?.id) assignee_ids = [users[0].id]
+          const users = await this.api(`/users?username=${encodeURIComponent(u)}`)
+          return Array.isArray(users) && users[0]?.id ? users[0].id : null
         } catch (e: any) {
-          this.log(`[business] GitLab user lookup failed for ${usernames[0]}: ${e.message}`)
+          this.log(`[board] user lookup failed for ${u}: ${e.message}`)
+          return null
         }
+      }))
+      assignee_ids = results.filter((x): x is number => typeof x === "number")
+    }
+
+    // Resolve milestone title → id.
+    let milestone_id: number | undefined
+    if (input.milestoneTitle) {
+      try {
+        const ms = await this.api(
+          `/projects/${encodeURIComponent(project)}/milestones?title=${encodeURIComponent(input.milestoneTitle)}`,
+        )
+        if (Array.isArray(ms) && ms[0]?.id) milestone_id = ms[0].id
+      } catch (e: any) {
+        this.log(`[board] milestone lookup failed for "${input.milestoneTitle}": ${e.message}`)
       }
     }
 
@@ -428,7 +681,8 @@ export class GitLabWorkSource implements WorkSource {
       description: input.description,
       labels: (input.labels || []).join(","),
     }
-    if (assignee_ids) body.assignee_ids = assignee_ids
+    if (assignee_ids?.length) body.assignee_ids = assignee_ids
+    if (milestone_id !== undefined) body.milestone_id = milestone_id
 
     const issue = await this.api(`/projects/${encodeURIComponent(project)}/issues`, {
       method: "POST",
@@ -438,11 +692,18 @@ export class GitLabWorkSource implements WorkSource {
   }
 
   async transition(itemId: string, toLabel: string, fromLabel?: string): Promise<void> {
+    // Legacy single add/remove — boards use transitionMany.
+    await this.transitionMany(itemId, toLabel ? [toLabel] : [], fromLabel ? [fromLabel] : [])
+  }
+
+  /** Multi-label transition; used by board drag-drop (scoped labels produce pairs). */
+  async transitionMany(itemId: string, add: string[], remove: string[]): Promise<void> {
     const { project, iid, type } = this.parseId(itemId)
     const seg = type === "issue" ? "issues" : "merge_requests"
     const params = new URLSearchParams()
-    params.set("add_labels", toLabel)
-    if (fromLabel && fromLabel !== toLabel) params.set("remove_labels", fromLabel)
+    if (add.length) params.set("add_labels", add.join(","))
+    if (remove.length) params.set("remove_labels", remove.join(","))
+    if (!params.toString()) return
     await this.api(
       `/projects/${encodeURIComponent(project)}/${seg}/${iid}?${params.toString()}`,
       { method: "PUT" },
