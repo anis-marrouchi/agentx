@@ -1,6 +1,8 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { connectTelegram } from "@/connect/telegram"
+import { connectDiscord } from "@/connect/discord"
+import { connectWhatsApp } from "@/connect/whatsapp"
 import { invite as meshInvite, join as meshJoin } from "@/connect/mesh"
 
 // --- agentx connect <channel> ---
@@ -31,6 +33,31 @@ connect
     })
   })
 
+connect
+  .command("discord")
+  .description("pair a Discord bot — verify token, emit install URL, save to .env")
+  .option("--agent <id>", "agent to bind the bot to")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (opts) => {
+    await connectDiscord({ agent: opts.agent, configPath: opts.config })
+  })
+
+connect
+  .command("whatsapp")
+  .description("pair WhatsApp via QR (prints in terminal), then writes channels.whatsapp config")
+  .option("--agent <id>", "default agent for inbound messages")
+  .option("--session-dir <path>", "session directory (default: .agentx/whatsapp-sessions)")
+  .option("--skip-pair", "skip QR pairing (use when session already exists)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .action(async (opts) => {
+    await connectWhatsApp({
+      agent: opts.agent,
+      sessionDir: opts.sessionDir,
+      skipPair: !!opts.skipPair,
+      configPath: opts.config,
+    })
+  })
+
 const mesh = connect
   .command("mesh")
   .description("mesh invite + join — replaces manual MESH_TOKEN copy-paste")
@@ -57,10 +84,12 @@ connect.action(() => {
   console.log()
   console.log(chalk.bold("  agentx connect — which channel?"))
   console.log()
-  console.log(`    ${chalk.cyan("agentx connect telegram")}  — pair a Telegram bot`)
-  console.log(`    ${chalk.cyan("agentx connect mesh invite")} — emit a mesh join link for another node`)
+  console.log(`    ${chalk.cyan("agentx connect telegram")}        — pair a Telegram bot`)
+  console.log(`    ${chalk.cyan("agentx connect discord")}         — pair a Discord bot, emit install URL`)
+  console.log(`    ${chalk.cyan("agentx connect whatsapp")}        — pair WhatsApp via QR`)
+  console.log(`    ${chalk.cyan("agentx connect mesh invite")}     — emit a mesh join link for another node`)
   console.log(`    ${chalk.cyan("agentx connect mesh join <link>")} — accept a mesh invite`)
   console.log()
-  console.log(chalk.dim("  WhatsApp / Discord / GitLab coming in a follow-up slice."))
+  console.log(chalk.dim("  GitLab connect is the next slice."))
   console.log()
 })

@@ -25,7 +25,7 @@ UX v2 eliminates those moments. Every change flows through a validated CLI comma
 | 1 | Config mutator + daemon reload | **shipped** (`10bc216`) | — | ~400 |
 | 2 | `agentx config get/set/unset` | **shipped** (`06e00a3`) | PR 1 | ~200 |
 | 3 | Natural-language scheduling | **shipped** (`ffd1ef5`) | PR 1 | ~400 |
-| 4 | `agentx connect <channel>` | **partial** — 4a telegram + 4e mesh shipped (`fbf793d`); whatsapp/discord/gitlab pending | PR 1 | ~700 (split-able) |
+| 4 | `agentx connect <channel>` | **partial** — 4a telegram + 4c whatsapp + 4d discord + 4e mesh shipped; gitlab (4b) pending | PR 1 | ~700 (split-able) |
 | 5 | `agentx setup` unified wizard | queued | PR 4 | ~300 |
 | 6 | `agentx doctor` + `agentx fix` | queued | PR 1 | ~400 |
 | 7 | Aliases + tab completion | queued | — | ~150 |

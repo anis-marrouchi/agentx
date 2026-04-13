@@ -6,6 +6,7 @@ node_modules/
 # AgentX runtime data
 .agentx/
 agentx.json
+agentx.json.*
 .env
 
 # Claude Code (project-local, not committed)
