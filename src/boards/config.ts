@@ -96,12 +96,25 @@ export const boardSchema = z.object({
 
 export const boardsConfigSchema = z.array(boardSchema).default([])
 
+export const dashboardDaemonSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+  /** Optional bearer token if the daemon is auth-gated. */
+  token: z.string().optional(),
+})
+
 export const dashboardConfigSchema = z.object({
   enabled: z.boolean().default(false),
   port: z.number().int().default(4202),
   bind: z.string().default("127.0.0.1"),
   /** Opt-in bearer token for writes. If unset, writes are unauthenticated. */
   token: z.string().optional(),
+  /** Primary daemon the dashboard talks to for live view + A2A. */
+  daemonUrl: z.string().default("http://localhost:18800"),
+  /** Additional daemons to poll (beyond peers discovered via primary's /mesh). */
+  daemons: z.array(dashboardDaemonSchema).default([]),
+  /** Default agent used for AI-assisted drafting in the create-issue flow. */
+  draftAgent: z.string().optional(),
 }).default({})
 
 export type BoardConfig = z.infer<typeof boardSchema>

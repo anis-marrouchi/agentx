@@ -25,6 +25,21 @@ export function getGlobalRegistry(): AgentRegistry | undefined {
   return globalRegistry
 }
 
+export interface RunningTask {
+  /** Unique id for this execution (timestamp-based). */
+  id: string
+  /** First 200 chars of the user message, for display. */
+  messagePreview: string
+  /** Origin channel (telegram, whatsapp, gitlab, api, cron, business, a2a, …). */
+  channel: string
+  /** Group / chat / issue id from which the task arrived. */
+  chatId?: string
+  /** Sender id/name (user, agent id, "cron:<id>", "mesh:<peer>", …). */
+  sender?: string
+  /** Wall-clock start. */
+  startedAt: Date
+}
+
 interface AgentState {
   id: string
   def: AgentDef
@@ -32,6 +47,7 @@ interface AgentState {
   totalTasks: number
   lastActive?: Date
   errors: number
+  runningTasks: RunningTask[]
 }
 
 export class AgentRegistry {
@@ -72,6 +88,7 @@ export class AgentRegistry {
         activeTasks: 0,
         totalTasks: 0,
         errors: 0,
+        runningTasks: [],
       })
     }
   }
@@ -216,6 +233,17 @@ export class AgentRegistry {
     state.activeTasks++
     state.totalTasks++
     state.lastActive = new Date()
+
+    // Track the running task for live visibility (/agents endpoint surfaces this).
+    const runningTask: RunningTask = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      messagePreview: (task.message || "").slice(0, 200),
+      channel: task.context?.channel || "api",
+      chatId: task.context?.chatId || task.context?.group,
+      sender: task.context?.sender,
+      startedAt: new Date(),
+    }
+    state.runningTasks.push(runningTask)
 
     // Mark session as running in the message queue
     this.messageQueue.markRunning(task.agentId, qChannel, qChatId)
@@ -416,6 +444,9 @@ export class AgentRegistry {
       return { content: "", error: error.message }
     } finally {
       state.activeTasks--
+      // Remove this run from the running-tasks list.
+      const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
+      if (idx !== -1) state.runningTasks.splice(idx, 1)
 
       // Flush queued messages that arrived while this run was in progress
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
@@ -455,6 +486,7 @@ export class AgentRegistry {
     total: number
     errors: number
     lastActive?: Date
+    runningTasks: RunningTask[]
   }> {
     return Array.from(this.agents.values()).map((s) => ({
       id: s.id,
@@ -465,6 +497,7 @@ export class AgentRegistry {
       total: s.totalTasks,
       errors: s.errors,
       lastActive: s.lastActive,
+      runningTasks: s.runningTasks,
     }))
   }
 

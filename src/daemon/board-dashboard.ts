@@ -86,9 +86,50 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderBoardHtml())
     return
   }
+  if (method === "GET" && path === "/live") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderLiveHtml())
+    return
+  }
   if (method === "GET" && path === "/sortable.min.js") {
     res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=86400" })
     res.end(SORTABLE_JS)
+    return
+  }
+
+  // Live mesh view endpoints (JSON snapshot + SSE push every 2s)
+  if (method === "GET" && path === "/api/live") {
+    try {
+      const snap = await buildLiveSnapshot(ctx.config)
+      sendJson(res, 200, snap)
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+  if (method === "GET" && path === "/api/live/stream") {
+    startLiveStream(req, res, ctx.config)
+    return
+  }
+
+  // Agent roster (proxy to configured daemon) — used by draft-agent picker.
+  if (method === "GET" && path === "/api/agents") {
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/agents", { headers })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const list = await r.json()
+      sendJson(res, 200, list)
+    } catch (e: any) { sendJson(res, 502, { error: e.message || "agents fetch failed" }) }
+    return
+  }
+
+  // AI-assisted issue draft — proxies to daemon /task with convention-aware prompt.
+  if (method === "POST" && path === "/api/draft") {
+    const body = await readJson(req)
+    try {
+      const drafted = await draftIssue(ctx.config, body)
+      sendJson(res, 200, drafted)
+    } catch (e: any) { sendJson(res, 502, { error: e.message || "draft failed" }) }
     return
   }
 
@@ -360,6 +401,267 @@ function auditActor(req: IncomingMessage): string {
   return (Array.isArray(fwd) ? fwd[0] : fwd?.split(",")[0]) || req.socket.remoteAddress || "unknown"
 }
 
+// --- Live mesh snapshot ---
+//
+// Aggregates /agents + /mesh from the configured primary daemon, then fans out
+// to each mesh peer to collect their /agents (running tasks included) so the
+// dashboard can show a single cross-node view of what every agent is doing.
+
+interface NodeLive {
+  id: string
+  name: string
+  url: string
+  reachable: boolean
+  error?: string
+  uptimeSec?: number
+  agents: Array<{
+    id: string
+    name: string
+    tier: string
+    active: number
+    total: number
+    errors: number
+    lastActive?: string
+    runningTasks?: Array<{
+      id: string
+      messagePreview: string
+      channel: string
+      chatId?: string
+      sender?: string
+      startedAt: string
+    }>
+  }>
+}
+interface LiveSnapshot {
+  ts: string
+  nodes: NodeLive[]
+}
+
+async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSignal): Promise<NodeLive> {
+  const headers: Record<string, string> = {}
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
+  try {
+    const [healthRes, agentsRes, meshRes] = await Promise.all([
+      fetch(url + "/health", { headers, signal }).catch(() => null),
+      fetch(url + "/agents", { headers, signal }).catch(() => null),
+      fetch(url + "/mesh", { headers, signal }).catch(() => null),
+    ])
+    if (!agentsRes || !agentsRes.ok) {
+      base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
+      return base
+    }
+    const agents: any[] = await agentsRes.json()
+    base.agents = agents.map((a) => ({
+      id: a.id, name: a.name, tier: a.tier,
+      active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
+      lastActive: a.lastActive,
+      runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
+    }))
+    if (healthRes && healthRes.ok) {
+      const h: any = await healthRes.json()
+      base.uptimeSec = h.uptime
+      base.name = h.node?.name || h.node?.id || url
+      base.id = h.node?.id || url
+    }
+    base.reachable = true
+    // Expose mesh peer info for discovery, but the caller does fan-out separately.
+    ;(base as any)._peers = Array.isArray(meshRes && await meshResSafe(meshRes)) ? (base as any)._peers : undefined
+  } catch (e: any) {
+    base.error = e.message || String(e)
+  }
+  return base
+}
+
+// Tiny helper to double-json a Response only once.
+let _meshJsonCache = new WeakMap<Response, any>()
+async function meshResSafe(r: Response): Promise<any> {
+  if (_meshJsonCache.has(r)) return _meshJsonCache.get(r)
+  try { const j = r.ok ? await r.json() : null; _meshJsonCache.set(r, j); return j } catch { return null }
+}
+
+async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: AbortSignal): Promise<Array<{ url: string; name: string; token?: string }>> {
+  try {
+    const headers: Record<string, string> = {}
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    const r = await fetch(primaryUrl + "/mesh", { headers, signal })
+    if (!r.ok) return []
+    const peers: any[] = await r.json()
+    return peers
+      .filter((p) => p && p.peerUrl)
+      .map((p) => ({ url: String(p.peerUrl).replace(/\/+$/, ""), name: p.peer || p.peerUrl }))
+  } catch { return [] }
+}
+
+async function buildLiveSnapshot(daemon: DaemonConfig): Promise<LiveSnapshot> {
+  const dash = daemon.dashboard
+  const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
+  const primaryToken = dash.token
+  // Sources: primary + configured extras + auto-discovered mesh peers.
+  const seen = new Map<string, { name: string; url: string; token?: string }>()
+  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: primaryToken })
+  for (const d of dash.daemons) {
+    const key = d.url.replace(/\/+$/, "")
+    if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: d.token })
+  }
+  const ac = new AbortController()
+  const timeout = setTimeout(() => ac.abort(), 3000)
+  try {
+    const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, ac.signal)
+    for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
+    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal)))
+    return { ts: new Date().toISOString(), nodes }
+  } finally { clearTimeout(timeout) }
+}
+
+function startLiveStream(req: IncomingMessage, res: ServerResponse, daemon: DaemonConfig): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  })
+  let closed = false
+  const send = (ev: string, data: unknown) => {
+    if (closed) return
+    res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+  const tick = async () => {
+    try {
+      const snap = await buildLiveSnapshot(daemon)
+      send("snapshot", snap)
+    } catch (e: any) {
+      send("error", { message: e.message })
+    }
+  }
+  // Initial tick immediately, then every 2s.
+  tick()
+  const timer = setInterval(tick, 2000)
+  req.on("close", () => { closed = true; clearInterval(timer); res.end() })
+}
+
+// --- A2A issue drafting ---
+//
+// Builds a convention-aware prompt, calls the configured agent on the daemon,
+// and parses a strict JSON reply. The agent returns title + refined description
+// + suggested labels + (optional) suggested assignee username.
+
+const DRAFT_CONVENTIONS = `
+You are helping draft a new GitLab issue. Follow these conventions strictly.
+
+Title pattern:
+  <Kind>: <page|component> – <short symptom>
+Kinds: Bug, UX, Copy, Perf, A11y, Security, UI, Incident (defects)
+       Feat, Enh, Deprecate (features)
+       Epic, Story, Spike, Req (planning)
+       Data, Env, Test, Refactor, Chore, Task, Mgmt (technical)
+
+Title guidance:
+  - Be specific about the location ("Contact page", not "frontend").
+  - Use lowercase for the symptom.
+  - Keep the symptom 4-7 words max, present tense.
+  - Do NOT include issue IDs.
+
+Description structure (Markdown):
+  For bugs: Problem / Steps to Reproduce / Expected / Actual / Environment / Impact.
+  For features/stories: User Story (As a … I want … So that …) + Acceptance Criteria bullets.
+  Otherwise: concise problem statement + any relevant context.
+
+Labels:
+  - Pick ONE Role label from: Dev, Design, QA, Ops, PM, mgmt.
+  - Pick ONE Kind label matching the title prefix (bug, task, ux, ui, perf, security, copy, enhancement, …).
+  - Pick ONE Priority: critical, high, medium, low.
+  - Pick ONE Difficulty: diff-XS, diff-S, diff-M, diff-L, diff-XL.
+  - Optional Area/feature labels if clearly applicable from the known label list.
+
+Return ONLY a single JSON object on one line — no prose, no code fences, no explanation.
+Shape:
+  { "title": string, "description": string, "labels": string[], "assigneeUsername": string | null, "kind": string }
+If you don't have enough information to pick a label confidently, omit it rather than guessing.
+`
+
+async function draftIssue(daemon: DaemonConfig, body: any): Promise<{ title: string; description: string; labels: string[]; assigneeUsername?: string; kind?: string; raw?: string }> {
+  const rough: string = (body?.rough || "").toString().trim()
+  if (!rough) throw new Error("rough description required")
+  const agentId: string | undefined = body?.agent || daemon.dashboard.draftAgent
+  if (!agentId) throw new Error("no draft agent configured (set dashboard.draftAgent or pass agent in body)")
+
+  const boardCtx: {
+    boardName?: string; primaryLabel?: string; project?: string;
+    knownLabels?: string[]; members?: string[]; columnLabel?: string
+  } = body?.context || {}
+
+  const userPrompt = [
+    `Rough description from the user:`,
+    `"""`,
+    rough,
+    `"""`,
+    ``,
+    `Board: ${boardCtx.boardName || "(unspecified)"}`,
+    boardCtx.primaryLabel ? `Primary board label (include in labels): ${boardCtx.primaryLabel}` : "",
+    boardCtx.columnLabel ? `Target column label (include in labels): ${boardCtx.columnLabel}` : "",
+    boardCtx.project ? `GitLab project: ${boardCtx.project}` : "",
+    boardCtx.knownLabels?.length ? `Known labels in this project (prefer picking from these when they fit):\n- ${boardCtx.knownLabels.slice(0, 60).join("\n- ")}` : "",
+    boardCtx.members?.length ? `Possible assignees (GitLab usernames): ${boardCtx.members.slice(0, 20).join(", ")}` : "",
+    ``,
+    `Produce the JSON draft now.`,
+  ].filter(Boolean).join("\n")
+
+  const url = daemon.dashboard.daemonUrl.replace(/\/+$/, "") + "/task"
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (daemon.dashboard.token) headers["Authorization"] = `Bearer ${daemon.dashboard.token}`
+
+  const r = await fetch(url, {
+    method: "POST", headers,
+    body: JSON.stringify({
+      agent: agentId,
+      message: userPrompt,
+      context: { channel: "a2a", sender: "board-dashboard", systemPrompt: DRAFT_CONVENTIONS },
+    }),
+  })
+  if (!r.ok) throw new Error(`daemon /task HTTP ${r.status}: ${await r.text().catch(() => "")}`)
+  const data: any = await r.json()
+  if (data.error) throw new Error(String(data.error))
+  const content: string = (data.content || "").toString()
+
+  // Agent may wrap JSON in ```json fences or prose; extract the first balanced {...}.
+  const parsed = extractJson(content)
+  if (!parsed || typeof parsed.title !== "string") {
+    throw new Error("agent did not return a valid JSON draft. Raw: " + content.slice(0, 400))
+  }
+  const labels: string[] = Array.isArray(parsed.labels) ? parsed.labels.filter((x: any) => typeof x === "string") : []
+  // Inject primary/column labels if the agent missed them.
+  if (boardCtx.primaryLabel && !labels.includes(boardCtx.primaryLabel)) labels.unshift(boardCtx.primaryLabel)
+  if (boardCtx.columnLabel && !labels.includes(boardCtx.columnLabel)) labels.unshift(boardCtx.columnLabel)
+  return {
+    title: parsed.title.trim(),
+    description: (parsed.description || "").toString(),
+    labels,
+    assigneeUsername: typeof parsed.assigneeUsername === "string" ? parsed.assigneeUsername : undefined,
+    kind: typeof parsed.kind === "string" ? parsed.kind : undefined,
+    raw: content,
+  }
+}
+
+function extractJson(text: string): any {
+  if (!text) return null
+  // Try direct parse
+  try { return JSON.parse(text) } catch { /* fallthrough */ }
+  // Strip code fences
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenced) { try { return JSON.parse(fenced[1]) } catch { /* fallthrough */ } }
+  // Find first balanced {...}
+  const start = text.indexOf("{")
+  if (start === -1) return null
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (c === "{") depth++
+    else if (c === "}") { depth--; if (depth === 0) { try { return JSON.parse(text.slice(start, i + 1)) } catch { return null } } }
+  }
+  return null
+}
+
 // --- HTTP helpers ---
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -404,10 +706,21 @@ function renderBoardHtml(): string {
   <select id="filterMilestone" title="Milestone"><option value="">Any milestone</option></select>
   <div id="filterLabels" class="chips"></div>
   <div class="spacer"></div>
+  <a href="/live" class="link" title="Live mesh view (L)">◎ Live</a>
+  <button id="activityBtn" title="Agent activity (a)">◉ Activity</button>
   <button id="newIssueBtn" title="New issue">+ New</button>
   <button id="refreshBtn" title="Refresh (r)">↻</button>
   <div id="conn" class="conn ok" title="ready">●</div>
 </header>
+<aside id="activity-panel" class="activity-panel hidden" aria-hidden="true">
+  <header>
+    <h2>Agent Activity</h2>
+    <span id="activity-source" class="source"></span>
+    <button id="activity-close" class="x" title="Close">✕</button>
+  </header>
+  <div id="activity-body">Loading…</div>
+  <footer id="activity-events" class="events"></footer>
+</aside>
 <main id="columns"></main>
 <div id="toast"></div>
 <div id="modal" class="modal" aria-hidden="true">
@@ -422,6 +735,17 @@ function renderBoardHtml(): string {
     </header>
     <div class="modal-body">
       <div class="m-main">
+        <div id="m-draft" class="draft-box" hidden>
+          <label class="fld">
+            <span>✨ Describe the issue (the agent will draft a proper title + description)</span>
+            <textarea id="m-rough" rows="3" placeholder="e.g. when I upload a CSV over 500 rows in Receiving Records the import silently fails"></textarea>
+          </label>
+          <div class="draft-row">
+            <select id="m-draft-agent" title="Drafting agent"><option value="">Agent…</option></select>
+            <button id="m-draft-go" class="btn-primary" type="button">✨ Draft</button>
+            <span id="m-draft-hint" class="hint"></span>
+          </div>
+        </div>
         <label class="fld">
           <span>Description</span>
           <textarea id="m-desc" rows="8" placeholder="Markdown supported"></textarea>
@@ -475,6 +799,210 @@ function renderBoardHtml(): string {
 </body>
 </html>`
 }
+
+// --- Live full-screen page (/live) ---
+
+function renderLiveHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentX — Live</title>
+<style>${LIVE_CSS}</style>
+</head>
+<body>
+<header>
+  <div class="brand">AgentX <span class="sub">· Live</span></div>
+  <div id="summary" class="summary"></div>
+  <div class="spacer"></div>
+  <a href="/" class="link">← Boards</a>
+  <span id="ts" class="ts" title="Last update"></span>
+  <span id="conn" class="conn ok" title="connected">●</span>
+</header>
+<main id="grid"></main>
+<script>${LIVE_JS}</script>
+</body>
+</html>`
+}
+
+const LIVE_CSS = `
+:root {
+  --bg: #0b0d14; --card: #151823; --node: #1a1d29; --border: #2a2d3a;
+  --text: #e6e8ef; --muted: #8b8fa3; --accent: #6366f1;
+  --green: #22c55e; --yellow: #f59e0b; --red: #ef4444; --blue: #3b82f6; --gray: #6b7280;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 14px; padding: 10px 18px;
+  background: #10131c; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+header .brand { font-weight: 600; color: var(--accent); font-size: 15px; }
+header .brand .sub { color: var(--muted); font-weight: 500; }
+header .summary { display: flex; gap: 16px; color: var(--muted); font-size: 12px; }
+header .summary b { color: var(--text); }
+header .spacer { flex: 1; }
+header .link { color: var(--muted); text-decoration: none; font-size: 13px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; }
+header .link:hover { color: var(--accent); border-color: var(--accent); }
+header .ts { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
+header .conn { font-size: 14px; }
+header .conn.ok { color: var(--green); }
+header .conn.warn { color: var(--yellow); }
+header .conn.err { color: var(--red); }
+
+main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.node { background: var(--node); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.node > header { background: transparent; position: static; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 10px; }
+.node .name { font-weight: 600; font-size: 14px; }
+.node .url { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
+.node .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 7px; border-radius: 10px; background: rgba(99,102,241,0.2); color: #c5c8d6; }
+.node .tag.down { background: rgba(239,68,68,0.25); color: #fca5a5; }
+.node .tag.up { background: rgba(34,197,94,0.2); color: #86efac; }
+.node .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px; padding: 12px 14px; }
+
+.agent { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.2s; }
+.agent.busy { border-color: var(--green); box-shadow: 0 0 0 1px rgba(34,197,94,0.3); }
+.agent.errored { border-color: var(--red); }
+.agent > .top { display: flex; align-items: center; gap: 8px; }
+.agent .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex-shrink: 0; }
+.agent.busy .dot { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s ease-in-out infinite; }
+.agent.errored .dot { background: var(--red); }
+.agent .name { font-weight: 600; font-size: 13px; flex: 1; }
+.agent .tier { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; }
+.agent .stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
+.agent .stats b { color: var(--text); font-weight: 600; }
+.agent .stats .err b { color: var(--red); }
+.agent .tasks { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.agent .task { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.agent .task .channel { background: rgba(99,102,241,0.18); color: var(--accent);
+  font-size: 9px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.5px; }
+.agent .task .elapsed { color: var(--muted); font-family: ui-monospace, monospace; font-size: 10px; }
+.agent .task .preview { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.agent .idle { color: var(--muted); font-size: 11px; font-style: italic; }
+
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+`
+
+const LIVE_JS = `
+'use strict';
+
+const ui = { nodes: new Map(), summary: { nodes: 0, agents: 0, busy: 0, errors: 0 } };
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function fmtElapsed(ms) {
+  if (ms < 1000) return ms + 'ms';
+  const s = Math.floor(ms / 1000); if (s < 60) return s + 's';
+  const m = Math.floor(s / 60); const rs = s % 60;
+  if (m < 60) return m + 'm ' + (rs < 10 ? '0' : '') + rs + 's';
+  const h = Math.floor(m / 60); const rm = m % 60;
+  return h + 'h ' + (rm < 10 ? '0' : '') + rm + 'm';
+}
+
+function render(snapshot) {
+  const grid = document.getElementById('grid');
+  const nowTs = new Date(snapshot.ts).toLocaleTimeString();
+  document.getElementById('ts').textContent = nowTs;
+  const summary = { nodes: snapshot.nodes.length, reachable: 0, agents: 0, busy: 0, errors: 0 };
+  grid.innerHTML = '';
+  for (const node of snapshot.nodes) {
+    if (node.reachable) summary.reachable++;
+    summary.agents += node.agents.length;
+    for (const a of node.agents) {
+      const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
+      if (busy) summary.busy++;
+      summary.errors += (a.errors || 0);
+    }
+    grid.appendChild(renderNode(node));
+  }
+  document.getElementById('summary').innerHTML =
+    '<span><b>' + summary.reachable + '/' + summary.nodes + '</b> nodes</span>' +
+    '<span><b>' + summary.agents + '</b> agents</span>' +
+    '<span><b>' + summary.busy + '</b> active now</span>' +
+    '<span><b>' + summary.errors + '</b> errors</span>';
+}
+
+function renderNode(node) {
+  const sec = document.createElement('section'); sec.className = 'node';
+  const tag = node.reachable
+    ? '<span class="tag up">online · ' + (node.uptimeSec ? Math.round(node.uptimeSec / 60) + 'm' : '—') + '</span>'
+    : '<span class="tag down">offline — ' + escapeHtml(node.error || 'unreachable') + '</span>';
+  sec.innerHTML = '<header><div class="name">' + escapeHtml(node.name) + '</div>' +
+    '<div class="url">' + escapeHtml(node.url) + '</div>' +
+    tag + '</header><div class="grid"></div>';
+  const g = sec.querySelector('.grid');
+  if (!node.reachable || node.agents.length === 0) {
+    const empty = document.createElement('div'); empty.style.color = 'var(--muted)'; empty.style.padding = '8px 4px';
+    empty.textContent = node.reachable ? 'No agents on this node.' : 'Unreachable.';
+    g.appendChild(empty);
+  } else {
+    for (const a of node.agents) g.appendChild(renderAgent(a));
+  }
+  return sec;
+}
+
+function renderAgent(a) {
+  const card = document.createElement('div');
+  const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
+  const errored = (a.errors || 0) > 0;
+  card.className = 'agent' + (busy ? ' busy' : '') + (errored ? ' errored' : '');
+  const tasks = (a.runningTasks || []).map(t => {
+    const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
+    return '<div class="task">' +
+      '<span class="channel">' + escapeHtml(t.channel || '—') + '</span>' +
+      '<span class="preview" title="' + escapeHtml(t.messagePreview || '') + '">' + escapeHtml(t.messagePreview || '(no preview)') + '</span>' +
+      '<span class="elapsed">' + elapsed + '</span>' +
+    '</div>';
+  }).join('');
+  const tasksBlock = tasks
+    ? '<div class="tasks">' + tasks + '</div>'
+    : (busy ? '<div class="tasks"><div class="task"><span class="elapsed">running · no preview</span></div></div>'
+            : '<div class="idle">idle</div>');
+  card.innerHTML =
+    '<div class="top">' +
+      '<span class="dot"></span>' +
+      '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
+      '<span class="tier">' + escapeHtml(a.tier || '') + '</span>' +
+    '</div>' +
+    '<div class="stats">' +
+      '<span>Active <b>' + (a.active || 0) + '</b></span>' +
+      '<span>Total <b>' + (a.total || 0) + '</b></span>' +
+      '<span class="err">Err <b>' + (a.errors || 0) + '</b></span>' +
+    '</div>' + tasksBlock;
+  return card;
+}
+
+function connect() {
+  const conn = document.getElementById('conn');
+  let es;
+  const open = () => {
+    try { es = new EventSource('/api/live/stream'); } catch (e) { setTimeout(open, 2000); return; }
+    es.addEventListener('snapshot', (ev) => {
+      conn.className = 'conn ok'; conn.title = 'connected';
+      try { render(JSON.parse(ev.data)); } catch {}
+    });
+    es.addEventListener('error', () => {
+      conn.className = 'conn err'; conn.title = 'reconnecting…';
+      es.close(); setTimeout(open, 2000);
+    });
+  };
+  open();
+}
+
+// Re-render every second to tick elapsed counters even when no new snapshot arrives.
+let lastSnap = null;
+fetch('/api/live').then(r => r.json()).then(s => { lastSnap = s; render(s); }).catch(() => {});
+setInterval(() => { if (lastSnap) {
+  // Patch elapsed times without a fresh snapshot
+  document.querySelectorAll('.agent .task .elapsed').forEach((el) => { /* placeholder: server snapshot advances on stream */ });
+} }, 1000);
+connect();
+`
 
 const BOARD_CSS = `
 :root {
@@ -650,6 +1178,62 @@ header #newIssueBtn:hover { filter: brightness(1.1); }
   .modal-body { grid-template-columns: 1fr; }
   .modal-body .m-side { border-left: none; border-top: 1px solid var(--border); }
 }
+
+/* --- Activity panel --- */
+.activity-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 340px;
+  background: var(--card); border-left: 1px solid var(--border); z-index: 140;
+  display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,0.35);
+  transition: transform 0.2s ease; }
+.activity-panel.hidden { transform: translateX(100%); pointer-events: none; }
+.activity-panel > header { display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); background: var(--col-hdr); }
+.activity-panel > header h2 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; }
+.activity-panel > header .source { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+.activity-panel > header .x { background: transparent; border: none; color: var(--muted); font-size: 16px;
+  cursor: pointer; padding: 4px 8px; }
+.activity-panel > header .x:hover { color: var(--text); }
+#activity-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.agent-card { background: var(--col); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.agent-card .top { display: flex; align-items: center; gap: 8px; }
+.agent-card .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex-shrink: 0; }
+.agent-card .dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s ease-in-out infinite; }
+.agent-card .dot.errored { background: var(--red); }
+.agent-card .name { font-weight: 600; font-size: 13px; flex: 1; }
+.agent-card .tier { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.agent-card .stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
+.agent-card .stats b { color: var(--text); font-weight: 600; }
+.agent-card .stats .errors b { color: var(--red); }
+.agent-card .current { font-size: 11px; color: var(--muted); padding-top: 4px; border-top: 1px dashed var(--border);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card .current b { color: var(--text); font-weight: 500; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+.activity-panel .events { padding: 10px 14px; max-height: 200px; overflow-y: auto;
+  border-top: 1px solid var(--border); background: #0a0c11; font: 11px/1.5 ui-monospace, monospace; }
+.activity-panel .events .evt { color: var(--muted); margin-bottom: 4px; }
+.activity-panel .events .evt .ts { color: #4a4e5a; }
+.activity-panel .events .evt .who { color: var(--accent); }
+.activity-panel .events .evt .what { color: var(--text); }
+.activity-panel .events .evt.err .what { color: var(--red); }
+
+/* Shift the main grid left when activity panel is open so cards aren't hidden */
+body.panel-open main#columns { padding-right: 352px; }
+body.panel-open header { padding-right: 356px; }
+
+header #activityBtn.on { background: var(--accent); color: white; border-color: var(--accent); }
+header a.link { color: var(--text); text-decoration: none; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+header a.link:hover { color: var(--accent); border-color: var(--accent); }
+
+/* AI draft row inside the create modal */
+.draft-box { background: var(--col); border: 1px dashed var(--accent); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 14px; }
+.draft-box .fld { margin-bottom: 8px; }
+.draft-box .draft-row { display: flex; gap: 8px; align-items: center; }
+.draft-box .draft-row select { flex: 0 0 160px; }
+.draft-box .draft-row .hint { color: var(--muted); font-size: 12px; flex: 1; }
+.draft-box .draft-row .hint.err { color: var(--red); }
+.draft-box .draft-row .hint.ok { color: var(--green); }
 `
 
 const BOARD_JS = `
@@ -959,7 +1543,498 @@ document.getElementById('filterSearch').oninput = debounce(e => { state.filter.q
 document.getElementById('filterAssignee').onchange = e => { state.filter.assignee = e.target.value; loadItems(); };
 document.getElementById('filterMilestone').onchange = e => { state.filter.milestone = e.target.value; loadItems(); };
 document.getElementById('refreshBtn').onclick = () => loadItems();
-window.addEventListener('keydown', (e) => { if (e.key === 'r' && !e.target.matches('input,select,textarea')) loadItems(); });
+document.getElementById('newIssueBtn').onclick = () => openCreateModal(null);
+document.getElementById('activityBtn').onclick = () => toggleActivity();
+document.getElementById('activity-close').onclick = () => toggleActivity(false);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modal').classList.contains('open')) { closeModal(); return; }
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key === 'r') loadItems();
+  if (e.key === 'a') toggleActivity();
+});
+
+// --- Modal (detail view / create) ---
+
+async function openDetailModal(itemId) {
+  openModal('edit', itemId);
+  const hint = document.getElementById('m-hint');
+  hint.textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/boards/' + state.current.id + '/items/' + encodeURIComponent(itemId));
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+    const detail = await r.json();
+    state.modal.original = detail;
+    state.modal.draft = cloneForDraft(detail);
+    paintModal(state.modal.draft);
+    hint.textContent = '';
+  } catch (e) {
+    hint.textContent = 'Load failed: ' + e.message;
+  }
+}
+
+function openCreateModal(columnId) {
+  state.modal.targetColumnId = columnId || null;
+  const blank = {
+    id: null, title: '', description: '',
+    labels: [], labelDetails: [], assignees: [], milestone: '', state: 'opened',
+  };
+  // Pre-apply the target column's scoped label so the new issue lands in that column.
+  if (columnId && state.current) {
+    const col = state.current.columns.find(c => c.id === columnId);
+    if (col && col.kind === 'scoped-label' && col.scopedLabel) {
+      blank.labels.push(col.scopedLabel);
+      blank.labelDetails.push({ name: col.scopedLabel, color: col.accent });
+    } else if (col && col.kind === 'label' && col.mapsToLabel) {
+      blank.labels.push(col.mapsToLabel);
+      blank.labelDetails.push({ name: col.mapsToLabel, color: col.accent });
+    }
+  }
+  // Carry the board's primary label (the team filter) so created issues show up here.
+  if (state.current && state.current.primaryToolLabel && !blank.labels.includes(state.current.primaryToolLabel)) {
+    blank.labels.push(state.current.primaryToolLabel);
+    blank.labelDetails.push({ name: state.current.primaryToolLabel });
+  }
+  openModal('create', null);
+  state.modal.original = null;
+  state.modal.draft = blank;
+  paintModal(blank);
+}
+
+function openModal(mode, id) {
+  state.modal.mode = mode;
+  state.modal.id = id;
+  const m = document.getElementById('modal');
+  m.classList.add('open');
+  m.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('m-save').textContent = mode === 'create' ? 'Create' : 'Save';
+  document.getElementById('m-iid').textContent = id ? ('#' + id.split(':').slice(-1)[0]) : 'NEW';
+  // Draft box only in create mode.
+  const draftBox = document.getElementById('m-draft');
+  if (draftBox) {
+    draftBox.hidden = mode !== 'create';
+    if (mode === 'create') {
+      document.getElementById('m-rough').value = '';
+      document.getElementById('m-draft-hint').textContent = '';
+      document.getElementById('m-draft-hint').className = 'hint';
+      populateDraftAgents();
+    }
+  }
+  // Pre-focus: rough for create, description for edit.
+  setTimeout(() => {
+    const el = document.getElementById(mode === 'create' ? 'm-rough' : 'm-desc');
+    if (el) el.focus();
+  }, 50);
+}
+
+async function populateDraftAgents() {
+  const sel = document.getElementById('m-draft-agent');
+  if (!sel) return;
+  if (sel.options.length > 1) {
+    // Already populated — just sync selection.
+    const saved = localStorage.getItem('agentx.draftAgent');
+    if (saved) sel.value = saved;
+    return;
+  }
+  try {
+    const r = await fetch('/api/agents');
+    if (!r.ok) return;
+    const list = await r.json();
+    sel.innerHTML = '<option value="">Agent…</option>';
+    for (const a of list) {
+      const o = document.createElement('option');
+      o.value = a.id; o.textContent = a.name + ' (' + a.tier + ')';
+      sel.appendChild(o);
+    }
+    const saved = localStorage.getItem('agentx.draftAgent');
+    if (saved && list.some(a => a.id === saved)) sel.value = saved;
+    sel.onchange = () => localStorage.setItem('agentx.draftAgent', sel.value);
+  } catch {}
+}
+
+async function draftWithAgent() {
+  const rough = document.getElementById('m-rough').value.trim();
+  const agentId = document.getElementById('m-draft-agent').value;
+  const hint = document.getElementById('m-draft-hint');
+  const goBtn = document.getElementById('m-draft-go');
+  if (!rough) { hint.textContent = 'Describe the issue first.'; hint.className = 'hint err'; return; }
+  if (!agentId) { hint.textContent = 'Pick a drafting agent.'; hint.className = 'hint err'; return; }
+  goBtn.disabled = true;
+  hint.textContent = 'Drafting with ' + agentId + '…'; hint.className = 'hint';
+
+  // Build board context for convention-aware prompting.
+  const board = state.current;
+  const col = state.modal.targetColumnId ? board.columns.find(c => c.id === state.modal.targetColumnId) : null;
+  const columnLabel = col && (col.scopedLabel || col.mapsToLabel);
+  const ctx = {
+    boardName: board.name,
+    primaryLabel: board.primaryToolLabel,
+    project: board.source && board.source.projects && board.source.projects[0],
+    knownLabels: state.meta.labels || [],
+    members: (state.meta.members || []).map(m => m.username),
+    columnLabel: columnLabel,
+  };
+
+  try {
+    const r = await fetch('/api/draft', {
+      method: 'POST', headers: csrfHeaders(),
+      body: JSON.stringify({ rough, agent: agentId, context: ctx }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const drafted = await r.json();
+    // Populate the existing form fields.
+    document.getElementById('m-title').value = drafted.title || '';
+    document.getElementById('m-desc').value = drafted.description || '';
+    state.modal.draft.title = drafted.title || '';
+    state.modal.draft.description = drafted.description || '';
+    state.modal.draft.labels = Array.isArray(drafted.labels) ? drafted.labels.slice() : state.modal.draft.labels;
+    if (drafted.assigneeUsername) {
+      const m = state.meta.members.find(x => x.username === drafted.assigneeUsername);
+      if (!state.modal.draft.assignees.some(a => a.username === drafted.assigneeUsername)) {
+        state.modal.draft.assignees.push({
+          username: drafted.assigneeUsername, name: m && m.name, avatarUrl: m && m.avatarUrl,
+        });
+      }
+    }
+    paintModal(state.modal.draft);
+    hint.textContent = 'Draft ready — review and edit before creating.';
+    hint.className = 'hint ok';
+  } catch (e) {
+    hint.textContent = 'Draft failed: ' + e.message;
+    hint.className = 'hint err';
+  } finally {
+    goBtn.disabled = false;
+  }
+}
+function closeModal() {
+  const m = document.getElementById('modal');
+  m.classList.remove('open');
+  m.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  state.modal = { mode: null, id: null, original: null, draft: null };
+}
+function cloneForDraft(d) {
+  return {
+    id: d.id, title: d.title || '', description: d.description || '',
+    labels: (d.labels || []).slice(), labelDetails: (d.labelDetails || []).slice(),
+    assignees: (d.assignees || []).slice(),
+    milestone: d.milestone || '',
+    state: d.state || 'opened',
+    stage: d.stage, url: d.url, createdAt: d.createdAt, updatedAt: d.updatedAt, author: d.author,
+  };
+}
+
+function paintModal(d) {
+  document.getElementById('m-title').value = d.title || '';
+  document.getElementById('m-desc').value = d.description || '';
+
+  document.querySelectorAll('#m-state button').forEach(b => {
+    b.classList.toggle('active', b.dataset.state === (d.state || 'opened'));
+    b.onclick = () => { state.modal.draft.state = b.dataset.state; paintModal(state.modal.draft); };
+  });
+
+  renderChipPicker('m-labels', d.labels || [], state.meta.labels, {
+    chipStyle: (name) => {
+      const match = (d.labelDetails || []).find(l => l.name === name);
+      const bg = match && match.color ? match.color : labelColor(name);
+      return { background: bg, color: pickTextColor(bg) };
+    },
+    onAdd: (name) => { if (!state.modal.draft.labels.includes(name)) { state.modal.draft.labels.push(name); paintModal(state.modal.draft); } },
+    onRemove: (name) => { state.modal.draft.labels = state.modal.draft.labels.filter(l => l !== name); paintModal(state.modal.draft); },
+    placeholder: 'Add label…',
+    allowCustom: true,
+  });
+
+  const aNames = (d.assignees || []).map(a => a.username);
+  renderChipPicker('m-assignees', aNames, state.meta.members.map(m => m.username), {
+    chipLabel: (u) => {
+      const m = state.meta.members.find(x => x.username === u) || (d.assignees || []).find(x => x.username === u);
+      return (m && m.name) || u;
+    },
+    onAdd: (u) => {
+      if (state.modal.draft.assignees.some(a => a.username === u)) return;
+      const m = state.meta.members.find(x => x.username === u);
+      state.modal.draft.assignees.push({ username: u, name: m && m.name, avatarUrl: m && m.avatarUrl });
+      paintModal(state.modal.draft);
+    },
+    onRemove: (u) => { state.modal.draft.assignees = state.modal.draft.assignees.filter(a => a.username !== u); paintModal(state.modal.draft); },
+    placeholder: 'Assign…',
+  });
+
+  const ms = document.getElementById('m-milestone');
+  ms.innerHTML = '<option value="">None</option>';
+  for (const m of state.meta.milestones) {
+    const o = document.createElement('option');
+    o.value = m.title; o.textContent = m.title + (m.state === 'closed' ? ' (closed)' : '');
+    if (m.title === d.milestone) o.selected = true;
+    ms.appendChild(o);
+  }
+  if (d.milestone && !state.meta.milestones.some(m => m.title === d.milestone)) {
+    const o = document.createElement('option'); o.value = d.milestone; o.textContent = d.milestone; o.selected = true;
+    ms.appendChild(o);
+  }
+  ms.onchange = () => { state.modal.draft.milestone = ms.value; };
+
+  document.getElementById('m-author').textContent = (d.author && (d.author.name || d.author.username)) || '—';
+  document.getElementById('m-created').textContent = d.createdAt ? fmtDate(d.createdAt) : '—';
+  document.getElementById('m-updated').textContent = d.updatedAt ? fmtDate(d.updatedAt) : '—';
+  const link = document.getElementById('m-link');
+  if (d.url) { link.href = d.url; link.style.display = ''; } else { link.style.display = 'none'; }
+}
+
+function renderChipPicker(elId, selected, options, opts) {
+  const el = document.getElementById(elId);
+  el.innerHTML = '';
+  for (const name of selected) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = opts.chipLabel ? opts.chipLabel(name) : name;
+    if (opts.chipStyle) {
+      const st = opts.chipStyle(name);
+      if (st.background) chip.style.background = st.background;
+      if (st.color) chip.style.color = st.color;
+    }
+    const x = document.createElement('span');
+    x.className = 'remove'; x.textContent = '✕'; x.title = 'Remove';
+    x.onclick = (e) => { e.stopPropagation(); opts.onRemove(name); };
+    chip.appendChild(x);
+    el.appendChild(chip);
+  }
+  const dd = document.createElement('span');
+  dd.className = 'dropdown';
+  const btn = document.createElement('button');
+  btn.className = 'add-chip'; btn.textContent = '+ ' + (opts.placeholder || 'Add');
+  btn.type = 'button';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    let menu = dd.querySelector('.menu');
+    if (menu) { menu.remove(); return; }
+    menu = document.createElement('div');
+    menu.className = 'menu';
+    const search = document.createElement('input');
+    search.className = 'search'; search.type = 'search'; search.placeholder = opts.placeholder || 'Search…';
+    menu.appendChild(search);
+    const list = document.createElement('div');
+    menu.appendChild(list);
+    const paintList = (q) => {
+      list.innerHTML = '';
+      const ql = (q || '').toLowerCase();
+      const filtered = options.filter(o => o.toLowerCase().includes(ql) && !selected.includes(o));
+      if (filtered.length === 0 && !(opts.allowCustom && q)) {
+        const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'No matches';
+        list.appendChild(empty);
+      }
+      for (const o of filtered.slice(0, 50)) {
+        const opt = document.createElement('div');
+        opt.className = 'opt'; opt.textContent = opts.chipLabel ? opts.chipLabel(o) : o;
+        opt.onclick = () => { opts.onAdd(o); menu.remove(); };
+        list.appendChild(opt);
+      }
+      if (opts.allowCustom && q && !options.includes(q) && !selected.includes(q)) {
+        const opt = document.createElement('div');
+        opt.className = 'opt'; opt.textContent = 'Create "' + q + '"';
+        opt.onclick = () => { opts.onAdd(q); menu.remove(); };
+        list.appendChild(opt);
+      }
+    };
+    search.oninput = (ev) => paintList(ev.target.value);
+    paintList('');
+    dd.appendChild(menu);
+    setTimeout(() => search.focus(), 0);
+    const away = (ev) => {
+      if (!dd.contains(ev.target)) { menu.remove(); document.removeEventListener('click', away); }
+    };
+    setTimeout(() => document.addEventListener('click', away), 0);
+  };
+  dd.appendChild(btn);
+  el.appendChild(dd);
+}
+
+async function saveModal() {
+  const saveBtn = document.getElementById('m-save');
+  const hint = document.getElementById('m-hint');
+  saveBtn.disabled = true;
+  hint.textContent = 'Saving…';
+  const d = state.modal.draft;
+  d.title = document.getElementById('m-title').value.trim();
+  d.description = document.getElementById('m-desc').value;
+  if (!d.title) { hint.textContent = 'Title required'; saveBtn.disabled = false; return; }
+
+  try {
+    if (state.modal.mode === 'create') {
+      const r = await fetch('/api/boards/' + state.current.id + '/items', {
+        method: 'POST', headers: csrfHeaders(),
+        body: JSON.stringify({
+          title: d.title, description: d.description, labels: d.labels,
+          assigneeUsernames: (d.assignees || []).map(a => a.username),
+          milestoneTitle: d.milestone || undefined,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+      toast('Created ✓', 'ok');
+    } else {
+      const orig = state.modal.original || {};
+      const patch = {};
+      if (d.title !== (orig.title || '')) patch.title = d.title;
+      if (d.description !== (orig.description || '')) patch.description = d.description;
+      const origLabels = (orig.labels || []).slice().sort().join('|');
+      const newLabels = (d.labels || []).slice().sort().join('|');
+      if (origLabels !== newLabels) patch.labels = d.labels;
+      const origA = (orig.assignees || []).map(a => a.username).sort().join('|');
+      const newA = (d.assignees || []).map(a => a.username).sort().join('|');
+      if (origA !== newA) patch.assigneeUsernames = (d.assignees || []).map(a => a.username);
+      if (d.milestone !== (orig.milestone || '')) patch.milestoneTitle = d.milestone || null;
+
+      if (Object.keys(patch).length > 0) {
+        const r = await fetch('/api/boards/' + state.current.id + '/items/' + encodeURIComponent(state.modal.id), {
+          method: 'PATCH', headers: csrfHeaders(), body: JSON.stringify(patch),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+      }
+      // State change → move to the appropriate column (reuses transition logic on server).
+      if (d.state !== (orig.state || 'opened')) {
+        const fromCol = state.current.columns.find(c => c.id === orig.stage);
+        const toCol = d.state === 'closed'
+          ? state.current.columns.find(c => c.kind === 'closed')
+          : state.current.columns.find(c => c.kind === 'open-backlog');
+        if (toCol) {
+          await fetch('/api/boards/' + state.current.id + '/items/' + encodeURIComponent(state.modal.id) + '/move', {
+            method: 'PATCH', headers: csrfHeaders(),
+            body: JSON.stringify({ from: fromCol && fromCol.id, to: toCol.id }),
+          });
+        }
+      }
+      toast('Saved ✓', 'ok');
+    }
+    closeModal();
+    await loadItems();
+    state.meta.labels = collectKnownLabels();
+  } catch (e) {
+    hint.textContent = 'Save failed: ' + e.message;
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+document.getElementById('m-close').onclick = closeModal;
+document.getElementById('m-cancel').onclick = closeModal;
+document.getElementById('m-save').onclick = saveModal;
+document.querySelector('#modal .modal-backdrop').onclick = closeModal;
+document.getElementById('m-title').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveModal();
+});
+const draftGo = document.getElementById('m-draft-go');
+if (draftGo) draftGo.onclick = draftWithAgent;
+const roughEl = document.getElementById('m-rough');
+if (roughEl) roughEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) draftWithAgent();
+});
+
+// --- Agent activity panel (live polling of the daemon API) ---
+
+const activity = {
+  open: false, timer: null, daemonUrl: null, lastEventAt: 0, eventsRing: [],
+};
+
+function resolveDaemonUrl() {
+  // Allow ?daemon=http://host:port override; fall back to localhost:18800 (MacBook) then 19900 (clawd).
+  const q = new URLSearchParams(window.location.search).get('daemon');
+  if (q) return q.replace(/\\/+\$/, '');
+  return localStorage.getItem('agentx.daemon') || 'http://localhost:18800';
+}
+
+function toggleActivity(force) {
+  activity.open = typeof force === 'boolean' ? force : !activity.open;
+  const panel = document.getElementById('activity-panel');
+  const btn = document.getElementById('activityBtn');
+  panel.classList.toggle('hidden', !activity.open);
+  panel.setAttribute('aria-hidden', activity.open ? 'false' : 'true');
+  btn.classList.toggle('on', activity.open);
+  document.body.classList.toggle('panel-open', activity.open);
+  if (activity.open) startActivity(); else stopActivity();
+}
+
+async function startActivity() {
+  activity.daemonUrl = resolveDaemonUrl();
+  document.getElementById('activity-source').textContent = activity.daemonUrl.replace(/^https?:\\/\\//, '');
+  await tickActivity();
+  activity.timer = setInterval(tickActivity, 3000);
+}
+function stopActivity() {
+  if (activity.timer) { clearInterval(activity.timer); activity.timer = null; }
+}
+
+async function tickActivity() {
+  const body = document.getElementById('activity-body');
+  try {
+    // Fetch /agents (always present) + /business/status (optional — 404 tolerated)
+    const [agentsRes, bizRes] = await Promise.all([
+      fetch(activity.daemonUrl + '/agents').catch(() => null),
+      fetch(activity.daemonUrl + '/business/status').catch(() => null),
+    ]);
+    if (!agentsRes || !agentsRes.ok) throw new Error('daemon unreachable at ' + activity.daemonUrl);
+    const agents = await agentsRes.json();
+    const biz = bizRes && bizRes.ok ? await bizRes.json() : null;
+
+    // Merge business data (currentItem, onClock, lastReport) per-agent when available.
+    const bizByAgent = {};
+    if (biz && Array.isArray(biz.employees)) for (const e of biz.employees) bizByAgent[e.agentId || e.id] = e;
+
+    body.innerHTML = '';
+    for (const a of agents) {
+      const b = bizByAgent[a.id];
+      body.appendChild(renderAgentCard(a, b));
+    }
+    if (agents.length === 0) {
+      body.innerHTML = '<div class="empty">No agents on this daemon.</div>';
+    }
+    // Events ring
+    if (biz && biz.recentEvents) appendEvents(biz.recentEvents);
+  } catch (e) {
+    body.innerHTML = '<div class="empty" style="color:var(--red)">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderAgentCard(a, biz) {
+  const card = document.createElement('div');
+  card.className = 'agent-card';
+  const active = (a.active || 0) > 0 || (biz && biz.onClock && biz.busy);
+  const dotClass = (a.errors || 0) > 0 ? 'errored' : (active ? 'active' : '');
+  const current = biz && biz.currentItem
+    ? '<div class="current">Working on <b>' + escapeHtml(biz.currentItem.title || biz.currentItem.id) + '</b></div>'
+    : (active ? '<div class="current"><b>' + a.active + ' active task' + (a.active === 1 ? '' : 's') + '</b></div>' : '');
+  card.innerHTML =
+    '<div class="top">' +
+      '<span class="dot ' + dotClass + '"></span>' +
+      '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
+      '<span class="tier">' + escapeHtml(a.tier || '') + '</span>' +
+    '</div>' +
+    '<div class="stats">' +
+      '<span>Active <b>' + (a.active || 0) + '</b></span>' +
+      '<span>Total <b>' + (a.total || 0) + '</b></span>' +
+      '<span class="errors">Errors <b>' + (a.errors || 0) + '</b></span>' +
+    '</div>' + current;
+  return card;
+}
+
+function appendEvents(events) {
+  const holder = document.getElementById('activity-events');
+  const existingKeys = new Set([...holder.querySelectorAll('.evt')].map(e => e.dataset.key));
+  for (const ev of events.slice(-50)) {
+    const key = (ev.ts || '') + '|' + (ev.type || '') + '|' + (ev.agentId || '');
+    if (existingKeys.has(key)) continue;
+    const div = document.createElement('div');
+    div.className = 'evt' + (ev.type && ev.type.includes('error') ? ' err' : '');
+    div.dataset.key = key;
+    div.innerHTML = '<span class="ts">' + (ev.ts ? new Date(ev.ts).toLocaleTimeString() : '') + '</span> ' +
+                    '<span class="who">' + escapeHtml(ev.agentId || '—') + '</span> ' +
+                    '<span class="what">' + escapeHtml(ev.summary || ev.type || '') + '</span>';
+    holder.appendChild(div);
+  }
+  // Keep last 50 entries
+  while (holder.children.length > 50) holder.removeChild(holder.firstChild);
+  holder.scrollTop = holder.scrollHeight;
+}
 
 loadBoards().catch(e => toast('Init failed: ' + e.message));
 `
