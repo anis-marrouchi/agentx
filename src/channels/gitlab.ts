@@ -117,11 +117,16 @@ export class GitLabAdapter implements ChannelAdapter {
   private agentToUsername: Map<string, string> = new Map()
   private log: (...args: unknown[]) => void
   private hooks?: HookRegistry
+  private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]"), hooks?: HookRegistry) {
     this.config = config
     this.log = log
     this.hooks = hooks
+  }
+
+  setReactForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>): void {
+    this.reactForwarder = fn
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -405,8 +410,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // React with 👀 using the RESOLVED agent's own token (deterministic identity)
     const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
     const agentToken = agentMapping?.token
-    debug.webhook("gitlab", "token", `agent="${targetAgentId}" mapping=${agentMapping ? "found" : "MISSING"} hasToken=${!!agentToken}`)
-    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken).catch(() => {})
+    const agentNode = (agentMapping as any)?.node as string | undefined
+    debug.webhook("gitlab", "token", `agent="${targetAgentId}" mapping=${agentMapping ? "found" : "MISSING"} hasToken=${!!agentToken} node=${agentNode ?? "local"}`)
+    this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken, agentNode, targetAgentId).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
 
@@ -676,9 +682,16 @@ export class GitLabAdapter implements ChannelAdapter {
    * ONLY uses the agent's own token — never the global token (which may
    * belong to a different agent user, causing the wrong identity to react).
    */
-  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string): Promise<void> {
+  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string, node?: string, agentId?: string): Promise<void> {
+    // Agent lives on a remote mesh peer — forward the reaction request there
+    if (!agentToken && node && agentId && this.reactForwarder) {
+      this.log(`Forwarding 👀 reaction for "${agentId}" to mesh peer "${node}"`)
+      await this.reactForwarder(node, project, noteableType, noteableIid, noteId, agentId)
+      return
+    }
+
     if (!agentToken) {
-      this.log(`No agent token for reaction on note ${noteId} — skipping (would react as wrong user)`)
+      this.log(`No token for reaction on note ${noteId} (agent "${agentId}") — skipping`)
       return
     }
 

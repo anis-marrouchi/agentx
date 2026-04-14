@@ -497,6 +497,21 @@ export class AgentXDaemon {
         this.log,
         this.hooks,
       )
+      // Wire up mesh reaction forwarder — for agents hosted on remote peers
+      if (this.mesh) {
+        gitlab.setReactForwarder(async (node, project, noteableType, noteableIid, noteId, agentId) => {
+          const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
+          if (!peer) {
+            this.log(`[gitlab] react forward: peer "${node}" not found or unhealthy`)
+            return
+          }
+          await fetch(`${peer.peerUrl}/gitlab/react`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId }),
+          })
+        })
+      }
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
@@ -659,6 +674,34 @@ export class AgentXDaemon {
           setDebug(false)
           this.log("Debug disabled")
           this.json(res, 200, { enabled: false })
+          break
+        }
+
+        case "POST /gitlab/react": {
+          // Forwarded from a mesh peer: perform a 👀 reaction using local agent token
+          const body = await readBody(req)
+          const { project, noteableType, noteableIid, noteId, agentId } = body as any
+          const mappings = this.config.channels.gitlab?.agentMappings || []
+          const mapping = mappings.find((m: any) => m.agentId === agentId)
+          const token = mapping?.token || this.config.channels.gitlab?.token
+          if (!token || !this.config.channels.gitlab?.host) {
+            this.json(res, 404, { error: "no gitlab token for agent" })
+            break
+          }
+          const encoded = encodeURIComponent(project)
+          const ep = noteableType === "issue"
+            ? `${this.config.channels.gitlab.host}/api/v4/projects/${encoded}/issues/${noteableIid}/notes/${noteId}/award_emoji`
+            : `${this.config.channels.gitlab.host}/api/v4/projects/${encoded}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
+          try {
+            const glRes = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
+              body: JSON.stringify({ name: "eyes" }),
+            })
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status })
+          } catch (e: any) {
+            this.json(res, 500, { error: e.message })
+          }
           break
         }
 
