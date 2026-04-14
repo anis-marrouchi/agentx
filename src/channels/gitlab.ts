@@ -176,7 +176,7 @@ export class GitLabAdapter implements ChannelAdapter {
         // Remote-routed mappings (node property) take explicit priority over token resolution.
         // Token resolution is authoritative only for local agents.
         const alreadySet = this.usernameToAgent.has(username.toLowerCase())
-        if (!alreadySet || (mapping as any).node) {
+        if (!alreadySet || mapping.node) {
           this.usernameToAgent.set(username.toLowerCase(), mapping.agentId)
         }
       }

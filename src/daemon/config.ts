@@ -97,6 +97,11 @@ const channelsConfigSchema = z.object({
       gitlabUsernames: z.array(z.string()).default([]),
       keywords: z.array(z.string()).default([]),
       token: z.string().optional(),
+      /** If set, the agent lives on a remote mesh peer (node id). Forces the
+       *  username→agent map to resolve to this mapping even when a local
+       *  agent's token resolves to the same GitLab user — prevents collisions
+       *  like two agents both claiming @devops-noqta. */
+      node: z.string().optional(),
     })).default([]),
   }).default({}),
 })
