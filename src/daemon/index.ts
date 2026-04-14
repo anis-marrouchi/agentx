@@ -495,6 +495,7 @@ export class AgentXDaemon {
           agentMappings: this.config.channels.gitlab.agentMappings,
         },
         this.log,
+        this.hooks,
       )
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)

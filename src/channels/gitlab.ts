@@ -1,6 +1,7 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
+import type { HookRegistry } from "@/hooks"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -115,10 +116,12 @@ export class GitLabAdapter implements ChannelAdapter {
   /** Maps agentId -> actual GitLab username (resolved from tokens at startup) */
   private agentToUsername: Map<string, string> = new Map()
   private log: (...args: unknown[]) => void
+  private hooks?: HookRegistry
 
-  constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]")) {
+  constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]"), hooks?: HookRegistry) {
     this.config = config
     this.log = log
+    this.hooks = hooks
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -516,17 +519,31 @@ export class GitLabAdapter implements ChannelAdapter {
    * Handle pipeline events (success, failed).
    */
   private async handlePipeline(event: GitLabPipelineEvent, res: ServerResponse): Promise<void> {
-    if (!this.handler) { res.writeHead(200); res.end("ok"); return }
+    const attrs = event.object_attributes
+    const project = event.project.path_with_namespace
+    const terminalStatuses = ["success", "failed", "canceled"]
 
-    // Only notify on failures
-    if (event.object_attributes.status !== "failed") {
+    // Fire on:gitlab-pipeline hook for all terminal pipelines (side-effect hooks, e.g. time logging)
+    if (terminalStatuses.includes(attrs.status) && this.hooks?.has("on:gitlab-pipeline" as any)) {
+      this.hooks.execute("on:gitlab-pipeline" as any, {
+        event: "on:gitlab-pipeline" as any,
+        pipelineId: attrs.id,
+        status: attrs.status,
+        ref: attrs.ref,
+        duration: attrs.duration,
+        project,
+        projectId: (event as any).project?.id,
+        raw: event,
+      }).catch((e: Error) => this.log(`on:gitlab-pipeline hook error: ${e.message}`))
+    }
+
+    // Only route to agent on failures
+    if (!this.handler || attrs.status !== "failed") {
       res.writeHead(200)
       res.end("ok")
       return
     }
 
-    const attrs = event.object_attributes
-    const project = event.project.path_with_namespace
     const agentId = this.resolveAgent(project)
 
     const incoming: IncomingMessage = {
