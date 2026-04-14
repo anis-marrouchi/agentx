@@ -180,6 +180,17 @@ export class MessageRouter {
     }
 
     const chatId = msg.group?.id || msg.sender.id
+
+    // If preferNode is set, skip local and route directly to the specified mesh peer
+    if (msg.preferNode) {
+      this.log(`preferNode="${msg.preferNode}" — forcing mesh routing for agent "${agentId}"`)
+      const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, msg.preferNode)
+      if (!routed) {
+        this.log(`Mesh peer "${msg.preferNode}" not found or unhealthy for agent "${agentId}"`)
+      }
+      return
+    }
+
     const agentDef = this.registry.getAgent(agentId)
 
     // Agent not found locally — try forwarding to a mesh peer
@@ -733,6 +744,64 @@ export class MessageRouter {
     }
 
     return false
+  }
+
+  /**
+   * Route to a specific named mesh peer by agentId.
+   * Used when preferNode is set on the incoming message.
+   */
+  private async handleViaMeshByPeer(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    agentId: string,
+    peerName: string,
+  ): Promise<boolean> {
+    if (!this.mesh) return false
+
+    const directory = this.mesh.directory()
+    const peer = directory.find(p => p.peer === peerName)
+
+    if (!peer || !peer.healthy) return false
+
+    const skill = peer.skills.find(s => s.id === agentId) ?? { name: agentId, id: agentId }
+
+    this.log(`Mesh routing by preferNode [${msg.channel}/${msg.sender.name}] -> peer "${peerName}" agent "${agentId}"`)
+
+    const chatId = msg.group?.id || msg.sender.id
+    const replyAccountId = msg.accountId
+
+    this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
+    const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
+
+    try {
+      const response = await this.mesh.sendTask(peerName, msg.text, agentId)
+      clearInterval(typingTimer)
+
+      if (response) {
+        await this.adapterSend(adapter, {
+          channel: msg.channel,
+          chatId,
+          text: response,
+          replyTo: msg.id,
+          accountId: replyAccountId,
+        })
+      }
+
+      return true
+    } catch (e: any) {
+      clearInterval(typingTimer)
+      this.log(`Mesh routing error for ${peerName}/${agentId}: ${e.message}`)
+
+      await this.adapterSend(adapter, {
+        channel: msg.channel,
+        chatId,
+        text: `Error from ${peerName}/${skill.name}: ${e.message}`,
+        replyTo: msg.id,
+        parseMode: "plain",
+        accountId: replyAccountId,
+      })
+      return true
+    }
   }
 
   private getAccountForAgent(agentId: string): string | undefined {

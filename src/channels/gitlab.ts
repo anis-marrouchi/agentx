@@ -30,6 +30,7 @@ export interface GitLabAgentMapping {
   gitlabUsernames: string[]  // GitLab @usernames that map to this agent
   keywords: string[]         // keywords in comments that trigger this agent (e.g. "coder", "devops")
   token?: string             // per-agent GitLab PAT — posts comments as this agent's user
+  node?: string              // if set, forward to this mesh peer instead of handling locally
 }
 
 export interface GitLabChannelConfig {
@@ -172,8 +173,10 @@ export class GitLabAdapter implements ChannelAdapter {
     for (const mapping of this.config.agentMappings || []) {
       for (const username of mapping.gitlabUsernames) {
         this.botUsernames.add(username)
-        // Only set if not already resolved from token (API is authoritative)
-        if (!this.usernameToAgent.has(username.toLowerCase())) {
+        // Remote-routed mappings (node property) take explicit priority over token resolution.
+        // Token resolution is authoritative only for local agents.
+        const alreadySet = this.usernameToAgent.has(username.toLowerCase())
+        if (!alreadySet || (mapping as any).node) {
           this.usernameToAgent.set(username.toLowerCase(), mapping.agentId)
         }
       }
@@ -423,6 +426,7 @@ export class GitLabAdapter implements ChannelAdapter {
       timestamp: new Date(),
       raw: event,
       resolvedAgent: targetAgentId,
+      preferNode: agentMapping?.node,
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
       media: imageAttachment,
     }

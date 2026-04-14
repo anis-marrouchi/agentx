@@ -41,6 +41,7 @@ export interface IncomingMessage {
   }
   raw?: unknown         // original platform message
   resolvedAgent?: string // pre-resolved agent ID (for route-based channels like WhatsApp)
+  preferNode?: string    // if set, skip local routing and forward to this mesh peer
   channelMeta?: ChannelMeta // verified context from the channel adapter
 }
 
