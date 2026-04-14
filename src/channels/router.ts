@@ -842,19 +842,30 @@ export class MessageRouter {
       return undefined
     }
 
+    // Messages from another bot (cross-daemon Telegram cascades, e.g. one bot
+    // quoting another bot's handle in a prose reply) must only route on an
+    // explicit `@`-prefixed handle of a local agent. Bare-word matches like
+    // "nadia" in text or "devops-mtgl" mentioned in a reply would otherwise
+    // trigger spurious activations across daemons.
+    const atMentionsOnly = msg.sender.isBot === true
+
     // Group: check policy
     if (msg.channel === "telegram") {
       const policy = this.config.channels.telegram.policy
       if (policy.group === "mention-required") {
-        const agentId = this.registry.findByMention(msg.text)
+        const agentId = this.registry.findByMention(msg.text, { atMentionsOnly })
         if (!agentId) return undefined
         return agentId
       }
     }
 
     // Default: mention matching, then account binding
-    const mentionAgent = this.registry.findByMention(msg.text)
+    const mentionAgent = this.registry.findByMention(msg.text, { atMentionsOnly })
     if (mentionAgent) return mentionAgent
+    // If this is a bot-origin message with no explicit @ match, drop it —
+    // don't fall through to account-binding which would route every bot reply
+    // in the group to the bound agent.
+    if (atMentionsOnly) return undefined
 
     if (msg.channel === "telegram") {
       const account = this.config.channels.telegram.accounts[msg.accountId]

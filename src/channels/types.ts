@@ -25,6 +25,10 @@ export interface IncomingMessage {
     id: string
     name: string
     username?: string
+    /** True when the origin is another bot account (Telegram `from.is_bot`).
+     *  Used by the router to apply strict @-mention-only routing — prevents
+     *  cross-daemon cascades from bare-word matches in bot replies. */
+    isBot?: boolean
   }
   group?: {
     id: string

@@ -110,14 +110,22 @@ export class AgentRegistry {
   /**
    * Find agent by mention pattern (e.g., "@my_bot" -> "my-agent").
    * Returns the agent with the longest (most specific) mention match.
+   *
+   * When `atMentionsOnly` is true, only `@`-prefixed mentions are considered.
+   * This is used for messages originating from another bot (cross-daemon
+   * Telegram cascades, for example) where we don't want bare-word matches
+   * like "nadia" in prose or "devops-mtgl" quoted in a reply to trigger
+   * agents spuriously. Intentional handoffs still work because agents
+   * write explicit `@noqta_X_bot` handles.
    */
-  findByMention(text: string): string | undefined {
+  findByMention(text: string, opts: { atMentionsOnly?: boolean } = {}): string | undefined {
     const lower = text.toLowerCase()
     let bestId: string | undefined
     let bestLen = 0
 
     for (const [id, state] of this.agents) {
       for (const mention of state.def.mentions) {
+        if (opts.atMentionsOnly && !mention.startsWith("@")) continue
         const mentionLower = mention.toLowerCase()
         if (lower.includes(mentionLower) && mentionLower.length > bestLen) {
           bestId = id

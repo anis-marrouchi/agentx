@@ -9,7 +9,7 @@ interface TelegramUpdate {
   update_id: number
   message?: {
     message_id: number
-    from: { id: number; first_name: string; last_name?: string; username?: string }
+    from: { id: number; first_name: string; last_name?: string; username?: string; is_bot?: boolean }
     chat: { id: number; type: string; title?: string }
     text?: string
     caption?: string
@@ -471,6 +471,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 id: String(msg.from.id),
                 name: [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" "),
                 username: msg.from.username,
+                isBot: msg.from.is_bot === true,
               },
               group: isGroup
                 ? { id: groupId, name: msg.chat.title || "" }
