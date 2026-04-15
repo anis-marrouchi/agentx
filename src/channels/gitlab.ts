@@ -58,6 +58,13 @@ interface GitLabNoteEvent {
   merge_request?: { iid: number; title: string; state: string; source_branch: string; target_branch: string }
 }
 
+interface GitLabUserRef {
+  id?: number
+  name?: string
+  username: string
+  avatar_url?: string
+}
+
 interface GitLabIssueEvent {
   object_kind: "issue"
   user: { name: string; username: string }
@@ -69,7 +76,16 @@ interface GitLabIssueEvent {
     state: string
     action: string
     url: string
+    updated_at?: string
     assignee_ids?: number[]
+  }
+  /** Current assignees (top-level on modern GitLab payloads). */
+  assignees?: GitLabUserRef[]
+  /** Field-change diffs (GitLab Premium/CE both emit this on updates). */
+  changes?: {
+    assignees?: { previous: GitLabUserRef[]; current: GitLabUserRef[] }
+    labels?: { previous: any[]; current: any[] }
+    [key: string]: unknown
   }
 }
 
@@ -455,15 +471,88 @@ export class GitLabAdapter implements ChannelAdapter {
   private async handleIssue(event: GitLabIssueEvent, res: ServerResponse): Promise<void> {
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
-    // Skip bot-triggered issue updates (label changes, assignments by agents)
+    // Skip bot-triggered issue updates (label changes, assignments by agents) —
+    // otherwise a bot re-assigning itself could trigger itself infinitely.
     if (this.isBotUser(event.user.username)) {
       res.writeHead(200); res.end("ok"); return
     }
 
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
-    const agentId = this.resolveAgent(project)
 
+    // Compute newly-assigned users. GitLab emits `changes.assignees` on updates,
+    // but on the initial `open` action a new issue can be created with an
+    // assignee already set — in that case we treat every current assignee as
+    // newly-assigned so the agent starts work immediately.
+    const prevList = event.changes?.assignees?.previous || []
+    const currentList = event.changes?.assignees?.current || event.assignees || []
+    const prevNames = new Set(prevList.map((u) => (u.username || "").toLowerCase()).filter(Boolean))
+    const newlyAssigned = currentList.filter(
+      (u) => u.username && !prevNames.has(u.username.toLowerCase()),
+    )
+
+    // Route one IncomingMessage per newly-assigned user that maps to an agent.
+    let firedForAssignee = false
+    for (const u of newlyAssigned) {
+      const username = u.username.toLowerCase()
+      const assigneeAgentId = this.usernameToAgent.get(username)
+      if (!assigneeAgentId) {
+        this.log(`Issue #${attrs.iid}: assignee @${u.username} is not mapped to an agent, skipping`)
+        continue
+      }
+
+      const agentMapping = this.config.agentMappings?.find((m) => m.agentId === assigneeAgentId)
+      const chatId = `${project}:issue:${attrs.iid}`
+      const channelMeta = await this.getChannelMeta(chatId)
+
+      // Stable id per (issue, assignee, updated_at) — the router's dedup LRU
+      // will drop webhook retries of the exact same assignment event.
+      const stamp = attrs.updated_at || "now"
+      const incoming: IncomingMessage = {
+        id: `issue-assign-${attrs.iid}-${username}-${stamp}`,
+        channel: "gitlab",
+        accountId: "default",
+        sender: {
+          id: chatId,
+          name: event.user.name,
+          username: event.user.username,
+        },
+        text: [
+          `[GitLab Issue #${attrs.iid}] ${attrs.title}`,
+          "",
+          attrs.description ? attrs.description.slice(0, 2000) : "(no description)",
+          "",
+          `URL: ${attrs.url}`,
+          "",
+          "---",
+          `You have been assigned this issue by ${event.user.name} (@${event.user.username}).`,
+          "Review the description, apply the Noqta GitLab conventions, and start working on it. Post progress as comments on the issue.",
+        ].join("\n"),
+        timestamp: new Date(),
+        raw: event,
+        resolvedAgent: assigneeAgentId,
+        preferNode: agentMapping?.node,
+        channelMeta: channelMeta ? {
+          ...channelMeta,
+          issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
+        } : undefined,
+      }
+
+      this.log(`Issue #${attrs.iid} assigned to @${u.username} -> agent "${assigneeAgentId}"${agentMapping?.node ? ` (remote: ${agentMapping.node})` : ""}`)
+      this.handler(incoming).catch((e) => this.log(`Error handling issue assignment: ${e.message}`))
+      firedForAssignee = true
+    }
+
+    // If we dispatched to assignee agents, stop — don't also fire the
+    // project-default agent (would duplicate work on every assignment).
+    if (firedForAssignee) {
+      res.writeHead(200); res.end("ok"); return
+    }
+
+    // Fallback: existing behavior — route generic issue events (non-assignment
+    // updates, or assignees that don't map to any agent) to the project's
+    // default agent from routes.
+    const agentId = this.resolveAgent(project)
     const incoming: IncomingMessage = {
       id: `issue-${attrs.iid}-${attrs.action}`,
       channel: "gitlab",
@@ -473,7 +562,6 @@ export class GitLabAdapter implements ChannelAdapter {
         name: event.user.name,
         username: event.user.username,
       },
-      // No group — sender.id has project:type:iid for reply routing
       text: `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
       timestamp: new Date(),
       raw: event,
