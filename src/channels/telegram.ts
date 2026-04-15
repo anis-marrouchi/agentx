@@ -121,10 +121,62 @@ class TelegramGroupStore {
   }
 }
 
+/**
+ * Persist long-poll `offset` per account to disk so a daemon restart doesn't
+ * re-fetch updates Telegram still holds in its 24h retention window. Without
+ * this, a crash loop (e.g. restart-counter cascade) causes the same message
+ * to be handled N times — seen on 2026-04-15 when clawd spun through 20
+ * systemd restarts while a zombie daemon held the pidfile, resulting in 6×
+ * duplicate replies from the queued incoming messages.
+ */
+class TelegramOffsetStore {
+  private offsets: Record<string, number> = {}
+  private filePath: string
+  private dirty = false
+  private saveTimer?: ReturnType<typeof setTimeout>
+
+  constructor(dataDir: string) {
+    this.filePath = resolve(dataDir, ".agentx/telegram/offsets.json")
+    try {
+      if (existsSync(this.filePath)) {
+        this.offsets = JSON.parse(readFileSync(this.filePath, "utf-8"))
+      }
+    } catch { this.offsets = {} }
+  }
+
+  get(accountId: string): number {
+    return this.offsets[accountId] || 0
+  }
+
+  set(accountId: string, offset: number): void {
+    if (this.offsets[accountId] === offset) return
+    this.offsets[accountId] = offset
+    this.dirty = true
+    // Debounce disk writes — each poll can produce many offset updates.
+    if (!this.saveTimer) {
+      this.saveTimer = setTimeout(() => this.flush(), 500)
+    }
+  }
+
+  flush(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = undefined
+    }
+    if (!this.dirty) return
+    try {
+      const dir = dirname(this.filePath)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(this.filePath, JSON.stringify(this.offsets, null, 2))
+      this.dirty = false
+    } catch { /* best-effort */ }
+  }
+}
+
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram"
   private accounts: Map<string, TelegramAccountConfig>
-  private offsets: Map<string, number> = new Map()
+  private offsetStore: TelegramOffsetStore
   private handler?: (msg: IncomingMessage) => Promise<void>
   private polling = false
   private log: (...args: unknown[]) => void
@@ -136,6 +188,7 @@ export class TelegramAdapter implements ChannelAdapter {
     this.accounts = new Map(Object.entries(accounts))
     this.log = log
     this.groupStore = new TelegramGroupStore(process.cwd())
+    this.offsetStore = new TelegramOffsetStore(process.cwd())
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -178,6 +231,9 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     this.polling = false
+    // Flush any debounced offset writes BEFORE we release the Telegram session
+    // — otherwise a clean stop could drop the last in-memory offset update.
+    this.offsetStore.flush()
     // Abort in-flight long-poll requests by making a short getUpdates call
     // with offset=-1 on each account. This immediately releases Telegram's
     // server-side session so the next start won't get 409 conflicts.
@@ -366,7 +422,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
     while (this.polling) {
       try {
-        const offset = this.offsets.get(accountId) || 0
+        const offset = this.offsetStore.get(accountId) || 0
         const data = await this.apiCall(config.token, "getUpdates", {
           offset: offset || undefined,
           timeout: 30,
@@ -376,7 +432,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const updates: TelegramUpdate[] = data.result || []
 
         for (const update of updates) {
-          this.offsets.set(accountId, update.update_id + 1)
+          this.offsetStore.set(accountId, update.update_id + 1)
 
           if (update.message && this.handler) {
             const msg = update.message
