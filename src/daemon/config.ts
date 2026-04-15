@@ -42,6 +42,10 @@ const agentConfigSchema = z.object({
   systemPrompt: z.string().optional(),
   mentions: z.array(z.string()).default([]),
   maxConcurrent: z.number().default(1),
+  /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
+   *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder
+   *  agents that do long investigations or multi-file refactors. */
+  maxExecutionMinutes: z.number().int().min(1).max(240).default(20),
   permissionMode: z.string().default("default"),
   queueMode: z.enum(["collect", "followup", "drop"]).default("collect"),
   heartbeat: z.object({

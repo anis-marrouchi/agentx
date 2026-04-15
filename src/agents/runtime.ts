@@ -230,10 +230,11 @@ export async function executeClaudeCode(
   const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model)
 
   try {
+    const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
-        timeout: 600_000,
+        timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
         env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "user") },
       }, (error, stdout, stderr) => {
@@ -251,7 +252,15 @@ export async function executeClaudeCode(
     })
 
     if (!stdout && exitCode !== 0) {
-      const errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
+      // exit 143 = 128+SIGTERM → our own `timeout` killed the process. Surface
+      // that as a recognizable "timed out after Xm" message so operators can
+      // bump agent.maxExecutionMinutes instead of guessing at an opaque 143.
+      let errMsg: string
+      if (exitCode === 143) {
+        errMsg = `Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else {
+        errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
+      }
       return {
         content: "",
         error: errMsg.slice(0, 300),
@@ -298,9 +307,10 @@ export async function executeClaudeCodeStreaming(
   let fullText = ""
 
   try {
+    const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const proc = execa("claude", args, {
       cwd: agent.workspace,
-      timeout: 600_000, // 10 minutes
+      timeout: streamTimeoutMs,
       reject: false,
       env: process.env,
       // Don't buffer — we'll read stdout line by line
