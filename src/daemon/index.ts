@@ -944,7 +944,7 @@ export class AgentXDaemon {
             this.json(res, 400, { error: "Mesh not enabled" })
             return
           }
-          const result = await this.mesh.sendTask(body.peer as string, body.message as string)
+          const result = await this.mesh.sendTask(body.peer as string, body.message as string, body.agent as string | undefined)
           this.json(res, 200, { response: result })
           break
         }
