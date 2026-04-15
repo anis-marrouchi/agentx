@@ -37,6 +37,19 @@ const DEFAULT_STALE_SESSION_MINUTES = 120
 /** Session has a compacted summary prepended to its messages */
 const COMPACTION_MARKER = "[Compacted conversation summary"
 
+/** Bucket an ISO timestamp into a stable 15-min window label (e.g. "14:45").
+ *  Used in history rendering so the prompt's bucket headers change at most
+ *  every 15 minutes — the prefix stays byte-stable across intra-bucket
+ *  messages and the server-side prompt cache is preserved. */
+function bucketLabel(iso: string): string {
+  const m = iso.slice(11, 16) // HH:MM
+  const hh = m.slice(0, 2)
+  const mm = parseInt(m.slice(3, 5), 10)
+  if (Number.isNaN(mm)) return m
+  const qtr = Math.floor(mm / 15) * 15
+  return `${hh}:${qtr.toString().padStart(2, "0")}`
+}
+
 export class SessionStore {
   private sessionsDir: string
   private cache: Map<string, Session> = new Map()
@@ -169,13 +182,19 @@ export class SessionStore {
       `[Conversation history for today (${session.day})]`,
     ]
 
+    // Bucket messages into 15-min windows. Stamping every line with its own
+    // HH:MM broke the server-side prompt cache every turn (each new message
+    // adds a never-seen timestamp near the tail). A bucket header changes
+    // only every 15 min, so most turns within the window preserve cache.
+    let currentBucket = ""
     for (const msg of session.messages) {
-      const time = msg.timestamp.slice(11, 16) // HH:MM
-      if (msg.role === "user") {
-        lines.push(`[${time}] ${msg.name || "User"}: ${msg.content}`)
-      } else {
-        lines.push(`[${time}] ${msg.name || "Agent"}: ${msg.content}`)
+      const bucket = bucketLabel(msg.timestamp)
+      if (bucket !== currentBucket) {
+        lines.push(`— ${bucket} —`)
+        currentBucket = bucket
       }
+      const name = msg.name || (msg.role === "user" ? "User" : "Agent")
+      lines.push(`${name}: ${msg.content}`)
     }
 
     lines.push("[End of history — respond to the latest message above]")

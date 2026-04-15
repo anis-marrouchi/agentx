@@ -118,6 +118,10 @@ const cronJobSchema = z.object({
   prompt: z.string(),
   timeout: z.number().default(600),
   model: z.string().optional(),
+  /** Soft cap on output length. Claude Code CLI has no hard flag for this,
+   *  but appending an instruction to the prompt is reliably honored. Use
+   *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
+  maxOutputTokens: z.number().int().min(50).max(8000).optional(),
   onError: z.union([
     z.enum(["log", "notify", "disable"]),
     z.array(z.enum(["log", "notify", "disable"])),

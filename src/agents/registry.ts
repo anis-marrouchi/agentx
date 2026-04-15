@@ -345,9 +345,25 @@ export class AgentRegistry {
     }
     const activeSoul = this.activeSouls.get(soulSessionKey)
 
-    // Load bootstrap identity files (SOUL.md or SOUL.{profile}.md)
+    // Load bootstrap identity files (SOUL.md or SOUL.{profile}.md).
+    // These are delivered via --append-system-prompt to Claude Code so they
+    // live inside the cached system prompt — we no longer append them into
+    // the per-turn user-message context (which would pay cache-create on
+    // every new session). The context builder still gets a flag-empty
+    // bootstrapContext so the `[Identity]` / `[Personality]` block is
+    // suppressed in the rendered context (Claude sees them once, cached).
     const bootstrapFiles = loadBootstrapFiles(state.def.workspace, activeSoul)
-    const bootstrapContext = buildBootstrapContext(bootstrapFiles)
+    const bootstrapContextText = buildBootstrapContext(bootstrapFiles)
+
+    // Compose the cacheable system-prompt preamble. Order matters for cache
+    // stability: agent.systemPrompt is the most stable (config-defined),
+    // bootstrap files follow. Soul-switching mid-session produces a new
+    // append-text and a new Claude cache key; that's by design — the rare
+    // switch is worth a one-time cache-create cost.
+    const systemPromptAppend = [
+      state.def.systemPrompt || "",
+      bootstrapContextText || "",
+    ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
 
     const contextInput: ContextInput = {
       channel,
@@ -365,7 +381,7 @@ export class AgentRegistry {
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,
-      bootstrapContext: bootstrapContext || undefined,
+      // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: patternContext || undefined,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
@@ -378,8 +394,12 @@ export class AgentRegistry {
 
     const historyContext = buildAgentContext(contextInput)
 
+    // Attach the cacheable preamble onto the task so runtime.ts can forward
+    // it to Claude CLI's --append-system-prompt arg.
+    const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
+
     try {
-      const response = await executeTask(state.def, task, this.providers, onDelta, historyContext, resumeSessionId)
+      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId)
 
       if (response.error) {
         state.errors++

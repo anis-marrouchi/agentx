@@ -20,6 +20,11 @@ export interface AgentTask {
   agentId: string
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
+  /** Cacheable text delivered to Claude via --append-system-prompt. Typically
+   *  agent.systemPrompt + SOUL/IDENTITY/AGENTS.md. Passing stable content
+   *  here (instead of in the user-message body) keeps it inside Claude's
+   *  cached system prompt across session resumes. */
+  systemPromptAppend?: string
   context?: {
     channel?: string
     sender?: string
@@ -74,9 +79,11 @@ export type StreamCallback = (delta: string, fullText: string) => void
 function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string): string {
   const parts: string[] = []
 
-  if (agent.systemPrompt) {
-    parts.push(agent.systemPrompt)
-  }
+  // NOTE: agent.systemPrompt is no longer injected into the user-message body —
+  // it's now delivered via `--append-system-prompt` so Claude's prompt cache
+  // retains it across turns instead of us paying cache-create for it on every
+  // new session. If a per-task override is needed, use task.context.systemPrompt
+  // (which buildClaudeArgs also forwards to --append-system-prompt).
 
   // Inject environment context — skip if historyContext is provided (context engine handles it)
   if (task.context && !historyContext) {
@@ -159,6 +166,12 @@ function buildClaudeArgs(
   streaming: boolean,
   resumeSessionId?: string,
   modelOverride?: string,
+  /** Static per-agent preamble delivered via --append-system-prompt. Content
+   *  here is Claude-cached across turns as part of the system prompt, so
+   *  moving stable content (agent.systemPrompt + SOUL/IDENTITY/AGENTS.md) out
+   *  of the user-message body and into this arg avoids paying cache-create
+   *  for it on every new session. */
+  systemPromptAppend?: string,
 ): string[] {
   const args: string[] = [
     "-p", prompt,
@@ -182,6 +195,10 @@ function buildClaudeArgs(
 
   if (agent.permissionMode === "bypassPermissions") {
     args.push("--dangerously-skip-permissions")
+  }
+
+  if (systemPromptAppend && systemPromptAppend.trim().length > 0) {
+    args.push("--append-system-prompt", systemPromptAppend)
   }
 
   return args
@@ -241,7 +258,7 @@ export async function executeClaudeCode(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend)
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -317,7 +334,7 @@ export async function executeClaudeCodeStreaming(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend)
 
   let fullText = ""
   // Capture model + usage + session id from the stream events — Claude Code

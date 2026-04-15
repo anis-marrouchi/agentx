@@ -24,16 +24,32 @@ export class LandscapeBuilder {
     this.config = config
   }
 
+  /** Fingerprint of the peer set that produced the current cache. A rebuild
+   *  is skipped when `refresh()` gets a topologically-identical set — this
+   *  is the common case on every mesh heartbeat and rebuilding would
+   *  needlessly invalidate every agent's cached prompt prefix. */
+  private fingerprint = ""
+
   /**
    * Build landscape strings for all agents. Call at startup.
    */
   build(meshPeers?: MeshPeerInfo[]): void {
     if (meshPeers) this.meshPeers = meshPeers
     this.cache.clear()
+    this.fingerprint = this.computeFingerprint()
 
     for (const agentId of Object.keys(this.config.agents)) {
       this.cache.set(agentId, this.renderForAgent(agentId))
     }
+  }
+
+  /** Set-only signature of peers + their skill IDs. Health is excluded on
+   *  purpose — we don't want a flapping heartbeat to rebuild the cache. */
+  private computeFingerprint(): string {
+    const parts = [...this.meshPeers]
+      .sort((a, b) => a.peer.localeCompare(b.peer))
+      .map(p => `${p.peer}:${p.skills.map(s => s.id).sort().join(",")}`)
+    return parts.join("|")
   }
 
   /**
@@ -44,10 +60,15 @@ export class LandscapeBuilder {
   }
 
   /**
-   * Rebuild after mesh topology changes.
+   * Rebuild after mesh topology changes. Skipped when the peer set is
+   * unchanged so a flapping health heartbeat doesn't invalidate every
+   * agent's cached prompt prefix.
    */
   refresh(meshPeers: MeshPeerInfo[]): void {
-    this.build(meshPeers)
+    this.meshPeers = meshPeers
+    const next = this.computeFingerprint()
+    if (next === this.fingerprint && this.cache.size > 0) return
+    this.build()
   }
 
   private renderForAgent(selfId: string): string {
@@ -74,12 +95,21 @@ export class LandscapeBuilder {
       lines.push(`• ${def.name}${h} — ${cap}`)
     }
 
-    // Remote mesh agents
-    const healthyPeers = this.meshPeers.filter(p => p.healthy && p.skills.length > 0)
-    if (healthyPeers.length) {
+    // Remote mesh agents. Deliberately NOT filtered by `healthy` — a transient
+    // heartbeat flap would otherwise rebuild the landscape and bust every
+    // agent's prompt cache. Listing a peer that's momentarily unreachable
+    // costs nothing (the A2A call will fail cleanly and the agent will
+    // surface that to the user); filtering them out costs us a cache-create
+    // on every flap. Health shows up in /health and /live, not here.
+    const remotePeers = this.meshPeers.filter(p => p.skills.length > 0)
+    if (remotePeers.length) {
       lines.push("Remote:")
-      for (const peer of healthyPeers) {
-        for (const skill of peer.skills) {
+      // Stable ordering so the peer list doesn't shuffle between builds and
+      // invalidate the cache even when the set is unchanged.
+      const sortedPeers = [...remotePeers].sort((a, b) => a.peer.localeCompare(b.peer))
+      for (const peer of sortedPeers) {
+        const sortedSkills = [...peer.skills].sort((a, b) => a.id.localeCompare(b.id))
+        for (const skill of sortedSkills) {
           lines.push(`• ${skill.name} [${peer.peer}] — ${skill.description.slice(0, 60)}`)
         }
       }

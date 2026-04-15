@@ -21,6 +21,16 @@ const MAX_ENTRY_CHARS = 1500
  *  prompt budget on the next agent's first turn. */
 const REPEAT_WINDOW_MS = 60_000
 
+/** Bucket a timestamp into a stable 15-min window so the rendered history
+ *  header only changes every quarter-hour. Stamping every line with HH:MM
+ *  invalidates the cache on every new message; bucketing preserves it. */
+function bucketLabel(ts: number): string {
+  const d = new Date(ts)
+  const hh = d.getUTCHours().toString().padStart(2, "0")
+  const mm = Math.floor(d.getUTCMinutes() / 15) * 15
+  return `${hh}:${mm.toString().padStart(2, "0")}`
+}
+
 export class GroupLog {
   private dir: string
   private cache: Map<string, GroupLogEntry[]> = new Map()
@@ -71,29 +81,45 @@ export class GroupLog {
     // message). Coalesce runs of identical (sender,text) into one line with a
     // repeat count — protects the prompt from any spam that predates on-insert
     // dedup (historical log entries) and keeps the context compact.
-    let pending: { line: string; repeat: number } | null = null
+    // Bucket headers only appear when the 15-min window changes, so the
+    // rendered history is byte-stable within the bucket (cache-friendly).
+    let pending: { line: string; repeat: number; bucket: string } | null = null
+    const buffered: string[] = []
+    let lastBucket = ""
     const flushPending = (): boolean => {
       if (!pending) return true
       const out = pending.repeat > 1 ? `${pending.line}  [×${pending.repeat}]` : pending.line
       if (chars + out.length > MAX_CONTEXT_CHARS) return false
-      lines.splice(1, 0, out)
+      buffered.push(out)
       chars += out.length
+      // Emit a bucket header when the window changes (we're walking back in
+      // time — so the "new bucket" is older than the previous one).
+      if (pending.bucket !== lastBucket) {
+        const hdr = `— ${pending.bucket} —`
+        if (chars + hdr.length > MAX_CONTEXT_CHARS) { pending = null; return false }
+        buffered.push(hdr)
+        chars += hdr.length
+        lastBucket = pending.bucket
+      }
       pending = null
       return true
     }
 
     for (let i = log.length - 2; i >= 0; i--) {
       const entry = log[i]
-      const time = new Date(entry.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
-      const line = `[${time}] ${entry.sender}: ${entry.text}`
-      if (pending && pending.line === line) {
+      const line = `${entry.sender}: ${entry.text}`
+      const bucket = bucketLabel(entry.timestamp)
+      if (pending && pending.line === line && pending.bucket === bucket) {
         pending.repeat++
         continue
       }
       if (!flushPending()) break
-      pending = { line, repeat: 1 }
+      pending = { line, repeat: 1, bucket }
     }
     flushPending()
+    // Splice buffered entries (in reverse — they're back-to-front) under the
+    // opening header in oldest-first order.
+    for (let i = buffered.length - 1; i >= 0; i--) lines.splice(1, 0, buffered[i])
 
     if (lines.length <= 1) return ""
     lines.push("[End of conversation — respond to the latest message]")

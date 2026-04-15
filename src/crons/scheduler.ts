@@ -10,6 +10,19 @@ import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 // No external dependencies — uses setTimeout-based scheduling.
 
 /**
+ * Append a soft output-length cap to a cron prompt when the job configured
+ * `maxOutputTokens`. Claude Code CLI has no hard flag for output length,
+ * but a clear instruction at the end of the prompt is reliably honored by
+ * the model. Keeps a cheap knob available for operators without us needing
+ * to invent our own token counter or hack a post-response truncate.
+ */
+function withOutputCap(prompt: string, maxOutputTokens?: number): string {
+  if (!maxOutputTokens) return prompt
+  const approxChars = maxOutputTokens * 4
+  return `${prompt}\n\n[Response budget]\nKeep your response under ~${maxOutputTokens} tokens (~${approxChars} chars). Be concise — this is automated batch work, not a conversation.`
+}
+
+/**
  * Parse a cron expression into next-fire timestamp.
  * Supports standard 5-field format: minute hour day-of-month month day-of-week
  */
@@ -130,6 +143,7 @@ export class CronScheduler {
         prompt: def.prompt,
         timeout: def.timeout,
         model: def.model,
+        maxOutputTokens: def.maxOutputTokens,
         onError: def.onError,
         consecutiveErrors: 0,
         totalRuns: 0,
@@ -257,7 +271,7 @@ export class CronScheduler {
 
     try {
       const response = await this.registry.execute({
-        message: job.prompt,
+        message: withOutputCap(job.prompt, job.maxOutputTokens),
         agentId: job.agent,
         model: job.model,
         context: { channel: "cron" },
@@ -396,7 +410,10 @@ export class CronScheduler {
 
       try {
         const response = await this.registry.execute({
-          message: `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
+          message: withOutputCap(
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
+            job.maxOutputTokens,
+          ),
           agentId: job.agent,
           context: { channel: "cron" },
         })

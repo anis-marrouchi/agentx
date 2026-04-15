@@ -9,6 +9,11 @@ export interface CronJobState {
   prompt: string
   timeout: number
   model?: string
+  /** Soft output-length cap appended to the prompt at invocation time.
+   *  Claude Code CLI has no hard flag for this, so we instruct the model
+   *  via the prompt tail; reliably honored and keeps cache-hit intact
+   *  (hint text is per-job, not per-run). */
+  maxOutputTokens?: number
   onError: Array<"log" | "notify" | "disable">
   lastRun?: Date
   nextRun?: Date
