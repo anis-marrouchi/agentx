@@ -118,6 +118,8 @@ export class GitLabAdapter implements ChannelAdapter {
   private log: (...args: unknown[]) => void
   private hooks?: HookRegistry
   private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
+  private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
+  private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]"), hooks?: HookRegistry) {
     this.config = config
@@ -127,6 +129,14 @@ export class GitLabAdapter implements ChannelAdapter {
 
   setReactForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>): void {
     this.reactForwarder = fn
+  }
+
+  setSendNoteForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>): void {
+    this.sendNoteForwarder = fn
+  }
+
+  setLogTimeForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>): void {
+    this.logTimeForwarder = fn
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -257,8 +267,30 @@ export class GitLabAdapter implements ChannelAdapter {
         return ""
     }
 
-    // Use per-agent token — fall back to global only as last resort
+    // Identity rules — posts must go out under the agent's own GitLab user,
+    // never under the shared group-access-token user (e.g. @group_<id>_bot_*):
+    //
+    //   1. If the agent has a per-agent token configured locally → use it.
+    //   2. Else if the agent lives on a remote peer (mapping.node) and a
+    //      sendNoteForwarder is wired → forward the post there. The peer uses
+    //      its own local token (owned by that agent's GitLab user) to POST.
+    //   3. Else fall back to the global token (signed content from a generic
+    //      shared identity — legacy path, only reached for local agents with
+    //      no token mapping).
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === msg.agentId)
     const agentToken = this.getAgentToken(msg.agentId)
+    if (!agentToken && mapping?.node && this.sendNoteForwarder) {
+      try {
+        const body = `${msg.text}\n\n<!-- agentx:${msg.agentId || "unknown"} -->`
+        const noteId = await this.sendNoteForwarder(mapping.node, project, noteableType, iid, msg.agentId || "", body)
+        if (noteId) this.sentNoteIds.add(noteId)
+        return noteId
+      } catch (e: any) {
+        this.log(`GitLab send forward to "${mapping.node}" failed: ${e.message} — skipping (would post as group bot)`)
+        return ""
+      }
+    }
+
     const token = agentToken || this.config.token
     debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
@@ -825,8 +857,22 @@ export class GitLabAdapter implements ChannelAdapter {
     const typeSegment = noteableType === "merge_request" ? "merge_requests" : "issues"
     const endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/${typeSegment}/${iid}/add_spent_time`
 
-    // Use per-agent token if available
-    const token = this.getAgentToken(agentId) || this.config.token
+    // Same identity rules as send(): for remote-hosted agents with no local
+    // per-agent token, forward the time-log to the peer so it posts as the
+    // agent's real GitLab user rather than the shared group bot.
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const agentToken = this.getAgentToken(agentId)
+    if (!agentToken && mapping?.node && this.logTimeForwarder) {
+      try {
+        await this.logTimeForwarder(mapping.node, project, noteableType, iid, agentId || "", durationMs)
+        this.log(`Time logged (via peer "${mapping.node}"): ${duration} on ${project} ${typeSegment}/${iid} (${agentId})`)
+      } catch (e: any) {
+        this.log(`Time log forward to "${mapping.node}" failed: ${e.message} — skipping (would log as group bot)`)
+      }
+      return
+    }
+
+    const token = agentToken || this.config.token
 
     try {
       const res = await fetch(endpoint, {

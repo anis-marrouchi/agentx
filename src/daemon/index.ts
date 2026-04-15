@@ -518,6 +518,52 @@ export class AgentXDaemon {
             this.log(`[gitlab] react forward FAILED -> ${url} : ${e.message}`)
           }
         })
+
+        // Forward note posting to peer so reply identity stays under the
+        // agent's real GitLab user (e.g. @devops-noqta) instead of whatever
+        // the local global token resolves to (the group-access-token bot).
+        gitlab.setSendNoteForwarder(async (node, project, noteableType, noteableIid, agentId, text): Promise<string> => {
+          const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
+          if (!peer) {
+            this.log(`[gitlab] send-note forward: peer "${node}" not found or unhealthy`)
+            return ""
+          }
+          const url = `${peer.peerUrl}/gitlab/send-note`
+          try {
+            const r = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
+            })
+            const data = await r.json().catch(() => ({}))
+            this.log(`[gitlab] send-note forward -> ${url} : ${r.status} noteId=${(data as any).noteId || "?"}`)
+            return (data as any).noteId || ""
+          } catch (e: any) {
+            this.log(`[gitlab] send-note forward FAILED -> ${url} : ${e.message}`)
+            return ""
+          }
+        })
+
+        // Same for time tracking — peer posts /add_spent_time as its own user.
+        gitlab.setLogTimeForwarder(async (node, project, noteableType, noteableIid, agentId, durationMs): Promise<void> => {
+          const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
+          if (!peer) {
+            this.log(`[gitlab] log-time forward: peer "${node}" not found or unhealthy`)
+            return
+          }
+          const url = `${peer.peerUrl}/gitlab/log-time`
+          try {
+            const r = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
+            })
+            const respText = await r.text().catch(() => "")
+            this.log(`[gitlab] log-time forward -> ${url} : ${r.status} ${respText.slice(0, 160)}`)
+          } catch (e: any) {
+            this.log(`[gitlab] log-time forward FAILED -> ${url} : ${e.message}`)
+          }
+        })
       }
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
@@ -715,6 +761,75 @@ export class AgentXDaemon {
             this.json(res, 200, { ok: glRes.ok, status: glRes.status, gitlabResponse: respBody.slice(0, 200) })
           } catch (e: any) {
             this.log(`[gitlab/react] FETCH ERROR: ${e.message}`)
+            this.json(res, 500, { error: e.message })
+          }
+          break
+        }
+
+        case "POST /gitlab/send-note": {
+          // Forwarded from a mesh peer: post a note using local agent token
+          // so the comment shows up under the agent's real GitLab user.
+          const body = await readBody(req)
+          const { project, noteableType, noteableIid, agentId, text } = body as any
+          const mappings = this.config.channels.gitlab?.agentMappings || []
+          const mapping = mappings.find((m: any) => m.agentId === agentId)
+          const token = mapping?.token || this.config.channels.gitlab?.token
+          const host = this.config.channels.gitlab?.host
+          if (!token || !host) {
+            this.json(res, 404, { error: "no gitlab token for agent", debug: { agentId, hasToken: !!token, hasHost: !!host } })
+            break
+          }
+          const encoded = encodeURIComponent(project)
+          const ep = noteableType === "issue"
+            ? `${host}/api/v4/projects/${encoded}/issues/${noteableIid}/notes`
+            : `${host}/api/v4/projects/${encoded}/merge_requests/${noteableIid}/notes`
+          try {
+            const glRes = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
+              body: JSON.stringify({ body: text }),
+            })
+            const respBody = await glRes.text().catch(() => "")
+            let noteId = ""
+            try { noteId = String((JSON.parse(respBody) as any).id || "") } catch { /* ignore */ }
+            this.log(`[gitlab/send-note] agent="${agentId}" -> POST ${ep} : ${glRes.status} noteId=${noteId || "?"}`)
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, noteId })
+          } catch (e: any) {
+            this.log(`[gitlab/send-note] FETCH ERROR: ${e.message}`)
+            this.json(res, 500, { error: e.message })
+          }
+          break
+        }
+
+        case "POST /gitlab/log-time": {
+          // Forwarded from a mesh peer: log spent time under the agent's own user.
+          const body = await readBody(req)
+          const { project, noteableType, noteableIid, agentId, durationMs } = body as any
+          const mappings = this.config.channels.gitlab?.agentMappings || []
+          const mapping = mappings.find((m: any) => m.agentId === agentId)
+          const token = mapping?.token || this.config.channels.gitlab?.token
+          const host = this.config.channels.gitlab?.host
+          if (!token || !host) {
+            this.json(res, 404, { error: "no gitlab token for agent" })
+            break
+          }
+          const totalSeconds = Math.max(60, Math.round(Number(durationMs) / 1000))
+          const hours = Math.floor(totalSeconds / 3600)
+          const minutes = Math.ceil((totalSeconds % 3600) / 60)
+          const duration = hours > 0 ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}` : `${minutes}m`
+          const encoded = encodeURIComponent(project)
+          const seg = noteableType === "merge_request" ? "merge_requests" : "issues"
+          const ep = `${host}/api/v4/projects/${encoded}/${seg}/${noteableIid}/add_spent_time`
+          try {
+            const glRes = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
+              body: JSON.stringify({ duration }),
+            })
+            this.log(`[gitlab/log-time] agent="${agentId}" duration=${duration} -> POST ${ep} : ${glRes.status}`)
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration })
+          } catch (e: any) {
+            this.log(`[gitlab/log-time] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
           }
           break
