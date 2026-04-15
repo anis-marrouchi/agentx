@@ -265,6 +265,14 @@ export class AgentXDaemon {
     }
 
     try {
+      // Persist router dedup + any debounced per-channel state before exit so
+      // a clean stop doesn't drop the last in-memory window of processed ids.
+      this.router.flushPersistence?.()
+    } catch (e: any) {
+      this.log(`  Router flush error: ${e.message}`)
+    }
+
+    try {
       this.log("  Stopping crons (saving last run times)...")
       await this.cron.stop()
     } catch {}

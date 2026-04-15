@@ -9,6 +9,8 @@ import { BlockStream } from "./block-stream"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
+import { resolve, dirname } from "path"
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -38,16 +40,26 @@ export class MessageRouter {
    *   - GitLab webhook retries (same object_attributes.id redelivered)
    *   - WhatsApp Baileys double-emitting messages.upsert (notify + append)
    *   - Telegram polling re-delivering an update after a long-poll hiccup
+   *   - A daemon crash-loop replaying messages the previous process had
+   *     already handled (fixed by persisting this map to disk — see below)
    *
    * The key INCLUDES accountId so two bots in the same Telegram group
    * (different accountId) both get to run their routing logic — the router's
    * downstream boundAccount check then picks the one bot that should actually
    * reply. Without accountId in the key, the second bot's legitimate view of
    * the same Telegram message_id would be wrongly suppressed.
+   *
+   * Persisted to .agentx/router/dedup.json so survival-across-restart is not
+   * just a Telegram concern — the same universal LRU covers every channel.
+   * Writes are debounced (every 20 new ids, or 5s, whichever first) and the
+   * file is pruned to only live TTL entries before each write.
    */
   private recentMessageIds: Map<string, number> = new Map()
   private readonly MESSAGE_ID_TTL_MS = 5 * 60 * 1000
   private readonly MESSAGE_ID_MAX_ENTRIES = 2000
+  private readonly DEDUP_STORE_PATH = ".agentx/router/dedup.json"
+  private dedupDirtyCount = 0
+  private dedupSaveTimer?: ReturnType<typeof setTimeout>
 
   constructor(
     registry: AgentRegistry,
@@ -60,6 +72,68 @@ export class MessageRouter {
     this.hooks = hooks
     this.log = log
     this.groupLog = new GroupLog()
+    this.loadDedupFromDisk()
+  }
+
+  private loadDedupFromDisk(): void {
+    try {
+      const p = resolve(process.cwd(), this.DEDUP_STORE_PATH)
+      if (!existsSync(p)) return
+      const raw = JSON.parse(readFileSync(p, "utf-8")) as Record<string, number>
+      const now = Date.now()
+      let restored = 0
+      for (const [key, ts] of Object.entries(raw)) {
+        if (typeof ts === "number" && now - ts < this.MESSAGE_ID_TTL_MS) {
+          this.recentMessageIds.set(key, ts)
+          restored++
+        }
+      }
+      if (restored > 0) {
+        this.log(`Router dedup: restored ${restored} recent message ids from disk`)
+      }
+    } catch {
+      // Corrupt file — start fresh, not worth failing startup over
+    }
+  }
+
+  private scheduleDedupSave(): void {
+    this.dedupDirtyCount++
+    // Fast flush on bursty traffic (every 20 new ids) plus a 5s debounce
+    // safety net for slow-trickle activity so we never lose more than a few
+    // seconds of entries in a hard crash.
+    if (this.dedupDirtyCount >= 20) {
+      this.flushDedupToDisk()
+      return
+    }
+    if (this.dedupSaveTimer) return
+    this.dedupSaveTimer = setTimeout(() => this.flushDedupToDisk(), 5000)
+  }
+
+  private flushDedupToDisk(): void {
+    if (this.dedupSaveTimer) {
+      clearTimeout(this.dedupSaveTimer)
+      this.dedupSaveTimer = undefined
+    }
+    this.dedupDirtyCount = 0
+    try {
+      const now = Date.now()
+      const live: Record<string, number> = {}
+      for (const [key, ts] of this.recentMessageIds) {
+        if (now - ts < this.MESSAGE_ID_TTL_MS) live[key] = ts
+      }
+      const p = resolve(process.cwd(), this.DEDUP_STORE_PATH)
+      const dir = dirname(p)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(p, JSON.stringify(live))
+    } catch {
+      // Best-effort — a failed write means at-most-restart-window of replays,
+      // not a correctness problem.
+    }
+  }
+
+  /** Called by the daemon on graceful shutdown so no in-memory ids are lost. */
+  flushPersistence(): void {
+    this.flushDedupToDisk()
   }
 
   setMesh(mesh: A2AMesh): void {
@@ -141,6 +215,7 @@ export class MessageRouter {
     const seen = this.recentMessageIds.get(key)
     if (seen && now - seen < this.MESSAGE_ID_TTL_MS) return true
     this.recentMessageIds.set(key, now)
+    this.scheduleDedupSave()
     return false
   }
 
