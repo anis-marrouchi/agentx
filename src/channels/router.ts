@@ -32,6 +32,23 @@ export class MessageRouter {
   private groupLog: GroupLog
   private log: (...args: unknown[]) => void
 
+  /**
+   * Short-TTL cache of recently processed incoming message IDs, keyed by
+   * `<channel>:<accountId>:<id>`. Prevents duplicate replies from:
+   *   - GitLab webhook retries (same object_attributes.id redelivered)
+   *   - WhatsApp Baileys double-emitting messages.upsert (notify + append)
+   *   - Telegram polling re-delivering an update after a long-poll hiccup
+   *
+   * The key INCLUDES accountId so two bots in the same Telegram group
+   * (different accountId) both get to run their routing logic — the router's
+   * downstream boundAccount check then picks the one bot that should actually
+   * reply. Without accountId in the key, the second bot's legitimate view of
+   * the same Telegram message_id would be wrongly suppressed.
+   */
+  private recentMessageIds: Map<string, number> = new Map()
+  private readonly MESSAGE_ID_TTL_MS = 5 * 60 * 1000
+  private readonly MESSAGE_ID_MAX_ENTRIES = 2000
+
   constructor(
     registry: AgentRegistry,
     config: DaemonConfig,
@@ -108,10 +125,38 @@ export class MessageRouter {
     }
   }
 
+  /**
+   * Returns true if this message id was processed within MESSAGE_ID_TTL_MS.
+   * Stamps the key when false. Size-bounded GC avoids unbounded growth.
+   */
+  private isDuplicateMessage(msg: IncomingMessage): boolean {
+    if (!msg.id) return false
+    const key = `${msg.channel}:${msg.accountId || "default"}:${msg.id}`
+    const now = Date.now()
+    if (this.recentMessageIds.size >= this.MESSAGE_ID_MAX_ENTRIES) {
+      for (const [k, t] of this.recentMessageIds) {
+        if (now - t > this.MESSAGE_ID_TTL_MS) this.recentMessageIds.delete(k)
+      }
+    }
+    const seen = this.recentMessageIds.get(key)
+    if (seen && now - seen < this.MESSAGE_ID_TTL_MS) return true
+    this.recentMessageIds.set(key, now)
+    return false
+  }
+
   private async handleMessage(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
   ): Promise<void> {
+    // Dedup: drop redeliveries of the same incoming message id within a TTL.
+    // Guards against GitLab webhook retries, Baileys double-emit, and Telegram
+    // offset hiccups. Scoped per-accountId so multi-bot Telegram groups still
+    // route each account's legitimate view of the message.
+    if (this.isDuplicateMessage(msg)) {
+      this.log(`Duplicate ${msg.channel} message dropped: ${msg.accountId || "default"}/${msg.id}`)
+      return
+    }
+
     // Pre-hook
     if (this.hooks?.has("pre:channel-message" as any)) {
       const hookResult = await this.hooks.execute("pre:channel-message" as any, {
@@ -299,8 +344,14 @@ export class MessageRouter {
 
     clearInterval(typingTimer)
 
-    // Flush any remaining streamed content
-    blockStream?.flush()
+    // Flush any remaining streamed content. Awaited so that sentMessageId is
+    // guaranteed set (if a stream block arrived) before we decide whether the
+    // final write goes via adapterSend (new message) or adapterEdit (update).
+    // Skipping the await caused double-sends on fast streams: the flushed
+    // first emission queued an adapterSend, the router moved on with
+    // sentMessageId still undefined, then the router's own adapterSend fired
+    // — producing two separate messages instead of one edited.
+    await blockStream?.flush()
 
     if (response.error) {
       // Queued messages are not errors — the message will be processed later

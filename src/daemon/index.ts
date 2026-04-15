@@ -505,11 +505,18 @@ export class AgentXDaemon {
             this.log(`[gitlab] react forward: peer "${node}" not found or unhealthy`)
             return
           }
-          await fetch(`${peer.peerUrl}/gitlab/react`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId }),
-          })
+          const url = `${peer.peerUrl}/gitlab/react`
+          try {
+            const r = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId }),
+            })
+            const respText = await r.text().catch(() => "")
+            this.log(`[gitlab] react forward -> ${url} : ${r.status} ${respText.slice(0, 200)}`)
+          } catch (e: any) {
+            this.log(`[gitlab] react forward FAILED -> ${url} : ${e.message}`)
+          }
         })
       }
       this.router.addChannel(gitlab)
@@ -684,22 +691,30 @@ export class AgentXDaemon {
           const mappings = this.config.channels.gitlab?.agentMappings || []
           const mapping = mappings.find((m: any) => m.agentId === agentId)
           const token = mapping?.token || this.config.channels.gitlab?.token
-          if (!token || !this.config.channels.gitlab?.host) {
-            this.json(res, 404, { error: "no gitlab token for agent" })
+          const host = this.config.channels.gitlab?.host
+          this.log(`[gitlab/react] agent="${agentId}" project="${project}" mappingFound=${!!mapping} mappingToken=${!!mapping?.token} globalToken=${!!this.config.channels.gitlab?.token}(len=${(this.config.channels.gitlab?.token || "").length}) host=${host || "MISSING"}`)
+          if (!token || !host) {
+            this.json(res, 404, {
+              error: "no gitlab token for agent",
+              debug: { agentId, mappingFound: !!mapping, hasMappingToken: !!mapping?.token, hasGlobalToken: !!this.config.channels.gitlab?.token, hasHost: !!host },
+            })
             break
           }
           const encoded = encodeURIComponent(project)
           const ep = noteableType === "issue"
-            ? `${this.config.channels.gitlab.host}/api/v4/projects/${encoded}/issues/${noteableIid}/notes/${noteId}/award_emoji`
-            : `${this.config.channels.gitlab.host}/api/v4/projects/${encoded}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
+            ? `${host}/api/v4/projects/${encoded}/issues/${noteableIid}/notes/${noteId}/award_emoji`
+            : `${host}/api/v4/projects/${encoded}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
           try {
             const glRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
               body: JSON.stringify({ name: "eyes" }),
             })
-            this.json(res, 200, { ok: glRes.ok, status: glRes.status })
+            const respBody = await glRes.text().catch(() => "")
+            this.log(`[gitlab/react] -> POST ${ep} : ${glRes.status} ${respBody.slice(0, 120)}`)
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, gitlabResponse: respBody.slice(0, 200) })
           } catch (e: any) {
+            this.log(`[gitlab/react] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
           }
           break

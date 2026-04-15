@@ -54,6 +54,15 @@ export class BlockStream {
   private idleTimer?: ReturnType<typeof setTimeout>
   private insideCodeFence = false
   private fencePattern = /^```/
+  /**
+   * Serialized chain of pending emissions. Each emit appends to this chain so
+   * emissions run in order, and `flush()` can `await` the tail to guarantee
+   * all emissions have completed before the caller proceeds — critical to
+   * avoid the router racing to send a final message while a flushed-but-not-
+   * yet-executed first emission is still queued (which would produce two
+   * separate outbound messages instead of one send + subsequent edits).
+   */
+  private lastEmission: Promise<void> = Promise.resolve()
 
   constructor(emitter: BlockEmitter, config?: Partial<BlockStreamConfig>, channel?: string) {
     const channelDefaults = channel ? CHANNEL_DEFAULTS[channel] : {}
@@ -89,9 +98,11 @@ export class BlockStream {
   }
 
   /**
-   * Flush any remaining content (call when stream ends).
+   * Flush any remaining content (call when stream ends). Awaits all pending
+   * emissions so the caller can safely inspect state (e.g. whether a message
+   * was already sent) immediately after flush() returns.
    */
-  flush(): void {
+  async flush(): Promise<void> {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer)
       this.idleTimer = undefined
@@ -100,6 +111,7 @@ export class BlockStream {
       this.emitImmediate(this.buffer)
       this.buffer = ""
     }
+    await this.lastEmission
   }
 
   /**
@@ -145,11 +157,14 @@ export class BlockStream {
 
   private emitImmediate(block: string): void {
     this.lastEmitTime = Date.now()
-    try {
-      this.emitter(block)
-    } catch {
-      // Best-effort emission
-    }
+    // Append to the serialized chain so emissions run in order and flush()
+    // can await the tail. Swallow per-emission errors — streaming is
+    // best-effort and must not break the chain for subsequent blocks.
+    this.lastEmission = this.lastEmission.then(() =>
+      Promise.resolve()
+        .then(() => this.emitter(block))
+        .catch(() => { /* best-effort */ })
+    )
   }
 
   /**
