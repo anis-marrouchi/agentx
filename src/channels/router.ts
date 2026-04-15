@@ -824,8 +824,10 @@ export class MessageRouter {
     this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
     const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
+    const start = Date.now()
     try {
       const response = await this.mesh.sendTask(peerName, msg.text, agentId)
+      const duration = Date.now() - start
       clearInterval(typingTimer)
 
       if (response) {
@@ -836,6 +838,15 @@ export class MessageRouter {
           replyTo: msg.id,
           accountId: replyAccountId,
         })
+      }
+
+      if (msg.channel === "gitlab" && duration) {
+        const gitlabAdapter = this.channels.get("gitlab") as any
+        if (gitlabAdapter) {
+          gitlabAdapter.logTimeSpent(chatId, duration, agentId).catch((e: any) => {
+            this.log(`GitLab time tracking (mesh) failed: ${e.message}`)
+          })
+        }
       }
 
       return true
