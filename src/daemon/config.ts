@@ -198,6 +198,13 @@ export const daemonConfigSchema = z.object({
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
+  /** Session cache-reuse policy. `staleMinutes` controls how long a Claude
+   *  session can idle before we rebuild the prompt from scratch (paying the
+   *  full cache-create tax again). Longer is cheaper at Opus rates but means
+   *  an agent may resume with mildly outdated context. */
+  session: z.object({
+    staleMinutes: z.number().int().min(1).max(1440).default(120),
+  }).default({}),
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>

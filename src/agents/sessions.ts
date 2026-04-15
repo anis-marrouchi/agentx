@@ -27,7 +27,12 @@ export interface Session {
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
 const MAX_MESSAGES = 30          // Keep last 30 messages max
-const STALE_SESSION_MINUTES = 15 // Resume sessions idle for less than this; rebuild if older
+/** Default stale timeout. Overridable via SessionStore options so each node
+ *  can trade cache-hit ratio (long timeout → prompt cache survives work
+ *  pauses) against "fresh context" (short timeout → new session rebuilds the
+ *  prompt from scratch). Agents on Opus pay ~$0.50 cache-create per task,
+ *  so the higher the timeout, the less often that cost recurs. */
+const DEFAULT_STALE_SESSION_MINUTES = 120
 
 /** Session has a compacted summary prepended to its messages */
 const COMPACTION_MARKER = "[Compacted conversation summary"
@@ -35,12 +40,14 @@ const COMPACTION_MARKER = "[Compacted conversation summary"
 export class SessionStore {
   private sessionsDir: string
   private cache: Map<string, Session> = new Map()
+  private staleMinutes: number
 
-  constructor(baseDir: string = process.cwd()) {
+  constructor(baseDir: string = process.cwd(), opts: { staleMinutes?: number } = {}) {
     this.sessionsDir = resolve(baseDir, ".agentx/sessions")
     if (!existsSync(this.sessionsDir)) {
       mkdirSync(this.sessionsDir, { recursive: true })
     }
+    this.staleMinutes = Math.max(1, opts.staleMinutes ?? DEFAULT_STALE_SESSION_MINUTES)
   }
 
   /**
@@ -185,7 +192,7 @@ export class SessionStore {
     const session = this.getSession(agentId, channel, chatId)
     if (!session.claudeSessionId) return false
     const elapsed = Date.now() - new Date(session.updatedAt).getTime()
-    return elapsed > STALE_SESSION_MINUTES * 60 * 1000
+    return elapsed > this.staleMinutes * 60 * 1000
   }
 
   /**

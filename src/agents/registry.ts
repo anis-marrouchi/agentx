@@ -73,7 +73,7 @@ export class AgentRegistry {
     this.log = log
     this.config = config
     this.providers = config.providers
-    this.sessions = new SessionStore()
+    this.sessions = new SessionStore(process.cwd(), { staleMinutes: config.session.staleMinutes })
     this.wikiHub = new WikiHub(undefined, undefined, "unified")
     this.memoryStore = new MemoryStore()
     this.patternStore = new PatternStore()
@@ -428,7 +428,12 @@ export class AgentRegistry {
           ).catch(() => {})
         }
 
-        // Track token usage (real counts if available, estimate otherwise)
+        // Track token usage (real counts if available, estimate otherwise).
+        // Model priority for pricing: what the API ACTUALLY billed (from the
+        // CLI init / result event) > per-task override (cron model) > agent
+        // config default. Without this, cron-overridden runs get priced at
+        // the wrong rate and cache-aware cost reports mislead operators.
+        const billedModel = response.billedModel || task.model || state.def.model
         this.tokenTracker.record(
           task.agentId,
           response.duration || 0,
@@ -436,7 +441,7 @@ export class AgentRegistry {
           task.message.length,
           response.content.length,
           false,
-          state.def.model,
+          billedModel,
         )
 
         this.log(

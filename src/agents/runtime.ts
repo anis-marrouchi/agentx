@@ -57,6 +57,12 @@ export interface AgentResponse {
   duration?: number
   claudeSessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
+  /** The model Claude actually billed for (from the CLI's init event). When
+   *  absent, cost reporting should fall back to the model override / agent
+   *  config. Knowing the billed model is what makes cache-aware pricing
+   *  trustworthy — a task that ran sonnet but was logged as opus would
+   *  overstate cost by ~5×. */
+  billedModel?: string
 }
 
 /** Callback for streaming text deltas */
@@ -192,7 +198,7 @@ export interface TokenUsage {
   cacheCreateTokens: number
 }
 
-function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage } {
+function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string } {
   try {
     const data = JSON.parse(stdout)
     const usage = data.usage ? {
@@ -202,10 +208,18 @@ function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: stri
       cacheCreateTokens: data.usage.cache_creation_input_tokens || 0,
     } : undefined
 
+    // Claude Code's --output-format json response carries the actual billed
+    // model at `model` (or nested under `message.model` depending on CLI ver).
+    const billedModel: string | undefined =
+      (typeof data.model === "string" && data.model) ||
+      (typeof data.message?.model === "string" && data.message.model) ||
+      undefined
+
     return {
       text: data.result || data.content || "",
       sessionId: data.session_id,
       usage,
+      billedModel,
     }
   } catch {
     return { text: stdout }
@@ -275,6 +289,7 @@ export async function executeClaudeCode(
       duration: Date.now() - start,
       claudeSessionId: parsed.sessionId,
       usage: parsed.usage,
+      billedModel: parsed.billedModel,
     }
   } catch (error: any) {
     console.error(`[runtime] execFile threw: ${error.message}`)
@@ -305,6 +320,13 @@ export async function executeClaudeCodeStreaming(
   const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model)
 
   let fullText = ""
+  // Capture model + usage + session id from the stream events — Claude Code
+  // emits a system-init event up front (with the billed model) and a terminal
+  // result event with the full usage accounting. Without these we can't
+  // attribute cost correctly for streamed tasks.
+  let streamBilledModel: string | undefined
+  let streamUsage: TokenUsage | undefined
+  let streamSessionId: string | undefined
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -363,6 +385,25 @@ export async function executeClaudeCodeStreaming(
                 fullText = resultText
                 if (delta) onDelta(delta, fullText)
               }
+              // Final event also carries the authoritative usage + model + session.
+              if (event.usage) {
+                streamUsage = {
+                  inputTokens: event.usage.input_tokens || 0,
+                  outputTokens: event.usage.output_tokens || 0,
+                  cacheReadTokens: event.usage.cache_read_input_tokens || 0,
+                  cacheCreateTokens: event.usage.cache_creation_input_tokens || 0,
+                }
+              }
+              if (typeof event.model === "string") streamBilledModel = event.model
+              if (typeof event.session_id === "string") streamSessionId = event.session_id
+            }
+
+            // System-init event (first thing the CLI emits) carries the model
+            // it's about to invoke — capture early so we have it even if the
+            // run errors before the terminal result.
+            if (event.type === "system" && event.subtype === "init") {
+              if (typeof event.model === "string") streamBilledModel = event.model
+              if (typeof event.session_id === "string") streamSessionId = event.session_id
             }
           } catch {
             // Not JSON — could be raw text output, append it
@@ -394,12 +435,18 @@ export async function executeClaudeCodeStreaming(
     return {
       content: fullText,
       duration: Date.now() - start,
+      usage: streamUsage,
+      billedModel: streamBilledModel,
+      claudeSessionId: streamSessionId,
     }
   } catch (error: any) {
     return {
       content: fullText || "",
       error: error.message,
       duration: Date.now() - start,
+      usage: streamUsage,
+      billedModel: streamBilledModel,
+      claudeSessionId: streamSessionId,
     }
   }
 }
