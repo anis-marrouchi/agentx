@@ -462,8 +462,84 @@ export class GitLabAdapter implements ChannelAdapter {
 
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
-    const agentId = this.resolveAgent(project)
+    const defaultAgentId = this.resolveAgent(project)
 
+    // Fire `on:gitlab-issue` hook so projects can customize routing — e.g.
+    // trigger a specific agent on assignment rather than the project default.
+    // The hook may:
+    //   - return `blocked: true` to suppress the default dispatch
+    //   - return `modified.dispatch: Array<{ agentId, preferNode?, prompt? }>`
+    //     to dispatch to one or more specific agents (skips default)
+    //   - return nothing, letting the default project-agent behavior run
+    // The event body stays inside the context so hook scripts have full detail
+    // (changes.assignees, attrs.assignees, labels, etc.) without us re-parsing.
+    let dispatch: Array<{ agentId: string; preferNode?: string; prompt?: string; assignee?: string }> | undefined
+    let hookBlocked = false
+    if (this.hooks?.has("on:gitlab-issue" as any)) {
+      try {
+        const result = await this.hooks.execute("on:gitlab-issue" as any, {
+          event: "on:gitlab-issue" as any,
+          issueEvent: event,
+          project,
+          iid: attrs.iid,
+          title: attrs.title,
+          description: attrs.description || "",
+          url: attrs.url,
+          action: attrs.action,
+          usernameToAgent: Object.fromEntries(this.usernameToAgent.entries()),
+          agentMappings: this.config.agentMappings || [],
+          defaultAgentId: defaultAgentId || null,
+        })
+        if (result.blocked) {
+          hookBlocked = true
+        }
+        const modDispatch = (result.modified as any)?.dispatch
+        if (Array.isArray(modDispatch) && modDispatch.length > 0) {
+          dispatch = modDispatch.filter((d: any) => d && typeof d.agentId === "string")
+        }
+      } catch (e: any) {
+        this.log(`on:gitlab-issue hook error: ${e.message}`)
+      }
+    }
+
+    // Hook-driven dispatch: route one IncomingMessage per dispatch entry.
+    if (dispatch && dispatch.length > 0) {
+      for (const d of dispatch) {
+        const mapping = this.config.agentMappings?.find((m) => m.agentId === d.agentId)
+        const chatId = `${project}:issue:${attrs.iid}`
+        const channelMeta = await this.getChannelMeta(chatId)
+        const id = `issue-hook-${attrs.iid}-${d.agentId}${d.assignee ? `-${d.assignee}` : ""}-${attrs.action}`
+        const incoming: IncomingMessage = {
+          id,
+          channel: "gitlab",
+          accountId: "default",
+          sender: {
+            id: chatId,
+            name: event.user.name,
+            username: event.user.username,
+          },
+          text: d.prompt || `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
+          timestamp: new Date(),
+          raw: event,
+          resolvedAgent: d.agentId,
+          preferNode: d.preferNode || mapping?.node,
+          channelMeta: channelMeta ? {
+            ...channelMeta,
+            issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
+          } : undefined,
+        }
+        this.log(`Issue #${attrs.iid} hook dispatch -> agent "${d.agentId}"${d.preferNode || mapping?.node ? ` (remote: ${d.preferNode || mapping?.node})` : ""}`)
+        this.handler(incoming).catch((e) => this.log(`Error handling hook dispatch: ${e.message}`))
+      }
+      res.writeHead(200); res.end("ok"); return
+    }
+
+    if (hookBlocked) {
+      this.log(`Issue #${attrs.iid}: on:gitlab-issue hook suppressed default dispatch`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
+    // Default: route generic issue event to the project's configured agent.
     const incoming: IncomingMessage = {
       id: `issue-${attrs.iid}-${attrs.action}`,
       channel: "gitlab",
@@ -477,7 +553,7 @@ export class GitLabAdapter implements ChannelAdapter {
       text: `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
       timestamp: new Date(),
       raw: event,
-      resolvedAgent: agentId,
+      resolvedAgent: defaultAgentId,
     }
 
     this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))

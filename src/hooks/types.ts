@@ -19,8 +19,11 @@ export const HOOK_EVENTS = [
   "pre:a2a-task",
   "pre:cron-run",
   "post:cron-run",
-  // GitLab-specific events (fired without agent routing — side-effect hooks)
+  // GitLab-specific events (fired without agent routing — side-effect hooks
+  // OR routing-modifying hooks that return `modified.dispatch` to pick the
+  // agent(s) to run for this event).
   "on:gitlab-pipeline",
+  "on:gitlab-issue",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]
