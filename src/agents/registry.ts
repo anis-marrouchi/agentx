@@ -40,6 +40,21 @@ export interface RunningTask {
   startedAt: Date
 }
 
+type TaskOutputSubscriber = (chunk: string) => void
+
+interface TaskOutput {
+  agentId: string
+  buffer: string
+  subscribers: Set<TaskOutputSubscriber>
+  done: boolean
+  endedAt?: Date
+}
+
+/** Cap per-task buffer to keep memory bounded; recent tail wins. */
+const TASK_OUTPUT_BUFFER_MAX = 64 * 1024
+/** Keep finished outputs around briefly so a late opener still gets the tail. */
+const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
+
 interface AgentState {
   id: string
   def: AgentDef
@@ -64,6 +79,8 @@ export class AgentRegistry {
   private messageQueue: MessageQueue
   /** Active soul profile per agent+chat session: "agentId:channel:chatId" → profile name */
   private activeSouls: Map<string, string> = new Map()
+  /** Live output captured per running task id — drives the dashboard streaming modal. */
+  private taskOutputs: Map<string, TaskOutput> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -253,6 +270,28 @@ export class AgentRegistry {
     }
     state.runningTasks.push(runningTask)
 
+    // Output capture for the dashboard streaming modal. We never *force*
+    // streaming on a caller that didn't ask for it — that would change the
+    // runtime mode (stream-json vs json) for every task in the system. So:
+    //   - Caller passed onDelta → wrap it to also fan-out to dashboard subscribers (live).
+    //   - Caller did NOT pass onDelta → leave runtime in non-streaming mode and
+    //     post the final response.content as a single chunk after execution.
+    const output: TaskOutput = { agentId: task.agentId, buffer: "", subscribers: new Set(), done: false }
+    this.taskOutputs.set(runningTask.id, output)
+    if (onDelta) {
+      const callerOnDelta = onDelta
+      onDelta = (chunk, full) => {
+        output.buffer += chunk
+        if (output.buffer.length > TASK_OUTPUT_BUFFER_MAX) {
+          output.buffer = output.buffer.slice(output.buffer.length - TASK_OUTPUT_BUFFER_MAX)
+        }
+        for (const sub of output.subscribers) {
+          try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
+        }
+        callerOnDelta(chunk, full)
+      }
+    }
+
     // Mark session as running in the message queue
     this.messageQueue.markRunning(task.agentId, qChannel, qChatId)
 
@@ -401,6 +440,17 @@ export class AgentRegistry {
     try {
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId)
 
+      // For non-streaming runs (no caller onDelta) we never captured incremental
+      // chunks — surface the final response in one shot so the dashboard modal
+      // shows something meaningful when subscribers are attached.
+      if (!onDelta && (response.content || response.error)) {
+        const finalText = response.error ? `[error] ${response.error}` : response.content
+        output.buffer = finalText
+        for (const sub of output.subscribers) {
+          try { sub(finalText) } catch { /* */ }
+        }
+      }
+
       if (response.error) {
         state.errors++
         this.log(`[${task.agentId}] error: ${response.error}`)
@@ -490,6 +540,16 @@ export class AgentRegistry {
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
       if (idx !== -1) state.runningTasks.splice(idx, 1)
 
+      // Notify any open dashboard streams that this task has finished, then
+      // schedule the buffer for cleanup so memory doesn't grow unbounded.
+      output.done = true
+      output.endedAt = new Date()
+      for (const sub of output.subscribers) {
+        try { sub("\n[task finished]\n") } catch { /* ignore */ }
+      }
+      output.subscribers.clear()
+      setTimeout(() => this.taskOutputs.delete(runningTask.id), TASK_OUTPUT_TTL_MS).unref?.()
+
       // Flush queued messages that arrived while this run was in progress
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
         .then((queued) => {
@@ -543,6 +603,24 @@ export class AgentRegistry {
       lastActive: s.lastActive,
       runningTasks: s.runningTasks,
     }))
+  }
+
+  /**
+   * Subscribe to live output for a running task. Returns the buffer that has
+   * accumulated so far plus an unsubscribe handle. If the task is unknown,
+   * returns null. If the task already finished, the subscriber is given the
+   * tail buffer and immediately ended.
+   */
+  subscribeToTaskOutput(taskId: string, sub: TaskOutputSubscriber): { initial: string; done: boolean; unsubscribe: () => void } | null {
+    const out = this.taskOutputs.get(taskId)
+    if (!out) return null
+    if (out.done) return { initial: out.buffer, done: true, unsubscribe: () => {} }
+    out.subscribers.add(sub)
+    return {
+      initial: out.buffer,
+      done: false,
+      unsubscribe: () => { out.subscribers.delete(sub) },
+    }
   }
 
   /**

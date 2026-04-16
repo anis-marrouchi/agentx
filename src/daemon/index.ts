@@ -652,6 +652,45 @@ export class AgentXDaemon {
     req.on("close", () => this.sseClients.delete(res))
   }
 
+  /**
+   * Stream a single running task's live output as SSE.
+   * Sends a `start` event with the existing buffer (so a late opener catches up),
+   * then `chunk` events for every new delta, and `end` when the task finishes.
+   */
+  private handleTaskStream(req: IncomingMessage, res: ServerResponse, _agentId: string, taskId: string): void {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "X-Accel-Buffering": "no",
+    })
+    let closed = false
+    const send = (ev: string, data: unknown) => {
+      if (closed) return
+      try { res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`) } catch { closed = true }
+    }
+    const sub = this.registry.subscribeToTaskOutput(taskId, (chunk) => send("chunk", { text: chunk }))
+    if (!sub) {
+      send("error", { message: "task not found or already evicted" })
+      res.end()
+      return
+    }
+    send("start", { taskId, initial: sub.initial, done: sub.done })
+    if (sub.done) {
+      send("end", { reason: "already finished" })
+      res.end()
+      return
+    }
+    // Heartbeat so proxies don't kill idle SSE connections.
+    const heartbeat = setInterval(() => { if (!closed) try { res.write(": ping\n\n") } catch { /* */ } }, 15000)
+    req.on("close", () => {
+      closed = true
+      clearInterval(heartbeat)
+      sub.unsubscribe()
+    })
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -666,6 +705,14 @@ export class AgentXDaemon {
       // Dynamic routes (before static switch)
       if (req.method === "POST" && path.startsWith("/webhook/")) {
         await this.webhooks.handle(req, res, path)
+        return
+      }
+
+      // SSE stream for a single running task — drives the dashboard modal.
+      // GET /agents/:agentId/tasks/:taskId/stream
+      const taskStreamMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)\/stream$/)
+      if (taskStreamMatch) {
+        this.handleTaskStream(req, res, taskStreamMatch[1], taskStreamMatch[2])
         return
       }
 

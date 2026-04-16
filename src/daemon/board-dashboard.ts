@@ -110,6 +110,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Cross-node SSE proxy for a single running task. Browser stays on
+  // the dashboard origin; we connect back to the originating daemon URL.
+  // GET /api/task/stream?node=<daemonUrl>&agent=<id>&task=<tid>
+  if (method === "GET" && path === "/api/task/stream") {
+    const u = new URL(req.url || "/", "http://localhost")
+    const nodeUrl = u.searchParams.get("node")
+    const agentId = u.searchParams.get("agent")
+    const taskId = u.searchParams.get("task")
+    if (!nodeUrl || !agentId || !taskId) {
+      sendJson(res, 400, { error: "node, agent, task query params required" })
+      return
+    }
+    await proxyTaskStream(req, res, ctx, nodeUrl, agentId, taskId)
+    return
+  }
+
   // Agent roster (proxy to configured daemon) — used by draft-agent picker.
   if (method === "GET" && path === "/api/agents") {
     try {
@@ -541,6 +557,74 @@ function startLiveStream(req: IncomingMessage, res: ServerResponse, daemon: Daem
   req.on("close", () => { closed = true; clearInterval(timer); res.end() })
 }
 
+/**
+ * Proxy SSE from a daemon's task-stream endpoint back to the dashboard
+ * client. Whitelists the target URL against the dashboard's known nodes
+ * to avoid being turned into an open SSE proxy.
+ */
+async function proxyTaskStream(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: { config: DaemonConfig },
+  nodeUrl: string,
+  agentId: string,
+  taskId: string,
+): Promise<void> {
+  const target = nodeUrl.replace(/\/+$/, "")
+  const allowed = new Set<string>()
+  allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
+  for (const d of ctx.config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
+  // Also accept any known mesh peer URL discovered at snapshot time.
+  try {
+    const peers = await fetchMeshPeers(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), ctx.config.dashboard.token)
+    for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
+  } catch { /* best effort */ }
+  if (!allowed.has(target)) {
+    sendJson(res, 403, { error: "node not in dashboard allowlist", target })
+    return
+  }
+  const tokenForNode =
+    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      ? ctx.config.dashboard.token
+      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const headers: Record<string, string> = { Accept: "text/event-stream" }
+  if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
+  const upstreamCtl = new AbortController()
+  let upstreamRes: Response
+  try {
+    upstreamRes = await fetch(`${target}/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/stream`, {
+      headers,
+      signal: upstreamCtl.signal,
+    })
+  } catch (e: any) {
+    sendJson(res, 502, { error: e.message || "upstream connect failed" })
+    return
+  }
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    sendJson(res, upstreamRes.status || 502, { error: `upstream HTTP ${upstreamRes.status}` })
+    return
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+    "X-Accel-Buffering": "no",
+  })
+  const reader = upstreamRes.body.getReader()
+  const pump = async () => {
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (value) res.write(value)
+      }
+    } catch { /* upstream closed */ } finally { try { res.end() } catch { /* */ } }
+  }
+  pump()
+  req.on("close", () => { upstreamCtl.abort(); try { res.end() } catch { /* */ } })
+}
+
 // --- A2A issue drafting ---
 //
 // Builds a convention-aware prompt, calls the configured agent on the daemon,
@@ -822,6 +906,18 @@ function renderLiveHtml(): string {
   <span id="conn" class="conn ok" title="connected">●</span>
 </header>
 <main id="grid"></main>
+<div id="task-modal" class="task-modal hidden" aria-hidden="true">
+  <div class="task-modal-backdrop"></div>
+  <div class="task-modal-card" role="dialog" aria-modal="true">
+    <header>
+      <span class="task-modal-channel" id="task-modal-channel"></span>
+      <h2 id="task-modal-title">Streaming task output</h2>
+      <span class="task-modal-status" id="task-modal-status">connecting…</span>
+      <button class="task-modal-close" id="task-modal-close" aria-label="Close">×</button>
+    </header>
+    <pre id="task-modal-output" class="task-modal-output"></pre>
+  </div>
+</div>
 <script>${LIVE_JS}</script>
 </body>
 </html>`
@@ -888,9 +984,34 @@ main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
   font-size: 9px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.5px; }
 .agent .task .elapsed { color: var(--muted); font-family: ui-monospace, monospace; font-size: 10px; }
 .agent .task .preview { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.agent .task .preview.clickable { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
+.agent .task .preview.clickable:hover { color: var(--accent); text-decoration-color: var(--accent); }
 .agent .idle { color: var(--muted); font-size: 11px; font-style: italic; }
 
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+.task-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.task-modal.hidden { display: none; }
+.task-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.task-modal-card { position: relative; width: min(900px, 92vw); height: min(620px, 80vh);
+  background: var(--node); border: 1px solid var(--border); border-radius: 10px;
+  display: flex; flex-direction: column; box-shadow: 0 18px 48px rgba(0,0,0,0.5); overflow: hidden; }
+.task-modal-card > header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); background: #10131c; }
+.task-modal-card > header h2 { margin: 0; font-size: 13px; font-weight: 600; flex: 1;
+  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-modal-channel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;
+  background: rgba(99,102,241,0.18); color: var(--accent); padding: 2px 7px; border-radius: 3px; }
+.task-modal-status { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+.task-modal-status.live { color: var(--green); }
+.task-modal-status.done { color: var(--accent); }
+.task-modal-status.err { color: var(--red); }
+.task-modal-close { background: transparent; border: none; color: var(--muted); font-size: 22px;
+  cursor: pointer; padding: 0 6px; line-height: 1; }
+.task-modal-close:hover { color: var(--text); }
+.task-modal-output { margin: 0; flex: 1; overflow: auto; padding: 14px 16px;
+  background: #0a0c12; color: var(--text); font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word; }
 `
 
 const LIVE_JS = `
@@ -947,21 +1068,27 @@ function renderNode(node) {
     empty.textContent = node.reachable ? 'No agents on this node.' : 'Unreachable.';
     g.appendChild(empty);
   } else {
-    for (const a of node.agents) g.appendChild(renderAgent(a));
+    for (const a of node.agents) g.appendChild(renderAgent(a, node));
   }
   return sec;
 }
 
-function renderAgent(a) {
+function renderAgent(a, node) {
   const card = document.createElement('div');
   const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
   const errored = (a.errors || 0) > 0;
   card.className = 'agent' + (busy ? ' busy' : '') + (errored ? ' errored' : '');
+  const nodeUrl = (node && node.url) || '';
   const tasks = (a.runningTasks || []).map(t => {
     const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
+    const hasId = !!t.id;
+    const cls = 'preview' + (hasId ? ' clickable' : '');
+    const dataAttrs = hasId
+      ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
+      : '';
     return '<div class="task">' +
       '<span class="channel">' + escapeHtml(t.channel || '—') + '</span>' +
-      '<span class="preview" title="' + escapeHtml(t.messagePreview || '') + '">' + escapeHtml(t.messagePreview || '(no preview)') + '</span>' +
+      '<span class="' + cls + '" title="' + escapeHtml(t.messagePreview || '') + '"' + dataAttrs + '>' + escapeHtml(t.messagePreview || '(no preview)') + '</span>' +
       '<span class="elapsed">' + elapsed + '</span>' +
     '</div>';
   }).join('');
@@ -1031,6 +1158,97 @@ setInterval(() => { if (lastSnap) {
   document.querySelectorAll('.agent .task .elapsed').forEach((el) => { /* placeholder: server snapshot advances on stream */ });
 } }, 1000);
 connect();
+
+// --- Task output modal ---
+const taskModal = {
+  el: document.getElementById('task-modal'),
+  output: document.getElementById('task-modal-output'),
+  title: document.getElementById('task-modal-title'),
+  status: document.getElementById('task-modal-status'),
+  channel: document.getElementById('task-modal-channel'),
+  closeBtn: document.getElementById('task-modal-close'),
+  backdrop: null,
+  es: null,
+  currentTaskId: null,
+};
+taskModal.backdrop = taskModal.el && taskModal.el.querySelector('.task-modal-backdrop');
+
+function setStatus(label, kind) {
+  if (!taskModal.status) return;
+  taskModal.status.textContent = label;
+  taskModal.status.className = 'task-modal-status' + (kind ? ' ' + kind : '');
+}
+
+function appendOutput(text) {
+  if (!text || !taskModal.output) return;
+  const atBottom = taskModal.output.scrollTop + taskModal.output.clientHeight >= taskModal.output.scrollHeight - 30;
+  taskModal.output.appendChild(document.createTextNode(text));
+  if (atBottom) taskModal.output.scrollTop = taskModal.output.scrollHeight;
+}
+
+function closeTaskModal() {
+  if (!taskModal.el) return;
+  taskModal.el.classList.add('hidden');
+  taskModal.el.setAttribute('aria-hidden', 'true');
+  if (taskModal.es) { try { taskModal.es.close(); } catch {} taskModal.es = null; }
+  taskModal.currentTaskId = null;
+}
+
+function openTaskModal(opts) {
+  if (!taskModal.el || !opts.taskId || !opts.nodeUrl) return;
+  if (taskModal.currentTaskId === opts.taskId) { taskModal.el.classList.remove('hidden'); return; }
+  closeTaskModal();
+  taskModal.currentTaskId = opts.taskId;
+  taskModal.el.classList.remove('hidden');
+  taskModal.el.setAttribute('aria-hidden', 'false');
+  taskModal.title.textContent = opts.agentName + ' · ' + (opts.preview || 'task ' + opts.taskId);
+  taskModal.title.title = opts.preview || '';
+  taskModal.channel.textContent = opts.channel || '—';
+  taskModal.output.textContent = '';
+  setStatus('connecting…', '');
+  const url = '/api/task/stream?node=' + encodeURIComponent(opts.nodeUrl)
+    + '&agent=' + encodeURIComponent(opts.agentId)
+    + '&task=' + encodeURIComponent(opts.taskId);
+  let es;
+  try { es = new EventSource(url); } catch (e) { setStatus('connect failed', 'err'); return; }
+  taskModal.es = es;
+  es.addEventListener('start', (ev) => {
+    setStatus('live', 'live');
+    try { const data = JSON.parse(ev.data); if (data.initial) appendOutput(data.initial); if (data.done) setStatus('finished', 'done'); } catch {}
+  });
+  es.addEventListener('chunk', (ev) => {
+    try { const data = JSON.parse(ev.data); appendOutput(data.text || ''); } catch {}
+  });
+  es.addEventListener('end', () => {
+    setStatus('finished', 'done');
+    try { es.close(); } catch {}
+    taskModal.es = null;
+  });
+  es.addEventListener('error', () => {
+    if (es.readyState === 2) {
+      setStatus('disconnected', 'err');
+      taskModal.es = null;
+    }
+  });
+}
+
+if (taskModal.closeBtn) taskModal.closeBtn.addEventListener('click', closeTaskModal);
+if (taskModal.backdrop) taskModal.backdrop.addEventListener('click', closeTaskModal);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && taskModal.el && !taskModal.el.classList.contains('hidden')) closeTaskModal(); });
+
+// Click delegation on the agent grid — opens the modal for any task preview.
+document.getElementById('grid').addEventListener('click', (e) => {
+  const el = e.target.closest('.preview.clickable');
+  if (!el) return;
+  openTaskModal({
+    taskId: el.dataset.taskId,
+    agentId: el.dataset.agentId,
+    nodeUrl: el.dataset.nodeUrl,
+    channel: el.dataset.channel,
+    agentName: el.dataset.agentName || el.dataset.agentId,
+    preview: el.getAttribute('title') || el.textContent || '',
+  });
+});
 `
 
 const BOARD_CSS = `
