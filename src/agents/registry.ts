@@ -454,6 +454,13 @@ export class AgentRegistry {
         // config default. Without this, cron-overridden runs get priced at
         // the wrong rate and cache-aware cost reports mislead operators.
         const billedModel = response.billedModel || task.model || state.def.model
+        const tChannel = task.context?.channel
+        // Session key = "channel:chatId" — opaque to the tracker, just needs
+        // to be unique per (conversation, day). Lets us derive avg-tasks/
+        // session later so retry-heavy traffic becomes visible.
+        const tSessionKey = tChannel && (task.context?.chatId || task.context?.group || task.context?.sender)
+          ? `${tChannel}:${task.context?.chatId || task.context?.group || task.context?.sender}`
+          : undefined
         this.tokenTracker.record(
           task.agentId,
           response.duration || 0,
@@ -462,6 +469,8 @@ export class AgentRegistry {
           response.content.length,
           false,
           billedModel,
+          tChannel,
+          tSessionKey,
         )
 
         this.log(
@@ -514,6 +523,7 @@ export class AgentRegistry {
     id: string
     name: string
     tier: string
+    model?: string
     workspace: string
     active: number
     total: number
@@ -525,6 +535,7 @@ export class AgentRegistry {
       id: s.id,
       name: s.def.name,
       tier: s.def.tier,
+      model: s.def.model,
       workspace: s.def.workspace,
       active: s.activeTasks,
       total: s.totalTasks,

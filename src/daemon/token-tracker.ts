@@ -2,15 +2,38 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } fr
 import { resolve } from "path"
 
 // --- Token usage tracker ---
-// Tracks token usage per agent per day with cache-aware cost calculation.
-// Persisted to .agentx/usage/{YYYY-MM-DD}.json
+// Tracks token usage per agent per day with cache-aware, tier-aware cost
+// calculation. Persisted to .agentx/usage/{YYYY-MM-DD}.json.
+//
+// Design notes:
+//   - Pricing is per-model-FAMILY (opus/sonnet/haiku). Exact model name
+//     variants map via getModelFamily(). Override the table by dropping
+//     .agentx/pricing/custom.json (same shape) — merged over defaults at
+//     construction, lets operators adjust without a rebuild.
+//   - Anthropic bills 1.5× input/output when a single request's total input
+//     (input + cacheCreate + cacheRead) exceeds 200K tokens. We split each
+//     recorded task into tier1/tier2 buckets and bill them separately so
+//     long-context sessions are not undercounted.
+//   - Per-channel breakdowns let operators see "GitLab drove 70% of today's
+//     spend" — the lever for channel-specific session + context tuning.
+//   - Session tracking (unique chatId:channel pairs seen today per agent)
+//     gives an avg-tasks-per-session proxy — when it spikes, it's usually
+//     retry/clarification chains, a signal the context budget or model
+//     capability is under-sized for that traffic.
 
-// Anthropic pricing per million tokens (as of April 2026)
+// Anthropic pricing per million tokens (as of April 2026, 5-min ephemeral).
+// Keys here must match getModelFamily() output.
 export const CACHE_AWARE_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
   "claude-opus":   { input: 15,   output: 75,   cacheRead: 1.5,    cacheCreate: 18.75 },
   "claude-sonnet": { input: 3,    output: 15,   cacheRead: 0.3,    cacheCreate: 3.75 },
   "claude-haiku":  { input: 0.25, output: 1.25, cacheRead: 0.025,  cacheCreate: 0.3125 },
 }
+
+/** Per-request input size (input + cacheCreate + cacheRead) above this
+ *  threshold triggers Anthropic's extended-context tier: all four rates
+ *  get multiplied. Applies to Opus 4.x and Sonnet 4.x 1M variants. */
+export const CONTEXT_TIER_THRESHOLD = 200_000
+export const TIER2_MULTIPLIER = 1.5
 
 export function getModelFamily(model: string): string {
   const lower = model.toLowerCase()
@@ -19,9 +42,18 @@ export function getModelFamily(model: string): string {
   return "claude-sonnet"
 }
 
-export interface DailyUsage {
-  date: string
-  agents: Record<string, AgentUsage>
+export interface ChannelUsage {
+  tasks: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
+  tier2InputTokens: number
+  tier2OutputTokens: number
+  tier2CacheReadTokens: number
+  tier2CacheCreateTokens: number
+  totalDuration: number
+  errors: number
 }
 
 export interface AgentUsage {
@@ -30,9 +62,27 @@ export interface AgentUsage {
   outputTokens: number
   cacheReadTokens: number
   cacheCreateTokens: number
+  /** Tokens from requests whose input crossed CONTEXT_TIER_THRESHOLD (billed at
+   *  TIER2_MULTIPLIER × normal rate). Kept separate from the tier1 buckets so
+   *  cost math stays honest when a session accumulates past 200K. */
+  tier2InputTokens?: number
+  tier2OutputTokens?: number
+  tier2CacheReadTokens?: number
+  tier2CacheCreateTokens?: number
   totalDuration: number
   errors: number
   model?: string
+  /** Per-channel breakdown so we can attribute cost to Telegram vs GitLab vs WhatsApp. */
+  byChannel?: Record<string, ChannelUsage>
+  /** Unique session identifiers (channel:chatId) this agent participated in
+   *  today. Used to derive avg tasks/session. Capped at 500 entries to keep
+   *  the daily JSON small. */
+  sessionKeys?: string[]
+}
+
+export interface DailyUsage {
+  date: string
+  agents: Record<string, AgentUsage>
 }
 
 export interface DailyReport {
@@ -46,65 +96,172 @@ export interface DailyReport {
   topAgent: string
   topCost: number
   agentCosts: Record<string, number>
+  /** Per-agent avg tasks/session — high values suggest retry chains. */
+  agentSessionStats: Record<string, { sessions: number; avgTasksPerSession: number }>
+  /** Aggregate cost by channel across all agents. */
+  byChannel: Record<string, number>
 }
+
+/** Shape of a per-request usage report coming from the runtime. Keeps the
+ *  record() signature tidy and lets callers opt into tier2 accounting. */
+export interface TaskUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
+}
+
+const SESSION_KEYS_MAX = 500
+const PRICING_OVERRIDE_PATH = ".agentx/pricing/custom.json"
 
 export class TokenTracker {
   private dir: string
   private cache: DailyUsage | null = null
+  private pricing: typeof CACHE_AWARE_PRICING
 
   constructor(baseDir: string = resolve(process.cwd(), ".agentx/usage")) {
     this.dir = baseDir
     mkdirSync(this.dir, { recursive: true })
+    this.pricing = loadPricingWithOverrides()
+  }
+
+  /** Returns the active pricing table (hardcoded defaults with any per-model
+   *  overrides merged in). Useful for UI / debugging. */
+  getPricing(): typeof CACHE_AWARE_PRICING {
+    return this.pricing
   }
 
   /**
-   * Calculate cost for an agent's usage with cache-aware pricing.
+   * Calculate cost for a slice of usage. Accepts either a full AgentUsage or
+   * a narrowed ChannelUsage — both expose the same token buckets we price on.
+   * Tier2 tokens are billed at TIER2_MULTIPLIER × the normal rate.
    */
-  static calculateCost(usage: AgentUsage): number {
-    const family = getModelFamily(usage.model || "claude-sonnet")
-    const pricing = CACHE_AWARE_PRICING[family] || CACHE_AWARE_PRICING["claude-sonnet"]
+  static calculateCost(usage: AgentUsage | ChannelUsage, model?: string, pricingTable: typeof CACHE_AWARE_PRICING = CACHE_AWARE_PRICING): number {
+    const family = getModelFamily(model || (usage as AgentUsage).model || "claude-sonnet")
+    const p = pricingTable[family] || pricingTable["claude-sonnet"]
+    const tier2In = (usage as any).tier2InputTokens || 0
+    const tier2Out = (usage as any).tier2OutputTokens || 0
+    const tier2CR = (usage as any).tier2CacheReadTokens || 0
+    const tier2CW = (usage as any).tier2CacheCreateTokens || 0
 
-    return (
-      ((usage.inputTokens || 0) / 1_000_000) * pricing.input +
-      ((usage.outputTokens || 0) / 1_000_000) * pricing.output +
-      ((usage.cacheReadTokens || 0) / 1_000_000) * pricing.cacheRead +
-      ((usage.cacheCreateTokens || 0) / 1_000_000) * pricing.cacheCreate
-    )
+    const tier1 =
+      ((usage.inputTokens || 0) / 1_000_000) * p.input +
+      ((usage.outputTokens || 0) / 1_000_000) * p.output +
+      ((usage.cacheReadTokens || 0) / 1_000_000) * p.cacheRead +
+      ((usage.cacheCreateTokens || 0) / 1_000_000) * p.cacheCreate
+
+    const tier2 =
+      (tier2In / 1_000_000) * p.input +
+      (tier2Out / 1_000_000) * p.output +
+      (tier2CR / 1_000_000) * p.cacheRead +
+      (tier2CW / 1_000_000) * p.cacheCreate
+
+    return tier1 + tier2 * TIER2_MULTIPLIER
+  }
+
+  /**
+   * Instance-level cost calculation — uses the tracker's resolved pricing
+   * table so any custom override file is honored. Prefer this over the
+   * static variant when available.
+   */
+  cost(usage: AgentUsage | ChannelUsage, model?: string): number {
+    return TokenTracker.calculateCost(usage, model, this.pricing)
   }
 
   /**
    * Record a task execution with real or estimated token counts.
+   *
+   * `channel` attributes the cost to a surface (telegram/gitlab/whatsapp/cron).
+   * `sessionKey` is an opaque "this chat on this day" identifier — we use it
+   * to count unique sessions so an avg-tasks-per-session metric falls out.
    */
   record(
     agentId: string,
     duration: number,
-    realUsage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number },
+    realUsage?: TaskUsage,
     messageLength?: number,
     responseLength?: number,
     error?: boolean,
     model?: string,
+    channel?: string,
+    sessionKey?: string,
   ): void {
     const daily = this.today()
     const agent = daily.agents[agentId] || {
       tasks: 0, inputTokens: 0, outputTokens: 0,
-      cacheReadTokens: 0, cacheCreateTokens: 0, totalDuration: 0, errors: 0,
+      cacheReadTokens: 0, cacheCreateTokens: 0,
+      tier2InputTokens: 0, tier2OutputTokens: 0,
+      tier2CacheReadTokens: 0, tier2CacheCreateTokens: 0,
+      totalDuration: 0, errors: 0, byChannel: {}, sessionKeys: [],
     }
 
     agent.tasks++
     agent.totalDuration += duration
     if (model) agent.model = model
 
+    // Split this request into tier1/tier2 based on its TOTAL input size
+    // (input + cacheCreate + cacheRead). Output inherits the tier of its
+    // request. Estimated paths (no realUsage) are always tier1 — they're
+    // too small to reach the threshold.
+    let i1 = 0, o1 = 0, cr1 = 0, cw1 = 0, i2 = 0, o2 = 0, cr2 = 0, cw2 = 0
     if (realUsage) {
-      agent.inputTokens += realUsage.inputTokens
-      agent.outputTokens += realUsage.outputTokens
-      agent.cacheReadTokens += realUsage.cacheReadTokens
-      agent.cacheCreateTokens += realUsage.cacheCreateTokens
+      const totalInput = realUsage.inputTokens + realUsage.cacheReadTokens + realUsage.cacheCreateTokens
+      if (totalInput > CONTEXT_TIER_THRESHOLD) {
+        i2 = realUsage.inputTokens
+        o2 = realUsage.outputTokens
+        cr2 = realUsage.cacheReadTokens
+        cw2 = realUsage.cacheCreateTokens
+      } else {
+        i1 = realUsage.inputTokens
+        o1 = realUsage.outputTokens
+        cr1 = realUsage.cacheReadTokens
+        cw1 = realUsage.cacheCreateTokens
+      }
     } else if (messageLength !== undefined && responseLength !== undefined) {
-      agent.inputTokens += Math.ceil(messageLength / 4)
-      agent.outputTokens += Math.ceil(responseLength / 4)
+      i1 = Math.ceil(messageLength / 4)
+      o1 = Math.ceil(responseLength / 4)
     }
 
+    agent.inputTokens += i1
+    agent.outputTokens += o1
+    agent.cacheReadTokens += cr1
+    agent.cacheCreateTokens += cw1
+    agent.tier2InputTokens = (agent.tier2InputTokens || 0) + i2
+    agent.tier2OutputTokens = (agent.tier2OutputTokens || 0) + o2
+    agent.tier2CacheReadTokens = (agent.tier2CacheReadTokens || 0) + cr2
+    agent.tier2CacheCreateTokens = (agent.tier2CacheCreateTokens || 0) + cw2
+
     if (error) agent.errors++
+
+    // Per-channel attribution. Unknown channel falls into "other".
+    if (!agent.byChannel) agent.byChannel = {}
+    const chKey = (channel || "other").toLowerCase()
+    const ch = agent.byChannel[chKey] || {
+      tasks: 0, inputTokens: 0, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreateTokens: 0,
+      tier2InputTokens: 0, tier2OutputTokens: 0,
+      tier2CacheReadTokens: 0, tier2CacheCreateTokens: 0,
+      totalDuration: 0, errors: 0,
+    }
+    ch.tasks++
+    ch.totalDuration += duration
+    ch.inputTokens += i1; ch.outputTokens += o1
+    ch.cacheReadTokens += cr1; ch.cacheCreateTokens += cw1
+    ch.tier2InputTokens += i2; ch.tier2OutputTokens += o2
+    ch.tier2CacheReadTokens += cr2; ch.tier2CacheCreateTokens += cw2
+    if (error) ch.errors++
+    agent.byChannel[chKey] = ch
+
+    // Session tracking — dedup sessions by opaque key (normally channel:chatId).
+    if (sessionKey) {
+      if (!agent.sessionKeys) agent.sessionKeys = []
+      if (!agent.sessionKeys.includes(sessionKey)) {
+        agent.sessionKeys.push(sessionKey)
+        if (agent.sessionKeys.length > SESSION_KEYS_MAX) {
+          agent.sessionKeys.splice(0, agent.sessionKeys.length - SESSION_KEYS_MAX)
+        }
+      }
+    }
 
     daily.agents[agentId] = agent
     this.save(daily)
@@ -144,7 +301,8 @@ export class TokenTracker {
   }
 
   /**
-   * Generate a daily cost report for a given date.
+   * Generate a daily cost report for a given date. Includes per-agent,
+   * per-channel costs and session statistics.
    */
   generateDailyReport(date?: string): DailyReport | null {
     const targetDate = date || new Date().toISOString().slice(0, 10)
@@ -155,27 +313,42 @@ export class TokenTracker {
     let totalCacheRead = 0, totalCacheCreate = 0, totalCost = 0
     let topAgent = "", topCost = 0
     const agentCosts: Record<string, number> = {}
+    const agentSessionStats: Record<string, { sessions: number; avgTasksPerSession: number }> = {}
+    const byChannel: Record<string, number> = {}
 
     for (const [id, agent] of Object.entries(usage.agents)) {
-      const cost = TokenTracker.calculateCost(agent)
+      const cost = this.cost(agent)
       agentCosts[id] = cost
       totalTasks += agent.tasks
-      totalInput += agent.inputTokens || 0
-      totalOutput += agent.outputTokens || 0
-      totalCacheRead += agent.cacheReadTokens || 0
-      totalCacheCreate += agent.cacheCreateTokens || 0
+      totalInput += (agent.inputTokens || 0) + (agent.tier2InputTokens || 0)
+      totalOutput += (agent.outputTokens || 0) + (agent.tier2OutputTokens || 0)
+      totalCacheRead += (agent.cacheReadTokens || 0) + (agent.tier2CacheReadTokens || 0)
+      totalCacheCreate += (agent.cacheCreateTokens || 0) + (agent.tier2CacheCreateTokens || 0)
       totalCost += cost
       if (cost > topCost) { topCost = cost; topAgent = id }
+
+      const sessions = agent.sessionKeys?.length || 0
+      agentSessionStats[id] = {
+        sessions,
+        avgTasksPerSession: sessions > 0 ? agent.tasks / sessions : agent.tasks,
+      }
+
+      for (const [chKey, ch] of Object.entries(agent.byChannel || {})) {
+        const chCost = this.cost(ch, agent.model)
+        byChannel[chKey] = (byChannel[chKey] || 0) + chCost
+      }
     }
 
     return {
       date: targetDate, totalTasks, totalInput, totalOutput,
       totalCacheRead, totalCacheCreate, totalCost, topAgent, topCost, agentCosts,
+      agentSessionStats, byChannel,
     }
   }
 
   /**
-   * Append a daily report row to TOKEN_COSTS.md.
+   * Append a daily report row to TOKEN_COSTS.md. Adds channel + session
+   * breakdown inline for at-a-glance spend attribution.
    */
   appendToTokenCosts(report: DailyReport, filePath?: string): void {
     const file = filePath || resolve(process.cwd(), ".agentx/TOKEN_COSTS.md")
@@ -187,17 +360,27 @@ export class TokenTracker {
 
     const agentBreakdown = Object.entries(report.agentCosts)
       .sort(([, a], [, b]) => b - a)
-      .map(([id, cost]) => `${id}: $${fmt(cost)}`)
+      .map(([id, cost]) => {
+        const stats = report.agentSessionStats[id]
+        const sessTag = stats && stats.sessions > 0 ? ` (${stats.sessions}s, ${stats.avgTasksPerSession.toFixed(1)}t/s)` : ""
+        return `${id}: $${fmt(cost)}${sessTag}`
+      })
       .join(", ")
 
-    const row = `| ${report.date} | ${report.totalTasks} | ${fmtTok(report.totalInput)} | ${fmtTok(report.totalOutput)} | ${fmtTok(report.totalCacheRead)} | ${fmtTok(report.totalCacheCreate)} | $${fmt(report.totalCost)} | ${agentBreakdown} |`
+    const channelBreakdown = Object.entries(report.byChannel)
+      .sort(([, a], [, b]) => b - a)
+      .map(([ch, cost]) => `${ch}: $${fmt(cost)}`)
+      .join(", ")
+
+    const row = `| ${report.date} | ${report.totalTasks} | ${fmtTok(report.totalInput)} | ${fmtTok(report.totalOutput)} | ${fmtTok(report.totalCacheRead)} | ${fmtTok(report.totalCacheCreate)} | $${fmt(report.totalCost)} | ${agentBreakdown} | ${channelBreakdown} |`
 
     if (!existsSync(file)) {
       const header =
         "# Token Costs\n\n" +
-        "Daily token cost tracking. Auto-appended at midnight (Africa/Tunis).\n\n" +
-        "| Date | Tasks | Input | Output | Cache R | Cache W | Cost | Per Agent |\n" +
-        "|------|-------|-------|--------|---------|---------|------|-----------|\n"
+        "Daily token cost tracking. Auto-appended at midnight (Africa/Tunis).\n" +
+        "Agent breakdown: `agent: $cost (Ns, T.Tt/s)` — sessions, tasks/session.\n\n" +
+        "| Date | Tasks | Input | Output | Cache R | Cache W | Cost | Per Agent | Per Channel |\n" +
+        "|------|-------|-------|--------|---------|---------|------|-----------|-------------|\n"
       writeFileSync(file, header + row + "\n")
     } else {
       appendFileSync(file, row + "\n")
@@ -218,6 +401,8 @@ export class TokenTracker {
     totalErrors: number
     totalCost: number
     byAgent: Record<string, { tasks: number; input: number; output: number; cacheRead: number; cacheCreate: number; total: number; avgDuration: number; cost: number }>
+    byChannel: Record<string, { tasks: number; cost: number }>
+    sessionStats: Record<string, { sessions: number; avgTasksPerSession: number }>
   } {
     let totalTasks = 0
     let totalInput = 0
@@ -226,7 +411,8 @@ export class TokenTracker {
     let totalCacheCreate = 0
     let totalErrors = 0
     let totalCost = 0
-    const byAgent: Record<string, { tasks: number; input: number; output: number; cacheRead: number; cacheCreate: number; total: number; avgDuration: number; totalDuration: number; cost: number; model?: string }> = {}
+    const byAgent: Record<string, { tasks: number; input: number; output: number; cacheRead: number; cacheCreate: number; total: number; avgDuration: number; totalDuration: number; cost: number; model?: string; sessions: number }> = {}
+    const byChannel: Record<string, { tasks: number; cost: number }> = {}
 
     for (let i = 0; i < days; i++) {
       const date = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10)
@@ -234,27 +420,40 @@ export class TokenTracker {
       if (!usage) continue
 
       for (const [id, agent] of Object.entries(usage.agents)) {
-        const cost = TokenTracker.calculateCost(agent)
+        const cost = this.cost(agent)
         totalTasks += agent.tasks
-        totalInput += agent.inputTokens || 0
-        totalOutput += agent.outputTokens || 0
-        totalCacheRead += agent.cacheReadTokens || 0
-        totalCacheCreate += agent.cacheCreateTokens || 0
+        const agentInput = (agent.inputTokens || 0) + (agent.tier2InputTokens || 0)
+        const agentOutput = (agent.outputTokens || 0) + (agent.tier2OutputTokens || 0)
+        const agentCR = (agent.cacheReadTokens || 0) + (agent.tier2CacheReadTokens || 0)
+        const agentCW = (agent.cacheCreateTokens || 0) + (agent.tier2CacheCreateTokens || 0)
+        totalInput += agentInput
+        totalOutput += agentOutput
+        totalCacheRead += agentCR
+        totalCacheCreate += agentCW
         totalErrors += agent.errors
         totalCost += cost
 
-        const existing = byAgent[id] || { tasks: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, total: 0, avgDuration: 0, totalDuration: 0, cost: 0 }
+        const existing = byAgent[id] || { tasks: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, total: 0, avgDuration: 0, totalDuration: 0, cost: 0, sessions: 0 }
         existing.tasks += agent.tasks
-        existing.input += agent.inputTokens || 0
-        existing.output += agent.outputTokens || 0
-        existing.cacheRead += agent.cacheReadTokens || 0
-        existing.cacheCreate += agent.cacheCreateTokens || 0
+        existing.input += agentInput
+        existing.output += agentOutput
+        existing.cacheRead += agentCR
+        existing.cacheCreate += agentCW
         existing.total = existing.input + existing.output + existing.cacheRead + existing.cacheCreate
         existing.totalDuration += agent.totalDuration
         existing.avgDuration = existing.totalDuration / existing.tasks
         existing.cost += cost
+        existing.sessions += agent.sessionKeys?.length || 0
         if (agent.model) existing.model = agent.model
         byAgent[id] = existing
+
+        for (const [chKey, ch] of Object.entries(agent.byChannel || {})) {
+          const chCost = this.cost(ch, agent.model)
+          const acc = byChannel[chKey] || { tasks: 0, cost: 0 }
+          acc.tasks += ch.tasks
+          acc.cost += chCost
+          byChannel[chKey] = acc
+        }
       }
     }
 
@@ -263,7 +462,15 @@ export class TokenTracker {
       ? totalCacheRead / (totalCacheRead + totalCacheCreate)
       : 0
 
-    return { totalTasks, totalTokens, totalInput, totalOutput, totalCacheRead, totalCacheCreate, cacheHitRatio, totalErrors, totalCost, byAgent }
+    const sessionStats: Record<string, { sessions: number; avgTasksPerSession: number }> = {}
+    for (const [id, a] of Object.entries(byAgent)) {
+      sessionStats[id] = {
+        sessions: a.sessions,
+        avgTasksPerSession: a.sessions > 0 ? a.tasks / a.sessions : a.tasks,
+      }
+    }
+
+    return { totalTasks, totalTokens, totalInput, totalOutput, totalCacheRead, totalCacheCreate, cacheHitRatio, totalErrors, totalCost, byAgent, byChannel, sessionStats }
   }
 
   private filePath(date: string): string {
@@ -275,4 +482,25 @@ export class TokenTracker {
       writeFileSync(this.filePath(usage.date), JSON.stringify(usage, null, 2))
     } catch {}
   }
+}
+
+/**
+ * Load CACHE_AWARE_PRICING and merge any operator-supplied override. The
+ * override file is optional; operators tweak rates (e.g. when Anthropic
+ * publishes a price change) without rebuilding the daemon.
+ */
+function loadPricingWithOverrides(): typeof CACHE_AWARE_PRICING {
+  const result = JSON.parse(JSON.stringify(CACHE_AWARE_PRICING))
+  try {
+    const p = resolve(process.cwd(), PRICING_OVERRIDE_PATH)
+    if (!existsSync(p)) return result
+    const raw = JSON.parse(readFileSync(p, "utf-8"))
+    for (const [family, rates] of Object.entries(raw)) {
+      if (!result[family]) result[family] = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 }
+      Object.assign(result[family], rates as object)
+    }
+  } catch {
+    // Malformed override file — stay with defaults rather than crash at boot.
+  }
+  return result
 }

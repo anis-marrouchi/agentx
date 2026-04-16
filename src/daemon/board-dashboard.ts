@@ -418,6 +418,7 @@ interface NodeLive {
     id: string
     name: string
     tier: string
+    model?: string
     active: number
     total: number
     errors: number
@@ -453,7 +454,7 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
     }
     const agents: any[] = await agentsRes.json()
     base.agents = agents.map((a) => ({
-      id: a.id, name: a.name, tier: a.tier,
+      id: a.id, name: a.name, tier: a.tier, model: a.model,
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
@@ -873,6 +874,11 @@ main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 .agent.errored .dot { background: var(--red); }
 .agent .name { font-weight: 600; font-size: 13px; flex: 1; }
 .agent .tier { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; }
+.agent .meta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); flex-wrap: wrap; }
+.agent .model { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
+  background: rgba(99,102,241,0.12); padding: 1px 7px; border-radius: 3px; letter-spacing: 0.2px; }
+.agent .last { font-size: 10px; color: var(--muted); }
+.agent .last.muted { font-style: italic; opacity: 0.7; }
 .agent .stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
 .agent .stats b { color: var(--text); font-weight: 600; }
 .agent .stats .err b { color: var(--red); }
@@ -963,18 +969,41 @@ function renderAgent(a) {
     ? '<div class="tasks">' + tasks + '</div>'
     : (busy ? '<div class="tasks"><div class="task"><span class="elapsed">running · no preview</span></div></div>'
             : '<div class="idle">idle</div>');
+  const modelLabel = a.model ? '<span class="model" title="Model">' + escapeHtml(shortenModel(a.model)) + '</span>' : '';
+  const lastLabel = a.lastActive
+    ? '<span class="last" title="' + escapeHtml(new Date(a.lastActive).toLocaleString()) + '">last ' + escapeHtml(fmtAgo(a.lastActive)) + '</span>'
+    : '<span class="last muted">never ran</span>';
   card.innerHTML =
     '<div class="top">' +
       '<span class="dot"></span>' +
       '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
       '<span class="tier">' + escapeHtml(a.tier || '') + '</span>' +
     '</div>' +
+    '<div class="meta">' + modelLabel + lastLabel + '</div>' +
     '<div class="stats">' +
       '<span>Active <b>' + (a.active || 0) + '</b></span>' +
       '<span>Total <b>' + (a.total || 0) + '</b></span>' +
       '<span class="err">Err <b>' + (a.errors || 0) + '</b></span>' +
     '</div>' + tasksBlock;
   return card;
+}
+
+function shortenModel(m) {
+  if (!m) return '';
+  return String(m)
+    .replace(/^claude-/, '')
+    .replace(/-\\d{8}$/, '')
+    .replace(/\\[1m\\]$/, ' · 1M');
+}
+
+function fmtAgo(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return '—';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24); return d + 'd ago';
 }
 
 function connect() {
@@ -1201,6 +1230,11 @@ header #newIssueBtn:hover { filter: brightness(1.1); }
 .agent-card .dot.errored { background: var(--red); }
 .agent-card .name { font-weight: 600; font-size: 13px; flex: 1; }
 .agent-card .tier { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.agent-card .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.agent-card .model { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
+  background: rgba(99,102,241,0.12); padding: 1px 7px; border-radius: 3px; letter-spacing: 0.2px; }
+.agent-card .last { font-size: 10px; color: var(--muted); }
+.agent-card .last.muted { font-style: italic; opacity: 0.7; }
 .agent-card .stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
 .agent-card .stats b { color: var(--text); font-weight: 600; }
 .agent-card .stats .errors b { color: var(--red); }
@@ -2003,18 +2037,41 @@ function renderAgentCard(a, biz) {
   const current = biz && biz.currentItem
     ? '<div class="current">Working on <b>' + escapeHtml(biz.currentItem.title || biz.currentItem.id) + '</b></div>'
     : (active ? '<div class="current"><b>' + a.active + ' active task' + (a.active === 1 ? '' : 's') + '</b></div>' : '');
+  const modelLabel = a.model ? '<span class="model" title="Model">' + escapeHtml(shortenModelName(a.model)) + '</span>' : '';
+  const lastLabel = a.lastActive
+    ? '<span class="last" title="' + escapeHtml(new Date(a.lastActive).toLocaleString()) + '">last ' + escapeHtml(fmtAgoBoard(a.lastActive)) + '</span>'
+    : '<span class="last muted">never ran</span>';
   card.innerHTML =
     '<div class="top">' +
       '<span class="dot ' + dotClass + '"></span>' +
       '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
       '<span class="tier">' + escapeHtml(a.tier || '') + '</span>' +
     '</div>' +
+    '<div class="meta">' + modelLabel + lastLabel + '</div>' +
     '<div class="stats">' +
       '<span>Active <b>' + (a.active || 0) + '</b></span>' +
       '<span>Total <b>' + (a.total || 0) + '</b></span>' +
       '<span class="errors">Errors <b>' + (a.errors || 0) + '</b></span>' +
     '</div>' + current;
   return card;
+}
+
+function shortenModelName(m) {
+  if (!m) return '';
+  return String(m)
+    .replace(/^claude-/, '')
+    .replace(/-\\d{8}$/, '')
+    .replace(/\\[1m\\]$/, ' · 1M');
+}
+
+function fmtAgoBoard(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return '—';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24); return d + 'd ago';
 }
 
 function appendEvents(events) {
