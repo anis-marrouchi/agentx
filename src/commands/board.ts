@@ -23,6 +23,10 @@ board
       startBoardDashboard(config)
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
+      // Stack trace is useful when the failure is inside board-dashboard
+      // internals (e.g. template-literal bundling mishaps). Only prints when
+      // DEBUG is set so normal usage stays clean.
+      if (process.env.DEBUG && e.stack) console.log(chalk.dim(e.stack))
       process.exit(1)
     }
   })

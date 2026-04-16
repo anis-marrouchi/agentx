@@ -898,10 +898,17 @@ function renderBoardHtml(): string {
             <span id="m-draft-hint" class="hint"></span>
           </div>
         </div>
-        <label class="fld">
-          <span>Description</span>
-          <textarea id="m-desc" rows="8" placeholder="Markdown supported"></textarea>
-        </label>
+        <div class="fld">
+          <div class="desc-head">
+            <span>Description</span>
+            <div class="desc-tabs" role="tablist">
+              <button type="button" class="desc-tab" data-tab="preview" role="tab">Preview</button>
+              <button type="button" class="desc-tab active" data-tab="write" role="tab">Write</button>
+            </div>
+          </div>
+          <div id="m-desc-preview" class="desc-preview" hidden></div>
+          <textarea id="m-desc" rows="10" placeholder="Markdown supported (GitLab flavored)"></textarea>
+        </div>
         <div class="fld">
           <span>Labels</span>
           <div id="m-labels" class="chip-picker"></div>
@@ -1607,6 +1614,39 @@ header #newIssueBtn:hover { filter: brightness(1.1); }
 .fld select { background: var(--col); border: 1px solid var(--border); color: var(--text);
   padding: 6px 10px; border-radius: 6px; font: inherit; outline: none; }
 
+/* Description edit/preview tabs */
+.desc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.desc-tabs { display: inline-flex; background: var(--col); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.desc-tabs button { background: transparent; border: none; color: var(--muted); padding: 4px 10px; cursor: pointer; font: inherit; font-size: 11px; }
+.desc-tabs button.active { background: var(--accent); color: white; }
+.desc-preview { background: var(--col); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 14px; min-height: 120px; max-height: 420px; overflow-y: auto; line-height: 1.55; }
+.desc-preview.empty { color: var(--muted); font-style: italic; }
+.desc-preview h1 { font-size: 18px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.desc-preview h2 { font-size: 16px; margin: 14px 0 6px; }
+.desc-preview h3 { font-size: 14px; margin: 12px 0 4px; color: var(--text); }
+.desc-preview p { margin: 6px 0; }
+.desc-preview ul, .desc-preview ol { margin: 6px 0; padding-left: 20px; }
+.desc-preview li { margin: 2px 0; }
+.desc-preview li.task { list-style: none; margin-left: -16px; }
+.desc-preview li.task input { margin-right: 6px; vertical-align: middle; }
+.desc-preview code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px;
+  font: 12px ui-monospace, "SF Mono", monospace; color: #e6e8ef; }
+.desc-preview pre { background: #0a0c11; border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; overflow-x: auto; margin: 8px 0; }
+.desc-preview pre code { background: transparent; padding: 0; font-size: 12px; line-height: 1.45; color: #d8dce6; }
+.desc-preview blockquote { border-left: 3px solid var(--accent); padding: 2px 12px; margin: 8px 0;
+  color: var(--muted); background: rgba(99,102,241,0.08); border-radius: 0 4px 4px 0; }
+.desc-preview a { color: var(--accent); text-decoration: none; }
+.desc-preview a:hover { text-decoration: underline; }
+.desc-preview hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.desc-preview table { border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.desc-preview th, .desc-preview td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.desc-preview th { background: var(--col-hdr); font-weight: 600; }
+.desc-preview img { max-width: 100%; border-radius: 4px; margin: 6px 0; }
+.desc-preview del { color: var(--muted); }
+.desc-preview .ref { background: rgba(99,102,241,0.15); padding: 0 4px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 12px; }
+
 .chip-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px;
   background: var(--col); border: 1px solid var(--border); border-radius: 6px; min-height: 36px; }
 .chip-picker .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
@@ -2090,6 +2130,9 @@ function openModal(mode, id) {
   document.body.style.overflow = 'hidden';
   document.getElementById('m-save').textContent = mode === 'create' ? 'Create' : 'Save';
   document.getElementById('m-iid').textContent = id ? ('#' + id.split(':').slice(-1)[0]) : 'NEW';
+  // Default description tab: Preview when reading an existing issue (focus on
+  // rendered content), Write when creating (focus on typing).
+  setDescTab(mode === 'create' ? 'write' : 'preview');
   // Draft box only in create mode.
   const draftBox = document.getElementById('m-draft');
   if (draftBox) {
@@ -2106,6 +2149,227 @@ function openModal(mode, id) {
     const el = document.getElementById(mode === 'create' ? 'm-rough' : 'm-desc');
     if (el) el.focus();
   }, 50);
+}
+
+/** Toggle between rendered preview and the raw textarea for the description. */
+function setDescTab(tab) {
+  const preview = document.getElementById('m-desc-preview');
+  const textarea = document.getElementById('m-desc');
+  if (!preview || !textarea) return;
+  const showPreview = tab === 'preview';
+  preview.hidden = !showPreview;
+  textarea.hidden = showPreview;
+  document.querySelectorAll('.desc-tabs .desc-tab').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  if (showPreview) {
+    // Re-render with the current draft content so previews stay in sync with
+    // in-progress edits (e.g. after an ✨ Draft).
+    paintDescriptionPreview(state.modal.draft || {});
+  }
+}
+
+function paintDescriptionPreview(d) {
+  const preview = document.getElementById('m-desc-preview');
+  if (!preview) return;
+  const text = (state.modal.draft && state.modal.draft.description) || d.description || '';
+  if (!text.trim()) {
+    preview.classList.add('empty');
+    preview.textContent = 'No description yet.';
+    return;
+  }
+  preview.classList.remove('empty');
+  // Derive GitLab host+project from the item URL so #123 / !45 / @user become
+  // real links. Falls back to plain text rendering when URL isn't available.
+  const url = (state.modal.original && state.modal.original.url) || d.url || '';
+  const ctx = parseGitLabContext(url);
+  preview.innerHTML = renderGitLabMarkdown(text, ctx);
+}
+
+/** Extract {host, project} from a GitLab issue/MR URL. Returns null on failure. */
+function parseGitLabContext(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    // ".../:namespace/:project/-/issues/:iid" or ".../-/merge_requests/..."
+    const m = u.pathname.match(/^\\/(.+?)\\/-\\//);
+    if (!m) return { host: u.origin, project: '' };
+    return { host: u.origin, project: m[1] };
+  } catch { return null; }
+}
+
+// Alias escapeHtml so the markdown renderer reads concisely.
+const esc = escapeHtml;
+
+/* ------------------------------------------------------------------ */
+/* Minimal GitLab-flavored Markdown renderer                          */
+/* ------------------------------------------------------------------ */
+/*  Handles: headings, bold, italic, strikethrough, inline + fenced   */
+/*  code, links, images, blockquotes, HR, ordered/unordered lists,    */
+/*  task lists (- [ ] / - [x]), tables, paragraphs. Post-process for  */
+/*  GitLab refs (#NNN, !NNN, @user).                                  */
+/*  Not a full CommonMark implementation — covers the 95% used in     */
+/*  issue bodies. Output is assembled from escaped + linkified tokens */
+/*  so no user content lands in the DOM unescaped.                    */
+/* ------------------------------------------------------------------ */
+
+function renderGitLabMarkdown(md, ctx) {
+  const src = String(md || '').replace(/\\r\\n?/g, '\\n');
+  // Protect fenced code blocks first — they must pass through untouched.
+  // Regex built via RegExp constructor because we're inside a TS template
+  // literal and backtick regex literals confuse the bundler.
+  const fences = [];
+  const fenceRe = new RegExp('\\\\u0060\\\\u0060\\\\u0060(\\\\w*)\\\\n([\\\\s\\\\S]*?)\\\\n\\\\u0060\\\\u0060\\\\u0060', 'g');
+  const withoutFences = src.replace(fenceRe, (_m, lang, code) => {
+    const idx = fences.length;
+    fences.push({ lang, code });
+    return '\\u0000FENCE' + idx + '\\u0000';
+  });
+
+  const lines = withoutFences.split('\\n');
+  let html = '';
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fence placeholder — emit <pre><code>.
+    const fm = line.match(/^\\u0000FENCE(\\d+)\\u0000\$/);
+    if (fm) {
+      const f = fences[+fm[1]];
+      const cls = f.lang ? ' class="lang-' + esc(f.lang) + '"' : '';
+      html += '<pre><code' + cls + '>' + esc(f.code) + '</code></pre>';
+      i++;
+      continue;
+    }
+
+    // Blank line — paragraph break.
+    if (!line.trim()) { i++; continue; }
+
+    // Heading.
+    const hm = line.match(/^(#{1,6})\\s+(.*)/);
+    if (hm) {
+      const level = hm[1].length;
+      html += '<h' + level + '>' + inlineMd(hm[2], ctx) + '</h' + level + '>';
+      i++;
+      continue;
+    }
+
+    // Horizontal rule.
+    if (/^(---+|\\*\\*\\*+|___+)\$/.test(line.trim())) {
+      html += '<hr>';
+      i++;
+      continue;
+    }
+
+    // Blockquote (consecutive > lines).
+    if (/^>\\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^>\\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\\s?/, '')); i++; }
+      html += '<blockquote>' + inlineMd(buf.join(' '), ctx) + '</blockquote>';
+      continue;
+    }
+
+    // Table (GFM) — header row + alignment row + body rows.
+    if (line.includes('|') && i + 1 < lines.length && /^\\s*\\|?\\s*(:?-+:?\\s*\\|?)+\\s*\$/.test(lines[i+1])) {
+      const headerCells = splitTableRow(line);
+      let t = '<table><thead><tr>' + headerCells.map(c => '<th>' + inlineMd(c, ctx) + '</th>').join('') + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
+        const cells = splitTableRow(lines[i]);
+        t += '<tr>' + cells.map(c => '<td>' + inlineMd(c, ctx) + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html += t + '</tbody></table>';
+      continue;
+    }
+
+    // Lists (ordered, unordered, task).
+    const ulMatch = line.match(/^(\\s*)[-*+]\\s+(.*)/);
+    const olMatch = line.match(/^(\\s*)(\\d+)\\.\\s+(.*)/);
+    if (ulMatch || olMatch) {
+      const ordered = !!olMatch;
+      const tag = ordered ? 'ol' : 'ul';
+      let items = '';
+      while (i < lines.length) {
+        const cur = lines[i];
+        const um = cur.match(/^(\\s*)[-*+]\\s+(.*)/);
+        const om = cur.match(/^(\\s*)(\\d+)\\.\\s+(.*)/);
+        if (!um && !om) break;
+        const content = (um ? um[2] : om[3]);
+        // Task list item: "- [ ] label" or "- [x] label"
+        const tm = content.match(/^\\[( |x|X)\\]\\s+(.*)/);
+        if (tm) {
+          const checked = tm[1].toLowerCase() === 'x' ? ' checked' : '';
+          items += '<li class="task"><input type="checkbox" disabled' + checked + '>' + inlineMd(tm[2], ctx) + '</li>';
+        } else {
+          items += '<li>' + inlineMd(content, ctx) + '</li>';
+        }
+        i++;
+      }
+      html += '<' + tag + '>' + items + '</' + tag + '>';
+      continue;
+    }
+
+    // Paragraph — absorb consecutive non-empty, non-special lines.
+    const para = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !/^(\\u0000FENCE|#|>|\\s*[-*+]\\s|\\s*\\d+\\.\\s|---+|===+)/.test(lines[i])) {
+      para.push(lines[i]);
+      i++;
+    }
+    html += '<p>' + inlineMd(para.join(' '), ctx) + '</p>';
+  }
+  return html;
+}
+
+function splitTableRow(line) {
+  // Strip leading/trailing pipe and split by unescaped pipes.
+  const s = line.trim().replace(/^\\||\\|\$/g, '');
+  return s.split(/(?<!\\\\)\\|/).map(c => c.trim());
+}
+
+function inlineMd(text, ctx) {
+  // Inline code — protect first with placeholders. Regex built via RegExp
+  // constructor so a TS template literal doesn't choke on backtick escapes.
+  const codes = [];
+  const inlineCodeRe = new RegExp('\\\\u0060([^\\\\u0060]+)\\\\u0060', 'g');
+  let out = text.replace(inlineCodeRe, (_m, c) => {
+    const idx = codes.length;
+    codes.push(c);
+    return '\\u0001CODE' + idx + '\\u0001';
+  });
+  out = esc(out);
+  // Images first so their URLs aren't caught by the link rule.
+  out = out.replace(/!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"([^\"]*)\")?\\)/g, (_m, alt, src, title) => {
+    return '<img src="' + sanitizeUrl(src) + '" alt="' + esc(alt) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>';
+  });
+  // Links [text](url).
+  out = out.replace(/\\[([^\\]]+)\\]\\(([^)\\s]+)(?:\\s+\"([^\"]*)\")?\\)/g, (_m, label, href, title) => {
+    return '<a href="' + sanitizeUrl(href) + '"' + (title ? ' title="' + esc(title) + '"' : '') + ' target="_blank" rel="noopener">' + label + '</a>';
+  });
+  // Bold, italic, strikethrough.
+  out = out.replace(/\\*\\*([^*\\n]+)\\*\\*/g, '<strong>\$1</strong>');
+  out = out.replace(/(?<![\\w*])\\*([^*\\n]+)\\*(?![\\w])/g, '<em>\$1</em>');
+  out = out.replace(/(?<![\\w_])_([^_\\n]+)_(?![\\w])/g, '<em>\$1</em>');
+  out = out.replace(/~~([^~\\n]+)~~/g, '<del>\$1</del>');
+  // Autolink raw URLs.
+  out = out.replace(/(^|[\\s(])((?:https?:\\/\\/)[^\\s<)]+)/g, (_m, pre, url) => pre + '<a href="' + sanitizeUrl(url) + '" target="_blank" rel="noopener">' + esc(url) + '</a>');
+  // GitLab refs: #NNN (issue), !NNN (MR), @user. Only when we have context.
+  if (ctx && ctx.host && ctx.project) {
+    out = out.replace(/(^|[\\s(])#(\\d+)\\b/g, (_m, pre, n) => pre + '<a class="ref" href="' + ctx.host + '/' + ctx.project + '/-/issues/' + n + '" target="_blank" rel="noopener">#' + n + '</a>');
+    out = out.replace(/(^|[\\s(])!(\\d+)\\b/g, (_m, pre, n) => pre + '<a class="ref" href="' + ctx.host + '/' + ctx.project + '/-/merge_requests/' + n + '" target="_blank" rel="noopener">!' + n + '</a>');
+    out = out.replace(/(^|[\\s(])@([A-Za-z0-9_.\\-]+)/g, (_m, pre, u) => pre + '<a class="ref" href="' + ctx.host + '/' + u + '" target="_blank" rel="noopener">@' + u + '</a>');
+  }
+  // Restore inline code.
+  out = out.replace(/\\u0001CODE(\\d+)\\u0001/g, (_m, idx) => '<code>' + esc(codes[+idx]) + '</code>');
+  return out;
+}
+
+function sanitizeUrl(u) {
+  const s = String(u || '').trim();
+  // Block javascript: and data: (except safe images) URLs.
+  if (/^javascript:/i.test(s)) return '#';
+  return esc(s);
 }
 
 async function populateDraftAgents() {
@@ -2208,6 +2472,7 @@ function cloneForDraft(d) {
 function paintModal(d) {
   document.getElementById('m-title').value = d.title || '';
   document.getElementById('m-desc').value = d.description || '';
+  paintDescriptionPreview(d);
 
   document.querySelectorAll('#m-state button').forEach(b => {
     b.classList.toggle('active', b.dataset.state === (d.state || 'opened'));
@@ -2409,6 +2674,16 @@ if (draftGo) draftGo.onclick = draftWithAgent;
 const roughEl = document.getElementById('m-rough');
 if (roughEl) roughEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) draftWithAgent();
+});
+
+// Description Preview/Write tabs. Textarea edits sync to draft so the
+// preview re-renders the CURRENT text when the user flips to it.
+document.querySelectorAll('.desc-tabs .desc-tab').forEach((b) => {
+  b.addEventListener('click', () => setDescTab(b.dataset.tab));
+});
+const descEl = document.getElementById('m-desc');
+if (descEl) descEl.addEventListener('input', () => {
+  if (state.modal.draft) state.modal.draft.description = descEl.value;
 });
 
 // --- Agent activity panel (live polling of the daemon API) ---
