@@ -26,10 +26,6 @@ import { SORTABLE_JS } from "./vendor/sortable"
 export function startBoardDashboard(config: DaemonConfig): void {
   const dashboard = config.dashboard
   const boards = config.boards
-  if (boards.length === 0) {
-    console.log("  No boards configured in agentx.json (boards[]). Nothing to serve.")
-    return
-  }
 
   const port = dashboard.port
   const bind = dashboard.bind
@@ -54,8 +50,13 @@ export function startBoardDashboard(config: DaemonConfig): void {
 
   server.listen(port, bind, () => {
     const displayHost = bind === "0.0.0.0" ? "localhost" : bind
-    console.log(`\n  Kanban dashboard: http://${displayHost}:${port}\n`)
-    console.log(`  Boards: ${boards.map((b) => b.id).join(", ")}`)
+    if (boards.length === 0) {
+      console.log(`\n  Live dashboard: http://${displayHost}:${port}\n`)
+      console.log("  (no boards configured — '/' serves the live view; add a board with 'agentx board add')")
+    } else {
+      console.log(`\n  Kanban dashboard: http://${displayHost}:${port}\n`)
+      console.log(`  Boards: ${boards.map((b) => b.id).join(", ")}`)
+    }
     if (bind === "127.0.0.1" && !token) {
       console.log("  (bound to localhost; no auth token — safe default)")
     } else if (bind !== "127.0.0.1" && !token) {
@@ -82,8 +83,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
   if (method === "GET" && path === "/") {
+    // Default to the live view when no boards are configured so the server
+    // still does something useful out of the box.
+    const html = ctx.boards.length === 0 ? renderLiveHtml() : renderBoardHtml()
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderBoardHtml())
+    res.end(html)
     return
   }
   if (method === "GET" && path === "/live") {
