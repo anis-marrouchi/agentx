@@ -223,6 +223,12 @@ export class AgentXDaemon {
       this.startConfigWatcher()
     }
 
+    // Drop old task-history folders past the retention window.
+    try {
+      const removed = this.registry.pruneTaskHistory()
+      if (removed > 0) this.log(`  Pruned ${removed} old task-history folder(s)`)
+    } catch { /* best-effort */ }
+
     this.log("")
     this.log("  Ready.")
     this.log("")
@@ -713,6 +719,23 @@ export class AgentXDaemon {
       const taskStreamMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)\/stream$/)
       if (taskStreamMatch) {
         this.handleTaskStream(req, res, taskStreamMatch[1], taskStreamMatch[2])
+        return
+      }
+
+      // Persisted task history (for the dashboard "Recent activities" panel).
+      // GET /agents/:agentId/tasks?limit=N  → list of summaries (newest first)
+      // GET /agents/:agentId/tasks/:taskId  → one full record (transcript + response)
+      const taskHistoryListMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks$/)
+      if (taskHistoryListMatch) {
+        const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") || "50", 10) || 50))
+        this.json(res, 200, this.registry.listTaskHistory(taskHistoryListMatch[1], limit))
+        return
+      }
+      const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)
+      if (taskRecordMatch) {
+        const rec = this.registry.getTaskRecord(taskRecordMatch[1], taskRecordMatch[2])
+        if (!rec) { this.json(res, 404, { error: "not found" }); return }
+        this.json(res, 200, rec)
         return
       }
 

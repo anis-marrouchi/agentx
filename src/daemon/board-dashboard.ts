@@ -126,6 +126,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Cross-node JSON proxy for the persisted task history (Recent Activities panel).
+  // GET /api/task/history?node=<url>&agent=<id>&limit=N      → list
+  // GET /api/task/history?node=<url>&agent=<id>&task=<tid>   → single record
+  if (method === "GET" && path === "/api/task/history") {
+    const u = new URL(req.url || "/", "http://localhost")
+    const nodeUrl = u.searchParams.get("node")
+    const agentId = u.searchParams.get("agent")
+    const taskId = u.searchParams.get("task")
+    const limit = u.searchParams.get("limit") || "50"
+    if (!nodeUrl || !agentId) {
+      sendJson(res, 400, { error: "node and agent query params required" })
+      return
+    }
+    await proxyTaskHistory(res, ctx, nodeUrl, agentId, taskId, limit)
+    return
+  }
+
   // Agent roster (proxy to configured daemon) — used by draft-agent picker.
   if (method === "GET" && path === "/api/agents") {
     try {
@@ -625,6 +642,52 @@ async function proxyTaskStream(
   req.on("close", () => { upstreamCtl.abort(); try { res.end() } catch { /* */ } })
 }
 
+/**
+ * One-shot JSON proxy for /agents/:id/tasks (list) or /agents/:id/tasks/:tid
+ * (single record). Same allowlist semantics as proxyTaskStream.
+ */
+async function proxyTaskHistory(
+  res: ServerResponse,
+  ctx: { config: DaemonConfig },
+  nodeUrl: string,
+  agentId: string,
+  taskId: string | null,
+  limit: string,
+): Promise<void> {
+  const target = nodeUrl.replace(/\/+$/, "")
+  const allowed = new Set<string>()
+  allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
+  for (const d of ctx.config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
+  try {
+    const peers = await fetchMeshPeers(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), ctx.config.dashboard.token)
+    for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
+  } catch { /* */ }
+  if (!allowed.has(target)) {
+    sendJson(res, 403, { error: "node not in dashboard allowlist", target })
+    return
+  }
+  const tokenForNode =
+    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      ? ctx.config.dashboard.token
+      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const headers: Record<string, string> = { Accept: "application/json" }
+  if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
+  const upstreamPath = taskId
+    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`
+    : `/agents/${encodeURIComponent(agentId)}/tasks?limit=${encodeURIComponent(limit)}`
+  try {
+    const r = await fetch(`${target}${upstreamPath}`, { headers })
+    const body = await r.text()
+    res.writeHead(r.status, {
+      "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+    })
+    res.end(body)
+  } catch (e: any) {
+    sendJson(res, 502, { error: e.message || "upstream fetch failed" })
+  }
+}
+
 // --- A2A issue drafting ---
 //
 // Builds a convention-aware prompt, calls the configured agent on the daemon,
@@ -906,6 +969,14 @@ function renderLiveHtml(): string {
   <span id="conn" class="conn ok" title="connected">●</span>
 </header>
 <main id="grid"></main>
+<aside id="history-panel" class="history-panel hidden" aria-hidden="true">
+  <header>
+    <h2 id="history-panel-title">Recent activities</h2>
+    <span class="history-panel-source" id="history-panel-source"></span>
+    <button class="history-panel-close" id="history-panel-close" aria-label="Close">×</button>
+  </header>
+  <div id="history-panel-body" class="history-panel-body"></div>
+</aside>
 <div id="task-modal" class="task-modal hidden" aria-hidden="true">
   <div class="task-modal-backdrop"></div>
   <div class="task-modal-card" role="dialog" aria-modal="true">
@@ -987,8 +1058,38 @@ main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 .agent .task .preview.clickable { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
 .agent .task .preview.clickable:hover { color: var(--accent); text-decoration-color: var(--accent); }
 .agent .idle { color: var(--muted); font-size: 11px; font-style: italic; }
+.agent .recent-link { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--muted);
+  text-decoration: none; align-self: flex-start; }
+.agent .recent-link:hover { color: var(--accent); }
 
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+.history-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 360px;
+  background: var(--node); border-left: 1px solid var(--border); z-index: 900;
+  display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+  transition: transform 0.2s ease; }
+.history-panel.hidden { transform: translateX(100%); pointer-events: none; }
+.history-panel > header { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  background: #10131c; border-bottom: 1px solid var(--border); }
+.history-panel > header h2 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; color: var(--text); }
+.history-panel-source { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+.history-panel-close { background: transparent; border: none; color: var(--muted); font-size: 20px;
+  cursor: pointer; padding: 0 6px; line-height: 1; }
+.history-panel-close:hover { color: var(--text); }
+.history-panel-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.history-item { background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 9px 11px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.history-item:hover { border-color: var(--accent); }
+.history-item .top { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+.history-item .top .channel { background: rgba(99,102,241,0.18); color: var(--accent);
+  font-size: 9px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.5px; }
+.history-item .top .ok { color: var(--green); }
+.history-item .top .err { color: var(--red); }
+.history-item .top .when { margin-left: auto; font-family: ui-monospace, monospace; }
+.history-item .preview { color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.history-item .duration { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+.history-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 8px; font-style: italic; }
 
 .task-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
 .task-modal.hidden { display: none; }
@@ -1100,6 +1201,9 @@ function renderAgent(a, node) {
   const lastLabel = a.lastActive
     ? '<span class="last" title="' + escapeHtml(new Date(a.lastActive).toLocaleString()) + '">last ' + escapeHtml(fmtAgo(a.lastActive)) + '</span>'
     : '<span class="last muted">never ran</span>';
+  const recentLink = nodeUrl
+    ? '<a class="recent-link" href="#" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '">Recent activities →</a>'
+    : '';
   card.innerHTML =
     '<div class="top">' +
       '<span class="dot"></span>' +
@@ -1111,7 +1215,7 @@ function renderAgent(a, node) {
       '<span>Active <b>' + (a.active || 0) + '</b></span>' +
       '<span>Total <b>' + (a.total || 0) + '</b></span>' +
       '<span class="err">Err <b>' + (a.errors || 0) + '</b></span>' +
-    '</div>' + tasksBlock;
+    '</div>' + tasksBlock + recentLink;
   return card;
 }
 
@@ -1236,18 +1340,139 @@ if (taskModal.closeBtn) taskModal.closeBtn.addEventListener('click', closeTaskMo
 if (taskModal.backdrop) taskModal.backdrop.addEventListener('click', closeTaskModal);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && taskModal.el && !taskModal.el.classList.contains('hidden')) closeTaskModal(); });
 
-// Click delegation on the agent grid — opens the modal for any task preview.
+// --- History panel ---
+const historyPanel = {
+  el: document.getElementById('history-panel'),
+  body: document.getElementById('history-panel-body'),
+  title: document.getElementById('history-panel-title'),
+  source: document.getElementById('history-panel-source'),
+  closeBtn: document.getElementById('history-panel-close'),
+  current: null,
+};
+
+function closeHistoryPanel() {
+  if (!historyPanel.el) return;
+  historyPanel.el.classList.add('hidden');
+  historyPanel.el.setAttribute('aria-hidden', 'true');
+  historyPanel.current = null;
+}
+
+async function openHistoryPanel(opts) {
+  if (!historyPanel.el) return;
+  historyPanel.current = { agentId: opts.agentId, nodeUrl: opts.nodeUrl };
+  historyPanel.title.textContent = (opts.agentName || opts.agentId) + ' · Recent activities';
+  historyPanel.source.textContent = opts.nodeUrl;
+  historyPanel.body.innerHTML = '<div class="history-empty">loading…</div>';
+  historyPanel.el.classList.remove('hidden');
+  historyPanel.el.setAttribute('aria-hidden', 'false');
+  const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
+    + '&agent=' + encodeURIComponent(opts.agentId) + '&limit=50';
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const items = await r.json();
+    renderHistoryList(items, opts);
+  } catch (e) {
+    historyPanel.body.innerHTML = '<div class="history-empty" style="color:var(--red)">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderHistoryList(items, opts) {
+  if (!Array.isArray(items) || items.length === 0) {
+    historyPanel.body.innerHTML = '<div class="history-empty">No recorded tasks yet.</div>';
+    return;
+  }
+  historyPanel.body.innerHTML = '';
+  for (const it of items) {
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.dataset.taskId = it.id;
+    const flag = it.ok ? '<span class="ok">✓</span>' : '<span class="err">✗</span>';
+    const dur = it.durationMs ? fmtElapsed(it.durationMs) : '—';
+    const when = it.endedAt ? fmtAgoShort(it.endedAt) : '';
+    const channel = '<span class="channel">' + escapeHtml(it.channel || '—') + '</span>';
+    const sender = it.sender ? ' · ' + escapeHtml(it.sender) : '';
+    div.innerHTML =
+      '<div class="top">' + flag + channel + sender + '<span class="when">' + escapeHtml(when) + '</span></div>' +
+      '<div class="preview">' + escapeHtml((it.message || '').slice(0, 200)) + '</div>' +
+      '<div class="duration">' + escapeHtml(dur) + (it.error ? ' · ' + escapeHtml(it.error.slice(0, 80)) : '') + '</div>';
+    div.addEventListener('click', () => openTaskRecord({
+      taskId: it.id, agentId: opts.agentId, nodeUrl: opts.nodeUrl,
+      channel: it.channel, agentName: opts.agentName,
+      preview: it.message || '',
+    }));
+    historyPanel.body.appendChild(div);
+  }
+}
+
+function fmtAgoShort(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return '';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60); if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+
+// Open the task modal in "history" mode — fetch the stored record once,
+// dump the transcript + final response, no SSE.
+async function openTaskRecord(opts) {
+  if (!taskModal.el) return;
+  closeTaskModal();
+  taskModal.currentTaskId = opts.taskId;
+  taskModal.el.classList.remove('hidden');
+  taskModal.el.setAttribute('aria-hidden', 'false');
+  taskModal.title.textContent = (opts.agentName || opts.agentId) + ' · ' + (opts.preview || 'task ' + opts.taskId);
+  taskModal.title.title = opts.preview || '';
+  taskModal.channel.textContent = opts.channel || '—';
+  taskModal.output.textContent = '';
+  setStatus('loading…', '');
+  const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
+    + '&agent=' + encodeURIComponent(opts.agentId) + '&task=' + encodeURIComponent(opts.taskId);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rec = await r.json();
+    setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
+    if (rec.transcript) appendOutput(rec.transcript);
+    if (rec.responseText && rec.transcript.indexOf(rec.responseText) === -1) {
+      appendOutput('\n\n--- final response ---\n' + rec.responseText);
+    }
+    if (rec.error) appendOutput('\n\n[error] ' + rec.error);
+  } catch (e) {
+    setStatus('load failed', 'err');
+    appendOutput('Error: ' + e.message);
+  }
+}
+
+if (historyPanel.closeBtn) historyPanel.closeBtn.addEventListener('click', closeHistoryPanel);
+
+// Click delegation on the agent grid — opens the modal for any task preview,
+// or the history panel for the "Recent activities" link.
 document.getElementById('grid').addEventListener('click', (e) => {
-  const el = e.target.closest('.preview.clickable');
-  if (!el) return;
-  openTaskModal({
-    taskId: el.dataset.taskId,
-    agentId: el.dataset.agentId,
-    nodeUrl: el.dataset.nodeUrl,
-    channel: el.dataset.channel,
-    agentName: el.dataset.agentName || el.dataset.agentId,
-    preview: el.getAttribute('title') || el.textContent || '',
-  });
+  const previewEl = e.target.closest('.preview.clickable');
+  if (previewEl) {
+    e.preventDefault();
+    openTaskModal({
+      taskId: previewEl.dataset.taskId,
+      agentId: previewEl.dataset.agentId,
+      nodeUrl: previewEl.dataset.nodeUrl,
+      channel: previewEl.dataset.channel,
+      agentName: previewEl.dataset.agentName || previewEl.dataset.agentId,
+      preview: previewEl.getAttribute('title') || previewEl.textContent || '',
+    });
+    return;
+  }
+  const recentEl = e.target.closest('.recent-link');
+  if (recentEl) {
+    e.preventDefault();
+    openHistoryPanel({
+      agentId: recentEl.dataset.agentId,
+      agentName: recentEl.dataset.agentName,
+      nodeUrl: recentEl.dataset.nodeUrl,
+    });
+  }
 });
 `
 

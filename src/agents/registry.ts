@@ -11,6 +11,8 @@ import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queu
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
 import type { LandscapeBuilder } from "./landscape"
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { resolve } from "path"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -54,6 +56,28 @@ interface TaskOutput {
 const TASK_OUTPUT_BUFFER_MAX = 64 * 1024
 /** Keep finished outputs around briefly so a late opener still gets the tail. */
 const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
+
+/** Persisted record of a finished task, written to .agentx/task-history. */
+export interface TaskRecord {
+  id: string
+  agentId: string
+  channel: string
+  chatId?: string
+  sender?: string
+  message: string
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  ok: boolean
+  error?: string
+  /** Final agent text (one-shot, may be empty if streaming captured it). */
+  responseText: string
+  /** Terminal-style transcript captured from stream-json events. */
+  transcript: string
+}
+
+const TASK_HISTORY_DIR = ".agentx/task-history"
+const TASK_HISTORY_RETENTION_DAYS = 7
 
 /** Truncate long values so the buffer doesn't blow up on huge tool inputs/outputs. */
 function clip(s: string, max = 800): string {
@@ -509,8 +533,10 @@ export class AgentRegistry {
     // it to Claude CLI's --append-system-prompt arg.
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
 
+    let finalResponse: AgentResponse | undefined
     try {
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
+      finalResponse = response
 
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal
@@ -605,7 +631,8 @@ export class AgentRegistry {
     } catch (error: any) {
       state.errors++
       this.log(`[${task.agentId}] unexpected error: ${error.message}`)
-      return { content: "", error: error.message }
+      finalResponse = { content: "", error: error.message }
+      return finalResponse
     } finally {
       state.activeTasks--
       // Remove this run from the running-tasks list.
@@ -621,6 +648,30 @@ export class AgentRegistry {
       }
       output.subscribers.clear()
       setTimeout(() => this.taskOutputs.delete(runningTask.id), TASK_OUTPUT_TTL_MS).unref?.()
+
+      // Persist a TaskRecord for the dashboard's "Recent activities" panel.
+      // Best-effort — disk failures must not affect task semantics.
+      try {
+        const endedAt = output.endedAt
+        const record: TaskRecord = {
+          id: runningTask.id,
+          agentId: task.agentId,
+          channel: runningTask.channel,
+          chatId: runningTask.chatId,
+          sender: runningTask.sender,
+          message: task.message || "",
+          startedAt: runningTask.startedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+          durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
+          ok: !finalResponse?.error,
+          error: finalResponse?.error,
+          responseText: finalResponse?.content || "",
+          transcript: output.buffer,
+        }
+        this.persistTaskRecord(record)
+      } catch (e: any) {
+        this.log(`[${task.agentId}] task history persist failed: ${e?.message}`)
+      }
 
       // Flush queued messages that arrived while this run was in progress
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
@@ -675,6 +726,89 @@ export class AgentRegistry {
       lastActive: s.lastActive,
       runningTasks: s.runningTasks,
     }))
+  }
+
+  /**
+   * Write a finished task record to disk under .agentx/task-history/<agent>/<yyyy-mm-dd>/.
+   * Side-effects only — call sites should treat failure as best-effort.
+   */
+  private persistTaskRecord(record: TaskRecord): void {
+    const day = record.endedAt.slice(0, 10)
+    const dir = resolve(process.cwd(), TASK_HISTORY_DIR, this.safe(record.agentId), day)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    const file = resolve(dir, `${this.safe(record.id)}.json`)
+    writeFileSync(file, JSON.stringify(record, null, 2), "utf-8")
+  }
+
+  /**
+   * Drop history folders older than retention window. Cheap startup-time
+   * sweep — once a day is plenty, but doing it on every daemon boot is fine.
+   */
+  pruneTaskHistory(retentionDays = TASK_HISTORY_RETENTION_DAYS): number {
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR)
+    if (!existsSync(root)) return 0
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+    let removed = 0
+    for (const agentDir of readdirSync(root)) {
+      const agentPath = resolve(root, agentDir)
+      let dayEntries: string[]
+      try { dayEntries = readdirSync(agentPath) } catch { continue }
+      for (const day of dayEntries) {
+        const ts = Date.parse(day + "T00:00:00Z")
+        if (Number.isNaN(ts) || ts >= cutoff) continue
+        try { rmSync(resolve(agentPath, day), { recursive: true, force: true }); removed++ } catch { /* */ }
+      }
+    }
+    return removed
+  }
+
+  /**
+   * Newest-first list of task records for one agent, capped at `limit`.
+   * Walks at most the last few day folders so this is O(limit), not O(history).
+   */
+  listTaskHistory(agentId: string, limit = 50): Array<Omit<TaskRecord, "transcript" | "responseText">> {
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR, this.safe(agentId))
+    if (!existsSync(root)) return []
+    const days = readdirSync(root).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse()
+    const out: Array<Omit<TaskRecord, "transcript" | "responseText">> = []
+    for (const day of days) {
+      if (out.length >= limit) break
+      const dayDir = resolve(root, day)
+      let files: string[]
+      try { files = readdirSync(dayDir).filter((f) => f.endsWith(".json")) } catch { continue }
+      // Sort by file mtime desc — task ids are timestamp-prefixed so lexicographic also works.
+      files.sort().reverse()
+      for (const f of files) {
+        if (out.length >= limit) break
+        try {
+          const rec = JSON.parse(readFileSync(resolve(dayDir, f), "utf-8")) as TaskRecord
+          const { transcript: _t, responseText: _r, ...summary } = rec
+          out.push(summary)
+        } catch { /* skip corrupt */ }
+      }
+    }
+    return out
+  }
+
+  /**
+   * Look up one task's full record (transcript included) across the retention window.
+   */
+  getTaskRecord(agentId: string, taskId: string): TaskRecord | null {
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR, this.safe(agentId))
+    if (!existsSync(root)) return null
+    const safeId = this.safe(taskId)
+    const days = readdirSync(root).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse()
+    for (const day of days) {
+      const file = resolve(root, day, `${safeId}.json`)
+      if (existsSync(file)) {
+        try { return JSON.parse(readFileSync(file, "utf-8")) as TaskRecord } catch { return null }
+      }
+    }
+    return null
+  }
+
+  private safe(s: string): string {
+    return s.replace(/[^a-zA-Z0-9_.:-]/g, "_")
   }
 
   /**
