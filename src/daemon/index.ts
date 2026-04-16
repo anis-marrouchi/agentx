@@ -938,11 +938,17 @@ export class AgentXDaemon {
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
             return
           }
-          const response = await this.registry.execute({
-            agentId,
-            message: body.message as string,
-            context: body.context as any,
-          })
+          // No-op onDelta enables stream-json runtime mode so the dashboard
+          // task modal can see tool calls + tool results live. The caller still
+          // awaits the final response — they don't see deltas, just the result.
+          const response = await this.registry.execute(
+            {
+              agentId,
+              message: body.message as string,
+              context: body.context as any,
+            },
+            () => {},
+          )
           this.json(res, response.error ? 500 : 200, response)
           break
         }
