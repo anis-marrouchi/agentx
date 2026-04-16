@@ -1437,9 +1437,9 @@ async function openTaskRecord(opts) {
     setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
     if (rec.transcript) appendOutput(rec.transcript);
     if (rec.responseText && rec.transcript.indexOf(rec.responseText) === -1) {
-      appendOutput('\n\n--- final response ---\n' + rec.responseText);
+      appendOutput('\\n\\n--- final response ---\\n' + rec.responseText);
     }
-    if (rec.error) appendOutput('\n\n[error] ' + rec.error);
+    if (rec.error) appendOutput('\\n\\n[error] ' + rec.error);
   } catch (e) {
     setStatus('load failed', 'err');
     appendOutput('Error: ' + e.message);
