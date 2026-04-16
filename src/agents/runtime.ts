@@ -328,6 +328,7 @@ export async function executeClaudeCodeStreaming(
   onDelta: StreamCallback,
   historyContext?: string,
   resumeSessionId?: string,
+  onEvent?: (event: any) => void,
 ): Promise<AgentResponse> {
   const start = Date.now()
   // Always inject context (landscape, rules, channel info) even on resume.
@@ -371,6 +372,12 @@ export async function executeClaudeCodeStreaming(
           if (!line.trim()) continue
           try {
             const event = JSON.parse(line)
+
+            // Surface every parsed event for observability (dashboard streaming).
+            // Best-effort — never let a subscriber crash the runtime.
+            if (onEvent) {
+              try { onEvent(event) } catch { /* */ }
+            }
 
             // Claude stream-json emits different event types
             // "assistant" messages with content contain the text
@@ -572,11 +579,12 @@ export async function executeTask(
   onDelta?: StreamCallback,
   historyContext?: string,
   resumeSessionId?: string,
+  onEvent?: (event: any) => void,
 ): Promise<AgentResponse> {
   switch (agent.tier) {
     case "claude-code":
       if (onDelta) {
-        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId)
+        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
       return executeClaudeCode(agent, task, historyContext, resumeSessionId)
 

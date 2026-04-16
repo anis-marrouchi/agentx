@@ -55,6 +55,68 @@ const TASK_OUTPUT_BUFFER_MAX = 64 * 1024
 /** Keep finished outputs around briefly so a late opener still gets the tail. */
 const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
 
+/** Truncate long values so the buffer doesn't blow up on huge tool inputs/outputs. */
+function clip(s: string, max = 800): string {
+  if (s.length <= max) return s
+  return s.slice(0, max) + ` …[+${s.length - max} chars]`
+}
+
+/**
+ * Format raw Claude Code stream-json events into a terminal-style transcript
+ * for the dashboard streaming modal. Returns "" for events we don't surface.
+ *
+ * Stateful so we can emit only the *delta* of assistant text across consecutive
+ * `assistant` snapshot events (Claude re-sends the cumulative content each tick).
+ */
+function makeStreamEventFormatter(): (event: any) => string {
+  let textSeen = ""
+  return (event: any): string => {
+    if (!event || typeof event !== "object") return ""
+    const t = event.type
+    if (t === "system" && event.subtype === "init") {
+      const m = event.model ? ` model=${event.model}` : ""
+      const sid = event.session_id ? ` session=${event.session_id.slice(0, 8)}` : ""
+      return `· init${m}${sid}\n`
+    }
+    if (t === "assistant" && event.message?.content) {
+      let out = ""
+      for (const block of event.message.content) {
+        if (block.type === "text" && typeof block.text === "string") {
+          if (block.text.length > textSeen.length) {
+            out += block.text.slice(textSeen.length)
+            textSeen = block.text
+          }
+        } else if (block.type === "thinking" && typeof block.thinking === "string") {
+          out += `\n💭 ${clip(block.thinking, 600)}\n`
+        } else if (block.type === "tool_use") {
+          const name = block.name || "tool"
+          const input = block.input ? clip(JSON.stringify(block.input), 400) : ""
+          out += `\n→ ${name}(${input})\n`
+        }
+      }
+      return out
+    }
+    if (t === "user" && event.message?.content) {
+      let out = ""
+      for (const block of event.message.content) {
+        if (block.type === "tool_result") {
+          const c = Array.isArray(block.content)
+            ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
+            : typeof block.content === "string" ? block.content : ""
+          const flag = block.is_error ? "← [error] " : "← "
+          out += `${flag}${clip(c, 800)}\n`
+        }
+      }
+      return out
+    }
+    if (t === "result") {
+      const dur = event.duration_ms ? ` (${Math.round(event.duration_ms / 1000)}s)` : ""
+      return `· done${dur}\n`
+    }
+    return ""
+  }
+}
+
 interface AgentState {
   id: string
   def: AgentDef
@@ -274,21 +336,31 @@ export class AgentRegistry {
     // streaming on a caller that didn't ask for it — that would change the
     // runtime mode (stream-json vs json) for every task in the system. So:
     //   - Caller passed onDelta → wrap it to also fan-out to dashboard subscribers (live).
+    //     We also install onEvent so the dashboard sees tool calls, tool results,
+    //     and system events — i.e. everything you'd see in a real terminal.
     //   - Caller did NOT pass onDelta → leave runtime in non-streaming mode and
     //     post the final response.content as a single chunk after execution.
     const output: TaskOutput = { agentId: task.agentId, buffer: "", subscribers: new Set(), done: false }
     this.taskOutputs.set(runningTask.id, output)
+    const pushToBuffer = (chunk: string) => {
+      if (!chunk) return
+      output.buffer += chunk
+      if (output.buffer.length > TASK_OUTPUT_BUFFER_MAX) {
+        output.buffer = output.buffer.slice(output.buffer.length - TASK_OUTPUT_BUFFER_MAX)
+      }
+      for (const sub of output.subscribers) {
+        try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
+      }
+    }
+    let onEvent: ((event: any) => void) | undefined
     if (onDelta) {
-      const callerOnDelta = onDelta
-      onDelta = (chunk, full) => {
-        output.buffer += chunk
-        if (output.buffer.length > TASK_OUTPUT_BUFFER_MAX) {
-          output.buffer = output.buffer.slice(output.buffer.length - TASK_OUTPUT_BUFFER_MAX)
-        }
-        for (const sub of output.subscribers) {
-          try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
-        }
-        callerOnDelta(chunk, full)
+      // Caller's onDelta still fires only for assistant text (unchanged).
+      // Dashboard subscribers see the formatted stream-json firehose via onEvent
+      // — this is what makes the modal feel like a live terminal.
+      const formatter = makeStreamEventFormatter()
+      onEvent = (event: any) => {
+        const formatted = formatter(event)
+        if (formatted) pushToBuffer(formatted)
       }
     }
 
@@ -438,7 +510,7 @@ export class AgentRegistry {
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
 
     try {
-      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId)
+      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
 
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal
