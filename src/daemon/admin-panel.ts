@@ -53,6 +53,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "DELETE /api/admin/tokens": () => revokeToken(body),
       "POST /api/admin/agents/test": () => testDriveAgent(body),
       "PATCH /api/admin/channels/telegram": () => editTelegramAccount(body),
+      "POST /api/admin/channels/slack": () => configureSlack(body),
+      "POST /api/admin/channels/slack/toggle": () => toggleSlack(body),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -127,6 +129,12 @@ function getAdminState() {
       botTokenRef: acc.botToken || "",
     })),
   }
+  const slack = {
+    enabled: !!cfg.channels?.slack?.enabled,
+    botTokenRef: cfg.channels?.slack?.botToken || "",
+    appTokenRef: cfg.channels?.slack?.appToken || "",
+    agentBinding: cfg.channels?.slack?.agentBinding || "",
+  }
   const crons = Object.entries(cfg.crons || {}).map(([id, c]: [string, any]) => ({
     id,
     schedule: c.schedule,
@@ -153,7 +161,7 @@ function getAdminState() {
   }
   // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
   const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
-  return { exists: true, agents, telegram, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
+  return { exists: true, agents, telegram, slack, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
 }
 
 // ========================================================================
@@ -530,6 +538,38 @@ function deleteWebhook(body: any) {
     cfg.webhooks = (cfg.webhooks || []).filter((w: any) => w.id !== id)
     if (cfg.webhooks.length === before) throw new Error(`Webhook "${id}" not found.`)
     return `removed webhook "${id}"`
+  })
+  return { summary }
+}
+
+function configureSlack(body: any) {
+  const botTokenEnv = String(body?.botTokenEnv || "").trim()
+  const appTokenEnv = String(body?.appTokenEnv || "").trim()
+  const agentBinding = String(body?.agentBinding || "").trim()
+  if (!botTokenEnv) throw new Error("Bot token env-var name is required (e.g. SLACK_BOT_TOKEN).")
+  if (!appTokenEnv) throw new Error("App-level token env-var name is required (e.g. SLACK_APP_TOKEN).")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.slack = cfg.channels.slack || { enabled: false }
+    cfg.channels.slack.enabled = true
+    cfg.channels.slack.botToken = "${" + botTokenEnv + "}"
+    cfg.channels.slack.appToken = "${" + appTokenEnv + "}"
+    if (agentBinding) {
+      if (!cfg.agents?.[agentBinding]) throw new Error(`Unknown agent "${agentBinding}".`)
+      cfg.channels.slack.agentBinding = agentBinding
+    }
+    return "configured slack connector"
+  })
+  return { summary, hint: `Add ${botTokenEnv}=xoxb-… and ${appTokenEnv}=xapp-… to your .env.` }
+}
+
+function toggleSlack(body: any) {
+  const enabled = !!body?.enabled
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.slack = cfg.channels.slack || { enabled: false }
+    cfg.channels.slack.enabled = enabled
+    return `slack ${enabled ? "enabled" : "disabled"}`
   })
   return { summary }
 }
@@ -1073,8 +1113,9 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 
   <section id="tab-channels" class="tab">
     <h2>Channels</h2>
-    <p class="lead">Connect messaging platforms that agents respond on. Today: Telegram. More channels are available via the CLI (<code>agentx channel add</code>).</p>
+    <p class="lead">Connect messaging platforms that agents respond on. Telegram and Slack are managed here; Discord / WhatsApp / GitLab still flow through the CLI (<code>agentx channel add</code>) + the raw JSON editor.</p>
     <div id="tg-section" class="section-block"></div>
+    <div id="slack-section" class="section-block"></div>
   </section>
 
   <section id="tab-crons" class="tab">
@@ -1457,6 +1498,62 @@ function renderChannels() {
       if (acc) openTelegramEdit(acc);
     });
   }
+  renderSlackSection();
+}
+
+function renderSlackSection() {
+  const s = state.slack || {};
+  const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '"' +
+    (a.id === (s.agentBinding || '') ? ' selected' : '') + '>' +
+    escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  // Strip dollar-brace wrappers so the edit form shows just the env-var name.
+  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
+  const configured = s.botTokenRef && s.appTokenRef;
+  const statusChip = configured
+    ? (s.enabled
+      ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>'
+      : '<span class="chip off">disabled</span>')
+    : '<span class="chip off">not configured</span>';
+
+  $('slack-section').innerHTML =
+    '<h3 style="margin:0 0 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--ax-muted)">Slack</h3>' +
+    '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3># slack workspace</h3>' +
+      '<div class="meta">' + statusChip +
+        (s.botTokenRef ? ' bot: <code style="font-family:var(--ax-mono)">' + escapeHtml(s.botTokenRef) + '</code>' : '') +
+        (s.appTokenRef ? ' · app: <code style="font-family:var(--ax-mono)">' + escapeHtml(s.appTokenRef) + '</code>' : '') +
+        (s.agentBinding ? ' · agent: <b>' + escapeHtml(s.agentBinding) + '</b>' : '') +
+      '</div></div>' +
+      (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="slack-toggle"' + (s.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
+    '</div>' +
+    '<div class="add-form"><h3>' + (configured ? 'Edit Slack connection' : 'Connect Slack') + '</h3>' +
+      '<div class="rowf">' +
+        '<div><label>Bot token env-var<span class="hint">(<code>xoxb-…</code>)</span></label><input id="slack-bot-env" placeholder="SLACK_BOT_TOKEN" value="' + escapeHtml(stripRef(s.botTokenRef)) + '" /></div>' +
+        '<div><label>App token env-var<span class="hint">(<code>xapp-…</code> — Socket Mode)</span></label><input id="slack-app-env" placeholder="SLACK_APP_TOKEN" value="' + escapeHtml(stripRef(s.appTokenRef)) + '" /></div>' +
+      '</div>' +
+      '<label>Default agent<span class="hint">(optional — used when a Slack message has no explicit @mention of another agent)</span></label>' +
+      '<select id="slack-agent"><option value="">(none)</option>' + agentOptions + '</select>' +
+      '<div class="actions"><button class="primary" onclick="configureSlack()">' + (configured ? 'Save changes' : 'Connect') + '</button>' +
+        '<div id="slack-msg" class="msg"></div></div>' +
+      '<div class="hint-block">Create the Slack app at <code>api.slack.com/apps</code>, enable Socket Mode, and generate an app-level token with <code>connections:write</code>. Bot needs scopes <code>chat:write</code>, <code>app_mentions:read</code>, <code>channels:history</code>, <code>im:history</code>, <code>users:read</code>, and event subscriptions for <code>app_mention</code> + <code>message.*</code>. Add <code>xoxb-…</code> and <code>xapp-…</code> to <code>.env</code>, then install <code>@slack/socket-mode</code> + <code>@slack/web-api</code>.</div>' +
+    '</div>';
+  const t = $('slack-toggle');
+  if (t) t.addEventListener('change', async (e) => {
+    try { await req('POST', '/api/admin/channels/slack/toggle', { enabled: e.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+  });
+}
+
+async function configureSlack() {
+  const body = {
+    botTokenEnv: $('slack-bot-env').value.trim(),
+    appTokenEnv: $('slack-app-env').value.trim(),
+    agentBinding: $('slack-agent').value,
+  };
+  try {
+    const r = await req('POST', '/api/admin/channels/slack', body);
+    showMsg($('slack-msg'), 'ok', (r.summary || 'Saved.') + (r.hint ? ' — ' + r.hint : ''));
+    refresh();
+  } catch (e) { showMsg($('slack-msg'), 'err', e.message); }
 }
 
 function openTelegramEdit(acc) {

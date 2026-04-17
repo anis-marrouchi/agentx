@@ -68,6 +68,7 @@ Full documentation: **[https://agentx-docs.pages.dev](https://agentx-docs.pages.
 - [Scoped API tokens](docs/reference/tokens.md) — mint / scope / revoke
 - [Public agents](docs/reference/public-agents.md) — expose an agent over HTTP
 - [`agentx doctor`](docs/reference/doctor.md) — pre-flight health check
+- [Slack channel](docs/reference/slack.md) — Socket Mode setup
 
 **Moving from another tool:**
 - [Migrate from OpenClaw](docs/migration/from-openclaw.md) — we import the bulk of your config in one shot

@@ -7,6 +7,7 @@ import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
+import { SlackAdapter } from "@/channels/slack"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
@@ -502,6 +503,22 @@ export class AgentXDaemon {
       )
       this.router.addChannel(discord)
       this.log("  Discord: enabled")
+    }
+
+    // Slack
+    if (this.config.channels.slack?.enabled && this.config.channels.slack.botToken && this.config.channels.slack.appToken) {
+      const slack = new SlackAdapter(
+        {
+          botToken: this.config.channels.slack.botToken,
+          appToken: this.config.channels.slack.appToken,
+          agentBinding: this.config.channels.slack.agentBinding,
+        },
+        this.log,
+      )
+      this.router.addChannel(slack)
+      this.log("  Slack: enabled")
+    } else if (this.config.channels.slack?.enabled) {
+      this.log("  Slack: enabled in config but missing botToken/appToken — skipped")
     }
 
     // GitLab

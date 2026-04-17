@@ -740,7 +740,7 @@ export class MessageRouter {
 
     // Bot-to-bot delegation: if response mentions another agent, route to them.
     // Works on Telegram, WhatsApp, and Discord. Not GitLab (uses its own @mention webhook flow).
-    const delegationChannels = ["telegram", "whatsapp", "discord"]
+    const delegationChannels = ["telegram", "whatsapp", "discord", "slack"]
     if (responseText && sentResponseId && delegationChannels.includes(msg.channel)) {
       this.handleBotToBotChain(adapter, msg, agentId, responseText, sentResponseId, 0).catch((e) => {
         this.log(`Bot-to-bot error: ${e.message}`)
