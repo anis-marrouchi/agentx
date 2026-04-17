@@ -802,6 +802,30 @@ export class AgentXDaemon {
           this.json(res, 200, this.registry.list())
           break
 
+        case "GET /whatsapp/state": {
+          const { getWhatsAppState } = await import("./whatsapp-state")
+          this.json(res, 200, getWhatsAppState())
+          break
+        }
+
+        case "GET /whatsapp/qr.svg": {
+          const { getWhatsAppState } = await import("./whatsapp-state")
+          const s = getWhatsAppState()
+          if (!s.qr) { res.writeHead(204, { "Cache-Control": "no-store" }); res.end(); break }
+          try {
+            // @ts-ignore — qrcode has no shipped types
+            const mod = await import("qrcode")
+            const QRCode: any = (mod as any).default || mod
+            const svg: string = await QRCode.toString(s.qr, { type: "svg", errorCorrectionLevel: "L", margin: 1, color: { dark: "#000", light: "#fff" } })
+            res.writeHead(200, { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "no-store" })
+            res.end(svg)
+          } catch (e: any) {
+            res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" })
+            res.end("qrcode package not installed or failed: " + (e?.message || "unknown"))
+          }
+          break
+        }
+
         case "GET /crons":
           this.json(res, 200, this.cron.list())
           break

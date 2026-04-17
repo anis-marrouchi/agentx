@@ -37,9 +37,11 @@ export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerRes
 
 export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
   try {
-    // Non-JSON carve-out: the WhatsApp QR rendered as SVG.
+    // Non-JSON carve-out: the WhatsApp QR rendered as SVG. Proxies to the
+    // daemon process (different memory space) where the adapter actually
+    // emits the QR.
     if (req.method === "GET" && path === "/api/admin/channels/whatsapp/qr.svg") {
-      await serveWhatsAppQRSvg(res)
+      await proxyDaemonSvg(res, "/whatsapp/qr.svg")
       return
     }
     const body = req.method === "GET" ? undefined : await readJsonBody(req)
@@ -66,7 +68,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
-      "GET /api/admin/channels/whatsapp/state": () => getWhatsAppState(),
+      "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -417,45 +419,46 @@ function editTelegramAccount(body: any) {
 }
 
 /**
- * Render the current WhatsApp QR string as an SVG the browser can consume.
- * Returns 204 No Content when no QR is pending (connected / logged out /
- * waiting) so an <img> element just keeps polling without showing a broken
- * picture frame. `qrcode` is a lazy import — a truly minimal install without
- * that dep still boots the daemon.
+ * Forward a GET to the daemon and return its JSON body. Used for state
+ * that lives in the daemon process (WhatsApp QR/connection, etc.) since the
+ * board server is a separate process with separate memory.
  */
-async function serveWhatsAppQRSvg(res: ServerResponse): Promise<void> {
-  const s = getWhatsAppState()
-  if (!s.qr) {
-    res.writeHead(204, { "Cache-Control": "no-store" })
-    res.end()
-    return
-  }
-  let QRCode: any
+async function proxyDaemonJson(pathOnDaemon: string): Promise<any> {
+  const { url, headers } = daemonTarget()
+  const r = await fetch(url + pathOnDaemon, { headers })
+  const text = await r.text()
+  if (!r.ok) throw new Error(`daemon ${r.status}: ${text.slice(0, 200)}`)
+  try { return JSON.parse(text) } catch { return { raw: text } }
+}
+
+/**
+ * Proxy a non-JSON response (SVG, binary) from the daemon straight through.
+ */
+async function proxyDaemonSvg(res: ServerResponse, pathOnDaemon: string): Promise<void> {
   try {
-    // @ts-ignore — qrcode ships without types; we use toString at runtime
-    const mod = await import("qrcode")
-    QRCode = (mod as any).default || mod
-  } catch {
-    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" })
-    res.end("qrcode package not installed — run `npm install qrcode` inside the daemon's dir")
-    return
-  }
-  try {
-    const svg: string = await QRCode.toString(s.qr, {
-      type: "svg",
-      errorCorrectionLevel: "L",
-      margin: 1,
-      color: { dark: "#000", light: "#fff" },
-    })
-    res.writeHead(200, {
-      "Content-Type": "image/svg+xml; charset=utf-8",
+    const { url, headers } = daemonTarget()
+    const r = await fetch(url + pathOnDaemon, { headers })
+    const body = await r.text()
+    res.writeHead(r.status, {
+      "Content-Type": r.headers.get("content-type") || "image/svg+xml",
       "Cache-Control": "no-store",
     })
-    res.end(svg)
+    res.end(body)
   } catch (e: any) {
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" })
-    res.end("QR render failed: " + (e?.message || "unknown"))
+    res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" })
+    res.end("daemon unreachable: " + (e?.message || "unknown"))
   }
+}
+
+function daemonTarget(): { url: string; headers: Record<string, string> } {
+  let url = "http://127.0.0.1:18800"
+  const headers: Record<string, string> = {}
+  try {
+    const cfg = loadDaemonConfig()
+    url = cfg.dashboard.daemonUrl?.replace(/\/+$/, "") || url
+    if (cfg.dashboard.token) headers["Authorization"] = `Bearer ${cfg.dashboard.token}`
+  } catch { /* */ }
+  return { url, headers }
 }
 
 // --- per-agent file operations ---------------------------------------------
