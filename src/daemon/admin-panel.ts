@@ -6,6 +6,7 @@ import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
+import { renderTopbar, TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT, type TopbarPeer } from "./topbar"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -23,9 +24,9 @@ import { getWhatsAppState } from "./whatsapp-state"
 // HTTP entry points
 // ========================================================================
 
-export function handleAdminGet(_req: IncomingMessage, res: ServerResponse): void {
+export function handleAdminGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = []): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderAdminHtml())
+  res.end(renderAdminHtml(peers))
 }
 
 export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -820,16 +821,15 @@ export const _reserved = { rmSync }
 // HTML
 // ========================================================================
 
-function renderAdminHtml(): string {
+function renderAdminHtml(peers: TopbarPeer[]): string {
+  const topbar = renderTopbar({ activeTab: "admin", subtitle: "Settings", peers })
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AgentX · Settings</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+${TOPBAR_HEAD}
 <style>
 /* --- Design tokens (ops-daemon, matches /live) --- */
 :root{
@@ -857,38 +857,12 @@ function renderAdminHtml(): string {
   --ax-surface-2:#0b2922;--ax-border:#164a30;--ax-border-2:#1f6a44;
   --ax-text:#b7ffcc;--ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
   --ax-font:"IBM Plex Mono",ui-monospace,monospace}
-.ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
-  border-radius:4px;overflow:hidden;margin-right:4px}
-.ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
-  padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
-  text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
-.ax-theme-switch button:last-child{border-right:none}
-.ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2)}
-.ax-theme-switch button.is-active{color:var(--ax-accent);
-  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
+${TOPBAR_CSS}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
   font-family:var(--ax-font);font-size:13px;line-height:1.5;
   -webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv01"}
 code,.mono{font-family:var(--ax-mono);font-variant-numeric:tabular-nums}
-
-/* --- Topbar (ax-* mirrors /live) --- */
-.ax-topbar{display:flex;align-items:center;justify-content:space-between;
-  padding:8px 18px;border-bottom:1px solid var(--ax-border);
-  background:var(--ax-bg-elev);position:sticky;top:0;z-index:20}
-.ax-topbar__left{display:flex;align-items:center;gap:18px}
-.ax-brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.01em}
-.ax-brand__mark{font-family:var(--ax-mono);font-size:12px;padding:2px 8px;
-  border:1px solid var(--ax-border-2);color:var(--ax-accent);border-radius:4px}
-.ax-brand__name{font-size:14px}
-.ax-brand__subtitle{font-size:11px;color:var(--ax-muted);
-  border-left:1px solid var(--ax-border);padding-left:12px;margin-left:4px}
-.ax-topbar__tabs{display:flex;gap:2px}
-.ax-topbar__tab{background:transparent;border:none;color:var(--ax-text-2);
-  padding:8px 14px;font:inherit;cursor:pointer;font-size:12px;
-  border-bottom:2px solid transparent;text-decoration:none;letter-spacing:-0.005em}
-.ax-topbar__tab:hover{color:var(--ax-text)}
-.ax-topbar__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent)}
 
 /* --- Inner tabs (Agents / Channels / Schedules / …) --- */
 nav.tabs{display:flex;gap:4px;padding:14px 24px 0;background:var(--ax-bg-elev);
@@ -1087,29 +1061,9 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 .td-hint{padding:6px 16px;font-size:10px;color:var(--ax-muted);
   border-top:1px solid var(--ax-border);background:var(--ax-bg-elev);font-family:var(--ax-mono)}
 </style>
-<script>(function(){try{var t=localStorage.getItem('ax-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>
 </head>
 <body>
-<header class="ax-topbar">
-  <div class="ax-topbar__left">
-    <div class="ax-brand">
-      <span class="ax-brand__mark">AX</span>
-      <span class="ax-brand__name">AgentX</span>
-      <span class="ax-brand__subtitle">Settings</span>
-    </div>
-    <nav class="ax-topbar__tabs">
-      <a href="/live" class="ax-topbar__tab">Live</a>
-      <a href="/" class="ax-topbar__tab">Boards</a>
-      <a href="/admin" class="ax-topbar__tab is-active">Settings</a>
-      <a href="/glossary" class="ax-topbar__tab">Glossary</a>
-    </nav>
-  </div>
-  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
-    <button data-theme-opt="dark">Dark</button>
-    <button data-theme-opt="light">Light</button>
-    <button data-theme-opt="crt">CRT</button>
-  </div>
-</header>
+${topbar}
 <nav class="tabs">
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="channels">Channels</button>
@@ -2586,23 +2540,8 @@ for (const btn of document.querySelectorAll('nav.tabs button')) {
 }
 
 refresh();
-
-// --- Theme switcher wiring (bootstrap ran in <head>; we attach click handlers) ---
-(function(){
-  var sw = document.querySelectorAll('[data-theme-opt]');
-  if (!sw.length) return;
-  var current = document.documentElement.getAttribute('data-theme') || 'dark';
-  sw.forEach(function(b){
-    if (b.getAttribute('data-theme-opt') === current) b.classList.add('is-active');
-    b.addEventListener('click', function(){
-      var t = b.getAttribute('data-theme-opt');
-      document.documentElement.setAttribute('data-theme', t);
-      try { localStorage.setItem('ax-theme', t); } catch (e) {}
-      sw.forEach(function(x){ x.classList.toggle('is-active', x === b); });
-    });
-  });
-})();
 </script>
+${TOPBAR_SCRIPT}
 </body>
 </html>`
 }

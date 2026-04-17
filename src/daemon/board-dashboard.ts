@@ -11,6 +11,7 @@ import { UI_LABELS, GLOSSARY } from "./ui-labels"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
+import { renderTopbar, TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT, type TopbarPeer } from "./topbar"
 
 // --- Kanban Board Dashboard ---
 //
@@ -97,19 +98,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       res.end()
       return
     }
-    const html = ctx.boards.length === 0 ? renderLiveHtml() : renderBoardHtml()
+    const html = ctx.boards.length === 0 ? renderLiveHtml(ctx.config) : renderBoardHtml(ctx.config)
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(html)
     return
   }
   if (method === "GET" && path === "/live") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderLiveHtml())
+    res.end(renderLiveHtml(ctx.config))
     return
   }
   if (method === "GET" && path === "/glossary") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGlossaryHtml())
+    res.end(renderGlossaryHtml(ctx.config))
     return
   }
 
@@ -125,7 +126,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Admin panel — ongoing management without editing JSON.
   if (method === "GET" && path === "/admin") {
-    handleAdminGet(req, res)
+    handleAdminGet(req, res, buildTopbarPeers(ctx.config))
     return
   }
   if (method === "GET" && path === "/api/admin/config") {
@@ -1002,43 +1003,39 @@ async function readJson(req: IncomingMessage): Promise<any> {
 
 // --- HTML ---
 
-function renderBoardHtml(): string {
+function renderBoardHtml(config: DaemonConfig): string {
+  const rightExtras = `<div id="conn" class="conn ok" title="ready">●</div>`
+  const subheader = `
+    <select id="boardPicker" title="Switch board"></select>
+    <div class="search">
+      <span class="icon">⌕</span>
+      <input id="filterSearch" type="search" placeholder="Search or filter…" autocomplete="off" />
+    </div>
+    <select id="filterAssignee" title="Assignee"><option value="">All assignees</option></select>
+    <select id="filterMilestone" title="Milestone"><option value="">Any milestone</option></select>
+    <div id="filterLabels" class="chips"></div>
+    <div class="spacer"></div>
+    <button id="activityBtn" title="Agent activity (a)">◉ Activity</button>
+    <button id="newIssueBtn" title="New issue">+ New</button>
+    <button id="refreshBtn" title="Refresh (r)">↻</button>`
+  const topbar = renderTopbar({
+    activeTab: "boards",
+    subtitle: "Boards",
+    subheader,
+    rightExtras,
+    peers: buildTopbarPeers(config),
+  })
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AgentX · Boards</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>${BOARD_CSS}</style>
-${THEME_SWITCH_SCRIPT}
+${TOPBAR_HEAD}
+<style>${BOARD_CSS}\n${TOPBAR_CSS}</style>
 </head>
 <body>
-<header>
-  <div class="brand">AX · AgentX</div>
-  <select id="boardPicker" title="Switch board"></select>
-  <div class="search">
-    <span class="icon">⌕</span>
-    <input id="filterSearch" type="search" placeholder="Search or filter…" autocomplete="off" />
-  </div>
-  <select id="filterAssignee" title="Assignee"><option value="">All assignees</option></select>
-  <select id="filterMilestone" title="Milestone"><option value="">Any milestone</option></select>
-  <div id="filterLabels" class="chips"></div>
-  <div class="spacer"></div>
-  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
-    <button data-theme-opt="dark">Dark</button>
-    <button data-theme-opt="light">Light</button>
-    <button data-theme-opt="crt">CRT</button>
-  </div>
-  <a href="/live" class="link" title="Live mesh view (L)">◎ Live</a>
-  <a href="/admin" class="link" title="Settings">⚙ Settings</a>
-  <button id="activityBtn" title="Agent activity (a)">◉ Activity</button>
-  <button id="newIssueBtn" title="New issue">+ New</button>
-  <button id="refreshBtn" title="Refresh (r)">↻</button>
-  <div id="conn" class="conn ok" title="ready">●</div>
-</header>
+${topbar}
 <aside id="activity-panel" class="activity-panel hidden" aria-hidden="true">
   <header>
     <h2>Agent Activity</h2>
@@ -1130,53 +1127,36 @@ ${THEME_SWITCH_SCRIPT}
 </div>
 <script src="/sortable.min.js"></script>
 <script>${BOARD_JS}</script>
+${TOPBAR_SCRIPT}
 </body>
 </html>`
 }
 
 // --- Live full-screen page (/live) ---
 
-function renderLiveHtml(): string {
+function renderLiveHtml(config: DaemonConfig): string {
   const labelsScript = `<script>window.UI_LABELS = ${JSON.stringify(UI_LABELS)};</script>`
+  const rightExtras = `<span id="ts" class="ax-mono" title="Last update">—</span>
+    <span id="conn-dot" class="ax-dot ax-dot--ok ax-dot--pulse" title="connected"></span>
+    <span id="conn-label">live</span>`
+  const topbar = renderTopbar({
+    activeTab: "live",
+    subtitle: UI_LABELS.subtitle,
+    rightExtras,
+    peers: buildTopbarPeers(config),
+  })
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark" data-density="normal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtmlServer(UI_LABELS.brand)} · ${escapeHtmlServer(UI_LABELS.subtitle)}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>${LIVE_CSS}</style>
-${THEME_SWITCH_SCRIPT}
+${TOPBAR_HEAD}
+<style>${TOPBAR_CSS}\n${LIVE_CSS}</style>
 </head>
 <body>
 <div class="ax-app">
-  <header class="ax-topbar">
-    <div class="ax-topbar__left">
-      <div class="ax-brand">
-        <span class="ax-brand__mark">AX</span>
-        <span class="ax-brand__name">${escapeHtmlServer(UI_LABELS.brand)}</span>
-        <span class="ax-brand__subtitle">${escapeHtmlServer(UI_LABELS.subtitle)}</span>
-      </div>
-      <nav class="ax-topbar__tabs">
-        <a href="/live" class="ax-topbar__tab is-active">Live</a>
-        <a href="/" class="ax-topbar__tab">Boards</a>
-        <a href="/admin" class="ax-topbar__tab">Settings</a>
-        <a href="/glossary" class="ax-topbar__tab">Glossary</a>
-      </nav>
-    </div>
-    <div class="ax-topbar__right">
-      <div class="ax-theme-switch" role="tablist" aria-label="Theme">
-        <button data-theme-opt="dark" title="Dark">Dark</button>
-        <button data-theme-opt="light" title="Light">Light</button>
-        <button data-theme-opt="crt" title="CRT">CRT</button>
-      </div>
-      <span id="ts" class="ax-mono" title="Last update">—</span>
-      <span id="conn-dot" class="ax-dot ax-dot--ok ax-dot--pulse" title="connected"></span>
-      <span id="conn-label">live</span>
-    </div>
-  </header>
+  ${topbar}
   <section id="statstrip" class="ax-statstrip"></section>
   <main id="grid" class="ax-live__body"></main>
 </div>
@@ -1201,6 +1181,7 @@ ${THEME_SWITCH_SCRIPT}
   </div>
 </div>
 ${labelsScript}
+${TOPBAR_SCRIPT}
 <script>${LIVE_JS}</script>
 </body>
 </html>`
@@ -1209,6 +1190,29 @@ ${labelsScript}
 /** Minimal HTML escaper for server-rendered label text. */
 function escapeHtmlServer(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string))
+}
+
+/**
+ * Build the peers list shown in the topbar mesh selector. Combines the
+ * primary daemon + any `dashboard.daemons[]` entries. Each peer's
+ * "dashboardUrl" is derived from its daemon URL by swapping port 18800/19900
+ * to 4202 — convention-based, overridable via the dashboards[] config.
+ */
+function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): TopbarPeer[] {
+  const cfg = ctxConfig || config
+  const primary: TopbarPeer = {
+    id: "primary",
+    name: cfg.node?.name || "this daemon",
+    dashboardUrl: "",  // empty = stay on current origin
+    primary: true,
+  }
+  const extras: TopbarPeer[] = (cfg.dashboard?.daemons || []).map((d) => ({
+    id: d.url.replace(/\/+$/, ""),
+    name: d.name,
+    dashboardUrl: d.url.replace(/\/+$/, "").replace(/:1[89][89]00$/, ":4202"),
+    tokenScope: d.token ? "dashboard.daemons entry" : undefined,
+  }))
+  return [primary, ...extras]
 }
 
 /**
@@ -1243,69 +1247,44 @@ const THEME_SWITCH_SCRIPT = `<script>
 </script>`
 
 /** /glossary — plain-English definitions of the terms that appear in the dashboard. */
-function renderGlossaryHtml(): string {
+function renderGlossaryHtml(config: DaemonConfig): string {
   const items = GLOSSARY.map((g) => {
     const alias = g.alias ? `<span class="alias" title="Schema key">${escapeHtmlServer(g.alias)}</span>` : ""
     return `<article class="term"><h3>${escapeHtmlServer(g.term)}${alias}</h3><p>${escapeHtmlServer(g.definition)}</p></article>`
   }).join("")
+  const topbar = renderTopbar({ activeTab: "glossary", subtitle: "Glossary", peers: buildTopbarPeers(config) })
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtmlServer(UI_LABELS.brand)} · Glossary</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+${TOPBAR_HEAD}
 <style>
 :root{
   --ax-bg:oklch(0.16 0.010 265);--ax-bg-elev:oklch(0.19 0.012 265);
-  --ax-surface:oklch(0.21 0.012 265);--ax-border:oklch(0.29 0.014 265);
-  --ax-border-2:oklch(0.35 0.016 265);--ax-text:oklch(0.95 0.005 265);
-  --ax-text-2:oklch(0.80 0.008 265);--ax-muted:oklch(0.60 0.010 265);
-  --ax-accent:oklch(0.78 0.13 165);
+  --ax-surface:oklch(0.21 0.012 265);--ax-surface-2:oklch(0.24 0.014 265);
+  --ax-border:oklch(0.29 0.014 265);--ax-border-2:oklch(0.35 0.016 265);
+  --ax-text:oklch(0.95 0.005 265);--ax-text-2:oklch(0.80 0.008 265);
+  --ax-muted:oklch(0.60 0.010 265);--ax-accent:oklch(0.78 0.13 165);
   --ax-font:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
   --ax-mono:"IBM Plex Mono",ui-monospace,"SF Mono",monospace;
   color-scheme:dark;
 }
 [data-theme="light"]{--ax-bg:oklch(0.98 0.002 265);--ax-bg-elev:oklch(0.96 0.003 265);
-  --ax-surface:oklch(0.99 0.002 265);--ax-border:oklch(0.88 0.006 265);
+  --ax-surface:oklch(0.99 0.002 265);--ax-surface-2:oklch(0.955 0.003 265);--ax-border:oklch(0.88 0.006 265);
   --ax-border-2:oklch(0.78 0.008 265);--ax-text:oklch(0.22 0.010 265);
   --ax-text-2:oklch(0.36 0.010 265);--ax-muted:oklch(0.54 0.010 265);
   --ax-accent:oklch(0.55 0.14 165);color-scheme:light}
-[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;
+[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;--ax-surface-2:#0b2922;
   --ax-border:#164a30;--ax-border-2:#1f6a44;--ax-text:#b7ffcc;
   --ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
   --ax-font:"IBM Plex Mono",ui-monospace,monospace}
-.ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
-  border-radius:4px;overflow:hidden;margin-right:4px}
-.ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
-  padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
-  text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
-.ax-theme-switch button:last-child{border-right:none}
-.ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2,var(--ax-surface))}
-.ax-theme-switch button.is-active{color:var(--ax-accent);
-  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
+${TOPBAR_CSS}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
   font-family:var(--ax-font);font-size:14px;line-height:1.55;
   -webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv01"}
-.ax-topbar{display:flex;align-items:center;justify-content:space-between;
-  padding:8px 18px;border-bottom:1px solid var(--ax-border);
-  background:var(--ax-bg-elev);position:sticky;top:0;z-index:20}
-.ax-topbar__left{display:flex;align-items:center;gap:18px}
-.ax-brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.01em}
-.ax-brand__mark{font-family:var(--ax-mono);font-size:12px;padding:2px 8px;
-  border:1px solid var(--ax-border-2);color:var(--ax-accent);border-radius:4px}
-.ax-brand__name{font-size:14px}
-.ax-brand__subtitle{font-size:11px;color:var(--ax-muted);
-  border-left:1px solid var(--ax-border);padding-left:12px;margin-left:4px}
-.ax-topbar__tabs{display:flex;gap:2px}
-.ax-topbar__tab{background:transparent;border:none;color:var(--ax-text-2);
-  padding:8px 14px;font:inherit;cursor:pointer;font-size:12px;text-decoration:none;
-  border-bottom:2px solid transparent}
-.ax-topbar__tab:hover{color:var(--ax-text)}
-.ax-topbar__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent)}
 main{max-width:760px;margin:0 auto;padding:32px 24px 80px}
 h1{font-size:22px;margin:0 0 6px;font-weight:600;letter-spacing:-0.01em}
 .lead{color:var(--ax-muted);margin:0 0 28px;font-size:13px;line-height:1.6}
@@ -1320,34 +1299,15 @@ article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.06e
   font-weight:500;font-family:var(--ax-mono);border:1px solid var(--ax-border)}
 article.term p{margin:0;color:var(--ax-text-2);font-size:13px;line-height:1.6}
 </style>
-${THEME_SWITCH_SCRIPT}
 </head>
 <body>
-<header class="ax-topbar">
-  <div class="ax-topbar__left">
-    <div class="ax-brand">
-      <span class="ax-brand__mark">AX</span>
-      <span class="ax-brand__name">${escapeHtmlServer(UI_LABELS.brand)}</span>
-      <span class="ax-brand__subtitle">Glossary</span>
-    </div>
-    <nav class="ax-topbar__tabs">
-      <a href="/live" class="ax-topbar__tab">Live</a>
-      <a href="/" class="ax-topbar__tab">Boards</a>
-      <a href="/admin" class="ax-topbar__tab">Settings</a>
-      <a href="/glossary" class="ax-topbar__tab is-active">Glossary</a>
-    </nav>
-  </div>
-  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
-    <button data-theme-opt="dark">Dark</button>
-    <button data-theme-opt="light">Light</button>
-    <button data-theme-opt="crt">CRT</button>
-  </div>
-</header>
+${topbar}
 <main>
   <h1>Plain-English glossary</h1>
   <p class="lead">What the terms on the dashboard mean. Schema keys (shown in the pill on the right of each term) are what you'd write in <code>agentx.json</code> — the dashboard just relabels them for readability.</p>
   ${items}
 </main>
+${TOPBAR_SCRIPT}
 </body>
 </html>`
 }
@@ -2333,25 +2293,24 @@ html, body { margin: 0; height: 100%; background: var(--ax-bg); color: var(--ax-
   font-family: var(--ax-font); font-size: 13px; line-height: 1.5;
   -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv01"; }
 pre, code, .mono { font-family: var(--ax-mono); font-variant-numeric: tabular-nums; }
-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10;
-  flex-wrap: wrap; }
-header .brand { font-weight: 600; letter-spacing: 0.5px; color: var(--accent); font-size: 14px; }
-header select, header input, header button { background: var(--col); color: var(--text);
-  border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; font: inherit; outline: none; }
-header select:focus, header input:focus { border-color: var(--accent); }
-header .search { position: relative; }
-header .search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+/* Kanban subheader — replaces the legacy toolbar that used to live in <header>. */
+.ax-subheader select, .ax-subheader input, .ax-subheader button {
+  background: var(--col); color: var(--text); border: 1px solid var(--border);
+  padding: 6px 10px; border-radius: 6px; font: inherit; outline: none; }
+.ax-subheader select:focus, .ax-subheader input:focus { border-color: var(--accent); }
+.ax-subheader .search { position: relative; }
+.ax-subheader .search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   color: var(--muted); pointer-events: none; font-size: 14px; }
-header .search input { padding-left: 28px; width: 260px; }
-header button { cursor: pointer; }
-header button:hover { border-color: var(--accent); }
-header .chips { display: flex; gap: 4px; flex-wrap: wrap; }
-header .spacer { flex: 1; }
-header .conn { font-size: 16px; line-height: 1; }
-header .conn.ok { color: var(--green); }
-header .conn.warn { color: var(--yellow); }
-header .conn.err { color: var(--red); }
+.ax-subheader .search input { padding-left: 28px; width: 260px; }
+.ax-subheader button { cursor: pointer; }
+.ax-subheader button:hover { border-color: var(--accent); }
+.ax-subheader .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.ax-subheader #newIssueBtn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ax-subheader #newIssueBtn:hover { filter: brightness(1.1); }
+.ax-topbar__right .conn { font-size: 14px; line-height: 1; }
+.ax-topbar__right .conn.ok { color: var(--green); }
+.ax-topbar__right .conn.warn { color: var(--yellow); }
+.ax-topbar__right .conn.err { color: var(--red); }
 
 main#columns { display: flex; gap: 10px; padding: 12px; overflow-x: auto; align-items: stretch;
   min-height: calc(100vh - 60px); }
@@ -2413,10 +2372,6 @@ main#columns { display: flex; gap: 10px; padding: 12px; overflow-x: auto; align-
 .col header.col-h .add { background: transparent; color: var(--muted); border: 1px solid var(--border);
   padding: 0 8px; line-height: 22px; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .col header.col-h .add:hover { color: var(--accent); border-color: var(--accent); }
-
-/* Header buttons */
-header #newIssueBtn { background: var(--accent); color: white; border-color: var(--accent); }
-header #newIssueBtn:hover { filter: brightness(1.1); }
 
 /* --- Modal --- */
 .modal { position: fixed; inset: 0; z-index: 150; display: none; }
