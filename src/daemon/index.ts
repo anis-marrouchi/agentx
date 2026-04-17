@@ -479,12 +479,17 @@ export class AgentXDaemon {
 
     // WhatsApp
     if (this.config.channels.whatsapp.enabled) {
+      const { setWhatsAppQR, setWhatsAppStatus } = await import("./whatsapp-state")
       const whatsapp = new WhatsAppAdapter(
         {
           sessionDir: this.config.channels.whatsapp.sessionDir,
           defaultAgent: this.config.channels.whatsapp.defaultAgent,
           allowFrom: this.config.channels.whatsapp.allowFrom,
           routes: this.config.channels.whatsapp.routes,
+          // Publish QR + status so /api/admin/channels/whatsapp/state can
+          // surface the pairing code in the browser.
+          onQR: setWhatsAppQR,
+          onStatus: setWhatsAppStatus,
         },
         this.log,
       )

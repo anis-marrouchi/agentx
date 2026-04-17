@@ -29,12 +29,20 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
   private log: (...args: unknown[]) => void
 
+  /** Fires whenever the underlying WhatsApp socket emits a new QR or clears it.
+   *  Passing null means the session is now connected. */
+  private onQR?: (qr: string | null) => void
+  /** Fires whenever the connection state changes (connecting / open / close). */
+  private onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
+
   constructor(
     config: {
       sessionDir: string
       defaultAgent?: string
       allowFrom?: string[]
       routes?: WhatsAppRoute[]
+      onQR?: (qr: string | null) => void
+      onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
     },
     log: (...args: unknown[]) => void = console.error.bind(console, "[whatsapp]"),
   ) {
@@ -42,6 +50,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.defaultAgent = config.defaultAgent
     this.allowFrom = config.allowFrom
     this.routes = config.routes || []
+    this.onQR = config.onQR
+    this.onStatus = config.onStatus
     this.log = log
   }
 
@@ -156,7 +166,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
       if (qr) {
         this.log("Scan QR code with WhatsApp to connect:")
-        // Render QR as text in terminal
+        // Publish the raw QR so the admin dashboard can render it in-browser.
+        try { this.onQR?.(qr) } catch { /* consumer crashed — don't block the socket */ }
+        // Render QR as text in terminal too (keeps SSH-only setups working).
         try {
           // @ts-ignore - no type declarations for qrcode-terminal
           const { default: qrcode } = await import("qrcode-terminal") as any
@@ -166,6 +178,14 @@ export class WhatsAppAdapter implements ChannelAdapter {
           this.log(`QR: ${qr}`)
           this.log("Install qrcode-terminal for visual QR: npm install qrcode-terminal")
         }
+      }
+      if (connection) {
+        try { this.onStatus?.(connection, lastDisconnect?.error?.message) } catch { /* */ }
+      }
+      if (connection === "open") {
+        // Clear the cached QR once the pairing succeeds so the dashboard stops
+        // showing a scannable code the user already consumed.
+        try { this.onQR?.(null) } catch { /* */ }
       }
 
       if (connection === "close") {

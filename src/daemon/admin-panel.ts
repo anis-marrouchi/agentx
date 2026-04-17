@@ -5,6 +5,7 @@ import { mutateAgentxConfig } from "./config-mutate"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
+import { getWhatsAppState } from "./whatsapp-state"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -35,6 +36,11 @@ export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerRes
 
 export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
   try {
+    // Non-JSON carve-out: the WhatsApp QR rendered as SVG.
+    if (req.method === "GET" && path === "/api/admin/channels/whatsapp/qr.svg") {
+      await serveWhatsAppQRSvg(res)
+      return
+    }
     const body = req.method === "GET" ? undefined : await readJsonBody(req)
     const dispatch: Record<string, () => unknown> = {
       "GET /api/admin/state": () => getAdminState(),
@@ -59,6 +65,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
+      "GET /api/admin/channels/whatsapp/state": () => getWhatsAppState(),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -406,6 +413,48 @@ function editTelegramAccount(body: any) {
     return `updated telegram account "${id}"`
   })
   return { summary }
+}
+
+/**
+ * Render the current WhatsApp QR string as an SVG the browser can consume.
+ * Returns 204 No Content when no QR is pending (connected / logged out /
+ * waiting) so an <img> element just keeps polling without showing a broken
+ * picture frame. `qrcode` is a lazy import — a truly minimal install without
+ * that dep still boots the daemon.
+ */
+async function serveWhatsAppQRSvg(res: ServerResponse): Promise<void> {
+  const s = getWhatsAppState()
+  if (!s.qr) {
+    res.writeHead(204, { "Cache-Control": "no-store" })
+    res.end()
+    return
+  }
+  let QRCode: any
+  try {
+    // @ts-ignore — qrcode ships without types; we use toString at runtime
+    const mod = await import("qrcode")
+    QRCode = (mod as any).default || mod
+  } catch {
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" })
+    res.end("qrcode package not installed — run `npm install qrcode` inside the daemon's dir")
+    return
+  }
+  try {
+    const svg: string = await QRCode.toString(s.qr, {
+      type: "svg",
+      errorCorrectionLevel: "L",
+      margin: 1,
+      color: { dark: "#000", light: "#fff" },
+    })
+    res.writeHead(200, {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": "no-store",
+    })
+    res.end(svg)
+  } catch (e: any) {
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" })
+    res.end("QR render failed: " + (e?.message || "unknown"))
+  }
 }
 
 // --- per-agent file operations ---------------------------------------------
@@ -1808,18 +1857,76 @@ function jumpToWebhooks() {
 
 function renderWhatsAppPane() {
   const w = state.whatsapp || {};
-  const configured = w.routeCount > 0;
-  const statusChip = configured
-    ? (w.enabled ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>' : '<span class="chip off">disabled</span>')
-    : '<span class="chip off">not configured</span>';
+  const enabled = !!w.enabled;
+  const statusChip = enabled
+    ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>'
+    : '<span class="chip off">disabled</span>';
   $('ch-whatsapp').innerHTML =
     '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>WhatsApp</h3>' +
       '<div class="meta">' + statusChip +
         ' · session dir: <code style="font-family:var(--ax-mono)">' + escapeHtml(w.sessionDir) + '</code>' +
         ' · ' + w.routeCount + ' route(s)' +
       '</div></div></div>' +
-    '<div class="hint-block">WhatsApp uses Baileys (multi-device). Routes + phone numbers live in the <b>Advanced</b> tab for now; a QR pairing flow is landing next. Install <code>@whiskeysockets/baileys</code> + <code>qrcode-terminal</code>.</div>' +
-    '<div class="hint-block" style="margin-top:10px"><b>Coming next session:</b> in-browser QR pairing (the adapter already prints the QR to the daemon log; we&rsquo;ll surface it here as a scannable image).</div>';
+    '<div id="wa-pairing" class="add-form"><h3>Pairing</h3>' +
+      '<div id="wa-status" style="margin-bottom:10px;font-size:12px;color:var(--ax-muted)">checking…</div>' +
+      '<div id="wa-qr-wrap" style="display:none;text-align:center;padding:14px;background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:6px">' +
+        '<img id="wa-qr" alt="WhatsApp QR" style="width:260px;height:260px;background:#fff;padding:8px;border-radius:4px" />' +
+        '<div style="margin-top:10px;font-size:11px;color:var(--ax-muted);line-height:1.55">Open WhatsApp on your phone → <b>Settings</b> → <b>Linked devices</b> → <b>Link a device</b> and scan. The code refreshes every ~20s.</div>' +
+      '</div>' +
+      '<div id="wa-connected" style="display:none;padding:14px;background:color-mix(in oklch,var(--ax-accent) 10%,transparent);border:1px solid color-mix(in oklch,var(--ax-accent) 35%,transparent);border-radius:6px;color:var(--ax-accent);font-size:13px">✓ Paired — the daemon is signed in.</div>' +
+      '<div id="wa-disabled" style="display:none;padding:14px;font-size:12px;color:var(--ax-muted);line-height:1.6">WhatsApp is currently disabled in <code>agentx.json</code>. Enable it there (or via the Advanced tab) and restart the daemon; the QR will appear once Baileys needs it.</div>' +
+      '<div class="hint-block" style="margin-top:12px">Routes, phone numbers, and allow-lists live under <code>channels.whatsapp</code> in the <b>Advanced</b> tab. Requires <code>@whiskeysockets/baileys</code> installed in the daemon&rsquo;s dir.</div>' +
+    '</div>';
+  startWhatsAppPolling();
+}
+
+const _wa = { timer: null, lastQRSeen: '' };
+function startWhatsAppPolling() {
+  stopWhatsAppPolling();
+  _wa.timer = setInterval(pollWhatsAppState, 3000);
+  pollWhatsAppState();
+}
+function stopWhatsAppPolling() {
+  if (_wa.timer) { clearInterval(_wa.timer); _wa.timer = null; }
+}
+async function pollWhatsAppState() {
+  // Stop polling if the user switched away from the WhatsApp pane.
+  const pane = $('ch-whatsapp');
+  if (!pane || pane.hidden) { stopWhatsAppPolling(); return; }
+  try {
+    const s = await req('GET', '/api/admin/channels/whatsapp/state');
+    const enabled = !!(state.whatsapp && state.whatsapp.enabled);
+    const status = $('wa-status');
+    const qrWrap = $('wa-qr-wrap');
+    const connected = $('wa-connected');
+    const disabled = $('wa-disabled');
+    const qrImg = $('wa-qr');
+    if (!enabled) {
+      status.textContent = 'disabled in config';
+      qrWrap.style.display = 'none'; connected.style.display = 'none'; disabled.style.display = 'block';
+      return;
+    }
+    disabled.style.display = 'none';
+    const connState = s.connection || 'init';
+    const detail = s.detail ? ' — ' + s.detail : '';
+    if (connState === 'open') {
+      status.innerHTML = '<span style="color:var(--ax-accent)">● connected</span>';
+      qrWrap.style.display = 'none'; connected.style.display = 'block';
+    } else if (s.qr) {
+      status.innerHTML = '<span style="color:var(--ax-warn)">● waiting for scan</span>' + (detail ? escapeHtml(detail) : '');
+      connected.style.display = 'none'; qrWrap.style.display = 'block';
+      // Bust cache when the QR actually changed.
+      if (s.qrUpdatedAt !== _wa.lastQRSeen) {
+        _wa.lastQRSeen = s.qrUpdatedAt;
+        qrImg.src = '/api/admin/channels/whatsapp/qr.svg?t=' + encodeURIComponent(s.qrUpdatedAt || Date.now());
+      }
+    } else {
+      status.textContent = connState + detail + ' — waiting for the daemon to emit a QR…';
+      qrWrap.style.display = 'none'; connected.style.display = 'none';
+    }
+  } catch (e) {
+    $('wa-status').innerHTML = '<span style="color:var(--ax-err)">' + escapeHtml(e.message) + '</span>';
+  }
 }
 
 function renderSlackSection() {
