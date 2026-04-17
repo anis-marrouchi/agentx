@@ -221,7 +221,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   const itemOpMatch = path.match(/^\/api\/boards\/([a-z0-9_-]+)\/items(?:\/(.+))?$/)
 
   if (moveMatch && method === "PATCH") {
-    const [, boardId, itemId] = moveMatch
+    const [, boardId, rawItemId] = moveMatch
+    const itemId = decodeURIComponent(rawItemId)
     const board = ctx.boards.find((b) => b.id === boardId)
     if (!board) { sendJson(res, 404, { error: `unknown board: ${boardId}` }); return }
     const source = ctx.sources.get(boardId)
@@ -239,7 +240,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
 
   if (itemOpMatch) {
-    const [, boardId, itemId] = itemOpMatch
+    const [, boardId, rawItemId] = itemOpMatch
+    const itemId = rawItemId ? decodeURIComponent(rawItemId) : undefined
     const board = ctx.boards.find((b) => b.id === boardId)
     if (!board) { sendJson(res, 404, { error: `unknown board: ${boardId}` }); return }
     const source = ctx.sources.get(boardId) as GitLabWorkSource | undefined
