@@ -9,8 +9,88 @@ import { BlockStream } from "./block-stream"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs"
 import { resolve, dirname } from "path"
+
+/**
+ * Crash-safe inflight task log. Every message we commit to handling is
+ * appended as a `start` entry to .agentx/router/inflight.jsonl. When the
+ * handler returns (success OR error), we append a matching `done` entry.
+ *
+ * On daemon boot, any `start` without a `done` is replayed through the
+ * handler with a `replay` flag that bypasses dedup — because a crash
+ * between start and done means the user never got a reply.
+ *
+ * Trade-off vs always replaying: we only resume work that was IN PROGRESS
+ * at crash time. Genuine handler failures (task returned an error) still
+ * get their `done` marker and are NOT retried — so we don't infinite-loop
+ * on a poison-pill message.
+ */
+interface InflightStart {
+  type: "start"
+  id: string
+  channel: string
+  accountId: string
+  text: string
+  sender: IncomingMessage["sender"]
+  group?: IncomingMessage["group"]
+  replyTo?: string
+  replyToText?: string
+  timestamp: string
+  resolvedAgent?: string
+  preferNode?: string
+  ts: number
+}
+
+class InflightLog {
+  private filePath: string
+
+  constructor(baseDir: string) {
+    this.filePath = resolve(baseDir, ".agentx/router/inflight.jsonl")
+    mkdirSync(dirname(this.filePath), { recursive: true })
+  }
+
+  start(entry: Omit<InflightStart, "type" | "ts">): void {
+    try {
+      const line = JSON.stringify({ type: "start", ts: Date.now(), ...entry }) + "\n"
+      appendFileSync(this.filePath, line)
+    } catch { /* best-effort persistence */ }
+  }
+
+  done(id: string): void {
+    try {
+      appendFileSync(this.filePath, JSON.stringify({ type: "done", id, ts: Date.now() }) + "\n")
+    } catch { /* */ }
+  }
+
+  /** Scan the log and return all `start` entries without a matching `done`. */
+  loadUnfinished(): InflightStart[] {
+    if (!existsSync(this.filePath)) return []
+    try {
+      const raw = readFileSync(this.filePath, "utf-8")
+      const byId = new Map<string, InflightStart>()
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue
+        try {
+          const entry = JSON.parse(line) as { type: string; id: string } & InflightStart
+          if (entry.type === "start") byId.set(entry.id, entry as InflightStart)
+          else if (entry.type === "done") byId.delete(entry.id)
+        } catch { /* skip corrupt line */ }
+      }
+      return [...byId.values()]
+    } catch { return [] }
+  }
+
+  /** Rewrite the file with only currently-unfinished entries. Call on graceful
+   *  stop or periodically — keeps the file from growing without bound. */
+  compact(): void {
+    try {
+      const unfinished = this.loadUnfinished()
+      const out = unfinished.map((e) => JSON.stringify(e)).join("\n") + (unfinished.length ? "\n" : "")
+      writeFileSync(this.filePath, out)
+    } catch { /* */ }
+  }
+}
 
 // --- Message Router ---
 // Routes channel messages to agents. Supports:
@@ -61,6 +141,9 @@ export class MessageRouter {
   private dedupDirtyCount = 0
   private dedupSaveTimer?: ReturnType<typeof setTimeout>
 
+  /** Crash-safe inflight log (see InflightLog class above). */
+  private inflight: InflightLog
+
   constructor(
     registry: AgentRegistry,
     config: DaemonConfig,
@@ -72,6 +155,7 @@ export class MessageRouter {
     this.hooks = hooks
     this.log = log
     this.groupLog = new GroupLog()
+    this.inflight = new InflightLog(process.cwd())
     this.loadDedupFromDisk()
   }
 
@@ -134,6 +218,11 @@ export class MessageRouter {
   /** Called by the daemon on graceful shutdown so no in-memory ids are lost. */
   flushPersistence(): void {
     this.flushDedupToDisk()
+    // Compact the inflight log so the file doesn't grow unboundedly across
+    // clean restarts. A crash skips this; the next boot just reads the
+    // untrimmed log and does the same replay — still correct, just slightly
+    // slower on the first scan.
+    this.inflight.compact()
   }
 
   setMesh(mesh: A2AMesh): void {
@@ -190,6 +279,56 @@ export class MessageRouter {
       this.log(`Starting channel: ${name}`)
       await adapter.start()
     }
+    // Replay any work the previous process committed to but never finished.
+    // Deferred until after channel startup so adapters can actually send
+    // replies. Fire-and-forget — we don't block normal traffic on it.
+    this.replayInflight().catch((e) => this.log(`Inflight replay error: ${e.message}`))
+  }
+
+  /**
+   * On startup, re-run any incoming message that was recorded as `start` but
+   * never got a matching `done` in the inflight log. Those are tasks the
+   * previous process committed to handling but crashed before completing.
+   */
+  private async replayInflight(): Promise<void> {
+    const unfinished = this.inflight.loadUnfinished()
+    if (unfinished.length === 0) return
+    this.log(`Inflight replay: ${unfinished.length} task(s) to resume from previous run`)
+    for (const entry of unfinished) {
+      const adapter = this.channels.get(entry.channel)
+      if (!adapter) {
+        this.log(`Inflight replay: adapter "${entry.channel}" not available, skipping task ${entry.id}`)
+        // Mark it done so we don't re-attempt forever — channel may be
+        // permanently disabled in the current config.
+        this.inflight.done(entry.id)
+        continue
+      }
+      const msg: IncomingMessage = {
+        id: entry.id,
+        channel: entry.channel,
+        accountId: entry.accountId,
+        sender: entry.sender,
+        group: entry.group,
+        text: entry.text,
+        replyTo: entry.replyTo,
+        replyToText: entry.replyToText,
+        timestamp: new Date(entry.timestamp),
+        resolvedAgent: entry.resolvedAgent,
+        preferNode: entry.preferNode,
+      }
+      this.log(`Inflight replay: ${entry.channel}/${entry.id} (agent=${entry.resolvedAgent || "resolve"})`)
+      this.handleMessage(adapter, msg, { replay: true })
+        .catch((e) => this.log(`Inflight replay failed for ${entry.id}: ${e.message}`))
+        // Always mark done on replay — single-shot by design. If the replayed
+        // handler re-committed and wrote its own done, the duplicate is
+        // harmless (loadUnfinished dedups by id). If the handler returned
+        // early (agent removed from config, no adapter, etc.), this clears
+        // the stale entry so we don't retry forever.
+        .finally(() => this.inflight.done(entry.id))
+    }
+    // Compact the file now that we've snapshotted — old entries are either
+    // being replayed (will get a fresh start/done) or already drained.
+    this.inflight.compact()
   }
 
   async stopAll(): Promise<void> {
@@ -222,12 +361,18 @@ export class MessageRouter {
   private async handleMessage(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
+    opts: { replay?: boolean } = {},
   ): Promise<void> {
     // Dedup: drop redeliveries of the same incoming message id within a TTL.
     // Guards against GitLab webhook retries, Baileys double-emit, and Telegram
     // offset hiccups. Scoped per-accountId so multi-bot Telegram groups still
     // route each account's legitimate view of the message.
-    if (this.isDuplicateMessage(msg)) {
+    //
+    // Replay-on-resume (from inflight log) deliberately bypasses dedup — a
+    // replayed message is one the previous process committed to handling but
+    // crashed before finishing, so the dedup entry is stale and the user
+    // still hasn't received their answer.
+    if (!opts.replay && this.isDuplicateMessage(msg)) {
       this.log(`Duplicate ${msg.channel} message dropped: ${msg.accountId || "default"}/${msg.id}`)
       return
     }
@@ -301,6 +446,36 @@ export class MessageRouter {
 
     const chatId = msg.group?.id || msg.sender.id
 
+    // From here on we're committed to processing this message. Write a `start`
+    // entry to the inflight log so a crash between now and the task's
+    // completion gets the replay treatment on next boot. `done` is always
+    // written via the try/finally wrapper further down.
+    this.inflight.start({
+      id: msg.id,
+      channel: msg.channel,
+      accountId: msg.accountId,
+      text: msg.text,
+      sender: msg.sender,
+      group: msg.group,
+      replyTo: msg.replyTo,
+      replyToText: msg.replyToText,
+      timestamp: (msg.timestamp instanceof Date ? msg.timestamp : new Date()).toISOString(),
+      resolvedAgent: agentId,
+      preferNode: msg.preferNode,
+    })
+
+    try { return await this.processResolvedMessage(adapter, msg, agentId, chatId) }
+    finally { this.inflight.done(msg.id) }
+  }
+
+  /** The actual processing body — split out so handleMessage can wrap it in
+   *  the inflight try/finally without drowning the happy path in indentation. */
+  private async processResolvedMessage(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    agentId: string,
+    chatId: string,
+  ): Promise<void> {
     // If preferNode is set, skip local and route directly to the specified mesh peer
     if (msg.preferNode) {
       this.log(`preferNode="${msg.preferNode}" — forcing mesh routing for agent "${agentId}"`)
