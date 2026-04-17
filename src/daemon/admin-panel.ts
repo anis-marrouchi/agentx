@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
+import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -59,6 +60,11 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/mesh/peers": () => addMeshPeer(body),
       "DELETE /api/admin/mesh/peers": () => deleteMeshPeer(body),
       "POST /api/admin/mesh/toggle": () => toggleMesh(body),
+      "GET /api/admin/files": () => listFilesForAgent(req),
+      "GET /api/admin/files/read": () => readFileForAgent(req),
+      "PUT /api/admin/files": () => writeFileForAgent(body),
+      "POST /api/admin/files/skill": () => addSkillForAgent(body),
+      "DELETE /api/admin/files/skill": () => removeSkillForAgent(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -372,6 +378,64 @@ function editTelegramAccount(body: any) {
   return { summary }
 }
 
+// --- per-agent file operations ---------------------------------------------
+
+function workspaceFor(agentId: string): string {
+  const cfg = readConfigRaw()
+  const def = cfg?.agents?.[agentId]
+  if (!def) throw new Error(`Unknown agent "${agentId}".`)
+  if (!def.workspace) throw new Error(`Agent "${agentId}" has no workspace configured.`)
+  return def.workspace
+}
+
+function queryParam(req: IncomingMessage, name: string): string {
+  try {
+    const url = new URL(req.url || "/", "http://localhost")
+    return url.searchParams.get(name) || ""
+  } catch { return "" }
+}
+
+function listFilesForAgent(req: IncomingMessage) {
+  const agentId = queryParam(req, "agent").trim()
+  if (!agentId) throw new Error("agent= query param is required.")
+  const overview = listAgentFiles(workspaceFor(agentId))
+  return { agentId, ...overview }
+}
+
+function readFileForAgent(req: IncomingMessage) {
+  const agentId = queryParam(req, "agent").trim()
+  const path = queryParam(req, "path").trim()
+  if (!agentId || !path) throw new Error("agent= and path= query params are required.")
+  return readAgentFile(workspaceFor(agentId), path)
+}
+
+function writeFileForAgent(body: any) {
+  const agentId = String(body?.agent || "").trim()
+  const path = String(body?.path || "").trim()
+  const content = typeof body?.content === "string" ? body.content : ""
+  if (!agentId || !path) throw new Error("agent and path are required.")
+  const r = writeAgentFile(workspaceFor(agentId), path, content)
+  return { summary: `saved ${path} (${r.bytes} bytes)`, ...r }
+}
+
+function addSkillForAgent(body: any) {
+  const agentId = String(body?.agent || "").trim()
+  const slug = String(body?.slug || "").trim()
+  const title = body?.title ? String(body.title) : undefined
+  const content = body?.content ? String(body.content) : undefined
+  if (!agentId) throw new Error("agent is required.")
+  const r = createAgentSkill(workspaceFor(agentId), slug, { title, content })
+  return { summary: `added skill "${slug}"`, ...r }
+}
+
+function removeSkillForAgent(body: any) {
+  const agentId = String(body?.agent || "").trim()
+  const slug = String(body?.slug || "").trim()
+  if (!agentId || !slug) throw new Error("agent and slug are required.")
+  const r = deleteAgentSkill(workspaceFor(agentId), slug)
+  return { summary: `removed skill "${slug}"`, ...r }
+}
+
 const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "discord", "slack", "custom"] as const
 
 function addWebhook(body: any) {
@@ -648,6 +712,28 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
 .hint-block code{background:#0e1119;padding:1px 6px;border-radius:3px;color:var(--text);font-family:ui-monospace,monospace;font-size:11px}
 .section-block{margin-bottom:28px}
 
+/* --- Files modal --- */
+.files-split{display:flex;flex:1;min-height:0}
+.files-picker{width:260px;min-width:220px;border-right:1px solid var(--border);overflow-y:auto;padding:10px 8px;background:#10131c}
+.files-picker .group{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);padding:8px 10px 4px;font-weight:600}
+.files-picker .file{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text);border-left:2px solid transparent}
+.files-picker .file:hover{background:rgba(99,102,241,0.08)}
+.files-picker .file.active{background:rgba(99,102,241,0.16);border-left-color:var(--accent)}
+.files-picker .file.missing{color:var(--muted);font-style:italic}
+.files-picker .file .info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files-picker .file .size{font-size:10px;color:var(--muted);font-family:ui-monospace,monospace}
+.files-picker .file .del{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:0 4px;font-size:13px}
+.files-picker .file .del:hover{color:var(--red)}
+.files-editor{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.files-editor-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-style:italic;padding:40px;text-align:center}
+.files-editor-head{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:#10131c}
+.files-editor-head .path{flex:1;font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)}
+.files-editor-body{flex:1;overflow:hidden;display:flex}
+.files-editor-body textarea{flex:1;background:#0a0c12;color:var(--text);border:none;padding:14px 16px;font:12px/1.55 ui-monospace,"SF Mono",Menlo,monospace;resize:none}
+.files-editor-body textarea:focus{outline:none}
+.files-add{border-top:1px solid var(--border);padding:10px 16px;background:#10131c}
+.files-add h4{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--text)}
+
 /* --- Test drive chat modal --- */
 .td-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center}
 .td-modal.hidden{display:none}
@@ -689,6 +775,45 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
+<div id="files-modal" class="td-modal hidden" aria-hidden="true">
+  <div class="td-backdrop"></div>
+  <div class="td-card" role="dialog" aria-modal="true" style="width:min(960px,94vw);height:min(720px,90vh)">
+    <header>
+      <span class="chip-small" id="files-tab-label">Identity</span>
+      <h3 id="files-title">Agent · Files</h3>
+      <nav style="display:flex;gap:0;margin-right:10px">
+        <button class="ghost" id="files-tab-identity" style="padding:6px 12px;font-size:12px;border-top-right-radius:0;border-bottom-right-radius:0">Identity</button>
+        <button class="ghost" id="files-tab-skills" style="padding:6px 12px;font-size:12px;border-top-left-radius:0;border-bottom-left-radius:0;border-left:none">Skills</button>
+      </nav>
+      <button class="td-close" id="files-close" aria-label="Close">×</button>
+    </header>
+    <div class="files-split">
+      <aside class="files-picker" id="files-picker"></aside>
+      <div class="files-editor">
+        <div id="files-editor-empty" class="files-editor-empty">Pick a file on the left to open it.</div>
+        <div id="files-editor-head" class="files-editor-head" style="display:none">
+          <span class="path" id="files-current-path"></span>
+          <button class="ghost" id="files-revert" style="padding:6px 10px;font-size:12px">Revert</button>
+          <button class="primary" id="files-save" style="padding:6px 14px;font-size:12px">Save</button>
+        </div>
+        <div class="files-editor-body" style="display:none" id="files-editor-wrap">
+          <textarea id="files-editor" spellcheck="false"></textarea>
+        </div>
+        <div id="files-save-msg" class="msg" style="margin:10px 16px"></div>
+
+        <div id="files-add-skill" class="files-add" style="display:none">
+          <h4>Add a skill</h4>
+          <div class="rowf">
+            <div><label>Slug<span class="hint">(lowercase)</span></label><input id="skill-slug" placeholder="my-skill" /></div>
+            <div><label>Title<span class="hint">(optional)</span></label><input id="skill-title" placeholder="What the skill does" /></div>
+          </div>
+          <div class="actions"><button class="primary" onclick="addSkill()">Create</button><div id="skill-msg" class="msg"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="edit-modal" class="td-modal hidden" aria-hidden="true">
   <div class="td-backdrop"></div>
   <div class="td-card" role="dialog" aria-modal="true" style="height:auto;max-height:90vh;width:min(560px,94vw)">
@@ -1051,6 +1176,7 @@ function renderAgents() {
       '</div>' +
       '<button class="primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px;padding:6px 12px;font-size:12px">Test drive</button>' +
       '<button class="ghost" data-edit="' + escapeHtml(a.id) + '" style="margin-right:6px">Edit</button>' +
+      '<button class="ghost" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px">Files</button>' +
       '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
       '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';
     div.querySelector('button.danger').addEventListener('click', () => deleteAgent(a.id));
@@ -1064,6 +1190,10 @@ function renderAgents() {
       openTestDrive(btn.dataset.test, btn.dataset.name);
     });
     div.querySelector('button[data-edit]').addEventListener('click', () => openAgentEdit(a));
+    div.querySelector('button[data-files]').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      openFilesModal(btn.dataset.files, btn.dataset.name);
+    });
     list.appendChild(div);
   }
   // Refresh the cron agent picker so new agents show up.
@@ -1218,6 +1348,181 @@ async function runCronPreview() {
   }
 }
 $('c-schedule').addEventListener('input', scheduleCronPreview);
+
+// --- Files modal (identity + skills) ---
+const filesModal = {
+  el: $('files-modal'),
+  agentId: null,
+  agentName: null,
+  currentTab: 'identity',  // 'identity' | 'skills'
+  currentPath: null,       // path of file being edited
+  originalContent: '',     // for revert
+};
+
+async function openFilesModal(agentId, agentName) {
+  filesModal.agentId = agentId;
+  filesModal.agentName = agentName;
+  $('files-title').textContent = agentName + ' · Files';
+  filesModal.el.classList.remove('hidden');
+  filesModal.el.setAttribute('aria-hidden', 'false');
+  switchFilesTab('identity');
+}
+
+function closeFilesModal() {
+  filesModal.el.classList.add('hidden');
+  filesModal.el.setAttribute('aria-hidden', 'true');
+  filesModal.agentId = null;
+  filesModal.currentPath = null;
+  hideFileEditor();
+}
+
+function switchFilesTab(tab) {
+  filesModal.currentTab = tab;
+  filesModal.currentPath = null;
+  $('files-tab-label').textContent = tab === 'skills' ? 'Skills' : 'Identity';
+  $('files-tab-identity').style.background = tab === 'identity' ? 'rgba(99,102,241,0.15)' : 'transparent';
+  $('files-tab-skills').style.background = tab === 'skills' ? 'rgba(99,102,241,0.15)' : 'transparent';
+  $('files-add-skill').style.display = tab === 'skills' ? 'block' : 'none';
+  hideFileEditor();
+  loadFileList();
+}
+
+async function loadFileList() {
+  const picker = $('files-picker');
+  picker.innerHTML = '<div class="empty" style="padding:20px 10px;color:var(--muted)">loading…</div>';
+  try {
+    const r = await req('GET', '/api/admin/files?agent=' + encodeURIComponent(filesModal.agentId));
+    filesModal.overview = r;
+    renderFilesPicker(r);
+  } catch (e) {
+    picker.innerHTML = '<div class="empty" style="color:var(--red);padding:14px">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderFilesPicker(overview) {
+  const picker = $('files-picker');
+  if (filesModal.currentTab === 'identity') {
+    const rows = overview.identity.map((f) => {
+      const activeCls = filesModal.currentPath === f.path ? ' active' : '';
+      const missingCls = f.exists ? '' : ' missing';
+      const sizeLabel = f.exists ? formatBytes(f.size) : 'create';
+      return '<div class="file' + activeCls + missingCls + '" data-path="' + escapeHtml(f.path) + '">' +
+        '<span class="info">' + escapeHtml(f.title) + '</span>' +
+        '<span class="size">' + sizeLabel + '</span>' +
+      '</div>';
+    }).join('');
+    picker.innerHTML = '<div class="group">Identity files</div>' + (rows || '<div class="empty">No files.</div>');
+  } else {
+    if (overview.skills.length === 0) {
+      picker.innerHTML = '<div class="group">Skills</div><div class="empty" style="padding:14px;color:var(--muted)">No skills yet.</div>';
+    } else {
+      const rows = overview.skills.map((s) => {
+        const activeCls = filesModal.currentPath === s.path ? ' active' : '';
+        return '<div class="file' + activeCls + '" data-path="' + escapeHtml(s.path) + '" data-slug="' + escapeHtml(s.slug) + '">' +
+          '<span class="info">' + escapeHtml(s.title) + '<br><span class="size">' + escapeHtml(s.slug) + '</span></span>' +
+          '<button class="del" data-rm-skill="' + escapeHtml(s.slug) + '" title="Delete skill">🗑</button>' +
+        '</div>';
+      }).join('');
+      picker.innerHTML = '<div class="group">Skills</div>' + rows;
+    }
+  }
+  for (const row of picker.querySelectorAll('.file')) {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-rm-skill]')) return;
+      openFileInEditor(row.dataset.path);
+    });
+  }
+  for (const btn of picker.querySelectorAll('[data-rm-skill]')) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeSkill(btn.dataset.rmSkill);
+    });
+  }
+}
+
+function formatBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1).replace(/\\.0$/, '') + ' KB';
+  return (n / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+async function openFileInEditor(path) {
+  filesModal.currentPath = path;
+  renderFilesPicker(filesModal.overview);  // restyle active row
+  try {
+    const r = await req('GET', '/api/admin/files/read?agent=' + encodeURIComponent(filesModal.agentId) + '&path=' + encodeURIComponent(path));
+    filesModal.originalContent = r.content;
+    $('files-current-path').textContent = path;
+    $('files-editor').value = r.content;
+    $('files-editor-empty').style.display = 'none';
+    $('files-editor-head').style.display = 'flex';
+    $('files-editor-wrap').style.display = 'flex';
+    $('files-save-msg').className = 'msg';
+  } catch (e) { showMsg($('files-save-msg'), 'err', e.message); }
+}
+
+function hideFileEditor() {
+  $('files-editor-empty').style.display = 'flex';
+  $('files-editor-head').style.display = 'none';
+  $('files-editor-wrap').style.display = 'none';
+  $('files-save-msg').className = 'msg';
+  $('files-editor').value = '';
+}
+
+async function saveCurrentFile() {
+  if (!filesModal.currentPath) return;
+  const content = $('files-editor').value;
+  try {
+    const r = await req('PUT', '/api/admin/files', {
+      agent: filesModal.agentId,
+      path: filesModal.currentPath,
+      content,
+    });
+    filesModal.originalContent = content;
+    showMsg($('files-save-msg'), 'ok', r.summary);
+    loadFileList();
+  } catch (e) { showMsg($('files-save-msg'), 'err', e.message); }
+}
+
+function revertCurrentFile() {
+  $('files-editor').value = filesModal.originalContent;
+  $('files-save-msg').className = 'msg';
+}
+
+async function addSkill() {
+  const slug = $('skill-slug').value.trim();
+  const title = $('skill-title').value.trim();
+  try {
+    const r = await req('POST', '/api/admin/files/skill', { agent: filesModal.agentId, slug, title });
+    showMsg($('skill-msg'), 'ok', r.summary);
+    $('skill-slug').value = ''; $('skill-title').value = '';
+    await loadFileList();
+    openFileInEditor(r.path);
+  } catch (e) { showMsg($('skill-msg'), 'err', e.message); }
+}
+
+async function removeSkill(slug) {
+  if (!confirm('Delete skill "' + slug + '"? The skill folder and SKILL.md will be removed from disk.')) return;
+  try {
+    await req('DELETE', '/api/admin/files/skill', { agent: filesModal.agentId, slug });
+    if (filesModal.currentPath && filesModal.currentPath.includes('/' + slug + '/')) hideFileEditor();
+    loadFileList();
+  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+$('files-close').addEventListener('click', closeFilesModal);
+$('files-modal').querySelector('.td-backdrop').addEventListener('click', closeFilesModal);
+$('files-tab-identity').addEventListener('click', () => switchFilesTab('identity'));
+$('files-tab-skills').addEventListener('click', () => switchFilesTab('skills'));
+$('files-save').addEventListener('click', saveCurrentFile);
+$('files-revert').addEventListener('click', revertCurrentFile);
+$('files-editor').addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveCurrentFile(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !filesModal.el.classList.contains('hidden')) closeFilesModal();
+});
 
 // --- Edit agent modal ---
 const editModal = {
