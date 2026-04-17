@@ -338,11 +338,18 @@ export class AgentRegistry {
       }
     }
 
-    // Rate limit check
-    const rateCheck = this.rateLimiter.check(task.agentId)
-    if (!rateCheck.allowed) {
-      this.log(`[${task.agentId}] ${rateCheck.reason}`)
-      return { content: "", error: rateCheck.reason }
+    // Rate limit — WAIT for a slot instead of failing. Dropping messages looks
+    // like the bot is broken; queueing for ~5 minutes gives chatty channels a
+    // smooth experience and still bails if something's genuinely stuck.
+    const rateResult = await this.rateLimiter.acquire(task.agentId, {
+      maxWaitMs: 5 * 60_000,
+      onWait: (reason, waitMs) => {
+        this.log(`[${task.agentId}] ${reason} — queued, resumes in ~${Math.max(1, Math.round(waitMs / 1000))}s`)
+      },
+    })
+    if (!rateResult.ok) {
+      this.log(`[${task.agentId}] ${rateResult.reason}`)
+      return { content: "", error: rateResult.reason }
     }
 
     state.activeTasks++

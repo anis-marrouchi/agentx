@@ -1,5 +1,6 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
+import { friendlyModelError, renderFriendlyError } from "./error-map"
 import type { AgentDef } from "@/daemon/config"
 
 // --- Agent execution runtime ---
@@ -215,6 +216,22 @@ export interface TokenUsage {
   cacheCreateTokens: number
 }
 
+/**
+ * When the Claude Code CLI returns exit=0 but the run itself errored (e.g.
+ * out-of-credits mid-session), it emits a top-level JSON object with
+ * `is_error: true` and the raw API error in `result`. Detect + extract so we
+ * can run the same friendly-error translator we use for stderr.
+ * Returns null when the output is a normal success.
+ */
+function extractClaudeIsError(stdout: string): string | null {
+  try {
+    const data = JSON.parse(stdout)
+    if (data && data.is_error && typeof data.result === "string") return data.result
+    if (data && data.error && typeof data.error === "string") return data.error
+  } catch { /* not JSON — fall through */ }
+  return null
+}
+
 function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string } {
   try {
     const data = JSON.parse(stdout)
@@ -294,7 +311,18 @@ export async function executeClaudeCode(
       }
       return {
         content: "",
-        error: errMsg.slice(0, 300),
+        error: renderFriendlyError(friendlyModelError(errMsg)),
+        duration: Date.now() - start,
+      }
+    }
+
+    // Claude Code sometimes exits 0 but embeds the API error in stdout's
+    // "result" field when `is_error` is set. Translate that too.
+    const apiErrorInStdout = extractClaudeIsError(stdout)
+    if (apiErrorInStdout) {
+      return {
+        content: "",
+        error: renderFriendlyError(friendlyModelError(apiErrorInStdout)),
         duration: Date.now() - start,
       }
     }
@@ -345,6 +373,9 @@ export async function executeClaudeCodeStreaming(
   let streamBilledModel: string | undefined
   let streamUsage: TokenUsage | undefined
   let streamSessionId: string | undefined
+  /** If the terminal `result` event carries is_error, we stash it here and
+   *  surface the translated message instead of treating `result` as agent text. */
+  let streamApiError: string | undefined
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -399,15 +430,19 @@ export async function executeClaudeCodeStreaming(
               onDelta(event.delta.text, fullText)
             }
 
-            // "result" event contains final text
+            // "result" event contains final text (or an API error, when is_error).
             if (event.type === "result" && event.result) {
-              const resultText = typeof event.result === "string"
-                ? event.result
-                : event.result
-              if (typeof resultText === "string" && resultText.length > fullText.length) {
-                const delta = resultText.slice(fullText.length)
-                fullText = resultText
-                if (delta) onDelta(delta, fullText)
+              if (event.is_error && typeof event.result === "string") {
+                streamApiError = event.result
+              } else {
+                const resultText = typeof event.result === "string"
+                  ? event.result
+                  : event.result
+                if (typeof resultText === "string" && resultText.length > fullText.length) {
+                  const delta = resultText.slice(fullText.length)
+                  fullText = resultText
+                  if (delta) onDelta(delta, fullText)
+                }
               }
               // Final event also carries the authoritative usage + model + session.
               if (event.usage) {
@@ -451,8 +486,19 @@ export async function executeClaudeCodeStreaming(
       const stderr = typeof result.stderr === "string" ? result.stderr : ""
       return {
         content: "",
-        error: stderr || `Claude Code exited with code ${result.exitCode}`,
+        error: renderFriendlyError(friendlyModelError(stderr || `Claude Code exited with code ${result.exitCode}`)),
         duration: Date.now() - start,
+      }
+    }
+
+    if (streamApiError) {
+      return {
+        content: "",
+        error: renderFriendlyError(friendlyModelError(streamApiError)),
+        duration: Date.now() - start,
+        usage: streamUsage,
+        billedModel: streamBilledModel,
+        claudeSessionId: streamSessionId,
       }
     }
 
@@ -466,7 +512,7 @@ export async function executeClaudeCodeStreaming(
   } catch (error: any) {
     return {
       content: fullText || "",
-      error: error.message,
+      error: renderFriendlyError(friendlyModelError(error.message)),
       duration: Date.now() - start,
       usage: streamUsage,
       billedModel: streamBilledModel,
