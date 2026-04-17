@@ -7,6 +7,7 @@ import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
+import { UI_LABELS, GLOSSARY } from "./ui-labels"
 
 // --- Kanban Board Dashboard ---
 //
@@ -93,6 +94,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/live") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderLiveHtml())
+    return
+  }
+  if (method === "GET" && path === "/glossary") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderGlossaryHtml())
     return
   }
   if (method === "GET" && path === "/sortable.min.js") {
@@ -964,19 +970,21 @@ function renderBoardHtml(): string {
 // --- Live full-screen page (/live) ---
 
 function renderLiveHtml(): string {
+  const labelsScript = `<script>window.UI_LABELS = ${JSON.stringify(UI_LABELS)};</script>`
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentX — Live</title>
+<title>${escapeHtmlServer(UI_LABELS.brand)} — ${escapeHtmlServer(UI_LABELS.subtitle)}</title>
 <style>${LIVE_CSS}</style>
 </head>
 <body>
 <header>
-  <div class="brand">AgentX <span class="sub">· Live</span></div>
+  <div class="brand">${escapeHtmlServer(UI_LABELS.brand)} <span class="sub">· ${escapeHtmlServer(UI_LABELS.subtitle)}</span></div>
   <div id="summary" class="summary"></div>
   <div class="spacer"></div>
+  <a href="/glossary" class="link" title="What do the terms mean?">? Glossary</a>
   <a href="/" class="link">← Boards</a>
   <span id="ts" class="ts" title="Last update"></span>
   <span id="conn" class="conn ok" title="connected">●</span>
@@ -984,7 +992,7 @@ function renderLiveHtml(): string {
 <main id="grid"></main>
 <aside id="history-panel" class="history-panel hidden" aria-hidden="true">
   <header>
-    <h2 id="history-panel-title">Recent activities</h2>
+    <h2 id="history-panel-title">${escapeHtmlServer(UI_LABELS.historyPanelTitle)}</h2>
     <span class="history-panel-source" id="history-panel-source"></span>
     <button class="history-panel-close" id="history-panel-close" aria-label="Close">×</button>
   </header>
@@ -995,14 +1003,66 @@ function renderLiveHtml(): string {
   <div class="task-modal-card" role="dialog" aria-modal="true">
     <header>
       <span class="task-modal-channel" id="task-modal-channel"></span>
-      <h2 id="task-modal-title">Streaming task output</h2>
-      <span class="task-modal-status" id="task-modal-status">connecting…</span>
+      <h2 id="task-modal-title">${escapeHtmlServer(UI_LABELS.taskModalTitle)}</h2>
+      <span class="task-modal-status" id="task-modal-status">${escapeHtmlServer(UI_LABELS.taskModalConnecting)}</span>
       <button class="task-modal-close" id="task-modal-close" aria-label="Close">×</button>
     </header>
     <pre id="task-modal-output" class="task-modal-output"></pre>
   </div>
 </div>
+${labelsScript}
 <script>${LIVE_JS}</script>
+</body>
+</html>`
+}
+
+/** Minimal HTML escaper for server-rendered label text. */
+function escapeHtmlServer(s: string): string {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string))
+}
+
+/** /glossary — plain-English definitions of the terms that appear in the dashboard. */
+function renderGlossaryHtml(): string {
+  const items = GLOSSARY.map((g) => {
+    const alias = g.alias ? `<span class="alias" title="Schema key">${escapeHtmlServer(g.alias)}</span>` : ""
+    return `<article class="term"><h3>${escapeHtmlServer(g.term)}${alias}</h3><p>${escapeHtmlServer(g.definition)}</p></article>`
+  }).join("")
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtmlServer(UI_LABELS.brand)} — Glossary</title>
+<style>
+:root { --bg:#0b0d14; --card:#151823; --border:#2a2d3a; --text:#e6e8ef; --muted:#8b8fa3; --accent:#6366f1; }
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:14px 22px;background:#10131c;border-bottom:1px solid var(--border);position:sticky;top:0}
+.brand{font-weight:600;color:var(--accent);font-size:15px}
+.sub{color:var(--muted);font-weight:500}
+.spacer{flex:1}
+a.link{color:var(--muted);text-decoration:none;font-size:13px;padding:4px 10px;border:1px solid var(--border);border-radius:6px}
+a.link:hover{color:var(--accent);border-color:var(--accent)}
+main{max-width:720px;margin:0 auto;padding:28px 22px 60px}
+h1{font-size:22px;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 26px}
+article.term{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:12px 0}
+article.term h3{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);background:rgba(99,102,241,0.14);padding:2px 7px;border-radius:3px;font-weight:500;font-family:ui-monospace,monospace}
+article.term p{margin:0;color:var(--text)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">${escapeHtmlServer(UI_LABELS.brand)} <span class="sub">· Glossary</span></div>
+  <div class="spacer"></div>
+  <a href="/live" class="link">← Back to dashboard</a>
+</header>
+<main>
+  <h1>Plain-English glossary</h1>
+  <p class="lead">What the terms on the dashboard mean. Schema keys (shown in the pill on the right of each term) are what you'd write in <code>agentx.json</code> — the dashboard just relabels them for readability.</p>
+  ${items}
+</main>
 </body>
 </html>`
 }
@@ -1161,11 +1221,12 @@ function render(snapshot) {
     }
     grid.appendChild(renderNode(node));
   }
+  const L = window.UI_LABELS || {};
   document.getElementById('summary').innerHTML =
-    '<span><b>' + summary.reachable + '/' + summary.nodes + '</b> nodes</span>' +
-    '<span><b>' + summary.agents + '</b> agents</span>' +
-    '<span><b>' + summary.busy + '</b> active now</span>' +
-    '<span><b>' + summary.errors + '</b> errors</span>';
+    '<span><b>' + summary.reachable + '/' + summary.nodes + '</b> ' + escapeHtml(L.nodes || 'machines') + '</span>' +
+    '<span><b>' + summary.agents + '</b> ' + escapeHtml(L.agentsCount || 'agents') + '</span>' +
+    '<span><b>' + summary.busy + '</b> ' + escapeHtml(L.activeNow || 'handling now') + '</span>' +
+    '<span><b>' + summary.errors + '</b> ' + escapeHtml(L.errorsCount || 'failed') + '</span>';
 }
 
 function renderNode(node) {
@@ -1179,7 +1240,8 @@ function renderNode(node) {
   const g = sec.querySelector('.grid');
   if (!node.reachable || node.agents.length === 0) {
     const empty = document.createElement('div'); empty.style.color = 'var(--muted)'; empty.style.padding = '8px 4px';
-    empty.textContent = node.reachable ? 'No agents on this node.' : 'Unreachable.';
+    const L = window.UI_LABELS || {};
+    empty.textContent = node.reachable ? (L.noAgentsOnNode || 'No agents on this node.') : (L.unreachable || 'Unreachable.');
     g.appendChild(empty);
   } else {
     for (const a of node.agents) g.appendChild(renderAgent(a, node));
@@ -1206,28 +1268,32 @@ function renderAgent(a, node) {
       '<span class="elapsed">' + elapsed + '</span>' +
     '</div>';
   }).join('');
+  const L = window.UI_LABELS || {};
+  const stats = (L.stats) || { active: 'Active', total: 'Total', errors: 'Err' };
+  const tierLabels = (L.tierLabels) || {};
+  const tierDisplay = tierLabels[a.tier] || a.tier || '';
   const tasksBlock = tasks
     ? '<div class="tasks">' + tasks + '</div>'
-    : (busy ? '<div class="tasks"><div class="task"><span class="elapsed">running · no preview</span></div></div>'
-            : '<div class="idle">idle</div>');
+    : (busy ? '<div class="tasks"><div class="task"><span class="elapsed">' + escapeHtml(L.runningNoPreview || 'running · no preview') + '</span></div></div>'
+            : '<div class="idle">' + escapeHtml(L.idle || 'idle') + '</div>');
   const modelLabel = a.model ? '<span class="model" title="Model">' + escapeHtml(shortenModel(a.model)) + '</span>' : '';
   const lastLabel = a.lastActive
     ? '<span class="last" title="' + escapeHtml(new Date(a.lastActive).toLocaleString()) + '">last ' + escapeHtml(fmtAgo(a.lastActive)) + '</span>'
-    : '<span class="last muted">never ran</span>';
+    : '<span class="last muted">' + escapeHtml(L.neverRan || 'never ran') + '</span>';
   const recentLink = nodeUrl
-    ? '<a class="recent-link" href="#" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '">Recent activities →</a>'
+    ? '<a class="recent-link" href="#" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '">' + escapeHtml(L.recentActivities || 'Recent activities →') + '</a>'
     : '';
   card.innerHTML =
     '<div class="top">' +
       '<span class="dot"></span>' +
       '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
-      '<span class="tier">' + escapeHtml(a.tier || '') + '</span>' +
+      '<span class="tier" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' +
     '</div>' +
     '<div class="meta">' + modelLabel + lastLabel + '</div>' +
     '<div class="stats">' +
-      '<span>Active <b>' + (a.active || 0) + '</b></span>' +
-      '<span>Total <b>' + (a.total || 0) + '</b></span>' +
-      '<span class="err">Err <b>' + (a.errors || 0) + '</b></span>' +
+      '<span>' + escapeHtml(stats.active) + ' <b>' + (a.active || 0) + '</b></span>' +
+      '<span>' + escapeHtml(stats.total) + ' <b>' + (a.total || 0) + '</b></span>' +
+      '<span class="err">' + escapeHtml(stats.errors) + ' <b>' + (a.errors || 0) + '</b></span>' +
     '</div>' + tasksBlock + recentLink;
   return card;
 }
@@ -1314,6 +1380,7 @@ function closeTaskModal() {
 function openTaskModal(opts) {
   if (!taskModal.el || !opts.taskId || !opts.nodeUrl) return;
   if (taskModal.currentTaskId === opts.taskId) { taskModal.el.classList.remove('hidden'); return; }
+  const L = window.UI_LABELS || {};
   closeTaskModal();
   taskModal.currentTaskId = opts.taskId;
   taskModal.el.classList.remove('hidden');
@@ -1322,7 +1389,7 @@ function openTaskModal(opts) {
   taskModal.title.title = opts.preview || '';
   taskModal.channel.textContent = opts.channel || '—';
   taskModal.output.textContent = '';
-  setStatus('connecting…', '');
+  setStatus(L.taskModalConnecting || 'connecting…', '');
   const url = '/api/task/stream?node=' + encodeURIComponent(opts.nodeUrl)
     + '&agent=' + encodeURIComponent(opts.agentId)
     + '&task=' + encodeURIComponent(opts.taskId);
@@ -1330,14 +1397,14 @@ function openTaskModal(opts) {
   try { es = new EventSource(url); } catch (e) { setStatus('connect failed', 'err'); return; }
   taskModal.es = es;
   es.addEventListener('start', (ev) => {
-    setStatus('live', 'live');
-    try { const data = JSON.parse(ev.data); if (data.initial) appendOutput(data.initial); if (data.done) setStatus('finished', 'done'); } catch {}
+    setStatus(L.taskModalLive || 'live', 'live');
+    try { const data = JSON.parse(ev.data); if (data.initial) appendOutput(data.initial); if (data.done) setStatus(L.taskModalFinished || 'finished', 'done'); } catch {}
   });
   es.addEventListener('chunk', (ev) => {
     try { const data = JSON.parse(ev.data); appendOutput(data.text || ''); } catch {}
   });
   es.addEventListener('end', () => {
-    setStatus('finished', 'done');
+    setStatus(L.taskModalFinished || 'finished', 'done');
     try { es.close(); } catch {}
     taskModal.es = null;
   });
@@ -1372,10 +1439,11 @@ function closeHistoryPanel() {
 
 async function openHistoryPanel(opts) {
   if (!historyPanel.el) return;
+  const L = window.UI_LABELS || {};
   historyPanel.current = { agentId: opts.agentId, nodeUrl: opts.nodeUrl };
-  historyPanel.title.textContent = (opts.agentName || opts.agentId) + ' · Recent activities';
+  historyPanel.title.textContent = (opts.agentName || opts.agentId) + ' · ' + (L.historyPanelTitle || 'Recent activities');
   historyPanel.source.textContent = opts.nodeUrl;
-  historyPanel.body.innerHTML = '<div class="history-empty">loading…</div>';
+  historyPanel.body.innerHTML = '<div class="history-empty">' + escapeHtml(L.historyLoading || 'loading…') + '</div>';
   historyPanel.el.classList.remove('hidden');
   historyPanel.el.setAttribute('aria-hidden', 'false');
   const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
@@ -1391,8 +1459,9 @@ async function openHistoryPanel(opts) {
 }
 
 function renderHistoryList(items, opts) {
+  const L = window.UI_LABELS || {};
   if (!Array.isArray(items) || items.length === 0) {
-    historyPanel.body.innerHTML = '<div class="history-empty">No recorded tasks yet.</div>';
+    historyPanel.body.innerHTML = '<div class="history-empty">' + escapeHtml(L.historyEmpty || 'No recorded tasks yet.') + '</div>';
     return;
   }
   historyPanel.body.innerHTML = '';
@@ -1432,6 +1501,7 @@ function fmtAgoShort(iso) {
 // dump the transcript + final response, no SSE.
 async function openTaskRecord(opts) {
   if (!taskModal.el) return;
+  const L = window.UI_LABELS || {};
   closeTaskModal();
   taskModal.currentTaskId = opts.taskId;
   taskModal.el.classList.remove('hidden');
@@ -1440,21 +1510,21 @@ async function openTaskRecord(opts) {
   taskModal.title.title = opts.preview || '';
   taskModal.channel.textContent = opts.channel || '—';
   taskModal.output.textContent = '';
-  setStatus('loading…', '');
+  setStatus(L.historyLoading || 'loading…', '');
   const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
     + '&agent=' + encodeURIComponent(opts.agentId) + '&task=' + encodeURIComponent(opts.taskId);
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const rec = await r.json();
-    setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
+    setStatus(rec.ok ? (L.taskModalArchived || 'archived') : (L.taskModalFinished || 'failed'), rec.ok ? 'done' : 'err');
     if (rec.transcript) appendOutput(rec.transcript);
     if (rec.responseText && rec.transcript.indexOf(rec.responseText) === -1) {
-      appendOutput('\\n\\n--- final response ---\\n' + rec.responseText);
+      appendOutput('\\n\\n--- ' + (L.taskModalFinalResponse || 'Final reply') + ' ---\\n' + rec.responseText);
     }
     if (rec.error) appendOutput('\\n\\n[error] ' + rec.error);
   } catch (e) {
-    setStatus('load failed', 'err');
+    setStatus(L.taskModalLoadFailed || 'couldn\\'t load', 'err');
     appendOutput('Error: ' + e.message);
   }
 }
