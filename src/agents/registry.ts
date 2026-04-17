@@ -167,6 +167,8 @@ export class AgentRegistry {
   private activeSouls: Map<string, string> = new Map()
   /** Live output captured per running task id — drives the dashboard streaming modal. */
   private taskOutputs: Map<string, TaskOutput> = new Map()
+  /** Last completed task summary per agent — single-line blurb for the dashboard card. */
+  private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -669,6 +671,13 @@ export class AgentRegistry {
           transcript: output.buffer,
         }
         this.persistTaskRecord(record)
+        // Stash a one-line summary so the dashboard card can show "what the
+        // agent did last" without reading from disk on every snapshot.
+        const rawSummary = (record.responseText || record.error || "").trim()
+        if (rawSummary) {
+          const firstLine = rawSummary.split(/\r?\n/)[0].slice(0, 140)
+          this.lastSummaries.set(task.agentId, { text: firstLine, at: endedAt, ok: record.ok })
+        }
       } catch (e: any) {
         this.log(`[${task.agentId}] task history persist failed: ${e?.message}`)
       }
@@ -713,19 +722,24 @@ export class AgentRegistry {
     errors: number
     lastActive?: Date
     runningTasks: RunningTask[]
+    lastSummary?: { text: string; at: string; ok: boolean }
   }> {
-    return Array.from(this.agents.values()).map((s) => ({
-      id: s.id,
-      name: s.def.name,
-      tier: s.def.tier,
-      model: s.def.model,
-      workspace: s.def.workspace,
-      active: s.activeTasks,
-      total: s.totalTasks,
-      errors: s.errors,
-      lastActive: s.lastActive,
-      runningTasks: s.runningTasks,
-    }))
+    return Array.from(this.agents.values()).map((s) => {
+      const summary = this.lastSummaries.get(s.id)
+      return {
+        id: s.id,
+        name: s.def.name,
+        tier: s.def.tier,
+        model: s.def.model,
+        workspace: s.def.workspace,
+        active: s.activeTasks,
+        total: s.totalTasks,
+        errors: s.errors,
+        lastActive: s.lastActive,
+        runningTasks: s.runningTasks,
+        lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
+      }
+    })
   }
 
   /**
@@ -738,6 +752,39 @@ export class AgentRegistry {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const file = resolve(dir, `${this.safe(record.id)}.json`)
     writeFileSync(file, JSON.stringify(record, null, 2), "utf-8")
+  }
+
+  /**
+   * Rebuild the in-memory lastSummaries cache from disk so dashboard cards
+   * show the most recent "what did they do" line even right after a restart.
+   * Called once on daemon startup — one file read per agent.
+   */
+  hydrateLastSummariesFromDisk(): number {
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR)
+    if (!existsSync(root)) return 0
+    let loaded = 0
+    for (const agentDir of readdirSync(root)) {
+      const agentPath = resolve(root, agentDir)
+      let days: string[]
+      try { days = readdirSync(agentPath).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse() } catch { continue }
+      outer: for (const day of days) {
+        const dayDir = resolve(agentPath, day)
+        let files: string[]
+        try { files = readdirSync(dayDir).filter((f) => f.endsWith(".json")).sort().reverse() } catch { continue }
+        for (const f of files) {
+          try {
+            const rec = JSON.parse(readFileSync(resolve(dayDir, f), "utf-8")) as TaskRecord
+            const raw = (rec.responseText || rec.error || "").trim()
+            if (!raw) continue
+            const firstLine = raw.split(/\r?\n/)[0].slice(0, 140)
+            this.lastSummaries.set(rec.agentId, { text: firstLine, at: new Date(rec.endedAt), ok: rec.ok })
+            loaded++
+            break outer
+          } catch { /* skip corrupt file */ }
+        }
+      }
+    }
+    return loaded
   }
 
   /**

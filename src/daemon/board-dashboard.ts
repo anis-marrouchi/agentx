@@ -468,6 +468,7 @@ interface NodeLive {
     total: number
     errors: number
     lastActive?: string
+    lastSummary?: { text: string; at: string; ok: boolean }
     runningTasks?: Array<{
       id: string
       messagePreview: string
@@ -477,6 +478,20 @@ interface NodeLive {
       startedAt: string
     }>
   }>
+  /** Today's per-agent usage rollup pulled from /health. */
+  usage?: {
+    date: string
+    agents: Record<string, {
+      tasks: number
+      totalDuration: number
+      errors: number
+      inputTokens: number
+      outputTokens: number
+      cacheReadTokens: number
+      cacheCreateTokens: number
+      byChannel?: Record<string, { tasks: number }>
+    }>
+  }
 }
 interface LiveSnapshot {
   ts: string
@@ -502,6 +517,7 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
       id: a.id, name: a.name, tier: a.tier, model: a.model,
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
+      lastSummary: a.lastSummary,
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
     }))
     if (healthRes && healthRes.ok) {
@@ -509,6 +525,9 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
       base.uptimeSec = h.uptime
       base.name = h.node?.name || h.node?.id || url
       base.id = h.node?.id || url
+      // /health already embeds today's usage rollup — reuse it so the
+      // dashboard doesn't need a separate /usage call per node.
+      if (h.usage) base.usage = h.usage
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
@@ -989,6 +1008,7 @@ function renderLiveHtml(): string {
   <span id="ts" class="ts" title="Last update"></span>
   <span id="conn" class="conn ok" title="connected">●</span>
 </header>
+<section id="today-strip" class="today-strip hidden" aria-label="Today's activity"></section>
 <main id="grid"></main>
 <aside id="history-panel" class="history-panel hidden" aria-hidden="true">
   <header>
@@ -1092,6 +1112,23 @@ header .conn.warn { color: var(--yellow); }
 header .conn.err { color: var(--red); }
 
 main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.today-strip { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 20px;
+  background: linear-gradient(90deg, rgba(99,102,241,0.12), rgba(34,197,94,0.08));
+  border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.today-strip.hidden { display: none; }
+.today-strip .lbl { text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; color: var(--muted); margin-right: 4px; }
+.today-strip b { color: var(--text); font-weight: 600; font-size: 13px; }
+.today-strip .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  background: rgba(21,24,35,0.6); border: 1px solid var(--border); border-radius: 20px; }
+.today-strip .ch-breakdown { color: var(--muted); font-size: 11px; }
+.today-strip .ch-breakdown .name { color: var(--text); font-weight: 500; }
+
+.agent .summary { font-size: 11px; color: var(--muted); padding: 6px 8px; border-radius: 4px;
+  background: rgba(255,255,255,0.02); border-left: 2px solid var(--accent);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.agent .summary.fail { border-left-color: var(--red); }
+.agent .summary .when { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
 
 .node { background: var(--node); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .node > header { background: transparent; position: static; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 10px; }
@@ -1227,6 +1264,69 @@ function render(snapshot) {
     '<span><b>' + summary.agents + '</b> ' + escapeHtml(L.agentsCount || 'agents') + '</span>' +
     '<span><b>' + summary.busy + '</b> ' + escapeHtml(L.activeNow || 'handling now') + '</span>' +
     '<span><b>' + summary.errors + '</b> ' + escapeHtml(L.errorsCount || 'failed') + '</span>';
+
+  renderTodayStrip(snapshot);
+}
+
+// Aggregate per-agent usage from every node, then paint the "Today" strip.
+// Zero-cost if the snapshot has no usage data (e.g. pre-1.0 daemons).
+function renderTodayStrip(snapshot) {
+  const strip = document.getElementById('today-strip');
+  if (!strip) return;
+  let tasks = 0, durationMs = 0, errors = 0, inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreate = 0;
+  const byChannel = {};
+  let hasData = false;
+  for (const node of snapshot.nodes) {
+    if (!node.usage || !node.usage.agents) continue;
+    hasData = true;
+    for (const agentId of Object.keys(node.usage.agents)) {
+      const u = node.usage.agents[agentId];
+      tasks += u.tasks || 0;
+      durationMs += u.totalDuration || 0;
+      errors += u.errors || 0;
+      inputTokens += u.inputTokens || 0;
+      outputTokens += u.outputTokens || 0;
+      cacheRead += u.cacheReadTokens || 0;
+      cacheCreate += u.cacheCreateTokens || 0;
+      if (u.byChannel) {
+        for (const ch of Object.keys(u.byChannel)) {
+          byChannel[ch] = (byChannel[ch] || 0) + (u.byChannel[ch].tasks || 0);
+        }
+      }
+    }
+  }
+  if (!hasData || tasks === 0) { strip.classList.add('hidden'); return; }
+  strip.classList.remove('hidden');
+  const topChannels = Object.keys(byChannel)
+    .sort((a, b) => byChannel[b] - byChannel[a])
+    .slice(0, 4)
+    .map(ch => '<span class="name">' + escapeHtml(ch) + '</span> (' + byChannel[ch] + ')')
+    .join(' · ');
+  const durationStr = fmtDuration(durationMs);
+  const tokensStr = fmtTokens(inputTokens + outputTokens + cacheRead + cacheCreate);
+  strip.innerHTML =
+    '<span class="chip"><span class="lbl">Today</span><b>' + tasks + '</b> tasks</span>' +
+    '<span class="chip"><span class="lbl">Time</span><b>' + escapeHtml(durationStr) + '</b></span>' +
+    '<span class="chip"><span class="lbl">Tokens</span><b>' + escapeHtml(tokensStr) + '</b></span>' +
+    (errors > 0 ? '<span class="chip" style="border-color:var(--red);color:var(--red)"><span class="lbl" style="color:var(--red)">Failed</span><b style="color:var(--red)">' + errors + '</b></span>' : '') +
+    (topChannels ? '<span class="ch-breakdown">' + topChannels + '</span>' : '');
+}
+
+function fmtDuration(ms) {
+  if (!ms) return '0s';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return h + 'h ' + (rm < 10 ? '0' : '') + rm + 'm';
+}
+
+function fmtTokens(n) {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'k';
+  return (n / 1_000_000).toFixed(2).replace(/\\.00$/, '') + 'M';
 }
 
 function renderNode(node) {
@@ -1283,6 +1383,14 @@ function renderAgent(a, node) {
   const recentLink = nodeUrl
     ? '<a class="recent-link" href="#" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '">' + escapeHtml(L.recentActivities || 'Recent activities →') + '</a>'
     : '';
+  // One-line "what did they do last" blurb so operators can scan what happened
+  // without clicking into each card.
+  const summaryBlock = (!busy && a.lastSummary && a.lastSummary.text)
+    ? '<div class="summary' + (a.lastSummary.ok === false ? ' fail' : '') + '" title="' + escapeHtml(a.lastSummary.text) + '">' +
+        escapeHtml(a.lastSummary.text) +
+        (a.lastSummary.at ? ' <span class="when">· ' + escapeHtml(fmtAgo(a.lastSummary.at)) + '</span>' : '') +
+      '</div>'
+    : '';
   card.innerHTML =
     '<div class="top">' +
       '<span class="dot"></span>' +
@@ -1294,7 +1402,7 @@ function renderAgent(a, node) {
       '<span>' + escapeHtml(stats.active) + ' <b>' + (a.active || 0) + '</b></span>' +
       '<span>' + escapeHtml(stats.total) + ' <b>' + (a.total || 0) + '</b></span>' +
       '<span class="err">' + escapeHtml(stats.errors) + ' <b>' + (a.errors || 0) + '</b></span>' +
-    '</div>' + tasksBlock + recentLink;
+    '</div>' + tasksBlock + summaryBlock + recentLink;
   return card;
 }
 

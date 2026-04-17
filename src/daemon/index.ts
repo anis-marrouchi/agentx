@@ -229,6 +229,13 @@ export class AgentXDaemon {
       if (removed > 0) this.log(`  Pruned ${removed} old task-history folder(s)`)
     } catch { /* best-effort */ }
 
+    // Warm the per-agent last-summary cache from disk so dashboard cards have
+    // something to show the instant the daemon boots.
+    try {
+      const loaded = this.registry.hydrateLastSummariesFromDisk()
+      if (loaded > 0) this.log(`  Loaded last-activity summaries for ${loaded} agent(s)`)
+    } catch { /* best-effort */ }
+
     this.log("")
     this.log("  Ready.")
     this.log("")
