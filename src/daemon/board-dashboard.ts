@@ -126,7 +126,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Admin panel — ongoing management without editing JSON.
   if (method === "GET" && path === "/admin") {
-    handleAdminGet(req, res, buildTopbarPeers(ctx.config))
+    handleAdminGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
   }
   // Cross-mesh admin proxy: when a non-primary peer is selected (header
@@ -140,6 +140,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
       await proxyAdminToPeer(req, res, peer, path + (url.search || ""))
       return
+    }
+    // Local admin calls: enforce dashboard.token (if configured) BEFORE the
+    // dispatcher runs. The legacy ctx.token check further down only catches
+    // paths nothing else handled — admin routes were silently bypassing it.
+    if (ctx.token) {
+      const authHeader = req.headers.authorization || ""
+      const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+      if (got !== ctx.token) {
+        const tokStore = new TokenStore()
+        const rec = got ? tokStore.verify(got) : null
+        if (!rec || !recordHasScope(rec, "dashboard:write")) {
+          sendJson(res, 401, { error: "unauthorized" })
+          return
+        }
+      }
     }
   }
   if (method === "GET" && path === "/api/admin/config") {

@@ -24,9 +24,9 @@ import { renderTopbar, TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT, type TopbarPeer }
 // HTTP entry points
 // ========================================================================
 
-export function handleAdminGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = []): void {
+export function handleAdminGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = [], localToken?: string): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderAdminHtml(peers))
+  res.end(renderAdminHtml(peers, localToken))
 }
 
 export async function handleAdminConfigGet(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -824,8 +824,14 @@ export const _reserved = { rmSync }
 // HTML
 // ========================================================================
 
-function renderAdminHtml(peers: TopbarPeer[]): string {
+function renderAdminHtml(peers: TopbarPeer[], localToken?: string): string {
   const topbar = renderTopbar({ activeTab: "admin", subtitle: "Settings", peers })
+  // Inject the local dashboard token so the admin UI can send it as a
+  // Bearer header on every same-origin request. Scoped per-page — only
+  // useful while this admin view is open in the browser.
+  const tokenScript = localToken
+    ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(localToken)};</script>`
+    : ""
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -1065,6 +1071,7 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
   border-top:1px solid var(--ax-border);background:var(--ax-bg-elev);font-family:var(--ax-mono)}
 </style>
 
+${tokenScript}
 <style>
 .peer-banner{display:none;padding:10px 20px;background:color-mix(in oklch,var(--ax-accent) 14%,var(--ax-surface));
   border-bottom:1px solid color-mix(in oklch,var(--ax-accent) 40%,var(--ax-border-2));
@@ -1364,6 +1371,11 @@ async function req(method, url, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'agentx-admin' } };
   const peer = currentPeer();
   if (peer !== 'primary') opts.headers['X-Agentx-Peer'] = peer;
+  // If this dashboard has a local token configured, inject it on every
+  // request so the new /api/admin/* auth gate lets us through. Peer-proxy
+  // requests still work because the server-side proxy swaps this header
+  // for the peer's own token before forwarding.
+  if (window.AX_LOCAL_TOKEN) opts.headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
   if (body !== undefined) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
   const data = await r.json().catch(() => ({}));
