@@ -48,7 +48,7 @@ function parseCronField(field: string, min: number, max: number): number[] {
   return [...new Set(values)].sort((a, b) => a - b)
 }
 
-function getNextCronDate(expression: string, after: Date, timezone: string): Date {
+export function getNextCronDate(expression: string, after: Date, timezone: string): Date {
   const fields = expression.trim().split(/\s+/)
   if (fields.length !== 5) throw new Error(`Invalid cron: ${expression}`)
 

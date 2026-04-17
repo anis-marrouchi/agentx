@@ -207,6 +207,17 @@ export const daemonConfigSchema = z.object({
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
+  /** Registered inbound webhooks — an inventory the dashboard manages. Each
+   *  entry binds an (agent, source) pair to an optional signing secret. The
+   *  actual inbound URL is always POST /webhook/<agentId>/<source>. */
+  webhooks: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "webhook id must be lowercase slug"),
+    source: z.enum(["gitlab", "github", "sentry", "stripe", "discord", "slack", "custom"]),
+    agentId: z.string(),
+    secretEnv: z.string().optional(),
+    description: z.string().optional(),
+    enabled: z.boolean().default(true),
+  })).default([]),
   /** Session cache-reuse policy. `staleMinutes` controls how long a Claude
    *  session can idle before we rebuild the prompt from scratch (paying the
    *  full cache-create tax again). Longer is cheaper at Opus rates but means

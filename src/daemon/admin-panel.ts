@@ -38,6 +38,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
     const dispatch: Record<string, () => unknown> = {
       "GET /api/admin/state": () => getAdminState(),
       "POST /api/admin/agents": () => addAgent(body),
+      "PATCH /api/admin/agents": () => editAgent(body),
       "DELETE /api/admin/agents": () => deleteAgent(body),
       "POST /api/admin/agents/access": () => setAgentAccess(body),
       "POST /api/admin/channels/telegram": () => addTelegramAccount(body),
@@ -50,6 +51,14 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/tokens": () => createToken(body),
       "DELETE /api/admin/tokens": () => revokeToken(body),
       "POST /api/admin/agents/test": () => testDriveAgent(body),
+      "PATCH /api/admin/channels/telegram": () => editTelegramAccount(body),
+      "POST /api/admin/crons/preview": () => previewCron(body),
+      "POST /api/admin/webhooks": () => addWebhook(body),
+      "PATCH /api/admin/webhooks": () => editWebhook(body),
+      "DELETE /api/admin/webhooks": () => deleteWebhook(body),
+      "POST /api/admin/mesh/peers": () => addMeshPeer(body),
+      "DELETE /api/admin/mesh/peers": () => deleteMeshPeer(body),
+      "POST /api/admin/mesh/toggle": () => toggleMesh(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -96,6 +105,11 @@ function getAdminState() {
     mentions: a.mentions || [],
     workspace: a.workspace,
     access: a.access || "private",
+    // Edit-form fields — cheap to include, saves a second round-trip.
+    systemPrompt: a.systemPrompt || "",
+    maxConcurrent: a.maxConcurrent ?? 1,
+    maxExecutionMinutes: a.maxExecutionMinutes ?? 20,
+    permissionMode: a.permissionMode || "default",
   }))
   const telegramAccounts = cfg.channels?.telegram?.accounts || {}
   const telegram = {
@@ -114,7 +128,26 @@ function getAdminState() {
     prompt: (c.prompt || "").slice(0, 200),
     enabled: c.enabled !== false,
   }))
-  return { exists: true, agents, telegram, crons, nodeName: cfg.node?.name }
+  const webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks.map((w: any) => ({
+    id: w.id,
+    source: w.source,
+    agentId: w.agentId,
+    secretEnv: w.secretEnv || "",
+    description: w.description || "",
+    enabled: w.enabled !== false,
+  })) : []
+  const mesh = {
+    enabled: !!cfg.mesh?.enabled,
+    discovery: cfg.mesh?.discovery || "static",
+    peers: (cfg.mesh?.peers || []).map((p: any) => ({
+      url: p.url,
+      name: p.name,
+      hasToken: !!p.token,
+    })),
+  }
+  // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
+  const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
+  return { exists: true, agents, telegram, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
 }
 
 // ========================================================================
@@ -245,6 +278,36 @@ function addAgent(body: any) {
   return { summary }
 }
 
+function editAgent(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("Agent id is required.")
+  const patch = body?.patch || {}
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[id]) throw new Error(`Agent "${id}" not found.`)
+    const a = cfg.agents[id]
+    // Whitelist every field the admin UI is allowed to change. Anything outside
+    // this list requires the raw JSON editor — keeps the simple form from
+    // silently nuking nested config shapes.
+    if (typeof patch.name === "string" && patch.name.trim()) a.name = patch.name.trim()
+    if (typeof patch.model === "string") a.model = patch.model.trim() || undefined
+    if (typeof patch.tier === "string" && ["claude-code", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
+    if (typeof patch.systemPrompt === "string") a.systemPrompt = patch.systemPrompt.trim() || undefined
+    if (Array.isArray(patch.mentions)) {
+      a.mentions = patch.mentions.map((m: any) => String(m).trim()).filter(Boolean)
+    } else if (typeof patch.triggerWords === "string") {
+      a.mentions = normaliseMentions(patch.triggerWords)
+    }
+    if (typeof patch.maxConcurrent === "number" && patch.maxConcurrent >= 1) a.maxConcurrent = patch.maxConcurrent
+    if (typeof patch.maxExecutionMinutes === "number" && patch.maxExecutionMinutes >= 1 && patch.maxExecutionMinutes <= 240) {
+      a.maxExecutionMinutes = patch.maxExecutionMinutes
+    }
+    if (typeof patch.permissionMode === "string") a.permissionMode = patch.permissionMode
+    if (patch.access === "public" || patch.access === "private") a.access = patch.access
+    return `updated agent "${id}"`
+  })
+  return { summary }
+}
+
 function deleteAgent(body: any) {
   const id = String(body?.id || "").trim()
   if (!id) throw new Error("Agent id is required.")
@@ -287,6 +350,149 @@ function addTelegramAccount(body: any) {
     return `added telegram account "${id}"`
   })
   return { summary, hint: `Add ${botTokenEnv}=<bot-token> to your .env file.` }
+}
+
+function editTelegramAccount(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("Account id is required.")
+  const patch = body?.patch || {}
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const acc = cfg.channels?.telegram?.accounts?.[id]
+    if (!acc) throw new Error(`Account "${id}" not found.`)
+    if (typeof patch.agentBinding === "string" && patch.agentBinding.trim()) {
+      if (!cfg.agents?.[patch.agentBinding]) throw new Error(`Unknown agent "${patch.agentBinding}".`)
+      acc.agentBinding = patch.agentBinding.trim()
+    }
+    if (typeof patch.botUsername === "string") acc.botUsername = patch.botUsername.trim()
+    if (typeof patch.botTokenEnv === "string" && patch.botTokenEnv.trim()) {
+      acc.botToken = "${" + patch.botTokenEnv.trim() + "}"
+    }
+    return `updated telegram account "${id}"`
+  })
+  return { summary }
+}
+
+const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "discord", "slack", "custom"] as const
+
+function addWebhook(body: any) {
+  const id = String(body?.id || "").trim()
+  const source = String(body?.source || "").trim()
+  const agentId = String(body?.agentId || "").trim()
+  const secretEnv = String(body?.secretEnv || "").trim()
+  const description = String(body?.description || "").trim()
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Webhook id must be lowercase (letters, digits, -, _).")
+  if (!WEBHOOK_SOURCES.includes(source as any)) throw new Error(`Unknown source: ${source}`)
+  if (!agentId) throw new Error("Pick an agent to bind the webhook to.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Unknown agent "${agentId}".`)
+    cfg.webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks : []
+    if (cfg.webhooks.find((w: any) => w.id === id)) throw new Error(`Webhook "${id}" already exists.`)
+    const entry: any = { id, source, agentId, enabled: true }
+    if (secretEnv) entry.secretEnv = secretEnv
+    if (description) entry.description = description
+    cfg.webhooks.push(entry)
+    return `added webhook "${id}" (${source} → ${agentId})`
+  })
+  return { summary }
+}
+
+function editWebhook(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("Webhook id is required.")
+  const patch = body?.patch || {}
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const w = (cfg.webhooks || []).find((x: any) => x.id === id)
+    if (!w) throw new Error(`Webhook "${id}" not found.`)
+    if (typeof patch.source === "string" && WEBHOOK_SOURCES.includes(patch.source as any)) w.source = patch.source
+    if (typeof patch.agentId === "string" && patch.agentId.trim()) {
+      if (!cfg.agents?.[patch.agentId]) throw new Error(`Unknown agent "${patch.agentId}".`)
+      w.agentId = patch.agentId.trim()
+    }
+    if (typeof patch.secretEnv === "string") w.secretEnv = patch.secretEnv.trim() || undefined
+    if (typeof patch.description === "string") w.description = patch.description.trim() || undefined
+    if (typeof patch.enabled === "boolean") w.enabled = patch.enabled
+    return `updated webhook "${id}"`
+  })
+  return { summary }
+}
+
+function addMeshPeer(body: any) {
+  const url = String(body?.url || "").trim().replace(/\/+$/, "")
+  const name = String(body?.name || "").trim()
+  const token = String(body?.token || "").trim() || undefined
+  if (!url || !/^https?:\/\//.test(url)) throw new Error("Peer URL must start with http:// or https://")
+  if (!name) throw new Error("Peer name is required.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.mesh = cfg.mesh || { enabled: true, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } }
+    cfg.mesh.enabled = true
+    cfg.mesh.peers = Array.isArray(cfg.mesh.peers) ? cfg.mesh.peers : []
+    if (cfg.mesh.peers.find((p: any) => p.url === url)) throw new Error(`Peer at ${url} already registered.`)
+    const entry: any = { url, name }
+    if (token) entry.token = token
+    cfg.mesh.peers.push(entry)
+    return `added mesh peer "${name}"`
+  })
+  return { summary }
+}
+
+function deleteMeshPeer(body: any) {
+  const url = String(body?.url || "").trim().replace(/\/+$/, "")
+  if (!url) throw new Error("Peer URL is required.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const before = (cfg.mesh?.peers || []).length
+    cfg.mesh = cfg.mesh || { enabled: false, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } }
+    cfg.mesh.peers = (cfg.mesh.peers || []).filter((p: any) => p.url.replace(/\/+$/, "") !== url)
+    if (cfg.mesh.peers.length === before) throw new Error(`Peer at ${url} not found.`)
+    return `removed mesh peer ${url}`
+  })
+  return { summary }
+}
+
+function toggleMesh(body: any) {
+  const enabled = !!body?.enabled
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.mesh = cfg.mesh || { enabled, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } }
+    cfg.mesh.enabled = enabled
+    return `mesh ${enabled ? "enabled" : "disabled"}`
+  })
+  return { summary }
+}
+
+function deleteWebhook(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("Webhook id is required.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const before = (cfg.webhooks || []).length
+    cfg.webhooks = (cfg.webhooks || []).filter((w: any) => w.id !== id)
+    if (cfg.webhooks.length === before) throw new Error(`Webhook "${id}" not found.`)
+    return `removed webhook "${id}"`
+  })
+  return { summary }
+}
+
+async function previewCron(body: any) {
+  const expr = String(body?.schedule || "").trim()
+  if (!expr) throw new Error("schedule is required")
+  const { getNextCronDate } = await import("@/crons/scheduler")
+  let human: string | undefined
+  try {
+    const cronstrue = (await import("cronstrue")).default
+    human = cronstrue.toString(expr, { use24HourTimeFormat: false })
+  } catch (e: any) {
+    throw new Error(`Invalid cron: ${e.message || "unknown"}`)
+  }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  const next: string[] = []
+  let cursor = new Date()
+  try {
+    for (let i = 0; i < 3; i++) {
+      cursor = getNextCronDate(expr, cursor, tz)
+      next.push(cursor.toISOString())
+    }
+  } catch (e: any) {
+    throw new Error(`Cron preview failed: ${e.message}`)
+  }
+  return { human, next, timezone: tz }
 }
 
 function deleteTelegramAccount(body: any) {
@@ -478,9 +684,45 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="channels">Channels</button>
   <button data-tab="crons">Schedules</button>
+  <button data-tab="webhooks">Webhooks</button>
+  <button data-tab="mesh">Mesh</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
+<div id="edit-modal" class="td-modal hidden" aria-hidden="true">
+  <div class="td-backdrop"></div>
+  <div class="td-card" role="dialog" aria-modal="true" style="height:auto;max-height:90vh;width:min(560px,94vw)">
+    <header>
+      <span class="chip-small">Edit</span>
+      <h3 id="edit-title">Agent</h3>
+      <button class="td-close" id="edit-close" aria-label="Close">×</button>
+    </header>
+    <div style="flex:1;overflow-y:auto;padding:16px 20px">
+      <div class="rowf">
+        <div><label>Name</label><input id="e-name" /></div>
+        <div><label>AI engine</label><select id="e-tier"><option value="claude-code">Claude Code</option><option value="sdk">Anthropic API (SDK)</option><option value="orchestrator">Orchestrator</option></select></div>
+      </div>
+      <label>Model<span class="hint">(optional)</span></label>
+      <input id="e-model" />
+      <label>Trigger words<span class="hint">(comma or space separated)</span></label>
+      <input id="e-triggers" />
+      <label>Personality / system prompt</label>
+      <textarea id="e-personality" rows="5"></textarea>
+      <div class="rowf">
+        <div><label>Max concurrent tasks</label><input id="e-max-concurrent" type="number" min="1" max="20" /></div>
+        <div><label>Max execution (minutes)</label><input id="e-max-exec" type="number" min="1" max="240" /></div>
+      </div>
+      <label>Permission mode<span class="hint">(default / bypassPermissions / plan)</span></label>
+      <select id="e-perm"><option value="default">default</option><option value="bypassPermissions">bypassPermissions</option><option value="plan">plan</option></select>
+      <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="e-access" /> <span>Expose via public API</span></label>
+      <div id="e-msg" class="msg"></div>
+    </div>
+    <div class="td-footer" style="justify-content:flex-end">
+      <button class="ghost" id="edit-cancel" style="padding:7px 14px">Cancel</button>
+      <button class="primary" id="edit-save">Save changes</button>
+    </div>
+  </div>
+</div>
 <div id="td-modal" class="td-modal hidden" aria-hidden="true">
   <div class="td-backdrop"></div>
   <div class="td-card" role="dialog" aria-modal="true">
@@ -541,9 +783,47 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
       </div>
       <label>Cron expression<span class="hint">(<a href="https://crontab.guru/" target="_blank" style="color:var(--accent)">crontab.guru</a> can help)</span></label>
       <input id="c-schedule" placeholder="0 9 * * 1" />
+      <div id="c-preview" class="hint-block" style="margin-top:4px;min-height:32px"></div>
       <label>Prompt<span class="hint">(what the agent should do on every tick)</span></label>
       <textarea id="c-prompt" placeholder="Send me the weekly sales summary."></textarea>
       <div class="actions"><button class="primary" onclick="addCron()">Add schedule</button><div id="c-msg" class="msg"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-webhooks" class="tab">
+    <h2>Webhooks</h2>
+    <p class="lead">Each webhook is an inbound URL an external service POSTs to. We translate the payload into a readable message and route it to the agent you bind here. Defaults: GitLab, GitHub, Sentry, Stripe, Discord, Slack, custom.</p>
+    <div id="webhook-list" class="list"></div>
+    <div class="add-form">
+      <h3>Add a webhook</h3>
+      <div class="rowf">
+        <div><label>Webhook id<span class="hint">(lowercase)</span></label><input id="w-id" placeholder="mtgl-gitlab" /></div>
+        <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab</option><option value="github">GitHub</option><option value="sentry">Sentry</option><option value="stripe">Stripe</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
+      </div>
+      <div class="rowf">
+        <div><label>Agent</label><select id="w-agent"></select></div>
+        <div><label>Signing secret env-var<span class="hint">(optional)</span></label><input id="w-secret" placeholder="GITLAB_WEBHOOK_SECRET" /></div>
+      </div>
+      <label>Description<span class="hint">(optional)</span></label>
+      <input id="w-desc" placeholder="MTGL main project webhooks" />
+      <div class="actions"><button class="primary" onclick="addWebhook()">Add webhook</button><div id="w-msg" class="msg"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-mesh" class="tab">
+    <h2>Mesh — team network</h2>
+    <p class="lead">Link AgentX instances across machines so they share work. Each peer is another daemon's URL; an optional token secures the connection.</p>
+    <div class="toggle-switch"><input type="checkbox" id="mesh-toggle" /> <label for="mesh-toggle" style="color:var(--text);margin:0">Mesh enabled on this node</label></div>
+    <div id="mesh-peers" class="list"></div>
+    <div class="add-form">
+      <h3>Add a peer</h3>
+      <div class="rowf">
+        <div><label>Peer name<span class="hint">(human label)</span></label><input id="m-name" placeholder="clawd-server" /></div>
+        <div><label>URL</label><input id="m-url" placeholder="http://192.168.1.50:18800" /></div>
+      </div>
+      <label>Auth token<span class="hint">(optional — use a scoped token with <code>mesh:peer</code>)</span></label>
+      <input id="m-token" type="password" />
+      <div class="actions"><button class="primary" onclick="addMeshPeer()">Add peer</button><div id="m-msg" class="msg"></div></div>
     </div>
   </section>
 
@@ -608,9 +888,146 @@ async function refresh() {
     renderAgents();
     renderChannels();
     renderCrons();
+    renderWebhooks();
+    renderMesh();
   } catch (e) {
     showMsg($('global-msg'), 'err', e.message);
   }
+}
+
+function renderWebhooks() {
+  const list = $('webhook-list');
+  const daemonUrl = (state.daemonUrl || '').replace(/\\/+$/, '');
+  const sources = {
+    gitlab: { icon: '🦊', label: 'GitLab', hint: 'In GitLab → Settings → Webhooks; tick Push events, Issue events, Pipeline events.' },
+    github: { icon: '🐙', label: 'GitHub', hint: 'In GitHub → Repo Settings → Webhooks; pick individual events.' },
+    sentry: { icon: '🛡', label: 'Sentry', hint: 'In Sentry → Project Settings → Alerts → Webhooks.' },
+    stripe: { icon: '💳', label: 'Stripe', hint: 'In Stripe Dashboard → Developers → Webhooks.' },
+    discord: { icon: '💬', label: 'Discord', hint: 'In Discord → Channel Settings → Integrations → Webhooks.' },
+    slack: { icon: '#️⃣', label: 'Slack', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.' },
+    custom: { icon: '🔗', label: 'Custom', hint: 'Any service that can POST JSON — the payload is forwarded as-is.' },
+  };
+  if (!state.webhooks.length) {
+    list.innerHTML = '<div class="empty">No webhooks registered.</div>';
+  } else {
+    list.innerHTML = '';
+    for (const w of state.webhooks) {
+      const meta = sources[w.source] || sources.custom;
+      const url = daemonUrl + '/webhook/' + encodeURIComponent(w.agentId) + '/' + encodeURIComponent(w.source);
+      const div = document.createElement('div');
+      div.className = 'row-card';
+      div.style.flexWrap = 'wrap';
+      div.style.gap = '10px';
+      const statusChip = w.enabled
+        ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">enabled</span>'
+        : '<span class="chip off">disabled</span>';
+      div.innerHTML =
+        '<div class="info" style="min-width:240px"><h3>' + meta.icon + ' ' + escapeHtml(w.id) + '</h3>' +
+          '<div class="meta">' + statusChip +
+            '<span class="chip">' + escapeHtml(meta.label) + '</span>' +
+            'agent: <b>' + escapeHtml(w.agentId) + '</b>' +
+            (w.secretEnv ? ' · secret: <code style="font-family:ui-monospace,monospace">$\{' + escapeHtml(w.secretEnv) + '}</code>' : '') +
+            (w.description ? '<br><span style="color:var(--muted)">' + escapeHtml(w.description) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="flex:1;min-width:300px">' +
+          '<code style="display:block;font-family:ui-monospace,monospace;font-size:11px;background:#0e1119;padding:8px 10px;border-radius:4px;word-break:break-all">' + escapeHtml(url) + '</code>' +
+          '<div style="font-size:10px;color:var(--muted);margin-top:4px">' + escapeHtml(meta.hint) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px">' +
+          '<button class="ghost" data-copy="' + escapeHtml(url) + '">Copy URL</button>' +
+          '<button class="ghost" data-toggle-wh="' + escapeHtml(w.id) + '" data-enabled="' + (w.enabled ? '1' : '0') + '">' + (w.enabled ? 'Disable' : 'Enable') + '</button>' +
+          '<button class="danger" data-rm-wh="' + escapeHtml(w.id) + '">Delete</button>' +
+        '</div>';
+      div.querySelector('button[data-copy]').addEventListener('click', (e) => {
+        navigator.clipboard.writeText(e.currentTarget.dataset.copy).then(() => {
+          const b = e.currentTarget; const old = b.textContent;
+          b.textContent = 'Copied'; setTimeout(() => { b.textContent = old; }, 1200);
+        });
+      });
+      div.querySelector('button[data-rm-wh]').addEventListener('click', () => deleteWebhookAction(w.id));
+      div.querySelector('button[data-toggle-wh]').addEventListener('click', () => toggleWebhook(w.id, !w.enabled));
+      list.appendChild(div);
+    }
+  }
+  // Refresh the add-webhook agent picker.
+  const sel = $('w-agent');
+  const cur = sel.value;
+  sel.innerHTML = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  if (cur) sel.value = cur;
+}
+
+async function addWebhook() {
+  const body = {
+    id: $('w-id').value.trim(),
+    source: $('w-source').value,
+    agentId: $('w-agent').value,
+    secretEnv: $('w-secret').value.trim(),
+    description: $('w-desc').value.trim(),
+  };
+  try {
+    const r = await req('POST', '/api/admin/webhooks', body);
+    showMsg($('w-msg'), 'ok', r.summary);
+    $('w-id').value = ''; $('w-secret').value = ''; $('w-desc').value = '';
+    refresh();
+  } catch (e) { showMsg($('w-msg'), 'err', e.message); }
+}
+
+async function deleteWebhookAction(id) {
+  if (!confirm('Delete webhook "' + id + '"?')) return;
+  try { await req('DELETE', '/api/admin/webhooks', { id }); refresh(); }
+  catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+async function toggleWebhook(id, enabled) {
+  try { await req('PATCH', '/api/admin/webhooks', { id, patch: { enabled } }); refresh(); }
+  catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+function renderMesh() {
+  const m = state.mesh || { enabled: false, peers: [] };
+  $('mesh-toggle').checked = !!m.enabled;
+  const peers = $('mesh-peers');
+  if (!m.peers.length) {
+    peers.innerHTML = '<div class="empty">No mesh peers.</div>';
+  } else {
+    peers.innerHTML = '';
+    for (const p of m.peers) {
+      const div = document.createElement('div');
+      div.className = 'row-card';
+      div.innerHTML =
+        '<div class="info"><h3>' + escapeHtml(p.name) + '</h3>' +
+          '<div class="meta">' +
+            (p.hasToken ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">authenticated</span>' : '<span class="chip off">no token</span>') +
+            '<code style="font-family:ui-monospace,monospace">' + escapeHtml(p.url) + '</code>' +
+          '</div>' +
+        '</div>' +
+        '<button class="danger" data-rm-peer="' + escapeHtml(p.url) + '">Remove</button>';
+      div.querySelector('button[data-rm-peer]').addEventListener('click', () => removeMeshPeer(p.url));
+      peers.appendChild(div);
+    }
+  }
+}
+
+$('mesh-toggle').addEventListener('change', async (e) => {
+  try { await req('POST', '/api/admin/mesh/toggle', { enabled: e.target.checked }); refresh(); }
+  catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+});
+
+async function addMeshPeer() {
+  const body = { url: $('m-url').value.trim(), name: $('m-name').value.trim(), token: $('m-token').value.trim() };
+  try {
+    const r = await req('POST', '/api/admin/mesh/peers', body);
+    showMsg($('m-msg'), 'ok', r.summary);
+    $('m-url').value = ''; $('m-name').value = ''; $('m-token').value = '';
+    refresh();
+  } catch (e) { showMsg($('m-msg'), 'err', e.message); }
+}
+
+async function removeMeshPeer(url) {
+  if (!confirm('Remove mesh peer at ' + url + '?')) return;
+  try { await req('DELETE', '/api/admin/mesh/peers', { url }); refresh(); }
+  catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
 function renderAgents() {
@@ -633,6 +1050,7 @@ function renderAgents() {
         '</div>' +
       '</div>' +
       '<button class="primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px;padding:6px 12px;font-size:12px">Test drive</button>' +
+      '<button class="ghost" data-edit="' + escapeHtml(a.id) + '" style="margin-right:6px">Edit</button>' +
       '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
       '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';
     div.querySelector('button.danger').addEventListener('click', () => deleteAgent(a.id));
@@ -645,6 +1063,7 @@ function renderAgents() {
       const btn = e.currentTarget;
       openTestDrive(btn.dataset.test, btn.dataset.name);
     });
+    div.querySelector('button[data-edit]').addEventListener('click', () => openAgentEdit(a));
     list.appendChild(div);
   }
   // Refresh the cron agent picker so new agents show up.
@@ -777,6 +1196,88 @@ async function deleteCron(id) {
   try { await req('DELETE', '/api/admin/crons', { id }); refresh(); }
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
+
+// Live cron preview — debounced so each keystroke doesn't hit the server.
+let cronPreviewTimer = null;
+function scheduleCronPreview() {
+  if (cronPreviewTimer) clearTimeout(cronPreviewTimer);
+  cronPreviewTimer = setTimeout(runCronPreview, 300);
+}
+async function runCronPreview() {
+  const expr = $('c-schedule').value.trim();
+  const box = $('c-preview');
+  if (!expr) { box.textContent = ''; return; }
+  try {
+    const r = await req('POST', '/api/admin/crons/preview', { schedule: expr });
+    const fires = r.next.map((iso) => new Date(iso).toLocaleString()).slice(0, 3);
+    box.innerHTML =
+      '<div style="color:var(--text)"><b>' + escapeHtml(r.human) + '</b></div>' +
+      '<div style="margin-top:4px">Next runs (' + escapeHtml(r.timezone) + '): ' + fires.map(escapeHtml).join(' · ') + '</div>';
+  } catch (e) {
+    box.innerHTML = '<div style="color:var(--red)">' + escapeHtml(e.message) + '</div>';
+  }
+}
+$('c-schedule').addEventListener('input', scheduleCronPreview);
+
+// --- Edit agent modal ---
+const editModal = {
+  el: $('edit-modal'),
+  currentId: null,
+};
+
+function openAgentEdit(agent) {
+  editModal.currentId = agent.id;
+  $('edit-title').textContent = agent.name + ' · ' + agent.id;
+  $('e-name').value = agent.name || '';
+  $('e-tier').value = agent.tier || 'claude-code';
+  $('e-model').value = agent.model || '';
+  $('e-triggers').value = (agent.mentions || []).join(', ');
+  $('e-personality').value = agent.systemPrompt || '';
+  $('e-max-concurrent').value = agent.maxConcurrent || 1;
+  $('e-max-exec').value = agent.maxExecutionMinutes || 20;
+  $('e-perm').value = agent.permissionMode || 'default';
+  $('e-access').checked = agent.access === 'public';
+  $('e-msg').className = 'msg';
+  editModal.el.classList.remove('hidden');
+  editModal.el.setAttribute('aria-hidden', 'false');
+}
+
+function closeAgentEdit() {
+  editModal.el.classList.add('hidden');
+  editModal.el.setAttribute('aria-hidden', 'true');
+  editModal.currentId = null;
+}
+
+async function saveAgentEdit() {
+  if (!editModal.currentId) return;
+  const id = editModal.currentId;
+  const maxConcurrent = parseInt($('e-max-concurrent').value, 10);
+  const maxExecutionMinutes = parseInt($('e-max-exec').value, 10);
+  const patch = {
+    name: $('e-name').value.trim(),
+    tier: $('e-tier').value,
+    model: $('e-model').value.trim(),
+    triggerWords: $('e-triggers').value.trim(),
+    systemPrompt: $('e-personality').value,
+    maxConcurrent: Number.isFinite(maxConcurrent) ? maxConcurrent : undefined,
+    maxExecutionMinutes: Number.isFinite(maxExecutionMinutes) ? maxExecutionMinutes : undefined,
+    permissionMode: $('e-perm').value,
+    access: $('e-access').checked ? 'public' : 'private',
+  };
+  try {
+    await req('PATCH', '/api/admin/agents', { id, patch });
+    showMsg($('e-msg'), 'ok', 'Saved. The change is live (hot-reloaded).');
+    setTimeout(() => { closeAgentEdit(); refresh(); }, 600);
+  } catch (e) { showMsg($('e-msg'), 'err', e.message); }
+}
+
+$('edit-close').addEventListener('click', closeAgentEdit);
+$('edit-cancel').addEventListener('click', closeAgentEdit);
+$('edit-save').addEventListener('click', saveAgentEdit);
+editModal.el.querySelector('.td-backdrop').addEventListener('click', closeAgentEdit);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !editModal.el.classList.contains('hidden')) closeAgentEdit();
+});
 
 // --- Test drive chat modal ---
 const testDrive = {
