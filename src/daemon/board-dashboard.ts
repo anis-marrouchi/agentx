@@ -1127,26 +1127,41 @@ function renderBoardHtml(): string {
 function renderLiveHtml(): string {
   const labelsScript = `<script>window.UI_LABELS = ${JSON.stringify(UI_LABELS)};</script>`
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-density="normal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtmlServer(UI_LABELS.brand)} — ${escapeHtmlServer(UI_LABELS.subtitle)}</title>
+<title>${escapeHtmlServer(UI_LABELS.brand)} · ${escapeHtmlServer(UI_LABELS.subtitle)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${LIVE_CSS}</style>
 </head>
 <body>
-<header>
-  <div class="brand">${escapeHtmlServer(UI_LABELS.brand)} <span class="sub">· ${escapeHtmlServer(UI_LABELS.subtitle)}</span></div>
-  <div id="summary" class="summary"></div>
-  <div class="spacer"></div>
-  <a href="/admin" class="link" title="Manage agents, channels, schedules">⚙ Settings</a>
-  <a href="/glossary" class="link" title="What do the terms mean?">? Glossary</a>
-  <a href="/" class="link">← Boards</a>
-  <span id="ts" class="ts" title="Last update"></span>
-  <span id="conn" class="conn ok" title="connected">●</span>
-</header>
-<section id="today-strip" class="today-strip hidden" aria-label="Today's activity"></section>
-<main id="grid"></main>
+<div class="ax-app">
+  <header class="ax-topbar">
+    <div class="ax-topbar__left">
+      <div class="ax-brand">
+        <span class="ax-brand__mark">AX</span>
+        <span class="ax-brand__name">${escapeHtmlServer(UI_LABELS.brand)}</span>
+        <span class="ax-brand__subtitle">${escapeHtmlServer(UI_LABELS.subtitle)}</span>
+      </div>
+      <nav class="ax-topbar__tabs">
+        <a href="/live" class="ax-topbar__tab is-active">Live</a>
+        <a href="/" class="ax-topbar__tab">Boards</a>
+        <a href="/admin" class="ax-topbar__tab">Settings</a>
+        <a href="/glossary" class="ax-topbar__tab">Glossary</a>
+      </nav>
+    </div>
+    <div class="ax-topbar__right">
+      <span id="ts" class="ax-mono" title="Last update">—</span>
+      <span id="conn-dot" class="ax-dot ax-dot--ok ax-dot--pulse" title="connected"></span>
+      <span id="conn-label">live</span>
+    </div>
+  </header>
+  <section id="statstrip" class="ax-statstrip"></section>
+  <main id="grid" class="ax-live__body"></main>
+</div>
 <aside id="history-panel" class="history-panel hidden" aria-hidden="true">
   <header>
     <h2 id="history-panel-title">${escapeHtmlServer(UI_LABELS.historyPanelTitle)}</h2>
@@ -1225,89 +1240,181 @@ article.term p{margin:0;color:var(--text)}
 }
 
 const LIVE_CSS = `
+/* --- Design tokens (ported from /Users/macbookpro/Downloads/agentx-redesign) --- */
 :root {
-  --bg: #0b0d14; --card: #151823; --node: #1a1d29; --border: #2a2d3a;
-  --text: #e6e8ef; --muted: #8b8fa3; --accent: #6366f1;
-  --green: #22c55e; --yellow: #f59e0b; --red: #ef4444; --blue: #3b82f6; --gray: #6b7280;
+  --ax-bg:        oklch(0.16 0.010 265);
+  --ax-bg-elev:   oklch(0.19 0.012 265);
+  --ax-surface:   oklch(0.21 0.012 265);
+  --ax-surface-2: oklch(0.24 0.014 265);
+  --ax-border:    oklch(0.29 0.014 265);
+  --ax-border-2:  oklch(0.35 0.016 265);
+  --ax-text:      oklch(0.95 0.005 265);
+  --ax-text-2:    oklch(0.80 0.008 265);
+  --ax-muted:     oklch(0.60 0.010 265);
+  --ax-accent:    oklch(0.78 0.13 165);  /* live green */
+  --ax-accent-2:  oklch(0.55 0.11 165);
+  --ax-warn:      oklch(0.80 0.14 75);
+  --ax-err:       oklch(0.68 0.19 25);
+  --ax-info:      oklch(0.78 0.10 220);
+  --ax-radius:    6px;
+  --ax-pad:       16px;
+  --ax-pad-sm:    10px;
+  --ax-gap:       12px;
+  --ax-font:      "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --ax-mono:      "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ax-fs:        13px;
+  --ax-fs-sm:     12px;
+  --ax-fs-xs:     11px;
+  /* Legacy aliases so history-panel / task-modal CSS keeps working. */
+  --bg: var(--ax-bg); --card: var(--ax-surface); --node: var(--ax-bg-elev);
+  --border: var(--ax-border); --text: var(--ax-text); --muted: var(--ax-muted);
+  --accent: var(--ax-accent); --green: var(--ax-accent); --yellow: var(--ax-warn);
+  --red: var(--ax-err); --blue: var(--ax-info); --gray: var(--ax-muted);
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-header { display: flex; align-items: center; gap: 14px; padding: 10px 18px;
-  background: #10131c; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
-header .brand { font-weight: 600; color: var(--accent); font-size: 15px; }
-header .brand .sub { color: var(--muted); font-weight: 500; }
-header .summary { display: flex; gap: 16px; color: var(--muted); font-size: 12px; }
-header .summary b { color: var(--text); }
-header .spacer { flex: 1; }
-header .link { color: var(--muted); text-decoration: none; font-size: 13px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; }
-header .link:hover { color: var(--accent); border-color: var(--accent); }
-header .ts { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
-header .conn { font-size: 14px; }
-header .conn.ok { color: var(--green); }
-header .conn.warn { color: var(--yellow); }
-header .conn.err { color: var(--red); }
+html, body { margin: 0; min-height: 100vh; background: var(--ax-bg); color: var(--ax-text);
+  font-family: var(--ax-font); font-size: var(--ax-fs);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv01"; }
+pre, code, .ax-mono { font-family: var(--ax-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.ax-muted { color: var(--ax-muted); }
+.ax-accent { color: var(--ax-accent); }
 
-main#grid { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+/* --- App chrome --- */
+.ax-app { min-height: 100vh; display: flex; flex-direction: column; }
+.ax-topbar { display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 18px; border-bottom: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); position: sticky; top: 0; z-index: 20; }
+.ax-topbar__left { display: flex; align-items: center; gap: 18px; }
+.ax-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+.ax-brand__mark { font-family: var(--ax-mono); font-size: 12px; padding: 2px 8px;
+  border: 1px solid var(--ax-border-2); color: var(--ax-accent); border-radius: 4px; }
+.ax-brand__name { font-size: 14px; }
+.ax-brand__subtitle { font-size: var(--ax-fs-xs); color: var(--ax-muted);
+  border-left: 1px solid var(--ax-border); padding-left: 12px; margin-left: 4px; }
+.ax-topbar__tabs { display: flex; gap: 2px; }
+.ax-topbar__tab { background: transparent; border: none; color: var(--ax-text-2);
+  padding: 8px 14px; font: inherit; cursor: pointer; font-size: var(--ax-fs-sm);
+  border-bottom: 2px solid transparent; letter-spacing: -0.005em; text-decoration: none; }
+.ax-topbar__tab:hover { color: var(--ax-text); }
+.ax-topbar__tab.is-active { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
+.ax-topbar__right { display: flex; align-items: center; gap: 10px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.ax-topbar__right .ax-mono { color: var(--ax-text-2); }
 
-.today-strip { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 20px;
-  background: linear-gradient(90deg, rgba(99,102,241,0.12), rgba(34,197,94,0.08));
-  border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
-.today-strip.hidden { display: none; }
-.today-strip .lbl { text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; color: var(--muted); margin-right: 4px; }
-.today-strip b { color: var(--text); font-weight: 600; font-size: 13px; }
-.today-strip .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
-  background: rgba(21,24,35,0.6); border: 1px solid var(--border); border-radius: 20px; }
-.today-strip .ch-breakdown { color: var(--muted); font-size: 11px; }
-.today-strip .ch-breakdown .name { color: var(--text); font-weight: 500; }
+/* --- Dots / badges / chips --- */
+.ax-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-muted); }
+.ax-dot--ok, .ax-dot--live { background: var(--ax-accent); }
+.ax-dot--warn { background: var(--ax-warn); }
+.ax-dot--err { background: var(--ax-err); }
+.ax-dot--off { background: var(--ax-border-2); }
+.ax-dot--pulse { box-shadow: 0 0 0 0 currentColor;
+  animation: ax-pulse 1.8s infinite; color: var(--ax-accent); }
+@keyframes ax-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ax-accent) 70%, transparent); }
+  70%  { box-shadow: 0 0 0 6px color-mix(in oklch, var(--ax-accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ax-accent) 0%, transparent); }
+}
+.ax-badge { display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 3px; font-size: var(--ax-fs-xs); line-height: 16px;
+  border: 1px solid var(--ax-border-2); color: var(--ax-text-2); background: transparent; }
+.ax-badge--mono { font-family: var(--ax-mono); letter-spacing: 0.02em;
+  text-transform: uppercase; font-size: 10px; }
+.ax-badge--accent { color: var(--ax-accent);
+  border-color: color-mix(in oklch, var(--ax-accent) 50%, transparent); }
+.ax-badge--warn { color: var(--ax-warn);
+  border-color: color-mix(in oklch, var(--ax-warn) 50%, transparent); }
+.ax-badge--ghost { color: var(--ax-muted); border-color: var(--ax-border); background: var(--ax-surface-2); }
+.ax-chip { display: inline-block; padding: 0 6px; font-family: var(--ax-mono);
+  font-size: 10px; line-height: 16px; border-radius: 3px; color: var(--ax-muted);
+  border: 1px solid var(--ax-border); background: var(--ax-surface); }
 
-.agent .summary { font-size: 11px; color: var(--muted); padding: 6px 8px; border-radius: 4px;
-  background: rgba(255,255,255,0.02); border-left: 2px solid var(--accent);
-  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.agent .summary.fail { border-left-color: var(--red); }
-.agent .summary .when { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
+/* --- Stat strip --- */
+.ax-statstrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--ax-gap); padding: var(--ax-pad) var(--ax-pad) 0; }
+.ax-stat { background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius); padding: 14px 16px; }
+.ax-stat__label { font-size: var(--ax-fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ax-muted); display: flex; align-items: center; gap: 6px; }
+.ax-stat__value { font-size: 24px; font-weight: 600; margin-top: 4px; letter-spacing: -0.02em;
+  font-family: var(--ax-mono); font-variant-numeric: tabular-nums; }
+.ax-stat__sub { font-size: var(--ax-fs-xs); color: var(--ax-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-stat--live .ax-stat__value { color: var(--ax-accent); }
+.ax-stat--warn .ax-stat__value { color: var(--ax-warn); }
+.ax-stat--err .ax-stat__value { color: var(--ax-err); }
 
-.node { background: var(--node); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.node > header { background: transparent; position: static; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 10px; }
-.node .name { font-weight: 600; font-size: 14px; }
-.node .url { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
-.node .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
-  padding: 2px 7px; border-radius: 10px; background: rgba(99,102,241,0.2); color: #c5c8d6; }
-.node .tag.down { background: rgba(239,68,68,0.25); color: #fca5a5; }
-.node .tag.up { background: rgba(34,197,94,0.2); color: #86efac; }
-.node .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 10px; padding: 12px 14px; }
+/* --- Section titles --- */
+.ax-section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.ax-section-title__label { font-size: var(--ax-fs-xs); text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ax-muted); }
+.ax-section-title__right { display: flex; align-items: center; gap: 8px;
+  font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 
-.agent { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.2s; }
-.agent.busy { border-color: var(--green); box-shadow: 0 0 0 1px rgba(34,197,94,0.3); }
-.agent.errored { border-color: var(--red); }
-.agent > .top { display: flex; align-items: center; gap: 8px; }
-.agent .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex-shrink: 0; }
-.agent.busy .dot { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s ease-in-out infinite; }
-.agent.errored .dot { background: var(--red); }
-.agent .name { font-weight: 600; font-size: 13px; flex: 1; }
-.agent .tier { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; }
-.agent .meta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); flex-wrap: wrap; }
-.agent .model { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
-  background: rgba(99,102,241,0.12); padding: 1px 7px; border-radius: 3px; letter-spacing: 0.2px; }
-.agent .last { font-size: 10px; color: var(--muted); }
-.agent .last.muted { font-style: italic; opacity: 0.7; }
-.agent .stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
-.agent .stats b { color: var(--text); font-weight: 600; }
-.agent .stats .err b { color: var(--red); }
-.agent .tasks { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
-.agent .task { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-.agent .task .channel { background: rgba(99,102,241,0.18); color: var(--accent);
-  font-size: 9px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.5px; }
-.agent .task .elapsed { color: var(--muted); font-family: ui-monospace, monospace; font-size: 10px; }
-.agent .task .preview { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.agent .task .preview.clickable { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
-.agent .task .preview.clickable:hover { color: var(--accent); text-decoration-color: var(--accent); }
-.agent .idle { color: var(--muted); font-size: 11px; font-style: italic; }
-.agent .recent-link { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--muted);
-  text-decoration: none; align-self: flex-start; }
-.agent .recent-link:hover { color: var(--accent); }
+/* --- Live body --- */
+.ax-live__body { display: flex; flex-direction: column; gap: var(--ax-gap); padding: var(--ax-pad); }
+.ax-node { background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: 8px; overflow: hidden; }
+.ax-node > header { background: transparent; padding: 12px 16px;
+  border-bottom: 1px solid var(--ax-border); display: flex; align-items: center; gap: 10px; }
+.ax-node__name { font-weight: 600; font-size: 14px; }
+.ax-node__url { color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px; }
+.ax-node__tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 7px; border-radius: 3px; border: 1px solid var(--ax-border-2);
+  color: var(--ax-text-2); font-family: var(--ax-mono); }
+.ax-node__tag--up { color: var(--ax-accent); border-color: color-mix(in oklch, var(--ax-accent) 50%, transparent); }
+.ax-node__tag--down { color: var(--ax-err); border-color: color-mix(in oklch, var(--ax-err) 50%, transparent); }
+.ax-grid--agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--ax-gap); padding: 12px 14px; }
+
+/* --- Agent cards --- */
+.ax-card { background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius); padding: var(--ax-pad); }
+.ax-agent { display: flex; flex-direction: column; gap: 10px; }
+.ax-agent.is-handling { border-color: color-mix(in oklch, var(--ax-accent) 35%, var(--ax-border)); }
+.ax-agent.is-errored { border-color: color-mix(in oklch, var(--ax-err) 35%, var(--ax-border)); }
+.ax-agent__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ax-agent__id { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
+.ax-mention { color: var(--ax-accent); font-size: 15px; font-weight: 500;
+  font-family: var(--ax-mono); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-agent__name { font-size: var(--ax-fs-sm); color: var(--ax-muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.ax-agent__tier { display: flex; gap: 4px; flex-shrink: 0; }
+.ax-agent__model { font-size: var(--ax-fs-xs); color: var(--ax-muted); font-family: var(--ax-mono); margin-top: -4px; }
+.ax-agent__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ax-ministat { padding: 8px 10px; background: var(--ax-bg); border: 1px solid var(--ax-border); border-radius: 4px; }
+.ax-ministat__label { display: flex; align-items: center; gap: 4px; font-size: 10px;
+  color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.ax-ministat__value { font-size: 18px; font-weight: 600; margin-top: 2px;
+  letter-spacing: -0.02em; font-family: var(--ax-mono); font-variant-numeric: tabular-nums; }
+.ax-ministat--live .ax-ministat__value { color: var(--ax-accent); }
+.ax-ministat--warn .ax-ministat__value { color: var(--ax-warn); }
+.ax-ministat--err .ax-ministat__value { color: var(--ax-err); }
+.ax-agent__running { display: flex; flex-direction: column; gap: 6px; }
+.ax-agent__task { text-align: left; background: var(--ax-bg);
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border));
+  padding: 8px 10px; border-radius: 4px; cursor: pointer; font: inherit; color: var(--ax-text); }
+.ax-agent__task:hover { border-color: var(--ax-accent); }
+.ax-agent__task-head { display: flex; align-items: center; gap: 6px; font-size: var(--ax-fs-xs); color: var(--ax-accent); }
+.ax-agent__task-head .elapsed { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.ax-agent__task-body { font-size: var(--ax-fs-sm); margin-top: 4px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  line-height: 1.35; }
+.ax-agent__summary { border-top: 1px dashed var(--ax-border); padding-top: 8px; }
+.ax-agent__summary-caption { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ax-muted); }
+.ax-agent__summary-text { font-size: var(--ax-fs-sm); color: var(--ax-text-2);
+  line-height: 1.45; margin-top: 4px; text-wrap: pretty;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ax-agent__summary.is-fail .ax-agent__summary-caption { color: var(--ax-err); }
+.ax-agent__foot { display: flex; justify-content: space-between; align-items: center;
+  font-size: var(--ax-fs-xs); color: var(--ax-muted); border-top: 1px solid var(--ax-border);
+  padding-top: 8px; }
+.ax-linkbtn { background: transparent; border: none; color: var(--ax-text-2);
+  padding: 2px 6px; font: inherit; cursor: pointer; font-size: var(--ax-fs-sm); text-decoration: none; }
+.ax-linkbtn:hover { color: var(--ax-accent); }
+
+.ax-empty { padding: 32px 10px; text-align: center; color: var(--ax-muted);
+  font-size: var(--ax-fs-sm); border: 1px dashed var(--ax-border); border-radius: 4px; margin: 12px 14px; }
 
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
 
@@ -1396,26 +1503,26 @@ function render(snapshot) {
     grid.appendChild(renderNode(node));
   }
   const L = window.UI_LABELS || {};
-  document.getElementById('summary').innerHTML =
-    '<span><b>' + summary.reachable + '/' + summary.nodes + '</b> ' + escapeHtml(L.nodes || 'machines') + '</span>' +
-    '<span><b>' + summary.agents + '</b> ' + escapeHtml(L.agentsCount || 'agents') + '</span>' +
-    '<span><b>' + summary.busy + '</b> ' + escapeHtml(L.activeNow || 'handling now') + '</span>' +
-    '<span><b>' + summary.errors + '</b> ' + escapeHtml(L.errorsCount || 'failed') + '</span>';
-
-  renderTodayStrip(snapshot);
+  renderStatStrip(snapshot, summary);
+  // The connection dot in the topbar gets pulsed only when tasks are running.
+  const connDot = document.getElementById('conn-dot');
+  const connLabel = document.getElementById('conn-label');
+  if (connDot) connDot.classList.toggle('ax-dot--pulse', summary.busy > 0);
+  if (connLabel) connLabel.textContent = summary.busy > 0 ? 'running ' + summary.busy : 'idle';
 }
 
-// Aggregate per-agent usage from every node, then paint the "Today" strip.
-// Zero-cost if the snapshot has no usage data (e.g. pre-1.0 daemons).
-function renderTodayStrip(snapshot) {
-  const strip = document.getElementById('today-strip');
+/**
+ * Paint the stat strip: agents online, running tasks, tasks today, tokens, errors.
+ * The legacy "today-strip" logic is absorbed here — same underlying data.
+ */
+function renderStatStrip(snapshot, summary) {
+  const strip = document.getElementById('statstrip');
   if (!strip) return;
+  const L = window.UI_LABELS || {};
   let tasks = 0, durationMs = 0, errors = 0, inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreate = 0;
   const byChannel = {};
-  let hasData = false;
   for (const node of snapshot.nodes) {
     if (!node.usage || !node.usage.agents) continue;
-    hasData = true;
     for (const agentId of Object.keys(node.usage.agents)) {
       const u = node.usage.agents[agentId];
       tasks += u.tasks || 0;
@@ -1425,28 +1532,37 @@ function renderTodayStrip(snapshot) {
       outputTokens += u.outputTokens || 0;
       cacheRead += u.cacheReadTokens || 0;
       cacheCreate += u.cacheCreateTokens || 0;
-      if (u.byChannel) {
-        for (const ch of Object.keys(u.byChannel)) {
-          byChannel[ch] = (byChannel[ch] || 0) + (u.byChannel[ch].tasks || 0);
-        }
+      if (u.byChannel) for (const ch of Object.keys(u.byChannel)) {
+        byChannel[ch] = (byChannel[ch] || 0) + (u.byChannel[ch].tasks || 0);
       }
     }
   }
-  if (!hasData || tasks === 0) { strip.classList.add('hidden'); return; }
-  strip.classList.remove('hidden');
-  const topChannels = Object.keys(byChannel)
-    .sort((a, b) => byChannel[b] - byChannel[a])
-    .slice(0, 4)
-    .map(ch => '<span class="name">' + escapeHtml(ch) + '</span> (' + byChannel[ch] + ')')
-    .join(' · ');
-  const durationStr = fmtDuration(durationMs);
-  const tokensStr = fmtTokens(inputTokens + outputTokens + cacheRead + cacheCreate);
+  const totalTokens = inputTokens + outputTokens + cacheRead + cacheCreate;
+  const topChannels = Object.keys(byChannel).sort((a, b) => byChannel[b] - byChannel[a]).slice(0, 3)
+    .map(ch => ch + ' (' + byChannel[ch] + ')').join(' · ');
+
   strip.innerHTML =
-    '<span class="chip"><span class="lbl">Today</span><b>' + tasks + '</b> tasks</span>' +
-    '<span class="chip"><span class="lbl">Time</span><b>' + escapeHtml(durationStr) + '</b></span>' +
-    '<span class="chip"><span class="lbl">Tokens</span><b>' + escapeHtml(tokensStr) + '</b></span>' +
-    (errors > 0 ? '<span class="chip" style="border-color:var(--red);color:var(--red)"><span class="lbl" style="color:var(--red)">Failed</span><b style="color:var(--red)">' + errors + '</b></span>' : '') +
-    (topChannels ? '<span class="ch-breakdown">' + topChannels + '</span>' : '');
+    stat({ label: 'agents online', value: summary.reachable + '/' + summary.nodes + ' machines',
+           sub: summary.agents + ' agents', variant: 'live', pulse: summary.reachable > 0 }) +
+    stat({ label: 'running now', value: summary.busy,
+           sub: summary.busy === 0 ? 'nothing active' : 'across ' + Object.keys(byChannel).length + ' channels',
+           variant: summary.busy > 0 ? 'live' : '' }) +
+    stat({ label: 'tasks today', value: tasks, sub: topChannels || 'no activity yet' }) +
+    stat({ label: 'tokens today', value: fmtTokens(totalTokens),
+           sub: fmtDuration(durationMs) + ' of agent time' }) +
+    stat({ label: L.errorsCount || 'failed', value: errors + summary.errors,
+           sub: (errors + summary.errors) === 0 ? 'all clean' : 'check history',
+           variant: (errors + summary.errors) > 0 ? 'err' : '' });
+}
+
+function stat({ label, value, sub, variant, pulse }) {
+  const cls = 'ax-stat' + (variant ? ' ax-stat--' + variant : '');
+  const dot = pulse ? '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' : '';
+  return '<div class="' + cls + '">' +
+    '<div class="ax-stat__label">' + dot + escapeHtml(String(label)) + '</div>' +
+    '<div class="ax-stat__value">' + escapeHtml(String(value)) + '</div>' +
+    (sub ? '<div class="ax-stat__sub">' + escapeHtml(String(sub)) + '</div>' : '') +
+  '</div>';
 }
 
 function fmtDuration(ms) {
@@ -1467,16 +1583,19 @@ function fmtTokens(n) {
 }
 
 function renderNode(node) {
-  const sec = document.createElement('section'); sec.className = 'node';
+  const sec = document.createElement('section');
+  sec.className = 'ax-node';
   const tag = node.reachable
-    ? '<span class="tag up">online · ' + (node.uptimeSec ? Math.round(node.uptimeSec / 60) + 'm' : '—') + '</span>'
-    : '<span class="tag down">offline — ' + escapeHtml(node.error || 'unreachable') + '</span>';
-  sec.innerHTML = '<header><div class="name">' + escapeHtml(node.name) + '</div>' +
-    '<div class="url">' + escapeHtml(node.url) + '</div>' +
-    tag + '</header><div class="grid"></div>';
-  const g = sec.querySelector('.grid');
+    ? '<span class="ax-node__tag ax-node__tag--up">online · ' + (node.uptimeSec ? Math.round(node.uptimeSec / 60) + 'm' : '—') + '</span>'
+    : '<span class="ax-node__tag ax-node__tag--down">offline — ' + escapeHtml(node.error || 'unreachable') + '</span>';
+  sec.innerHTML = '<header>' +
+    '<span class="ax-node__name">' + escapeHtml(node.name) + '</span>' +
+    '<span class="ax-node__url">' + escapeHtml(node.url) + '</span>' +
+    tag + '</header><div class="ax-grid--agents"></div>';
+  const g = sec.querySelector('.ax-grid--agents');
   if (!node.reachable || node.agents.length === 0) {
-    const empty = document.createElement('div'); empty.style.color = 'var(--muted)'; empty.style.padding = '8px 4px';
+    const empty = document.createElement('div');
+    empty.className = 'ax-empty';
     const L = window.UI_LABELS || {};
     empty.textContent = node.reachable ? (L.noAgentsOnNode || 'No agents on this node.') : (L.unreachable || 'Unreachable.');
     g.appendChild(empty);
@@ -1490,56 +1609,80 @@ function renderAgent(a, node) {
   const card = document.createElement('div');
   const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
   const errored = (a.errors || 0) > 0;
-  card.className = 'agent' + (busy ? ' busy' : '') + (errored ? ' errored' : '');
+  card.className = 'ax-card ax-agent' + (busy ? ' is-handling' : '') + (errored ? ' is-errored' : '');
   const nodeUrl = (node && node.url) || '';
-  const tasks = (a.runningTasks || []).map(t => {
-    const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
-    const hasId = !!t.id;
-    const cls = 'preview' + (hasId ? ' clickable' : '');
-    const dataAttrs = hasId
-      ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
-      : '';
-    return '<div class="task">' +
-      '<span class="channel">' + escapeHtml(t.channel || '—') + '</span>' +
-      '<span class="' + cls + '" title="' + escapeHtml(t.messagePreview || '') + '"' + dataAttrs + '>' + escapeHtml(t.messagePreview || '(no preview)') + '</span>' +
-      '<span class="elapsed">' + elapsed + '</span>' +
-    '</div>';
-  }).join('');
   const L = window.UI_LABELS || {};
-  const stats = (L.stats) || { active: 'Active', total: 'Total', errors: 'Err' };
   const tierLabels = (L.tierLabels) || {};
   const tierDisplay = tierLabels[a.tier] || a.tier || '';
-  const tasksBlock = tasks
-    ? '<div class="tasks">' + tasks + '</div>'
-    : (busy ? '<div class="tasks"><div class="task"><span class="elapsed">' + escapeHtml(L.runningNoPreview || 'running · no preview') + '</span></div></div>'
-            : '<div class="idle">' + escapeHtml(L.idle || 'idle') + '</div>');
-  const modelLabel = a.model ? '<span class="model" title="Model">' + escapeHtml(shortenModel(a.model)) + '</span>' : '';
-  const lastLabel = a.lastActive
-    ? '<span class="last" title="' + escapeHtml(new Date(a.lastActive).toLocaleString()) + '">last ' + escapeHtml(fmtAgo(a.lastActive)) + '</span>'
-    : '<span class="last muted">' + escapeHtml(L.neverRan || 'never ran') + '</span>';
-  const recentLink = nodeUrl
-    ? '<a class="recent-link" href="#" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '">' + escapeHtml(L.recentActivities || 'Recent activities →') + '</a>'
-    : '';
-  // One-line "what did they do last" blurb so operators can scan what happened
-  // without clicking into each card.
+
+  // Running task card (clickable → opens live stream modal)
+  const taskHtml = (a.runningTasks || []).map(t => {
+    const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
+    const dataAttrs = t.id
+      ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
+      : '';
+    return '<button class="ax-agent__task"' + dataAttrs + ' title="' + escapeHtml(t.messagePreview || '') + '">' +
+      '<div class="ax-agent__task-head">' +
+        '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' +
+        '<span>running · ' + escapeHtml(t.channel || '') + '</span>' +
+        '<span class="elapsed">' + elapsed + '</span>' +
+      '</div>' +
+      '<div class="ax-agent__task-body">' + escapeHtml(t.messagePreview || '(no preview)') + '</div>' +
+    '</button>';
+  }).join('');
+  const runningBlock = taskHtml
+    ? '<div class="ax-agent__running">' + taskHtml + '</div>'
+    : (busy ? '<div class="ax-agent__running"><div class="ax-agent__task"><div class="ax-agent__task-head"><span class="ax-dot ax-dot--live ax-dot--pulse"></span>' + escapeHtml(L.runningNoPreview || 'working · preparing reply') + '</div></div></div>' : '');
+
+  // Last-reply summary (shown when idle)
   const summaryBlock = (!busy && a.lastSummary && a.lastSummary.text)
-    ? '<div class="summary' + (a.lastSummary.ok === false ? ' fail' : '') + '" title="' + escapeHtml(a.lastSummary.text) + '">' +
-        escapeHtml(a.lastSummary.text) +
-        (a.lastSummary.at ? ' <span class="when">· ' + escapeHtml(fmtAgo(a.lastSummary.at)) + '</span>' : '') +
+    ? '<div class="ax-agent__summary' + (a.lastSummary.ok === false ? ' is-fail' : '') + '">' +
+        '<div class="ax-agent__summary-caption">last reply' + (a.lastSummary.at ? ' · ' + escapeHtml(fmtAgo(a.lastSummary.at)) : '') + '</div>' +
+        '<div class="ax-agent__summary-text" title="' + escapeHtml(a.lastSummary.text) + '">' + escapeHtml(a.lastSummary.text) + '</div>' +
       '</div>'
-    : '';
-  card.innerHTML =
-    '<div class="top">' +
-      '<span class="dot"></span>' +
-      '<span class="name">' + escapeHtml(a.name || a.id) + '</span>' +
-      '<span class="tier" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' +
+    : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
+
+  // Mini stats row
+  const miniStats = '<div class="ax-agent__stats">' +
+    '<div class="ax-ministat' + (busy ? ' ax-ministat--live' : '') + '">' +
+      '<div class="ax-ministat__label">handling</div>' +
+      '<div class="ax-ministat__value">' + (a.active || 0) + '</div>' +
     '</div>' +
-    '<div class="meta">' + modelLabel + lastLabel + '</div>' +
-    '<div class="stats">' +
-      '<span>' + escapeHtml(stats.active) + ' <b>' + (a.active || 0) + '</b></span>' +
-      '<span>' + escapeHtml(stats.total) + ' <b>' + (a.total || 0) + '</b></span>' +
-      '<span class="err">' + escapeHtml(stats.errors) + ' <b>' + (a.errors || 0) + '</b></span>' +
-    '</div>' + tasksBlock + summaryBlock + recentLink;
+    '<div class="ax-ministat">' +
+      '<div class="ax-ministat__label">today</div>' +
+      '<div class="ax-ministat__value">' + (a.total || 0) + '</div>' +
+    '</div>' +
+    '<div class="ax-ministat' + (errored ? ' ax-ministat--err' : '') + '">' +
+      '<div class="ax-ministat__label">failed</div>' +
+      '<div class="ax-ministat__value">' + (a.errors || 0) + '</div>' +
+    '</div>' +
+  '</div>';
+
+  const lastActiveText = a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
+  const recentLink = nodeUrl
+    ? '<button class="ax-linkbtn" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-recent="1">history →</button>'
+    : '';
+
+  // Head: mention (trigger) + human name + tier badge + live/idle badge
+  const mention = (a.mentions && a.mentions.length) ? '@' + a.mentions[0].replace(/^@/, '') : '@' + a.id;
+  const liveBadge = busy
+    ? '<span class="ax-badge ax-badge--mono ax-badge--accent"><span class="ax-dot ax-dot--live ax-dot--pulse"></span> live</span>'
+    : (errored ? '<span class="ax-badge ax-badge--mono ax-badge--warn">errored</span>' : '<span class="ax-badge ax-badge--mono ax-badge--ghost">idle</span>');
+  const tierBadge = tierDisplay ? '<span class="ax-badge ax-badge--mono ax-badge--ghost" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' : '';
+
+  card.innerHTML =
+    '<div class="ax-agent__head">' +
+      '<div class="ax-agent__id">' +
+        '<span class="ax-mention">' + escapeHtml(mention) + '</span>' +
+        '<span class="ax-agent__name">' + escapeHtml(a.name || a.id) + '</span>' +
+      '</div>' +
+      '<div class="ax-agent__tier">' + tierBadge + liveBadge + '</div>' +
+    '</div>' +
+    (a.model ? '<div class="ax-agent__model">' + escapeHtml(shortenModel(a.model)) + '</div>' : '') +
+    miniStats +
+    runningBlock +
+    summaryBlock +
+    '<div class="ax-agent__foot"><span>' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
 }
 
@@ -1776,23 +1919,23 @@ async function openTaskRecord(opts) {
 
 if (historyPanel.closeBtn) historyPanel.closeBtn.addEventListener('click', closeHistoryPanel);
 
-// Click delegation on the agent grid — opens the modal for any task preview,
-// or the history panel for the "Recent activities" link.
+// Click delegation on the agent grid — opens the modal for any task card,
+// or the history panel for the "history →" link.
 document.getElementById('grid').addEventListener('click', (e) => {
-  const previewEl = e.target.closest('.preview.clickable');
-  if (previewEl) {
+  const taskEl = e.target.closest('.ax-agent__task[data-task-id]');
+  if (taskEl) {
     e.preventDefault();
     openTaskModal({
-      taskId: previewEl.dataset.taskId,
-      agentId: previewEl.dataset.agentId,
-      nodeUrl: previewEl.dataset.nodeUrl,
-      channel: previewEl.dataset.channel,
-      agentName: previewEl.dataset.agentName || previewEl.dataset.agentId,
-      preview: previewEl.getAttribute('title') || previewEl.textContent || '',
+      taskId: taskEl.dataset.taskId,
+      agentId: taskEl.dataset.agentId,
+      nodeUrl: taskEl.dataset.nodeUrl,
+      channel: taskEl.dataset.channel,
+      agentName: taskEl.dataset.agentName || taskEl.dataset.agentId,
+      preview: taskEl.getAttribute('title') || taskEl.textContent || '',
     });
     return;
   }
-  const recentEl = e.target.closest('.recent-link');
+  const recentEl = e.target.closest('[data-recent]');
   if (recentEl) {
     e.preventDefault();
     openHistoryPanel({
