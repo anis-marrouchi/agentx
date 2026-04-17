@@ -23,10 +23,25 @@ import { resolve } from "path"
 
 // Anthropic pricing per million tokens (as of April 2026, 5-min ephemeral).
 // Keys here must match getModelFamily() output.
+//
+// IMPORTANT: Opus 4.6 is 3× cheaper than Opus 4.1. Haiku 4.5 is more expensive
+// than Haiku 3.5. Our getModelFamily() resolves the exact version so the cost
+// report matches what Anthropic actually bills. Source: LiteLLM pricing cache
+// at ~/.cache/codeburn/litellm-pricing.json + codeburn/src/models.ts.
+//
+// Cache multipliers (consistent across all models):
+//   cache write (5-min ephemeral) = 1.25 × input
+//   cache read                    = 0.10 × input
 export const CACHE_AWARE_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
-  "claude-opus":   { input: 15,   output: 75,   cacheRead: 1.5,    cacheCreate: 18.75 },
-  "claude-sonnet": { input: 3,    output: 15,   cacheRead: 0.3,    cacheCreate: 3.75 },
-  "claude-haiku":  { input: 0.25, output: 1.25, cacheRead: 0.025,  cacheCreate: 0.3125 },
+  // Opus 4.6 / 4.5 — $5/$25 per MTok
+  "claude-opus-4-6":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
+  "claude-opus-4-5":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
+  // Opus 4.1 and earlier — $15/$75 per MTok (legacy, keep for historical runs)
+  "claude-opus":      { input: 15,   output: 75,   cacheRead: 1.5,   cacheCreate: 18.75 },
+  // Sonnet 4.6 / 4.5 — $3/$15 per MTok
+  "claude-sonnet":    { input: 3,    output: 15,   cacheRead: 0.3,   cacheCreate: 3.75 },
+  // Haiku 4.5 — $1/$5 per MTok (more expensive than Haiku 3.5)
+  "claude-haiku":     { input: 1,    output: 5,    cacheRead: 0.1,   cacheCreate: 1.25 },
 }
 
 /** Per-request input size (input + cacheCreate + cacheRead) above this
@@ -37,7 +52,12 @@ export const TIER2_MULTIPLIER = 1.5
 
 export function getModelFamily(model: string): string {
   const lower = model.toLowerCase()
-  if (lower.includes("opus")) return "claude-opus"
+  if (lower.includes("opus")) {
+    // Opus 4.6 and 4.5 are 3× cheaper than 4.1 — must distinguish.
+    if (lower.includes("4-6") || lower.includes("4.6") || lower.includes("opus-4-6")) return "claude-opus-4-6"
+    if (lower.includes("4-5") || lower.includes("4.5") || lower.includes("opus-4-5")) return "claude-opus-4-5"
+    return "claude-opus" // legacy 4.1 and earlier
+  }
   if (lower.includes("haiku")) return "claude-haiku"
   return "claude-sonnet"
 }
