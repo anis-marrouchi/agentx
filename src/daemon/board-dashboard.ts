@@ -1179,7 +1179,7 @@ function renderLiveHtml(): string {
       <span class="task-modal-status" id="task-modal-status">${escapeHtmlServer(UI_LABELS.taskModalConnecting)}</span>
       <button class="task-modal-close" id="task-modal-close" aria-label="Close">×</button>
     </header>
-    <pre id="task-modal-output" class="task-modal-output"></pre>
+    <div id="task-modal-output" class="task-modal-output"></div>
   </div>
 </div>
 ${labelsScript}
@@ -1485,28 +1485,66 @@ pre, code, .ax-mono { font-family: var(--ax-mono); font-variant-numeric: tabular
 .history-item .duration { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
 .history-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 8px; font-style: italic; }
 
-.task-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.task-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .task-modal.hidden { display: none; }
-.task-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
-.task-modal-card { position: relative; width: min(900px, 92vw); height: min(620px, 80vh);
-  background: var(--node); border: 1px solid var(--border); border-radius: 10px;
+.task-modal-backdrop { position: absolute; inset: 0; background: color-mix(in oklch, var(--ax-bg) 60%, black); }
+.task-modal-card { position: relative; width: min(900px, 92vw); height: min(640px, 86vh);
+  background: var(--ax-surface); border: 1px solid var(--ax-border-2); border-radius: 8px;
   display: flex; flex-direction: column; box-shadow: 0 18px 48px rgba(0,0,0,0.5); overflow: hidden; }
-.task-modal-card > header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid var(--border); background: #10131c; }
-.task-modal-card > header h2 { margin: 0; font-size: 13px; font-weight: 600; flex: 1;
-  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-modal-channel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;
-  background: rgba(99,102,241,0.18); color: var(--accent); padding: 2px 7px; border-radius: 3px; }
-.task-modal-status { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
-.task-modal-status.live { color: var(--green); }
-.task-modal-status.done { color: var(--accent); }
-.task-modal-status.err { color: var(--red); }
-.task-modal-close { background: transparent; border: none; color: var(--muted); font-size: 22px;
+.task-modal-card > header { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border-bottom: 1px solid var(--ax-border); background: var(--ax-bg-elev); }
+.task-modal-card > header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1;
+  color: var(--ax-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.005em; }
+.task-modal-channel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  background: color-mix(in oklch, var(--ax-accent) 14%, transparent); color: var(--ax-accent);
+  padding: 2px 7px; border-radius: 3px; font-family: var(--ax-mono); }
+.task-modal-status { font-size: 11px; color: var(--ax-muted); font-family: var(--ax-mono); }
+.task-modal-status.live { color: var(--ax-accent); }
+.task-modal-status.done { color: var(--ax-accent); opacity: 0.75; }
+.task-modal-status.err { color: var(--ax-err); }
+.task-modal-close { background: transparent; border: none; color: var(--ax-muted); font-size: 22px;
   cursor: pointer; padding: 0 6px; line-height: 1; }
-.task-modal-close:hover { color: var(--text); }
-.task-modal-output { margin: 0; flex: 1; overflow: auto; padding: 14px 16px;
-  background: #0a0c12; color: var(--text); font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-  white-space: pre-wrap; word-break: break-word; }
+.task-modal-close:hover { color: var(--ax-text); }
+
+/* Event timeline — colored left borders per event kind.
+   Structure: <div class="ax-ev ax-ev--<kind>"><div class="ax-ev__head">...</div><pre/div class="ax-ev__body"/></div> */
+.task-modal-output { margin: 0; flex: 1; overflow: auto; padding: 16px 20px;
+  background: var(--ax-bg); display: flex; flex-direction: column; gap: 14px; }
+.ax-ev { border-left: 2px solid var(--ax-border-2); padding: 2px 0 2px 12px; }
+.ax-ev--tool { border-color: var(--ax-info); }
+.ax-ev--tool-result { border-color: var(--ax-border-2); }
+.ax-ev--tool-result.is-err { border-color: var(--ax-err); }
+.ax-ev--thought { border-color: var(--ax-muted); }
+.ax-ev--text { border-color: var(--ax-accent); }
+.ax-ev--system { border-color: var(--ax-border-2); color: var(--ax-muted); font-size: var(--ax-fs-xs);
+  font-family: var(--ax-mono); padding-top: 4px; padding-bottom: 4px; }
+.ax-ev--system.is-done { border-color: var(--ax-accent); }
+.ax-ev--error { border-color: var(--ax-err); }
+.ax-ev__head { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.ax-ev__label { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; font-family: var(--ax-mono); }
+.ax-ev__label--soft { color: var(--ax-muted); }
+.ax-ev__label--tool { color: var(--ax-info); }
+.ax-ev__label--result { color: var(--ax-muted); }
+.ax-ev__label--text { color: var(--ax-accent); }
+.ax-ev__label--error { color: var(--ax-err); }
+.ax-ev__time { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.ax-ev__tool { font-family: var(--ax-mono); color: var(--ax-info); font-size: var(--ax-fs-xs); }
+.ax-ev__code { margin: 4px 0 0; padding: 8px 10px; background: var(--ax-bg-elev);
+  border: 1px solid var(--ax-border); border-radius: 3px; font-family: var(--ax-mono);
+  font-size: var(--ax-fs-xs); white-space: pre-wrap; word-break: break-word;
+  line-height: 1.5; color: var(--ax-text-2); max-height: 200px; overflow: auto; }
+.ax-ev__code--muted { color: var(--ax-muted); }
+.ax-ev__code--err { color: var(--ax-err); border-color: color-mix(in oklch, var(--ax-err) 35%, var(--ax-border)); }
+.ax-ev__thought { margin-top: 4px; color: var(--ax-text-2); font-style: italic;
+  font-size: var(--ax-fs-sm); line-height: 1.55; text-wrap: pretty; }
+.ax-ev__text { margin-top: 4px; color: var(--ax-text); font-size: var(--ax-fs-sm);
+  line-height: 1.55; text-wrap: pretty; white-space: pre-wrap; word-break: break-word; }
+.ax-ev--thinking { display: flex; align-items: center; gap: 8px; padding: 8px 0 0 12px;
+  color: var(--ax-muted); font-size: var(--ax-fs-sm); }
+.ax-ev__spinner { width: 10px; height: 10px; border: 1.5px solid var(--ax-border-2);
+  border-top-color: var(--ax-accent); border-radius: 50%;
+  animation: ax-spin 800ms linear infinite; display: inline-block; }
+@keyframes ax-spin { to { transform: rotate(360deg); } }
 `
 
 const LIVE_JS = `
@@ -1771,6 +1809,7 @@ setInterval(() => { if (lastSnap) {
 connect();
 
 // --- Task output modal ---
+// Per-modal parser state so consecutive chunks coalesce cleanly.
 const taskModal = {
   el: document.getElementById('task-modal'),
   output: document.getElementById('task-modal-output'),
@@ -1781,6 +1820,10 @@ const taskModal = {
   backdrop: null,
   es: null,
   currentTaskId: null,
+  /** Trailing line fragment from the last chunk (completes on next newline). */
+  lineBuf: '',
+  /** Active text event DOM node — consecutive plain-text lines coalesce into it. */
+  openTextEv: null,
 };
 taskModal.backdrop = taskModal.el && taskModal.el.querySelector('.task-modal-backdrop');
 
@@ -1790,11 +1833,126 @@ function setStatus(label, kind) {
   taskModal.status.className = 'task-modal-status' + (kind ? ' ' + kind : '');
 }
 
+function resetOutput() {
+  if (!taskModal.output) return;
+  taskModal.output.innerHTML = '';
+  taskModal.lineBuf = '';
+  taskModal.openTextEv = null;
+}
+
+/**
+ * Feed a raw transcript chunk to the event renderer. Handles partial lines
+ * (buffered until the next newline) and coalesces bare text lines into a
+ * single "assistant text" event until a structured marker arrives.
+ *
+ * Prefixes emitted by the backend formatter (src/agents/registry.ts):
+ *   '· '        system (init, done)
+ *   '→ '        tool_use
+ *   '← '        tool_result   (or '← [error] ' for is_error)
+ *   '💭 '       thinking / thought block
+ *   anything    assistant text
+ */
 function appendOutput(text) {
   if (!text || !taskModal.output) return;
   const atBottom = taskModal.output.scrollTop + taskModal.output.clientHeight >= taskModal.output.scrollHeight - 30;
-  taskModal.output.appendChild(document.createTextNode(text));
+  taskModal.lineBuf += text;
+  const lines = taskModal.lineBuf.split('\\n');
+  taskModal.lineBuf = lines.pop();
+  for (const line of lines) processStreamLine(line);
   if (atBottom) taskModal.output.scrollTop = taskModal.output.scrollHeight;
+}
+
+function processStreamLine(line) {
+  if (line.startsWith('· ')) { closeOpenText(); renderSystemEvent(line.slice(2)); return; }
+  if (line.startsWith('→ ')) { closeOpenText(); renderToolUseEvent(line.slice(2)); return; }
+  if (line.startsWith('← ')) { closeOpenText(); renderToolResultEvent(line.slice(2)); return; }
+  if (line.startsWith('💭 ')) { closeOpenText(); renderThoughtEvent(line.slice(2)); return; }
+  if (line.startsWith('[error] ')) { closeOpenText(); renderErrorEvent(line.slice(8)); return; }
+  if (line.startsWith('[task finished]')) { closeOpenText(); renderSystemEvent('task finished', true); return; }
+  if (line === '') {
+    // Blank line = paragraph break in assistant text. Keep the block open but
+    // insert a blank line so long replies stay readable.
+    if (taskModal.openTextEv) {
+      const body = taskModal.openTextEv.querySelector('.ax-ev__text');
+      if (body) body.appendChild(document.createTextNode('\\n\\n'));
+    }
+    return;
+  }
+  appendToOpenText(line);
+}
+
+function closeOpenText() { taskModal.openTextEv = null; }
+
+function appendToOpenText(line) {
+  if (!taskModal.openTextEv) {
+    const ev = document.createElement('div');
+    ev.className = 'ax-ev ax-ev--text';
+    ev.innerHTML = '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--text">response</span></div><div class="ax-ev__text"></div>';
+    taskModal.output.appendChild(ev);
+    taskModal.openTextEv = ev;
+  }
+  const body = taskModal.openTextEv.querySelector('.ax-ev__text');
+  if (body.childNodes.length > 0) body.appendChild(document.createTextNode('\\n'));
+  body.appendChild(document.createTextNode(line));
+}
+
+function renderSystemEvent(text, done) {
+  const ev = document.createElement('div');
+  ev.className = 'ax-ev ax-ev--system' + (done ? ' is-done' : '');
+  ev.innerHTML = '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--soft">system</span>' +
+    '<span>' + escapeHtml(text) + '</span></div>';
+  taskModal.output.appendChild(ev);
+}
+
+function renderToolUseEvent(text) {
+  // text looks like 'ToolName({...input...})' — best-effort split on the first paren.
+  const openIdx = text.indexOf('(');
+  const closeIdx = text.lastIndexOf(')');
+  const name = openIdx > 0 ? text.slice(0, openIdx) : text;
+  const args = (openIdx > 0 && closeIdx > openIdx) ? text.slice(openIdx + 1, closeIdx) : '';
+  const ev = document.createElement('div');
+  ev.className = 'ax-ev ax-ev--tool';
+  const head =
+    '<div class="ax-ev__head">' +
+      '<span class="ax-ev__label ax-ev__label--tool">tool call</span>' +
+      '<span class="ax-ev__tool">' + escapeHtml(name) + '</span>' +
+    '</div>';
+  const body = args ? '<pre class="ax-ev__code">' + escapeHtml(args) + '</pre>' : '';
+  ev.innerHTML = head + body;
+  taskModal.output.appendChild(ev);
+}
+
+function renderToolResultEvent(text) {
+  const isErr = text.startsWith('[error] ');
+  const body = isErr ? text.slice('[error] '.length) : text;
+  const ev = document.createElement('div');
+  ev.className = 'ax-ev ax-ev--tool-result' + (isErr ? ' is-err' : '');
+  ev.innerHTML =
+    '<div class="ax-ev__head">' +
+      '<span class="ax-ev__label ax-ev__label--result">' + (isErr ? 'tool error' : 'tool result') + '</span>' +
+    '</div>' +
+    '<pre class="ax-ev__code ' + (isErr ? 'ax-ev__code--err' : 'ax-ev__code--muted') + '">' + escapeHtml(body) + '</pre>';
+  taskModal.output.appendChild(ev);
+}
+
+function renderThoughtEvent(text) {
+  const ev = document.createElement('div');
+  ev.className = 'ax-ev ax-ev--thought';
+  ev.innerHTML =
+    '<div class="ax-ev__head">' +
+      '<span class="ax-ev__label ax-ev__label--soft">internal</span>' +
+    '</div>' +
+    '<div class="ax-ev__thought">' + escapeHtml(text) + '</div>';
+  taskModal.output.appendChild(ev);
+}
+
+function renderErrorEvent(text) {
+  const ev = document.createElement('div');
+  ev.className = 'ax-ev ax-ev--error';
+  ev.innerHTML =
+    '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--error">error</span></div>' +
+    '<pre class="ax-ev__code ax-ev__code--err">' + escapeHtml(text) + '</pre>';
+  taskModal.output.appendChild(ev);
 }
 
 function closeTaskModal() {
@@ -1816,7 +1974,7 @@ function openTaskModal(opts) {
   taskModal.title.textContent = opts.agentName + ' · ' + (opts.preview || 'task ' + opts.taskId);
   taskModal.title.title = opts.preview || '';
   taskModal.channel.textContent = opts.channel || '—';
-  taskModal.output.textContent = '';
+  resetOutput();
   setStatus(L.taskModalConnecting || 'connecting…', '');
   const url = '/api/task/stream?node=' + encodeURIComponent(opts.nodeUrl)
     + '&agent=' + encodeURIComponent(opts.agentId)
@@ -1937,7 +2095,7 @@ async function openTaskRecord(opts) {
   taskModal.title.textContent = (opts.agentName || opts.agentId) + ' · ' + (opts.preview || 'task ' + opts.taskId);
   taskModal.title.title = opts.preview || '';
   taskModal.channel.textContent = opts.channel || '—';
-  taskModal.output.textContent = '';
+  resetOutput();
   setStatus(L.historyLoading || 'loading…', '');
   const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
     + '&agent=' + encodeURIComponent(opts.agentId) + '&task=' + encodeURIComponent(opts.taskId);
