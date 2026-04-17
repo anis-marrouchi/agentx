@@ -1200,35 +1200,75 @@ function renderGlossaryHtml(): string {
     return `<article class="term"><h3>${escapeHtmlServer(g.term)}${alias}</h3><p>${escapeHtmlServer(g.definition)}</p></article>`
   }).join("")
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtmlServer(UI_LABELS.brand)} — Glossary</title>
+<title>${escapeHtmlServer(UI_LABELS.brand)} · Glossary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root { --bg:#0b0d14; --card:#151823; --border:#2a2d3a; --text:#e6e8ef; --muted:#8b8fa3; --accent:#6366f1; }
+:root{
+  --ax-bg:oklch(0.16 0.010 265);--ax-bg-elev:oklch(0.19 0.012 265);
+  --ax-surface:oklch(0.21 0.012 265);--ax-border:oklch(0.29 0.014 265);
+  --ax-border-2:oklch(0.35 0.016 265);--ax-text:oklch(0.95 0.005 265);
+  --ax-text-2:oklch(0.80 0.008 265);--ax-muted:oklch(0.60 0.010 265);
+  --ax-accent:oklch(0.78 0.13 165);
+  --ax-font:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
+  --ax-mono:"IBM Plex Mono",ui-monospace,"SF Mono",monospace;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-header{display:flex;align-items:center;gap:14px;padding:14px 22px;background:#10131c;border-bottom:1px solid var(--border);position:sticky;top:0}
-.brand{font-weight:600;color:var(--accent);font-size:15px}
-.sub{color:var(--muted);font-weight:500}
-.spacer{flex:1}
-a.link{color:var(--muted);text-decoration:none;font-size:13px;padding:4px 10px;border:1px solid var(--border);border-radius:6px}
-a.link:hover{color:var(--accent);border-color:var(--accent)}
-main{max-width:720px;margin:0 auto;padding:28px 22px 60px}
-h1{font-size:22px;margin:0 0 6px}
-.lead{color:var(--muted);margin:0 0 26px}
-article.term{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:12px 0}
-article.term h3{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
-article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);background:rgba(99,102,241,0.14);padding:2px 7px;border-radius:3px;font-weight:500;font-family:ui-monospace,monospace}
-article.term p{margin:0;color:var(--text)}
+html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
+  font-family:var(--ax-font);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv01"}
+.ax-topbar{display:flex;align-items:center;justify-content:space-between;
+  padding:8px 18px;border-bottom:1px solid var(--ax-border);
+  background:var(--ax-bg-elev);position:sticky;top:0;z-index:20}
+.ax-topbar__left{display:flex;align-items:center;gap:18px}
+.ax-brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.01em}
+.ax-brand__mark{font-family:var(--ax-mono);font-size:12px;padding:2px 8px;
+  border:1px solid var(--ax-border-2);color:var(--ax-accent);border-radius:4px}
+.ax-brand__name{font-size:14px}
+.ax-brand__subtitle{font-size:11px;color:var(--ax-muted);
+  border-left:1px solid var(--ax-border);padding-left:12px;margin-left:4px}
+.ax-topbar__tabs{display:flex;gap:2px}
+.ax-topbar__tab{background:transparent;border:none;color:var(--ax-text-2);
+  padding:8px 14px;font:inherit;cursor:pointer;font-size:12px;text-decoration:none;
+  border-bottom:2px solid transparent}
+.ax-topbar__tab:hover{color:var(--ax-text)}
+.ax-topbar__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent)}
+main{max-width:760px;margin:0 auto;padding:32px 24px 80px}
+h1{font-size:22px;margin:0 0 6px;font-weight:600;letter-spacing:-0.01em}
+.lead{color:var(--ax-muted);margin:0 0 28px;font-size:13px;line-height:1.6}
+.lead code{font-family:var(--ax-mono);font-size:12px;background:var(--ax-surface);
+  padding:1px 6px;border-radius:3px;border:1px solid var(--ax-border)}
+article.term{background:var(--ax-surface);border:1px solid var(--ax-border);
+  border-radius:6px;padding:16px 20px;margin:10px 0}
+article.term h3{font-size:14px;margin:0 0 6px;display:flex;align-items:center;
+  gap:10px;font-weight:600;letter-spacing:-0.005em}
+article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;
+  color:var(--ax-muted);background:var(--ax-bg);padding:2px 7px;border-radius:3px;
+  font-weight:500;font-family:var(--ax-mono);border:1px solid var(--ax-border)}
+article.term p{margin:0;color:var(--ax-text-2);font-size:13px;line-height:1.6}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">${escapeHtmlServer(UI_LABELS.brand)} <span class="sub">· Glossary</span></div>
-  <div class="spacer"></div>
-  <a href="/live" class="link">← Back to dashboard</a>
+<header class="ax-topbar">
+  <div class="ax-topbar__left">
+    <div class="ax-brand">
+      <span class="ax-brand__mark">AX</span>
+      <span class="ax-brand__name">${escapeHtmlServer(UI_LABELS.brand)}</span>
+      <span class="ax-brand__subtitle">Glossary</span>
+    </div>
+    <nav class="ax-topbar__tabs">
+      <a href="/live" class="ax-topbar__tab">Live</a>
+      <a href="/" class="ax-topbar__tab">Boards</a>
+      <a href="/admin" class="ax-topbar__tab">Settings</a>
+      <a href="/glossary" class="ax-topbar__tab is-active">Glossary</a>
+    </nav>
+  </div>
 </header>
 <main>
   <h1>Plain-English glossary</h1>
