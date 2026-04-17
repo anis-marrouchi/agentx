@@ -54,6 +54,11 @@ const agentConfigSchema = z.object({
     prompt: z.string().default("Check inbox, pending tasks, and system health. Report anything that needs attention."),
     channel: z.string().default("heartbeat"),
   }).default({}),
+  /** Reachability via the external public API.
+   *   - "private" (default): this agent is daemon-internal + channel-bound only.
+   *   - "public": external apps can POST /api/public/agents/<id>/messages
+   *     with a scoped token (agent:<id> or agent:*). */
+  access: z.enum(["private", "public"]).default("private"),
 })
 
 const telegramAccountSchema = z.object({

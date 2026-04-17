@@ -1,0 +1,44 @@
+# Friendlier path than `docker run` — mount ./agentx-data, bring up daemon +
+# dashboard together, pick up secrets from ./.env.
+#
+# Quick start:
+#   1. cp agentx.example.json agentx-data/agentx.json   (or use the wizard)
+#   2. cp .env.example .env                              (add your API keys)
+#   3. docker compose up -d
+#   4. open http://127.0.0.1:4202
+#
+# The daemon and the dashboard run in two separate containers so you can
+# upgrade / restart them independently. They share the ./agentx-data volume
+# so config, sessions, and task history are visible to both.
+
+services:
+  daemon:
+    build:
+      context: .
+      args:
+        # Set to 1 if you want Claude Code baked into the image.
+        INSTALL_CLAUDE: "0"
+    image: agentx:latest
+    container_name: agentx-daemon
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18800:18800"
+    volumes:
+      - ./agentx-data:/data
+    env_file:
+      - .env
+    command: ["daemon", "start"]
+
+  dashboard:
+    image: agentx:latest
+    container_name: agentx-dashboard
+    depends_on:
+      - daemon
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4202:4202"
+    volumes:
+      - ./agentx-data:/data
+    env_file:
+      - .env
+    command: ["board", "serve", "--bind", "0.0.0.0"]

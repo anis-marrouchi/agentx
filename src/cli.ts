@@ -3,6 +3,7 @@ import { Command } from "commander"
 import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
 import { setup } from "@/commands/setup"
+import { token } from "@/commands/token"
 import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
@@ -45,6 +46,7 @@ async function main() {
     .addCommand(usage)
     .addCommand(board)
     .addCommand(wiki)
+    .addCommand(token)
 
   const args = process.argv.slice(2)
   if (args.length === 0) {

@@ -1,25 +1,43 @@
 # Install
 
-From zero to a running daemon in under five minutes.
+Pick the path that matches you. All three end up at the same place: a working daemon and a dashboard at `http://127.0.0.1:4202`.
 
-## Prerequisites
+## Option A: One-line installer (recommended)
 
-- **Node.js 20+** — `node --version`
-- **Claude Code CLI** (for `claude-code` tier agents) — [install guide](https://docs.anthropic.com/en/docs/claude-code). Other providers (OpenAI, Ollama) don't require it.
-- A channel credential: a Telegram bot token from [@BotFather](https://t.me/BotFather), a Discord bot token, a GitLab API token, or a WhatsApp session. Telegram is the fastest to get started.
+```bash
+curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
+```
 
-## 1. Install the CLI
+This:
+
+1. Checks for Node.js 20+ (uses nvm if available).
+2. Installs `agentix-cli` globally.
+3. Runs `agentx setup`, which opens the web wizard in your browser.
+
+The wizard collects: team name, first agent (name, trigger words, personality), optional Telegram bot token, optional Anthropic API key. It writes `agentx.json` + `.env` + scaffolds the agent's folder for you — no hand-editing.
+
+## Option B: Docker
+
+Best for servers you don't want to install Node on.
+
+```bash
+git clone https://github.com/anis-marrouchi/agentx.git
+cd agentx
+cp agentx.example.json agentx-data/agentx.json   # or empty, and run `docker compose run daemon setup`
+cp .env.example .env                              # add your API keys here
+docker compose up -d
+```
+
+The `docker-compose.yml` runs two containers (daemon + dashboard) sharing a bind-mounted `./agentx-data` directory — nothing is stored inside the image, so upgrades are `docker compose pull && up -d`.
+
+## Option C: Manual npm
 
 ```bash
 npm install -g agentix-cli
-agentx --version
+agentx setup               # opens the wizard
 ```
 
-::: tip Package name
-The npm package is `agentix-cli`; the CLI binary is `agentx`.
-:::
-
-## 2. Initialize a workspace
+If you'd rather skip the wizard and edit JSON by hand, `agentx init` still works:
 
 ```bash
 mkdir my-agentx && cd my-agentx
@@ -30,7 +48,13 @@ This creates:
 
 - `agentx.json` — the main config file
 - `.env` — template for secrets (loaded automatically at startup)
-- `.agentx/` — runtime data directory (sessions, wiki, cron logs — gitignored)
+- `.agentx/` — runtime data directory (sessions, wiki, cron logs, task history, tokens — gitignored)
+
+## Prerequisites (reference)
+
+- **Node.js 20+** — `node --version`
+- **Claude Code CLI** (for `claude-code` tier agents) — [install guide](https://docs.anthropic.com/en/docs/claude-code). Other providers (OpenAI, Ollama) don't require it.
+- A channel credential: a Telegram bot token from [@BotFather](https://t.me/BotFather), a Discord bot token, a GitLab API token, or a WhatsApp session. Telegram is the fastest to get started.
 
 ## 3. Add your first agent
 

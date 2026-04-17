@@ -15,20 +15,38 @@
 - **Multiple machines, one team** — run AgentX across a laptop + a server and they'll share work automatically
 - **Scheduled jobs in plain English** — `agentx schedule "every Monday at 9am" --agent sales`
 - **Live dashboard** — a browser view of what every agent is doing right now, with full task history and replay
+- **Scoped API tokens** — let external apps message an agent with a time-bound, scope-limited token (see [Tokens](docs/reference/tokens.md) and [Public agents](docs/reference/public-agents.md))
 - **Bring your own AI** — Claude Code (deep reasoning + tools), OpenAI / Anthropic API, Ollama, or anything in between
 - **Wiki memory** — conversations compound into a shared knowledge base each agent draws from
 
 ## Install
 
+**One line:**
+
 ```bash
-npm install -g agentix-cli
-agentx init                # scaffolds agentx.json
-agentx daemon start        # starts the router
+curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
 ```
 
-Open the dashboard at **http://127.0.0.1:4202** — a plain-English control view, with a `?`-Glossary link at the top if anything looks unfamiliar.
+Installs the CLI and launches the web setup wizard — no YAML, no JSON.
 
-For hand-rolled setup, see the [full install guide](docs/install.md).
+**Docker:**
+
+```bash
+git clone https://github.com/anis-marrouchi/agentx.git && cd agentx
+cp agentx.example.json agentx-data/agentx.json    # or run `agentx setup` later
+docker compose up -d
+```
+
+**Manual:**
+
+```bash
+npm install -g agentix-cli
+agentx setup               # opens the web wizard
+```
+
+Open the dashboard at **http://127.0.0.1:4202** — a plain-English control view, with a `?`-Glossary link if anything looks unfamiliar.
+
+See the [full install guide](docs/install.md) for advanced setups.
 
 ## Docs
 
@@ -47,6 +65,8 @@ Full documentation: **[https://agentx-docs.pages.dev](https://agentx-docs.pages.
 
 **For configuration:**
 - [CLI reference](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Communication matrix](docs/reference/communication-matrix.md)
+- [Scoped API tokens](docs/reference/tokens.md) — mint / scope / revoke
+- [Public agents](docs/reference/public-agents.md) — expose an agent over HTTP
 
 **Moving from another tool:**
 - [Migrate from OpenClaw](docs/migration/from-openclaw.md) — we import the bulk of your config in one shot

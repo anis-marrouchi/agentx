@@ -10,6 +10,7 @@ import { SORTABLE_JS } from "./vendor/sortable"
 import { UI_LABELS, GLOSSARY } from "./ui-labels"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
+import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 
 // --- Kanban Board Dashboard ---
 //
@@ -210,10 +211,30 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // --- Public agent endpoint (always token-gated, regardless of dashboard.token) ---
+  const publicAgentMatch = path.match(/^\/api\/public\/agents\/([^/]+)\/messages$/)
+  if (publicAgentMatch && method === "POST") {
+    const agentId = publicAgentMatch[1]
+    const tokenRec = requireScopedToken(req, res, [`agent:${agentId}`])
+    if (!tokenRec) return
+    await proxyPublicAgentMessage(req, res, ctx.config, agentId)
+    return
+  }
+
   if (path.startsWith("/api/") && ctx.token) {
+    // Legacy: if dashboard.token is configured, every /api/* request must
+    // carry it (or a scoped token with dashboard:write).
     const authHeader = req.headers.authorization || ""
     const got = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-    if (got !== ctx.token) { sendJson(res, 401, { error: "unauthorized" }); return }
+    if (got === ctx.token) { /* fall through */ }
+    else {
+      const tokStore = new TokenStore()
+      const rec = got ? tokStore.verify(got) : null
+      if (!rec || !recordHasScope(rec, "dashboard:write")) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
+    }
   }
 
   const isWrite = method === "POST" || method === "PATCH" || method === "DELETE"
@@ -705,6 +726,87 @@ async function proxyTaskStream(
   }
   pump()
   req.on("close", () => { upstreamCtl.abort(); try { res.end() } catch { /* */ } })
+}
+
+/**
+ * Reject the request with 401 unless the caller presents a scoped token that
+ * covers *all* of the required scopes. Returns the matching record on success,
+ * or null after writing the 401 (so callers can early-return).
+ */
+function requireScopedToken(
+  req: IncomingMessage,
+  res: ServerResponse,
+  required: string[],
+): TokenRecord | null {
+  const token = extractToken(req as any)
+  if (!token) {
+    sendJson(res, 401, { error: "missing token", hint: "pass Authorization: Bearer <token> (agentx token create)" })
+    return null
+  }
+  const rec = new TokenStore().verify(token)
+  if (!rec) {
+    sendJson(res, 401, { error: "invalid or revoked token" })
+    return null
+  }
+  for (const s of required) {
+    if (!recordHasScope(rec, s)) {
+      sendJson(res, 403, { error: `token missing scope: ${s}`, scopes: rec.scopes })
+      return null
+    }
+  }
+  return rec
+}
+
+/**
+ * Public agent endpoint — external apps POST a message, we forward to the
+ * daemon's /task and return the final response. Only agents whose config
+ * says `access: "public"` are reachable.
+ */
+async function proxyPublicAgentMessage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: DaemonConfig,
+  agentId: string,
+): Promise<void> {
+  const agentDef = (config.agents as any)?.[agentId]
+  if (!agentDef) { sendJson(res, 404, { error: "unknown agent" }); return }
+  if (agentDef.access !== "public") {
+    sendJson(res, 403, { error: "agent is private", hint: `set agents.${agentId}.access = "public" to expose it` })
+    return
+  }
+  let body: any
+  try { body = await readJson(req) } catch { sendJson(res, 400, { error: "invalid JSON body" }); return }
+  const message = body?.message
+  if (!message || typeof message !== "string") {
+    sendJson(res, 400, { error: "required: { message: string, context?: {...} }" })
+    return
+  }
+  const daemonUrl = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (config.dashboard.token) headers["Authorization"] = `Bearer ${config.dashboard.token}`
+  try {
+    const upstream = await fetch(`${daemonUrl}/task`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        agent: agentId,
+        message,
+        context: {
+          channel: "public-api",
+          sender: body.context?.sender || "api",
+          ...(body.context || {}),
+        },
+      }),
+    })
+    const text = await upstream.text()
+    res.writeHead(upstream.status, {
+      "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+    })
+    res.end(text)
+  } catch (e: any) {
+    sendJson(res, 502, { error: e.message || "upstream call failed" })
+  }
 }
 
 /**

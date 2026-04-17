@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync } from "fs"
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { TokenStore } from "./token-store"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -37,12 +38,16 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "GET /api/admin/state": () => getAdminState(),
       "POST /api/admin/agents": () => addAgent(body),
       "DELETE /api/admin/agents": () => deleteAgent(body),
+      "POST /api/admin/agents/access": () => setAgentAccess(body),
       "POST /api/admin/channels/telegram": () => addTelegramAccount(body),
       "DELETE /api/admin/channels/telegram": () => deleteTelegramAccount(body),
       "POST /api/admin/channels/telegram/toggle": () => toggleTelegram(body),
       "POST /api/admin/crons": () => addCron(body),
       "DELETE /api/admin/crons": () => deleteCron(body),
       "POST /api/admin/config/raw": () => replaceConfigRaw(body),
+      "GET /api/admin/tokens": () => listTokens(),
+      "POST /api/admin/tokens": () => createToken(body),
+      "DELETE /api/admin/tokens": () => revokeToken(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -88,6 +93,7 @@ function getAdminState() {
     model: a.model,
     mentions: a.mentions || [],
     workspace: a.workspace,
+    access: a.access || "private",
   }))
   const telegramAccounts = cfg.channels?.telegram?.accounts || {}
   const telegram = {
@@ -112,6 +118,49 @@ function getAdminState() {
 // ========================================================================
 // Mutations
 // ========================================================================
+
+function setAgentAccess(body: any) {
+  const id = String(body?.id || "").trim()
+  const access = body?.access === "public" ? "public" : "private"
+  if (!id) throw new Error("Agent id is required.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[id]) throw new Error(`Agent "${id}" not found.`)
+    cfg.agents[id].access = access
+    return `agent "${id}" is now ${access}`
+  })
+  return { summary }
+}
+
+function listTokens() {
+  return new TokenStore().list().map((r) => ({
+    id: r.id,
+    name: r.name,
+    prefix: r.prefix,
+    scopes: r.scopes,
+    createdAt: r.createdAt,
+    expiresAt: r.expiresAt,
+    revokedAt: r.revokedAt,
+    lastUsedAt: r.lastUsedAt,
+  }))
+}
+
+function createToken(body: any) {
+  const name = String(body?.name || "").trim()
+  const scopes = Array.isArray(body?.scopes) ? body.scopes.map(String) : []
+  const expiresInDays = body?.expiresInDays ? Number(body.expiresInDays) : undefined
+  const { token, record } = new TokenStore().create({ name, scopes, expiresInDays })
+  // Return the secret in the body exactly once — the UI must surface it
+  // immediately and then forget it (no re-display after refresh).
+  return { summary: `created token "${name}"`, token, record }
+}
+
+function revokeToken(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("Token id is required.")
+  const rec = new TokenStore().revoke(id)
+  if (!rec) throw new Error(`Token "${id}" not found.`)
+  return { summary: `revoked token ${id} (${rec.name})` }
+}
 
 function addAgent(body: any) {
   const id = String(body?.id || "").trim()
@@ -356,6 +405,7 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="channels">Channels</button>
   <button data-tab="crons">Schedules</button>
+  <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
 <main>
@@ -379,6 +429,7 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
       </div>
       <label>Personality / instructions<span class="hint">(optional)</span></label>
       <textarea id="a-personality" placeholder="You are a sales agent for Acme. Qualify leads, route pricing questions to @support."></textarea>
+      <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="a-public" /> <span>Expose via public API (needs a token with <code>agent:&lt;id&gt;</code> scope)</span></label>
       <div class="actions"><button class="primary" onclick="addAgent()">Add agent</button><div id="a-msg" class="msg"></div></div>
     </div>
   </section>
@@ -404,6 +455,26 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
       <label>Prompt<span class="hint">(what the agent should do on every tick)</span></label>
       <textarea id="c-prompt" placeholder="Send me the weekly sales summary."></textarea>
       <div class="actions"><button class="primary" onclick="addCron()">Add schedule</button><div id="c-msg" class="msg"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-tokens" class="tab">
+    <h2>Access tokens</h2>
+    <p class="lead">Scoped tokens let external apps and mesh peers call AgentX. Pick the narrowest scope that covers what the caller needs — tokens can't be recovered if leaked, so short expiries are a good habit.</p>
+    <div id="token-list" class="list"></div>
+    <div class="add-form">
+      <h3>Mint a new token</h3>
+      <label>Name<span class="hint">(who or what this is for — e.g. "Slack bridge", "Mesh peer: laptop")</span></label>
+      <input id="t-name" placeholder="Slack bridge" />
+      <label>Scopes<span class="hint">(pick one or more)</span></label>
+      <div id="t-scopes" style="display:flex;flex-direction:column;gap:4px;margin-top:4px"></div>
+      <label>Expires after<span class="hint">(in days; blank = never)</span></label>
+      <input id="t-expires" type="number" min="1" max="3650" placeholder="90" />
+      <div class="actions"><button class="primary" onclick="createToken()">Create token</button><div id="t-msg" class="msg"></div></div>
+      <div id="t-reveal" style="display:none;margin-top:14px;padding:14px 16px;border-radius:6px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3)">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Copy this now — it won't be shown again.</div>
+        <code id="t-secret" style="display:block;word-break:break-all;color:var(--green);font-family:ui-monospace,monospace;font-size:12px;padding:8px;background:#0e1119;border-radius:4px"></code>
+      </div>
     </div>
   </section>
 
@@ -460,16 +531,26 @@ function renderAgents() {
   for (const a of state.agents) {
     const div = document.createElement('div');
     div.className = 'row-card';
+    const accessChip = a.access === 'public'
+      ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">public API</span>'
+      : '<span class="chip off">private</span>';
     div.innerHTML =
       '<div class="info"><h3>' + escapeHtml(a.name) + '</h3>' +
         '<div class="meta">' +
           '<span class="chip">' + escapeHtml(a.tier || '') + '</span>' +
           (a.model ? '<span class="chip">' + escapeHtml(a.model) + '</span>' : '') +
+          accessChip +
           '<b>' + escapeHtml(a.id) + '</b> · triggers: ' + (a.mentions.map(escapeHtml).join(', ') || '—') +
         '</div>' +
       '</div>' +
+      '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
       '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';
     div.querySelector('button.danger').addEventListener('click', () => deleteAgent(a.id));
+    div.querySelector('button.ghost[data-toggle]').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      const want = btn.dataset.access === 'public' ? 'private' : 'public';
+      setAgentAccess(btn.dataset.toggle, want);
+    });
     list.appendChild(div);
   }
   // Refresh the cron agent picker so new agents show up.
@@ -487,13 +568,25 @@ async function addAgent() {
     tier: $('a-tier').value,
     model: $('a-model').value.trim() || undefined,
     personality: $('a-personality').value.trim() || undefined,
+    access: $('a-public').checked ? 'public' : 'private',
   };
   try {
     const r = await req('POST', '/api/admin/agents', body);
+    if (body.access === 'public') {
+      await req('POST', '/api/admin/agents/access', { id: body.id, access: 'public' }).catch(() => {});
+    }
     showMsg($('a-msg'), 'ok', r.summary || 'Added.');
     $('a-id').value = ''; $('a-name').value = ''; $('a-triggers').value = ''; $('a-personality').value = '';
+    $('a-public').checked = false;
     refresh();
   } catch (e) { showMsg($('a-msg'), 'err', e.message); }
+}
+
+async function setAgentAccess(id, access) {
+  try {
+    await req('POST', '/api/admin/agents/access', { id, access });
+    refresh();
+  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
 async function deleteAgent(id) {
@@ -591,6 +684,81 @@ async function deleteCron(id) {
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
+// --- Tokens tab ---
+const SCOPE_CHOICES = [
+  { value: 'dashboard:read', label: 'Read dashboard + live view' },
+  { value: 'dashboard:write', label: 'Write (admin + config) — full control' },
+  { value: 'agent:*', label: 'Message any public agent' },
+  { value: 'mesh:peer', label: 'Mesh peer auth (cross-node)' },
+];
+
+function renderScopeChoices() {
+  const publicAgents = state.agents.filter((a) => a.access === 'public');
+  const agentScopes = publicAgents.map((a) => ({ value: 'agent:' + a.id, label: 'Message agent: ' + a.name + ' (' + a.id + ')' }));
+  const all = SCOPE_CHOICES.concat(agentScopes);
+  const host = $('t-scopes');
+  host.innerHTML = all.map((c) => {
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);font-weight:400;margin:0">' +
+      '<input type="checkbox" value="' + escapeHtml(c.value) + '" style="width:auto" /> ' +
+      '<code style="background:#0e1119;padding:1px 6px;border-radius:3px;font-family:ui-monospace,monospace;font-size:11px;color:var(--accent)">' + escapeHtml(c.value) + '</code>' +
+      '<span style="color:var(--muted)">— ' + escapeHtml(c.label) + '</span>' +
+    '</label>';
+  }).join('');
+}
+
+async function loadTokens() {
+  renderScopeChoices();
+  try {
+    const tokens = await req('GET', '/api/admin/tokens');
+    const list = $('token-list');
+    if (!tokens.length) { list.innerHTML = '<div class="empty">No tokens issued.</div>'; return; }
+    list.innerHTML = '';
+    for (const t of tokens) {
+      const div = document.createElement('div');
+      div.className = 'row-card';
+      const status = t.revokedAt
+        ? '<span class="chip" style="background:rgba(239,68,68,0.15);color:var(--red)">revoked</span>'
+        : (t.expiresAt && Date.parse(t.expiresAt) < Date.now()
+          ? '<span class="chip" style="background:rgba(245,158,11,0.15);color:var(--yellow)">expired</span>'
+          : '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">active</span>');
+      const expiry = t.expiresAt ? ' · expires ' + new Date(t.expiresAt).toLocaleDateString() : ' · no expiry';
+      const lastUsed = t.lastUsedAt ? ' · last used ' + new Date(t.lastUsedAt).toLocaleString() : ' · never used';
+      div.innerHTML =
+        '<div class="info"><h3>' + escapeHtml(t.name) + '</h3>' +
+          '<div class="meta">' + status +
+            '<b>' + escapeHtml(t.id) + '</b> · <code style="font-family:ui-monospace,monospace">' + escapeHtml(t.prefix) + '…</code> · scopes: ' + (t.scopes.map(escapeHtml).join(', ') || '—') + expiry + lastUsed +
+          '</div>' +
+        '</div>' +
+        (t.revokedAt ? '' : '<button class="danger" data-id="' + escapeHtml(t.id) + '">Revoke</button>');
+      const del = div.querySelector('button.danger');
+      if (del) del.addEventListener('click', () => revokeToken(t.id));
+      $('token-list').appendChild(div);
+    }
+  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+async function createToken() {
+  const name = $('t-name').value.trim();
+  const scopes = [...document.querySelectorAll('#t-scopes input:checked')].map((el) => el.value);
+  const expires = $('t-expires').value.trim();
+  try {
+    const body = { name, scopes, expiresInDays: expires ? parseInt(expires, 10) : undefined };
+    const r = await req('POST', '/api/admin/tokens', body);
+    $('t-secret').textContent = r.token;
+    $('t-reveal').style.display = 'block';
+    showMsg($('t-msg'), 'ok', r.summary);
+    $('t-name').value = ''; $('t-expires').value = '';
+    document.querySelectorAll('#t-scopes input:checked').forEach((el) => { el.checked = false; });
+    loadTokens();
+  } catch (e) { showMsg($('t-msg'), 'err', e.message); }
+}
+
+async function revokeToken(id) {
+  if (!confirm('Revoke this token? Any callers using it will immediately fail.')) return;
+  try { await req('DELETE', '/api/admin/tokens', { id }); loadTokens(); }
+  catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
 async function loadRaw() {
   try {
     const r = await fetch('/api/admin/config');
@@ -621,6 +789,7 @@ for (const btn of document.querySelectorAll('nav.tabs button')) {
     btn.classList.add('active');
     $('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'advanced') loadRaw();
+    if (btn.dataset.tab === 'tokens') loadTokens();
   });
 }
 
