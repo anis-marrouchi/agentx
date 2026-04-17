@@ -9,6 +9,7 @@ import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
 import { UI_LABELS, GLOSSARY } from "./ui-labels"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
+import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 
 // --- Kanban Board Dashboard ---
 //
@@ -118,6 +119,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "POST" && path === "/api/setup") {
     await handleWizardPost(req, res)
+    return
+  }
+
+  // Admin panel — ongoing management without editing JSON.
+  if (method === "GET" && path === "/admin") {
+    handleAdminGet(req, res)
+    return
+  }
+  if (method === "GET" && path === "/api/admin/config") {
+    await handleAdminConfigGet(req, res)
+    return
+  }
+  if (path.startsWith("/api/admin/")) {
+    await handleAdminApi(req, res, path)
     return
   }
   if (method === "GET" && path === "/sortable.min.js") {
@@ -1022,6 +1037,7 @@ function renderLiveHtml(): string {
   <div class="brand">${escapeHtmlServer(UI_LABELS.brand)} <span class="sub">· ${escapeHtmlServer(UI_LABELS.subtitle)}</span></div>
   <div id="summary" class="summary"></div>
   <div class="spacer"></div>
+  <a href="/admin" class="link" title="Manage agents, channels, schedules">⚙ Settings</a>
   <a href="/glossary" class="link" title="What do the terms mean?">? Glossary</a>
   <a href="/" class="link">← Boards</a>
   <span id="ts" class="ts" title="Last update"></span>
