@@ -171,6 +171,8 @@ export class AgentRegistry {
   private taskOutputs: Map<string, TaskOutput> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
+  /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
+  private sparklineCache: Map<string, { hourly: number[]; at: number }> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -732,6 +734,7 @@ export class AgentRegistry {
     lastActive?: Date
     runningTasks: RunningTask[]
     lastSummary?: { text: string; at: string; ok: boolean }
+    hourlyTasks?: number[]
   }> {
     return Array.from(this.agents.values()).map((s) => {
       const summary = this.lastSummaries.get(s.id)
@@ -747,6 +750,7 @@ export class AgentRegistry {
         lastActive: s.lastActive,
         runningTasks: s.runningTasks,
         lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
+        hourlyTasks: this.getHourlySparkline(s.id, 24),
       }
     })
   }
@@ -761,6 +765,49 @@ export class AgentRegistry {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const file = resolve(dir, `${this.safe(record.id)}.json`)
     writeFileSync(file, JSON.stringify(record, null, 2), "utf-8")
+  }
+
+  /**
+   * Compute a 24-hour hourly task-count sparkline for an agent from persisted
+   * history. Returns an array of 24 numbers: buckets[0] = 23-24h ago,
+   * buckets[23] = now-hour. Cached per-agent for 60s to keep snapshot load
+   * reasonable when the dashboard polls every 2s.
+   */
+  getHourlySparkline(agentId: string, hours: number = 24): number[] {
+    const now = Date.now()
+    const cached = this.sparklineCache.get(agentId)
+    if (cached && now - cached.at < 60_000 && cached.hourly.length === hours) return cached.hourly
+
+    const buckets = new Array<number>(hours).fill(0)
+    const windowStart = now - hours * 3600_000
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR, this.safe(agentId))
+    if (!existsSync(root)) {
+      this.sparklineCache.set(agentId, { hourly: buckets, at: now })
+      return buckets
+    }
+    // Only need the last 2 day folders — crossing midnight still fits.
+    const today = new Date(now).toISOString().slice(0, 10)
+    const yesterday = new Date(now - 86400_000).toISOString().slice(0, 10)
+    const dayToday = new Date(now); dayToday.setUTCHours(0, 0, 0, 0)
+    for (const day of [yesterday, today]) {
+      const dayDir = resolve(root, day)
+      if (!existsSync(dayDir)) continue
+      try {
+        for (const f of readdirSync(dayDir)) {
+          if (!f.endsWith(".json")) continue
+          // Task id is timestamp-prefixed (e.g. 1776447897061-xxx.json) — pull
+          // the millis without parsing each file.
+          const tsStr = f.split("-")[0]
+          const ts = parseInt(tsStr, 10)
+          if (!Number.isFinite(ts) || ts < windowStart || ts > now) continue
+          const offsetHours = Math.floor((now - ts) / 3600_000)
+          const idx = hours - 1 - offsetHours
+          if (idx >= 0 && idx < hours) buckets[idx]++
+        }
+      } catch { /* skip unreadable */ }
+    }
+    this.sparklineCache.set(agentId, { hourly: buckets, at: now })
+    return buckets
   }
 
   /**

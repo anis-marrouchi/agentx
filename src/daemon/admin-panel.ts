@@ -678,6 +678,24 @@ function renderAdminHtml(): string {
   --green:var(--ax-accent);--red:var(--ax-err);--yellow:var(--ax-warn);
   color-scheme:dark;
 }
+[data-theme="light"]{--ax-bg:oklch(0.98 0.002 265);--ax-bg-elev:oklch(0.96 0.003 265);
+  --ax-surface:oklch(0.99 0.002 265);--ax-surface-2:oklch(0.955 0.003 265);
+  --ax-border:oklch(0.88 0.006 265);--ax-border-2:oklch(0.78 0.008 265);
+  --ax-text:oklch(0.22 0.010 265);--ax-text-2:oklch(0.36 0.010 265);
+  --ax-muted:oklch(0.54 0.010 265);--ax-accent:oklch(0.55 0.14 165);color-scheme:light}
+[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;
+  --ax-surface-2:#0b2922;--ax-border:#164a30;--ax-border-2:#1f6a44;
+  --ax-text:#b7ffcc;--ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
+  --ax-font:"IBM Plex Mono",ui-monospace,monospace}
+.ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
+  border-radius:4px;overflow:hidden;margin-right:4px}
+.ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
+  padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
+  text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
+.ax-theme-switch button:last-child{border-right:none}
+.ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2)}
+.ax-theme-switch button.is-active{color:var(--ax-accent);
+  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
   font-family:var(--ax-font);font-size:13px;line-height:1.5;
@@ -875,6 +893,7 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 .td-hint{padding:6px 16px;font-size:10px;color:var(--ax-muted);
   border-top:1px solid var(--ax-border);background:var(--ax-bg-elev);font-family:var(--ax-mono)}
 </style>
+<script>(function(){try{var t=localStorage.getItem('ax-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>
 </head>
 <body>
 <header class="ax-topbar">
@@ -890,6 +909,11 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
       <a href="/admin" class="ax-topbar__tab is-active">Settings</a>
       <a href="/glossary" class="ax-topbar__tab">Glossary</a>
     </nav>
+  </div>
+  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
+    <button data-theme-opt="dark">Dark</button>
+    <button data-theme-opt="light">Light</button>
+    <button data-theme-opt="crt">CRT</button>
   </div>
 </header>
 <nav class="tabs">
@@ -919,6 +943,9 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
         <div id="files-editor-empty" class="files-editor-empty">Pick a file on the left to open it.</div>
         <div id="files-editor-head" class="files-editor-head" style="display:none">
           <span class="path" id="files-current-path"></span>
+          <label class="ghost" style="padding:6px 10px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--ax-border-2);border-radius:4px">
+            ↑ Upload<input type="file" id="files-upload" accept=".md,.markdown,.txt,text/markdown,text/plain" style="display:none" />
+          </label>
           <button class="ghost" id="files-revert" style="padding:6px 10px;font-size:12px">Revert</button>
           <button class="primary" id="files-save" style="padding:6px 14px;font-size:12px">Save</button>
         </div>
@@ -933,9 +960,37 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
             <div><label>Slug<span class="hint">(lowercase)</span></label><input id="skill-slug" placeholder="my-skill" /></div>
             <div><label>Title<span class="hint">(optional)</span></label><input id="skill-title" placeholder="What the skill does" /></div>
           </div>
+          <label>Upload SKILL.md<span class="hint">(optional — otherwise we scaffold a template)</span></label>
+          <input id="skill-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
           <div class="actions"><button class="primary" onclick="addSkill()">Create</button><div id="skill-msg" class="msg"></div></div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="tg-edit-modal" class="td-modal hidden" aria-hidden="true">
+  <div class="td-backdrop"></div>
+  <div class="td-card" role="dialog" aria-modal="true" style="height:auto;max-height:90vh;width:min(520px,94vw)">
+    <header>
+      <span class="chip-small">Edit</span>
+      <h3 id="tg-edit-title">Telegram account</h3>
+      <button class="td-close" id="tg-edit-close" aria-label="Close">×</button>
+    </header>
+    <div style="flex:1;overflow-y:auto;padding:16px 20px">
+      <input type="hidden" id="tg-edit-id" />
+      <label>Bind to agent</label>
+      <select id="tg-edit-agent"></select>
+      <label>Bot username<span class="hint">(optional)</span></label>
+      <input id="tg-edit-user" placeholder="my_bot" />
+      <label>Bot token env-var<span class="hint">(e.g. <code>TG_SUPPORT_BOT_TOKEN</code>)</span></label>
+      <input id="tg-edit-env" placeholder="TG_SUPPORT_BOT_TOKEN" />
+      <div class="hint-block">Token value stays in <code>.env</code>; this panel only edits the reference name.</div>
+      <div id="tg-edit-msg" class="msg"></div>
+    </div>
+    <div class="td-footer" style="justify-content:flex-end">
+      <button class="ghost" id="tg-edit-cancel" style="padding:7px 14px">Cancel</button>
+      <button class="primary" id="tg-edit-save">Save changes</button>
     </div>
   </div>
 </div>
@@ -1374,7 +1429,9 @@ function renderChannels() {
       '<div class="meta">' +
         '<span class="chip ' + (t.enabled ? '' : 'off') + '">' + (t.enabled ? 'enabled' : 'disabled') + '</span>' +
         'bot: <b>' + escapeHtml(acc.botUsername || '—') + '</b> · agent: <b>' + escapeHtml(acc.agentBinding || '—') + '</b> · token ref: <b>' + escapeHtml(acc.botTokenRef || '—') + '</b>' +
-      '</div></div><button class="danger" data-id="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
+      '</div></div>' +
+      '<button class="ghost" data-tg-edit="' + escapeHtml(acc.id) + '" style="margin-right:6px">Edit</button>' +
+      '<button class="danger" data-id="' + escapeHtml(acc.id) + '">Delete</button></div>').join('');
   $('tg-section').innerHTML =
     '<div class="toggle-switch"><input type="checkbox" id="tg-toggle"' + (t.enabled ? ' checked' : '') + ' /><label for="tg-toggle" style="color:var(--text);margin:0">Telegram connector enabled</label></div>' +
     '<div class="list">' + accountRows + '</div>' +
@@ -1393,6 +1450,49 @@ function renderChannels() {
   for (const btn of document.querySelectorAll('#tg-section button.danger')) {
     btn.addEventListener('click', () => deleteTelegram(btn.dataset.id));
   }
+  for (const btn of document.querySelectorAll('#tg-section button[data-tg-edit]')) {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.tgEdit;
+      const acc = (state.telegram.accounts || []).find((a) => a.id === id);
+      if (acc) openTelegramEdit(acc);
+    });
+  }
+}
+
+function openTelegramEdit(acc) {
+  const modal = $('tg-edit-modal');
+  $('tg-edit-title').textContent = 'Edit Telegram · ' + acc.id;
+  $('tg-edit-agent').innerHTML = state.agents.map((a) =>
+    '<option value="' + escapeHtml(a.id) + '"' + (a.id === acc.agentBinding ? ' selected' : '') + '>' +
+    escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  $('tg-edit-user').value = acc.botUsername || '';
+  // Current token ref is a dollar-brace placeholder — strip the wrapper for the form.
+  const ref = acc.botTokenRef || '';
+  $('tg-edit-env').value = ref.replace(/^\\\$\\{|\\}$/g, '');
+  $('tg-edit-id').value = acc.id;
+  $('tg-edit-msg').className = 'msg';
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeTelegramEdit() {
+  const modal = $('tg-edit-modal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+async function saveTelegramEdit() {
+  const id = $('tg-edit-id').value;
+  const patch = {
+    agentBinding: $('tg-edit-agent').value,
+    botUsername: $('tg-edit-user').value.trim(),
+    botTokenEnv: $('tg-edit-env').value.trim(),
+  };
+  try {
+    await req('PATCH', '/api/admin/channels/telegram', { id, patch });
+    showMsg($('tg-edit-msg'), 'ok', 'Saved.');
+    setTimeout(() => { closeTelegramEdit(); refresh(); }, 500);
+  } catch (e) { showMsg($('tg-edit-msg'), 'err', e.message); }
 }
 
 async function addTelegram() {
@@ -1619,14 +1719,58 @@ function revertCurrentFile() {
 async function addSkill() {
   const slug = $('skill-slug').value.trim();
   const title = $('skill-title').value.trim();
+  const fileInput = $('skill-file');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  let content;
+  if (file) {
+    try { content = await readFileAsText(file); }
+    catch (e) { showMsg($('skill-msg'), 'err', 'Could not read file: ' + e.message); return; }
+    if (content.length > 200 * 1024) {
+      showMsg($('skill-msg'), 'err', 'File too large (>200 KB). Edit in-place after creation instead.');
+      return;
+    }
+  }
   try {
-    const r = await req('POST', '/api/admin/files/skill', { agent: filesModal.agentId, slug, title });
+    const body = { agent: filesModal.agentId, slug, title };
+    if (content != null) body.content = content;
+    const r = await req('POST', '/api/admin/files/skill', body);
     showMsg($('skill-msg'), 'ok', r.summary);
     $('skill-slug').value = ''; $('skill-title').value = '';
+    if (fileInput) fileInput.value = '';
     await loadFileList();
     openFileInEditor(r.path);
   } catch (e) { showMsg($('skill-msg'), 'err', e.message); }
 }
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ''));
+    r.onerror = () => reject(r.error || new Error('read failed'));
+    r.readAsText(file);
+  });
+}
+
+// Upload-into-editor: replaces the current file's buffer with the uploaded text.
+// User still has to click Save for the write to land on disk, so accidents are reversible.
+function wireFilesUpload() {
+  const input = $('files-upload');
+  if (!input) return;
+  input.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      if (text.length > 200 * 1024) throw new Error('File too large (>200 KB).');
+      $('files-editor').value = text;
+      showMsg($('files-save-msg'), 'ok', 'Loaded into editor — click Save to persist.');
+    } catch (err) {
+      showMsg($('files-save-msg'), 'err', err.message);
+    }
+    e.target.value = '';
+  });
+}
+wireFilesUpload();
 
 async function removeSkill(slug) {
   if (!confirm('Delete skill "' + slug + '"? The skill folder and SKILL.md will be removed from disk.')) return;
@@ -1701,6 +1845,12 @@ async function saveAgentEdit() {
     setTimeout(() => { closeAgentEdit(); refresh(); }, 600);
   } catch (e) { showMsg($('e-msg'), 'err', e.message); }
 }
+
+// Telegram edit wiring
+$('tg-edit-close').addEventListener('click', closeTelegramEdit);
+$('tg-edit-cancel').addEventListener('click', closeTelegramEdit);
+$('tg-edit-save').addEventListener('click', saveTelegramEdit);
+$('tg-edit-modal').querySelector('.td-backdrop').addEventListener('click', closeTelegramEdit);
 
 $('edit-close').addEventListener('click', closeAgentEdit);
 $('edit-cancel').addEventListener('click', closeAgentEdit);
@@ -1911,6 +2061,22 @@ for (const btn of document.querySelectorAll('nav.tabs button')) {
 }
 
 refresh();
+
+// --- Theme switcher wiring (bootstrap ran in <head>; we attach click handlers) ---
+(function(){
+  var sw = document.querySelectorAll('[data-theme-opt]');
+  if (!sw.length) return;
+  var current = document.documentElement.getAttribute('data-theme') || 'dark';
+  sw.forEach(function(b){
+    if (b.getAttribute('data-theme-opt') === current) b.classList.add('is-active');
+    b.addEventListener('click', function(){
+      var t = b.getAttribute('data-theme-opt');
+      document.documentElement.setAttribute('data-theme', t);
+      try { localStorage.setItem('ax-theme', t); } catch (e) {}
+      sw.forEach(function(x){ x.classList.toggle('is-active', x === b); });
+    });
+  });
+})();
 </script>
 </body>
 </html>`

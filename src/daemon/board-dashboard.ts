@@ -524,6 +524,7 @@ interface NodeLive {
     errors: number
     lastActive?: string
     lastSummary?: { text: string; at: string; ok: boolean }
+    hourlyTasks?: number[]
     runningTasks?: Array<{
       id: string
       messagePreview: string
@@ -573,6 +574,7 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
       lastSummary: a.lastSummary,
+      hourlyTasks: Array.isArray(a.hourlyTasks) ? a.hourlyTasks : undefined,
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
     }))
     if (healthRes && healthRes.ok) {
@@ -1002,16 +1004,20 @@ async function readJson(req: IncomingMessage): Promise<any> {
 
 function renderBoardHtml(): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentX Boards</title>
+<title>AgentX · Boards</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${BOARD_CSS}</style>
+${THEME_SWITCH_SCRIPT}
 </head>
 <body>
 <header>
-  <div class="brand">AgentX</div>
+  <div class="brand">AX · AgentX</div>
   <select id="boardPicker" title="Switch board"></select>
   <div class="search">
     <span class="icon">⌕</span>
@@ -1021,7 +1027,13 @@ function renderBoardHtml(): string {
   <select id="filterMilestone" title="Milestone"><option value="">Any milestone</option></select>
   <div id="filterLabels" class="chips"></div>
   <div class="spacer"></div>
+  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
+    <button data-theme-opt="dark">Dark</button>
+    <button data-theme-opt="light">Light</button>
+    <button data-theme-opt="crt">CRT</button>
+  </div>
   <a href="/live" class="link" title="Live mesh view (L)">◎ Live</a>
+  <a href="/admin" class="link" title="Settings">⚙ Settings</a>
   <button id="activityBtn" title="Agent activity (a)">◉ Activity</button>
   <button id="newIssueBtn" title="New issue">+ New</button>
   <button id="refreshBtn" title="Refresh (r)">↻</button>
@@ -1136,6 +1148,7 @@ function renderLiveHtml(): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${LIVE_CSS}</style>
+${THEME_SWITCH_SCRIPT}
 </head>
 <body>
 <div class="ax-app">
@@ -1154,6 +1167,11 @@ function renderLiveHtml(): string {
       </nav>
     </div>
     <div class="ax-topbar__right">
+      <div class="ax-theme-switch" role="tablist" aria-label="Theme">
+        <button data-theme-opt="dark" title="Dark">Dark</button>
+        <button data-theme-opt="light" title="Light">Light</button>
+        <button data-theme-opt="crt" title="CRT">CRT</button>
+      </div>
       <span id="ts" class="ax-mono" title="Last update">—</span>
       <span id="conn-dot" class="ax-dot ax-dot--ok ax-dot--pulse" title="connected"></span>
       <span id="conn-label">live</span>
@@ -1193,6 +1211,37 @@ function escapeHtmlServer(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string))
 }
 
+/**
+ * Cross-surface theme switcher. Reads persisted theme from localStorage BEFORE
+ * first paint (dropped into <head> to avoid FOUC), then wires any segmented
+ * control with [data-theme-opt="..."] buttons once the DOM is ready.
+ */
+const THEME_SWITCH_SCRIPT = `<script>
+(function(){
+  try {
+    var t = localStorage.getItem('ax-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+  function wire() {
+    var sw = document.querySelectorAll('[data-theme-opt]');
+    if (!sw.length) return;
+    var current = document.documentElement.getAttribute('data-theme') || 'dark';
+    sw.forEach(function(b){
+      if (b.getAttribute('data-theme-opt') === current) b.classList.add('is-active');
+      b.addEventListener('click', function(){
+        var t = b.getAttribute('data-theme-opt');
+        document.documentElement.setAttribute('data-theme', t);
+        try { localStorage.setItem('ax-theme', t); } catch (e) {}
+        sw.forEach(function(x){ x.classList.toggle('is-active', x === b); });
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wire);
+  } else { wire(); }
+})();
+</script>`
+
 /** /glossary — plain-English definitions of the terms that appear in the dashboard. */
 function renderGlossaryHtml(): string {
   const items = GLOSSARY.map((g) => {
@@ -1219,6 +1268,24 @@ function renderGlossaryHtml(): string {
   --ax-mono:"IBM Plex Mono",ui-monospace,"SF Mono",monospace;
   color-scheme:dark;
 }
+[data-theme="light"]{--ax-bg:oklch(0.98 0.002 265);--ax-bg-elev:oklch(0.96 0.003 265);
+  --ax-surface:oklch(0.99 0.002 265);--ax-border:oklch(0.88 0.006 265);
+  --ax-border-2:oklch(0.78 0.008 265);--ax-text:oklch(0.22 0.010 265);
+  --ax-text-2:oklch(0.36 0.010 265);--ax-muted:oklch(0.54 0.010 265);
+  --ax-accent:oklch(0.55 0.14 165);color-scheme:light}
+[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;
+  --ax-border:#164a30;--ax-border-2:#1f6a44;--ax-text:#b7ffcc;
+  --ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
+  --ax-font:"IBM Plex Mono",ui-monospace,monospace}
+.ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
+  border-radius:4px;overflow:hidden;margin-right:4px}
+.ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
+  padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
+  text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
+.ax-theme-switch button:last-child{border-right:none}
+.ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2,var(--ax-surface))}
+.ax-theme-switch button.is-active{color:var(--ax-accent);
+  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
   font-family:var(--ax-font);font-size:14px;line-height:1.55;
@@ -1253,6 +1320,7 @@ article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.06e
   font-weight:500;font-family:var(--ax-mono);border:1px solid var(--ax-border)}
 article.term p{margin:0;color:var(--ax-text-2);font-size:13px;line-height:1.6}
 </style>
+${THEME_SWITCH_SCRIPT}
 </head>
 <body>
 <header class="ax-topbar">
@@ -1268,6 +1336,11 @@ article.term p{margin:0;color:var(--ax-text-2);font-size:13px;line-height:1.6}
       <a href="/admin" class="ax-topbar__tab">Settings</a>
       <a href="/glossary" class="ax-topbar__tab is-active">Glossary</a>
     </nav>
+  </div>
+  <div class="ax-theme-switch" role="tablist" aria-label="Theme">
+    <button data-theme-opt="dark">Dark</button>
+    <button data-theme-opt="light">Light</button>
+    <button data-theme-opt="crt">CRT</button>
   </div>
 </header>
 <main>
@@ -1312,6 +1385,45 @@ const LIVE_CSS = `
   --red: var(--ax-err); --blue: var(--ax-info); --gray: var(--ax-muted);
   color-scheme: dark;
 }
+[data-theme="light"] {
+  --ax-bg:        oklch(0.98 0.002 265);
+  --ax-bg-elev:   oklch(0.96 0.003 265);
+  --ax-surface:   oklch(0.99 0.002 265);
+  --ax-surface-2: oklch(0.955 0.003 265);
+  --ax-border:    oklch(0.88 0.006 265);
+  --ax-border-2:  oklch(0.78 0.008 265);
+  --ax-text:      oklch(0.22 0.010 265);
+  --ax-text-2:    oklch(0.36 0.010 265);
+  --ax-muted:     oklch(0.54 0.010 265);
+  --ax-accent:    oklch(0.55 0.14 165);
+  color-scheme: light;
+}
+[data-theme="crt"] {
+  --ax-bg:        #05140a;
+  --ax-bg-elev:   #061a0d;
+  --ax-surface:   #08201f;
+  --ax-surface-2: #0b2922;
+  --ax-border:    #164a30;
+  --ax-border-2:  #1f6a44;
+  --ax-text:      #b7ffcc;
+  --ax-text-2:    #83e3a8;
+  --ax-muted:     #4f9a73;
+  --ax-accent:    #6dff9e;
+  --ax-font:      "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* Theme switcher — segmented control in the topbar. */
+.ax-theme-switch { display: inline-flex; gap: 0; border: 1px solid var(--ax-border-2);
+  border-radius: 4px; overflow: hidden; margin-right: 4px; }
+.ax-theme-switch button { background: transparent; border: none; color: var(--ax-muted);
+  padding: 3px 9px; font: inherit; font-size: 10px; cursor: pointer;
+  letter-spacing: 0.04em; text-transform: uppercase; font-family: var(--ax-mono);
+  border-right: 1px solid var(--ax-border-2); }
+.ax-theme-switch button:last-child { border-right: none; }
+.ax-theme-switch button:hover { color: var(--ax-text); background: var(--ax-surface-2); }
+.ax-theme-switch button.is-active { color: var(--ax-accent);
+  background: color-mix(in oklch, var(--ax-accent) 12%, var(--ax-surface)); }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100vh; background: var(--ax-bg); color: var(--ax-text);
   font-family: var(--ax-font); font-size: var(--ax-fs);
@@ -1429,6 +1541,10 @@ pre, code, .ax-mono { font-family: var(--ax-mono); font-variant-numeric: tabular
 .ax-ministat--live .ax-ministat__value { color: var(--ax-accent); }
 .ax-ministat--warn .ax-ministat__value { color: var(--ax-warn); }
 .ax-ministat--err .ax-ministat__value { color: var(--ax-err); }
+.ax-agent__spark { border-top: 1px dashed var(--ax-border); padding-top: 8px; color: var(--ax-accent); }
+.ax-agent__spark-caption { display: flex; justify-content: space-between; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ax-muted); margin-top: 2px; }
+.ax-agent__spark svg { display: block; width: 100%; height: 28px; }
 .ax-agent__running { display: flex; flex-direction: column; gap: 6px; }
 .ax-agent__task { text-align: left; background: var(--ax-bg);
   border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border));
@@ -1720,6 +1836,14 @@ function renderAgent(a, node) {
       '</div>'
     : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
 
+  // Sparkline — last 24 hourly task counts
+  const sparkBlock = (Array.isArray(a.hourlyTasks) && a.hourlyTasks.length)
+    ? '<div class="ax-agent__spark">' + renderSpark(a.hourlyTasks) +
+        '<div class="ax-agent__spark-caption"><span>tasks · last 24h</span><span class="ax-mono">' +
+          a.hourlyTasks.reduce(function(s,v){return s+v}, 0) + ' total</span></div>' +
+      '</div>'
+    : '';
+
   // Mini stats row
   const miniStats = '<div class="ax-agent__stats">' +
     '<div class="ax-ministat' + (busy ? ' ax-ministat--live' : '') + '">' +
@@ -1758,10 +1882,30 @@ function renderAgent(a, node) {
     '</div>' +
     (a.model ? '<div class="ax-agent__model">' + escapeHtml(shortenModel(a.model)) + '</div>' : '') +
     miniStats +
+    sparkBlock +
     runningBlock +
     summaryBlock +
     '<div class="ax-agent__foot"><span>' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
+}
+
+/** Inline SVG sparkline — polyline + dot on the last point. 100% width, 28px high. */
+function renderSpark(data) {
+  const w = 280, h = 28;
+  const max = Math.max.apply(null, data.concat([1]));
+  const step = w / Math.max(data.length - 1, 1);
+  let pts = '';
+  for (let i = 0; i < data.length; i++) {
+    const x = (i * step).toFixed(1);
+    const y = (h - (data[i] / max) * (h - 4) - 2).toFixed(1);
+    pts += (i ? ' ' : '') + x + ',' + y;
+  }
+  const lastX = ((data.length - 1) * step).toFixed(1);
+  const lastY = (h - (data[data.length - 1] / max) * (h - 4) - 2).toFixed(1);
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + pts + '" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />' +
+    '<circle cx="' + lastX + '" cy="' + lastY + '" r="2" fill="currentColor" />' +
+  '</svg>';
 }
 
 function shortenModel(m) {
@@ -2146,16 +2290,49 @@ document.getElementById('grid').addEventListener('click', (e) => {
 `
 
 const BOARD_CSS = `
+/* --- Design tokens (ops-daemon, matches /live and /admin) --- */
 :root {
-  --bg: #0f1117; --card: #1a1d27; --col: #161922; --col-hdr: #1e2230;
-  --border: #2a2d3a; --border-soft: #22253220;
-  --text: #e6e8ef; --muted: #8b8fa3; --accent: #6366f1;
-  --green: #22c55e; --yellow: #f59e0b; --orange: #fb7a35;
-  --red: #ef4444; --blue: #3b82f6; --gray: #6b7280;
+  --ax-bg: oklch(0.16 0.010 265); --ax-bg-elev: oklch(0.19 0.012 265);
+  --ax-surface: oklch(0.21 0.012 265); --ax-surface-2: oklch(0.24 0.014 265);
+  --ax-border: oklch(0.29 0.014 265); --ax-border-2: oklch(0.35 0.016 265);
+  --ax-text: oklch(0.95 0.005 265); --ax-text-2: oklch(0.80 0.008 265);
+  --ax-muted: oklch(0.60 0.010 265); --ax-accent: oklch(0.78 0.13 165);
+  --ax-warn: oklch(0.80 0.14 75); --ax-err: oklch(0.68 0.19 25);
+  --ax-info: oklch(0.78 0.10 220);
+  --ax-font: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --ax-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  /* Legacy aliases so the existing CSS keeps working. */
+  --bg: var(--ax-bg); --card: var(--ax-surface); --col: var(--ax-bg-elev);
+  --col-hdr: var(--ax-surface); --border: var(--ax-border);
+  --border-soft: color-mix(in oklch, var(--ax-border) 35%, transparent);
+  --text: var(--ax-text); --muted: var(--ax-muted); --accent: var(--ax-accent);
+  --green: var(--ax-accent); --yellow: var(--ax-warn); --orange: var(--ax-warn);
+  --red: var(--ax-err); --blue: var(--ax-info); --gray: var(--ax-muted);
+  color-scheme: dark;
 }
+[data-theme="light"]{--ax-bg:oklch(0.98 0.002 265);--ax-bg-elev:oklch(0.96 0.003 265);
+  --ax-surface:oklch(0.99 0.002 265);--ax-surface-2:oklch(0.955 0.003 265);
+  --ax-border:oklch(0.88 0.006 265);--ax-border-2:oklch(0.78 0.008 265);
+  --ax-text:oklch(0.22 0.010 265);--ax-text-2:oklch(0.36 0.010 265);
+  --ax-muted:oklch(0.54 0.010 265);--ax-accent:oklch(0.55 0.14 165);color-scheme:light}
+[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;
+  --ax-surface-2:#0b2922;--ax-border:#164a30;--ax-border-2:#1f6a44;
+  --ax-text:#b7ffcc;--ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
+  --ax-font:"IBM Plex Mono",ui-monospace,monospace}
+.ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
+  border-radius:4px;overflow:hidden;margin-right:4px}
+.ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
+  padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
+  text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
+.ax-theme-switch button:last-child{border-right:none}
+.ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2)}
+.ax-theme-switch button.is-active{color:var(--ax-accent);
+  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html, body { margin: 0; height: 100%; background: var(--ax-bg); color: var(--ax-text);
+  font-family: var(--ax-font); font-size: 13px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv01"; }
+pre, code, .mono { font-family: var(--ax-mono); font-variant-numeric: tabular-nums; }
 header { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
   background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10;
   flex-wrap: wrap; }
