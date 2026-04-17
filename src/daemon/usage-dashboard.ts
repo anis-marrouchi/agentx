@@ -71,19 +71,27 @@ function loadUsageRange(tracker: TokenTracker, from: string, to: string): UsageD
 
     for (const [id, agent] of Object.entries(usage.agents)) {
       const agentCost = TokenTracker.calculateCost(agent)
+      // Token displays sum tier1 + tier2 so operators see the REAL volume
+      // they paid for. Tier2 tokens (from requests >200K input) are billed
+      // at 1.5×, but they're still tokens processed — hiding them made
+      // low-display/high-cost days look inconsistent on the dashboard.
+      const aInput = (agent.inputTokens || 0) + (agent.tier2InputTokens || 0)
+      const aOutput = (agent.outputTokens || 0) + (agent.tier2OutputTokens || 0)
+      const aCacheRead = (agent.cacheReadTokens || 0) + (agent.tier2CacheReadTokens || 0)
+      const aCacheCreate = (agent.cacheCreateTokens || 0) + (agent.tier2CacheCreateTokens || 0)
       tasks += agent.tasks
-      input += agent.inputTokens || 0
-      output += agent.outputTokens || 0
-      cacheRead += agent.cacheReadTokens || 0
-      cacheCreate += agent.cacheCreateTokens || 0
+      input += aInput
+      output += aOutput
+      cacheRead += aCacheRead
+      cacheCreate += aCacheCreate
       cost += agentCost
       agents[id] = {
         tasks: agent.tasks,
         cost: agentCost,
-        input: agent.inputTokens || 0,
-        output: agent.outputTokens || 0,
-        cacheRead: agent.cacheReadTokens || 0,
-        cacheCreate: agent.cacheCreateTokens || 0,
+        input: aInput,
+        output: aOutput,
+        cacheRead: aCacheRead,
+        cacheCreate: aCacheCreate,
         model: agent.model,
       }
     }
