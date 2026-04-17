@@ -98,9 +98,17 @@ export const boardsConfigSchema = z.array(boardSchema).default([])
 
 export const dashboardDaemonSchema = z.object({
   name: z.string(),
+  /** Daemon HTTP URL (the one serving /agents, /health, /task). */
   url: z.string(),
-  /** Optional bearer token if the daemon is auth-gated. */
+  /** Optional board-dashboard URL if we want to proxy admin writes to this
+   *  peer. Defaults to `url` with port :18800/:19900 rewritten to :4202,
+   *  matching our convention that the dashboard runs alongside the daemon. */
+  dashboardUrl: z.string().optional(),
+  /** Bearer for the daemon's HTTP API (live snapshot, task stream). */
   token: z.string().optional(),
+  /** Bearer for the peer's dashboard when proxying admin calls. Defaults to
+   *  `token` when unset. */
+  dashboardToken: z.string().optional(),
 })
 
 export const dashboardConfigSchema = z.object({

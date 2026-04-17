@@ -79,6 +79,8 @@ export const TOPBAR_CSS = `
   background:var(--ax-surface);cursor:pointer;font:inherit;font-size:11px;
   color:var(--ax-text-2);white-space:nowrap}
 .ax-mesh-sel:hover{border-color:var(--ax-accent);color:var(--ax-text)}
+.ax-mesh-sel.is-proxy{background:color-mix(in oklch,var(--ax-accent) 14%,var(--ax-surface));
+  border-color:color-mix(in oklch,var(--ax-accent) 45%,var(--ax-border-2));color:var(--ax-accent)}
 .ax-mesh-sel .lbl{font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ax-muted);margin-right:2px}
 .ax-mesh-sel .name{font-weight:500;color:var(--ax-text)}
 .ax-mesh-sel .chev{font-size:9px;opacity:0.6;margin-left:2px}
@@ -137,16 +139,53 @@ export const TOPBAR_SCRIPT = `<script>
       });
     });
   }
+  function currentPeer(){
+    try { return localStorage.getItem('ax-peer') || 'primary'; } catch { return 'primary'; }
+  }
+  function setCurrentPeer(id){
+    try {
+      if (id && id !== 'primary') localStorage.setItem('ax-peer', id);
+      else localStorage.removeItem('ax-peer');
+    } catch {}
+  }
+  function reflectPeerPill(){
+    var sel = document.querySelector('.ax-mesh-sel');
+    if (!sel) return;
+    var cur = currentPeer();
+    sel.classList.toggle('is-proxy', cur !== 'primary');
+    // If a proxy is active, update the visible pill label + highlight.
+    var picked = null;
+    sel.querySelectorAll('.ax-mesh-menu a').forEach(function(a){
+      a.classList.toggle('is-current', a.getAttribute('data-peer-id') === cur || (cur === 'primary' && a.getAttribute('data-peer-id') === 'primary'));
+      if (a.getAttribute('data-peer-id') === cur) picked = a;
+    });
+    if (picked) {
+      var name = picked.querySelector('span'); // first <span> inside .row
+      var visibleName = sel.querySelector('.name');
+      if (name && visibleName) visibleName.textContent = name.textContent.replace(/ · primary/, '');
+    }
+  }
   function wireMesh(){
     var sel = document.querySelector('.ax-mesh-sel');
     if (!sel || sel.dataset.wired) return; sel.dataset.wired = '1';
     sel.addEventListener('click', function(e){
-      if (e.target.closest('.ax-mesh-menu a')) return;
+      var link = e.target.closest('.ax-mesh-menu a[data-peer-action="proxy"]');
+      if (link) {
+        e.preventDefault();
+        setCurrentPeer(link.getAttribute('data-peer-id'));
+        reflectPeerPill();
+        sel.classList.remove('is-open');
+        // Reload so the admin panel re-reads state from the selected peer.
+        location.reload();
+        return;
+      }
+      if (e.target.closest('.ax-mesh-menu a')) return; // plain navigate anchor
       sel.classList.toggle('is-open');
     });
     document.addEventListener('click', function(e){
       if (!sel.contains(e.target)) sel.classList.remove('is-open');
     });
+    reflectPeerPill();
   }
   function wire(){ wireTheme(); wireMesh(); }
   if (document.readyState === 'loading') {
@@ -166,13 +205,27 @@ export function renderTopbar(opts: TopbarOpts): string {
 
   const meshMenu = peers.map((p) => {
     const isCurrent = p.id === currentId
-    const url = p.dashboardUrl ? `${p.dashboardUrl.replace(/\/+$/, "")}/admin` : "#"
     const primaryMark = p.primary ? ' <span style="color:var(--ax-muted);font-size:10px">· primary</span>' : ""
-    const tokenNote = p.tokenScope ? `<div class="url">token: ${esc(p.tokenScope)}</div>` : ""
-    return `<a href="${esc(url)}" class="${isCurrent ? "is-current" : ""}">
+    const proxyable = !!p.tokenScope && !p.primary
+    // Proxyable peers: use data-peer-id so the click handler switches locally
+    // via localStorage + reload. Un-proxyable (no token): legacy navigate.
+    const href = proxyable
+      ? "#"
+      : p.dashboardUrl
+        ? `${p.dashboardUrl.replace(/\/+$/, "")}/admin`
+        : "#"
+    const dataAttr = proxyable ? ` data-peer-id="${esc(p.id)}" data-peer-action="proxy"` : p.primary ? ` data-peer-id="primary" data-peer-action="proxy"` : ""
+    const hint = proxyable
+      ? '<div class="url" style="color:var(--ax-accent)">manage from this dashboard ✓</div>'
+      : p.tokenScope
+        ? `<div class="url">${esc(p.tokenScope)}</div>`
+        : p.dashboardUrl
+          ? '<div class="url" style="color:var(--ax-muted)">(open peer dashboard ↗)</div>'
+          : ""
+    return `<a href="${esc(href)}" class="${isCurrent ? "is-current" : ""}"${dataAttr}>
       <div class="row"><span class="dot"></span><span>${esc(p.name)}${primaryMark}</span></div>
       ${p.dashboardUrl ? `<div class="url">${esc(p.dashboardUrl)}</div>` : ""}
-      ${tokenNote}
+      ${hint}
     </a>`
   }).join("")
 

@@ -1064,9 +1064,29 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 .td-hint{padding:6px 16px;font-size:10px;color:var(--ax-muted);
   border-top:1px solid var(--ax-border);background:var(--ax-bg-elev);font-family:var(--ax-mono)}
 </style>
+
+<style>
+.peer-banner{display:none;padding:10px 20px;background:color-mix(in oklch,var(--ax-accent) 14%,var(--ax-surface));
+  border-bottom:1px solid color-mix(in oklch,var(--ax-accent) 40%,var(--ax-border-2));
+  color:var(--ax-accent);font-size:12px;align-items:center;gap:12px;font-family:var(--ax-mono)}
+.peer-banner.is-active{display:flex}
+.peer-banner .label{text-transform:uppercase;letter-spacing:0.06em;font-size:10px;opacity:0.8}
+.peer-banner .name{font-weight:600;color:var(--ax-accent)}
+.peer-banner .spacer{flex:1}
+.peer-banner button{background:transparent;border:1px solid currentColor;color:var(--ax-accent);
+  padding:4px 10px;border-radius:4px;font:inherit;font-size:11px;cursor:pointer}
+.peer-banner button:hover{background:color-mix(in oklch,var(--ax-accent) 12%,transparent)}
+</style>
 </head>
 <body>
 ${topbar}
+<div id="peer-banner" class="peer-banner">
+  <span class="label">Managing</span>
+  <span class="name" id="peer-banner-name">—</span>
+  <span>from this dashboard via scoped token.</span>
+  <span class="spacer"></span>
+  <button id="peer-banner-back">← Back to primary</button>
+</div>
 <nav class="tabs">
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="channels">Channels</button>
@@ -1330,8 +1350,20 @@ ${topbar}
 const $ = (id) => document.getElementById(id);
 let state = null;
 
+function currentPeer() {
+  try { return localStorage.getItem('ax-peer') || 'primary'; } catch { return 'primary'; }
+}
+function setCurrentPeer(id) {
+  try {
+    if (id && id !== 'primary') localStorage.setItem('ax-peer', id);
+    else localStorage.removeItem('ax-peer');
+  } catch { /**/ }
+}
+
 async function req(method, url, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'agentx-admin' } };
+  const peer = currentPeer();
+  if (peer !== 'primary') opts.headers['X-Agentx-Peer'] = peer;
   if (body !== undefined) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
   const data = await r.json().catch(() => ({}));
@@ -2541,6 +2573,25 @@ for (const btn of document.querySelectorAll('nav.tabs button')) {
     if (btn.dataset.tab === 'tokens') loadTokens();
   });
 }
+
+// --- Peer-proxy banner: shown when admin writes target a non-primary peer ---
+(function(){
+  var cur = currentPeer();
+  if (cur === 'primary') return;
+  // Try to resolve a friendly name from the topbar menu (server-rendered).
+  var friendly = cur;
+  var picked = document.querySelector('.ax-mesh-menu a[data-peer-id="' + CSS.escape(cur) + '"]');
+  if (picked) {
+    var span = picked.querySelector('.row > span:last-child');
+    if (span) friendly = span.textContent.replace(/ · primary/,'').trim();
+  }
+  $('peer-banner-name').textContent = friendly;
+  $('peer-banner').classList.add('is-active');
+  $('peer-banner-back').addEventListener('click', function(){
+    setCurrentPeer('primary');
+    location.reload();
+  });
+})();
 
 refresh();
 </script>

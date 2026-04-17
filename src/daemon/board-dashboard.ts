@@ -129,6 +129,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleAdminGet(req, res, buildTopbarPeers(ctx.config))
     return
   }
+  // Cross-mesh admin proxy: when a non-primary peer is selected (header
+  // X-Agentx-Peer or ?peer=), forward the whole request to the peer's
+  // dashboard with its own token. The peer's board-server handles it as
+  // a normal admin call against its own agentx.json.
+  if (path.startsWith("/api/admin/")) {
+    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    if (peerId && peerId !== "primary") {
+      const peer = findPeer(peerId, ctx.config)
+      if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
+      await proxyAdminToPeer(req, res, peer, path + (url.search || ""))
+      return
+    }
+  }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
     return
@@ -1193,10 +1206,19 @@ function escapeHtmlServer(s: string): string {
 }
 
 /**
+ * Derive a peer's board-dashboard URL from a dashboard.daemons[] entry.
+ * Uses the explicit dashboardUrl override if set; otherwise swaps the
+ * daemon's port (18800 / 19900 / 18810) for :4202, matching our convention
+ * that the dashboard runs alongside the daemon.
+ */
+function resolvePeerDashboardUrl(d: { url: string; dashboardUrl?: string }): string {
+  if (d.dashboardUrl) return d.dashboardUrl.replace(/\/+$/, "")
+  return d.url.replace(/\/+$/, "").replace(/:(?:1[89][89]00|18810)$/, ":4202")
+}
+
+/**
  * Build the peers list shown in the topbar mesh selector. Combines the
- * primary daemon + any `dashboard.daemons[]` entries. Each peer's
- * "dashboardUrl" is derived from its daemon URL by swapping port 18800/19900
- * to 4202 — convention-based, overridable via the dashboards[] config.
+ * primary daemon + any `dashboard.daemons[]` entries.
  */
 function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): TopbarPeer[] {
   const cfg = ctxConfig || config
@@ -1209,10 +1231,76 @@ function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): Topba
   const extras: TopbarPeer[] = (cfg.dashboard?.daemons || []).map((d) => ({
     id: d.url.replace(/\/+$/, ""),
     name: d.name,
-    dashboardUrl: d.url.replace(/\/+$/, "").replace(/:1[89][89]00$/, ":4202"),
-    tokenScope: d.token ? "dashboard.daemons entry" : undefined,
+    dashboardUrl: resolvePeerDashboardUrl(d),
+    tokenScope: (d.dashboardToken || d.token) ? "proxy-ready" : undefined,
   }))
   return [primary, ...extras]
+}
+
+/**
+ * Forward the entire incoming admin request to the selected peer's
+ * dashboard. Copies method, query string, body, and Content-Type. Auth
+ * replaces anything the browser sent with the peer's configured token so
+ * the local dashboard.token (if any) doesn't leak across nodes.
+ */
+async function proxyAdminToPeer(
+  req: IncomingMessage,
+  res: ServerResponse,
+  peer: { url: string; token?: string },
+  pathWithQuery: string,
+): Promise<void> {
+  const target = peer.url + pathWithQuery
+  // Read the incoming body (if any). For GET/HEAD there's no body to drain.
+  const method = (req.method || "GET").toUpperCase()
+  const hasBody = method !== "GET" && method !== "HEAD"
+  const body: Buffer | undefined = hasBody
+    ? await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = []
+        req.on("data", (c: Buffer) => chunks.push(c))
+        req.on("end", () => resolve(Buffer.concat(chunks)))
+        req.on("error", reject)
+      })
+    : undefined
+
+  const headers: Record<string, string> = {}
+  const ct = req.headers["content-type"]
+  if (ct) headers["Content-Type"] = Array.isArray(ct) ? ct[0] : ct
+  const xrw = req.headers["x-requested-with"]
+  if (xrw) headers["X-Requested-With"] = Array.isArray(xrw) ? xrw[0] : xrw
+  if (peer.token) headers["Authorization"] = `Bearer ${peer.token}`
+  // Tell the peer not to recurse — belt-and-braces guard.
+  headers["X-Agentx-Peer"] = "primary"
+
+  try {
+    const upstream = await fetch(target, {
+      method,
+      headers,
+      body: body && body.length > 0 ? body : undefined,
+    })
+    const respBody = Buffer.from(await upstream.arrayBuffer())
+    res.writeHead(upstream.status, {
+      "Content-Type": upstream.headers.get("content-type") || "application/json",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*",
+    })
+    res.end(respBody)
+  } catch (e: any) {
+    sendJson(res, 502, { error: `proxy to peer failed: ${e?.message || e}`, target })
+  }
+}
+
+/**
+ * Look up a peer by id (matches `dashboard.daemons[].url` normalised) so
+ * the proxy middleware knows where to forward + what token to use.
+ */
+function findPeer(id: string, config: DaemonConfig): { url: string; token?: string } | null {
+  const peerId = id.replace(/\/+$/, "")
+  const match = (config.dashboard?.daemons || []).find((d) => d.url.replace(/\/+$/, "") === peerId)
+  if (!match) return null
+  return {
+    url: resolvePeerDashboardUrl(match),
+    token: match.dashboardToken || match.token,
+  }
 }
 
 /**
