@@ -77,7 +77,9 @@ export interface TaskRecord {
 }
 
 const TASK_HISTORY_DIR = ".agentx/task-history"
-const TASK_HISTORY_RETENTION_DAYS = 7
+/** Default retention for persisted task records. Set for business audit trails;
+ *  bump via the `dashboard.taskHistoryRetentionDays` config field if you need more. */
+const TASK_HISTORY_RETENTION_DAYS = 30
 
 /** Truncate long values so the buffer doesn't blow up on huge tool inputs/outputs. */
 function clip(s: string, max = 800): string {

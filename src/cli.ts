@@ -2,6 +2,7 @@
 import { Command } from "commander"
 import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
+import { setup } from "@/commands/setup"
 import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
@@ -29,6 +30,7 @@ async function main() {
 
   program
     .addCommand(daemon)
+    .addCommand(setup)
     .addCommand(init)
     .addCommand(agent)
     .addCommand(channel)

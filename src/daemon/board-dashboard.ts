@@ -8,6 +8,7 @@ import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
 import { UI_LABELS, GLOSSARY } from "./ui-labels"
+import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 
 // --- Kanban Board Dashboard ---
 //
@@ -84,8 +85,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
   if (method === "GET" && path === "/") {
-    // Default to the live view when no boards are configured so the server
-    // still does something useful out of the box.
+    // Routing priority:
+    //   1. No agents yet → send operator to the setup wizard.
+    //   2. Agents exist but no boards → live view.
+    //   3. Boards configured → Kanban landing page.
+    const wz = wizardState()
+    if (!wz.configExists || wz.agentCount === 0) {
+      res.writeHead(302, { Location: "/setup" })
+      res.end()
+      return
+    }
     const html = ctx.boards.length === 0 ? renderLiveHtml() : renderBoardHtml()
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(html)
@@ -99,6 +108,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/glossary") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderGlossaryHtml())
+    return
+  }
+
+  // Setup wizard — form-driven first-run experience for non-technical operators.
+  if (method === "GET" && path === "/setup") {
+    handleWizardGet(req, res)
+    return
+  }
+  if (method === "POST" && path === "/api/setup") {
+    await handleWizardPost(req, res)
     return
   }
   if (method === "GET" && path === "/sortable.min.js") {

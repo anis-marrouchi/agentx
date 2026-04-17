@@ -1,8 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { readFileSync, writeFileSync, copyFileSync, existsSync } from "fs"
-import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
+import { mutateAgentxConfig } from "@/daemon/config-mutate"
 
 export const board = new Command()
   .name("board")
@@ -16,20 +15,51 @@ board
   .option("--bind <host>", "override dashboard.bind (e.g. 0.0.0.0)")
   .action(async (opts) => {
     try {
-      const config = loadDaemonConfig()
-      if (opts.port) config.dashboard.port = parseInt(opts.port, 10)
-      if (opts.bind) config.dashboard.bind = opts.bind
+      const config = resolveServerConfig(opts.port, opts.bind)
       const { startBoardDashboard } = await import("@/daemon/board-dashboard")
       startBoardDashboard(config)
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
-      // Stack trace is useful when the failure is inside board-dashboard
-      // internals (e.g. template-literal bundling mishaps). Only prints when
-      // DEBUG is set so normal usage stays clean.
       if (process.env.DEBUG && e.stack) console.log(chalk.dim(e.stack))
       process.exit(1)
     }
   })
+
+/**
+ * Load agentx.json if it exists; otherwise fabricate a minimal config so the
+ * dashboard can serve the setup wizard. Without this, `agentx setup` on a
+ * fresh machine would crash with "No config found" before the user has a
+ * chance to create one.
+ */
+function resolveServerConfig(portOpt?: string, bindOpt?: string): any {
+  try {
+    const cfg = loadDaemonConfig()
+    if (portOpt) cfg.dashboard.port = parseInt(portOpt, 10)
+    if (bindOpt) cfg.dashboard.bind = bindOpt
+    return cfg
+  } catch (e: any) {
+    console.log(chalk.yellow("  No agentx.json found — starting dashboard in setup-only mode."))
+    console.log(chalk.dim("  Visit http://127.0.0.1:" + (portOpt || "4202") + " to run the wizard.\n"))
+    return {
+      node: { id: "setup", name: "Setup", bind: "127.0.0.1:18800" },
+      providers: {},
+      agents: {},
+      channels: {},
+      crons: {},
+      mesh: { enabled: false, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } },
+      boards: [],
+      dashboard: {
+        enabled: true,
+        port: portOpt ? parseInt(portOpt, 10) : 4202,
+        bind: bindOpt || "127.0.0.1",
+        daemonUrl: "http://localhost:18800",
+        daemons: [],
+      },
+      business: undefined,
+      session: { staleMinutes: 120 },
+    }
+  }
+}
 
 // agentx board list — show configured boards (quick sanity check)
 board
@@ -113,40 +143,13 @@ board
   })
 
 /**
- * Read agentx.json, run the mutator, validate by re-loading via the schema,
- * back up + write atomically. Throws on anything that fails validation so we
- * never leave an unparseable config on disk.
+ * CLI-friendly wrapper around the shared mutateAgentxConfig helper — prints
+ * colourized success + backup hint so `agentx board add/remove` feels the same
+ * as it did before the refactor.
  */
 function mutateConfig(mutator: (cfg: any) => string): void {
-  const file = resolve(process.cwd(), "agentx.json")
-  if (!existsSync(file)) throw new Error("agentx.json not found in current directory")
-  const cfg = JSON.parse(readFileSync(file, "utf-8"))
-  const summary = mutator(cfg)
-  const json = JSON.stringify(cfg, null, 2) + "\n"
-  // Validate via the daemon loader before persisting.
-  const tmp = file + ".tmp"
-  writeFileSync(tmp, json, "utf-8")
-  try {
-    // Spot-check by re-reading from the temp file via JSON; full schema validation
-    // happens on the next `loadDaemonConfig()` (e.g. when serving). We at least
-    // confirm the JSON shape round-trips.
-    JSON.parse(readFileSync(tmp, "utf-8"))
-  } catch (e: any) {
-    throw new Error(`config did not round-trip cleanly: ${e.message}`)
-  }
-  copyFileSync(file, file + `.bak.${Date.now()}`)
-  writeFileSync(file, json, "utf-8")
-  // Best-effort reload via /reload so a running daemon picks up the change.
-  triggerReload().catch(() => {/* daemon may not be running */})
+  const { summary, backupPath } = mutateAgentxConfig((cfg) => mutator(cfg))
   console.log(chalk.green(`\n  ✓ ${summary}\n`))
-  console.log(chalk.dim(`  Backup: ${file}.bak.<ts>`))
+  if (backupPath) console.log(chalk.dim(`  Backup: ${backupPath}`))
   console.log(chalk.dim(`  Restart the dashboard to pick up the change if not auto-reloading.\n`))
-}
-
-async function triggerReload(): Promise<void> {
-  try {
-    const cfg = loadDaemonConfig()
-    const url = cfg.dashboard.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
-    await fetch(`${url}/reload`, { method: "POST" }).catch(() => null)
-  } catch { /* */ }
 }
