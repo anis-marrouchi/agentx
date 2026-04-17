@@ -3,6 +3,7 @@ import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
 import { TokenStore } from "./token-store"
+import { loadDaemonConfig } from "./config"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -48,11 +49,12 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "GET /api/admin/tokens": () => listTokens(),
       "POST /api/admin/tokens": () => createToken(body),
       "DELETE /api/admin/tokens": () => revokeToken(body),
+      "POST /api/admin/agents/test": () => testDriveAgent(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
     if (!handler) { sendJson(res, 404, { error: `unknown admin endpoint: ${key}` }); return }
-    const result = handler()
+    const result = await handler()
     sendJson(res, 200, result)
   } catch (e: any) {
     sendJson(res, 400, { error: e.message || "admin op failed" })
@@ -160,6 +162,53 @@ function revokeToken(body: any) {
   const rec = new TokenStore().revoke(id)
   if (!rec) throw new Error(`Token "${id}" not found.`)
   return { summary: `revoked token ${id} (${rec.name})` }
+}
+
+/**
+ * Admin-only shortcut that sends a message to an agent and returns the full
+ * reply. Used by the dashboard's "Test drive" chat modal so operators can
+ * sanity-check a freshly configured agent before wiring a real channel.
+ *
+ * Routes through the daemon's /task endpoint (unchanged runtime semantics)
+ * and labels the run with channel="test-drive" so it's obvious in the task
+ * history / dashboard. A stable chatId lets the agent's session carry
+ * context across follow-up messages within one modal sitting.
+ */
+async function testDriveAgent(body: any) {
+  const id = String(body?.agent || body?.id || "").trim()
+  const message = String(body?.message || "").trim()
+  const chatId = String(body?.chatId || "").trim() || `admin-${Date.now()}`
+  if (!id) throw new Error("Agent id is required.")
+  if (!message) throw new Error("Message is required.")
+
+  // Resolve the primary daemon URL from config. Fall back to the local default.
+  let daemonUrl = "http://127.0.0.1:18800"
+  let daemonToken: string | undefined
+  try {
+    const cfg = loadDaemonConfig()
+    daemonUrl = cfg.dashboard.daemonUrl.replace(/\/+$/, "") || daemonUrl
+    daemonToken = cfg.dashboard.token
+  } catch { /* missing config shouldn't block test-drive */ }
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (daemonToken) headers["Authorization"] = `Bearer ${daemonToken}`
+
+  const r = await fetch(`${daemonUrl}/task`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      agent: id,
+      message,
+      context: { channel: "test-drive", sender: "admin", chatId },
+    }),
+  })
+  const text = await r.text()
+  let parsed: any
+  try { parsed = JSON.parse(text) } catch { parsed = { content: text } }
+  if (!r.ok) {
+    throw new Error(parsed?.error || `daemon HTTP ${r.status}`)
+  }
+  return { chatId, response: parsed }
 }
 
 function addAgent(body: any) {
@@ -392,6 +441,30 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
 .hint-block{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.55}
 .hint-block code{background:#0e1119;padding:1px 6px;border-radius:3px;color:var(--text);font-family:ui-monospace,monospace;font-size:11px}
 .section-block{margin-bottom:28px}
+
+/* --- Test drive chat modal --- */
+.td-modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center}
+.td-modal.hidden{display:none}
+.td-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.6)}
+.td-card{position:relative;width:min(640px,94vw);height:min(720px,90vh);background:var(--card);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;box-shadow:0 18px 48px rgba(0,0,0,0.5);overflow:hidden}
+.td-card > header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:#10131c}
+.td-card > header h3{margin:0;font-size:14px;font-weight:600;flex:1}
+.td-card .chip-small{font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(99,102,241,0.14);color:var(--accent);letter-spacing:0.3px}
+.td-close{background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 6px;line-height:1}
+.td-close:hover{color:var(--text)}
+.td-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:#0a0c12}
+.td-msg{max-width:82%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap}
+.td-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:2px}
+.td-msg.agent{align-self:flex-start;background:#1a1d29;color:var(--text);border:1px solid var(--border);border-bottom-left-radius:2px}
+.td-msg.err{align-self:flex-start;background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-bottom-left-radius:2px}
+.td-msg.thinking{align-self:flex-start;color:var(--muted);font-style:italic;background:transparent;padding:4px 8px}
+.td-empty{color:var(--muted);text-align:center;padding:40px 12px;font-style:italic;font-size:13px}
+.td-footer{border-top:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:#10131c}
+.td-footer textarea{flex:1;background:#0e1119;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font:13px/1.4 inherit;min-height:40px;max-height:120px;resize:none}
+.td-footer textarea:focus{outline:none;border-color:var(--accent)}
+.td-footer button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;font-size:13px;cursor:pointer}
+.td-footer button:disabled{opacity:0.5;cursor:not-allowed}
+.td-hint{padding:6px 16px;font-size:10px;color:var(--muted);border-top:1px solid var(--border);background:#10131c;font-family:ui-monospace,monospace}
 </style>
 </head>
 <body>
@@ -408,6 +481,22 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--bo
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
+<div id="td-modal" class="td-modal hidden" aria-hidden="true">
+  <div class="td-backdrop"></div>
+  <div class="td-card" role="dialog" aria-modal="true">
+    <header>
+      <span class="chip-small">Test drive</span>
+      <h3 id="td-title">Agent</h3>
+      <button class="td-close" id="td-close" aria-label="Close">×</button>
+    </header>
+    <div id="td-body" class="td-body"><div class="td-empty">Send a message to sanity-check this agent before wiring it to a real channel.</div></div>
+    <div class="td-footer">
+      <textarea id="td-input" placeholder="Message the agent…  (Cmd/Ctrl-Enter to send)" rows="1"></textarea>
+      <button id="td-send">Send</button>
+    </div>
+    <div class="td-hint" id="td-hint"></div>
+  </div>
+</div>
 <main>
   <div id="global-msg" class="msg"></div>
 
@@ -543,6 +632,7 @@ function renderAgents() {
           '<b>' + escapeHtml(a.id) + '</b> · triggers: ' + (a.mentions.map(escapeHtml).join(', ') || '—') +
         '</div>' +
       '</div>' +
+      '<button class="primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px;padding:6px 12px;font-size:12px">Test drive</button>' +
       '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
       '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';
     div.querySelector('button.danger').addEventListener('click', () => deleteAgent(a.id));
@@ -550,6 +640,10 @@ function renderAgents() {
       const btn = e.currentTarget;
       const want = btn.dataset.access === 'public' ? 'private' : 'public';
       setAgentAccess(btn.dataset.toggle, want);
+    });
+    div.querySelector('button[data-test]').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      openTestDrive(btn.dataset.test, btn.dataset.name);
     });
     list.appendChild(div);
   }
@@ -683,6 +777,97 @@ async function deleteCron(id) {
   try { await req('DELETE', '/api/admin/crons', { id }); refresh(); }
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
+
+// --- Test drive chat modal ---
+const testDrive = {
+  modal: $('td-modal'),
+  body: $('td-body'),
+  title: $('td-title'),
+  input: $('td-input'),
+  sendBtn: $('td-send'),
+  hint: $('td-hint'),
+  closeBtn: $('td-close'),
+  agentId: null,
+  chatId: null,  // stable per modal open so follow-ups share session context
+  thinkingEl: null,
+  busy: false,
+};
+
+function openTestDrive(agentId, agentName) {
+  testDrive.agentId = agentId;
+  testDrive.chatId = 'admin-' + Date.now();
+  testDrive.title.textContent = agentName + ' · ' + agentId;
+  testDrive.body.innerHTML = '<div class="td-empty">Send a message to sanity-check this agent before wiring it to a real channel.</div>';
+  testDrive.hint.textContent = 'Session: ' + testDrive.chatId + ' · channel: test-drive';
+  testDrive.input.value = '';
+  testDrive.modal.classList.remove('hidden');
+  testDrive.modal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => testDrive.input.focus(), 50);
+}
+
+function closeTestDrive() {
+  testDrive.modal.classList.add('hidden');
+  testDrive.modal.setAttribute('aria-hidden', 'true');
+  testDrive.agentId = null;
+  testDrive.chatId = null;
+}
+
+function appendChat(kind, text) {
+  const empty = testDrive.body.querySelector('.td-empty');
+  if (empty) empty.remove();
+  const el = document.createElement('div');
+  el.className = 'td-msg ' + kind;
+  el.textContent = text;
+  testDrive.body.appendChild(el);
+  testDrive.body.scrollTop = testDrive.body.scrollHeight;
+  return el;
+}
+
+async function sendTestDrive() {
+  if (testDrive.busy) return;
+  const msg = testDrive.input.value.trim();
+  if (!msg || !testDrive.agentId) return;
+  appendChat('user', msg);
+  testDrive.input.value = '';
+  testDrive.input.style.height = 'auto';
+  testDrive.thinkingEl = appendChat('thinking', 'thinking…');
+  testDrive.busy = true;
+  testDrive.sendBtn.disabled = true;
+  try {
+    const r = await req('POST', '/api/admin/agents/test', {
+      agent: testDrive.agentId,
+      message: msg,
+      chatId: testDrive.chatId,
+    });
+    testDrive.thinkingEl?.remove();
+    testDrive.thinkingEl = null;
+    const reply = r?.response?.content || r?.response?.error || '(empty reply)';
+    appendChat(r?.response?.error ? 'err' : 'agent', reply);
+  } catch (e) {
+    testDrive.thinkingEl?.remove();
+    testDrive.thinkingEl = null;
+    appendChat('err', e.message);
+  } finally {
+    testDrive.busy = false;
+    testDrive.sendBtn.disabled = false;
+    testDrive.input.focus();
+  }
+}
+
+testDrive.sendBtn.addEventListener('click', sendTestDrive);
+testDrive.closeBtn.addEventListener('click', closeTestDrive);
+testDrive.modal.querySelector('.td-backdrop').addEventListener('click', closeTestDrive);
+testDrive.input.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); sendTestDrive(); }
+});
+testDrive.input.addEventListener('input', () => {
+  // Autogrow the textarea up to 120px.
+  testDrive.input.style.height = 'auto';
+  testDrive.input.style.height = Math.min(testDrive.input.scrollHeight, 120) + 'px';
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !testDrive.modal.classList.contains('hidden')) closeTestDrive();
+});
 
 // --- Tokens tab ---
 const SCOPE_CHOICES = [
