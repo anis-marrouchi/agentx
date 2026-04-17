@@ -67,6 +67,7 @@ Full documentation: **[https://agentx-docs.pages.dev](https://agentx-docs.pages.
 - [CLI reference](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Communication matrix](docs/reference/communication-matrix.md)
 - [Scoped API tokens](docs/reference/tokens.md) — mint / scope / revoke
 - [Public agents](docs/reference/public-agents.md) — expose an agent over HTTP
+- [`agentx doctor`](docs/reference/doctor.md) — pre-flight health check
 
 **Moving from another tool:**
 - [Migrate from OpenClaw](docs/migration/from-openclaw.md) — we import the bulk of your config in one shot

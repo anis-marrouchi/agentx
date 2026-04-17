@@ -4,6 +4,7 @@ import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
 import { setup } from "@/commands/setup"
 import { token } from "@/commands/token"
+import { doctor } from "@/commands/doctor"
 import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
@@ -47,6 +48,7 @@ async function main() {
     .addCommand(board)
     .addCommand(wiki)
     .addCommand(token)
+    .addCommand(doctor)
 
   const args = process.argv.slice(2)
   if (args.length === 0) {
