@@ -55,6 +55,10 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PATCH /api/admin/channels/telegram": () => editTelegramAccount(body),
       "POST /api/admin/channels/slack": () => configureSlack(body),
       "POST /api/admin/channels/slack/toggle": () => toggleSlack(body),
+      "POST /api/admin/channels/discord": () => configureDiscord(body),
+      "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
+      "POST /api/admin/channels/gitlab": () => configureGitLab(body),
+      "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -135,6 +139,24 @@ function getAdminState() {
     appTokenRef: cfg.channels?.slack?.appToken || "",
     agentBinding: cfg.channels?.slack?.agentBinding || "",
   }
+  const discord = {
+    enabled: !!cfg.channels?.discord?.enabled,
+    tokenRef: cfg.channels?.discord?.token || "",
+    agentBinding: cfg.channels?.discord?.agentBinding || "",
+  }
+  const gitlab = {
+    enabled: !!cfg.channels?.gitlab?.enabled,
+    host: cfg.channels?.gitlab?.host || "",
+    webhookPort: cfg.channels?.gitlab?.webhookPort || 18810,
+    tokenRef: cfg.channels?.gitlab?.token || "",
+    routeCount: Array.isArray(cfg.channels?.gitlab?.routes) ? cfg.channels.gitlab.routes.length : 0,
+    agentMappingCount: Array.isArray(cfg.channels?.gitlab?.agentMappings) ? cfg.channels.gitlab.agentMappings.length : 0,
+  }
+  const whatsapp = {
+    enabled: !!cfg.channels?.whatsapp?.enabled,
+    sessionDir: cfg.channels?.whatsapp?.sessionDir || ".agentx/whatsapp-sessions",
+    routeCount: Array.isArray(cfg.channels?.whatsapp?.routes) ? cfg.channels.whatsapp.routes.length : 0,
+  }
   const crons = Object.entries(cfg.crons || {}).map(([id, c]: [string, any]) => ({
     id,
     schedule: c.schedule,
@@ -161,7 +183,7 @@ function getAdminState() {
   }
   // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
   const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
-  return { exists: true, agents, telegram, slack, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
 }
 
 // ========================================================================
@@ -574,6 +596,65 @@ function toggleSlack(body: any) {
   return { summary }
 }
 
+function configureDiscord(body: any) {
+  const tokenEnv = String(body?.tokenEnv || "").trim()
+  const agentBinding = String(body?.agentBinding || "").trim()
+  if (!tokenEnv) throw new Error("Bot token env-var name is required (e.g. DISCORD_BOT_TOKEN).")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.discord = cfg.channels.discord || { enabled: false }
+    cfg.channels.discord.enabled = true
+    cfg.channels.discord.token = "${" + tokenEnv + "}"
+    if (agentBinding) {
+      if (!cfg.agents?.[agentBinding]) throw new Error(`Unknown agent "${agentBinding}".`)
+      cfg.channels.discord.agentBinding = agentBinding
+    }
+    return "configured discord connector"
+  })
+  return { summary, hint: `Add ${tokenEnv}=<bot-token> to your .env.` }
+}
+
+function toggleDiscord(body: any) {
+  const enabled = !!body?.enabled
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.discord = cfg.channels.discord || { enabled: false }
+    cfg.channels.discord.enabled = enabled
+    return `discord ${enabled ? "enabled" : "disabled"}`
+  })
+  return { summary }
+}
+
+function configureGitLab(body: any) {
+  const host = String(body?.host || "").trim().replace(/\/+$/, "")
+  const tokenEnv = String(body?.tokenEnv || "").trim()
+  const webhookPort = parseInt(String(body?.webhookPort || "18810"), 10)
+  if (!host || !/^https?:\/\//.test(host)) throw new Error("Host must start with http:// or https://")
+  if (!tokenEnv) throw new Error("Admin token env-var name is required (e.g. GITLAB_TOKEN).")
+  if (!Number.isFinite(webhookPort) || webhookPort < 1 || webhookPort > 65535) throw new Error("Webhook port must be between 1 and 65535.")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.gitlab = cfg.channels.gitlab || { enabled: false, routes: [], agentMappings: [] }
+    cfg.channels.gitlab.enabled = true
+    cfg.channels.gitlab.host = host
+    cfg.channels.gitlab.token = "${" + tokenEnv + "}"
+    cfg.channels.gitlab.webhookPort = webhookPort
+    return "configured gitlab connector"
+  })
+  return { summary, hint: `Add ${tokenEnv}=<personal-access-token> to your .env. Per-project routes + per-agent tokens stay in the Advanced JSON editor.` }
+}
+
+function toggleGitLab(body: any) {
+  const enabled = !!body?.enabled
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.channels = cfg.channels || {}
+    cfg.channels.gitlab = cfg.channels.gitlab || { enabled: false, routes: [], agentMappings: [] }
+    cfg.channels.gitlab.enabled = enabled
+    return `gitlab ${enabled ? "enabled" : "disabled"}`
+  })
+  return { summary }
+}
+
 async function previewCron(body: any) {
   const expr = String(body?.schedule || "").trim()
   if (!expr) throw new Error("schedule is required")
@@ -855,6 +936,30 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
   border:1px solid var(--ax-border)}
 .section-block{margin-bottom:28px}
 
+/* --- Channels sidemenu --- */
+.ch-split{display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start}
+@media (max-width:720px){.ch-split{grid-template-columns:1fr}}
+.ch-menu{background:var(--ax-surface);border:1px solid var(--ax-border);
+  border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:2px;
+  position:sticky;top:120px}
+.ch-menu button{background:transparent;border:1px solid transparent;
+  color:var(--ax-text-2);padding:8px 10px;border-radius:4px;cursor:pointer;
+  font:inherit;font-size:12px;text-align:left;display:flex;align-items:center;gap:10px;
+  transition:background 120ms,border-color 120ms,color 120ms}
+.ch-menu button:hover{background:var(--ax-surface-2);color:var(--ax-text)}
+.ch-menu button.is-active{background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface));
+  color:var(--ax-text);border-color:color-mix(in oklch,var(--ax-accent) 35%,var(--ax-border-2))}
+.ch-menu .ch-icon{font-family:var(--ax-mono);font-size:10px;line-height:16px;
+  width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:3px;
+  color:var(--ax-muted);flex-shrink:0}
+.ch-menu .ch-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-menu .ch-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--ax-border-2)}
+.ch-menu .ch-dot--on{background:var(--ax-accent)}
+.ch-menu .ch-dot--off{background:var(--ax-warn)}
+.ch-view{display:block}
+.ch-view[hidden]{display:none}
+
 /* --- Files modal --- */
 .files-split{display:flex;flex:1;min-height:0}
 .files-picker{width:260px;min-width:220px;border-right:1px solid var(--ax-border);
@@ -1113,9 +1218,18 @@ textarea.raw{min-height:480px;font-family:var(--ax-mono);font-size:12px;line-hei
 
   <section id="tab-channels" class="tab">
     <h2>Channels</h2>
-    <p class="lead">Connect messaging platforms that agents respond on. Telegram and Slack are managed here; Discord / WhatsApp / GitLab still flow through the CLI (<code>agentx channel add</code>) + the raw JSON editor.</p>
-    <div id="tg-section" class="section-block"></div>
-    <div id="slack-section" class="section-block"></div>
+    <p class="lead">Everywhere agents can answer from. Pick a connector on the left to configure or check status.</p>
+    <div class="ch-split">
+      <aside class="ch-menu" id="ch-menu"></aside>
+      <div class="ch-pane">
+        <div id="ch-telegram" class="ch-view"><div id="tg-section" class="section-block"></div></div>
+        <div id="ch-whatsapp" class="ch-view" hidden></div>
+        <div id="ch-slack" class="ch-view" hidden><div id="slack-section" class="section-block"></div></div>
+        <div id="ch-discord" class="ch-view" hidden></div>
+        <div id="ch-gitlab" class="ch-view" hidden></div>
+        <div id="ch-github" class="ch-view" hidden></div>
+      </div>
+    </div>
   </section>
 
   <section id="tab-crons" class="tab">
@@ -1461,6 +1575,7 @@ async function deleteAgent(id) {
 }
 
 function renderChannels() {
+  renderChannelsMenu();
   const t = state.telegram || { enabled: false, accounts: [] };
   const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
   const accountRows = t.accounts.length === 0
@@ -1499,6 +1614,212 @@ function renderChannels() {
     });
   }
   renderSlackSection();
+}
+
+const CHANNEL_DEFS = [
+  { id: 'telegram', icon: 'TG', label: 'Telegram' },
+  { id: 'whatsapp', icon: 'WA', label: 'WhatsApp' },
+  { id: 'slack',    icon: 'SL', label: 'Slack' },
+  { id: 'discord',  icon: 'DC', label: 'Discord' },
+  { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
+  { id: 'github',   icon: 'GH', label: 'GitHub' },
+];
+
+function channelStatus(id) {
+  if (id === 'telegram') {
+    const t = state.telegram || {};
+    const configured = (t.accounts || []).length > 0;
+    if (!configured) return 'none';
+    return t.enabled ? 'on' : 'off';
+  }
+  if (id === 'whatsapp') {
+    const w = state.whatsapp || {};
+    if (!w.routeCount) return 'none';
+    return w.enabled ? 'on' : 'off';
+  }
+  if (id === 'slack') {
+    const s = state.slack || {};
+    if (!s.botTokenRef || !s.appTokenRef) return 'none';
+    return s.enabled ? 'on' : 'off';
+  }
+  if (id === 'discord') {
+    const d = state.discord || {};
+    if (!d.tokenRef) return 'none';
+    return d.enabled ? 'on' : 'off';
+  }
+  if (id === 'gitlab') {
+    const g = state.gitlab || {};
+    if (!g.tokenRef) return 'none';
+    return g.enabled ? 'on' : 'off';
+  }
+  if (id === 'github') {
+    const webhooks = (state.webhooks || []).filter((w) => w.source === 'github');
+    if (webhooks.length === 0) return 'none';
+    return webhooks.some((w) => w.enabled) ? 'on' : 'off';
+  }
+  return 'none';
+}
+
+function renderChannelsMenu() {
+  const menu = $('ch-menu');
+  if (!menu) return;
+  const activeId = menu.dataset.active || 'telegram';
+  menu.innerHTML = CHANNEL_DEFS.map((c) => {
+    const s = channelStatus(c.id);
+    const dotCls = s === 'on' ? 'ch-dot ch-dot--on' : s === 'off' ? 'ch-dot ch-dot--off' : 'ch-dot';
+    const dotTitle = s === 'on' ? 'enabled' : s === 'off' ? 'configured but off' : 'not set up';
+    const isActive = c.id === activeId;
+    return '<button data-ch="' + c.id + '" class="' + (isActive ? 'is-active' : '') + '">' +
+      '<span class="ch-icon">' + c.icon + '</span>' +
+      '<span class="ch-label">' + c.label + '</span>' +
+      '<span class="' + dotCls + '" title="' + dotTitle + '"></span>' +
+    '</button>';
+  }).join('');
+  for (const btn of menu.querySelectorAll('button')) {
+    btn.addEventListener('click', () => selectChannel(btn.dataset.ch));
+  }
+  // Re-render the currently-selected pane's content.
+  selectChannel(activeId, true);
+}
+
+function selectChannel(id, keep) {
+  const menu = $('ch-menu');
+  if (menu) menu.dataset.active = id;
+  for (const btn of menu.querySelectorAll('button')) {
+    btn.classList.toggle('is-active', btn.dataset.ch === id);
+  }
+  for (const v of document.querySelectorAll('.ch-view')) {
+    v.hidden = v.id !== 'ch-' + id;
+  }
+  // Lazy-render the more static panes; telegram + slack re-render via their existing calls.
+  if (id === 'discord') renderDiscordPane();
+  else if (id === 'gitlab') renderGitLabPane();
+  else if (id === 'github') renderGitHubPane();
+  else if (id === 'whatsapp') renderWhatsAppPane();
+}
+
+function renderDiscordPane() {
+  const d = state.discord || {};
+  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
+  const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '"' +
+    (a.id === (d.agentBinding || '') ? ' selected' : '') + '>' +
+    escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  const configured = !!d.tokenRef;
+  const statusChip = configured
+    ? (d.enabled ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>' : '<span class="chip off">disabled</span>')
+    : '<span class="chip off">not configured</span>';
+  $('ch-discord').innerHTML =
+    '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>Discord bot</h3>' +
+      '<div class="meta">' + statusChip +
+        (d.tokenRef ? ' token: <code style="font-family:var(--ax-mono)">' + escapeHtml(d.tokenRef) + '</code>' : '') +
+        (d.agentBinding ? ' · agent: <b>' + escapeHtml(d.agentBinding) + '</b>' : '') +
+      '</div></div>' +
+      (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="dc-toggle"' + (d.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
+    '</div>' +
+    '<div class="add-form"><h3>' + (configured ? 'Edit Discord' : 'Connect Discord') + '</h3>' +
+      '<label>Bot token env-var<span class="hint">(from the Discord Developer Portal)</span></label>' +
+      '<input id="dc-env" placeholder="DISCORD_BOT_TOKEN" value="' + escapeHtml(stripRef(d.tokenRef)) + '" />' +
+      '<label>Default agent<span class="hint">(optional)</span></label>' +
+      '<select id="dc-agent"><option value="">(none)</option>' + agentOptions + '</select>' +
+      '<div class="actions"><button class="primary" onclick="configureDiscord()">' + (configured ? 'Save' : 'Connect') + '</button><div id="dc-msg" class="msg"></div></div>' +
+      '<div class="hint-block">Bot needs <code>MESSAGE_CONTENT</code> intent enabled in the Developer Portal. Routing: @-mention in channels, always in DMs.</div>' +
+    '</div>';
+  const t = $('dc-toggle');
+  if (t) t.addEventListener('change', async (e) => {
+    try { await req('POST', '/api/admin/channels/discord/toggle', { enabled: e.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+  });
+}
+async function configureDiscord() {
+  const body = { tokenEnv: $('dc-env').value.trim(), agentBinding: $('dc-agent').value };
+  try { const r = await req('POST', '/api/admin/channels/discord', body); showMsg($('dc-msg'), 'ok', (r.summary || 'Saved.') + (r.hint ? ' — ' + r.hint : '')); refresh(); }
+  catch (e) { showMsg($('dc-msg'), 'err', e.message); }
+}
+
+function renderGitLabPane() {
+  const g = state.gitlab || {};
+  const stripRef = (ref) => (ref || '').replace(/^\\\$\\{|\\}$/g, '');
+  const configured = !!g.tokenRef;
+  const statusChip = configured
+    ? (g.enabled ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>' : '<span class="chip off">disabled</span>')
+    : '<span class="chip off">not configured</span>';
+  $('ch-gitlab').innerHTML =
+    '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>GitLab</h3>' +
+      '<div class="meta">' + statusChip +
+        (g.host ? ' <code style="font-family:var(--ax-mono)">' + escapeHtml(g.host) + '</code>' : '') +
+        (g.tokenRef ? ' · token: <code style="font-family:var(--ax-mono)">' + escapeHtml(g.tokenRef) + '</code>' : '') +
+        ' · ' + g.routeCount + ' route(s) · ' + g.agentMappingCount + ' agent mapping(s)' +
+      '</div></div>' +
+      (configured ? '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="gl-toggle"' + (g.enabled ? ' checked' : '') + ' /> <span>On</span></label>' : '') +
+    '</div>' +
+    '<div class="add-form"><h3>' + (configured ? 'Edit GitLab' : 'Connect GitLab') + '</h3>' +
+      '<label>Host<span class="hint">(e.g. <code>https://gitlab.com</code> or your self-hosted URL)</span></label>' +
+      '<input id="gl-host" placeholder="https://gitlab.com" value="' + escapeHtml(g.host || 'https://gitlab.com') + '" />' +
+      '<label>Admin token env-var<span class="hint">(personal access token with <code>api</code> scope)</span></label>' +
+      '<input id="gl-env" placeholder="GITLAB_TOKEN" value="' + escapeHtml(stripRef(g.tokenRef)) + '" />' +
+      '<label>Webhook listen port<span class="hint">(incoming GitLab webhooks)</span></label>' +
+      '<input id="gl-port" type="number" min="1" max="65535" value="' + (g.webhookPort || 18810) + '" />' +
+      '<div class="actions"><button class="primary" onclick="configureGitLab()">' + (configured ? 'Save' : 'Connect') + '</button><div id="gl-msg" class="msg"></div></div>' +
+      '<div class="hint-block">Per-project routes and per-agent tokens stay in the <b>Advanced</b> tab (raw JSON). Webhooks from GitLab are also registered in the <b>Webhooks</b> tab with source=<code>gitlab</code>.</div>' +
+    '</div>';
+  const t = $('gl-toggle');
+  if (t) t.addEventListener('change', async (e) => {
+    try { await req('POST', '/api/admin/channels/gitlab/toggle', { enabled: e.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+  });
+}
+async function configureGitLab() {
+  const body = {
+    host: $('gl-host').value.trim(),
+    tokenEnv: $('gl-env').value.trim(),
+    webhookPort: parseInt($('gl-port').value, 10),
+  };
+  try { const r = await req('POST', '/api/admin/channels/gitlab', body); showMsg($('gl-msg'), 'ok', (r.summary || 'Saved.') + (r.hint ? ' — ' + r.hint : '')); refresh(); }
+  catch (e) { showMsg($('gl-msg'), 'err', e.message); }
+}
+
+function renderGitHubPane() {
+  const daemonUrl = (state.daemonUrl || '').replace(/\\/+$/, '');
+  const ghHooks = (state.webhooks || []).filter((w) => w.source === 'github');
+  const hookList = ghHooks.length === 0
+    ? '<div class="empty">No GitHub webhooks registered yet.</div>'
+    : ghHooks.map((w) => {
+        const url = daemonUrl + '/webhook/' + encodeURIComponent(w.agentId) + '/github';
+        const status = w.enabled
+          ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>'
+          : '<span class="chip off">disabled</span>';
+        return '<div class="row-card"><div class="info"><h3>' + escapeHtml(w.id) + '</h3>' +
+          '<div class="meta">' + status + ' agent: <b>' + escapeHtml(w.agentId) + '</b> · ' +
+            '<code style="font-family:var(--ax-mono);font-size:11px">' + escapeHtml(url) + '</code>' +
+          '</div></div></div>';
+      }).join('');
+  $('ch-github').innerHTML =
+    '<div class="hint-block" style="margin-bottom:14px">GitHub doesn&rsquo;t need a bot adapter — it speaks webhooks. Register one in the <b>Webhooks</b> tab with <code>source=github</code>, bind it to an agent, then paste the generated URL into the repo&rsquo;s <i>Settings → Webhooks</i>.</div>' +
+    '<div class="list">' + hookList + '</div>' +
+    '<div class="actions"><button class="primary" onclick="jumpToWebhooks()">Add a GitHub webhook →</button></div>';
+}
+function jumpToWebhooks() {
+  for (const btn of document.querySelectorAll('nav.tabs button')) {
+    if (btn.dataset.tab === 'webhooks') btn.click();
+  }
+  const src = document.getElementById('w-source');
+  if (src) src.value = 'github';
+}
+
+function renderWhatsAppPane() {
+  const w = state.whatsapp || {};
+  const configured = w.routeCount > 0;
+  const statusChip = configured
+    ? (w.enabled ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--ax-accent)">enabled</span>' : '<span class="chip off">disabled</span>')
+    : '<span class="chip off">not configured</span>';
+  $('ch-whatsapp').innerHTML =
+    '<div class="row-card" style="margin-bottom:12px"><div class="info"><h3>WhatsApp</h3>' +
+      '<div class="meta">' + statusChip +
+        ' · session dir: <code style="font-family:var(--ax-mono)">' + escapeHtml(w.sessionDir) + '</code>' +
+        ' · ' + w.routeCount + ' route(s)' +
+      '</div></div></div>' +
+    '<div class="hint-block">WhatsApp uses Baileys (multi-device). Routes + phone numbers live in the <b>Advanced</b> tab for now; a QR pairing flow is landing next. Install <code>@whiskeysockets/baileys</code> + <code>qrcode-terminal</code>.</div>' +
+    '<div class="hint-block" style="margin-top:10px"><b>Coming next session:</b> in-browser QR pairing (the adapter already prints the QR to the daemon log; we&rsquo;ll surface it here as a scannable image).</div>';
 }
 
 function renderSlackSection() {
