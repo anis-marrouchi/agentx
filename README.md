@@ -1,49 +1,57 @@
 # AgentX
 
-**Self-hosted multi-agent orchestrator.** Routes messages from Telegram, WhatsApp, Discord, GitLab, crons, webhooks, and cross-machine mesh to AI agents running on Claude Code, OpenAI, Ollama, or any LLM provider.
+**The AI operations layer for your team.** Plug in the channels your team already uses — Telegram, WhatsApp, Discord, GitLab — set schedules, and watch your agents work. Self-hosted. No Python, no YAML, no code.
 
-## Why AgentX?
+## Who it's for
 
-Existing multi-agent frameworks (CrewAI, AutoGen, LangGraph) are SDK-first, Python-heavy, and cloud-dependent. AgentX is **infrastructure-first** — closer to systemd for AI agents than to another framework.
+**Teams running AI agents on real channels.** Support queues, devops squads, ops teams, internal automation. You want multiple agents handling different jobs, coordinating across machines, answering on the tools your people already use.
 
-- **BYOAI** — Claude, OpenAI, Ollama, whatever
-- **Agents = directories** — workspace + config. No code required
-- **Channel routing** built in — Telegram, WhatsApp, Discord, GitLab, webhooks
-- **Mesh federation** — agents across machines collaborate over Tailscale/VPN
-- **Cron + business layer** — scheduled work with KPI tracking
-- **Wiki memory** — compounding knowledge from conversations
-- **Cross-channel `/send`** — receive on X, push to Y
-- **Live monitoring** — SSE event stream, debug categories
+> **Running AgentX solo for yourself?** [OpenClaw](https://github.com/openclaw/openclaw) is built for single-user assistants and has a lighter install path. If you outgrow it, we import your config — see [Migrate from OpenClaw](docs/migration/from-openclaw.md).
+
+## What you get out of the box
+
+- **Answer on Telegram, WhatsApp, Discord, GitLab** — one config, all channels
+- **Agents = folders, not code** — each agent has its own persona, knowledge, and tools in plain Markdown
+- **Multiple machines, one team** — run AgentX across a laptop + a server and they'll share work automatically
+- **Scheduled jobs in plain English** — `agentx schedule "every Monday at 9am" --agent sales`
+- **Live dashboard** — a browser view of what every agent is doing right now, with full task history and replay
+- **Bring your own AI** — Claude Code (deep reasoning + tools), OpenAI / Anthropic API, Ollama, or anything in between
+- **Wiki memory** — conversations compound into a shared knowledge base each agent draws from
 
 ## Install
 
 ```bash
 npm install -g agentix-cli
-agentx init
-agentx agent add
-agentx channel add
-agentx daemon start
-agentx daemon watch    # live, color-coded activity
+agentx init                # scaffolds agentx.json
+agentx daemon start        # starts the router
 ```
 
-## Read the docs
+Open the dashboard at **http://127.0.0.1:4202** — a plain-English control view, with a `?`-Glossary link at the top if anything looks unfamiliar.
 
-The full documentation lives at **[https://agentx-docs.pages.dev](https://agentx-docs.pages.dev)** (or run `pnpm docs:dev` locally).
+For hand-rolled setup, see the [full install guide](docs/install.md).
 
-- **[Install](docs/install.md)** — from zero to a running daemon in 5 minutes
-- **[Concepts](docs/concepts.md)** — agents, channels, crons, mesh, wiki, business
-- **Journey (simple → advanced):**
-  - [1. Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md)
-  - [2. Scheduled reports with failure alerts](docs/journey/02-scheduled-reports.md)
-  - [3. Multi-agent group chat](docs/journey/03-multi-agent-group.md)
-  - [7. Business layer — run a team with AI agents](docs/journey/07-business-layer.md)
-  - [8. Mesh federation — two machines, one team](docs/journey/08-mesh-federation.md)
-- **Reference:**
-  - [CLI](docs/reference/cli.md)
-  - [Config schema](docs/reference/config-schema.md)
-  - [Communication matrix](docs/reference/communication-matrix.md)
-- **[Migrate from OpenClaw](docs/migration/from-openclaw.md)**
-- **[Contributing](docs/contributing.md)**
+## Docs
+
+Full documentation: **[https://agentx-docs.pages.dev](https://agentx-docs.pages.dev)** (or `pnpm docs:dev` locally).
+
+**Start here:**
+- [Install](docs/install.md) — from zero to a running daemon in 5 minutes
+- [Concepts](docs/concepts.md) — what an agent, channel, schedule, and team network are (glossary also lives at `/glossary` in the dashboard)
+
+**Worked examples, simple → advanced:**
+- [1. Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) — one agent, one channel, one conversation
+- [2. Scheduled reports with failure alerts](docs/journey/02-scheduled-reports.md)
+- [3. Multi-agent group chat](docs/journey/03-multi-agent-group.md)
+- [7. Run a team with AI agents](docs/journey/07-business-layer.md) — roles, KPIs, org chart
+- [8. Two machines, one team](docs/journey/08-mesh-federation.md) — mesh federation
+
+**For configuration:**
+- [CLI reference](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Communication matrix](docs/reference/communication-matrix.md)
+
+**Moving from another tool:**
+- [Migrate from OpenClaw](docs/migration/from-openclaw.md) — we import the bulk of your config in one shot
+
+[Contributing](docs/contributing.md)
 
 ## Architecture
 

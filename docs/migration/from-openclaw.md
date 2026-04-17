@@ -1,6 +1,16 @@
 # Migrate from OpenClaw
 
-If you're coming from an OpenClaw setup, `agentx migrate` imports the bulk of your config in one shot.
+## When to switch
+
+[OpenClaw](https://github.com/openclaw/openclaw) is a great single-user personal assistant. You'll feel the pinch the moment you need more than one:
+
+- **More than one operator** — multiple people managing the same set of agents, sharing dashboards and logs.
+- **More than one machine** — agents on a laptop + a server that share work without you copying configs around. AgentX calls this the [team network](../journey/08-mesh-federation.md) and sets it up automatically.
+- **Scheduled work** — cron jobs with retries, failure alerts, and a built-in natural-language scheduler (`agentx schedule "every Monday at 9am" --agent sales`).
+- **A shared Kanban / board view** — a browser Kanban that drags GitLab issues between columns is shipped in AgentX; OpenClaw is chat-first.
+- **Cost + KPI tracking** — a "Today" strip on the live dashboard showing tasks handled, time, tokens, and per-channel breakdown; business-layer KPIs per agent.
+
+If none of those match, **stay on OpenClaw.** It has the lighter install path and the simpler mental model. When you outgrow it, `agentx migrate` imports the bulk of your config in one shot.
 
 ## Command
 
