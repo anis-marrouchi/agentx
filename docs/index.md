@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "AgentX"
-  text: "Self-hosted multi-agent orchestrator"
-  tagline: Route Telegram, WhatsApp, Discord, GitLab, crons, webhooks, and cross-machine mesh tasks to AI agents on Claude, OpenAI, or any LLM — with persistent memory, scheduled jobs, and a built-in business layer.
+  text: "AI operations layer for your team"
+  tagline: For small & medium businesses. Plug in Telegram, WhatsApp, Slack, Discord, or GitLab, set schedules, and watch your agents work — on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.
   actions:
     - theme: brand
       text: Get started
@@ -20,7 +20,7 @@ features:
       width: 32
       height: 32
     title: Every channel, one router
-    details: Telegram, WhatsApp, Discord, GitLab, webhooks, HTTP — built in. Agents reply on the channel they received on, or push to any other via cross-channel /send.
+    details: Telegram, WhatsApp, Slack, Discord, GitLab, webhooks, HTTP — built in. Agents reply on the channel they received on, or push to any other via cross-channel /send.
     link: /journey/01-telegram-qa-bot
     linkText: Build a Telegram bot
   - icon:
@@ -56,7 +56,7 @@ features:
       width: 32
       height: 32
     title: Mesh across machines
-    details: Agents on different machines collaborate over Tailscale/VPN. One roster, cross-node delegation, federated wiki.
+    details: Agents on different machines collaborate over Tailscale/VPN. One roster, cross-node delegation, federated wiki. Manage any peer's config from one dashboard.
     link: /journey/08-mesh-federation
     linkText: Federate two machines
   - icon:
@@ -68,6 +68,24 @@ features:
     details: Karpathy-inspired wiki with a knowledge graph. Daily absorb turns raw conversations into cited articles the whole team can read.
     link: /concepts
     linkText: See the concepts
+  - icon:
+      src: /icons/settings.svg
+      alt: Admin panel
+      width: 32
+      height: 32
+    title: Browser-based admin, no JSON editing
+    details: Add agents, wire channels (QR-pair WhatsApp in the browser), schedule crons, mint scoped API tokens — all from the dashboard. CLI + agentx.json stay fully supported for power users.
+    link: /install
+    linkText: Start the wizard
+  - icon:
+      src: /icons/shield-check.svg
+      alt: Scoped tokens
+      width: 32
+      height: 32
+    title: Secure public agents
+    details: Expose specific agents over HTTP with scoped, revocable bearer tokens. Read-only, write, per-agent, or mesh-peer scopes — no RBAC needed for a small team.
+    link: /reference/tokens
+    linkText: Tokens & public access
 ---
 
 ## Three ways to start
@@ -84,12 +102,27 @@ features:
 
 ## Install in 30 seconds
 
+**One line — opens the web setup wizard, no JSON editing:**
+
 ```bash
-npm install -g agentix-cli
-agentx init
-agentx agent add
-agentx channel add
-agentx daemon start
+curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
 ```
 
-See the [install guide](/install) for the full walkthrough.
+**Prefer Docker?**
+
+```bash
+git clone https://github.com/anis-marrouchi/agentx.git && cd agentx
+cp agentx.example.json agentx-data/agentx.json    # or run `agentx setup` later
+docker compose up -d
+```
+
+**Engineer shortcut:**
+
+```bash
+npm install -g agentix-cli
+agentx setup          # opens the web wizard
+# or skip the wizard:
+agentx init && agentx agent add && agentx channel add && agentx daemon start
+```
+
+Then open **http://127.0.0.1:4202** for the dashboard — live agents, task history, Kanban, and the `/admin` panel. See the [install guide](/install) for advanced setups, Tailscale binding, and systemd.

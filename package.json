@@ -1,7 +1,7 @@
 {
   "name": "agentix-cli",
-  "version": "0.14.0",
-  "description": "Self-hosted multi-agent orchestrator — routes Telegram, WhatsApp, crons, and A2A mesh tasks to Claude Code, OpenAI, or any LLM provider",
+  "version": "0.15.0",
+  "description": "AI operations layer for small & medium businesses. Routes Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.",
   "license": "MIT",
   "author": {
     "name": "anis_marrouchi",

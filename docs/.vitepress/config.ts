@@ -3,7 +3,7 @@ import { withMermaid } from "vitepress-plugin-mermaid"
 
 export default withMermaid(defineConfig({
   title: "AgentX",
-  description: "Self-hosted multi-agent orchestrator. Telegram, WhatsApp, Discord, GitLab, crons, webhooks, mesh — routed to Claude, OpenAI, or any LLM.",
+  description: "The AI operations layer for small & medium businesses. Route Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.",
   lastUpdated: true,
   cleanUrls: true,
 
@@ -11,8 +11,8 @@ export default withMermaid(defineConfig({
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
     ["meta", { name: "theme-color", content: "#0ea5e9" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "AgentX" }],
-    ["meta", { property: "og:description", content: "Self-hosted multi-agent orchestrator." }],
+    ["meta", { property: "og:title", content: "AgentX — AI operations layer for small & medium businesses" }],
+    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, Slack, Discord, or GitLab. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
   ],
 
   themeConfig: {
@@ -59,6 +59,11 @@ export default withMermaid(defineConfig({
             { text: "CLI", link: "/reference/cli" },
             { text: "Config schema", link: "/reference/config-schema" },
             { text: "Communication matrix", link: "/reference/communication-matrix" },
+            { text: "Boards (Kanban)", link: "/reference/boards" },
+            { text: "Slack channel", link: "/reference/slack" },
+            { text: "Scoped API tokens", link: "/reference/tokens" },
+            { text: "Public agents", link: "/reference/public-agents" },
+            { text: "agentx doctor", link: "/reference/doctor" },
           ],
         },
         {
