@@ -627,6 +627,111 @@ skillCmd
     console.log()
   })
 
+// --- skill sync ---
+// Redeploy a skill's SKILL.md from the source location to every agent
+// workspace in agentx.json. Prevents stale skill copies after the source
+// is updated — e.g. the wiki skill bumped from v3.0.0 → v3.1.0 in Phase 4
+// but deployed copies in 25 workspaces stayed on v3.0.0 until a manual
+// redeploy. Complements `skill add` (which copies one skill to selected
+// workspaces) with `skill sync` (which re-copies a skill to ALL workspaces
+// that already have it, or everyone if --all-workspaces).
+skillCmd
+  .command("sync <name>")
+  .description("redeploy a skill's SKILL.md from source to agent workspaces (by default, only those that already have it)")
+  .option("--source <path>", "explicit source path (defaults to src/<name>/SKILL.md or skills/<name>/SKILL.md)")
+  .option("--agent <id>", "restrict to a single agent's workspace")
+  .option("--all-workspaces", "also seed into workspaces that don't have the skill yet")
+  .option("--dry-run", "report what would change, don't write")
+  .action(async (name, opts) => {
+    const { createHash } = await import("node:crypto")
+
+    // Resolve source
+    const cwd = process.cwd()
+    const candidates = opts.source
+      ? [opts.source]
+      : [
+          resolve(cwd, "src", name, "SKILL.md"),
+          resolve(cwd, "skills", name, "SKILL.md"),
+        ]
+    const src = candidates.find(p => existsSync(p))
+    if (!src) {
+      console.log(chalk.red(`  No SKILL.md found for "${name}". Searched:`))
+      for (const c of candidates) console.log(chalk.dim(`    ${c}`))
+      return
+    }
+    const srcContent = readFileSync(src, "utf-8")
+    const srcHash = createHash("sha256").update(srcContent).digest("hex").slice(0, 12)
+    const srcVersion = (srcContent.match(/^version:\s*(.+)$/m)?.[1] || "?").trim()
+
+    let config
+    try { config = loadDaemonConfig() } catch (e: any) {
+      console.log(chalk.red(`  Can't load agentx.json: ${e.message}`))
+      return
+    }
+
+    const entries = Object.entries(config.agents || {}) as Array<[string, any]>
+    const targets = opts.agent ? entries.filter(([id]) => id === opts.agent) : entries
+    if (targets.length === 0) {
+      console.log(chalk.yellow(opts.agent ? `  Agent "${opts.agent}" not in config.` : "  No agents in config."))
+      return
+    }
+
+    console.log()
+    console.log(chalk.bold(`  Skill sync — ${name}`))
+    console.log(chalk.dim(`  Source:  ${src}`))
+    console.log(chalk.dim(`  Version: ${srcVersion}  ·  hash ${srcHash}`))
+    console.log(chalk.dim(`  Mode:    ${opts.dryRun ? "dry-run" : "commit"}${opts.allWorkspaces ? " · seed missing" : " · only-existing"}`))
+    console.log()
+
+    let newN = 0, updatedN = 0, unchangedN = 0, skippedN = 0
+    for (const [agentId, def] of targets) {
+      const ws = def.workspace as string
+      if (!ws || !existsSync(ws)) {
+        console.log(`  ${chalk.yellow("✗")} ${agentId.padEnd(22)} ${chalk.dim("(workspace missing: " + (ws || "undefined") + ")")}`)
+        skippedN++
+        continue
+      }
+      const dstDir = resolve(ws, ".claude/skills", name)
+      const dst = resolve(dstDir, "SKILL.md")
+
+      if (!existsSync(dst)) {
+        if (!opts.allWorkspaces) {
+          console.log(`  ${chalk.dim("·")} ${agentId.padEnd(22)} ${chalk.dim("(skipped — no existing copy; use --all-workspaces to seed)")}`)
+          skippedN++
+          continue
+        }
+        if (!opts.dryRun) {
+          mkdirSync(dstDir, { recursive: true })
+          writeFileSync(dst, srcContent)
+        }
+        console.log(`  ${chalk.green("+")} ${agentId.padEnd(22)} ${chalk.dim("→ seeded v" + srcVersion)}`)
+        newN++
+        continue
+      }
+
+      const dstContent = readFileSync(dst, "utf-8")
+      const dstHash = createHash("sha256").update(dstContent).digest("hex").slice(0, 12)
+      if (dstHash === srcHash) {
+        console.log(`  ${chalk.dim("=")} ${agentId.padEnd(22)} ${chalk.dim("up to date (v" + srcVersion + ")")}`)
+        unchangedN++
+        continue
+      }
+
+      const dstVersion = (dstContent.match(/^version:\s*(.+)$/m)?.[1] || "?").trim()
+      if (!opts.dryRun) writeFileSync(dst, srcContent)
+      console.log(`  ${chalk.yellow("↻")} ${agentId.padEnd(22)} ${chalk.dim(`v${dstVersion} → v${srcVersion}`)}`)
+      updatedN++
+    }
+
+    console.log()
+    const verb = opts.dryRun ? "would" : "did"
+    console.log(chalk.dim(`  Summary: ${verb} seed ${newN}, ${verb} update ${updatedN}, ${unchangedN} already current, ${skippedN} skipped.`))
+    if (opts.dryRun && (newN > 0 || updatedN > 0)) {
+      console.log(chalk.dim("  Dry-run — rerun without --dry-run to write."))
+    }
+    console.log()
+  })
+
 // ==================== agentx hook ====================
 
 export const hook = new Command()
