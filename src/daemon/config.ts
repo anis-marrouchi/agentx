@@ -202,9 +202,23 @@ const graphConfigSchema = z.object({
   /** Which agent makes LLM classification proposals. Falls back to
    *  `dashboard.draftAgent` at call sites if unset. */
   draftAgent: z.string().optional(),
-  /** Minimum classifier confidence (0..1) to auto-approve without a human.
-   *  1.0 (default) means nothing auto-approves — every new shape waits for
-   *  you in the /admin/graph approval queue. */
+  /** Structural auto-approval policy. Evaluated against each classification
+   *  independently of `autoApproveConfidence`; either triggers approval.
+   *    - "strict"        : never approve via structure — every classification
+   *                        waits for human review
+   *    - "extend-leaves" : auto-approve when the proposed path (a) reuses only
+   *                        existing nodes, or (b) adds exactly one NEW node at
+   *                        the deepest level. Structural changes (new mid-path
+   *                        node, new root) still queue for review. Default.
+   *    - "any"           : auto-approve every classification regardless of
+   *                        structural change
+   */
+  autoApproveStructure: z.enum(["strict", "extend-leaves", "any"]).default("extend-leaves"),
+  /** Minimum classifier confidence (0..1) to auto-approve. OR'd with the
+   *  structural policy — either hitting the threshold lets the classification
+   *  bypass the pending queue. 1.0 (default) disables this knob, so approval
+   *  is driven by `autoApproveStructure` alone. Lower it to e.g. 0.7 if you
+   *  also want high-confidence structural changes auto-approved. */
   autoApproveConfidence: z.number().min(0).max(1).default(1.0),
   /** Weights for the wiki hybrid retrieval score. Path-ancestry match vs
    *  BM25 over article text. Sum need not be 1. */

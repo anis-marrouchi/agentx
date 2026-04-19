@@ -244,6 +244,7 @@ export class AgentRegistry {
         daemonUrl: config.dashboard.daemonUrl,
         token: config.dashboard.token,
         draftAgent,
+        autoApproveStructure: config.graph.autoApproveStructure,
         autoApproveConfidence: config.graph.autoApproveConfidence,
         log: (...a) => log("[classifier]", ...a),
       })

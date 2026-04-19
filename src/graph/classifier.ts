@@ -43,6 +43,8 @@ export interface ClassifyResult {
   confidence?: number
 }
 
+export type ApprovalStructurePolicy = "strict" | "extend-leaves" | "any"
+
 export interface ClassifierOptions {
   store: GraphStore
   /** Base URL of the daemon — used to POST /task for LLM proposals. */
@@ -52,7 +54,11 @@ export interface ClassifierOptions {
   /** Which agent makes the proposal. Required if caller ever expects a
    *  non-cached classification (cache hits work without an agent). */
   draftAgent?: string
-  /** Minimum confidence (0..1) to commit without human approval. 1.0 = never. */
+  /** Structural approval policy — see config.ts for semantics. Default
+   *  "extend-leaves" (auto-approve pure reuse + single-leaf additions). */
+  autoApproveStructure?: ApprovalStructurePolicy
+  /** Minimum confidence (0..1) to commit without human approval. 1.0 = never.
+   *  OR'd with the structural policy. */
   autoApproveConfidence?: number
   log?: (...args: unknown[]) => void
 }
@@ -63,6 +69,7 @@ export class Classifier {
   private token?: string
   private draftAgent?: string
   private autoApprove: number
+  private autoApproveStructure: ApprovalStructurePolicy
   private log: (...args: unknown[]) => void
 
   constructor(opts: ClassifierOptions) {
@@ -71,6 +78,7 @@ export class Classifier {
     this.token = opts.token
     this.draftAgent = opts.draftAgent
     this.autoApprove = opts.autoApproveConfidence ?? 1.0
+    this.autoApproveStructure = opts.autoApproveStructure ?? "extend-leaves"
     this.log = opts.log ?? console.error.bind(console, "[classifier]")
   }
 
@@ -133,13 +141,53 @@ export class Classifier {
       preview: input.text.slice(0, 200),
     }
 
+    // --- Auto-approval policy (see config.ts for full semantics) ---
+    //
+    // Two conditions, OR'd. Either approves the classification:
+    //   1. Structure policy — what KIND of change the proposed path makes:
+    //        strict:        nothing auto — always pending
+    //        extend-leaves: auto if the path either (a) reuses only existing
+    //                       nodes, or (b) adds exactly one new node at the
+    //                       DEEPEST level (a new leaf). Structural changes
+    //                       (new mid-path or root node) still queue.
+    //        any:           auto regardless of structure.
+    //   2. Confidence — LLM-self-reported confidence >= autoApproveConfidence.
+    //
+    // Pending classifications still persist to the log, but don't commit nodes
+    // and don't populate the fingerprint cache (so similar messages re-query).
+    const existingIds = new Set(nodes.map((n) => n.id))
+    const newNodeIndices = path
+      .map((id, idx) => (existingIds.has(id) ? -1 : idx))
+      .filter((idx) => idx >= 0)
+
+    let structureOk = false
+    if (this.autoApproveStructure === "any") {
+      structureOk = true
+    } else if (this.autoApproveStructure === "extend-leaves") {
+      const isReuseOnly = newNodeIndices.length === 0
+      const isSingleLeafAddition =
+        newNodeIndices.length === 1 && newNodeIndices[0] === path.length - 1
+      structureOk = isReuseOnly || isSingleLeafAddition
+    }
+    const confidenceOk = confidence !== undefined && confidence >= this.autoApprove
+
     let status: "pending" | "approved" = "pending"
-    const autoOk = confidence !== undefined && confidence >= this.autoApprove
-    if (autoOk) {
-      // Commit any new nodes, then stamp the classification + cache.
-      this.commitNewNodes(path, proposedAxes, schema, nodes, input.sender)
-      this.store.setFingerprint(fp, { path, leaf })
-      status = "approved"
+    if (structureOk || confidenceOk) {
+      // Commit any new nodes; if ANY fail schema validation (missing axes,
+      // bad ref, etc.) fall back to pending for the whole classification
+      // rather than half-committing the graph and bubbling the error up to
+      // the task handler.
+      try {
+        this.commitNewNodes(path, proposedAxes, schema, nodes, input.sender)
+        this.store.setFingerprint(fp, { path, leaf })
+        status = "approved"
+      } catch (e: any) {
+        this.log(
+          `auto-approve failed — staying pending ·`,
+          `path=${JSON.stringify(path)}`,
+          `reason=${(e?.message || e).toString().slice(0, 200)}`,
+        )
+      }
     }
     classification.status = status
     this.store.appendClassification(classification)
@@ -210,11 +258,14 @@ export class Classifier {
       `confidence in [0,1]. Prefer low confidence over guessing.`,
     ].join("\n")
 
-    // 20s ceiling so a hung sub-task can't block the caller indefinitely.
-    // The classifier is a small JSON-only call — anything longer than this
-    // is a symptom, not an expected latency.
+    // 60s ceiling. Originally 20s on the assumption the classifier makes a
+    // tiny JSON-only call, but in practice the daemon routes it through the
+    // draftAgent's Claude Code subprocess which has real cold-start + queue
+    // wait costs. At 20s almost every proposal was timing out on a fresh
+    // daemon. 60s is the right balance: long enough for a sonnet turn,
+    // short enough that a genuinely hung sub-task doesn't stall the caller.
     const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), 20_000)
+    const timer = setTimeout(() => ac.abort(), 60_000)
     let r: Response
     try {
       r = await fetch(`${this.daemonUrl}/task`, {

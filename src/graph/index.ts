@@ -6,6 +6,7 @@ export {
   type ClassifyInput,
   type ClassifyResult,
   type ClassifierOptions,
+  type ApprovalStructurePolicy,
   hashPath,
   pathLabel,
   ancestryScore,
