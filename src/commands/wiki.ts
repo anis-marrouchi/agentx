@@ -1016,6 +1016,28 @@ wiki
       return
     }
 
+    // Sync `related` from body wikilinks if the user added/removed any.
+    // Read back the article, compare wikilinks, rewrite frontmatter if drift.
+    const after = store.readArticle(relPath)
+    if (after) {
+      const seenLinks = new Set<string>()
+      const bodyLinks = store.extractWikilinks(after.content).filter((w: string) => {
+        if (seenLinks.has(w)) return false
+        seenLinks.add(w); return true
+      })
+      const currentRelated = after.meta.related || []
+      const drift = bodyLinks.some(b => !currentRelated.includes(b)) ||
+                    currentRelated.some(r => !bodyLinks.includes(r))
+      if (drift) {
+        store.writeArticle(relPath, {
+          ...after.meta,
+          related: bodyLinks.length ? bodyLinks : undefined,
+          lastUpdated: new Date().toISOString().slice(0, 10),
+        }, after.content, agentId)
+        console.log(chalk.dim(`  (synced frontmatter.related from body: ${bodyLinks.length} wikilink${bodyLinks.length === 1 ? "" : "s"})`))
+      }
+    }
+
     // Rebuild catalog so related/title changes propagate
     try {
       store.rebuildIndex()
@@ -1114,12 +1136,28 @@ wiki
       return
     }
 
-    const ok = store.writeArticle(relPath, { ...article.meta, lastUpdated: new Date().toISOString().slice(0, 10) }, patched, agentId)
+    // Auto-sync `related` from body wikilinks — after an edit the body's
+    // wikilinks are the source of truth, frontmatter.related should follow.
+    // Dedupe preserving first-occurrence order.
+    const seen = new Set<string>()
+    const syncedRelated = store.extractWikilinks(patched).filter((w: string) => {
+      if (seen.has(w)) return false
+      seen.add(w); return true
+    })
+    const ok = store.writeArticle(relPath, {
+      ...article.meta,
+      related: syncedRelated.length ? syncedRelated : undefined,
+      lastUpdated: new Date().toISOString().slice(0, 10),
+    }, patched, agentId)
     if (!ok) {
       console.log(chalk.red("  write failed (permission?)"))
       return
     }
     store.rebuildIndex()
+    const relDrift = (article.meta.related || []).filter(r => !syncedRelated.includes(r))
+    if (relDrift.length) {
+      console.log(chalk.dim(`  (pruned stale related: ${relDrift.slice(0, 3).join(", ")}${relDrift.length > 3 ? ", …" : ""})`))
+    }
     console.log(chalk.green(`  ✓ ${relPath} patched.`))
   })
 
