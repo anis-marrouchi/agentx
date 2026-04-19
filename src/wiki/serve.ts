@@ -10,8 +10,33 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
+/**
+ * Strip legacy section-tag comments from the article body. The old absorb
+ * prompt told the LLM to add `<!-- tags: runbook, staging -->` inside
+ * sections; in the Farzapedia-aligned design, these are no longer
+ * load-bearing and leak through as visible literal text once escaped.
+ */
+function stripSectionTags(text: string): string {
+  return text.replace(/<!--\s*tags?:[^>]*-->\s*\n?/gi, "")
+}
+
+/** Render a single tag as a clickable link to the tag-filter route. */
+function tagLink(tag: string, agentId?: string): string {
+  const href = agentId
+    ? `/agent/${encodeURIComponent(agentId)}/tag/${encodeURIComponent(tag)}`
+    : `/tag/${encodeURIComponent(tag)}`
+  return `<a href="${href}" class="tag">${escapeHtml(tag)}</a>`
+}
+
+/** Render an array of tags as clickable links, space-separated. */
+function tagLinks(tags: string[] | undefined, agentId?: string): string {
+  return (tags || []).map(t => tagLink(t, agentId)).join(" ")
+}
+
 function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string = ""): string {
-  let html = escapeHtml(text)
+  // Strip section-tag HTML comments before escaping so they don't render
+  // as literal "<!-- tags: ... -->" in the output.
+  let html = escapeHtml(stripSectionTags(text))
 
   // Code blocks (fenced)
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
@@ -52,16 +77,39 @@ function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string
   // External links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
 
+  // Blockquotes (consecutive `> ` lines → one <blockquote>)
+  html = html.replace(/^(>\s?.*(?:\n>\s?.*)*)/gm, (block: string) => {
+    const inner = block.split("\n").map(l => l.replace(/^>\s?/, "")).join("<br>")
+    return `<blockquote>${inner}</blockquote>`
+  })
+
+  // Task-list items (render as plain text with unicode checkbox)
+  html = html.replace(/^[-*] \[( |x|X)\] (.+)$/gm, (_m, chk, rest) =>
+    `<li class="task">${chk.toLowerCase() === "x" ? "☑" : "☐"} ${rest}</li>`)
+
   // Unordered lists
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+
+  // Ordered lists — match lines like "1. foo" (number, dot, space)
+  html = html.replace(/^\d+\. (.+)$/gm, '<li data-ordered="1">$1</li>')
+
+  // Wrap consecutive <li>s in <ul> / <ol> respectively
+  html = html.replace(/(<li data-ordered="1">.*?<\/li>(?:\n?<li data-ordered="1">.*?<\/li>)*)/g,
+    (match) => `<ol>${match.replace(/ data-ordered="1"/g, "")}</ol>`)
+  html = html.replace(/((?:<li(?! data-ordered)[^>]*>.*?<\/li>\n?)+)/g, '<ul>$1</ul>')
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr>')
 
-  // Paragraphs
+  // Paragraphs — only wrap non-block lines. A paragraph is a run of
+  // text that isn't already wrapped in a block-level tag.
   html = html.replace(/\n\n+/g, '</p><p>')
   html = `<p>${html}</p>`
+  // Unwrap <p>...</p> that now contain block-level elements.
+  html = html.replace(/<p>\s*(<(?:h[1-6]|ul|ol|blockquote|table|pre|hr)\b[^>]*>[\s\S]*?<\/(?:h[1-6]|ul|ol|blockquote|table|pre)>)\s*<\/p>/g, "$1")
+  html = html.replace(/<p>\s*<hr>\s*<\/p>/g, "<hr>")
+  // Drop empty paragraphs that remain.
+  html = html.replace(/<p>\s*<\/p>/g, "")
 
   html = html.replace(/<p>(<(?:h[1-4]|pre|table|ul|hr|div))/g, '$1')
   html = html.replace(/(<\/(?:h[1-4]|pre|table|ul|hr|div)>)<\/p>/g, '$1')
@@ -104,7 +152,11 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--
 .main a.wikilink.broken { color: var(--link-broken); }
 .meta { background: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; }
 .meta dt { font-weight: 600; color: var(--text-dim); }
-.tag { display: inline-block; background: var(--tag); border-radius: 3px; padding: 1px 8px; font-size: 12px; margin: 1px 2px; }
+.tag { display: inline-block; background: var(--tag); border-radius: 3px; padding: 1px 8px; font-size: 12px; margin: 1px 2px; color: inherit; text-decoration: none; }
+a.tag:hover { background: var(--border); cursor: pointer; }
+.article-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 0; }
+.article-row .article-title { margin-left: 4px; }
+.article-list { display: flex; flex-direction: column; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
 th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; font-size: 14px; }
 th { background: var(--accent); font-weight: 600; }
@@ -239,7 +291,10 @@ function hubHome(hub: WikiHub, allAgents?: AgentWikiSummary[], remoteAgents?: Ar
     if (agent.articles.length > 0) {
       content += '<div class="article-list">'
       for (const a of agent.articles) {
-        content += `<a href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}"><span class="tag">${(a.tags||[]).slice(0,3).join(", ")}</span> ${escapeHtml(a.title)}</a> `
+        // Tags are individual anchors so each is independently clickable.
+        // Article title is its own anchor, so nesting doesn't apply.
+        const tagPart = tagLinks((a.tags || []).slice(0, 3), agent.agentId)
+        content += `<div class="article-row">${tagPart} <a class="article-title" href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></div>`
       }
       content += '</div>'
     }
@@ -279,7 +334,7 @@ function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSu
     for (const a of articles) {
       content += `<tr>
         <td><a href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td>
-        <td>${((a.tags || []) as string[]).slice(0, 4).map(t => `<span class="tag">${t}</span>`).join(" ")}</td>
+        <td>${tagLinks(((a.tags || []) as string[]).slice(0, 4), agentId)}</td>
       </tr>`
     }
     content += '</table>'
@@ -331,7 +386,10 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string, allA
 
   // Meta box
   content += '<dl class="meta">'
-  content += `<dt>Tags</dt><dd>${(article.meta.tags||[]).map(t => `<span class="tag">${t}</span>`).join(" ")}</dd>`
+  if (article.meta.type) {
+    content += `<dt>Type</dt><dd>${tagLink(article.meta.type, agentId)}</dd>`
+  }
+  content += `<dt>Tags</dt><dd>${tagLinks(article.meta.tags, agentId)}</dd>`
   content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
   content += `<dt>Created</dt><dd>${article.meta.created}</dd>`
   content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
@@ -399,7 +457,7 @@ function hubSearch(hub: WikiHub, query: string, allAgents?: AgentWikiSummary[]):
       for (const r of results) {
         const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
         content += `<div class="entry-card">
-          <div class="meta-line">${(r.meta.tags||[]).slice(0,3).map(t => `<span class="tag">${t}</span>`).join(" ")}</div>
+          <div class="meta-line">${tagLinks((r.meta.tags || []).slice(0, 3), agentSummary.agentId)}</div>
           <h3><a href="${prefix}/article/${encodeURIComponent(r.path)}">${escapeHtml(r.meta.title)}</a></h3>
           <p>${escapeHtml(r.content.slice(0, 200))}...</p>
         </div>`
@@ -411,6 +469,54 @@ function hubSearch(hub: WikiHub, query: string, allAgents?: AgentWikiSummary[]):
   if (totalResults === 0) content += '<p>No matching articles found.</p>'
 
   return pageLayout(`Search: ${query}`, hubSidebar(agents), content)
+}
+
+/**
+ * Hub-wide tag filter. Shows every article tagged with `tag` across all
+ * local agents, grouped by agent. Exact-tag match (not BM25).
+ */
+function hubTagPage(hub: WikiHub, tag: string, allAgents?: AgentWikiSummary[]): string {
+  const agents = allAgents || hub.summary()
+  let content = `<h1>Tag: <span class="tag">${escapeHtml(tag)}</span></h1>`
+  let total = 0
+  for (const agentSummary of agents) {
+    let store
+    try { store = hub.getAgentWiki(agentSummary.agentId) } catch { continue }
+    const matches = store.findByTags([tag], undefined, 100)
+    if (matches.length === 0) continue
+    content += `<h2>${escapeHtml(agentSummary.agentId)} (${matches.length})</h2>`
+    for (const a of matches) {
+      const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
+      content += `<div class="entry-card">
+        <div class="meta-line">${tagLinks((a.meta.tags || []).slice(0, 6), agentSummary.agentId)}</div>
+        <h3><a href="${prefix}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.meta.title)}</a></h3>
+      </div>`
+    }
+    total += matches.length
+  }
+  if (total === 0) content += `<p>No articles tagged <code>${escapeHtml(tag)}</code>.</p>`
+  return pageLayout(`Tag: ${tag}`, hubSidebar(agents), content)
+}
+
+/** Per-agent tag filter — narrows to one agent's corpus. */
+function hubAgentTagPage(hub: WikiHub, agentId: string, tag: string, allAgents?: AgentWikiSummary[]): string {
+  const agents = allAgents || hub.summary()
+  let store
+  try { store = hub.getAgentWiki(agentId) } catch {
+    return pageLayout(`Tag: ${tag}`, hubSidebar(agents), `<h1>Agent not found: ${escapeHtml(agentId)}</h1>`)
+  }
+  const matches = store.findByTags([tag], undefined, 100)
+  const prefix = `/agent/${encodeURIComponent(agentId)}`
+  let content = `<div class="breadcrumb"><a href="/">Hub</a> / <a href="${prefix}">${escapeHtml(agentId)}</a> / Tag: ${escapeHtml(tag)}</div>`
+  content += `<h1>${escapeHtml(agentId)} · Tag: <span class="tag">${escapeHtml(tag)}</span></h1>`
+  content += `<p>${matches.length} article${matches.length === 1 ? "" : "s"} tagged <code>${escapeHtml(tag)}</code></p>`
+  for (const a of matches) {
+    content += `<div class="entry-card">
+      <div class="meta-line">${tagLinks((a.meta.tags || []).slice(0, 6), agentId)}</div>
+      <h3><a href="${prefix}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.meta.title)}</a></h3>
+    </div>`
+  }
+  return pageLayout(`${agentId} · ${tag}`, hubSidebar(agents), content)
 }
 
 // --- Single Agent Mode ---
@@ -438,7 +544,7 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
 
 // --- Server ---
 
-export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" | "unified" = "unified"): void {
+export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" | "unified" = "graph"): void {
   const hub = new WikiHub(wikiDir, undefined, mode)
   const mesh = peerUrls.length > 0 ? new MeshWikiClient(peerUrls) : null
 
@@ -536,6 +642,16 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
           }
           if (results.length === 0) content += '<p>No results.</p>'
           html = pageLayout(`Search: ${q}`, agentSidebar(store, agentFilter), content)
+        } else if (path.startsWith("/tag/")) {
+          const tag = decodeURIComponent(path.slice("/tag/".length))
+          const matches = store.findByTags([tag], undefined, 100)
+          let content = `<h1>Tag: <a class="tag" href="#">${escapeHtml(tag)}</a></h1>`
+          content += `<p>${matches.length} article${matches.length === 1 ? "" : "s"} tagged <code>${escapeHtml(tag)}</code></p>`
+          for (const a of matches) {
+            content += `<div class="entry-card"><h3><a href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.meta.title)}</a></h3><div class="meta-line">${tagLinks((a.meta.tags || []).slice(0, 6))}</div></div>`
+          }
+          if (matches.length === 0) content += '<p>No articles with this tag.</p>'
+          html = pageLayout(`Tag: ${tag}`, agentSidebar(store, agentFilter), content)
         }
       } else {
         // Hub mode — merge local + remote agents
@@ -574,6 +690,11 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
           html = hubEntries(hub, allAgents)
         } else if (path === "/search") {
           html = hubSearch(hub, url.searchParams.get("q") || "", allAgents)
+        } else if (path.startsWith("/tag/")) {
+          html = hubTagPage(hub, decodeURIComponent(path.slice("/tag/".length)), allAgents)
+        } else if (path.match(/^\/agent\/[^/]+\/tag\/.+/)) {
+          const m = path.match(/^\/agent\/([^/]+)\/tag\/(.+)$/)!
+          html = hubAgentTagPage(hub, decodeURIComponent(m[1]), decodeURIComponent(m[2]), allAgents)
         } else if (path.startsWith("/agent/")) {
           const rest = path.slice("/agent/".length)
           const slashIdx = rest.indexOf("/article/")
