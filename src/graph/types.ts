@@ -21,6 +21,10 @@ export const axisDefSchema = z.object({
   values: z.array(z.string()).optional(),
   /** For type="ref": which level's nodes may be referenced. */
   refLevel: z.string().optional(),
+  /** If true, this axis may be absent from a node without failing validation.
+   *  Use for axes that apply conditionally (e.g. a department's "lead" ref
+   *  doesn't apply to a person-kind unit). Default: false (required). */
+  optional: z.boolean().default(false),
   /** Optional human-readable help, shown as tooltip in the admin UI. */
   description: z.string().optional(),
 })

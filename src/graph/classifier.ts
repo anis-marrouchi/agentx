@@ -346,35 +346,17 @@ export class Classifier {
     return { path, proposedAxes, confidence, leaf }
   }
 
-  /** Create any nodes along `path` that don't exist yet. Caller must have
-   *  validated `proposedAxes` carries what the schema requires. */
+  /** Create any nodes along `path` that don't exist yet. Delegates to the
+   *  store so level inference (for paths that skip levels) + fresh reloads
+   *  between adds are shared with the review path. */
   private commitNewNodes(
     path: string[],
     proposedAxes: Record<string, Record<string, string>>,
     schema: GraphSchema,
-    existing: GraphNode[],
+    _existing: GraphNode[],
     createdBy?: string,
   ): void {
-    const known = new Set(existing.map((n) => n.id))
-    const now = new Date().toISOString()
-    for (let i = 0; i < path.length; i++) {
-      const id = path[i]
-      if (known.has(id)) continue
-      const level = schema.levels[i]?.id
-      if (!level) break
-      const axes = proposedAxes[id] ?? {}
-      const parentId = i === 0 ? null : path[i - 1]
-      const node: GraphNode = {
-        id,
-        level,
-        parentId,
-        axes,
-        createdAt: now,
-        createdBy,
-      }
-      this.store.addNode(node) // throws if axes invalid — caller gets the error
-      known.add(id)
-    }
+    this.store.commitNodesAlongPath(path, proposedAxes, schema, createdBy)
   }
 }
 

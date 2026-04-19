@@ -101,7 +101,9 @@ export class GraphStore {
     const level = schema.levels.find((l) => l.id === node.level)
     if (!level) throw new Error(`Unknown level: "${node.level}"`)
 
-    const missing = level.axes.filter((a) => !(a.name in node.axes))
+    const missing = level.axes
+      .filter((a) => !a.optional)
+      .filter((a) => !(a.name in node.axes))
     if (missing.length) {
       throw new Error(
         `Node ${node.id} (${node.level}) missing required axes: ${missing.map((a) => a.name).join(", ")}`,
@@ -151,6 +153,98 @@ export class GraphStore {
     }
   }
 
+  /**
+   * Commit a full classification path: for each path element that doesn't
+   * yet exist, infer its schema level by matching the proposed axes against
+   * the level's required axes (first match ≥ cursor wins — this handles
+   * paths that skip levels, like business → noqta where location is
+   * absent). Refreshes the node list between adds so callers in a loop
+   * don't hit "Node id already exists" on the second iteration.
+   */
+  commitNodesAlongPath(
+    path: string[],
+    proposedAxes: Record<string, Record<string, string>>,
+    schema: GraphSchema,
+    createdBy?: string,
+  ): { added: GraphNode[]; skipped: string[] } {
+    const added: GraphNode[] = []
+    const skipped: string[] = []
+    const now = new Date().toISOString()
+
+    for (let i = 0; i < path.length; i++) {
+      const id = path[i]
+      // Load fresh each iteration — cheap O(N) file read, avoids stale snapshots.
+      const current = this.loadNodes().nodes
+      const existing = current.find((n) => n.id === id)
+      if (existing) {
+        skipped.push(id)
+        continue
+      }
+
+      // Cursor: how deep the schema-levels we've already filled up to.
+      let cursor = 0
+      // Scan backwards through path[0..i-1] to find the deepest already-committed
+      // or just-added node and resume after its level.
+      for (let j = i - 1; j >= 0; j--) {
+        const priorId = path[j]
+        const priorNode = current.find((n) => n.id === priorId) || added.find((n) => n.id === priorId)
+        if (priorNode) {
+          cursor = schema.levels.findIndex((l) => l.id === priorNode.level) + 1
+          break
+        }
+      }
+
+      const axes = proposedAxes[id] ?? {}
+      // Find the first level at or after the cursor whose required axes are
+      // satisfied by proposedAxes[id]. "Required" here = listed in level.axes;
+      // we accept a partial match (axes present in proposal, even if some
+      // schema axes are missing — validateNode will catch truly broken ones).
+      let chosenLevel: string | null = null
+      for (let j = cursor; j < schema.levels.length; j++) {
+        const level = schema.levels[j]
+        const missing = level.axes
+          .filter((a) => !a.optional)
+          .filter((a) => !(a.name in axes))
+        if (missing.length === 0) {
+          chosenLevel = level.id
+          cursor = j + 1
+          break
+        }
+      }
+      // Fallback: if no level's axes fully match, try the NEXT level after
+      // the cursor anyway. Better to commit at the likely level and let
+      // validateNode reject on write than to silently drop the whole path.
+      if (!chosenLevel && cursor < schema.levels.length) {
+        chosenLevel = schema.levels[cursor].id
+        cursor++
+      }
+      if (!chosenLevel) {
+        throw new Error(`Can't place node ${id} — no schema level left (cursor=${cursor}, levels=${schema.levels.length})`)
+      }
+
+      // Parent is the DEEPEST already-placed node at a level < chosenLevel.
+      let parentId: string | null = null
+      const chosenIdx = schema.levels.findIndex((l) => l.id === chosenLevel)
+      for (let j = i - 1; j >= 0; j--) {
+        const priorId = path[j]
+        const prior = current.find((n) => n.id === priorId) || added.find((n) => n.id === priorId)
+        if (!prior) continue
+        const priorIdx = schema.levels.findIndex((l) => l.id === prior.level)
+        if (priorIdx >= 0 && priorIdx < chosenIdx) { parentId = priorId; break }
+      }
+
+      const node: GraphNode = {
+        id, level: chosenLevel, parentId, axes,
+        createdAt: now,
+        createdBy,
+      }
+      this.addNode(node)  // throws if schema validation fails
+      added.push(node)
+    }
+
+    return { added, skipped }
+  }
+
   /** Append a node. Caller is responsible for id uniqueness; we check and throw. */
   addNode(node: GraphNode): GraphNode {
     const schema = this.loadSchema()
@@ -188,6 +282,79 @@ export class GraphStore {
     }
     appendFileSync(p, line)
     return true
+  }
+
+  /**
+   * All pending classifications, newest first. Collapses the append-only
+   * ledger by msgHash — the most recent entry per message wins (so if an
+   * entry was updated via updateClassificationStatus, we see the current
+   * state, not the original).
+   */
+  listPendingClassifications(limit = 200): Classification[] {
+    return this.listByStatus("pending", limit)
+  }
+
+  /** Same contract as listPendingClassifications but filtered to any status. */
+  listByStatus(status: Classification["status"], limit = 200): Classification[] {
+    const all = this.readAllCollapsed()
+    return all.filter((c) => c.status === status).slice(0, limit)
+  }
+
+  /**
+   * Read every classification, collapse by msgHash keeping the newest entry
+   * per message. Used by listByStatus + the review loop to see current state.
+   * Returns newest-first order.
+   */
+  private readAllCollapsed(): Classification[] {
+    const p = this.classificationsPath()
+    if (!existsSync(p)) return []
+    const raw = readFileSync(p, "utf-8")
+    const lines = raw.split("\n").filter(Boolean)
+    const byHash = new Map<string, Classification>()
+    for (const line of lines) {
+      try {
+        const parsed = classificationSchema.safeParse(JSON.parse(line))
+        if (!parsed.success) continue
+        // Later entries overwrite earlier ones for the same msgHash.
+        byHash.set(parsed.data.msgHash, parsed.data)
+      } catch {
+        // skip malformed
+      }
+    }
+    // Newest-first — sort by ts desc.
+    return Array.from(byHash.values()).sort((a, b) => (a.ts < b.ts ? 1 : -1))
+  }
+
+  /**
+   * Append a status-update entry for an existing classification. The ledger
+   * stays append-only; readers collapse by msgHash. Returns the updated
+   * classification, or null if no prior entry for msgHash exists.
+   */
+  updateClassificationStatus(
+    msgHash: string,
+    update: {
+      status: Classification["status"]
+      reviewer?: string
+      reviewReason?: string
+    },
+  ): Classification | null {
+    const all = this.readAllCollapsed()
+    const prior = all.find((c) => c.msgHash === msgHash)
+    if (!prior) return null
+    const next: Classification = {
+      ...prior,
+      status: update.status,
+      ts: new Date().toISOString(),
+    }
+    // Store reviewer + reason in the preview field so readers can see who
+    // flipped what without needing a separate review-log file. Non-breaking:
+    // preview is already optional text meant for UI display.
+    if (update.reviewer || update.reviewReason) {
+      const suffix = ` · ${update.reviewer ? `reviewer=${update.reviewer}` : ""}${update.reviewReason ? ` · ${update.reviewReason}` : ""}`
+      next.preview = ((prior.preview || "") + suffix).slice(0, 500)
+    }
+    this.appendClassification(next)
+    return next
   }
 
   /** Read the last N classifications, newest first. Cheap enough for the admin UI. */

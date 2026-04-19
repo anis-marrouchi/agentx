@@ -11,6 +11,7 @@ import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
 import { board } from "@/commands/board"
 import { wiki } from "@/commands/wiki"
+import { graph } from "@/commands/graph"
 import { getPackageInfo } from "@/utils/get-package-info"
 
 process.on("SIGINT", () => process.exit(0))
@@ -47,6 +48,7 @@ async function main() {
     .addCommand(usage)
     .addCommand(board)
     .addCommand(wiki)
+    .addCommand(graph)
     .addCommand(token)
     .addCommand(doctor)
 

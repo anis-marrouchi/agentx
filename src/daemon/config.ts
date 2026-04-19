@@ -202,6 +202,10 @@ const graphConfigSchema = z.object({
   /** Which agent makes LLM classification proposals. Falls back to
    *  `dashboard.draftAgent` at call sites if unset. */
   draftAgent: z.string().optional(),
+  /** Agent used by `agentx graph review` to triage pending classifications.
+   *  Should be an agent with the wiki skill so it can call `wiki query` for
+   *  context before deciding approve/reject. Falls back to draftAgent. */
+  reviewAgent: z.string().optional(),
   /** Structural auto-approval policy. Evaluated against each classification
    *  independently of `autoApproveConfidence`; either triggers approval.
    *    - "strict"        : never approve via structure — every classification
