@@ -1,8 +1,8 @@
 ---
 name: wiki
-version: 3.0.0
+version: 3.1.0
 description: Institutional knowledge wiki — cross-agent source of truth for people, projects, events, decisions, and patterns. Use `wiki query` BEFORE grep/workspace-memory when the question is about who / what happened / what we decided / how we do something.
-argument-hint: "query <question> | status | ingest | share <article> <agent>"
+argument-hint: "query <question> | status | ingest | absorb | share <article> <agent>"
 tags: [wiki, knowledge, institutional, cross-agent, retrieval]
 triggers:
   - pattern: "who is|who owns|what happened|what did we decide|history of|institutional|runbook|past incident|previous deploy"
@@ -51,8 +51,9 @@ You get back: a synthesized answer + a list of cited articles. Every factual cla
 | `agentx wiki status` | How many articles exist per agent; am I running low on institutional knowledge? |
 | `agentx wiki ingest` | Export recent conversations as raw wiki entries (cheap, just writes markdown) |
 | `agentx wiki share <article> <agent>` | Share a private article you own with another agent |
-| `agentx wiki migrate --dry-run` | Backfill `type` + `related` on legacy articles (operator-run) |
-| `agentx wiki absorb --force` | **Deprecated** — see [the blog post](/blog/wiki-karpathy-review). A procedure-delta replacement is planned. |
+| `agentx wiki migrate --dry-run` | Backfill `type` + `related` on legacy articles (operator-run, one-shot) |
+| `agentx wiki prune --dry-run` | Collapse legacy mode dirs into graph/ (operator-run, one-shot) |
+| `agentx wiki absorb [--max N]` | Compile unabsorbed entries into typed articles (Farzapedia-faithful; nightly cron) |
 
 ## Article types (the organizational spine)
 

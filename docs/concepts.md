@@ -78,12 +78,14 @@ See [Journey 8](/journey/08-mesh-federation).
 
 ### 5. Wiki
 
-A Karpathy-inspired flat wiki with per-article permissions — `public`, `shared`, `private`. Each agent has its own wiki; raw conversation entries are persisted to `.agentx/wiki/raw/entries/` continuously. Existing articles are retrieved via BM25 + tag overlap and injected into the agent's next turn.
+Karpathy/Farzapedia-pattern flat wiki. Articles are typed (`person / project / place / concept / event / decision / pattern`), cross-referenced via `[[wikilinks]]`, and catalogued in `_index.md` per agent. Permissions are per-article — `public / shared / private`.
 
-- **Ingest** — export recent conversations as raw entries *(cheap)*
-- **Query** — BM25 search, articles injected into the agent's next turn
-- **Sync** — pull raw entries from mesh peers
-- **Absorb** — **deprecated.** Batched LLM compile of raw entries into articles. Expensive and rarely retrieved in practice — see the [honest review](/blog/wiki-karpathy-review). Gated behind `--force`; a focused **procedure-delta** replacement tied to the intent knowledge graph is planned.
+- **Ingest** — every conversation writes a raw entry to `.agentx/wiki/raw/entries/` continuously (cheap).
+- **Absorb** — nightly cron compiles recent raw entries into typed articles with `[[wikilinks]]` and updates `_index.md`.
+- **Query** — agentic: agent calls `wiki query`, which walks the catalog → picks candidates by type → follows `related` wikilinks → synthesizes a cited answer.
+- **Sync** — pull raw entries from mesh peers.
+
+For the full why (and the path from the original BM25-preload design we walked back from), see [the honest review](/blog/wiki-karpathy-review).
 
 ### 6. Business layer
 

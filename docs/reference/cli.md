@@ -105,7 +105,10 @@ Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["
 |---|---|
 | `agentx wiki status [--mode <unified\|graph\|flat>]` | Status per agent (entries, articles, unabsorbed) |
 | `agentx wiki entries [--agent <id>]` | List raw entries |
-| `agentx wiki absorb [--force] [--agent <id>] [--mode <m>] [--max <n>] [--dry-run]` | **Deprecated.** Batched LLM compile of raw entries into articles — expensive and rarely retrieved. Gated behind `--force`. A focused procedure-delta replacement tied to the intent knowledge graph is planned. |
+| `agentx wiki absorb [--agent <id>] [--max <n>] [--dry-run]` | Compile unabsorbed raw entries into typed articles (Farzapedia-faithful — `type`, `[[wikilinks]]`, `_index.md`). Safe to schedule as a nightly cron. |
+| `agentx wiki migrate [--dry-run] [--commit]` | One-shot: backfill `type` + `related` on legacy articles (LLM-classifies from body + tags) |
+| `agentx wiki prune [--dry-run] [--commit]` | One-shot: collapse legacy `flat/` + `unified/` mode dirs into canonical `graph/` (dedup by title; losers archived to `_versions/`) |
+| `agentx wiki query <question>` | Agentic query: walks `_index.md` → picks candidates by type → follows `[[related]]` 2–3 hops → synthesizes an answer with citations |
 | `agentx wiki lint [--agent <id>]` | Check wiki for broken links, orphans |
 | `agentx wiki search <query> [--agent <id>]` | Search articles |
 | `agentx wiki serve [--port <n>] [--peer <url>...]` | Wikipedia-style web browser (local + mesh peers) |

@@ -4,34 +4,38 @@ title: "6. Shared wiki — compounding team knowledge"
 
 # 6. Shared wiki — compounding team knowledge
 
-> **Status:** ingest + query shipping · absorb **deprecated** · procedure-delta replacement planned
+> **Status:** full Karpathy/Farzapedia pattern shipped — ingest + absorb + query + prune + migrate all live
 
-::: warning Absorb is deprecated
-The original plan was a nightly `agentx wiki absorb` cron that LLM-compiles raw entries into articles. In practice the articles it produced were retrieved by BM25 + tag overlap, which rarely returned a meaningful hit for real agent traffic — we were paying big and reading small. Read the full evaluation: **[An honest review of our Karpathy-inspired wiki](/blog/wiki-karpathy-review)**.
+The wiki pipeline today follows the pattern Karpathy and Farza actually described: typed articles (`person / project / place / concept / event / decision / pattern`), `[[wikilinks]]` as the primary navigation surface, an `_index.md` catalog grouped by type, and an **agentic query** that walks the subgraph instead of BM25-matching keywords. For the full why, see **[An honest review of our Karpathy-inspired wiki](/blog/wiki-karpathy-review)**.
 
-Raw-entry ingest is untouched (cheap, useful). `agentx wiki absorb` is now gated behind `--force`; a focused replacement tied to the upcoming intent knowledge graph is planned.
-:::
+## The five verbs
 
-## What still works today
+| Verb | When |
+|---|---|
+| `ingest` | Continuous — every conversation writes a raw entry. Cheap, source of truth. |
+| `absorb` | Nightly cron — compiles recent raw entries into typed articles with `[[wikilinks]]` and updates `_index.md`. |
+| `query` | Agent-invoked — walks the catalog + wikilink graph, synthesizes a cited answer. |
+| `migrate` | One-shot — backfills `type` + `related` on legacy articles (after a major upgrade). |
+| `prune` | One-shot — collapses legacy per-mode dirs into canonical `graph/`. |
 
-- **Ingest** — every conversation is written to `.agentx/wiki/raw/entries/` as a Markdown file with frontmatter. Cheap, continuous, the source of truth.
-- **Query** — `agentx wiki query <question>` searches existing articles via BM25 + tag match.
-- **Browse** — `agentx wiki serve` opens a Wikipedia-style local browser.
-- **Sync** — `agentx wiki sync` pulls raw entries from mesh peers.
-- **Permissions** — `public` / `shared` / `private` per article, enforced on read/write.
+## The agentic query path (the "read side")
 
-## What's deprecated
+This is the part the earlier design missed. When an agent needs institutional knowledge:
 
-- **Absorb** (`agentx wiki absorb`) — LLM batched compile. Still callable with `--force` if you genuinely want it; the default cron in the example config is `enabled: false`.
-- The three absorb modes (`unified`, `flat`, `graph`) all had the same retrieval problem — the issue was never the prompt, it was the retrieval side.
+1. Read `_index.md` (catalog grouped by type with wikilink previews).
+2. LLM selector picks candidate articles by `type` + title.
+3. Walk `related` wikilinks 2–3 hops from candidates, cap at ~8 articles.
+4. Synthesize the answer from the walked subgraph, cite by title.
 
-## What's coming
+This is what makes the wiki worth compiling into. Without it, you're running shallow BM25 over files the LLM wrote — the pathology the blog post analyzes.
 
-A **procedure-delta** flow tied to the intent knowledge graph (Procedures + fixed-axis taxonomy). When a message runs a known Procedure, the agent produces a 1-line delta against the Procedure's SOP — a proposed patch, reviewed in the admin approval queue. Cost: O(procedure-runs) with a small classifier-sized call, not O(entries × articles) with a giant compile call.
+## Permissions
+
+`public` / `shared` / `private` per article, enforced on read and write. Default `public`; drop to `private` for sensitive credentials or agent-specific learnings; use `shared` with specific agent IDs when the article only matters to a subset.
 
 ## References
 
-- [Wiki CLI](/reference/cli#wiki) — every command still works; absorb is gated
+- [Wiki CLI](/reference/cli#wiki) — every command
 - [Concepts → Wiki](/concepts#_5-wiki)
-- [Honest review of the wiki approach](/blog/wiki-karpathy-review) — objective evaluation by Nadia
-- Source: [`src/wiki/`](https://github.com/anis-marrouchi/agentx/tree/master/src/wiki) ([store.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/store.ts), [prompts.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/prompts.ts))
+- [Honest review of the wiki approach](/blog/wiki-karpathy-review) — the post-mortem and the fix
+- Source: [`src/wiki/`](https://github.com/anis-marrouchi/agentx/tree/master/src/wiki) ([store.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/store.ts), [prompts.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/prompts.ts), [query.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/query.ts))

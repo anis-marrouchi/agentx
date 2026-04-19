@@ -27,7 +27,7 @@ wiki
   .command("status")
   .description("show wiki status per agent")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
+  .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .action((opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -73,7 +73,7 @@ wiki
   .command("lint")
   .description("check wiki for issues per agent")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
+  .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "lint a specific agent's wiki")
   .action((opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
@@ -104,33 +104,19 @@ wiki
     console.log()
   })
 
-// agentx wiki absorb — per-agent compilation (DEPRECATED — see --force gate)
+// agentx wiki absorb — Farzapedia-faithful compilation.
+// Reads unabsorbed raw entries, classifies by type, writes articles with
+// wikilinked `related`, updates the catalog. Phase 4 un-gated this after
+// the query + prune layers landed; see docs/blog/wiki-karpathy-review.
 wiki
   .command("absorb")
-  .description("[deprecated] compile unabsorbed entries into per-agent wiki articles")
+  .description("compile unabsorbed entries into typed per-agent wiki articles (Farzapedia-faithful)")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
+  .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
   .option("--max <n>", "max entries per agent", "20")
-  .option("--force", "acknowledge the cost and run anyway (deprecation bypass)")
   .action(async (opts) => {
-    if (!opts.force && !opts.dryRun) {
-      console.log()
-      console.log(chalk.yellow("  wiki absorb is DEPRECATED and disabled by default."))
-      console.log()
-      console.log("  It stuffs the full article list + worldview + raw entries into a")
-      console.log("  single LLM call per agent. The articles it produces are retrieved")
-      console.log("  by BM25 + tag overlap, which rarely returns a meaningful hit for")
-      console.log("  real agent traffic. You're paying big and reading small.")
-      console.log()
-      console.log("  A focused replacement — procedure-delta extraction, tied to the")
-      console.log("  intent knowledge graph — is planned. Until that lands, either:")
-      console.log(chalk.dim("    --force       run anyway (you've read the cost note)"))
-      console.log(chalk.dim("    --dry-run     preview without calling the LLM"))
-      console.log()
-      return
-    }
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
@@ -728,7 +714,7 @@ wiki
   .command("serve")
   .description("start a local web server to browse agent wikis (local + mesh)")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
+  .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "serve only this agent's wiki")
   .option("--port <n>", "port number", "4200")
   .option("--peer <urls...>", "mesh peer URLs to federate")
@@ -851,7 +837,7 @@ wiki
   .command("search <query>")
   .description("search wiki articles")
   .option("--dir <path>", "wiki directory")
-  .option("--mode <mode>", "unified (default), graph, or flat", "unified")
+  .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "search specific agent's wiki")
   .action((query, opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)

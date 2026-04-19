@@ -148,11 +148,9 @@ The pattern does not work when:
 - **Multi-agent, high-volume traffic on the write side.** With five agents generating hundreds of entries, absorb scales O(entries × articles) per call. Farzapedia is one person's corpus. Ours is five.
 - **The goal is reusable procedures, not articles.** Our agents don't need "the history of MTGL deployments." They need "when you deploy MTGL to staging, run these five commands in this order." That is a Procedure, not a Wikipedia article.
 
-## The Fix — Finish What We Started
+## The Fix — Finished
 
-Absorb is currently gated behind `--force` and the nightly cron is off. That is a pause, not a deprecation. The diagnosis tells us clearly what to build, and once it lands the pause lifts.
-
-**Three concrete changes, in order.**
+The three changes below have shipped. Absorb is un-gated; the nightly cron is back on; the read side walks the graph.
 
 **1. Build the agentic query step the pattern actually specifies.** This is the missing half. A new tool the context engine calls at read time that:
 
@@ -165,7 +163,7 @@ Cost at read time goes up. That is the point. Karpathy's entire thesis is that y
 
 **2. Restore the article structure the reference actually uses.** We keep raw entries and regenerated articles, but the frontmatter shifts to match Farzapedia: `type` (person / project / concept / event) becomes the organizational spine, `related` carries wikilinks, `_index.md` becomes the catalog. The sprawling per-article `tags` array — our workaround for BM25's imprecision — stops being load-bearing. Tags can stay as a secondary hint; they stop being the primary retrieval surface.
 
-**3. Un-gate absorb when (1) and (2) land.** Once the query path walks the graph and articles carry the reference shape, absorb's output is consumed by something that actually reads it. The 75k tokens/day buys something it didn't before. Same write cost, real retrieval. The cron comes back on.
+**3. Un-gate absorb once (1) and (2) are in.** Done. The `--force` gate is removed, the midnight cron is re-enabled in the example config, and the write side now produces typed articles with wikilinks that the agentic query actually walks. Same write cost as before; the retrieval is real for the first time.
 
 **Separately — not a replacement, a complement — procedure-delta extraction** for runbook-shaped content. When a message triggers a known Procedure, the agent emits a one-line delta against that Procedure's SOP ("step 3 now requires `--no-cache`"). The delta patches the Procedure, not a new article. This runs alongside the wiki, not instead of it: articles answer "what did we decide about X"; procedures answer "how do I do X." These were getting conflated in our original absorb prompt — splitting them is cleaner.
 
