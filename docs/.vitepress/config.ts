@@ -71,7 +71,9 @@ export default withMermaid(defineConfig({
         {
           text: "Roadmap",
           items: [
+            { text: "What's next", link: "/roadmap/whats-next" },
             { text: "UX v2 — zero manual config edits", link: "/roadmap/ux-v2" },
+            { text: "Business layer v2", link: "/roadmap/business-layer-v2" },
           ],
         },
         {
