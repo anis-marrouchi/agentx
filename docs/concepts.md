@@ -85,7 +85,7 @@ Karpathy/Farzapedia-pattern flat wiki. Articles are typed (`person / project / p
 - **Query** — agentic: agent calls `wiki query`, which walks the catalog → picks candidates by type → follows `related` wikilinks → synthesizes a cited answer.
 - **Sync** — pull raw entries from mesh peers.
 
-For the full why (and the path from the original BM25-preload design we walked back from), see [the honest review](/blog/wiki-karpathy-review).
+For the full why (and the path from the original BM25-preload design we walked back from), see [the honest review on noqta.tn](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026).
 
 ### 6. Business layer
 

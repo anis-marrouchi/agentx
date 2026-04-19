@@ -6,7 +6,7 @@ title: "6. Shared wiki — compounding team knowledge"
 
 > **Status:** full Karpathy/Farzapedia pattern shipped — ingest + absorb + query + prune + migrate all live
 
-The wiki pipeline today follows the pattern Karpathy and Farza actually described: typed articles (`person / project / place / concept / event / decision / pattern`), `[[wikilinks]]` as the primary navigation surface, an `_index.md` catalog grouped by type, and an **agentic query** that walks the subgraph instead of BM25-matching keywords. For the full why, see **[An honest review of our Karpathy-inspired wiki](/blog/wiki-karpathy-review)**.
+The wiki pipeline today follows the pattern Karpathy and Farza actually described: typed articles (`person / project / place / concept / event / decision / pattern`), `[[wikilinks]]` as the primary navigation surface, an `_index.md` catalog grouped by type, and an **agentic query** that walks the subgraph instead of BM25-matching keywords. For the full why, see **[An honest review of our Karpathy-inspired wiki](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026)**.
 
 ## The five verbs
 
@@ -37,5 +37,5 @@ This is what makes the wiki worth compiling into. Without it, you're running sha
 
 - [Wiki CLI](/reference/cli#wiki) — every command
 - [Concepts → Wiki](/concepts#_5-wiki)
-- [Honest review of the wiki approach](/blog/wiki-karpathy-review) — the post-mortem and the fix
+- [Honest review of the wiki approach](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026) — the post-mortem and the fix
 - Source: [`src/wiki/`](https://github.com/anis-marrouchi/agentx/tree/master/src/wiki) ([store.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/store.ts), [prompts.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/prompts.ts), [query.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/query.ts))
