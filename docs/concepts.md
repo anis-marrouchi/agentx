@@ -2,7 +2,7 @@
 
 AgentX is **infrastructure for AI agents** — closer to systemd than to another Python framework. If you already understand cron, message queues, and HTTP webhooks, you already understand most of AgentX.
 
-## The six primitives
+## The seven primitives
 
 ```mermaid
 graph LR
@@ -87,7 +87,17 @@ Karpathy/Farzapedia-pattern flat wiki. Articles are typed (`person / project / p
 
 For the full why (and the path from the original BM25-preload design we walked back from), see [the honest review on noqta.tn](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026).
 
-### 6. Business layer
+### 6. Intent knowledge graph
+
+A fixed-axis taxonomy (`scope → location → org → unit → activity`) that classifies every incoming message into a path. Each per-agent daemon maintains its own graph on disk. A dedicated `graph-agent` (sonnet, channel-less) classifies proposals; a review loop (`agentx graph review`) approves/rejects pending entries via an agent that can call `wiki query` for context before deciding. Approved paths tag wiki articles so retrieval can prefer content from the same sub-tree.
+
+- **Classify** — structural auto-approval for leaf-additions; review agent gates structural changes
+- **Review** — `agentx graph review` triages pending classifications in batch or via cron
+- **Cache** — approved classifications populate a fingerprint → path cache, so recurring similar messages skip the LLM
+
+See the [Intent Knowledge Graph reference](/reference/graph) for the full story.
+
+### 7. Business layer
 
 A day-cycle ticker that fires standup/work-tick/wrap prompts at configured times, feeds tasks from a work pool (`.agentx/backlog.md`, GitLab, …), tracks KPIs per agent, and generates daily summaries. Turns a group of agents into a team with a schedule and a P&L.
 
@@ -104,11 +114,11 @@ Every turn the agent sees is a token-budgeted compound prompt:
 | 3 | Landscape | 800 | roster of other agents + mesh peers |
 | 4 | Identity | 200 | system prompt |
 | 5 | Bootstrap | 500 | `SOUL.md`, `IDENTITY.md`, `USER.md`, `AGENTS.md` |
-| 6 | Intent | 200 | deploy / review / bugfix detection |
+| 6 | Intent | 200 | graph-classified path (`scope → … → activity`); falls back to regex tags when the graph is disabled |
 | 7 | Artifacts | 500 | media, mentions |
 | 8 | Memory | 600 | cross-session facts (Haiku-extracted) |
 | 9 | History | 1200 | conversation |
-| 10 | Wiki | 1000 | tag-matched articles |
+| 10 | Wiki | 1000 | pointer to `agentx wiki query` — agent calls the tool itself when institutional knowledge matters (no BM25 preload) |
 
 Total: ~6000 tokens. **Compaction** kicks in when history exceeds the budget — older turns are summarized, last 6 messages kept verbatim, tool calls preserved intact.
 

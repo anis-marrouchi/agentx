@@ -101,19 +101,46 @@ Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["
 
 ## Wiki
 
+The wiki is a Karpathy/Farzapedia-shaped knowledge base — typed articles, `[[wikilinks]]` as the nav surface, `_index.md` as the catalog, agentic query at read time. See [Journey 6](/journey/06-shared-wiki) for the full story.
+
+### Read
+
 | Command | Description |
 |---|---|
-| `agentx wiki status [--mode <unified\|graph\|flat>]` | Status per agent (entries, articles, unabsorbed) |
-| `agentx wiki entries [--agent <id>]` | List raw entries |
-| `agentx wiki absorb [--agent <id>] [--max <n>] [--dry-run]` | Compile unabsorbed raw entries into typed articles (Farzapedia-faithful — `type`, `[[wikilinks]]`, `_index.md`). Safe to schedule as a nightly cron. |
-| `agentx wiki migrate [--dry-run] [--commit]` | One-shot: backfill `type` + `related` on legacy articles (LLM-classifies from body + tags) |
-| `agentx wiki prune [--dry-run] [--commit]` | One-shot: collapse legacy `flat/` + `unified/` mode dirs into canonical `graph/` (dedup by title; losers archived to `_versions/`) |
-| `agentx wiki query <question>` | Agentic query: walks `_index.md` → picks candidates by type → follows `[[related]]` 2–3 hops → synthesizes an answer with citations |
-| `agentx wiki lint [--agent <id>]` | Check wiki for broken links, orphans |
-| `agentx wiki search <query> [--agent <id>]` | Search articles |
-| `agentx wiki serve [--port <n>] [--peer <url>...]` | Wikipedia-style web browser (local + mesh peers) |
-| `agentx wiki sync [--peer <url>] [--dry-run]` | Pull raw entries from mesh peers |
-| `agentx wiki compare --agent <id>` | Deterministic side-by-side comparison of all three modes |
+| `agentx wiki query <question>` | **Agentic query** — walks `_index.md` → picks candidates by `type` → follows `[[related]]` 2–3 hops → synthesizes an answer with citations. Primary retrieval path. |
+| `agentx wiki search <query> [--agent <id>]` | Raw BM25 escape hatch when the agentic path is too slow. |
+| `agentx wiki serve [--port <n>] [--peer <url>...]` | Wikipedia-style web browser (local + mesh peers). Default port 4200. |
+| `agentx wiki status [--mode <graph\|unified\|flat>]` | Status per agent — entries, articles, unabsorbed count. |
+| `agentx wiki entries [--agent <id>]` | List raw entries (the source log before absorb). |
+| `agentx wiki lint [--agent <id>]` | Check wiki for broken wikilinks, orphans, stubs. |
+
+### Write
+
+| Command | Description |
+|---|---|
+| `agentx wiki interview --agent <id> [--topic <t>] [--type <t>] [--answers <file>]` | Interactive Q&A with an LLM synthesizer. Produces one typed article from operator answers. `--answers <file>` for scripted/non-interactive runs. |
+| `agentx wiki quiz --agent <id> [--script <file>] [--rounds N]` | Reverse interview — ask the wiki questions, grade with `/ok` `/correct` `/add` `/link`, the top-cited article gets patched. |
+| `agentx wiki patch <agent> <title-or-path> <instruction> [--yes] [--no-commit]` | One-shot LLM-patch from a plain-English instruction. Resolves title or path, shows diff, confirms. |
+| `agentx wiki edit <agent> <title-or-path> [--editor <cmd>]` | Opens the article in `$EDITOR` directly. No LLM. Catalog rebuilds on exit. |
+| `agentx wiki absorb [--agent <id>] [--max <n>] [--dry-run]` | Batch: compile unabsorbed raw entries into typed articles. Safe to schedule as nightly cron. |
+
+### Housekeeping
+
+| Command | Description |
+|---|---|
+| `agentx wiki migrate [--dry-run] [--commit]` | One-shot: backfill `type` + `related` on legacy articles via LLM classification. |
+| `agentx wiki prune [--dry-run] [--commit]` | One-shot: collapse legacy `flat/` + `unified/` mode dirs into canonical `graph/`. Losers archived to `_versions/`. |
+| `agentx wiki ab-test --agent <id> [--n N] [--out <file>]` | Sample N recent task-history messages, run each through OLD BM25 preload vs NEW agentic query, emit a side-by-side markdown report for manual rating. |
+| `agentx wiki sync [--peer <url>] [--dry-run]` | Pull raw entries from mesh peers. |
+| `agentx wiki share <article> <agent>` | Share a private article with another agent. |
+
+## Graph (intent knowledge)
+
+Per-message intent classification into a fixed-axis taxonomy. Typed paths feed Layer 6 of the context engine and can be used as article-tags for targeted wiki retrieval. See [reference/graph](/reference/graph) for the full story.
+
+| Command | Description |
+|---|---|
+| `agentx graph review [--agent <id>] [--max N] [--dry-run]` | Triage pending classifications via the configured review agent. The reviewer may call `wiki query` for context before deciding approve / reject / skip. On approve, new nodes commit + the fingerprint cache populates so subsequent similar messages skip the LLM. |
 
 ## Skills
 
@@ -121,6 +148,7 @@ Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["
 |---|---|
 | `agentx skill list` (alias `ls`) | List skills per agent |
 | `agentx skill add <skillPath> [--agent <id>] [--all]` | Add a skill to one or all agents |
+| `agentx skill sync <name> [--agent <id>] [--all-workspaces] [--dry-run]` | Redeploy a skill's `SKILL.md` from source to agent workspaces. Default: only workspaces that already have the skill; `--all-workspaces` to also seed missing. Prevents stale skill copies when the source is updated. |
 
 ## Hooks
 
