@@ -3,6 +3,7 @@ import { resolve } from "path"
 import { hostname } from "os"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig, writeAgentxConfig } from "./config-mutate"
+import { TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT } from "./topbar"
 
 // --- /setup wizard: form-driven first-run experience for non-technical operators ---
 //
@@ -273,141 +274,340 @@ function renderWizardHtml(state: ReturnType<typeof wizardState>): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AgentX — Setup</title>
+${TOPBAR_HEAD}
 <style>
-:root{--bg:#0b0d14;--card:#151823;--border:#2a2d3a;--text:#e6e8ef;--muted:#8b8fa3;--accent:#6366f1;--green:#22c55e;--red:#ef4444}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-header{padding:18px 24px;border-bottom:1px solid var(--border);background:#10131c;display:flex;align-items:center;gap:12px}
-header .brand{font-weight:600;color:var(--accent);font-size:15px}
-header .sub{color:var(--muted);font-weight:500}
-.spacer{flex:1}
-a.link{color:var(--muted);text-decoration:none;font-size:13px;padding:4px 10px;border:1px solid var(--border);border-radius:6px}
-a.link:hover{color:var(--accent);border-color:var(--accent)}
-main{max-width:620px;margin:0 auto;padding:32px 22px 60px}
-h1{font-size:24px;margin:0 0 6px}
-.lead{color:var(--muted);margin:0 0 26px}
-section.step{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin:14px 0}
-section.step h2{font-size:14px;font-weight:600;margin:0 0 14px;color:var(--text);display:flex;align-items:center;gap:10px}
-section.step h2 .num{background:var(--accent);color:#fff;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
-label{display:block;margin:10px 0 4px;font-size:12px;color:var(--muted)}
-label .hint{color:var(--muted);font-weight:400;font-size:11px;margin-left:6px}
-input,textarea,select{width:100%;background:#0e1119;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font:13px/1.4 inherit}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
-textarea{resize:vertical;min-height:70px;font-family:inherit}
-.row{display:flex;gap:10px}
-.row > *{flex:1}
-.toggle{display:flex;align-items:center;gap:8px;margin:14px 0 4px;font-size:13px;color:var(--text);cursor:pointer}
-.toggle input{width:auto}
-.optional{border-left:2px solid var(--border);padding-left:14px;margin-top:10px;display:none}
-.optional.show{display:block}
-footer.actions{display:flex;gap:10px;padding:20px 0;align-items:center}
-button.primary{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer}
-button.primary:hover{filter:brightness(1.1)}
-button.primary:disabled{opacity:0.5;cursor:not-allowed}
-button.ghost{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer}
-.hint-block{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.55}
-.hint-block code{background:#10131c;padding:1px 6px;border-radius:3px;color:var(--text);font-family:ui-monospace,monospace;font-size:11px}
-#msg{margin:14px 0;padding:12px 16px;border-radius:6px;font-size:13px;display:none}
-#msg.ok{display:block;background:rgba(34,197,94,0.12);color:var(--green);border:1px solid rgba(34,197,94,0.3)}
-#msg.err{display:block;background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3)}
-#next-steps{margin-top:12px;padding-left:20px}
-#next-steps li{margin:4px 0}
-#next-steps code{background:#10131c;padding:1px 6px;border-radius:3px;color:var(--text);font-family:ui-monospace,monospace;font-size:12px}
-.config-banner{background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:6px;padding:10px 14px;margin-bottom:16px;color:var(--muted);font-size:12px}
-.config-banner b{color:var(--text)}
+/* --- Shared design tokens (mirror of LIVE_CSS :root) --- */
+:root {
+  --ax-bg: oklch(0.16 0.010 265);
+  --ax-bg-elev: oklch(0.19 0.012 265);
+  --ax-surface: oklch(0.21 0.012 265);
+  --ax-surface-2: oklch(0.24 0.014 265);
+  --ax-border: oklch(0.29 0.014 265);
+  --ax-border-2: oklch(0.35 0.016 265);
+  --ax-text: oklch(0.95 0.005 265);
+  --ax-text-2: oklch(0.80 0.008 265);
+  --ax-muted: oklch(0.60 0.010 265);
+  --ax-accent: oklch(0.78 0.13 165);
+  --ax-warn: oklch(0.80 0.14 75);
+  --ax-err: oklch(0.68 0.19 25);
+  --ax-font: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --ax-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ax-fs: 13px;
+  --ax-fs-sm: 12px;
+  --ax-fs-xs: 11px;
+  --ax-radius: 6px;
+  --ax-pad: 16px;
+  --ax-gap: 12px;
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --ax-bg: oklch(0.98 0.002 265);
+  --ax-bg-elev: oklch(0.96 0.003 265);
+  --ax-surface: oklch(0.99 0.002 265);
+  --ax-surface-2: oklch(0.955 0.003 265);
+  --ax-border: oklch(0.88 0.006 265);
+  --ax-border-2: oklch(0.78 0.008 265);
+  --ax-text: oklch(0.22 0.010 265);
+  --ax-text-2: oklch(0.36 0.010 265);
+  --ax-muted: oklch(0.54 0.010 265);
+  --ax-accent: oklch(0.55 0.14 165);
+  color-scheme: light;
+}
+[data-theme="crt"] {
+  --ax-bg: #05140a;
+  --ax-bg-elev: #061a0d;
+  --ax-surface: #08201f;
+  --ax-surface-2: #0b2922;
+  --ax-border: #164a30;
+  --ax-border-2: #1f6a44;
+  --ax-text: #b7ffcc;
+  --ax-text-2: #83e3a8;
+  --ax-muted: #4f9a73;
+  --ax-accent: #6dff9e;
+  --ax-font: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; min-height: 100vh;
+  background: var(--ax-bg); color: var(--ax-text);
+  font-family: var(--ax-font); font-size: var(--ax-fs);
+  -webkit-font-smoothing: antialiased;
+}
+code, .ax-mono { font-family: var(--ax-mono); letter-spacing: -0.01em; }
+a { color: var(--ax-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+${TOPBAR_CSS}
+
+/* Setup-specific: we don't render the full tab bar on /setup — just brand,
+ * subtitle, theme switcher, and a "skip" link that goes to the dashboard. */
+.ax-topbar__right a.ax-skip {
+  padding: 4px 10px; border: 1px solid var(--ax-border-2); border-radius: 4px;
+  color: var(--ax-text-2); font-size: var(--ax-fs-xs); text-decoration: none;
+}
+.ax-topbar__right a.ax-skip:hover {
+  color: var(--ax-accent); border-color: var(--ax-accent);
+}
+
+/* --- Main wizard layout --- */
+main.ax-wizard {
+  max-width: 680px; margin: 0 auto; padding: 36px 22px 80px;
+}
+.ax-wizard__h1 {
+  font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em;
+}
+.ax-wizard__lead {
+  color: var(--ax-muted); margin: 0 0 24px; font-size: var(--ax-fs);
+  line-height: 1.55;
+}
+.ax-wizard__lead code {
+  background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px;
+  color: var(--ax-text); font-size: var(--ax-fs-sm);
+}
+
+.ax-banner {
+  background: color-mix(in oklch, var(--ax-accent) 10%, var(--ax-bg-elev));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border-2));
+  border-radius: var(--ax-radius);
+  padding: 10px 14px; margin-bottom: 18px;
+  color: var(--ax-text-2); font-size: var(--ax-fs-sm);
+}
+.ax-banner b { color: var(--ax-text); font-weight: 600; }
+
+/* Step cards — mirror the .ax-card look from live */
+.ax-step {
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: 8px; padding: 20px 22px; margin: 14px 0;
+}
+.ax-step__head {
+  font-size: var(--ax-fs-xs); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ax-muted);
+  margin: 0 0 14px; display: flex; align-items: center; gap: 10px;
+}
+.ax-step__num {
+  width: 22px; height: 22px; border-radius: 4px;
+  background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 45%, var(--ax-border-2));
+  color: var(--ax-accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--ax-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0; text-transform: none;
+}
+
+/* Form fields */
+.ax-field { margin: 10px 0 0; }
+.ax-field:first-child { margin-top: 0; }
+.ax-field label {
+  display: block; margin-bottom: 5px;
+  font-size: var(--ax-fs-xs); color: var(--ax-muted);
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
+}
+.ax-field label .ax-hint {
+  text-transform: none; letter-spacing: 0; color: var(--ax-muted);
+  font-weight: 400; font-size: var(--ax-fs-xs); margin-left: 6px;
+}
+.ax-field input, .ax-field textarea, .ax-field select {
+  width: 100%;
+  background: var(--ax-bg); color: var(--ax-text);
+  border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius);
+  padding: 8px 10px; font: inherit; font-size: var(--ax-fs);
+  transition: border-color 0.1s ease;
+}
+.ax-field input:focus, .ax-field textarea:focus, .ax-field select:focus {
+  outline: none;
+  border-color: var(--ax-accent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ax-accent) 18%, transparent);
+}
+.ax-field textarea { resize: vertical; min-height: 72px; font-family: var(--ax-font); }
+.ax-field input::placeholder, .ax-field textarea::placeholder { color: var(--ax-muted); opacity: 0.7; }
+
+.ax-row { display: flex; gap: 12px; }
+.ax-row > * { flex: 1; }
+
+.ax-toggle {
+  display: flex; align-items: center; gap: 8px; margin: 4px 0 6px;
+  font-size: var(--ax-fs); color: var(--ax-text); cursor: pointer;
+  user-select: none;
+}
+.ax-toggle input { width: auto; accent-color: var(--ax-accent); }
+.ax-optional {
+  border-left: 2px solid var(--ax-border-2); padding-left: 14px;
+  margin-top: 10px; display: none;
+}
+.ax-optional.is-show { display: block; }
+.ax-hint-block {
+  font-size: var(--ax-fs-xs); color: var(--ax-muted); margin-top: 8px; line-height: 1.55;
+}
+.ax-hint-block code {
+  background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px;
+  color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-xs);
+}
+
+/* Action buttons — matches dashboard primary-button feel */
+.ax-actions {
+  display: flex; gap: 10px; padding: 20px 0 0; align-items: center;
+  border-top: 1px solid var(--ax-border); margin-top: 20px;
+}
+.ax-btn {
+  background: transparent; color: var(--ax-text-2);
+  border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius);
+  padding: 8px 16px; font: inherit; font-size: var(--ax-fs); cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.ax-btn:hover { color: var(--ax-text); border-color: var(--ax-accent); }
+.ax-btn--primary {
+  background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface));
+  color: var(--ax-accent);
+  border-color: color-mix(in oklch, var(--ax-accent) 50%, var(--ax-border-2));
+  font-weight: 600;
+}
+.ax-btn--primary:hover {
+  background: color-mix(in oklch, var(--ax-accent) 25%, var(--ax-surface));
+  color: var(--ax-accent); border-color: var(--ax-accent);
+}
+.ax-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Result messaging */
+.ax-msg { margin: 14px 0; padding: 12px 16px; border-radius: var(--ax-radius); font-size: var(--ax-fs); display: none; }
+.ax-msg.is-ok {
+  display: block;
+  background: color-mix(in oklch, var(--ax-accent) 12%, transparent);
+  color: var(--ax-accent);
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 40%, transparent);
+}
+.ax-msg.is-err {
+  display: block;
+  background: color-mix(in oklch, var(--ax-err) 12%, transparent);
+  color: var(--ax-err);
+  border: 1px solid color-mix(in oklch, var(--ax-err) 40%, transparent);
+}
+.ax-next-steps { margin-top: 12px; padding-left: 20px; color: var(--ax-text-2); }
+.ax-next-steps li { margin: 4px 0; }
+.ax-next-steps code {
+  background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px;
+  color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-sm);
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">AgentX <span class="sub">· Setup</span></div>
-  <div class="spacer"></div>
-  <a href="/glossary" class="link">? Glossary</a>
-  <a href="/live" class="link">Skip — open dashboard</a>
+<header class="ax-topbar">
+  <div class="ax-topbar__left">
+    <div class="ax-brand">
+      <span class="ax-brand__mark">AX</span>
+      <span class="ax-brand__name">AgentX</span>
+      <span class="ax-brand__subtitle">Setup</span>
+    </div>
+  </div>
+  <div class="ax-topbar__right">
+    <a href="/glossary" class="ax-skip">? Glossary</a>
+    <a href="/live" class="ax-skip">Skip — open dashboard</a>
+    <div class="ax-theme-switch" role="tablist" aria-label="Theme">
+      <button data-theme-opt="dark">Dark</button>
+      <button data-theme-opt="light">Light</button>
+      <button data-theme-opt="crt">CRT</button>
+    </div>
+  </div>
 </header>
-<main>
-  <h1>${escapeHtml(heading)}</h1>
-  <p class="lead">Fill in the basics below. We'll write <code>agentx.json</code>, set up a folder for your first agent, and point you at the next step.</p>
+<main class="ax-wizard">
+  <h1 class="ax-wizard__h1">${escapeHtml(heading)}</h1>
+  <p class="ax-wizard__lead">Fill in the basics below. We'll write <code>agentx.json</code>, set up a folder for your first agent, and point you at the next step.</p>
 
-  ${state.configExists ? `<div class="config-banner">Existing install: <b>${state.agentCount}</b> agent(s), <b>${state.channelCount}</b> channel(s) already configured. This wizard will add to it.</div>` : ""}
+  ${state.configExists ? `<div class="ax-banner">Existing install: <b>${state.agentCount}</b> agent(s), <b>${state.channelCount}</b> channel(s) already configured. This wizard will add to it.</div>` : ""}
 
-  <div id="msg"></div>
+  <div id="msg" class="ax-msg"></div>
 
   <form id="wizard" autocomplete="off">
-    <section class="step">
-      <h2><span class="num">1</span>Team basics</h2>
-      <label>Team name<span class="hint">(what you'd call this AgentX install)</span></label>
-      <input name="nodeName" value="${escapeHtml(defaultNode)}" placeholder="My Team" required />
+    <section class="ax-step">
+      <div class="ax-step__head"><span class="ax-step__num">1</span>Team basics</div>
+      <div class="ax-field">
+        <label>Team name <span class="ax-hint">(what you'd call this AgentX install)</span></label>
+        <input name="nodeName" value="${escapeHtml(defaultNode)}" placeholder="My Team" required />
+      </div>
     </section>
 
-    <section class="step">
-      <h2><span class="num">2</span>First agent</h2>
-      <div class="row">
-        <div>
+    <section class="ax-step">
+      <div class="ax-step__head"><span class="ax-step__num">2</span>First agent</div>
+      <div class="ax-row">
+        <div class="ax-field">
           <label>Agent name</label>
           <input name="agentName" value="Assistant" placeholder="Support Bot" required />
         </div>
-        <div>
-          <label>Agent id<span class="hint">(lowercase, no spaces)</span></label>
+        <div class="ax-field">
+          <label>Agent id <span class="ax-hint">(lowercase, no spaces)</span></label>
           <input name="agentId" value="assistant" pattern="[a-z0-9][a-z0-9_-]*" required />
         </div>
       </div>
-      <label>Trigger words<span class="hint">(words that activate this agent — comma or space separated, e.g. <code>@support, support</code>)</span></label>
-      <input name="triggerWords" value="@assistant, assistant" required />
-      <div class="row">
-        <div>
+      <div class="ax-field">
+        <label>Trigger words <span class="ax-hint">(comma or space separated — e.g. <code>@support, support</code>)</span></label>
+        <input name="triggerWords" value="@assistant, assistant" required />
+      </div>
+      <div class="ax-row">
+        <div class="ax-field">
           <label>AI engine</label>
           <select name="tier">
             <option value="claude-code">Claude Code (recommended)</option>
             <option value="sdk">Anthropic API (BYO key)</option>
           </select>
         </div>
-        <div>
-          <label>Model<span class="hint">(optional)</span></label>
+        <div class="ax-field">
+          <label>Model <span class="ax-hint">(optional)</span></label>
           <input name="model" value="claude-sonnet-4-6" placeholder="claude-sonnet-4-6" />
         </div>
       </div>
-      <label>Personality / instructions<span class="hint">(optional — what this agent does, in plain English)</span></label>
-      <textarea name="personality" placeholder="You are a support agent for Acme Co. Answer customer questions about our product, be friendly, keep replies short."></textarea>
-    </section>
-
-    <section class="step">
-      <h2><span class="num">3</span>First channel</h2>
-      <label class="toggle"><input type="checkbox" id="enableTelegram" /> Connect Telegram now</label>
-      <div class="optional" id="telegramFields">
-        <label>Account id<span class="hint">(a label you choose — e.g. <code>support</code>)</span></label>
-        <input name="telegramAccountId" value="default" />
-        <label>Bot token<span class="hint">(from <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a>)</span></label>
-        <input name="telegramBotToken" placeholder="123456:ABCdef..." />
-        <label>Bot username<span class="hint">(optional — e.g. <code>my_support_bot</code>)</span></label>
-        <input name="telegramBotUsername" placeholder="my_support_bot" />
+      <div class="ax-field">
+        <label>Personality / instructions <span class="ax-hint">(optional — what this agent does, in plain English)</span></label>
+        <textarea name="personality" placeholder="You are a support agent for Acme Co. Answer customer questions about our product, be friendly, keep replies short."></textarea>
       </div>
     </section>
 
-    <section class="step">
-      <h2><span class="num">4</span>Anthropic API key</h2>
-      <label>API key<span class="hint">(optional if you'll paste it into <code>.env</code> manually, or if you're only using Claude Code)</span></label>
-      <input name="anthropicApiKey" type="password" placeholder="sk-ant-…" autocomplete="off" />
-      <div class="hint-block">
+    <section class="ax-step">
+      <div class="ax-step__head"><span class="ax-step__num">3</span>First channel</div>
+      <label class="ax-toggle"><input type="checkbox" id="enableTelegram" /> Connect Telegram now</label>
+      <div class="ax-optional" id="telegramFields">
+        <div class="ax-field">
+          <label>Account id <span class="ax-hint">(a label you choose — e.g. <code>support</code>)</span></label>
+          <input name="telegramAccountId" value="default" />
+        </div>
+        <div class="ax-field">
+          <label>Bot token <span class="ax-hint">(from <a href="https://t.me/BotFather" target="_blank">@BotFather</a>)</span></label>
+          <input name="telegramBotToken" placeholder="123456:ABCdef..." />
+        </div>
+        <div class="ax-field">
+          <label>Bot username <span class="ax-hint">(optional — e.g. <code>my_support_bot</code>)</span></label>
+          <input name="telegramBotUsername" placeholder="my_support_bot" />
+        </div>
+      </div>
+    </section>
+
+    <section class="ax-step">
+      <div class="ax-step__head"><span class="ax-step__num">4</span>Anthropic API key</div>
+      <div class="ax-field">
+        <label>API key <span class="ax-hint">(optional — skip if you're using Claude Code)</span></label>
+        <input name="anthropicApiKey" type="password" placeholder="sk-ant-…" autocomplete="off" />
+      </div>
+      <div class="ax-hint-block">
         The key is written to <code>.env</code> as <code>ANTHROPIC_API_KEY</code>. AgentX never transmits it — everything stays on this machine.
       </div>
     </section>
 
-    <footer class="actions">
-      <button type="submit" class="primary" id="submitBtn">Save and continue</button>
-      <button type="button" class="ghost" onclick="window.location.href='/live'">Skip, I'll do it later</button>
+    <footer class="ax-actions">
+      <button type="submit" class="ax-btn ax-btn--primary" id="submitBtn">Save and continue</button>
+      <button type="button" class="ax-btn" onclick="window.location.href='/live'">Skip, I'll do it later</button>
     </footer>
   </form>
 </main>
+${TOPBAR_SCRIPT}
 <script>
 document.getElementById('enableTelegram').addEventListener('change', (e) => {
-  document.getElementById('telegramFields').classList.toggle('show', e.target.checked);
+  document.getElementById('telegramFields').classList.toggle('is-show', e.target.checked);
 });
 document.getElementById('wizard').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
   const msg = document.getElementById('msg');
   const btn = document.getElementById('submitBtn');
-  msg.className = ''; msg.style.display = 'none';
+  msg.className = 'ax-msg'; msg.style.display = 'none';
   btn.disabled = true; btn.textContent = 'Saving…';
   const telegramEnabled = document.getElementById('enableTelegram').checked;
   const payload = {
@@ -429,7 +629,7 @@ document.getElementById('wizard').addEventListener('submit', async (e) => {
       botUsername: f.telegramBotUsername.value.trim() || undefined,
     };
     if (!payload.telegram.botToken) {
-      msg.className = 'err'; msg.textContent = 'Bot token is required when Telegram is enabled.';
+      msg.className = 'ax-msg is-err'; msg.textContent = 'Bot token is required when Telegram is enabled.';
       btn.disabled = false; btn.textContent = 'Save and continue'; return;
     }
   }
@@ -442,12 +642,12 @@ document.getElementById('wizard').addEventListener('submit', async (e) => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     const steps = data.nextSteps.map((s) => '<li>' + s.replace(/\`([^\`]+)\`/g, '<code>$1</code>') + '</li>').join('');
-    msg.className = 'ok';
-    msg.innerHTML = '<b>' + data.summary + '</b><ol id="next-steps">' + steps + '</ol>';
+    msg.className = 'ax-msg is-ok';
+    msg.innerHTML = '<b>' + data.summary + '</b><ol class="ax-next-steps">' + steps + '</ol>';
     btn.textContent = 'Done';
     btn.disabled = true;
   } catch (err) {
-    msg.className = 'err'; msg.textContent = err.message;
+    msg.className = 'ax-msg is-err'; msg.textContent = err.message;
     btn.disabled = false; btn.textContent = 'Save and continue';
   }
 });
