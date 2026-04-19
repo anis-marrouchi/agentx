@@ -16,7 +16,7 @@
 // worth the cost — the scaffold is already ready for it under
 // ui/pages/admin/<tab>.ts.
 
-import { renderShell, type TopbarPeer } from ".."
+import { renderShell, pageHead, healthStrip, witBanner, TOAST_HTML, TOAST_SCRIPT, ROW_CARD_SCRIPT, type TopbarPeer } from ".."
 
 export interface AdminPageOpts {
   peers?: TopbarPeer[]
@@ -29,6 +29,23 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
     ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>`
     : ""
 
+  // New page chrome — sits above the peer banner + tabs. Placeholder values
+  // for the health strip live here; ADMIN_HEALTH_SCRIPT populates them from
+  // /api/admin/config once the page loads.
+  const chrome = pageHead({
+    kicker: "Settings",
+    title: "Your team's control room",
+    lead: `Manage the agents, the places they answer from, and who's allowed to reach them. Everything here writes to <span class="mono muted">agentx.json</span> on your machine — nothing leaves.`,
+  }) + healthStrip([
+    { kind: "off", num: "—", label: "Agents online" },
+    { kind: "off", num: "—", label: "Channels connected" },
+    { kind: "off", num: "0", label: "Needs attention" },
+    { kind: "off", num: "—", label: "Active tokens" },
+  ]).replace(
+    "<div class=\"ax-health-strip\">",
+    `<div class="ax-health-strip" id="ax-health">`,
+  )
+
   return renderShell({
     title: "AgentX · Settings",
     activeTab: "admin",
@@ -36,11 +53,77 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     noMain: true,
-    body: ADMIN_PAGE_BODY,
+    body: chrome + ADMIN_PAGE_BODY + TOAST_HTML,
     css: ADMIN_PAGE_CSS,
-    scripts: `${tokenScript}<script>${ADMIN_PAGE_SCRIPT}</script>`,
+    scripts: `${tokenScript}<script>${TOAST_SCRIPT}\n${ROW_CARD_SCRIPT}\n${ADMIN_HEALTH_SCRIPT}\n${ADMIN_PAGE_SCRIPT}</script>`,
   })
 }
+
+// Populates the 4-up health strip + tab count bubbles from the same
+// /api/admin/config payload the main admin script already fetches. Runs
+// after the admin bootstrap attaches state under window.__AX_ADMIN.
+const ADMIN_HEALTH_SCRIPT = `
+(function(){
+  function fmt(n) { return n == null ? '—' : String(n); }
+  async function refresh() {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (window.AX_LOCAL_TOKEN) headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
+      const r = await fetch('/api/admin/config', { headers });
+      if (!r.ok) return;
+      const cfg = await r.json();
+      const agents = Object.keys(cfg.agents || {});
+      const channels = cfg.channels || {};
+      const channelDefs = ['telegram','whatsapp','slack','discord','gitlab','github'];
+      const enabled = channelDefs.filter(c => channels[c] && channels[c].enabled).length;
+      const crons = Object.keys(cfg.crons || {}).length;
+      const webhooks = Object.keys(cfg.webhooks || {}).length;
+      const meshPeers = (cfg.mesh && Array.isArray(cfg.mesh.peers) ? cfg.mesh.peers.length : 0);
+
+      // Health strip numbers
+      const strip = document.getElementById('ax-health');
+      if (strip) {
+        const cards = strip.querySelectorAll('.ax-health-card');
+        const setCard = (i, num, kind) => {
+          const c = cards[i]; if (!c) return;
+          const n = c.querySelector('.ax-hc-num'); if (n) n.textContent = fmt(num);
+          const d = c.querySelector('.ax-hc-dot');
+          if (d) { d.className = 'ax-hc-dot ax-hc-dot--' + kind; }
+        };
+        setCard(0, agents.length, agents.length > 0 ? 'ok' : 'off');
+        setCard(1, enabled + '/' + channelDefs.length, enabled > 0 ? 'ok' : 'off');
+        // "Needs attention" is a placeholder until we surface real warnings.
+        setCard(2, 0, 'off');
+        const tokenCount = Array.isArray(cfg.tokens) ? cfg.tokens.length : 0;
+        setCard(3, tokenCount, tokenCount > 0 ? 'ok' : 'off');
+      }
+
+      // Tab counts
+      const setCount = (tab, val) => {
+        const btn = document.querySelector('nav.tabs button[data-tab="' + tab + '"]');
+        if (!btn) return;
+        let c = btn.querySelector('.ax-tab-count');
+        if (!c) {
+          c = document.createElement('span');
+          c.className = 'ax-tab-count';
+          btn.appendChild(document.createTextNode(' '));
+          btn.appendChild(c);
+        }
+        c.textContent = String(val);
+      };
+      setCount('agents', agents.length);
+      setCount('channels', enabled + '/' + channelDefs.length);
+      setCount('crons', crons);
+      setCount('webhooks', webhooks);
+      setCount('mesh', meshPeers);
+      const tokenCount = Array.isArray(cfg.tokens) ? cfg.tokens.length : 0;
+      setCount('tokens', tokenCount);
+    } catch (e) { /* best-effort */ }
+  }
+  refresh();
+  // Refresh again after the main admin script has had a chance to mutate config.
+  document.addEventListener('ax-config-saved', refresh);
+})();`
 
 const ADMIN_PAGE_BODY = `
 <div id="peer-banner" class="peer-banner">
