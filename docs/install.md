@@ -12,9 +12,15 @@ This:
 
 1. Checks for Node.js 20+ (uses nvm if available).
 2. Installs `agentix-cli` globally.
-3. Runs `agentx setup`, which opens the web wizard in your browser.
+3. Runs `agentx setup` — the daemon starts in the background and **your browser opens at `http://127.0.0.1:4202/setup`**.
+
+![AgentX setup wizard opens automatically after install](/screenshots/setup.png)
 
 The wizard collects: team name, first agent (name, trigger words, personality), optional Telegram bot token, optional Anthropic API key. It writes `agentx.json` + `.env` + scaffolds the agent's folder for you — no hand-editing.
+
+From that moment on, **everything is in the dashboard**: agents, channels, schedules, webhooks, mesh peers, tokens, the intent graph. The CLI is always there as a parallel control plane — every button maps to a verb — but you never need to open an editor.
+
+Jump straight into → [Journey 1 — Your first agent on Telegram](/journey/01-telegram-qa-bot) for a guided walkthrough.
 
 ## Option B: Docker
 
