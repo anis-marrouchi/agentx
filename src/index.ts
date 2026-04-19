@@ -131,6 +131,23 @@ export { A2AClient } from "./a2a/client"
 export { WikiStore } from "./wiki"
 export type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./wiki"
 
+// Intent Knowledge Graph
+export { GraphStore, STARTER_SCHEMA } from "./graph"
+export type {
+  GraphSchema,
+  GraphNode,
+  LevelDef,
+  AxisDef,
+  AxisType,
+  Classification,
+  ClassificationSource,
+  ClassificationStatus,
+  FingerprintEntry,
+  NodesFile,
+  IndexFile,
+  GraphStoreOptions,
+} from "./graph"
+
 // Provider Capabilities
 export { PROVIDER_CAPABILITIES, checkCapabilities } from "./agent/providers/capabilities"
 export type { ProviderCapabilities } from "./agent/providers/capabilities"

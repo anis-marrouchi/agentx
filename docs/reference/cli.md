@@ -105,7 +105,7 @@ Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["
 |---|---|
 | `agentx wiki status [--mode <unified\|graph\|flat>]` | Status per agent (entries, articles, unabsorbed) |
 | `agentx wiki entries [--agent <id>]` | List raw entries |
-| `agentx wiki absorb [--agent <id>] [--mode <m>] [--max <n>] [--dry-run]` | Compile raw entries into articles |
+| `agentx wiki absorb [--force] [--agent <id>] [--mode <m>] [--max <n>] [--dry-run]` | **Deprecated.** Batched LLM compile of raw entries into articles — expensive and rarely retrieved. Gated behind `--force`. A focused procedure-delta replacement tied to the intent knowledge graph is planned. |
 | `agentx wiki lint [--agent <id>]` | Check wiki for broken links, orphans |
 | `agentx wiki search <query> [--agent <id>]` | Search articles |
 | `agentx wiki serve [--port <n>] [--peer <url>...]` | Wikipedia-style web browser (local + mesh peers) |

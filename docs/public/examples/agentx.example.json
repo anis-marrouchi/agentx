@@ -71,7 +71,7 @@
       "prompt": "Post the morning standup: pipeline status, new issues, deploys, alerts, top 3 priorities. Keep each line under 15 words."
     },
     "wiki-absorb-midnight": {
-      "enabled": true,
+      "enabled": false,
       "schedule": "0 0 * * *",
       "timezone": "Africa/Tunis",
       "agent": "devops",
@@ -83,7 +83,7 @@
         "chatId": "-1001234567890",
         "accountId": "devops"
       },
-      "prompt": "Run: node dist/cli.js wiki absorb --max 20. Report how many entries were absorbed per agent."
+      "prompt": "DEPRECATED — wiki absorb is costly and its articles rarely get retrieved. Leave disabled; a focused procedure-delta replacement is planned. Use `agentx wiki absorb --force` if you truly want to run it."
     }
   },
   "mesh": {

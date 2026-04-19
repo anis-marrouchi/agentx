@@ -1,4 +1,6 @@
 export { WikiStore } from "./store"
 export { WikiHub } from "./hub"
 export type { AgentWikiSummary, WikiMode } from "./hub"
-export type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
+export type { WikiArticle, WikiArticleMeta, WikiArticleType, WikiEntry, WikiIndex, WikiAccess } from "./types"
+export { agenticQuery } from "./query"
+export type { AgenticQueryOptions, AgenticQueryResult } from "./query"

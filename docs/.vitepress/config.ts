@@ -24,6 +24,7 @@ export default withMermaid(defineConfig({
       { text: "Concepts", link: "/concepts" },
       { text: "Journey", link: "/journey/01-telegram-qa-bot" },
       { text: "Reference", link: "/reference/cli" },
+      { text: "Blog", link: "/blog/" },
       { text: "GitHub", link: "https://github.com/anis-marrouchi/agentx" },
     ],
 
@@ -70,6 +71,13 @@ export default withMermaid(defineConfig({
           text: "Roadmap",
           items: [
             { text: "UX v2 — zero manual config edits", link: "/roadmap/ux-v2" },
+          ],
+        },
+        {
+          text: "Blog",
+          items: [
+            { text: "All posts", link: "/blog/" },
+            { text: "Where we misread Karpathy's LLM wiki", link: "/blog/wiki-karpathy-review" },
           ],
         },
         {

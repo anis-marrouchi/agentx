@@ -5,6 +5,8 @@ import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
+import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
+import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { extractMemories } from "./memory-extract"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
@@ -88,6 +90,42 @@ function clip(s: string, max = 800): string {
 }
 
 /**
+ * Phase 3 wiki layer — compact pointer to the `agentx wiki query` tool.
+ * The wiki is the cross-agent institutional-knowledge source of truth.
+ * Agents call it themselves when the question is about "who / what
+ * happened / what we decided / how we do X." Empty when the agent has no
+ * catalog yet, so new installs see no noise.
+ *
+ * Uses an absolute CLI path because `agentx` is not on PATH in the agent
+ * workspaces. `process.argv[1]` points at the running daemon's cli.js.
+ */
+function buildWikiQueryHint(agentWiki: ReturnType<WikiHub["getAgentWiki"]>, agentId: string): string {
+  let articleCount = 0
+  try {
+    articleCount = agentWiki.listArticles(agentId).length
+  } catch {
+    return ""
+  }
+  if (articleCount === 0) return ""
+  const catalogPath = resolve(agentWiki.baseDir, "_index.md")
+  if (!existsSync(catalogPath)) return ""
+  const cli = process.argv[1] || "dist/cli.js"
+  const wikiDir = agentWiki.baseDir.replace(new RegExp(`/agents/${agentId}(/[^/]+)?$`), "")
+  return [
+    "[Institutional Wiki — cross-agent source of truth]",
+    `A curated wiki with ${articleCount} article${articleCount === 1 ? "" : "s"} grouped by type: person, project, place, concept, event, decision, pattern.`,
+    "",
+    "The wiki is the canonical source for: who people are (team, clients, agents), past events (incidents, deploys), decisions and their reasoning, documented procedures, patterns.",
+    "",
+    "BEFORE you grep the workspace, search memory, or answer from your own prior context — if the question is about who / what happened / what we decided / how we do X, call:",
+    `  node ${cli} wiki query "the user's question" --dir ${wikiDir} --agent ${agentId}`,
+    "",
+    "It walks the catalog + wikilink graph and returns a cited answer. Your workspace memory is local to you; the wiki is shared and authoritative. Prefer the wiki for institutional questions; prefer your workspace for code-level questions.",
+    "[End Institutional Wiki]",
+  ].join("\n")
+}
+
+/**
  * Format raw Claude Code stream-json events into a terminal-style transcript
  * for the dashboard streaming modal. Returns "" for events we don't surface.
  *
@@ -165,6 +203,11 @@ export class AgentRegistry {
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
   private messageQueue: MessageQueue
+  /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
+  private classifier?: Classifier
+  private graphStore?: GraphStore
+  /** Runtime handover store — shared with MessageRouter via file on disk. */
+  private handoverStore: HandoverStore = new HandoverStore()
   /** Active soul profile per agent+chat session: "agentId:channel:chatId" → profile name */
   private activeSouls: Map<string, string> = new Map()
   /** Live output captured per running task id — drives the dashboard streaming modal. */
@@ -190,6 +233,22 @@ export class AgentRegistry {
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
 
+    if (config.graph?.enabled) {
+      this.graphStore = new GraphStore({
+        baseDir: resolve(process.cwd(), config.graph.baseDir),
+        log: (...a) => log("[graph]", ...a),
+      })
+      const draftAgent = config.graph.draftAgent || config.dashboard?.draftAgent
+      this.classifier = new Classifier({
+        store: this.graphStore,
+        daemonUrl: config.dashboard.daemonUrl,
+        token: config.dashboard.token,
+        draftAgent,
+        autoApproveConfidence: config.graph.autoApproveConfidence,
+        log: (...a) => log("[classifier]", ...a),
+      })
+    }
+
     for (const [id, def] of Object.entries(config.agents)) {
       this.agents.set(id, {
         id,
@@ -207,6 +266,29 @@ export class AgentRegistry {
    */
   setLandscape(builder: LandscapeBuilder): void {
     this.landscape = builder
+  }
+
+  /**
+   * If there's an active handover routing TO this agent for this (channel,
+   * chatId) pair AND the operator's summary hasn't been consumed yet, pull
+   * + clear it so the target agent sees the note exactly once.
+   */
+  private buildHandoverNote(
+    agentId: string,
+    channel: string,
+    chatId: string,
+  ): ContextInput["handoverNote"] {
+    const o = this.handoverStore.get(channel, chatId)
+    if (!o || o.toAgent !== agentId) return undefined
+    const summary = this.handoverStore.consumeSummary(channel, chatId)
+    // If already consumed on a prior message, skip — route remains active
+    // but no repeated briefing in every turn.
+    if (!summary && o.summaryConsumedAt) return undefined
+    return {
+      fromAgent: o.fromAgent,
+      summary: summary || o.summary,
+      at: o.createdAt,
+    }
   }
 
   /**
@@ -414,10 +496,33 @@ export class AgentRegistry {
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
-    // Build structured context — read from per-agent wiki
+    // Classify the message through the intent graph when enabled. Skip for
+    // a2a traffic — the classifier itself dispatches through /task, and
+    // re-classifying its own prompts would recurse forever. Any classifier
+    // failure (bad LLM output, schema rejection, network error) must never
+    // propagate — the main task still has to run.
+    let intent: ClassifyResult | undefined
+    if (this.classifier && channel !== "a2a") {
+      try {
+        intent = (await this.classifier.classify({
+          text: task.message,
+          channel,
+          sender: task.context?.sender,
+          agentId: task.agentId,
+        })) || undefined
+      } catch (e: any) {
+        this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
+      }
+    }
+
+    // Wiki context — Phase 3 Farzapedia alignment: instead of preloading BM25
+    // hits (the old shallow-RAG path), we inject a short pointer to the
+    // `agentx wiki query` tool. The agent decides WHEN institutional knowledge
+    // matters and invokes the agentic query itself — walking _index.md, picking
+    // candidates, following wikilinks 2–3 hops. Zero retrieval cost on messages
+    // that don't need it.
     const agentWiki = this.wikiHub.getAgentWiki(task.agentId)
-    const wikiArticles = agentWiki.findRelevant(task.message, task.agentId, 3)
-    const wikiContext = agentWiki.buildContext(wikiArticles)
+    const wikiContext = buildWikiQueryHint(agentWiki, task.agentId)
 
     // Load persistent agent memory (cross-session facts)
     const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, 8)
@@ -537,6 +642,17 @@ export class AgentRegistry {
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       wikiContext,
+      handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
+      intent: intent
+        ? {
+            path: intent.path,
+            pathLabel: intent.pathLabel,
+            pathId: intent.pathId,
+            axes: intent.axes,
+            leaf: intent.leaf,
+            status: intent.status,
+          }
+        : undefined,
       message: task.message,
     }
 

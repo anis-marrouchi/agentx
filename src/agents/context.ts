@@ -110,6 +110,25 @@ export interface ContextInput {
   // Wiki
   wikiContext?: string               // from WikiStore.buildContext()
 
+  // Handover — one-shot note injected on the first message after an
+  // operator-initiated handover takes effect. See channels/handover-store.
+  handoverNote?: {
+    fromAgent: string
+    summary?: string
+    at: string                       // ISO timestamp of the handover
+  }
+
+  // Intent (graph classification — when absent, Intent layer falls back
+  // to the legacy regex tag extractor).
+  intent?: {
+    path: string[]                   // root → leaf node ids
+    pathLabel: string                // "Business › Noqta › DevOps › Review MR"
+    pathId: string                   // hash — also carried as wiki `graph:<pathId>` tag
+    axes?: Record<string, Record<string, string>>
+    leaf?: { input?: string; output?: string }
+    status: "pending" | "approved"
+  }
+
   // Message
   message: string
 }
@@ -201,17 +220,40 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
     })
   }
 
-  // 5. Intent (extracted keywords from message)
-  // Lightweight — just tag detection, not LLM-based
-  const intentTags = extractIntentTags(input.message)
-  if (intentTags.length) {
+  // 5. Intent — prefer graph classification (hierarchical path) when the
+  //    caller ran the classifier. Fall back to the regex tag extractor
+  //    otherwise so legacy installs with graph.enabled=false behave as before.
+  if (input.intent && input.intent.path.length > 0) {
+    const lines: string[] = [
+      `[Intent path: ${input.intent.pathLabel}${input.intent.status === "pending" ? " (pending approval)" : ""}]`,
+    ]
+    const leafId = input.intent.path[input.intent.path.length - 1]
+    const leafAxes = input.intent.axes?.[leafId]
+    if (leafAxes && Object.keys(leafAxes).length) {
+      const kv = Object.entries(leafAxes)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join("\n")
+      lines.push(kv)
+    }
+    if (input.intent.leaf?.input) lines.push(`  input: ${input.intent.leaf.input}`)
     layers.push({
       name: "intent",
       priority: 5,
       maxTokens: budget("intent", 200),
-      content: `[Intent: ${intentTags.join(", ")}]`,
-      tags: intentTags,
+      content: lines.join("\n"),
+      tags: ["intent", ...input.intent.path],
     })
+  } else {
+    const intentTags = extractIntentTags(input.message)
+    if (intentTags.length) {
+      layers.push({
+        name: "intent",
+        priority: 5,
+        maxTokens: budget("intent", 200),
+        content: `[Intent: ${intentTags.join(", ")}]`,
+        tags: intentTags,
+      })
+    }
   }
 
   // 6. Artifacts (media, reply-to, issue/MR context)
@@ -291,6 +333,25 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("cross-chat", 800),
       content: input.crossChatContext,
       tags: ["history", "cross-chat"],
+    })
+  }
+
+  // 7c. Handover note — one-shot briefing when this agent is taking over
+  //      a conversation from another agent. Rendered just before wiki.
+  if (input.handoverNote) {
+    const lines = [
+      `[Handover] You are taking over this conversation from ${input.handoverNote.fromAgent}.`,
+    ]
+    if (input.handoverNote.summary) {
+      lines.push(`Operator summary: ${input.handoverNote.summary}`)
+    }
+    lines.push(`Handover time: ${input.handoverNote.at}`)
+    layers.push({
+      name: "handover",
+      priority: 7.5,
+      maxTokens: budget("handover", 400),
+      content: lines.join("\n"),
+      tags: ["handover", input.handoverNote.fromAgent],
     })
   }
 

@@ -78,12 +78,12 @@ See [Journey 8](/journey/08-mesh-federation).
 
 ### 5. Wiki
 
-A Karpathy-inspired flat wiki with a knowledge-graph overlay. Each agent has its own wiki; raw entries (conversations) get **absorbed** daily into structured articles with `[[wikilinks]]`. The wiki has per-article permissions — `public`, `shared`, `private`.
+A Karpathy-inspired flat wiki with per-article permissions — `public`, `shared`, `private`. Each agent has its own wiki; raw conversation entries are persisted to `.agentx/wiki/raw/entries/` continuously. Existing articles are retrieved via BM25 + tag overlap and injected into the agent's next turn.
 
-- **Ingest** — export recent conversations as raw entries
-- **Absorb** — LLM compiles raw entries into articles
+- **Ingest** — export recent conversations as raw entries *(cheap)*
 - **Query** — BM25 search, articles injected into the agent's next turn
 - **Sync** — pull raw entries from mesh peers
+- **Absorb** — **deprecated.** Batched LLM compile of raw entries into articles. Expensive and rarely retrieved in practice — see the [honest review](/blog/wiki-karpathy-review). Gated behind `--force`; a focused **procedure-delta** replacement tied to the intent knowledge graph is planned.
 
 ### 6. Business layer
 

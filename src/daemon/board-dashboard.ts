@@ -10,6 +10,8 @@ import { SORTABLE_JS } from "./vendor/sortable"
 import { UI_LABELS, GLOSSARY } from "./ui-labels"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
+import { handleGraphGet, handleGraphApi } from "./graph-panel"
+import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { renderTopbar, TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT, type TopbarPeer } from "./topbar"
 
@@ -129,6 +131,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleAdminGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
   }
+  // /admin/graph — Intent Knowledge Graph: pending approvals + taxonomy editor.
+  if (method === "GET" && path === "/admin/graph") {
+    handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
+    return
+  }
+  // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
+  const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
+  if (agentPageMatch) {
+    handleAgentPageGet(req, res, agentPageMatch[1], buildTopbarPeers(ctx.config), ctx.token)
+    return
+  }
   // Cross-mesh admin proxy: when a non-primary peer is selected (header
   // X-Agentx-Peer or ?peer=), forward the whole request to the peer's
   // dashboard with its own token. The peer's board-server handles it as
@@ -159,6 +172,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
+    return
+  }
+  if (path.startsWith("/api/admin/graph/")) {
+    await handleGraphApi(req, res, path)
+    return
+  }
+  if (path.startsWith("/api/admin/agent/")) {
+    await handleAgentApi(req, res, path)
     return
   }
   if (path.startsWith("/api/admin/")) {
@@ -1536,6 +1557,16 @@ pre, code, .ax-mono { font-family: var(--ax-mono); font-variant-numeric: tabular
   text-transform: uppercase; font-size: 10px; }
 .ax-badge--accent { color: var(--ax-accent);
   border-color: color-mix(in oklch, var(--ax-accent) 50%, transparent); }
+/* --live modifier: tinted-fill + bold so the "live" pill stands out in
+ *  the card header while keeping the original pulsing accent dot visible
+ *  (a solid-accent background would swallow the pulse animation). */
+.ax-badge--live {
+  color: var(--ax-accent);
+  background: color-mix(in oklch, var(--ax-accent) 14%, transparent);
+  border-color: color-mix(in oklch, var(--ax-accent) 60%, transparent);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
 .ax-badge--warn { color: var(--ax-warn);
   border-color: color-mix(in oklch, var(--ax-warn) 50%, transparent); }
 .ax-badge--ghost { color: var(--ax-muted); border-color: var(--ax-border); background: var(--ax-surface-2); }
@@ -1584,9 +1615,32 @@ pre, code, .ax-mono { font-family: var(--ax-mono); font-variant-numeric: tabular
 /* --- Agent cards --- */
 .ax-card { background: var(--ax-surface); border: 1px solid var(--ax-border);
   border-radius: var(--ax-radius); padding: var(--ax-pad); }
-.ax-agent { display: flex; flex-direction: column; gap: 10px; }
-.ax-agent.is-handling { border-color: color-mix(in oklch, var(--ax-accent) 35%, var(--ax-border)); }
-.ax-agent.is-errored { border-color: color-mix(in oklch, var(--ax-err) 35%, var(--ax-border)); }
+.ax-agent { display: flex; flex-direction: column; gap: 10px;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease; }
+.ax-agent.is-handling {
+  border-color: color-mix(in oklch, var(--ax-accent) 75%, var(--ax-border));
+  background:
+    linear-gradient(180deg,
+      color-mix(in oklch, var(--ax-accent) 6%, var(--ax-surface)) 0%,
+      var(--ax-surface) 38%);
+  animation: ax-agent-breathe 2.2s ease-in-out infinite;
+}
+.ax-agent.is-errored {
+  border-color: color-mix(in oklch, var(--ax-err) 55%, var(--ax-border));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ax-err) 25%, transparent);
+}
+@keyframes ax-agent-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--ax-accent) 45%, transparent),
+      0 0 20px -6px color-mix(in oklch, var(--ax-accent) 30%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--ax-accent) 70%, transparent),
+      0 0 32px -2px color-mix(in oklch, var(--ax-accent) 55%, transparent);
+  }
+}
 .ax-agent__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ax-agent__id { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
 .ax-mention { color: var(--ax-accent); font-size: 15px; font-weight: 500;
@@ -1878,7 +1932,7 @@ function renderAgent(a, node) {
     const dataAttrs = t.id
       ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
       : '';
-    return '<button class="ax-agent__task"' + dataAttrs + ' title="' + escapeHtml(t.messagePreview || '') + '">' +
+    return '<button class="ax-agent__task"' + dataAttrs + ' data-started-at="' + escapeHtml(t.startedAt || '') + '" title="' + escapeHtml(t.messagePreview || '') + '">' +
       '<div class="ax-agent__task-head">' +
         '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' +
         '<span>running · ' + escapeHtml(t.channel || '') + '</span>' +
@@ -1924,6 +1978,7 @@ function renderAgent(a, node) {
   '</div>';
 
   const lastActiveText = a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
+  const lastActiveAttr = a.lastActive ? ' data-last-active="' + escapeHtml(a.lastActive) + '"' : '';
   const recentLink = nodeUrl
     ? '<button class="ax-linkbtn" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-recent="1">history →</button>'
     : '';
@@ -1931,7 +1986,7 @@ function renderAgent(a, node) {
   // Head: mention (trigger) + human name + tier badge + live/idle badge
   const mention = (a.mentions && a.mentions.length) ? '@' + a.mentions[0].replace(/^@/, '') : '@' + a.id;
   const liveBadge = busy
-    ? '<span class="ax-badge ax-badge--mono ax-badge--accent"><span class="ax-dot ax-dot--live ax-dot--pulse"></span> live</span>'
+    ? '<span class="ax-badge ax-badge--mono ax-badge--live"><span class="ax-dot ax-dot--live ax-dot--pulse"></span> live</span>'
     : (errored ? '<span class="ax-badge ax-badge--mono ax-badge--warn">errored</span>' : '<span class="ax-badge ax-badge--mono ax-badge--ghost">idle</span>');
   const tierBadge = tierDisplay ? '<span class="ax-badge ax-badge--mono ax-badge--ghost" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' : '';
 
@@ -1948,7 +2003,7 @@ function renderAgent(a, node) {
     sparkBlock +
     runningBlock +
     summaryBlock +
-    '<div class="ax-agent__foot"><span>' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
+    '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
 }
 
@@ -1990,29 +2045,48 @@ function fmtAgo(iso) {
 }
 
 function connect() {
+  // #conn exists on the Kanban page; the Live page only has #conn-dot/#conn-label
+  // in the topbar. Guard it or the snapshot handler throws before render runs,
+  // which silently freezes the live grid between page reloads.
   const conn = document.getElementById('conn');
   let es;
   const open = () => {
     try { es = new EventSource('/api/live/stream'); } catch (e) { setTimeout(open, 2000); return; }
     es.addEventListener('snapshot', (ev) => {
-      conn.className = 'conn ok'; conn.title = 'connected';
-      try { render(JSON.parse(ev.data)); } catch {}
+      if (conn) { conn.className = 'conn ok'; conn.title = 'connected'; }
+      try { render(JSON.parse(ev.data)); } catch (e) { console.error('live render failed', e); }
     });
     es.addEventListener('error', () => {
-      conn.className = 'conn err'; conn.title = 'reconnecting…';
+      if (conn) { conn.className = 'conn err'; conn.title = 'reconnecting…'; }
       es.close(); setTimeout(open, 2000);
     });
   };
   open();
 }
 
-// Re-render every second to tick elapsed counters even when no new snapshot arrives.
+// Tick elapsed / last-active counters every second from DOM data attributes,
+// so they advance smoothly between 2s server snapshots instead of jumping.
 let lastSnap = null;
 fetch('/api/live').then(r => r.json()).then(s => { lastSnap = s; render(s); }).catch(() => {});
-setInterval(() => { if (lastSnap) {
-  // Patch elapsed times without a fresh snapshot
-  document.querySelectorAll('.agent .task .elapsed').forEach((el) => { /* placeholder: server snapshot advances on stream */ });
-} }, 1000);
+setInterval(() => {
+  const now = Date.now();
+  // Running-task elapsed counters.
+  document.querySelectorAll('.ax-agent__task[data-started-at]').forEach((btn) => {
+    const startedAt = btn.getAttribute('data-started-at');
+    if (!startedAt) return;
+    const t = new Date(startedAt).getTime();
+    if (!t) return;
+    const el = btn.querySelector('.elapsed');
+    if (el) el.textContent = fmtElapsed(now - t);
+  });
+  // Idle-card "last active" text — smooths from "5s ago" to "6s ago".
+  document.querySelectorAll('.ax-agent__foot[data-last-active]').forEach((foot) => {
+    const iso = foot.getAttribute('data-last-active');
+    if (!iso) return;
+    const el = foot.querySelector('.last-active');
+    if (el) el.textContent = 'last active ' + fmtAgo(iso);
+  });
+}, 1000);
 connect();
 
 // --- Task output modal ---

@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "glossary"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -236,6 +236,10 @@ export function renderTopbar(opts: TopbarOpts): string {
     <div class="ax-mesh-menu" role="menu">${meshMenu}</div>
   </div>`
 
+  // Graph tab is intentionally not listed — the page is still reachable at
+  // /admin/graph for debugging the classifier, but we don't promote it in the
+  // main nav until it earns its keep (wiki absorb writing graphPath, or
+  // graph-based routing).
   const tabs = [
     { id: "live", label: "Live", href: "/live" },
     { id: "boards", label: "Boards", href: "/" },

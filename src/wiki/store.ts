@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rea
 import { resolve, join, relative, dirname } from "path"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
 import { buildIndex, buildIndexCached, scoreAll } from "../memory/bm25"
+import { ancestryScore as ancestryOf } from "@/graph"
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -18,7 +19,7 @@ import { buildIndex, buildIndexCached, scoreAll } from "../memory/bm25"
 //   - public: owner writes, all agents read
 
 export class WikiStore {
-  private baseDir: string
+  readonly baseDir: string
   private rawDir: string
   private log: (...args: unknown[]) => void
 
@@ -162,10 +163,16 @@ export class WikiStore {
     const frontmatter = [
       "---",
       `title: "${meta.title}"`,
+    ]
+    if (meta.type) frontmatter.push(`type: ${meta.type}`)
+    if (meta.related?.length) {
+      frontmatter.push(`related: [${meta.related.map(t => `"${t}"`).join(", ")}]`)
+    }
+    frontmatter.push(
       `tags: [${(meta.tags || []).map(t => `"${t}"`).join(", ")}]`,
       `owner: ${meta.owner}`,
       `access: ${meta.access}`,
-    ]
+    )
     if (meta.sharedWith?.length) {
       frontmatter.push(`shared_with: [${meta.sharedWith.map(s => `"${s}"`).join(", ")}]`)
     }
@@ -174,6 +181,9 @@ export class WikiStore {
       `last_updated: ${meta.lastUpdated}`,
       `sources: [${meta.sources.map(s => `"${s}"`).join(", ")}]`,
     )
+    if (meta.graphPath?.length) {
+      frontmatter.push(`graph_path: [${meta.graphPath.map(s => `"${s}"`).join(", ")}]`)
+    }
     frontmatter.push("---", "", content)
 
     writeFileSync(fullPath, frontmatter.join("\n"))
@@ -282,17 +292,23 @@ export class WikiStore {
       return m[1].split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
     }
 
-    // Collect tags from all legacy fields + explicit tags
-    const tags = [
-      ...getArray("tags"),
-      // Pull legacy fields into tags for backwards compat
-      ...(get("kind") ? [get("kind")] : []),
-      ...(get("type") ? [get("type")] : []),
-    ].filter((v, i, a) => v && a.indexOf(v) === i) // dedupe
+    // `type` and `kind` are the new structural spine; no longer stuffed into tags.
+    // Legacy articles may have a `kind:` field; we promote it to `type` on read so
+    // the migration (Phase 2) can patch it in place.
+    const rawType = get("type") || get("kind")
+    const validTypes = new Set([
+      "person", "project", "place", "concept", "event", "decision", "pattern",
+    ])
+    const type = validTypes.has(rawType) ? (rawType as WikiArticleMeta["type"]) : undefined
 
+    const tags = getArray("tags").filter((v, i, a) => v && a.indexOf(v) === i)
+    const related = getArray("related")
+    const graphPath = getArray("graph_path")
     return {
       meta: {
         title: get("title"),
+        type,
+        related: related.length ? related : undefined,
         tags,
         owner: get("owner"),
         access: (get("access") as WikiAccess) || "public",
@@ -300,6 +316,7 @@ export class WikiStore {
         created: get("created"),
         lastUpdated: get("last_updated"),
         sources: getArray("sources"),
+        graphPath: graphPath.length ? graphPath : undefined,
       },
       content,
       path,
@@ -369,9 +386,22 @@ export class WikiStore {
 
   /**
    * Find articles relevant to a message (for context injection).
-   * Extracts keywords from the message and searches the wiki.
+   *
+   * Scoring:
+   *   - BM25 over title+tags+content (always)
+   *   - + ancestry bonus if the caller classified the message through the
+   *     intent graph and articles carry `graphPath` from a previous classification
+   *
+   * `weights.graph` is scaled against `weights.bm25`. When the caller omits
+   * `messagePath`, retrieval collapses to pure BM25 and matches legacy behavior.
    */
-  findRelevant(message: string, agentId?: string, maxArticles: number = 3): WikiArticle[] {
+  findRelevant(
+    message: string,
+    agentId?: string,
+    maxArticles: number = 3,
+    messagePath?: string[],
+    weights: { graph: number; bm25: number } = { graph: 0.6, bm25: 0.4 },
+  ): WikiArticle[] {
     const articles: WikiArticle[] = []
 
     this.walkDir(this.baseDir, (filePath) => {
@@ -386,17 +416,36 @@ export class WikiStore {
 
     if (articles.length === 0) return []
 
-    // Single BM25 pass over title + tags + content (cached)
     const docs = articles.map(
       (a) => `${a.meta.title} ${(a.meta.tags || []).join(" ")} ${a.content}`,
     )
     const cachePath = resolve(this.baseDir, "_bm25_relevance_cache.json")
     const index = buildIndexCached(docs, cachePath)
-    const scored = scoreAll(message, index)
+    const bm25Scores = scoreAll(message, index)
+
+    // Normalize BM25 so the two signals live on [0,1] before the weighted sum.
+    const maxBm25 = bm25Scores.reduce((m, s) => Math.max(m, s.score), 0) || 1
+    const bm25Map = new Map(bm25Scores.map((s) => [s.docIndex, s.score / maxBm25]))
+
+    const hasGraph = !!(messagePath && messagePath.length > 0)
+    const scored = articles.map((article, i) => {
+      const bm25 = bm25Map.get(i) ?? 0
+      let ancestry = 0
+      if (hasGraph && article.meta.graphPath?.length) {
+        ancestry = ancestryOf(messagePath!, article.meta.graphPath)
+      }
+      // When the caller passed no path, BM25 gets the full weight.
+      const combined = hasGraph
+        ? weights.graph * ancestry + weights.bm25 * bm25
+        : bm25
+      return { article, score: combined }
+    })
 
     return scored
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
       .slice(0, maxArticles)
-      .map((s) => articles[s.docIndex])
+      .map((r) => r.article)
   }
 
   /**
@@ -457,6 +506,8 @@ export class WikiStore {
       articles.push({
         path: relPath,
         title: article.meta.title,
+        type: article.meta.type,
+        related: article.meta.related,
         tags: article.meta.tags || [],
         owner: article.meta.owner,
         access: article.meta.access,
@@ -473,36 +524,97 @@ export class WikiStore {
       lastRebuilt: new Date().toISOString(),
     }
 
-    // Write index files
+    // Machine-readable index
     writeFileSync(
       resolve(this.baseDir, "_index.json"),
       JSON.stringify(index, null, 2),
     )
 
-    // Write human-readable WIKI.md
-    const md = ["# Wiki Index", "", `Last rebuilt: ${index.lastRebuilt}`, ""]
-    const byType = new Map<string, typeof articles>()
-    for (const a of articles) {
-      const type = (a as any).type || a.access || "public"
-      const list = byType.get(type) || []
-      list.push(a)
-      byType.set(type, list)
-    }
+    // Farzapedia-style content catalog at _index.md — the one file the
+    // agentic query reads to pick candidate articles by `type` + title.
+    // Load-bearing in Phase 3; grouped by type, alphabetical within group.
+    this.writeCatalog(articles, index.lastRebuilt)
 
-    for (const [type, list] of Array.from(byType.entries()).sort()) {
-      md.push(`## ${type}`, "")
+    // Human-readable WIKI.md — legacy view, grouped by access level.
+    const md = ["# Wiki Index", "", `Last rebuilt: ${index.lastRebuilt}`, ""]
+    const byAccess = new Map<string, typeof articles>()
+    for (const a of articles) {
+      const bucket = a.access || "public"
+      const list = byAccess.get(bucket) || []
+      list.push(a)
+      byAccess.set(bucket, list)
+    }
+    for (const [bucket, list] of Array.from(byAccess.entries()).sort()) {
+      md.push(`## ${bucket}`, "")
       for (const a of list.sort((x, y) => x.title.localeCompare(y.title))) {
-        const access = a.access === "private" ? " (private)" : a.access === "shared" ? " (shared)" : ""
-        md.push(`- [${a.title}](${a.path})${access} — owner: ${a.owner}`)
+        const t = a.type ? ` [${a.type}]` : ""
+        md.push(`- [${a.title}](${a.path})${t} — owner: ${a.owner}`)
       }
       md.push("")
     }
-
     writeFileSync(resolve(this.baseDir, "WIKI.md"), md.join("\n"))
 
     this.log(`Index rebuilt: ${articles.length} articles`)
     this.appendLog("rebuild-index", `${articles.length} articles indexed`)
     return index
+  }
+
+  /**
+   * Write `_index.md` — the Farzapedia-style content catalog grouped by
+   * article `type`. This is the one file the agentic query (Phase 3) reads
+   * to pick candidate articles before walking the wikilink subgraph.
+   *
+   * Articles without a `type` land in "Untyped" at the bottom; the Phase 2
+   * migration backfills those.
+   */
+  private writeCatalog(
+    articles: WikiIndex["articles"],
+    lastRebuilt: string,
+  ): void {
+    const typeOrder: Array<NonNullable<WikiArticleMeta["type"]> | "untyped"> = [
+      "person", "project", "place", "concept", "event", "decision", "pattern", "untyped",
+    ]
+    const typeHeaders: Record<string, string> = {
+      person: "## People",
+      project: "## Projects",
+      place: "## Places",
+      concept: "## Concepts",
+      event: "## Events",
+      decision: "## Decisions",
+      pattern: "## Patterns",
+      untyped: "## Untyped (needs migration)",
+    }
+
+    const byType = new Map<string, typeof articles>()
+    for (const a of articles) {
+      const bucket = a.type || "untyped"
+      const list = byType.get(bucket) || []
+      list.push(a)
+      byType.set(bucket, list)
+    }
+
+    const lines: string[] = [
+      "# Wiki Content Catalog",
+      "",
+      `_Last rebuilt: ${lastRebuilt}_`,
+      "",
+      "Articles grouped by type. Agentic query walks this file first to pick candidates.",
+      "",
+    ]
+
+    for (const type of typeOrder) {
+      const list = byType.get(type)
+      if (!list || list.length === 0) continue
+      lines.push(typeHeaders[type] || `## ${type}`, "")
+      for (const a of list.sort((x, y) => x.title.localeCompare(y.title))) {
+        const access = a.access === "private" ? " (private)" : a.access === "shared" ? " (shared)" : ""
+        const related = a.related?.length ? ` → [[${a.related.slice(0, 3).join("]], [[")}]]${a.related.length > 3 ? ", …" : ""}` : ""
+        lines.push(`- [${a.title}](${a.path})${access}${related}`)
+      }
+      lines.push("")
+    }
+
+    writeFileSync(resolve(this.baseDir, "_index.md"), lines.join("\n"))
   }
 
   /**

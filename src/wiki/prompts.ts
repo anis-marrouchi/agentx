@@ -1,222 +1,150 @@
 import type { WikiMode } from "./hub"
 
 /**
- * Two absorb prompts — same entries, different compilation strategies.
+ * Farzapedia-faithful absorb prompt.
+ *
+ * Replaces the legacy three-mode design (flat/graph/unified) with one prompt
+ * that mirrors what Karpathy and Farza describe: article `type` is the
+ * organizational spine, `[[wikilinks]]` are the navigation surface, tags are
+ * a secondary hint. The LLM chooses paths and cross-references; it does not
+ * produce a sprawling per-article tag cloud.
+ *
+ * The mode parameter is kept in the signature for backwards compatibility but
+ * all values resolve to the same prompt — retained callers (hub.ts, wiki CLI)
+ * still pass a mode but it no longer changes behavior.
  */
-
 export function buildAbsorbPrompt(
-  mode: WikiMode,
+  _mode: WikiMode,
   agentId: string,
   worldview: string,
-  existingArticles: Array<{ title: string; path: string; tags?: string[] }>,
+  existingArticles: Array<{ title: string; path: string; type?: string; tags?: string[] }>,
   entryTexts: string,
   entryCount: number,
 ): string {
-  const existingList = existingArticles.length > 0
-    ? `\nExisting articles:\n${existingArticles.map(a => `- ${a.title} [${(a.tags || []).join(", ")}] (${a.path})`).join("\n")}\n`
-    : ""
-
-  const worldviewSection = worldview
-    ? `\n## Worldview\n\n${worldview}\n`
-    : ""
-
-  if (mode === "flat") return buildFlatPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
-  if (mode === "graph") return buildGraphPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
-  return buildUnifiedPrompt(agentId, worldviewSection, existingList, entryTexts, entryCount)
+  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount)
 }
 
-// --- Karpathy Flat: tags, LLM-chosen paths, gap detection ---
-
-function buildFlatPrompt(
-  agentId: string, worldview: string, existing: string, entries: string, count: number,
+function buildFarzapediaPrompt(
+  agentId: string,
+  worldview: string,
+  existingArticles: Array<{ title: string; path: string; type?: string; tags?: string[] }>,
+  entryTexts: string,
+  entryCount: number,
 ): string {
-  return `You are a wiki editor for the "${agentId}" agent. Compile raw entries into a personal wiki.
+  const worldviewSection = worldview ? `\n## Worldview\n\n${worldview}\n` : ""
 
-## Karpathy Pattern
+  // Group the existing index by type so the LLM sees the structure.
+  const byType = new Map<string, typeof existingArticles>()
+  for (const a of existingArticles) {
+    const t = a.type || "untyped"
+    const list = byType.get(t) || []
+    list.push(a)
+    byType.set(t, list)
+  }
+  const existingList = existingArticles.length === 0 ? "" :
+    "\n## Existing Articles (the current catalog)\n\n" +
+    Array.from(byType.entries()).sort()
+      .map(([type, arr]) =>
+        `**${type}**\n` +
+        arr.sort((x, y) => x.title.localeCompare(y.title))
+          .map(a => `- [[${a.title}]] — ${a.path}`)
+          .join("\n")
+      ).join("\n\n") + "\n"
 
-- Plain markdown files. YOU choose the path and structure — it emerges from the data.
-- Tag AGGRESSIVELY. Tags are the #1 mechanism for context narrowing.
-- Use [[wikilinks]] to cross-reference between articles.
-- Synthesize — distill conversations into factual wiki articles, don't copy-paste.
-- If an existing article covers the topic, produce an UPDATE with full merged content.
-${worldview}${existing}
-## Tagging Rules
+  return `You are compiling a personal wiki for the "${agentId}" agent in the Karpathy / Farzapedia pattern.
 
-Tag every article with ALL relevant dimensions:
-- WHO: people, agents, teams (e.g., "alice", "deploy-bot", "cto")
-- WHAT: project, client, topic, tech (e.g., "billing-api", "seo", "gitlab", "deploy")
-- WHEN: dates, periods (e.g., "2026-04-06", "week-14")
-- WHERE: server, environment, channel (e.g., "staging", "telegram", "production")
-- HOW: type of knowledge (e.g., "process", "incident", "report", "decision")
+## The Pattern (read this first — it shapes every decision below)
 
-Use section tags: \`<!-- tags: runbook, staging -->\`
+The wiki is a compounding knowledge base of interlinked markdown articles that a future LLM will read by walking the graph, NOT by bag-of-words search. Your job is to produce articles that another agent can navigate via \`type\` + wikilinks. If the wikilinks don't form a coherent graph, the wiki is useless regardless of how many tags you add.
 
+**Three rules, in priority order:**
+
+1. **\`type\` is the organizational spine.** Every article has exactly one of: \`person | project | place | concept | event | decision | pattern\`. Choose the type BEFORE writing; if you can't pick one, the article probably isn't needed.
+2. **\`related\` is the navigation surface.** Every article cross-references 2–5 other articles via \`[[Article Title]]\` wikilinks in the body AND lists them in the \`related\` frontmatter field. Links the reader could follow to learn more.
+3. **Tags are a secondary hint, not a retrieval spine.** 2–4 specific tags max. Do NOT tag aggressively. Do NOT tag with dates unless the article is an \`event\`. Do NOT tag with generic terms ("deploy", "work") that will match half the corpus.
+
+## Path convention
+
+Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
+
+- People: \`people/anis-marrouchi.md\`
+- Projects: \`projects/mtgl-system-v2.md\`
+- Concepts: \`concepts/staging-deployment.md\`
+- Events: \`events/YYYY-MM-DD-<slug>.md\` (date in path)
+- Decisions: \`decisions/<slug>.md\`
+- Patterns: \`patterns/<slug>.md\`
+- Places: \`places/<slug>.md\`
+
+## How to process entries
+
+For each of the ${entryCount} raw entries below, ask in this order:
+
+1. **Does it extend an existing article?** If a person/project/concept mentioned in the entry already has an article in the catalog, produce an UPDATE with the full merged content. Prefer merging over proliferating.
+2. **Does it deserve a new article?** Only if the subject is a persistent entity (a person, a project, a recurring concept, a specific event/decision) that future queries will need to find. Not every conversation deserves an article.
+3. **Does it belong in an existing \`event\` or \`decision\`?** Most work entries fold into one of these.
+4. **Can you skip it?** If the entry is small talk, a transient status ping, or already covered elsewhere — skip. The wiki is curated, not exhaustive.
+
+## Writing standards
+
+- **Wikipedia-style, flat, factual, encyclopedic.** This is the agent's knowledge, not a diary. Write about the *role* of the entity in our work, not a product description.
+- **Synthesize, don't quote.** At most 2 short quoted lines per article.
+- **Organize by theme, not chronology.** An article about a person lists what they do, who they work with, how they prefer to be contacted — not a log of every interaction.
+- **Length: 20–100 lines.** Articles exceeding 100 lines should split into multiple type-specific articles.
+- **Every paragraph earns its place.** Cut narrative filler. If you can remove a sentence without losing a fact, remove it.
+
+## Wikilink discipline
+
+- Use \`[[Article Title]]\` **inside the body** every time another tracked entity is referenced.
+- List those same targets in the \`related\` frontmatter field.
+- If you reference something that has no article yet (\`[[New Thing]]\`), add "New Thing" to the output \`gaps\` array so the next pass can create it.
+
+## Article frontmatter (exact shape — do not invent fields)
+
+\`\`\`yaml
+---
+title: "Article Title"
+type: person | project | place | concept | event | decision | pattern
+related: ["Other Article", "Another Article"]
+tags: ["2-4-specific-tags", "no-dates-unless-event"]
+owner: ${agentId}
+access: public | shared | private
+created: YYYY-MM-DD
+last_updated: YYYY-MM-DD
+sources: ["entry-id-1", "entry-id-2"]
+---
+\`\`\`
+
+Access guidance: default \`public\`; \`private\` only for sensitive credentials or agent-specific learnings; \`shared\` with specific agent IDs when the article matters only to a subset.
+${worldviewSection}${existingList}
 ## Gap Detection
 
-After compiling, add a "gaps" array — topics MENTIONED but not yet covered.
+After compiling, populate a \`gaps\` array: wikilink targets you referenced but for which no article exists yet. Be specific:
 
-## Output — ONLY valid JSON, no markdown fencing
+- Good: "Karim Rahmouni — coach for Tunis Padel club, mentioned twice but no \`people/\` article"
+- Bad: "We need more content about deployments"
 
+## Output — valid JSON only, no markdown fencing
+
+\`\`\`
 {
   "articles": [
     {
-      "path": "infra/staging-deploy.md",
-      "title": "Staging Deployment Process",
-      "tags": ["deploy", "staging", "devops", "process", "2026-04-06"],
-      "content": "How we deploy to staging...\\n\\n## Steps\\n<!-- tags: runbook, staging -->\\n1. ...",
+      "path": "projects/mtgl-system-v2.md",
+      "title": "MTGL System V2",
+      "type": "project",
+      "related": ["Anis Marrouchi", "Laravel", "Staging Deployment"],
+      "tags": ["mtgl", "laravel", "react"],
+      "content": "MTGL System V2 is [[Anis Marrouchi]]'s production Laravel + React app for …",
       "sources": ["entry-id-1", "entry-id-2"]
     }
   ],
-  "gaps": ["Production server — mentioned but no article exists"]
-}
-
-ENTRIES (${count}):
-
-${entries}`
-}
-
-// --- Knowledge Graph: kind, parent, hierarchy, events, entities ---
-
-function buildGraphPrompt(
-  agentId: string, worldview: string, existing: string, entries: string, count: number,
-): string {
-  return `You are building a knowledge graph for the "${agentId}" agent. Compile raw entries into a structured wiki.
-
-## Knowledge Graph Model
-
-Every article is a NODE with a kind and position in a hierarchy.
-The path reflects the hierarchy: org/team/agent-name.md
-
-### Node Kinds
-
-**Entities** (things that persist):
-person, agent, company, team, client, project, repo, server, service, domain
-
-**Occurrences** (things that happen — always have a date):
-event, incident, deploy, decision
-
-**Knowledge** (what we know):
-process, pattern, concept, report
-
-### Rules
-
-1. Ask: "What ENTITY is this about? What HAPPENED? Where in the hierarchy?"
-2. Entities go under their parent: agent under team, server under project
-3. Events go under events/YYYY-MM-DD/ and list which entities are involved
-4. Path = hierarchy: org/<company>/<area>/<entity>.md
-5. Use [[wikilinks]] to cross-reference between nodes
-6. Synthesize — distill conversations into factual wiki content
-7. If an existing article covers the topic, produce an UPDATE with full merged content
-8. Tag aggressively too — tags help narrow context
-${worldview}${existing}
-## Gap Detection
-
-After compiling, add a "gaps" array — entities or events MENTIONED but missing.
-
-## Output — ONLY valid JSON, no markdown fencing
-
-{
-  "articles": [
-    {
-      "path": "org/team/marketing-bot.md",
-      "title": "Marketing Bot — Content Agent",
-      "tags": ["marketing-bot", "agent", "marketing"],
-      "kind": "agent",
-      "parent": "org/team",
-      "content": "Marketing bot handles content and SEO.",
-      "sources": ["entry-id-1"],
-      "date": null,
-      "involves": null
-    },
-    {
-      "path": "events/2026-04-06/token-expiry.md",
-      "title": "GitLab Token Expiry",
-      "tags": ["incident", "gitlab", "2026-04-06"],
-      "kind": "incident",
-      "parent": "events/2026-04-06",
-      "content": "The GITLAB_TOKEN expired, blocking deploys.",
-      "sources": ["entry-id-2"],
-      "date": "2026-04-06",
-      "involves": ["org/clients/acme"]
-    }
-  ],
-  "gaps": ["Production server — entity mentioned but missing"]
-}
-
-ENTRIES (${count}):
-
-${entries}`
-}
-
-// --- Unified: best of both — flat's tags + graph's entity thinking ---
-
-function buildUnifiedPrompt(
-  agentId: string, worldview: string, existing: string, entries: string, count: number,
-): string {
-  return `You are compiling a personal wiki for the "${agentId}" agent.
-
-## Your Job
-
-Read ${count} raw conversation entries. For each, ask:
-1. **Who** is mentioned? (people, agents, companies, teams)
-2. **What** is this about? (project, server, tool, concept)
-3. **What happened?** (deploy, incident, decision, report)
-4. **What's missing?** (entities mentioned but undocumented)
-
-Then compile articles — one topic per article, synthesized (not copy-pasted).
-
-## How to Organize
-
-- YOU choose the file path. Let structure emerge from the data.
-- Use whatever directory names make sense: projects/, incidents/, agents/ — your call.
-- Use [[wikilinks]] to cross-reference between articles.
-- If an existing article covers the topic, produce an UPDATE with full merged content.
-${worldview}${existing}
-## How to Tag (CRITICAL)
-
-Tags are how agents find relevant context. Tag EVERY article with ALL dimensions:
-
-| Dimension | Examples |
-|-----------|----------|
-| **Who** | agent names, people, team names |
-| **What** | project names, tools, technologies |
-| **Type** | person, agent, server, project, incident, process, report, decision |
-| **When** | 2026-04-06, week-14, q2-2026 |
-| **Where** | staging, production, telegram, server-name |
-| **How** | deploy, runbook, spike, review |
-
-Minimum 6 tags per article. More is better.
-Use section-level tags too: \`<!-- tags: runbook, staging -->\`
-
-## How to Find Gaps
-
-After compiling, identify MISSING PIECES:
-- People mentioned but no article (e.g., "Alice gives deploy instructions but who is Alice?")
-- Servers referenced but undocumented (e.g., "10.0.1.5 — what is this?")
-- Processes implied but not written down (e.g., "deploy to staging — how exactly?")
-- Projects named but no overview (e.g., "Project X — what is it?")
-
-Be specific. "X is undocumented" is useless. "Alice — stakeholder who issues deploy instructions via Telegram, no profile article" is useful.
-
-## Output — ONLY valid JSON, no markdown fencing
-
-{
-  "articles": [
-    {
-      "path": "agents/marketing-bot.md",
-      "title": "Marketing Bot — Content Agent",
-      "tags": ["marketing-bot", "agent", "marketing", "content", "seo"],
-      "content": "Marketing bot handles content, marketing, and SEO.\\n\\n## Capabilities\\n<!-- tags: capabilities, tools -->\\n...",
-      "sources": ["entry-id-1"]
-    }
-  ],
   "gaps": [
-    "Alice — stakeholder who issues deploy instructions via Telegram, no profile article",
-    "10.0.1.5 — production server IP referenced but no infrastructure article"
+    "Karim Rahmouni — Tunis Padel coach, mentioned in entries but no people/ article"
   ]
 }
+\`\`\`
 
-ENTRIES (${count}):
+ENTRIES (${entryCount}):
 
-${entries}`
+${entryTexts}`
 }

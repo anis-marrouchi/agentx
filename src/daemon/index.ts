@@ -471,9 +471,24 @@ export class AgentXDaemon {
     if (this.config.channels.telegram.enabled) {
       const accounts = this.config.channels.telegram.accounts
       if (Object.keys(accounts).length > 0) {
-        const telegram = new TelegramAdapter(accounts, this.log)
+        const policy = this.config.channels.telegram.policy
+        const telegram = new TelegramAdapter(
+          accounts,
+          { policy: { allowFrom: policy?.allowFrom } },
+          this.log,
+        )
         this.router.addChannel(telegram)
-        this.log("  Telegram: enabled")
+        const globalSize = policy?.allowFrom?.length ?? 0
+        const closedAccts = Object.entries(accounts).filter(
+          ([, c]) => !c.allowFrom && globalSize === 0,
+        ).length
+        if (closedAccts > 0) {
+          this.log(
+            `  Telegram: enabled — WARNING: ${closedAccts} account(s) have no allowFrom (global or per-account). All incoming messages will be DROPPED.`,
+          )
+        } else {
+          this.log(`  Telegram: enabled — global allowFrom entries: ${globalSize}`)
+        }
       }
     }
 

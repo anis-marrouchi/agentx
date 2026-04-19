@@ -11,6 +11,16 @@ import { resolve, relative, dirname, join, extname, basename } from "path"
 
 const MAX_FILE_BYTES = 200 * 1024      // 200 KB — plenty for CLAUDE.md / skills.
 const ALLOWED_EXTENSIONS = new Set([".md", ".markdown", ".txt"])
+/** Extensions the skill-tree viewer is allowed to read/write. Broader than
+ *  identity editing — skills include shell scripts, lockfiles, configs. Kept
+ *  as an allow-list so a malicious prompt can't touch an arbitrary binary. */
+const SKILL_EDITABLE_EXTENSIONS = new Set([
+  ".md", ".markdown", ".txt", ".json", ".jsonc", ".yaml", ".yml", ".toml",
+  ".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".ts", ".tsx", ".jsx",
+  ".css", ".html", ".lock", ".cfg", ".ini", ".env", ".gitignore",
+])
+/** Depth limit when walking a skill dir tree — defensive against loops. */
+const SKILL_TREE_MAX_DEPTH = 6
 const IDENTITY_FILENAMES = new Set([
   "CLAUDE.md", "SOUL.md", "IDENTITY.md", "PERSONA.md", "AGENT.md", "BOOTSTRAP.md",
 ])
@@ -204,6 +214,130 @@ export function deleteAgentSkill(workspace: string, slug: string): { slug: strin
   if (!st.isDirectory()) throw new Error(`Skill path is not a directory: ${slug}`)
   rmSync(abs, { recursive: true, force: true })
   return { slug }
+}
+
+// --- Skill directory tree + per-file I/O ---
+//
+// A skill is `.claude/skills/<slug>/` — usually SKILL.md plus scripts,
+// lockfiles, configs. The admin UI lets the operator browse the directory
+// tree, edit any text file, and dispatch "install deps" through the agent.
+
+export interface SkillTreeEntry {
+  /** Path relative to the skill dir root. Directories end with "/". */
+  path: string
+  kind: "file" | "dir"
+  size: number
+  editable: boolean                // false for binaries or disallowed extensions
+}
+
+export interface SkillDepsHint {
+  /** Which install command the operator should run (or have an agent run). */
+  manager: "npm" | "pnpm" | "yarn" | "pip" | "bundle" | null
+  /** Filename that triggered the detection, relative to skill dir. */
+  file: string | null
+  /** The exact command we'd recommend. */
+  command: string | null
+}
+
+/** List every file in `.claude/skills/<slug>/`, recursively. Scoped so the
+ *  caller can't escape the skill dir via symlinks or ".." segments. */
+export function listSkillTree(workspace: string, slug: string): SkillTreeEntry[] {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error(`Invalid skill slug: ${slug}`)
+  const skillRoot = resolveInWorkspace(workspace, `.claude/skills/${slug}`)
+  if (!existsSync(skillRoot)) throw new Error(`Skill "${slug}" not found.`)
+  const out: SkillTreeEntry[] = []
+  walk(skillRoot, "", 0, out)
+  out.sort((a, b) => {
+    // dirs first, then alphabetical
+    if (a.kind !== b.kind) return a.kind === "dir" ? -1 : 1
+    return a.path.localeCompare(b.path)
+  })
+  return out
+
+  function walk(absDir: string, relDir: string, depth: number, acc: SkillTreeEntry[]): void {
+    if (depth > SKILL_TREE_MAX_DEPTH) return
+    let entries: string[] = []
+    try { entries = readdirSync(absDir) } catch { return }
+    for (const name of entries) {
+      if (name === "node_modules" || name === ".git") continue
+      const abs = join(absDir, name)
+      const rel = relDir ? `${relDir}/${name}` : name
+      let st
+      try { st = statSync(abs) } catch { continue }
+      if (st.isDirectory()) {
+        acc.push({ path: `${rel}/`, kind: "dir", size: 0, editable: false })
+        walk(abs, rel, depth + 1, acc)
+      } else if (st.isFile()) {
+        const ext = extname(name).toLowerCase()
+        // name-only allowlist for dotfiles like .env / .gitignore (no extension)
+        const allowedByName = SKILL_EDITABLE_EXTENSIONS.has(ext) ||
+          SKILL_EDITABLE_EXTENSIONS.has(name.toLowerCase())
+        acc.push({
+          path: rel,
+          kind: "file",
+          size: st.size,
+          editable: allowedByName && st.size < MAX_FILE_BYTES,
+        })
+      }
+    }
+  }
+}
+
+/** Read any file in a skill dir. Respects the skill-editable allowlist. */
+export function readSkillFile(workspace: string, slug: string, relPath: string): { path: string; content: string } {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error(`Invalid skill slug: ${slug}`)
+  if (!relPath || relPath.includes("..")) throw new Error(`Invalid file path: ${relPath}`)
+  const abs = resolveInWorkspace(workspace, `.claude/skills/${slug}/${relPath}`)
+  if (!existsSync(abs) || !statSync(abs).isFile()) {
+    throw new Error(`File not found: ${relPath}`)
+  }
+  const ext = extname(abs).toLowerCase()
+  const name = basename(abs).toLowerCase()
+  if (!SKILL_EDITABLE_EXTENSIONS.has(ext) && !SKILL_EDITABLE_EXTENSIONS.has(name)) {
+    throw new Error(`File type not editable: ${relPath}`)
+  }
+  if (statSync(abs).size > MAX_FILE_BYTES) {
+    throw new Error(`File too large to edit (> ${MAX_FILE_BYTES / 1024} KB): ${relPath}`)
+  }
+  return { path: relPath, content: readFileSync(abs, "utf-8") }
+}
+
+/** Write any allowed file inside a skill dir. Creates parents. */
+export function writeSkillFile(
+  workspace: string,
+  slug: string,
+  relPath: string,
+  content: string,
+): { path: string; bytes: number } {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error(`Invalid skill slug: ${slug}`)
+  if (!relPath || relPath.includes("..")) throw new Error(`Invalid file path: ${relPath}`)
+  const abs = resolveInWorkspace(workspace, `.claude/skills/${slug}/${relPath}`)
+  const ext = extname(abs).toLowerCase()
+  const name = basename(abs).toLowerCase()
+  if (!SKILL_EDITABLE_EXTENSIONS.has(ext) && !SKILL_EDITABLE_EXTENSIONS.has(name)) {
+    throw new Error(`File type not editable: ${relPath}`)
+  }
+  const buf = Buffer.from(content, "utf-8")
+  if (buf.length > MAX_FILE_BYTES) {
+    throw new Error(`File too large (${buf.length} > ${MAX_FILE_BYTES} bytes).`)
+  }
+  mkdirSync(dirname(abs), { recursive: true })
+  writeFileSync(abs, buf)
+  return { path: relPath, bytes: buf.length }
+}
+
+/** Detect which dependency manager a skill needs based on the files present. */
+export function detectSkillDeps(workspace: string, slug: string): SkillDepsHint {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error(`Invalid skill slug: ${slug}`)
+  const skillRoot = resolveInWorkspace(workspace, `.claude/skills/${slug}`)
+  if (!existsSync(skillRoot)) throw new Error(`Skill "${slug}" not found.`)
+  const check = (name: string): boolean => existsSync(join(skillRoot, name))
+  if (check("pnpm-lock.yaml")) return { manager: "pnpm", file: "pnpm-lock.yaml", command: "pnpm install" }
+  if (check("yarn.lock")) return { manager: "yarn", file: "yarn.lock", command: "yarn install" }
+  if (check("package.json")) return { manager: "npm", file: "package.json", command: "npm install" }
+  if (check("requirements.txt")) return { manager: "pip", file: "requirements.txt", command: "pip install -r requirements.txt" }
+  if (check("Gemfile")) return { manager: "bundle", file: "Gemfile", command: "bundle install" }
+  return { manager: null, file: null, command: null }
 }
 
 function defaultSkillTemplate(slug: string, title?: string): string {

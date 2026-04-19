@@ -64,6 +64,13 @@ const agentConfigSchema = z.object({
 const telegramAccountSchema = z.object({
   token: z.string(),
   agentBinding: z.string(),
+  /** Per-account sender allowlist. When set, OVERRIDES the global
+   *  `policy.allowFrom`. Entries accept:
+   *    - numeric user id  ("1816212449")         — matches sender (from.id)
+   *    - numeric chat id  ("-1003861455814")     — matches chat (chat.id)
+   *    - "@username"                             — matches sender username
+   *  A message is dispatched iff at least one entry matches. */
+  allowFrom: z.array(z.string()).optional(),
 })
 
 const channelsConfigSchema = z.object({
@@ -73,6 +80,11 @@ const channelsConfigSchema = z.object({
     policy: z.object({
       dm: z.enum(["pair", "block"]).default("pair"),
       group: z.enum(["mention-required", "all"]).default("mention-required"),
+      /** Global sender allowlist applied to every account that doesn't set
+       *  its own `allowFrom`. When neither is configured, every incoming
+       *  message is dropped — closed by default. Same entry forms as the
+       *  per-account list (user id, chat id, @username). */
+      allowFrom: z.array(z.string()).optional(),
     }).default({}),
   }).default({}),
   whatsapp: z.object({
@@ -180,6 +192,28 @@ const meshConfigSchema = z.object({
   }).default({}),
 })
 
+/** Intent Knowledge Graph — fixed-axis, LLM-proposed taxonomy used by the
+ *  Intent layer in context.ts and (eventually) wiki retrieval. Off by default
+ *  so existing installs see no change. */
+const graphConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Where the schema/nodes/classifications live. Relative to cwd. */
+  baseDir: z.string().default(".agentx/graph"),
+  /** Which agent makes LLM classification proposals. Falls back to
+   *  `dashboard.draftAgent` at call sites if unset. */
+  draftAgent: z.string().optional(),
+  /** Minimum classifier confidence (0..1) to auto-approve without a human.
+   *  1.0 (default) means nothing auto-approves — every new shape waits for
+   *  you in the /admin/graph approval queue. */
+  autoApproveConfidence: z.number().min(0).max(1).default(1.0),
+  /** Weights for the wiki hybrid retrieval score. Path-ancestry match vs
+   *  BM25 over article text. Sum need not be 1. */
+  retrievalWeights: z.object({
+    graph: z.number().min(0).default(0.6),
+    bm25: z.number().min(0).default(0.4),
+  }).default({}),
+}).default({})
+
 const notificationsSchema = z.object({
   /** Send notification when task takes longer than this (seconds). 0 = disabled. */
   longTaskThreshold: z.number().default(30),
@@ -215,6 +249,7 @@ export const daemonConfigSchema = z.object({
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
+  graph: graphConfigSchema,
   /** Registered inbound webhooks — an inventory the dashboard manages. Each
    *  entry binds an (agent, source) pair to an optional signing secret. The
    *  actual inbound URL is always POST /webhook/<agentId>/<source>. */

@@ -1,131 +1,124 @@
 ---
 name: wiki
-version: 1.0.0
-description: Multi-agent knowledge wiki. Agents compile conversations and work into structured articles with permissions. Based on Karpathy/Farzapedia architecture.
-argument-hint: "ingest | absorb [date-range] | query <question> | cleanup | share | status"
+version: 3.0.0
+description: Institutional knowledge wiki — cross-agent source of truth for people, projects, events, decisions, and patterns. Use `wiki query` BEFORE grep/workspace-memory when the question is about who / what happened / what we decided / how we do something.
+argument-hint: "query <question> | status | ingest | share <article> <agent>"
+tags: [wiki, knowledge, institutional, cross-agent, retrieval]
+triggers:
+  - pattern: "who is|who owns|what happened|what did we decide|history of|institutional|runbook|past incident|previous deploy"
+    description: "Questions about persistent cross-agent knowledge"
 ---
 
-# AgentX Wiki — Multi-Agent Knowledge Base
+# AgentX Institutional Wiki
 
-You are a **writer** compiling a knowledge wiki from agent conversations and work sessions. Not a filing clerk. A writer. Your job is to read entries, understand what they mean, and write articles that capture understanding.
+You have access to a curated wiki that is **shared across all agents in the team**. It is the canonical source of truth for institutional knowledge. Your own workspace memory and per-project session history are LOCAL to you; the wiki is SHARED.
 
-This wiki is shared across agents. Each article has an **owner** and **access level**:
-- `private` — only you can read/write
-- `shared` — you write, specific agents can read
-- `public` — you write, all agents can read
+**When to use the wiki (imperative):**
 
-## Commands
+- "Who is X / who owns Y" → query the wiki
+- "What happened on DATE" / "past incident about Z" → query the wiki
+- "What did we decide about X" → query the wiki
+- "How do we do X" (team procedure, not code-level) → query the wiki
+- "History of the MTGL deploys" / any "history of" question → query the wiki
+
+**When NOT to use the wiki:**
+
+- Live data (current GitLab MR status, current issue count) → use `gitlab` skill
+- Code-level questions ("how does this function work") → read workspace files
+- Real-time system status → use `mesh-awareness` or curl the daemon
+- Anything you already know from the current conversation
+
+## The primary command
 
 ```
-/wiki ingest        # Export recent conversations into raw entries
-/wiki absorb        # Compile raw entries into wiki articles
-/wiki query <q>     # Search and answer from wiki knowledge
-/wiki cleanup       # Audit articles, fix links, enrich content
-/wiki share <article> <agent> # Share a private article with another agent
-/wiki status        # Show stats
+agentx wiki query "your question"
 ```
 
-## Directory Structure
+If `agentx` is not on PATH, the exact invocation is provided in the `[Institutional Wiki]` block in your context — copy it verbatim. It's a `node /path/to/cli.js wiki query ...` call.
 
-```
-.agentx/wiki/
-  WIKI.md              # Master index (human-readable)
-  _index.json          # Machine-readable index
-  raw/entries/          # One .md per ingested entry
-  projects/             # Project knowledge
-  people/               # People and relationships
-  decisions/            # Key decisions and reasoning
-  patterns/             # Recurring patterns and insights
-  concepts/             # Technical concepts and learnings
-  {emerge}/             # New directories emerge from data
-```
+The command does three things:
 
-## Writing Articles
+1. Reads `_index.md` (the catalog organized by article type: person, project, place, concept, event, decision, pattern).
+2. An LLM selector picks the candidate articles most relevant to the question.
+3. Walks `related` wikilinks 2–3 hops from the candidates, then synthesizes an answer from the walked subgraph — with citations by article title.
 
-### Frontmatter
+You get back: a synthesized answer + a list of cited articles. Every factual claim is grounded in a wiki article.
+
+## Other commands
+
+| Command | When |
+|---|---|
+| `agentx wiki status` | How many articles exist per agent; am I running low on institutional knowledge? |
+| `agentx wiki ingest` | Export recent conversations as raw wiki entries (cheap, just writes markdown) |
+| `agentx wiki share <article> <agent>` | Share a private article you own with another agent |
+| `agentx wiki migrate --dry-run` | Backfill `type` + `related` on legacy articles (operator-run) |
+| `agentx wiki absorb --force` | **Deprecated** — see [the blog post](/blog/wiki-karpathy-review). A procedure-delta replacement is planned. |
+
+## Article types (the organizational spine)
+
+- **person** — an individual human (team member, stakeholder, contact)
+- **project** — a named initiative, repo, product, or service (also used for named agents)
+- **place** — a physical or logical location (office, server, environment)
+- **concept** — a recurring idea, philosophy, methodology
+- **event** — a specific dated thing that happened (incident, deploy, launch)
+- **decision** — a specific choice made and why (architecture, policy)
+- **pattern** — a reusable workflow, template, or recipe
+
+When you read a wiki answer, note the `[type]` tag on each citation — it tells you what kind of knowledge it is.
+
+## Retrieval quality notes
+
+The wiki uses an **agentic walk** of the article graph, not BM25 keyword search. This means:
+
+- It handles questions like "what did we decide about the staging deploy" correctly — those need synthesis across multiple articles.
+- It costs ~25 seconds per query (two LLM calls + file reads). Call it when you need it, not speculatively.
+- If the wiki has no relevant article, the answer says so plainly. Don't invent.
+- If a wiki answer contradicts something you believe, the wiki is usually right — it's the cross-agent authoritative source.
+
+## When you should WRITE a wiki article
+
+Only when the operator explicitly asks you to, OR when a task produces a durable, citable artifact (a runbook, an architectural decision, a person profile).
+
+### Frontmatter (the exact shape — do not invent fields)
 
 ```yaml
 ---
 title: "Article Title"
-type: project | person | concept | decision | pattern | event
-owner: marketing-agent
+type: person | project | place | concept | event | decision | pattern
+related: ["Other Article", "Another Article"]
+tags: ["2-4-specific-tags"]
+owner: <your-agent-id>
 access: public | shared | private
-shared_with: ["devops-agent", "coordinator"]
-created: 2026-04-05
-last_updated: 2026-04-05
-related: ["[[Other Article]]", "[[Another]]"]
-sources: ["entry-id-1", "entry-id-2"]
-tags: ["project-name", "deployment"]
+shared_with: ["other-agent"]
+created: YYYY-MM-DD
+last_updated: YYYY-MM-DD
+sources: ["entry-id-1"]
 ---
 ```
 
-### Permission Guidelines
+### Writing standards
 
-Choose access level based on content:
+- Wikipedia-style: flat, factual, encyclopedic. Not a diary entry.
+- Synthesize — don't quote more than ~2 short lines.
+- Organize by theme, not chronology.
+- Use `[[wikilinks]]` inside the body for every referenced entity; list the same targets in `related` frontmatter.
+- 20–100 lines. Articles over 100 lines should split.
 
-| Content | Access | Why |
-|---------|--------|-----|
-| Project status, architecture | `public` | All agents benefit |
-| Meeting notes, decisions | `public` | Transparency |
-| Personal agent learnings | `private` | Agent-specific patterns |
-| Sensitive credentials, keys | `private` | Security |
-| Cross-team insights | `shared` | Relevant agents only |
-| Draft strategies | `shared` | Share when ready |
+## Access levels
 
-### Writing Standards
+| Content | Access |
+|---|---|
+| Project status, team decisions, procedures | `public` |
+| Personal agent learnings, one-off patterns | `private` |
+| Cross-team sensitive knowledge | `shared` with specific agents |
+| Credentials, tokens, keys | `private` and encrypted — usually don't write at all |
 
-- Write like Wikipedia. Flat, factual, encyclopedic.
-- **This is not Wikipedia about the thing. This is about the thing's role in our work.**
-- A page about a project isn't a product description. It's about deployment patterns, decisions made, issues encountered.
-- Let facts imply significance. No peacock words.
-- Articles organized by **theme, not chronology**.
-- Maximum 2 direct quotes per article.
-- Every article must have a point. Not "here are 4 times X happened" but "X represents Y in our workflow."
+## Gap flagging
 
-### Article Types
+If you query the wiki and no article covers the topic, add a one-line note to your final response:
 
-| Type | Structure | Length |
-|------|-----------|--------|
-| project | Architecture, decisions, current state, issues | 40-100 lines |
-| person | Role, interactions, preferences | 20-50 lines |
-| concept | What it is, how we use it, lessons | 30-60 lines |
-| decision | Context, options, reasoning, outcome | 30-50 lines |
-| pattern | Trigger, cycle, how to handle | 30-60 lines |
-| event | What happened, impact, follow-ups | 20-40 lines |
+```
+Gap: <subject> — no wiki article covers this; <why it matters>
+```
 
-## Absorbing Entries
-
-Process entries chronologically. For each:
-
-1. **Read the entry.** Understand what it means, not just what it says.
-2. **Match against the index.** What existing articles does this touch?
-3. **Update or create articles.** Re-read every article before updating.
-4. **Set permissions.** Default to `public` unless content is sensitive or agent-specific.
-5. **Connect.** Use `[[wikilinks]]` between articles. Find patterns.
-
-### Anti-Cramming
-
-If you're adding a third paragraph about a sub-topic to an existing article, that sub-topic probably deserves its own page.
-
-### Every 10 Entries: Checkpoint
-
-1. Rebuild index
-2. Count new articles (if zero, you're cramming)
-3. Check articles over 100 lines (should split?)
-4. Verify permissions make sense
-
-## Querying
-
-1. Read `_index.json` to find relevant articles
-2. Only read articles you have permission to access
-3. Follow `[[wikilinks]]` 2-3 links deep
-4. Synthesize across articles. Cite by name.
-5. Never read raw entries. The wiki IS the knowledge.
-
-## Token Optimization
-
-This wiki exists to save tokens. Instead of replaying entire conversation histories:
-- Agents read 2-3 relevant articles before responding (~1K tokens vs ~10K for session history)
-- Articles are distilled knowledge, not raw transcripts
-- The absorb step compresses many conversations into focused articles
-- Stale knowledge gets cleaned up, not accumulated
+The operator decides whether to ask you to write one, or wait for the procedure-delta flow to land.

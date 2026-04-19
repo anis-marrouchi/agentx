@@ -4,9 +4,9 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
-import { resolve } from "path"
+import { resolve, relative, dirname } from "path"
 import { execSync } from "child_process"
-import { writeFileSync, mkdirSync } from "fs"
+import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
 
 function getHub(dir?: string, mode?: WikiMode): WikiHub {
   return new WikiHub(dir || resolve(process.cwd(), ".agentx/wiki"), undefined, mode || "graph")
@@ -63,7 +63,7 @@ wiki
 
     const totalUnabsorbed = agents.reduce((s, a) => s + a.unabsorbed, 0)
     if (totalUnabsorbed > 0) {
-      console.log(chalk.dim("  Run 'agentx wiki absorb' to compile all, or 'agentx wiki absorb --agent <id>' for one agent"))
+      console.log(chalk.dim(`  ${totalUnabsorbed} raw entries on disk. Absorb is deprecated — see 'agentx wiki absorb --help'.`))
       console.log()
     }
   })
@@ -104,16 +104,33 @@ wiki
     console.log()
   })
 
-// agentx wiki absorb — per-agent compilation
+// agentx wiki absorb — per-agent compilation (DEPRECATED — see --force gate)
 wiki
   .command("absorb")
-  .description("compile unabsorbed entries into per-agent wiki articles")
+  .description("[deprecated] compile unabsorbed entries into per-agent wiki articles")
   .option("--dir <path>", "wiki directory")
   .option("--mode <mode>", "unified (default), graph, or flat", "unified")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
   .option("--max <n>", "max entries per agent", "20")
+  .option("--force", "acknowledge the cost and run anyway (deprecation bypass)")
   .action(async (opts) => {
+    if (!opts.force && !opts.dryRun) {
+      console.log()
+      console.log(chalk.yellow("  wiki absorb is DEPRECATED and disabled by default."))
+      console.log()
+      console.log("  It stuffs the full article list + worldview + raw entries into a")
+      console.log("  single LLM call per agent. The articles it produces are retrieved")
+      console.log("  by BM25 + tag overlap, which rarely returns a meaningful hit for")
+      console.log("  real agent traffic. You're paying big and reading small.")
+      console.log()
+      console.log("  A focused replacement — procedure-delta extraction, tied to the")
+      console.log("  intent knowledge graph — is planned. Until that lands, either:")
+      console.log(chalk.dim("    --force       run anyway (you've read the cost note)"))
+      console.log(chalk.dim("    --dry-run     preview without calling the LLM"))
+      console.log()
+      return
+    }
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
@@ -190,7 +207,8 @@ wiki
         let articles: Array<{ path: string; title: string; tags: string[]; content: string; sources: string[] }>
         let gaps: string[] = []
 
-        // Find outermost JSON object or array
+        // Find outermost JSON object or array. New prompt emits { articles, gaps };
+        // legacy arrays are tolerated for back-compat during migration.
         const objStart = responseText.indexOf("{")
         const arrStart = responseText.indexOf("[")
         const jsonStart = (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) ? objStart : arrStart
@@ -231,6 +249,8 @@ wiki
           const now = new Date().toISOString().slice(0, 10)
           agentWiki.writeArticle(article.path, {
             title: article.title,
+            type: article.type as any,
+            related: Array.isArray(article.related) ? article.related : undefined,
             tags: article.tags || [],
             owner: agentId,
             access: "public",
@@ -239,9 +259,13 @@ wiki
             sources: article.sources || [],
           }, article.content, agentId)
 
-          const tagStr = (article.tags || []).slice(0, 5).join(", ")
-          console.log(`    ${chalk.green("+")} ${article.path}: ${article.title}`)
-          if (tagStr) console.log(chalk.dim(`       [${tagStr}]`))
+          const typeTag = article.type ? chalk.magenta(`[${article.type}]`) + " " : ""
+          const relStr = Array.isArray(article.related) && article.related.length
+            ? ` → ${article.related.slice(0, 3).join(", ")}${article.related.length > 3 ? ", …" : ""}`
+            : ""
+          console.log(`    ${chalk.green("+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
+          const tagStr = (article.tags || []).slice(0, 4).join(", ")
+          if (tagStr) console.log(chalk.dim(`       tags: ${tagStr}`))
           totalAbsorbed++
         }
 
@@ -270,6 +294,361 @@ wiki
     }
     console.log()
   })
+
+// agentx wiki prune — Phase 3 cleanup before un-gating absorb.
+// Collapses legacy per-mode dirs (flat/, unified/) into canonical graph/.
+// Title-level dedup: for each title, the best copy wins (prefer typed,
+// then newer `last_updated`); losers are archived to `_versions/`.
+wiki
+  .command("prune")
+  .description("collapse legacy flat/unified mode dirs into graph/ (dedup by title; losers archived)")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "prune only this agent's wiki")
+  .option("--commit", "execute moves + archives (default: dry-run)")
+  .action(async (opts) => {
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const commit = !!opts.commit
+    const wikiRoot = opts.dir ? resolve(opts.dir) : resolve(process.cwd(), ".agentx/wiki")
+    const CANONICAL = "graph"
+    const LEGACY_MODES = ["flat", "unified"]
+
+    console.log()
+    console.log(chalk.bold(commit ? "  Pruning (commit)" : "  Pruning (dry-run)"))
+    console.log(chalk.dim(`  Canonical: ${CANONICAL}/  ·  Legacy to collapse: ${LEGACY_MODES.join("/, ")}/`))
+
+    let totalLegacy = 0
+    let totalPromote = 0
+    let totalUpgrade = 0
+    let totalArchive = 0
+
+    for (const agentId of agents) {
+      const agentRoot = resolve(wikiRoot, "agents", agentId)
+      if (!existsSync(agentRoot)) continue
+
+      const canonicalDir = resolve(agentRoot, CANONICAL)
+      const legacyEntries = LEGACY_MODES
+        .map(m => ({ mode: m, dir: resolve(agentRoot, m) }))
+        .filter(e => existsSync(e.dir))
+
+      if (legacyEntries.length === 0) continue
+
+      // Build a title → {relPath, type, lastUpdated} index of the canonical dir.
+      const canonIdx = new Map<string, { relPath: string; type?: string; lastUpdated: string }>()
+      walkMd(canonicalDir, (abs) => {
+        const rel = relative(canonicalDir, abs)
+        if (rel.startsWith("_") || rel.startsWith("raw/") || rel.includes("_tmp/")) return
+        const parsed = parseWikiFrontmatter(readFileSync(abs, "utf-8"))
+        if (!parsed?.meta.title) return
+        canonIdx.set(parsed.meta.title.trim().toLowerCase(), {
+          relPath: rel,
+          type: parsed.meta.type,
+          lastUpdated: parsed.meta.lastUpdated || "",
+        })
+      })
+
+      // Enumerate legacy articles.
+      type Legacy = {
+        mode: string
+        relPath: string
+        absPath: string
+        title: string
+        type?: string
+        lastUpdated: string
+      }
+      const legacy: Legacy[] = []
+      for (const e of legacyEntries) {
+        walkMd(e.dir, (abs) => {
+          const rel = relative(e.dir, abs)
+          if (rel.startsWith("_") || rel.startsWith("raw/") || rel.includes("_tmp/")) return
+          const parsed = parseWikiFrontmatter(readFileSync(abs, "utf-8"))
+          if (!parsed?.meta.title) return
+          legacy.push({
+            mode: e.mode,
+            relPath: rel,
+            absPath: abs,
+            title: parsed.meta.title.trim(),
+            type: parsed.meta.type,
+            lastUpdated: parsed.meta.lastUpdated || "",
+          })
+        })
+      }
+      totalLegacy += legacy.length
+
+      if (legacy.length === 0) continue
+
+      console.log()
+      const modeStr = legacyEntries.map(e => e.mode).join("+")
+      console.log(chalk.bold(`  ${chalk.cyan(agentId)}: ${legacy.length} legacy article(s) across ${modeStr}`))
+
+      for (const la of legacy) {
+        const key = la.title.toLowerCase()
+        const existing = canonIdx.get(key)
+
+        // Decide: promote (new), upgrade (beat canonical), or archive (lose to canonical)
+        let action: "promote" | "upgrade" | "archive"
+        if (!existing) action = "promote"
+        else if (!existing.type && la.type) action = "upgrade"
+        else if (!!existing.type === !!la.type && la.lastUpdated && existing.lastUpdated &&
+                 la.lastUpdated > existing.lastUpdated) action = "upgrade"
+        else action = "archive"
+
+        const typeTag = la.type ? chalk.magenta(`[${la.type}]`) : chalk.yellow("[untyped]")
+        const arrow = action === "promote" ? chalk.green("→ promote  ")
+                    : action === "upgrade" ? chalk.cyan("⟳ upgrade  ")
+                    : chalk.dim("✗ archive  ")
+        const where = la.relPath.length > 46 ? la.relPath.slice(0, 43) + "..." : la.relPath.padEnd(46)
+        console.log(`    ${arrow} ${typeTag} ${chalk.dim(la.mode + "/")}${where}`)
+        if (action === "upgrade") console.log(chalk.dim(`      (replaces ${existing!.relPath}, old version kept under _versions/)`))
+
+        if (!commit) {
+          if (action === "promote") totalPromote++
+          else if (action === "upgrade") totalUpgrade++
+          else totalArchive++
+          continue
+        }
+
+        try {
+          if (action === "promote") {
+            const target = resolve(canonicalDir, la.relPath)
+            if (existsSync(target)) {
+              console.log(chalk.yellow(`      ! target path already exists, archiving instead: ${la.relPath}`))
+              archiveLegacy(agentRoot, la)
+              totalArchive++
+            } else {
+              mkdirSync(dirname(target), { recursive: true })
+              renameSync(la.absPath, target)
+              canonIdx.set(key, { relPath: la.relPath, type: la.type, lastUpdated: la.lastUpdated })
+              totalPromote++
+            }
+          } else if (action === "upgrade") {
+            const target = resolve(canonicalDir, existing!.relPath)
+            if (existsSync(target)) {
+              const verDir = resolve(agentRoot, "_versions", existing!.relPath.replace(/\.md$/, ""))
+              mkdirSync(verDir, { recursive: true })
+              const ts = new Date().toISOString().replace(/[:.]/g, "-")
+              renameSync(target, resolve(verDir, `${ts}.md`))
+            }
+            mkdirSync(dirname(target), { recursive: true })
+            renameSync(la.absPath, target)
+            canonIdx.set(key, { relPath: existing!.relPath, type: la.type, lastUpdated: la.lastUpdated })
+            totalUpgrade++
+          } else {
+            archiveLegacy(agentRoot, la)
+            totalArchive++
+          }
+        } catch (e: any) {
+          console.log(chalk.red(`      ! ${action} failed: ${e.message?.slice(0, 120)}`))
+        }
+      }
+
+      if (commit) {
+        // Delete the now-empty legacy mode dirs (they will also contain obsolete
+        // _index.md, _schema.md, log.md etc.; rmSync -f nukes the whole subtree).
+        for (const e of legacyEntries) {
+          try { rmSync(e.dir, { recursive: true, force: true }) } catch {}
+        }
+        // Rebuild the canonical catalog so _index.md reflects the merged corpus.
+        try {
+          hub.getAgentWiki(agentId).rebuildIndex()
+        } catch (e: any) {
+          console.log(chalk.dim(`      (catalog rebuild skipped: ${e.message?.slice(0, 80)})`))
+        }
+      }
+    }
+
+    console.log()
+    console.log(chalk.dim(`  Legacy scanned: ${totalLegacy}`))
+    if (commit) {
+      console.log(chalk.green(`  Promoted: ${totalPromote} · Upgraded canonical: ${totalUpgrade} · Archived: ${totalArchive}`))
+      console.log(chalk.dim("  Archived losers preserved under <agent>/_versions/. Legacy mode dirs deleted."))
+    } else {
+      console.log(chalk.dim(`  Would: promote ${totalPromote} · upgrade ${totalUpgrade} · archive ${totalArchive}`))
+      console.log(chalk.dim("  Dry-run — add --commit to execute"))
+    }
+    console.log()
+  })
+
+function walkMd(dir: string, cb: (absPath: string) => void): void {
+  if (!existsSync(dir)) return
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const abs = resolve(dir, entry.name)
+    if (entry.isDirectory()) walkMd(abs, cb)
+    else if (entry.isFile() && entry.name.endsWith(".md")) cb(abs)
+  }
+}
+
+function parseWikiFrontmatter(raw: string): { meta: Record<string, any> } | null {
+  const fm = raw.match(/^---\n([\s\S]*?)\n---/)
+  if (!fm) return null
+  const meta: Record<string, any> = {}
+  for (const line of fm[1].split("\n")) {
+    const m = line.match(/^(\w+):\s*(.+)$/)
+    if (!m) continue
+    const key = m[1] === "last_updated" ? "lastUpdated" : m[1]
+    meta[key] = m[2].trim().replace(/^"(.*)"$/, "$1")
+  }
+  return { meta }
+}
+
+function archiveLegacy(
+  agentRoot: string,
+  la: { mode: string; relPath: string; absPath: string },
+): void {
+  const verDir = resolve(agentRoot, "_versions", `legacy-${la.mode}`, la.relPath.replace(/\.md$/, ""))
+  mkdirSync(verDir, { recursive: true })
+  const ts = new Date().toISOString().replace(/[:.]/g, "-")
+  renameSync(la.absPath, resolve(verDir, `${ts}.md`))
+}
+
+// agentx wiki migrate — Phase 2 of the Karpathy-alignment plan.
+// Backfills `type` + `related` on legacy articles so Phase 3's agentic
+// query has a corpus with a usable `_index.md` + wikilink graph.
+wiki
+  .command("migrate")
+  .description("backfill type + related on legacy articles (one-shot)")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "migrate only this agent's articles")
+  .option("--commit", "write changes (default: dry-run, reports what would change)")
+  .option("--batch <n>", "articles per LLM call", "10")
+  .option("--max <n>", "cap articles this run (for spot-checks)")
+  .option("--model <m>", "classifier model", "sonnet")
+  .action(async (opts) => {
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const batchSize = Math.max(1, parseInt(opts.batch) || 10)
+    const maxArticles = opts.max ? parseInt(opts.max) : Infinity
+    const commit = !!opts.commit
+
+    console.log()
+    console.log(chalk.bold(commit ? "  Migrating (commit)" : "  Migrating (dry-run)"))
+    console.log(chalk.dim(`  Batch size: ${batchSize}  ·  Model: ${opts.model}`))
+    console.log()
+
+    let totalScanned = 0
+    let totalNeeds = 0
+    let totalApplied = 0
+
+    for (const agentId of agents) {
+      const agentWiki = hub.getAgentWiki(agentId)
+      const articles = agentWiki.listArticles(agentId)
+      const needs = articles.filter(a => !a.meta.type)
+      totalScanned += articles.length
+      totalNeeds += needs.length
+
+      if (needs.length === 0) {
+        console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("all typed")} (${articles.length} articles)`)
+        continue
+      }
+
+      const remaining = Math.max(0, maxArticles - totalApplied)
+      const limit = Math.min(needs.length, remaining)
+      if (limit === 0) {
+        console.log(chalk.dim(`  ${agentId}: skipped (--max reached)`))
+        continue
+      }
+
+      console.log()
+      console.log(chalk.bold(`  ${chalk.cyan(agentId)}: ${limit}/${needs.length} untyped articles`))
+
+      const baseDir = agentWiki["baseDir"]
+      const tmpDir = resolve(baseDir, "_tmp")
+      mkdirSync(tmpDir, { recursive: true })
+
+      for (let i = 0; i < limit; i += batchSize) {
+        const batch = needs.slice(i, Math.min(i + batchSize, limit))
+        const prompt = buildMigratePrompt(batch)
+        const promptPath = resolve(tmpDir, "migrate-prompt.txt")
+        writeFileSync(promptPath, prompt)
+
+        let classifications: Array<{ path: string; type: string }>
+        try {
+          const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
+          const rawOutput = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+          const envelope = JSON.parse(rawOutput)
+          const responseText = String(envelope.result || envelope.content || "")
+          const arrMatch = responseText.match(/\[[\s\S]*\]/)
+          if (!arrMatch) throw new Error("no JSON array in classifier response")
+          classifications = JSON.parse(arrMatch[0])
+        } catch (e: any) {
+          console.log(chalk.red(`    LLM classify failed: ${e.message?.slice(0, 150)}`))
+          continue
+        }
+
+        const validTypes = new Set([
+          "person", "project", "place", "concept", "event", "decision", "pattern",
+        ])
+
+        for (const article of batch) {
+          const c = classifications.find((x) => x.path === article.path)
+          if (!c || !validTypes.has(c.type)) {
+            console.log(chalk.yellow(`    ? ${article.path}: unclassified${c ? ` (got "${c.type}")` : ""}`))
+            continue
+          }
+          const related = agentWiki.extractWikilinks(article.content)
+          const newMeta = {
+            ...article.meta,
+            type: c.type as any,
+            related: related.length ? related : undefined,
+            lastUpdated: new Date().toISOString().slice(0, 10),
+          }
+          const relStr = related.length ? chalk.dim(` → ${related.slice(0, 3).join(", ")}${related.length > 3 ? ", …" : ""}`) : ""
+          console.log(`    ${chalk.green("+")} ${chalk.magenta("[" + c.type + "]")} ${article.path}${relStr}`)
+
+          if (commit) {
+            agentWiki.writeArticle(article.path, newMeta, article.content, agentId)
+            totalApplied++
+          }
+        }
+      }
+
+      if (commit) agentWiki.rebuildIndex()
+    }
+
+    console.log()
+    console.log(chalk.dim(`  Scanned ${totalScanned} articles; ${totalNeeds} needed migration`))
+    if (commit) {
+      console.log(chalk.green(`  Applied ${totalApplied} patches.`))
+    } else {
+      console.log(chalk.dim("  Dry-run — add --commit to write changes."))
+    }
+    console.log()
+  })
+
+function buildMigratePrompt(articles: Array<{ path: string; meta: { title: string; tags?: string[] }; content: string }>): string {
+  const items = articles.map((a, i) => {
+    const body = a.content.replace(/\s+/g, " ").slice(0, 400)
+    const tags = (a.meta.tags || []).slice(0, 8).join(", ")
+    return `${i + 1}. path: "${a.path}"\n   title: "${a.meta.title}"\n   tags: [${tags}]\n   body: ${body}${a.content.length > 400 ? "…" : ""}`
+  }).join("\n\n")
+
+  return `Classify each of these ${articles.length} wiki articles into EXACTLY ONE type.
+
+Allowed types:
+- person: an individual human (team member, stakeholder, contact)
+- project: a named initiative, repo, product, or service
+- place: a physical or logical location (office, server, environment)
+- concept: a recurring idea, philosophy, methodology, or thinking pattern
+- event: a specific dated thing that happened (incident, deploy, launch)
+- decision: a specific choice made and why (architecture decision, policy)
+- pattern: a reusable workflow, template, or recipe
+
+Rules:
+- Return EXACTLY one type per article, by path.
+- If the title is a person's name, it's person. If it's a repo/product name, it's project. If it's dated + past tense, it's event.
+- If you genuinely cannot decide, pick "concept" as the fallback.
+- Output ONLY valid JSON, no markdown fencing, no prose.
+
+Articles:
+
+${items}
+
+Output (JSON array, one entry per input article, same order):
+[
+  {"path": "path/to/article.md", "type": "project"},
+  ...
+]`
+}
 
 // agentx wiki entries
 wiki
@@ -340,6 +719,87 @@ wiki
     console.log()
 
     startWikiServer(dir, port, opts.agent, peerUrls, opts.mode as WikiMode)
+  })
+
+// agentx wiki query <question> — Phase 3 agentic query.
+// Walks _index.md → picks candidate articles → walks `related` wikilinks
+// → synthesizes an answer with citations. This is the Farzapedia-faithful
+// retrieval path; `wiki search` stays as the raw BM25 escape hatch.
+wiki
+  .command("query <question>")
+  .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "which agent's wiki to query (default: first one with a catalog)")
+  .option("--selector-model <m>", "candidate-selection model", "haiku")
+  .option("--synth-model <m>", "synthesis model", "sonnet")
+  .option("--max-candidates <n>", "candidates from selector", "3")
+  .option("--max-hops <n>", "wikilink hops from candidates", "2")
+  .option("--max-articles <n>", "cap on total articles walked", "8")
+  .option("--json", "emit full result as JSON (for A/B harnesses)")
+  .option("--trace", "print selector + walk trace")
+  .action(async (question, opts) => {
+    const { agenticQuery } = await import("@/wiki/query")
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+
+    // Find the first agent that actually has a catalog.
+    let chosen: string | null = null
+    for (const id of agents) {
+      const s = hub.getAgentWiki(id)
+      const cat = resolve(s.baseDir, "_index.md")
+      try {
+        if ((await import("fs")).existsSync(cat)) { chosen = id; break }
+      } catch {}
+    }
+    if (!chosen) {
+      console.log(chalk.yellow("  No agent has a catalog yet. Run `agentx wiki status` or migrate first."))
+      return
+    }
+
+    const store = hub.getAgentWiki(chosen)
+    const result = await agenticQuery(question, store, chosen, {
+      selectorModel: opts.selectorModel,
+      synthModel: opts.synthModel,
+      maxCandidates: parseInt(opts.maxCandidates),
+      maxHops: parseInt(opts.maxHops),
+      maxArticles: parseInt(opts.maxArticles),
+    })
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    console.log()
+    console.log(chalk.bold(`  Q: ${question}`))
+    console.log(chalk.dim(`  agent: ${chosen}  ·  status: ${result.status}  ·  walked: ${result.walked.length}`))
+    console.log()
+
+    if (result.status !== "ok") {
+      console.log(chalk.yellow(`  (no answer) ${result.error || result.status}`))
+      return
+    }
+
+    console.log(result.answer)
+    console.log()
+    if (result.citations.length) {
+      console.log(chalk.dim("  Citations:"))
+      for (const c of result.citations) {
+        const type = c.type ? chalk.magenta(` [${c.type}]`) : ""
+        console.log(chalk.dim(`    - ${c.title}${type}  (${c.path})`))
+      }
+      console.log()
+    }
+
+    if (opts.trace && result.trace) {
+      console.log(chalk.dim(`  selector: ${result.trace.selectorMs}ms   synthesis: ${result.trace.synthesisMs}ms`))
+      console.log(chalk.dim(`  candidates: ${result.candidates.map(c => c.title).join(" | ") || "(none)"}`))
+      if (result.walked.length > result.candidates.length) {
+        const follow = result.walked.filter(w => !result.candidates.some(c => c.path === w.path))
+        console.log(chalk.dim(`  followed: ${follow.map(w => `${w.title}@h${w.hop}`).join(" | ")}`))
+      }
+      console.log()
+    }
   })
 
 // agentx wiki search <query>
@@ -481,7 +941,7 @@ wiki
 
     console.log()
     if (totalSynced > 0 && !opts.dryRun) {
-      console.log(chalk.green(`  ${totalSynced} entries synced. Run 'agentx wiki absorb' to compile.`))
+      console.log(chalk.green(`  ${totalSynced} entries synced.`))
     } else if (totalSynced > 0) {
       console.log(chalk.dim(`  ${totalSynced} entries would be synced (dry run)`))
     } else {

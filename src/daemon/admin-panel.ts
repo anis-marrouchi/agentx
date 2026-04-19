@@ -1562,6 +1562,7 @@ function renderAgents() {
       '</div>' +
       '<button class="primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px;padding:6px 12px;font-size:12px">Test drive</button>' +
       '<button class="ghost" data-edit="' + escapeHtml(a.id) + '" style="margin-right:6px">Edit</button>' +
+      '<a class="btn ghost" href="/admin/agents/' + encodeURIComponent(a.id) + '" style="margin-right:6px;display:inline-block;text-decoration:none">Manage</a>' +
       '<button class="ghost" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px">Files</button>' +
       '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
       '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';

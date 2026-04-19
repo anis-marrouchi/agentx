@@ -35,6 +35,7 @@ interface TelegramUpdate {
 interface TelegramAccountConfig {
   token: string
   agentBinding: string
+  allowFrom?: string[]
 }
 
 // --- Persistent group membership store ---
@@ -180,15 +181,51 @@ export class TelegramAdapter implements ChannelAdapter {
   private handler?: (msg: IncomingMessage) => Promise<void>
   private polling = false
   private log: (...args: unknown[]) => void
+  /** Global allowlist fallback. When a per-account allowFrom is unset,
+   *  this list applies. When BOTH are unset, everything is rejected
+   *  (closed by default). */
+  private globalAllowFrom?: string[]
 
   constructor(
     accounts: Record<string, TelegramAccountConfig>,
+    opts: { policy?: { allowFrom?: string[] } } = {},
     log: (...args: unknown[]) => void = console.error.bind(console, "[telegram]"),
   ) {
     this.accounts = new Map(Object.entries(accounts))
+    this.globalAllowFrom = opts.policy?.allowFrom
     this.log = log
     this.groupStore = new TelegramGroupStore(process.cwd())
     this.offsetStore = new TelegramOffsetStore(process.cwd())
+  }
+
+  /** Effective sender allowlist for an account. Returns undefined when the
+   *  account has no explicit config AND the global policy is unset — the
+   *  caller treats undefined as "closed, drop everything". */
+  private effectiveAllowFrom(accountId: string): string[] | undefined {
+    const cfg = this.accounts.get(accountId)
+    if (cfg?.allowFrom !== undefined) return cfg.allowFrom
+    return this.globalAllowFrom
+  }
+
+  /** Accept a message only when at least one allowlist entry matches the
+   *  sender's user id, the chat id, or the sender's @username. */
+  private isAllowed(
+    accountId: string,
+    fromId: number | string | undefined,
+    chatId: number | string | undefined,
+    fromUsername?: string,
+  ): boolean {
+    const list = this.effectiveAllowFrom(accountId)
+    if (!list || list.length === 0) return false
+    const fromStr = fromId != null ? String(fromId) : ""
+    const chatStr = chatId != null ? String(chatId) : ""
+    const userLc = fromUsername?.toLowerCase()
+    for (const entry of list) {
+      if (!entry) continue
+      if (entry === fromStr || entry === chatStr) return true
+      if (entry.startsWith("@") && userLc && entry.slice(1).toLowerCase() === userLc) return true
+    }
+    return false
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -506,6 +543,16 @@ export class TelegramAdapter implements ChannelAdapter {
             }
 
             if (!text) continue
+
+            // Sender allowlist gate — enforced BEFORE the router sees anything
+            // so an unauthorized message burns zero tokens and leaves no trace
+            // in the agent's session log.
+            if (!this.isAllowed(accountId, msg.from?.id, msg.chat?.id, msg.from?.username)) {
+              this.log(
+                `[telegram/${accountId}] dropped message from ${msg.from?.id}${msg.from?.username ? ` (@${msg.from.username})` : ""} in chat ${msg.chat?.id} — not in allowlist`,
+              )
+              continue
+            }
 
             // Build channel meta for groups (verified bot membership)
             const isGroup = msg.chat.type !== "private"

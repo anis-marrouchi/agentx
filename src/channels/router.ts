@@ -5,6 +5,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
+import { HandoverStore, type HandoverOverride } from "./handover-store"
 import { BlockStream } from "./block-stream"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
@@ -112,7 +113,14 @@ export class MessageRouter {
   private serviceMatcher?: ServiceMatcher
   private business?: BusinessLayer
   private groupLog: GroupLog
+  /** Runtime per-chat routing overrides (handovers). Consulted at the top
+   *  of resolveAgent; config routes + mention matching only run when no
+   *  override applies. */
+  private handoverStore: HandoverStore
   private log: (...args: unknown[]) => void
+
+  /** Exposed so the admin panel + registry can share the same store. */
+  getHandoverStore(): HandoverStore { return this.handoverStore }
 
   /**
    * Short-TTL cache of recently processed incoming message IDs, keyed by
@@ -155,6 +163,7 @@ export class MessageRouter {
     this.hooks = hooks
     this.log = log
     this.groupLog = new GroupLog()
+    this.handoverStore = new HandoverStore({ log: (...a) => log("[handover]", ...a) })
     this.inflight = new InflightLog(process.cwd())
     this.loadDedupFromDisk()
   }
@@ -1135,6 +1144,18 @@ export class MessageRouter {
         return msg.resolvedAgent
       }
       return undefined
+    }
+
+    // Runtime override takes precedence over every config-driven route.
+    // This is how operator-initiated handovers redirect traffic without a
+    // daemon restart.
+    const chatId = msg.group?.id ?? msg.sender.id
+    const override = this.handoverStore.get(msg.channel, chatId, msg.accountId)
+    if (override) {
+      this.log(
+        `[handover] ${msg.channel}:${chatId}${msg.accountId ? `:${msg.accountId}` : ""} -> ${override.toAgent} (handover)`,
+      )
+      return override.toAgent
     }
 
     // Pre-resolved by channel adapter (WhatsApp route-based, etc.)

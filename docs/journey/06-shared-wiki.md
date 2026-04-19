@@ -4,32 +4,34 @@ title: "6. Shared wiki — compounding team knowledge"
 
 # 6. Shared wiki — compounding team knowledge
 
-> **Status:** planned (V2) · **Difficulty:** intermediate
+> **Status:** ingest + query shipping · absorb **deprecated** · procedure-delta replacement planned
 
-::: warning This page is on the roadmap
-The wiki ships and runs daily on the maintainer's own deployment. A user-facing walkthrough is pending.
+::: warning Absorb is deprecated
+The original plan was a nightly `agentx wiki absorb` cron that LLM-compiles raw entries into articles. In practice the articles it produced were retrieved by BM25 + tag overlap, which rarely returned a meaningful hit for real agent traffic — we were paying big and reading small. Read the full evaluation: **[An honest review of our Karpathy-inspired wiki](/blog/wiki-karpathy-review)**.
+
+Raw-entry ingest is untouched (cheap, useful). `agentx wiki absorb` is now gated behind `--force`; a focused replacement tied to the upcoming intent knowledge graph is planned.
 :::
 
-## Scenario (planned)
+## What still works today
 
-Every conversation your agents have gets saved as a raw entry. Overnight, a cron runs `agentx wiki absorb` — an LLM reads the new entries, compares them to existing articles, and writes **distilled, cited wiki articles** the whole team can read tomorrow. After a week you have `projects/`, `people/`, `decisions/`, `patterns/` directories with interlinked `[[wikilinks]]`, each article marked `public`, `shared`, or `private`.
+- **Ingest** — every conversation is written to `.agentx/wiki/raw/entries/` as a Markdown file with frontmatter. Cheap, continuous, the source of truth.
+- **Query** — `agentx wiki query <question>` searches existing articles via BM25 + tag match.
+- **Browse** — `agentx wiki serve` opens a Wikipedia-style local browser.
+- **Sync** — `agentx wiki sync` pulls raw entries from mesh peers.
+- **Permissions** — `public` / `shared` / `private` per article, enforced on read/write.
 
-## Outline (what this page will teach)
+## What's deprecated
 
-- The three wiki modes: `unified` (default), `flat` (Karpathy), `graph` (knowledge graph)
-- Ingesting conversations into raw entries automatically
-- `agentx wiki absorb` — the daily compile step; the prompt template per mode
-- Cron pattern: `wiki-absorb-midnight` with `onError: ["notify", "disable"]` (see [Journey 2](/journey/02-scheduled-reports))
-- `agentx wiki query <question>` — how agents retrieve before answering
-- `agentx wiki serve` — Wikipedia-style web browser at `:4200`
-- Permissions: when to write `public` vs `shared` vs `private`
+- **Absorb** (`agentx wiki absorb`) — LLM batched compile. Still callable with `--force` if you genuinely want it; the default cron in the example config is `enabled: false`.
+- The three absorb modes (`unified`, `flat`, `graph`) all had the same retrieval problem — the issue was never the prompt, it was the retrieval side.
 
-## Today's nearest equivalents
+## What's coming
 
-- **Wiki CLI** — every command: [reference/cli → Wiki](/reference/cli#wiki)
-- **Concepts page** — short wiki primer: [concepts](/concepts#_5-wiki)
-- **Source** — the absorb prompt template lives at [`src/wiki/prompts.ts`](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/prompts.ts); the `SKILL.md` that drives absorb is at [`src/wiki/SKILL.md`](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/SKILL.md)
+A **procedure-delta** flow tied to the intent knowledge graph (Procedures + fixed-axis taxonomy). When a message runs a known Procedure, the agent produces a 1-line delta against the Procedure's SOP — a proposed patch, reviewed in the admin approval queue. Cost: O(procedure-runs) with a small classifier-sized call, not O(entries × articles) with a giant compile call.
 
-## Contribute
+## References
 
-The ideal V2 page walks through a seven-day loop with screenshots: day 1 entries → day 7 articles with wikilinks.
+- [Wiki CLI](/reference/cli#wiki) — every command still works; absorb is gated
+- [Concepts → Wiki](/concepts#_5-wiki)
+- [Honest review of the wiki approach](/blog/wiki-karpathy-review) — objective evaluation by Nadia
+- Source: [`src/wiki/`](https://github.com/anis-marrouchi/agentx/tree/master/src/wiki) ([store.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/store.ts), [prompts.ts](https://github.com/anis-marrouchi/agentx/blob/master/src/wiki/prompts.ts))
