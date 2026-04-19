@@ -16,7 +16,25 @@
 // worth the cost — the scaffold is already ready for it under
 // ui/pages/admin/<tab>.ts.
 
-import { renderShell, pageHead, healthStrip, witBanner, TOAST_HTML, TOAST_SCRIPT, ROW_CARD_SCRIPT, type TopbarPeer } from ".."
+import {
+  renderShell,
+  pageHead, healthStrip, witBanner, sectionHead, secLabel,
+  TOAST_HTML, TOAST_SCRIPT, ROW_CARD_SCRIPT,
+  type TopbarPeer,
+} from ".."
+
+/** Feather-style stroked icons for each section head. Kept together at the
+ *  top so we can swap the icon set in one place if/when the design calls
+ *  for a change. */
+const ICONS = {
+  agents: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>`,
+  channels: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
+  schedules: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+  webhooks: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a3 3 0 1 0 3-3m-8 11a3 3 0 1 0 2.6-1.5L10 12m7 3a3 3 0 1 0-2-5.5"/></svg>`,
+  mesh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="12" r="2"/><path d="M7.4 7.4l3.2 3.2M13.4 13.4l3.2 3.2M16.6 7.4l-3.2 3.2M10.6 13.4l-3.2 3.2"/></svg>`,
+  tokens: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-8 8a4 4 0 1 1-6 6m6-6l5-5 3 3-5 5m-3-3l3 3"/></svg>`,
+  advanced: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 13l2 2 4-4"/></svg>`,
+}
 
 export interface AdminPageOpts {
   peers?: TopbarPeer[]
@@ -266,9 +284,16 @@ const ADMIN_PAGE_BODY = `
   <div id="global-msg" class="msg"></div>
 
   <section id="tab-agents" class="tab active">
-    <h2>Agents</h2>
-    <p class="lead">Each agent is a role with its own trigger words and folder. Delete removes the config only — the agent's folder stays on disk.</p>
-    <div id="agent-list" class="list"></div>
+    ${sectionHead({
+      icon: ICONS.agents,
+      title: "Your agents",
+      lead: "Each agent is a role with its own trigger words and workspace. Delete removes the config only — the folder on disk stays.",
+    })}
+    ${witBanner({
+      persistKey: "agents",
+      bodyHtml: `<b>What's an agent, exactly?</b> Think of it as a specialised teammate. A sales agent handles pricing questions, a support agent answers tickets, a reports agent sends a weekly summary. You decide what they do and what to say to wake them up (their "trigger words", like <code>@support</code>).`,
+    })}
+    <div id="agent-list" class="ax-stack"></div>
     <div class="add-form">
       <h3>Add a new agent</h3>
       <div class="rowf">
@@ -289,25 +314,46 @@ const ADMIN_PAGE_BODY = `
   </section>
 
   <section id="tab-channels" class="tab">
-    <h2>Channels</h2>
-    <p class="lead">Everywhere agents can answer from. Pick a connector on the left to configure or check status.</p>
-    <div class="ch-split">
-      <aside class="ch-menu" id="ch-menu"></aside>
-      <div class="ch-pane">
-        <div id="ch-telegram" class="ch-view"><div id="tg-section" class="section-block"></div></div>
-        <div id="ch-whatsapp" class="ch-view" hidden></div>
-        <div id="ch-slack" class="ch-view" hidden><div id="slack-section" class="section-block"></div></div>
-        <div id="ch-discord" class="ch-view" hidden></div>
-        <div id="ch-gitlab" class="ch-view" hidden></div>
-        <div id="ch-github" class="ch-view" hidden></div>
-      </div>
+    ${sectionHead({
+      icon: ICONS.channels,
+      title: "Where your agents show up",
+      lead: "Connect a chat app, and your agents can answer from there. Set up once — they'll keep working in the background.",
+    })}
+    ${witBanner({
+      persistKey: "channels",
+      bodyHtml: `<b>How does this work?</b> We give each channel a small "bridge" that forwards messages to AgentX. For chat apps (Telegram, Slack, Discord) you'll paste a bot token — we keep the value in your <code>.env</code> file and never send it over the network. For webhook-style sources (GitHub, GitLab) we hand you a URL to paste into their dashboard.`,
+    })}
+
+    <div id="ch-chatapps-label">${secLabel({ label: "Chat apps" })}</div>
+    <div class="ax-connectors" id="ch-chatapps"></div>
+
+    <div id="ch-devtools-label">${secLabel({ label: "Developer tools", rightHtml: `<span class="ax-pill">Send events from GitHub, GitLab, Sentry, etc.</span>` })}</div>
+    <div class="ax-connectors" id="ch-devtools"></div>
+
+    <!-- Active-channel configuration panes. One shows at a time; clicking
+         a connector card above flips the 'hidden' attribute on the
+         matching div. Existing render* pipelines still populate these by id. -->
+    <div id="ch-panes" style="margin-top:22px">
+      <div id="ch-telegram" hidden><div id="tg-section" class="section-block"></div></div>
+      <div id="ch-whatsapp" hidden></div>
+      <div id="ch-slack" hidden><div id="slack-section" class="section-block"></div></div>
+      <div id="ch-discord" hidden></div>
+      <div id="ch-gitlab" hidden></div>
+      <div id="ch-github" hidden></div>
     </div>
   </section>
 
   <section id="tab-crons" class="tab">
-    <h2>Schedules</h2>
-    <p class="lead">Recurring jobs that nudge an agent without a human trigger. Use cron syntax — e.g. <code>0 9 * * 1</code> for Mondays at 9am.</p>
-    <div id="cron-list" class="list"></div>
+    ${sectionHead({
+      icon: ICONS.schedules,
+      title: "Schedules",
+      lead: "Make an agent do something on a timer — no one has to ask. Daily summaries, weekly reports, hourly health checks.",
+    })}
+    ${witBanner({
+      persistKey: "crons",
+      bodyHtml: `<b>What's a good schedule?</b> Anything recurring. A <i>Reports agent</i> sending Monday-morning numbers, a <i>Health agent</i> pinging you at 3am if a server's down, a <i>Standup agent</i> reminding the team. Pick a time below.`,
+    })}
+    <div id="cron-list" class="ax-stack"></div>
     <div class="add-form">
       <h3>Add a schedule</h3>
       <div class="rowf">
@@ -324,9 +370,16 @@ const ADMIN_PAGE_BODY = `
   </section>
 
   <section id="tab-webhooks" class="tab">
-    <h2>Webhooks</h2>
-    <p class="lead">Each webhook is an inbound URL an external service POSTs to. We translate the payload into a readable message and route it to the agent you bind here. Defaults: GitLab, GitHub, Sentry, Stripe, Discord, Slack, custom.</p>
-    <div id="webhook-list" class="list"></div>
+    ${sectionHead({
+      icon: ICONS.webhooks,
+      title: "Webhooks",
+      lead: "A URL you give to another service. When something happens there — a PR is merged, an error fires — they POST to that URL, and we forward it to your agent as a readable message.",
+    })}
+    ${witBanner({
+      persistKey: "webhooks",
+      bodyHtml: `<b>Not sure you need this?</b> If a service you use has a "webhooks" setting (GitHub, Stripe, Sentry, Typeform…), you probably do. It's how those services tell AgentX when something's worth looking at.`,
+    })}
+    <div id="webhook-list" class="ax-stack"></div>
     <div class="add-form">
       <h3>Add a webhook</h3>
       <div class="rowf">
@@ -344,10 +397,18 @@ const ADMIN_PAGE_BODY = `
   </section>
 
   <section id="tab-mesh" class="tab">
-    <h2>Mesh — team network</h2>
-    <p class="lead">Link AgentX instances across machines so they share work. Each peer is another daemon's URL; an optional token secures the connection.</p>
-    <div class="toggle-switch"><input type="checkbox" id="mesh-toggle" /> <label for="mesh-toggle" style="color:var(--text);margin:0">Mesh enabled on this node</label></div>
-    <div id="mesh-peers" class="list"></div>
+    ${sectionHead({
+      icon: ICONS.mesh,
+      title: "Mesh",
+      lead: "Link this AgentX to other machines so they share work. Good for teams running AgentX on multiple laptops or a mix of laptop + server.",
+    })}
+    <div id="mesh-hero" class="ax-mesh-hero"></div>
+    ${witBanner({
+      persistKey: "mesh",
+      bodyHtml: `<b>Do I need mesh?</b> Only if you're running AgentX in more than one place. Solo users on one laptop can skip this entirely.`,
+    })}
+    ${secLabel({ label: "Connected peers" })}
+    <div id="mesh-peers" class="ax-stack"></div>
     <div class="add-form">
       <h3>Add a peer</h3>
       <div class="rowf">
@@ -361,9 +422,16 @@ const ADMIN_PAGE_BODY = `
   </section>
 
   <section id="tab-tokens" class="tab">
-    <h2>Access tokens</h2>
-    <p class="lead">Scoped tokens let external apps and mesh peers call AgentX. Pick the narrowest scope that covers what the caller needs — tokens can't be recovered if leaked, so short expiries are a good habit.</p>
-    <div id="token-list" class="list"></div>
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Access tokens",
+      lead: "Passwords, but for software. Anything that wants to talk to AgentX from outside (a Slack bridge, another AgentX machine, a script) uses one.",
+    })}
+    ${witBanner({
+      persistKey: "tokens",
+      bodyHtml: `<b>Tokens get scopes.</b> A scope is what the token is allowed to do. Give the narrowest one that works — a Slack bridge only needs to send messages, it doesn't need to edit settings. You can't recover a token after you close this page, so copy it immediately.`,
+    })}
+    <div id="token-list" class="ax-stack"></div>
     <div class="add-form">
       <h3>Mint a new token</h3>
       <label>Name<span class="hint">(who or what this is for — e.g. "Slack bridge", "Mesh peer: laptop")</span></label>
@@ -381,8 +449,15 @@ const ADMIN_PAGE_BODY = `
   </section>
 
   <section id="tab-advanced" class="tab">
-    <h2>Advanced — raw agentx.json</h2>
-    <p class="lead">Direct editor for the full config. Saving creates a timestamped backup so you can roll back. After a save, the daemon is asked to hot-reload — if a field needs a restart, you'll see it in the dashboard.</p>
+    ${sectionHead({
+      icon: ICONS.advanced,
+      title: "Raw configuration",
+      lead: "Direct editor for the full agentx.json. Saving creates a timestamped backup so you can roll back.",
+    })}
+    ${witBanner({
+      persistKey: "advanced",
+      bodyHtml: `<b>Safe to look, careful editing.</b> Invalid JSON is refused before saving. Schema-level errors surface after the daemon tries to use the new config — you'll see them in the status bar.`,
+    })}
     <textarea id="raw-editor" class="raw" spellcheck="false"></textarea>
     <div class="actions">
       <button class="primary" onclick="saveRaw()">Save config</button>
@@ -659,55 +734,62 @@ function renderWebhooks() {
   const list = $('webhook-list');
   const daemonUrl = (state.daemonUrl || '').replace(/\\/+$/, '');
   const sources = {
-    gitlab: { icon: '🦊', label: 'GitLab', hint: 'In GitLab → Settings → Webhooks; tick Push events, Issue events, Pipeline events.' },
-    github: { icon: '🐙', label: 'GitHub', hint: 'In GitHub → Repo Settings → Webhooks; pick individual events.' },
-    sentry: { icon: '🛡', label: 'Sentry', hint: 'In Sentry → Project Settings → Alerts → Webhooks.' },
-    stripe: { icon: '💳', label: 'Stripe', hint: 'In Stripe Dashboard → Developers → Webhooks.' },
-    discord: { icon: '💬', label: 'Discord', hint: 'In Discord → Channel Settings → Integrations → Webhooks.' },
-    slack: { icon: '#️⃣', label: 'Slack', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.' },
-    custom: { icon: '🔗', label: 'Custom', hint: 'Any service that can POST JSON — the payload is forwarded as-is.' },
+    gitlab: { logoBg: '#FC6D26', label: 'GitLab', init: 'GL', hint: 'In GitLab → Settings → Webhooks; tick Push/Issue/Pipeline events.' },
+    github: { logoBg: '#24292e', label: 'GitHub', init: 'GH', hint: 'In GitHub → Repo Settings → Webhooks; pick individual events.' },
+    sentry: { logoBg: '#362D59', label: 'Sentry', init: 'SE', hint: 'In Sentry → Project Settings → Alerts → Webhooks.' },
+    stripe: { logoBg: '#635BFF', label: 'Stripe', init: 'ST', hint: 'In Stripe Dashboard → Developers → Webhooks.' },
+    discord: { logoBg: '#5865F2', label: 'Discord', init: 'DC', hint: 'In Discord → Channel Settings → Integrations → Webhooks.' },
+    slack: { logoBg: '#4A154B', label: 'Slack', init: 'SL', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.' },
+    custom: { logoBg: 'var(--ax-surface-3)', label: 'Custom', init: '?', hint: 'Any service that can POST JSON — payload is forwarded as-is.' },
   };
   if (!state.webhooks.length) {
-    list.innerHTML = '<div class="empty">No webhooks registered.</div>';
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">No webhooks yet</h3><p style="margin:0;font-size:13px">Register one below and paste the URL into the external service.</p></div>';
   } else {
     list.innerHTML = '';
     for (const w of state.webhooks) {
       const meta = sources[w.source] || sources.custom;
       const url = daemonUrl + '/webhook/' + encodeURIComponent(w.agentId) + '/' + encodeURIComponent(w.source);
-      const div = document.createElement('div');
-      div.className = 'row-card';
-      div.style.flexWrap = 'wrap';
-      div.style.gap = '10px';
-      const statusChip = w.enabled
-        ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">enabled</span>'
-        : '<span class="chip off">disabled</span>';
-      div.innerHTML =
-        '<div class="info" style="min-width:240px"><h3>' + meta.icon + ' ' + escapeHtml(w.id) + '</h3>' +
-          '<div class="meta">' + statusChip +
-            '<span class="chip">' + escapeHtml(meta.label) + '</span>' +
-            'agent: <b>' + escapeHtml(w.agentId) + '</b>' +
-            (w.secretEnv ? ' · secret: <code style="font-family:ui-monospace,monospace">$\{' + escapeHtml(w.secretEnv) + '}</code>' : '') +
-            (w.description ? '<br><span style="color:var(--muted)">' + escapeHtml(w.description) + '</span>' : '') +
+      const missingSecret = w.source !== 'custom' && !w.secretEnv;
+      const statusPill = missingSecret
+        ? '<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>signing secret missing</span>'
+        : (w.enabled
+          ? '<span class="ax-pill ax-pill--ok"><span class="ax-pill__dot"></span>receiving</span>'
+          : '<span class="ax-pill ax-pill--off">disabled</span>');
+      const card = document.createElement('div');
+      card.className = 'ax-row-card';
+      if (missingSecret) card.style.borderColor = 'color-mix(in oklch, var(--ax-warn) 35%, var(--ax-border))';
+      const logoStyle = 'background:' + meta.logoBg + ';color:white;border-color:' + meta.logoBg;
+      card.innerHTML =
+        '<div class="ax-row-card__top">' +
+          '<div class="ax-avatar" style="' + logoStyle + '">' + meta.init + '</div>' +
+          '<div class="ax-row-card__info">' +
+            '<div class="ax-name">' + escapeHtml(w.id) + ' ' + statusPill + '</div>' +
+            '<div class="ax-sub">' +
+              escapeHtml(meta.label) + ' · routes to <b>' + escapeHtml(w.agentId) + '</b>' +
+              (w.secretEnv ? ' · secret: <code>${' + escapeHtml(w.secretEnv) + '}</code>' : '') +
+              (w.description ? ' · ' + escapeHtml(w.description) : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="ax-row-card__actions">' +
+            '<button class="ax-btn" data-toggle-wh="' + escapeHtml(w.id) + '" data-enabled="' + (w.enabled ? '1' : '0') + '">' + (w.enabled ? 'Disable' : 'Enable') + '</button>' +
+            '<button class="ax-btn ax-btn--danger" data-rm-wh="' + escapeHtml(w.id) + '">Delete</button>' +
           '</div>' +
         '</div>' +
-        '<div style="flex:1;min-width:300px">' +
-          '<code style="display:block;font-family:ui-monospace,monospace;font-size:11px;background:#0e1119;padding:8px 10px;border-radius:4px;word-break:break-all">' + escapeHtml(url) + '</code>' +
-          '<div style="font-size:10px;color:var(--muted);margin-top:4px">' + escapeHtml(meta.hint) + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:5px;padding:8px 10px;font-family:var(--ax-mono);font-size:11.5px;color:var(--ax-text);margin-top:10px">' +
+          '<span class="muted">POST</span>' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(url) + '</span>' +
+          '<button class="ax-btn ax-btn--ghost" style="padding:3px 9px;font-size:11px" data-copy="' + escapeHtml(url) + '">Copy</button>' +
         '</div>' +
-        '<div style="display:flex;gap:6px">' +
-          '<button class="ghost" data-copy="' + escapeHtml(url) + '">Copy URL</button>' +
-          '<button class="ghost" data-toggle-wh="' + escapeHtml(w.id) + '" data-enabled="' + (w.enabled ? '1' : '0') + '">' + (w.enabled ? 'Disable' : 'Enable') + '</button>' +
-          '<button class="danger" data-rm-wh="' + escapeHtml(w.id) + '">Delete</button>' +
-        '</div>';
-      div.querySelector('button[data-copy]').addEventListener('click', (e) => {
-        navigator.clipboard.writeText(e.currentTarget.dataset.copy).then(() => {
-          const b = e.currentTarget; const old = b.textContent;
-          b.textContent = 'Copied'; setTimeout(() => { b.textContent = old; }, 1200);
-        });
+        '<div style="font-size:11px;color:var(--ax-muted);margin-top:6px">' + escapeHtml(meta.hint) + '</div>';
+
+      card.querySelector('[data-copy]').addEventListener('click', (e) => {
+        const u = e.currentTarget.dataset.copy;
+        navigator.clipboard.writeText(u).catch(() => {});
+        if (window.showToast) window.showToast('URL copied');
       });
-      div.querySelector('button[data-rm-wh]').addEventListener('click', () => deleteWebhookAction(w.id));
-      div.querySelector('button[data-toggle-wh]').addEventListener('click', () => toggleWebhook(w.id, !w.enabled));
-      list.appendChild(div);
+      card.querySelector('[data-rm-wh]').addEventListener('click', () => deleteWebhookAction(w.id));
+      card.querySelector('[data-toggle-wh]').addEventListener('click', () => toggleWebhook(w.id, !w.enabled));
+      list.appendChild(card);
     }
   }
   // Refresh the add-webhook agent picker.
@@ -746,33 +828,99 @@ async function toggleWebhook(id, enabled) {
 
 function renderMesh() {
   const m = state.mesh || { enabled: false, peers: [] };
-  $('mesh-toggle').checked = !!m.enabled;
+
+  // Hero card: status message + enable toggle + SVG network viz.
+  const hero = $('mesh-hero');
+  if (hero) {
+    const count = m.peers.length;
+    const nodeName = (state.node && state.node.name) || 'this machine';
+    const viz = renderMeshViz(count);
+    const toggleCls = m.enabled ? 'ax-mesh-toggle is-on' : 'ax-mesh-toggle';
+    const msg = !m.enabled
+      ? 'Mesh is off. Turn it on to share work between AgentX machines.'
+      : (count === 0
+        ? 'Mesh is on, but no peers yet. Add one below to link another machine.'
+        : 'Your machine (<b>' + escapeHtml(nodeName) + '</b>) is connected to ' + count + ' peer' + (count === 1 ? '' : 's') + '. Work from any of them can land here — and vice versa.');
+    hero.innerHTML =
+      '<div>' +
+        '<h3>' + (m.enabled ? (count === 0 ? 'Mesh is on' : 'Mesh is active') : 'Mesh is off') + '</h3>' +
+        '<p>' + msg + '</p>' +
+        '<div class="' + toggleCls + '" onclick="toggleMesh(this)">' +
+          '<div class="ax-mesh-switch"></div>' +
+          '<span>Mesh networking ' + (m.enabled ? 'enabled' : 'disabled') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ax-mesh-viz">' + viz + '</div>';
+  }
+
   const peers = $('mesh-peers');
   if (!m.peers.length) {
-    peers.innerHTML = '<div class="empty">No mesh peers.</div>';
+    peers.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:32px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><p style="margin:0;font-size:13px">No peers yet. Add one below to get started.</p></div>';
   } else {
     peers.innerHTML = '';
     for (const p of m.peers) {
-      const div = document.createElement('div');
-      div.className = 'row-card';
-      div.innerHTML =
-        '<div class="info"><h3>' + escapeHtml(p.name) + '</h3>' +
-          '<div class="meta">' +
-            (p.hasToken ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">authenticated</span>' : '<span class="chip off">no token</span>') +
-            '<code style="font-family:ui-monospace,monospace">' + escapeHtml(p.url) + '</code>' +
+      const statusPill = p.hasToken
+        ? '<span class="ax-pill ax-pill--ok"><span class="ax-pill__dot"></span>authenticated</span>'
+        : '<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>no token</span>';
+      const card = document.createElement('div');
+      card.className = 'ax-row-card';
+      card.innerHTML =
+        '<div class="ax-row-card__top">' +
+          '<div class="ax-avatar ax-avatar--' + avatarVariant(p.url) + '">' + escapeHtml(initialsOf(p.name, p.name)) + '</div>' +
+          '<div class="ax-row-card__info">' +
+            '<div class="ax-name">' + escapeHtml(p.name) + ' ' + statusPill + '</div>' +
+            '<div class="ax-sub"><span class="mono muted">' + escapeHtml(p.url) + '</span></div>' +
           '</div>' +
-        '</div>' +
-        '<button class="danger" data-rm-peer="' + escapeHtml(p.url) + '">Remove</button>';
-      div.querySelector('button[data-rm-peer]').addEventListener('click', () => removeMeshPeer(p.url));
-      peers.appendChild(div);
+          '<div class="ax-row-card__actions">' +
+            '<button class="ax-btn ax-btn--danger" data-rm-peer="' + escapeHtml(p.url) + '">Remove</button>' +
+          '</div>' +
+        '</div>';
+      card.querySelector('[data-rm-peer]').addEventListener('click', () => removeMeshPeer(p.url));
+      peers.appendChild(card);
     }
   }
 }
 
-$('mesh-toggle').addEventListener('change', async (e) => {
-  try { await req('POST', '/api/admin/mesh/toggle', { enabled: e.target.checked }); refresh(); }
-  catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
-});
+/** Tiny SVG showing the mesh topology with live dashed wires — YOU in the
+ *  middle, up to three peers around. Decorative; scales down on narrow
+ *  viewports via CSS. */
+function renderMeshViz(peerCount) {
+  // Fixed layout: YOU centered, three peer slots. Extra peers collapse into "+".
+  const slots = [
+    { x: 18, y: 8, label: peerCount >= 1 ? 'A' : '+' },
+    { x: 178, y: 8, label: peerCount >= 2 ? 'B' : '+' },
+    { x: 18, y: 88, label: peerCount >= 3 ? '+' + (peerCount - 2) : '+' },
+  ];
+  let lines = '';
+  if (peerCount >= 1) lines += '<line x1="120" y1="70" x2="40" y2="30" class="live"/>';
+  if (peerCount >= 2) lines += '<line x1="120" y1="70" x2="200" y2="30" class="live"/>';
+  if (peerCount >= 3) lines += '<line x1="120" y1="70" x2="40" y2="110" class="live"/>';
+  if (peerCount === 0) lines += '<line x1="120" y1="70" x2="40" y2="30"/><line x1="120" y1="70" x2="200" y2="30"/>';
+  let dots = '<div class="ax-mesh-dot self" style="left:98px;top:48px">YOU</div>';
+  for (const s of slots) {
+    const cls = s.label === '+' || /^\\+\\d+$/.test(s.label) ? 'ax-mesh-dot empty' : 'ax-mesh-dot';
+    dots += '<div class="' + cls + '" style="left:' + s.x + 'px;top:' + s.y + 'px">' + s.label + '</div>';
+  }
+  return '<svg class="ax-mesh-wires" viewBox="0 0 240 140">' + lines + '</svg>' + dots;
+}
+
+async function toggleMesh(pill) {
+  const want = !pill.classList.contains('is-on');
+  try {
+    await req('POST', '/api/admin/mesh/toggle', { enabled: want });
+    refresh();
+  } catch (err) { showMsg($('global-msg'), 'err', err.message); }
+}
+
+// Keep the legacy checkbox listener for the hidden input if any calls reach it
+// (the form below the hero still uses #m-url/#m-name/#m-token).
+const __meshToggle = $('mesh-toggle');
+if (__meshToggle) {
+  __meshToggle.addEventListener('change', async (e) => {
+    try { await req('POST', '/api/admin/mesh/toggle', { enabled: e.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+  });
+}
 
 async function addMeshPeer() {
   const body = { url: $('m-url').value.trim(), name: $('m-name').value.trim(), token: $('m-token').value.trim() };
@@ -790,47 +938,90 @@ async function removeMeshPeer(url) {
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
+function initialsOf(name, id) {
+  const src = (name || id || '?').replace(/[^a-zA-Z ]/g, '').trim();
+  const parts = src.split(/\\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0] || id || '?').slice(0, 2).toUpperCase();
+}
+
+/** Pick a stable avatar variant from the string hash. Gives each agent a
+ *  distinct-looking square without the operator having to configure one. */
+function avatarVariant(key) {
+  const variants = ['teal', 'amber', 'blue', 'coral'];
+  let h = 0;
+  for (let i = 0; i < String(key).length; i++) h = (h * 31 + String(key).charCodeAt(i)) >>> 0;
+  return variants[h % variants.length];
+}
+
 function renderAgents() {
   const list = $('agent-list');
-  if (!state.agents.length) { list.innerHTML = '<div class="empty">No agents yet.</div>'; return; }
+  if (!state.agents.length) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">No agents yet</h3><p style="margin:0 0 16px;font-size:13px">Click <b>+ New agent</b> below to add your first one.</p></div>';
+    // still refresh cron agent picker even when the list is empty
+    const selE = $('c-agent'); selE.innerHTML = '';
+    return;
+  }
   list.innerHTML = '';
   for (const a of state.agents) {
-    const div = document.createElement('div');
-    div.className = 'row-card';
-    const accessChip = a.access === 'public'
-      ? '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">public API</span>'
-      : '<span class="chip off">private</span>';
-    div.innerHTML =
-      '<div class="info"><h3>' + escapeHtml(a.name) + '</h3>' +
-        '<div class="meta">' +
-          '<span class="chip">' + escapeHtml(a.tier || '') + '</span>' +
-          (a.model ? '<span class="chip">' + escapeHtml(a.model) + '</span>' : '') +
-          accessChip +
-          '<b>' + escapeHtml(a.id) + '</b> · triggers: ' + (a.mentions.map(escapeHtml).join(', ') || '—') +
+    const accessPill = a.access === 'public'
+      ? '<span class="ax-pill ax-pill--info"><span class="ax-pill__dot"></span>public API</span>'
+      : '<span class="ax-pill ax-pill--off">private</span>';
+    const triggers = (a.mentions || []).map(t =>
+      '<span class="ax-trigger-pill">' + escapeHtml(t) + '</span>'
+    ).join('') || '<span class="muted">—</span>';
+
+    const card = document.createElement('div');
+    card.className = 'ax-row-card';
+    card.innerHTML =
+      '<div class="ax-row-card__top">' +
+        '<div class="ax-avatar ax-avatar--' + avatarVariant(a.id) + '">' + escapeHtml(initialsOf(a.name, a.id)) + '</div>' +
+        '<div class="ax-row-card__info">' +
+          '<div class="ax-name">' + escapeHtml(a.name) + ' ' + accessPill + '</div>' +
+          '<div class="ax-sub">' +
+            '<span class="mono">' + escapeHtml(a.id) + '</span>' +
+            (a.model ? ' · ' + escapeHtml(a.model) : '') +
+            (a.tier ? ' · ' + escapeHtml(a.tier) : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="ax-row-card__actions">' +
+          '<button class="ax-btn ax-btn--primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '">Test drive</button>' +
+          '<a class="ax-btn" href="/admin/agents/' + encodeURIComponent(a.id) + '">Manage</a>' +
+          '<button class="ax-btn ax-btn--ghost" onclick="toggleCard(this)">Details <svg class="ax-chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4l3 3 3-3"/></svg></button>' +
         '</div>' +
       '</div>' +
-      '<button class="primary" data-test="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px;padding:6px 12px;font-size:12px">Test drive</button>' +
-      '<button class="ghost" data-edit="' + escapeHtml(a.id) + '" style="margin-right:6px">Edit</button>' +
-      '<a class="btn ghost" href="/admin/agents/' + encodeURIComponent(a.id) + '" style="margin-right:6px;display:inline-block;text-decoration:none">Manage</a>' +
-      '<button class="ghost" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '" style="margin-right:6px">Files</button>' +
-      '<button class="ghost" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '" style="margin-right:6px">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
-      '<button class="danger" data-id="' + escapeHtml(a.id) + '">Delete</button>';
-    div.querySelector('button.danger').addEventListener('click', () => deleteAgent(a.id));
-    div.querySelector('button.ghost[data-toggle]').addEventListener('click', (e) => {
+      '<div class="ax-row-card__details">' +
+        '<dl class="ax-detail-grid">' +
+          '<div><dt>AI engine</dt><dd>' + escapeHtml(a.tier || '—') + (a.model ? ' · ' + escapeHtml(a.model) : '') + '</dd></div>' +
+          '<div><dt>Max concurrent</dt><dd>' + escapeHtml(String(a.maxConcurrent ?? '—')) + '</dd></div>' +
+          '<div style="grid-column:1/-1"><dt>Trigger words</dt><dd><div class="ax-triggers">' + triggers + '</div></dd></div>' +
+        '</dl>' +
+        (a.systemPrompt ? '<div><dt style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--ax-muted);margin-bottom:4px;font-family:var(--ax-mono)">Personality</dt><dd style="margin:0;color:var(--ax-text-2);line-height:1.6;font-size:12.5px;white-space:pre-wrap">' + escapeHtml(a.systemPrompt) + '</dd></div>' : '') +
+        '<div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button class="ax-btn" data-edit="' + escapeHtml(a.id) + '">Edit</button>' +
+          '<button class="ax-btn" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '">Files</button>' +
+          '<button class="ax-btn" data-toggle="' + escapeHtml(a.id) + '" data-access="' + escapeHtml(a.access) + '">' + (a.access === 'public' ? 'Make private' : 'Make public') + '</button>' +
+          '<div style="flex:1"></div>' +
+          '<button class="ax-btn ax-btn--danger" data-delete="' + escapeHtml(a.id) + '">Delete</button>' +
+        '</div>' +
+      '</div>';
+
+    card.querySelector('[data-test]').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      openTestDrive(btn.dataset.test, btn.dataset.name);
+    });
+    card.querySelector('[data-edit]').addEventListener('click', () => openAgentEdit(a));
+    card.querySelector('[data-files]').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      openFilesModal(btn.dataset.files, btn.dataset.name);
+    });
+    card.querySelector('[data-toggle]').addEventListener('click', (e) => {
       const btn = e.currentTarget;
       const want = btn.dataset.access === 'public' ? 'private' : 'public';
       setAgentAccess(btn.dataset.toggle, want);
     });
-    div.querySelector('button[data-test]').addEventListener('click', (e) => {
-      const btn = e.currentTarget;
-      openTestDrive(btn.dataset.test, btn.dataset.name);
-    });
-    div.querySelector('button[data-edit]').addEventListener('click', () => openAgentEdit(a));
-    div.querySelector('button[data-files]').addEventListener('click', (e) => {
-      const btn = e.currentTarget;
-      openFilesModal(btn.dataset.files, btn.dataset.name);
-    });
-    list.appendChild(div);
+    card.querySelector('[data-delete]').addEventListener('click', () => deleteAgent(a.id));
+    list.appendChild(card);
   }
   // Refresh the cron agent picker so new agents show up.
   const sel = $('c-agent');
@@ -876,6 +1067,7 @@ async function deleteAgent(id) {
 
 function renderChannels() {
   renderChannelsMenu();
+  renderChannelsGrid();
   const t = state.telegram || { enabled: false, accounts: [] };
   const agentOptions = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
   const accountRows = t.accounts.length === 0
@@ -924,6 +1116,106 @@ const CHANNEL_DEFS = [
   { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
   { id: 'github',   icon: 'GH', label: 'GitHub' },
 ];
+
+/** Per-connector card metadata — logo color, long description, setup time.
+ *  Keeps renderChannelsGrid() focused on wiring rather than content. */
+const CONNECTOR_META = {
+  telegram: { group: 'chat', brand: '#229ED9', desc: 'Replies in Telegram DMs and groups when tagged. Paste your BotFather token; we keep the value in .env.' },
+  whatsapp: { group: 'chat', brand: '#25D366', desc: 'Answer on WhatsApp via a local session. Scan a QR once; AgentX pairs as an extra device.' },
+  slack:    { group: 'chat', brand: '#4A154B', desc: 'Agents can DM or be mentioned in channels. Uses the Events API with socket mode.' },
+  discord:  { group: 'chat', brand: '#5865F2', desc: 'Works in servers, threads, and DMs. Create a Discord bot, grant Read/Send Messages, paste the token.' },
+  gitlab:   { group: 'dev',  brand: '#FC6D26', desc: 'Pings your agent on MRs, issues, and pipeline events. Works with self-hosted too.' },
+  github:   { group: 'dev',  brand: '#24292e', desc: 'Pings your agent on PRs, issues, and CI runs. Configure per-repo.' },
+};
+
+function renderChannelsGrid() {
+  const chat = $('ch-chatapps');
+  const dev = $('ch-devtools');
+  if (!chat || !dev) return;
+  chat.innerHTML = ''; dev.innerHTML = '';
+  for (const def of CHANNEL_DEFS) {
+    const meta = CONNECTOR_META[def.id] || { group: 'chat', brand: 'var(--ax-surface-3)', desc: '' };
+    const status = channelStatus(def.id);
+    const active = state.__activeChannel === def.id;
+    const statusPill = status === 'on'
+      ? '<span class="ax-pill ax-pill--ok"><span class="ax-pill__dot"></span>live</span>'
+      : status === 'off'
+        ? '<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>off</span>'
+        : '<span class="ax-pill ax-pill--off">not set up</span>';
+    const sub = channelSubtext(def.id, status);
+    const card = document.createElement('div');
+    card.className = 'ax-connector' + (status === 'on' ? ' is-on' : '') + (active ? ' is-active' : '');
+    card.innerHTML =
+      '<div class="ax-connector__top">' +
+        '<div class="ax-connector__logo" style="background:' + meta.brand + ';color:#fff;border-color:' + meta.brand + '">' + def.icon + '</div>' +
+        '<div class="ax-connector__meta">' +
+          '<div class="ax-connector__name">' + def.label + '</div>' +
+          '<div class="ax-connector__sub">' + sub + '</div>' +
+        '</div>' +
+        '<div class="ax-connector__status">' + statusPill + '</div>' +
+      '</div>' +
+      '<div class="ax-connector__desc">' + meta.desc + '</div>' +
+      '<div class="ax-connector__foot">' +
+        '<span>' + (status === 'none' ? '~5 min setup' : 'Configured') + '</span>' +
+        '<span class="ax-connector__cta">' + (status === 'none' ? 'Set up' : 'Manage') + ' <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2l4 4-4 4"/></svg></span>' +
+      '</div>';
+    card.addEventListener('click', () => showChannelPane(def.id));
+    (meta.group === 'chat' ? chat : dev).appendChild(card);
+  }
+  if (!state.__activeChannel) {
+    // Default to telegram pane showing if nothing picked yet.
+    showChannelPane('telegram');
+  } else {
+    showChannelPane(state.__activeChannel);
+  }
+}
+
+/** Human-readable sub-text for the connector card under the name. */
+function channelSubtext(id, status) {
+  if (id === 'telegram') {
+    const t = state.telegram || {};
+    const n = (t.accounts || []).length;
+    if (n === 0) return 'Not set up';
+    return n + ' bot' + (n === 1 ? '' : 's') + ' configured';
+  }
+  if (id === 'whatsapp') {
+    const w = state.whatsapp || {};
+    return w.routeCount ? w.routeCount + ' route' + (w.routeCount === 1 ? '' : 's') : 'Not set up';
+  }
+  if (id === 'slack') {
+    const s = state.slack || {};
+    return s.botTokenRef ? (s.workspace ? 'Workspace: ' + s.workspace : 'Token set') : 'Not set up';
+  }
+  if (id === 'discord') return status === 'none' ? 'Not set up' : 'Token set';
+  if (id === 'gitlab') return status === 'none' ? 'Not set up' : 'Token set';
+  if (id === 'github') {
+    const n = ((state.webhooks || []).filter((w) => w.source === 'github')).length;
+    return n ? n + ' webhook' + (n === 1 ? '' : 's') : 'Not set up';
+  }
+  return status === 'none' ? 'Not set up' : 'Configured';
+}
+
+/** Show the pane for the given channel id, hide the others, and highlight
+ *  the matching connector card. */
+function showChannelPane(id) {
+  state.__activeChannel = id;
+  const panes = ['telegram','whatsapp','slack','discord','gitlab','github'];
+  for (const p of panes) {
+    const el = document.getElementById('ch-' + p);
+    if (el) el.hidden = (p !== id);
+  }
+  // Reflect active on connector cards
+  const chat = $('ch-chatapps');
+  const dev = $('ch-devtools');
+  [chat, dev].forEach((container) => {
+    if (!container) return;
+    container.querySelectorAll('.ax-connector').forEach((c, i) => {
+      const defs = CHANNEL_DEFS.filter(d => (CONNECTOR_META[d.id]?.group === (container === chat ? 'chat' : 'dev')));
+      const def = defs[i];
+      if (def) c.classList.toggle('is-active', def.id === id);
+    });
+  });
+}
 
 function channelStatus(id) {
   if (id === 'telegram') {
@@ -1754,28 +2046,46 @@ async function loadTokens() {
   try {
     const tokens = await req('GET', '/api/admin/tokens');
     const list = $('token-list');
-    if (!tokens.length) { list.innerHTML = '<div class="empty">No tokens issued.</div>'; return; }
+    if (!tokens.length) {
+      list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">No tokens yet</h3><p style="margin:0;font-size:13px">Create one below to let a script, a chat bridge, or another AgentX machine talk to this one.</p></div>';
+      return;
+    }
     list.innerHTML = '';
     for (const t of tokens) {
-      const div = document.createElement('div');
-      div.className = 'row-card';
-      const status = t.revokedAt
-        ? '<span class="chip" style="background:rgba(239,68,68,0.15);color:var(--red)">revoked</span>'
-        : (t.expiresAt && Date.parse(t.expiresAt) < Date.now()
-          ? '<span class="chip" style="background:rgba(245,158,11,0.15);color:var(--yellow)">expired</span>'
-          : '<span class="chip" style="background:rgba(34,197,94,0.15);color:var(--green)">active</span>');
-      const expiry = t.expiresAt ? ' · expires ' + new Date(t.expiresAt).toLocaleDateString() : ' · no expiry';
-      const lastUsed = t.lastUsedAt ? ' · last used ' + new Date(t.lastUsedAt).toLocaleString() : ' · never used';
-      div.innerHTML =
-        '<div class="info"><h3>' + escapeHtml(t.name) + '</h3>' +
-          '<div class="meta">' + status +
-            '<b>' + escapeHtml(t.id) + '</b> · <code style="font-family:ui-monospace,monospace">' + escapeHtml(t.prefix) + '…</code> · scopes: ' + (t.scopes.map(escapeHtml).join(', ') || '—') + expiry + lastUsed +
+      const now = Date.now();
+      const expired = t.expiresAt && Date.parse(t.expiresAt) < now;
+      const stale = t.lastUsedAt && (now - Date.parse(t.lastUsedAt)) > 30 * 24 * 60 * 60 * 1000 && !t.revokedAt;
+      const statusPill = t.revokedAt
+        ? '<span class="ax-pill ax-pill--off">revoked</span>'
+        : (expired
+          ? '<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>expired</span>'
+          : (stale
+            ? '<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>stale</span>'
+            : '<span class="ax-pill ax-pill--ok"><span class="ax-pill__dot"></span>active</span>'));
+      const sub = [
+        (t.scopes && t.scopes.length) ? 'scopes: ' + t.scopes.map(escapeHtml).join(', ') : 'no scopes',
+        t.lastUsedAt ? 'last used ' + new Date(t.lastUsedAt).toLocaleString() : 'never used',
+        t.expiresAt ? 'expires ' + new Date(t.expiresAt).toLocaleDateString() : 'no expiry',
+      ].join(' · ');
+      const avClass = t.revokedAt ? '' : (stale || expired ? 'ax-avatar--amber' : 'ax-avatar--teal');
+      const card = document.createElement('div');
+      card.className = 'ax-row-card';
+      card.innerHTML =
+        '<div class="ax-row-card__top">' +
+          '<div class="ax-avatar ' + avClass + '">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15L19 4M18 5l2 2M15 8l2 2"/></svg>' +
           '</div>' +
-        '</div>' +
-        (t.revokedAt ? '' : '<button class="danger" data-id="' + escapeHtml(t.id) + '">Revoke</button>');
-      const del = div.querySelector('button.danger');
+          '<div class="ax-row-card__info">' +
+            '<div class="ax-name">' + escapeHtml(t.name) + ' ' + statusPill + '</div>' +
+            '<div class="ax-sub"><span class="mono">' + escapeHtml(t.prefix) + '…</span> · ' + sub + '</div>' +
+          '</div>' +
+          '<div class="ax-row-card__actions">' +
+            (t.revokedAt ? '' : '<button class="ax-btn ax-btn--danger" data-revoke="' + escapeHtml(t.id) + '">Revoke</button>') +
+          '</div>' +
+        '</div>';
+      const del = card.querySelector('[data-revoke]');
       if (del) del.addEventListener('click', () => revokeToken(t.id));
-      $('token-list').appendChild(div);
+      list.appendChild(card);
     }
   } catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }

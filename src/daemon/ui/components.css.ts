@@ -442,6 +442,10 @@ export const AX_COMPONENTS_CSS = `
 .ax-connector.is-on {
   border-color: color-mix(in oklch, var(--ax-accent) 40%, var(--ax-border));
 }
+.ax-connector.is-active {
+  border-color: var(--ax-accent);
+  background: color-mix(in oklch, var(--ax-accent) 8%, var(--ax-surface));
+}
 .ax-connector__top {
   display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
 }
@@ -546,9 +550,62 @@ export const AX_COMPONENTS_CSS = `
   border-top: 1px solid var(--ax-border);
 }
 
+/* --- Mesh hero (enable toggle + SVG network viz) --- */
+.ax-mesh-hero {
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); padding: 20px;
+  display: grid; grid-template-columns: 1fr 240px; gap: 24px;
+  align-items: center; margin-bottom: 18px;
+}
+.ax-mesh-hero h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.ax-mesh-hero p { margin: 0 0 12px; font-size: 12.5px; color: var(--ax-text-2); line-height: 1.5; }
+.ax-mesh-viz { position: relative; width: 240px; height: 140px; }
+.ax-mesh-dot {
+  position: absolute; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--ax-surface-2); border: 2px solid var(--ax-border-2);
+  display: grid; place-items: center;
+  font-family: var(--ax-mono); font-size: 10px; font-weight: 600;
+  color: var(--ax-text-2);
+}
+.ax-mesh-dot.self {
+  background: color-mix(in oklch, var(--ax-accent) 18%, var(--ax-surface));
+  border-color: var(--ax-accent); color: var(--ax-accent);
+}
+.ax-mesh-dot.empty {
+  border-style: dashed; color: var(--ax-muted); font-size: 14px;
+}
+.ax-mesh-wires { position: absolute; inset: 0; }
+.ax-mesh-wires line { stroke: var(--ax-border-2); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.ax-mesh-wires line.live { stroke: var(--ax-accent); stroke-dasharray: 0; opacity: 0.6; }
+
+/* Pill-shaped toggle (used for the mesh enable switch + similar binary actions). */
+.ax-mesh-toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: 20px; padding: 4px 14px 4px 5px;
+  cursor: pointer; user-select: none; font-size: 12px;
+}
+.ax-mesh-switch {
+  width: 32px; height: 18px; background: var(--ax-surface-3);
+  border-radius: 9px; position: relative; transition: background 160ms;
+}
+.ax-mesh-switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ax-text-2); transition: all 160ms;
+}
+.ax-mesh-toggle.is-on .ax-mesh-switch {
+  background: color-mix(in oklch, var(--ax-accent) 80%, transparent);
+}
+.ax-mesh-toggle.is-on .ax-mesh-switch::after {
+  left: 16px; background: var(--ax-bg);
+}
+
 /* --- Responsive collapses for the settings primitives --- */
 @media (max-width: 760px) {
   .ax-health-strip { grid-template-columns: repeat(2, 1fr); }
   .ax-connectors { grid-template-columns: 1fr; }
   .ax-detail-grid { grid-template-columns: 1fr; }
+  .ax-mesh-hero { grid-template-columns: 1fr; }
+  .ax-mesh-viz { margin: 0 auto; }
 }`
