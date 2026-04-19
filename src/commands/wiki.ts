@@ -669,7 +669,14 @@ wiki
     const body = fmMatch[2]
     const title = fm.title || topic
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60)
-    const articlePath = `${type}s/${slug}.md`
+    // Use canonical per-type directory names. Most types pluralise with +s,
+    // but "person" goes in "people/" (English irregular plural — and matches
+    // what Farzapedia / our catalog groupings use everywhere else).
+    const TYPE_DIR: Record<string, string> = {
+      person: "people", project: "projects", place: "places",
+      concept: "concepts", event: "events", decision: "decisions", pattern: "patterns",
+    }
+    const articlePath = `${TYPE_DIR[type] || type + "s"}/${slug}.md`
 
     console.log()
     console.log(chalk.bold("  === Draft preview ==="))
