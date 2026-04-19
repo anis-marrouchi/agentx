@@ -95,6 +95,12 @@ const elicitationResolvers = new Map<string, (result: any) => void>()
 // Default daemon URL (local)
 const DAEMON_URL = process.env.AGENTX_DAEMON_URL || "http://localhost:19900"
 
+// Strip ANSI escape codes from CLI output (we re-invoke the CLI for tools
+// that shell out — chalk colors its output, MCP clients want plain text).
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]/g
+function stripAnsi(s: string): string { return s.replace(ANSI_RE, "") }
+
 // Tool definitions
 const TOOLS = [
   {
@@ -296,6 +302,101 @@ const TOOLS = [
         },
       },
       required: ["question"],
+    },
+  },
+  {
+    name: "agentx_wiki_patch",
+    description:
+      "Edit a single wiki article via an LLM-applied instruction and write the result. Use this for targeted fixes, additions, or clarifications to an existing article when you already know what's wrong. For brand-new articles, use `agentx_wiki_interview` instead.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agent: {
+          type: "string",
+          description: "Agent ID whose wiki owns the article (required).",
+        },
+        title_or_path: {
+          type: "string",
+          description: "Article title (case-insensitive) or relative path like 'people/anis.md'.",
+        },
+        instruction: {
+          type: "string",
+          description: "Plain-English edit instruction (e.g. 'Add a section on the KSA Supabase rollout'). The LLM makes the minimum edit that satisfies it.",
+        },
+        model: {
+          type: "string",
+          description: "Claude model for the patch (default: sonnet).",
+          default: "sonnet",
+        },
+        dry_run: {
+          type: "boolean",
+          description: "Preview the patched body without writing.",
+          default: false,
+        },
+      },
+      required: ["agent", "title_or_path", "instruction"],
+    },
+  },
+  {
+    name: "agentx_wiki_interview",
+    description:
+      "Run a scripted wiki interview — synthesize ONE typed article from a list of Q&A answers, and save it. Non-interactive: caller supplies the answers upfront. Use for capturing tacit knowledge (person/project/decision/pattern/...) that never hit a channel. For editing an existing article, use `agentx_wiki_patch`.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agent: {
+          type: "string",
+          description: "Agent ID that will own the new article (required).",
+        },
+        topic: {
+          type: "string",
+          description: "What the article is about — e.g. 'MTGL deployment procedure', 'Yousef Al-Fahad', 'Hackathonat KSA migration'.",
+        },
+        type: {
+          type: "string",
+          description: "Article type: person | project | place | concept | event | decision | pattern",
+        },
+        answers: {
+          type: "array",
+          description: "Answers to the type-specific question bank (one per question, in order). Empty string = skip that question. Final entry is typically 'save'.",
+          items: { type: "string" },
+        },
+        model: {
+          type: "string",
+          description: "Synthesis model (default: sonnet).",
+          default: "sonnet",
+        },
+        commit: {
+          type: "boolean",
+          description: "Write the article (true) or just preview (false).",
+          default: true,
+        },
+      },
+      required: ["agent", "topic", "type", "answers"],
+    },
+  },
+  {
+    name: "agentx_graph_review",
+    description:
+      "Triage pending intent-graph classifications via the configured review agent. The review agent sees each pending classification, may call `wiki query` for institutional context, and decides approve/reject/skip. Structural changes (new org, new unit) gate here; leaf additions auto-approve without this step.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        max: {
+          type: "number",
+          description: "Cap reviews this run (default 20).",
+          default: 20,
+        },
+        dry_run: {
+          type: "boolean",
+          description: "Show decisions but don't apply approvals/rejections.",
+          default: false,
+        },
+        agent: {
+          type: "string",
+          description: "Override the review agent (defaults to graph.reviewAgent or graph.draftAgent).",
+        },
+      },
     },
   },
 ]
@@ -570,6 +671,94 @@ async function handleToolCall(
       const walkCount = result.walked.length
       const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
       return { content: [{ type: "text", text: body }] }
+    }
+
+    case "agentx_wiki_patch": {
+      const agent = String(args.agent || "").trim()
+      const titleOrPath = String(args.title_or_path || "").trim()
+      const instruction = String(args.instruction || "").trim()
+      if (!agent || !titleOrPath || !instruction) {
+        return { content: [{ type: "text", text: "Error: `agent`, `title_or_path`, and `instruction` are required." }] }
+      }
+      const model = String(args.model || "sonnet")
+      const dry = args.dry_run === true
+      const { execFileSync } = await import("child_process")
+      const flags = ["wiki", "patch", agent, titleOrPath, instruction, "--patch-model", model, ...(dry ? ["--no-commit"] : ["--yes"])]
+      try {
+        const out = execFileSync(process.execPath, [process.argv[1], ...flags], {
+          cwd,
+          encoding: "utf-8",
+          timeout: 180_000,
+          maxBuffer: 8 * 1024 * 1024,
+        })
+        return { content: [{ type: "text", text: stripAnsi(out).trim() || "(no output)" }] }
+      } catch (e: any) {
+        const combined = [e.stdout, e.stderr, e.message].filter(Boolean).map((s: any) => stripAnsi(String(s))).join("\n").trim()
+        return { content: [{ type: "text", text: `patch failed:\n${combined.slice(0, 2000)}` }] }
+      }
+    }
+
+    case "agentx_wiki_interview": {
+      const agent = String(args.agent || "").trim()
+      const topic = String(args.topic || "").trim()
+      const type = String(args.type || "").trim().toLowerCase()
+      const answers = Array.isArray(args.answers) ? (args.answers as any[]).map(a => String(a ?? "")) : null
+      if (!agent || !topic || !type || !answers || answers.length === 0) {
+        return { content: [{ type: "text", text: "Error: `agent`, `topic`, `type`, and non-empty `answers[]` are required." }] }
+      }
+      const model = String(args.model || "sonnet")
+      const commit = args.commit !== false
+      // Last line in --answers is typically the save/edit/scrap verdict — default save.
+      const terminal = answers[answers.length - 1]?.toLowerCase()
+      const finalAnswers = ["save", "edit", "scrap"].includes(terminal) ? answers : [...answers, "save"]
+      const { execFileSync } = await import("child_process")
+      const { writeFileSync, mkdtempSync } = await import("fs")
+      const { tmpdir } = await import("os")
+      const { join } = await import("path")
+      const tmp = mkdtempSync(join(tmpdir(), "agentx-mcp-interview-"))
+      const answersPath = join(tmp, "answers.txt")
+      writeFileSync(answersPath, finalAnswers.join("\n"))
+      const flags = [
+        "wiki", "interview",
+        "--agent", agent,
+        "--topic", topic,
+        "--type", type,
+        "--model", model,
+        "--answers", answersPath,
+        ...(commit ? [] : ["--no-commit"]),
+      ]
+      try {
+        const out = execFileSync(process.execPath, [process.argv[1], ...flags], {
+          cwd,
+          encoding: "utf-8",
+          timeout: 240_000,
+          maxBuffer: 8 * 1024 * 1024,
+        })
+        return { content: [{ type: "text", text: stripAnsi(out).trim() || "(no output)" }] }
+      } catch (e: any) {
+        const combined = [e.stdout, e.stderr, e.message].filter(Boolean).map((s: any) => stripAnsi(String(s))).join("\n").trim()
+        return { content: [{ type: "text", text: `interview failed:\n${combined.slice(0, 2000)}` }] }
+      }
+    }
+
+    case "agentx_graph_review": {
+      const max = typeof args.max === "number" ? Math.max(1, args.max as number) : 20
+      const dry = args.dry_run === true
+      const agent = args.agent ? String(args.agent) : ""
+      const { execFileSync } = await import("child_process")
+      const flags = ["graph", "review", "--max", String(max), ...(dry ? ["--dry-run"] : []), ...(agent ? ["--agent", agent] : [])]
+      try {
+        const out = execFileSync(process.execPath, [process.argv[1], ...flags], {
+          cwd,
+          encoding: "utf-8",
+          timeout: 600_000,
+          maxBuffer: 8 * 1024 * 1024,
+        })
+        return { content: [{ type: "text", text: stripAnsi(out).trim() || "(no output)" }] }
+      } catch (e: any) {
+        const combined = [e.stdout, e.stderr, e.message].filter(Boolean).map((s: any) => stripAnsi(String(s))).join("\n").trim()
+        return { content: [{ type: "text", text: `graph review failed:\n${combined.slice(0, 2000)}` }] }
+      }
     }
 
     case "agentx_debug": {

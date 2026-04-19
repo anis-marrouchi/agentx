@@ -14,13 +14,13 @@ The backlog. No vision copy.
 
 **A/B harness as a cron** — `wiki ab-test` works interactively; no standing run. Waiting on traffic volume to justify alerting.
 
-## Scoped, not built
+## Scoped, partial
 
-**Procedure-delta extraction** — the [Karpathy blog](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026) promised this as the replacement for batch absorb on runbook content. Procedures (trigger/inputs/steps/expected/KPIs) become first-class; agents emit one-line deltas against the SOP when they run one. Cost is O(procedure-runs), not O(entries × articles). ~1 week.
+**Procedure-delta extraction** — data model + `agentx procedure list/add/show` shipped. Deferred: the delta flow itself (agents emit one-line deltas when they run a procedure, cheap O(runs) instead of O(entries × articles)). ~1 week for the delta pipeline.
 
-**Cross-mesh graph sync** — each host's graph is fully local. At N=2 the divergence cost is low; real payoff at N≥5. Leader-follower with MacBook as leader is the lean.
+**Cross-mesh graph sync** — v1 shipped: `GET /graph/{schema,nodes,classifications}` on the daemon + `agentx graph pull --from <peer>` (leader-follower, local wins on conflict, fingerprint cache populated from peer's approved classifications). Bidirectional push + schema reconciliation still parked.
 
-**MCP tool surface beyond `wiki_query`** — `wiki interview/patch/edit`, `graph review`, `skill sync` are CLI-only. Exposing them via MCP lets Claude Code / Cursor / Windsurf call them as tools. ~1 day per tool.
+**MCP tool surface beyond `wiki_query`** — `agentx_wiki_patch`, `agentx_wiki_interview`, `agentx_graph_review` now exposed over MCP. Claude Code / Cursor / Windsurf can call them as tools. Remaining CLI-only: `wiki edit`, `wiki quiz`, `skill sync`, `procedure add/show`.
 
 ## Parking lot
 

@@ -1203,6 +1203,43 @@ export class AgentXDaemon {
           break
         }
 
+        // --- Graph API (read-only, for mesh sync) ---
+
+        case "GET /graph/schema": {
+          const store = this.registry.getGraphStore()
+          if (!store) { this.json(res, 404, { error: "graph disabled on this node" }); break }
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            schema: store.loadSchema(),
+          })
+          break
+        }
+
+        case "GET /graph/nodes": {
+          const store = this.registry.getGraphStore()
+          if (!store) { this.json(res, 404, { error: "graph disabled on this node" }); break }
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            ...store.loadNodes(),
+          })
+          break
+        }
+
+        case "GET /graph/classifications": {
+          const store = this.registry.getGraphStore()
+          if (!store) { this.json(res, 404, { error: "graph disabled on this node" }); break }
+          const status = (url.searchParams.get("status") || "approved") as "pending" | "approved" | "rejected"
+          const limit = Math.max(1, Math.min(1000, parseInt(url.searchParams.get("limit") || "200", 10) || 200))
+          const items = store.listByStatus(status, limit)
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            status,
+            count: items.length,
+            classifications: items,
+          })
+          break
+        }
+
         default:
           this.json(res, 404, {
             error: "Not found",
@@ -1214,6 +1251,9 @@ export class AgentXDaemon {
               "GET  /wiki/agents",
               "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",
               "GET  /wiki/articles?agent=X",
+              "GET  /graph/schema",
+              "GET  /graph/nodes",
+              "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",
               "POST /task { agent, message, context? }",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",

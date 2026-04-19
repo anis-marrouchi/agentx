@@ -350,6 +350,7 @@ export class AgentRegistry {
 
   /** Wiki hub accessor. */
   getWikiHub(): WikiHub { return this.wikiHub }
+  getGraphStore(): GraphStore | undefined { return this.graphStore }
 
   /**
    * Build peer list for context engine.

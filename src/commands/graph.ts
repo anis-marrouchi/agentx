@@ -125,6 +125,124 @@ graph
     console.log()
   })
 
+// --- graph pull (cross-mesh sync) ---
+// v1: leader-follower — pull schema + nodes + approved classifications from
+// a peer's daemon. Conflicts skip silently; local always wins. Only approved
+// classifications come across — pending/rejected stay peer-local. Schema
+// divergence is reported but not reconciled (that's a harder design).
+
+graph
+  .command("pull")
+  .description("pull schema + nodes + approved classifications from a peer's graph")
+  .requiredOption("--from <url>", "peer daemon URL (e.g. http://clawd.noqta.tn:19900)")
+  .option("--token <t>", "bearer token for the peer (if it requires auth)")
+  .option("--limit <n>", "max approved classifications to pull", "500")
+  .option("--dry-run", "show what would change, don't write")
+  .action(async (opts) => {
+    const config = loadDaemonConfig()
+    if (!config.graph?.enabled) {
+      console.log(chalk.yellow("  graph.enabled is false on this node — nothing to sync INTO."))
+      return
+    }
+    const peer = String(opts.from).replace(/\/+$/, "")
+    const limit = Math.max(1, parseInt(opts.limit) || 500)
+    const headers: Record<string, string> = { Accept: "application/json" }
+    if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`
+
+    const store = new GraphStore({ baseDir: resolve(process.cwd(), config.graph.baseDir) })
+    const localSchema = store.loadSchema()
+    const localNodes = store.loadNodes().nodes
+    const localIds = new Set(localNodes.map(n => n.id))
+
+    // 1. Schema — warn on divergence. If local is fresh (no nodes committed),
+    //    adopt peer schema. Otherwise keep local + warn about axis drift.
+    console.log()
+    console.log(chalk.bold(`  graph pull ← ${peer}`))
+    let peerSchema: any, peerNodes: any[], peerClassifications: any[]
+    try {
+      const schemaRes = await fetch(`${peer}/graph/schema`, { headers })
+      if (!schemaRes.ok) throw new Error(`schema HTTP ${schemaRes.status}`)
+      const schemaData = await schemaRes.json() as any
+      peerSchema = schemaData.schema
+
+      const nodesRes = await fetch(`${peer}/graph/nodes`, { headers })
+      if (!nodesRes.ok) throw new Error(`nodes HTTP ${nodesRes.status}`)
+      peerNodes = ((await nodesRes.json() as any).nodes) || []
+
+      const clRes = await fetch(`${peer}/graph/classifications?status=approved&limit=${limit}`, { headers })
+      if (!clRes.ok) throw new Error(`classifications HTTP ${clRes.status}`)
+      peerClassifications = ((await clRes.json() as any).classifications) || []
+    } catch (e: any) {
+      console.log(chalk.red(`  fetch failed: ${e.message}`))
+      return
+    }
+
+    const localLevels = localSchema.levels.map((l: any) => l.id).join(",")
+    const peerLevels = peerSchema?.levels?.map((l: any) => l.id).join(",")
+    const schemaMatches = localLevels === peerLevels
+    if (!schemaMatches) {
+      console.log(chalk.yellow(`  ⚠ schema levels differ:`))
+      console.log(chalk.dim(`    local: ${localLevels}`))
+      console.log(chalk.dim(`    peer:  ${peerLevels}`))
+      if (localNodes.length === 0 && !opts.dryRun) {
+        console.log(chalk.dim(`  local is empty — adopting peer schema`))
+        store.saveSchema(peerSchema)
+      } else {
+        console.log(chalk.yellow(`  keeping local schema; node import may fail if levels disagree`))
+      }
+    } else {
+      console.log(chalk.dim(`  schema matches (${localSchema.levels.length} levels)`))
+    }
+
+    // 2. Nodes — import in topological order (level ascending) so parents
+    //    exist before children. Skip any id already present locally.
+    const schemaForImport = schemaMatches ? localSchema : peerSchema
+    const levelOrder = new Map<string, number>()
+    schemaForImport.levels.forEach((l: any, i: number) => levelOrder.set(l.id, i))
+    const sortedPeerNodes = [...peerNodes].sort(
+      (a, b) => (levelOrder.get(a.level) ?? 99) - (levelOrder.get(b.level) ?? 99),
+    )
+
+    let nodesAdded = 0, nodesSkipped = 0, nodesFailed = 0
+    for (const n of sortedPeerNodes) {
+      if (localIds.has(n.id)) { nodesSkipped++; continue }
+      if (opts.dryRun) { nodesAdded++; localIds.add(n.id); continue }
+      try {
+        store.addNode({
+          ...n,
+          createdBy: n.createdBy ? `${n.createdBy} (sync)` : `sync:${peer}`,
+        })
+        localIds.add(n.id)
+        nodesAdded++
+      } catch (e: any) {
+        nodesFailed++
+        console.log(chalk.yellow(`    skip node ${n.id}: ${e.message?.slice(0, 100)}`))
+      }
+    }
+    console.log(chalk.dim(`  nodes: +${nodesAdded} added · ${nodesSkipped} already-present · ${nodesFailed} failed`))
+
+    // 3. Approved classifications — populate fingerprint cache so recurring
+    //    similar messages here snap to the peer's approved path without
+    //    another LLM call. Skip any fingerprint already cached locally.
+    let fpAdded = 0, fpSkipped = 0
+    for (const c of peerClassifications) {
+      if (!c.msgHash || !Array.isArray(c.path)) continue
+      if (store.getFingerprint(c.msgHash)) { fpSkipped++; continue }
+      if (opts.dryRun) { fpAdded++; continue }
+      store.setFingerprint(c.msgHash, { path: c.path, leaf: c.leaf || {} })
+      fpAdded++
+    }
+    console.log(chalk.dim(`  fingerprints: +${fpAdded} cached · ${fpSkipped} already-present`))
+
+    console.log()
+    if (opts.dryRun) {
+      console.log(chalk.dim(`  Dry-run — omit --dry-run to apply.`))
+    } else {
+      console.log(chalk.green(`  ✓ pulled from ${peer}`))
+    }
+    console.log()
+  })
+
 // --- helpers ---
 
 /**

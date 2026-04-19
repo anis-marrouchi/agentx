@@ -12,6 +12,8 @@ import { usage } from "@/commands/usage"
 import { board } from "@/commands/board"
 import { wiki } from "@/commands/wiki"
 import { graph } from "@/commands/graph"
+import { procedure } from "@/commands/procedure"
+import { serve } from "@/commands/serve"
 import { getPackageInfo } from "@/utils/get-package-info"
 
 process.on("SIGINT", () => process.exit(0))
@@ -49,8 +51,10 @@ async function main() {
     .addCommand(board)
     .addCommand(wiki)
     .addCommand(graph)
+    .addCommand(procedure)
     .addCommand(token)
     .addCommand(doctor)
+    .addCommand(serve)
 
   const args = process.argv.slice(2)
   if (args.length === 0) {
