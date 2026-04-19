@@ -1919,7 +1919,12 @@ function renderNode(node) {
 function renderAgent(a, node) {
   const card = document.createElement('div');
   const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
-  const errored = (a.errors || 0) > 0;
+  // Error border reflects the MOST RECENT task's status, not the cumulative
+  // error count. A red border drops the moment a new task succeeds — it should
+  // not persist forever because of a failure an hour ago. The cumulative
+  // a.errors count stays visible in the "failed" ministat below as an
+  // informational value.
+  const errored = a.lastSummary && a.lastSummary.ok === false;
   card.className = 'ax-card ax-agent' + (busy ? ' is-handling' : '') + (errored ? ' is-errored' : '');
   const nodeUrl = (node && node.url) || '';
   const L = window.UI_LABELS || {};

@@ -166,10 +166,20 @@ export class GraphStore {
 
   // --- Classifications (append-only log) ---
 
-  appendClassification(c: Classification): void {
+  appendClassification(c: Classification): boolean {
     const parsed = classificationSchema.safeParse(c)
     if (!parsed.success) {
-      throw new Error(`Refusing to log invalid classification: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
+      // Before the fix this threw and took down the whole task. Now we drop
+      // the bad classification and log enough detail (the offending path +
+      // axes keys) for the operator to diagnose the prompt. Returning false
+      // lets callers decide whether to retry with a cleaner proposal.
+      const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(" · ")
+      this.log(
+        `skipped invalid classification — ${issues} ·`,
+        `path=${JSON.stringify(c.path)}`,
+        `axes-keys=${JSON.stringify(Object.keys(c.proposedAxes || {}))}`,
+      )
+      return false
     }
     const line = JSON.stringify(parsed.data) + "\n"
     const p = this.classificationsPath()
@@ -177,6 +187,7 @@ export class GraphStore {
       mkdirSync(dirname(p), { recursive: true })
     }
     appendFileSync(p, line)
+    return true
   }
 
   /** Read the last N classifications, newest first. Cheap enough for the admin UI. */

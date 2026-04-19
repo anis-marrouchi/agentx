@@ -195,6 +195,16 @@ export class Classifier {
       ``,
       `TASK: classify this message into one path through the schema — one node per level from root toward leaf. Shorter paths are OK if you are not confident past a certain depth. For any node id you invent, include its axes in proposedAxes.`,
       ``,
+      `NODE ID RULES (strict — invalid ids get dropped):`,
+      `- lowercase-kebab only: [a-z0-9][a-z0-9_-]*`,
+      `- no spaces, no uppercase, no punctuation, no Arabic/other non-Latin`,
+      `- if the human-readable label is "Sales Manager", the id is "sales-manager"`,
+      `- if the label contains non-Latin script, use a short Latin-slug + put the original in axes.name`,
+      `- good: "business", "noqta", "sales-manager", "activity-review-mr"`,
+      `- bad:  "Business", "sales manager", "Scope: Business", "تليجرام"`,
+      ``,
+      `If a node needs a display name, put the human-readable form in axes.name — never in the node id.`,
+      ``,
       `Return ONE JSON object on one line, no prose, no fences:`,
       `  { "path": string[], "proposedAxes": { [nodeId]: { [axisName]: string } }, "leaf": { "input"?: string, "output"?: string }, "confidence": number }`,
       `confidence in [0,1]. Prefer low confidence over guessing.`,
@@ -238,6 +248,10 @@ export class Classifier {
     // LLM often returns human-readable labels ("Business", "Sales Manager").
     // The node-id schema requires a lowercase slug, so normalize here and
     // remember the original → slug mapping so proposedAxes stays attached.
+    // We also drop any element that can't be slugified into a valid id (e.g.
+    // a path entry of pure Arabic script) — better to classify with a shorter
+    // path than to have the store reject the whole classification.
+    const NODE_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
     const slugMap = new Map<string, string>()
     const path: string[] = parsed.path
       .filter((s: unknown): s is string => typeof s === "string" && s.length > 0)
@@ -247,7 +261,7 @@ export class Classifier {
         if (trimmed !== slugged) slugMap.set(trimmed, slugged)
         return slugged
       })
-      .filter((s: string) => s.length > 0)
+      .filter((s: string) => NODE_ID_RE.test(s))
     if (path.length === 0) return null
 
     const proposedAxes: Record<string, Record<string, string>> = {}
