@@ -412,6 +412,344 @@ wiki
     }
   })
 
+// agentx wiki interview — interactive write-side for the wiki.
+// Operator answers a short question bank per article type; an LLM
+// synthesizes a Farzapedia-shape article from the transcript. Accounts
+// for the "absorb only captures what's already been said in channels"
+// gap — this is where knowledge lives in your head.
+wiki
+  .command("interview")
+  .description("interactive interview session — Q&A with an LLM synthesizer, produces one typed wiki article")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "which agent's wiki to write to (required)")
+  .option("--topic <text>", "what to interview about (e.g. 'MTGL deployment procedure')")
+  .option("--type <t>", "article type hint (person|project|place|concept|event|decision|pattern)")
+  .option("--model <m>", "synthesis model", "sonnet")
+  .option("--no-commit", "show the draft but don't write")
+  .action(async (opts) => {
+    const readline = await import("node:readline/promises")
+    const { randomUUID } = await import("node:crypto")
+    const { WIKI_ARTICLE_TYPES } = await import("@/wiki/types")
+
+    if (!opts.agent) {
+      console.log(chalk.red("  --agent <id> is required. The article will be owned by this agent."))
+      return
+    }
+    const hub = getHub(opts.dir)
+    let store
+    try { store = hub.getAgentWiki(opts.agent) } catch (e: any) {
+      console.log(chalk.red(`  can't open wiki for agent "${opts.agent}": ${e.message}`))
+      return
+    }
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+    const ask = async (prompt: string): Promise<string> => (await rl.question(prompt)).trim()
+
+    console.log()
+    console.log(chalk.bold("  Wiki Interview"))
+    console.log(chalk.dim("  One article per session. Empty answer = skip field. /done = stop & synthesize. /abort = quit."))
+    console.log()
+
+    // Topic
+    let topic = opts.topic || ""
+    if (!topic) {
+      topic = await ask(chalk.cyan("  Topic? ") + chalk.dim("(a person, a procedure, a past event, …) "))
+      if (!topic || topic === "/abort") { rl.close(); return }
+    }
+
+    // Type
+    let type = (opts.type || "").toLowerCase()
+    const validTypes = new Set(WIKI_ARTICLE_TYPES as readonly string[])
+    if (!validTypes.has(type)) {
+      console.log(chalk.dim(`  Types: ${WIKI_ARTICLE_TYPES.join(" | ")}`))
+      const picked = await ask(chalk.cyan("  Type? "))
+      if (picked === "/abort") { rl.close(); return }
+      if (!validTypes.has(picked)) {
+        console.log(chalk.yellow(`  "${picked}" isn't a valid type. Falling back to "concept".`))
+        type = "concept"
+      } else {
+        type = picked
+      }
+    }
+
+    // Question bank per type
+    const QUESTIONS: Record<string, string[]> = {
+      person: [
+        "Full name (and any aliases / Telegram handle / GitLab username)?",
+        "Role or title?",
+        "Which org or team are they part of (use the article title if you have one)?",
+        "Key responsibilities in OUR work?",
+        "Preferred channel to reach them (Telegram, email, in-person, …)?",
+        "Who do they report to? (skip if none)",
+        "Notable decisions, events, or patterns they're involved in?",
+        "Anything quirky we should remember (timezone, working hours, style)?",
+      ],
+      project: [
+        "One-line description — what is this project?",
+        "Who owns it? (person article title)",
+        "Tech stack or key tools involved?",
+        "Current status (active / paused / archived)?",
+        "Repo / URL / path on disk?",
+        "Two or three key decisions made so far?",
+        "Any open blockers, risks, or known issues?",
+        "Related projects or patterns?",
+      ],
+      place: [
+        "Kind — office / server / environment / domain / URL?",
+        "Address — URL, IP, hostname, or physical location?",
+        "Owner (person or team)?",
+        "How to access it (SSH host, login, VPN, …)?",
+        "What lives there (services, people, data)?",
+        "Known quirks (timezone, uptime, access restrictions)?",
+      ],
+      concept: [
+        "Define it in one sentence — what does this term mean in OUR work?",
+        "Where did we first adopt it (origin story, date)?",
+        "Two or three concrete examples from our team?",
+        "What does it replace or extend (older concept, related concept)?",
+        "Common misunderstandings to avoid?",
+      ],
+      event: [
+        "Date (YYYY-MM-DD)?",
+        "One-line summary — what happened?",
+        "Who was involved?",
+        "Timeline — key moments (start → resolution)?",
+        "Impact — what broke, what got delivered, who was affected?",
+        "Resolution / outcome?",
+        "Follow-ups or lessons captured?",
+      ],
+      decision: [
+        "Context — what was the situation forcing a choice?",
+        "Options that were considered?",
+        "Chosen option — and one-sentence why?",
+        "Alternatives rejected — and one-sentence why not?",
+        "Who decided, and when (date)?",
+        "Is this reversible, and what would trigger a revisit?",
+      ],
+      pattern: [
+        "Trigger — when should someone follow this pattern?",
+        "Inputs required (what do you need before starting)?",
+        "Steps in order — keep it tight, one line per step?",
+        "Expected output — how do you know it worked?",
+        "Common failure modes?",
+        "Related patterns, decisions, or runbooks?",
+      ],
+    }
+    const questions = QUESTIONS[type] || QUESTIONS.concept
+
+    // Ask each question
+    console.log()
+    console.log(chalk.bold(`  Topic: ${chalk.cyan(topic)}  ·  Type: ${chalk.magenta(type)}`))
+    console.log(chalk.dim(`  ${questions.length} questions. Skip with empty answer. /done to stop early.`))
+    console.log()
+
+    type QA = { q: string; a: string }
+    const qas: QA[] = []
+    let aborted = false
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i]
+      const a = await ask(`  ${chalk.dim(`[${i + 1}/${questions.length}]`)} ${q}\n  ${chalk.green(">")} `)
+      if (a === "/abort") { aborted = true; break }
+      if (a === "/done") break
+      if (a === "/skip") continue
+      if (a) qas.push({ q, a })
+    }
+
+    // Always ask for anything extra
+    if (!aborted) {
+      const extra = await ask(`\n  ${chalk.dim("Anything else worth capturing?")}\n  ${chalk.green(">")} `)
+      if (extra && extra !== "/abort" && extra !== "/done") qas.push({ q: "Anything else worth capturing?", a: extra })
+    }
+
+    if (aborted || qas.length === 0) {
+      console.log(chalk.yellow("\n  Nothing captured. Exiting."))
+      rl.close()
+      return
+    }
+
+    // Build the catalog slice for wikilink grounding (first 40 titles max)
+    const existingArticles = store.listArticles(opts.agent).slice(0, 40)
+    const catalogLines = existingArticles
+      .map(a => `- ${a.meta.title} [${a.meta.type || "?"}]`)
+      .join("\n")
+
+    const synthesisPrompt = [
+      `You are compiling one Farzapedia-style wiki article from an operator interview transcript.`,
+      ``,
+      `**Topic:** ${topic}`,
+      `**Type:** ${type}`,
+      `**Owning agent:** ${opts.agent}`,
+      ``,
+      `## Transcript`,
+      ...qas.map(x => `\nQ: ${x.q}\nA: ${x.a}`),
+      ``,
+      `## Existing articles (use [[Title]] wikilinks when referencing these)`,
+      catalogLines || "(none yet)",
+      ``,
+      `## Output rules`,
+      `- Output EXACTLY one markdown file: frontmatter (---) + body. No code fences, no preamble.`,
+      `- Frontmatter fields in this exact order: title, type, related, tags, owner, access, created, last_updated, sources.`,
+      `  - \`title\`: "…"`,
+      `  - \`type\`: ${type}`,
+      `  - \`related\`: ["Article Title", …]   (titles that exist in the catalog above; drop if none)`,
+      `  - \`tags\`: 2-4 specific tags, lowercase-kebab — no dates unless type=event`,
+      `  - \`owner\`: ${opts.agent}`,
+      `  - \`access\`: public (unless the content is sensitive)`,
+      `  - \`created\`: ${new Date().toISOString().slice(0, 10)}`,
+      `  - \`last_updated\`: ${new Date().toISOString().slice(0, 10)}`,
+      `  - \`sources\`: ["interview-${new Date().toISOString().slice(0, 10)}"]`,
+      `- Body: 20-80 lines, Wikipedia-style, organized by theme (not by question), synthesized (not verbatim Q&A).`,
+      `- Use [[Title]] inline every time you reference something that has an article in the catalog.`,
+      `- Do NOT invent facts. If the transcript didn't cover something, skip that sub-topic.`,
+    ].join("\n")
+
+    // Write prompt to tmp, run claude -p
+    const tmpDir = resolve(store.baseDir, "_tmp")
+    mkdirSync(tmpDir, { recursive: true })
+    const promptPath = resolve(tmpDir, `interview-${randomUUID().slice(0, 8)}.txt`)
+    writeFileSync(promptPath, synthesisPrompt)
+
+    console.log()
+    console.log(chalk.dim(`  Synthesizing draft with ${opts.model}...`))
+
+    let draft = ""
+    try {
+      const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
+      const raw = execSync(cmd, { encoding: "utf-8", timeout: 180_000, maxBuffer: 4 * 1024 * 1024 })
+      try {
+        const envelope = JSON.parse(raw)
+        draft = String(envelope.result || envelope.content || "")
+      } catch {
+        draft = raw
+      }
+    } catch (e: any) {
+      console.log(chalk.red(`  synthesis failed: ${e.message?.slice(0, 200)}`))
+      rl.close()
+      return
+    }
+
+    // Strip any wrapping code fences / preamble
+    draft = draft.trim()
+    const fence = draft.match(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/)
+    if (fence) draft = fence[1].trim()
+    // If there's a preamble before the `---`, drop it
+    const fmStart = draft.indexOf("---")
+    if (fmStart > 0) draft = draft.slice(fmStart)
+
+    // Parse frontmatter to extract title + type
+    const fmMatch = draft.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+    if (!fmMatch) {
+      console.log(chalk.red("  LLM output is not a valid frontmatter+body article:"))
+      console.log(draft.slice(0, 600))
+      rl.close()
+      return
+    }
+    const fm: Record<string, string> = {}
+    for (const line of fmMatch[1].split("\n")) {
+      const m = line.match(/^(\w+):\s*(.+)$/)
+      if (m) fm[m[1]] = m[2].trim().replace(/^"(.*)"$/, "$1")
+    }
+    const body = fmMatch[2]
+    const title = fm.title || topic
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60)
+    const articlePath = `${type}s/${slug}.md`
+
+    console.log()
+    console.log(chalk.bold("  === Draft preview ==="))
+    console.log(chalk.dim(`  Path: ${articlePath}`))
+    console.log()
+    console.log(draft)
+    console.log()
+
+    const choice = await ask(`  ${chalk.green("save")} / ${chalk.yellow("edit (opens $EDITOR)")} / ${chalk.red("scrap")} ? `)
+    rl.close()
+
+    if (choice === "scrap" || choice === "/abort") {
+      console.log(chalk.dim("  Discarded."))
+      return
+    }
+    if (!opts.commit) {
+      console.log(chalk.dim("  --no-commit: not writing."))
+      console.log(chalk.dim(`  Draft kept at ${promptPath} (prompt only; no article file)`))
+      return
+    }
+
+    // Optional editor pass
+    let finalContent = body
+    let finalMeta: Record<string, any> = {
+      title,
+      type: fm.type || type,
+      related: fm.related
+        ? fm.related.replace(/^\[|\]$/g, "").split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
+        : undefined,
+      tags: fm.tags
+        ? fm.tags.replace(/^\[|\]$/g, "").split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
+        : [],
+      owner: opts.agent,
+      access: fm.access || "public",
+      created: fm.created || new Date().toISOString().slice(0, 10),
+      lastUpdated: fm.last_updated || new Date().toISOString().slice(0, 10),
+      sources: [`interview-${new Date().toISOString().slice(0, 10)}`],
+    }
+
+    if (choice === "edit") {
+      const editor = process.env.EDITOR || "vi"
+      const editPath = resolve(tmpDir, `draft-${randomUUID().slice(0, 8)}.md`)
+      writeFileSync(editPath, draft)
+      try {
+        execSync(`${editor} '${editPath}'`, { stdio: "inherit" })
+        const edited = require("fs").readFileSync(editPath, "utf-8")
+        const m = edited.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+        if (m) {
+          const ef: Record<string, string> = {}
+          for (const line of m[1].split("\n")) {
+            const mm = line.match(/^(\w+):\s*(.+)$/)
+            if (mm) ef[mm[1]] = mm[2].trim().replace(/^"(.*)"$/, "$1")
+          }
+          finalContent = m[2]
+          finalMeta = {
+            ...finalMeta,
+            title: ef.title || finalMeta.title,
+            type: ef.type || finalMeta.type,
+            access: ef.access || finalMeta.access,
+            related: ef.related
+              ? ef.related.replace(/^\[|\]$/g, "").split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
+              : finalMeta.related,
+            tags: ef.tags
+              ? ef.tags.replace(/^\[|\]$/g, "").split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
+              : finalMeta.tags,
+          }
+        }
+      } catch (e: any) {
+        console.log(chalk.red(`  editor failed: ${e.message}`))
+        return
+      }
+    }
+
+    // Write via the store — type validation kicks in
+    const written = store.writeArticle(articlePath, finalMeta as any, finalContent, opts.agent)
+    if (!written) {
+      console.log(chalk.red("  write failed (permission?)"))
+      return
+    }
+    store.rebuildIndex()
+    console.log(chalk.green(`  ✓ ${articlePath} saved.`))
+
+    // Suggest next topics from wikilinks in the body that don't yet exist
+    const referenced = store.extractWikilinks(finalContent)
+    const titleIdx = new Map<string, boolean>()
+    for (const a of store.listArticles(opts.agent)) titleIdx.set(a.meta.title.toLowerCase(), true)
+    const gaps = referenced.filter(r => !titleIdx.has(r.toLowerCase()))
+    if (gaps.length) {
+      console.log()
+      console.log(chalk.bold("  Gaps referenced but not yet covered:"))
+      for (const g of gaps.slice(0, 8)) {
+        console.log(chalk.dim(`    - ${g}`))
+      }
+      console.log(chalk.dim(`  Run \`agentx wiki interview --agent ${opts.agent} --topic "<title>"\` for any of these.`))
+    }
+  })
+
 // agentx wiki prune — Phase 3 cleanup before un-gating absorb.
 // Collapses legacy per-mode dirs (flat/, unified/) into canonical graph/.
 // Title-level dedup: for each title, the best copy wins (prefer typed,
