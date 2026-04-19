@@ -426,10 +426,18 @@ wiki
   .option("--type <t>", "article type hint (person|project|place|concept|event|decision|pattern)")
   .option("--model <m>", "synthesis model", "sonnet")
   .option("--no-commit", "show the draft but don't write")
+  .option("--answers <path>", "non-interactive: one answer per line (same order as questions); last line = save|edit|scrap")
   .action(async (opts) => {
     const readline = await import("node:readline/promises")
     const { randomUUID } = await import("node:crypto")
     const { WIKI_ARTICLE_TYPES } = await import("@/wiki/types")
+
+    // --answers: read all lines up front; feed them to each `ask()`.
+    // Avoids readline/stdin interaction entirely for scripted runs.
+    const scripted = opts.answers
+      ? (readFileSync(opts.answers, "utf-8").split(/\r?\n/).filter(l => l.length > 0))
+      : null
+    let scriptCursor = 0
 
     if (!opts.agent) {
       console.log(chalk.red("  --agent <id> is required. The article will be owned by this agent."))
@@ -442,8 +450,17 @@ wiki
       return
     }
 
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-    const ask = async (prompt: string): Promise<string> => (await rl.question(prompt)).trim()
+    const rl = scripted
+      ? null
+      : readline.createInterface({ input: process.stdin, output: process.stdout })
+    const ask = async (prompt: string): Promise<string> => {
+      if (scripted) {
+        const answer = scripted[scriptCursor++] ?? ""
+        process.stdout.write(prompt + chalk.dim(`[scripted] ${answer.slice(0, 80)}${answer.length > 80 ? "…" : ""}`) + "\n")
+        return answer.trim()
+      }
+      return (await rl!.question(prompt)).trim()
+    }
 
     console.log()
     console.log(chalk.bold("  Wiki Interview"))
@@ -454,7 +471,7 @@ wiki
     let topic = opts.topic || ""
     if (!topic) {
       topic = await ask(chalk.cyan("  Topic? ") + chalk.dim("(a person, a procedure, a past event, …) "))
-      if (!topic || topic === "/abort") { rl.close(); return }
+      if (!topic || topic === "/abort") { rl?.close(); return }
     }
 
     // Type
@@ -463,7 +480,7 @@ wiki
     if (!validTypes.has(type)) {
       console.log(chalk.dim(`  Types: ${WIKI_ARTICLE_TYPES.join(" | ")}`))
       const picked = await ask(chalk.cyan("  Type? "))
-      if (picked === "/abort") { rl.close(); return }
+      if (picked === "/abort") { rl?.close(); return }
       if (!validTypes.has(picked)) {
         console.log(chalk.yellow(`  "${picked}" isn't a valid type. Falling back to "concept".`))
         type = "concept"
@@ -563,7 +580,7 @@ wiki
 
     if (aborted || qas.length === 0) {
       console.log(chalk.yellow("\n  Nothing captured. Exiting."))
-      rl.close()
+      rl?.close()
       return
     }
 
@@ -624,7 +641,7 @@ wiki
       }
     } catch (e: any) {
       console.log(chalk.red(`  synthesis failed: ${e.message?.slice(0, 200)}`))
-      rl.close()
+      rl?.close()
       return
     }
 
@@ -641,7 +658,7 @@ wiki
     if (!fmMatch) {
       console.log(chalk.red("  LLM output is not a valid frontmatter+body article:"))
       console.log(draft.slice(0, 600))
-      rl.close()
+      rl?.close()
       return
     }
     const fm: Record<string, string> = {}
@@ -662,7 +679,7 @@ wiki
     console.log()
 
     const choice = await ask(`  ${chalk.green("save")} / ${chalk.yellow("edit (opens $EDITOR)")} / ${chalk.red("scrap")} ? `)
-    rl.close()
+    rl?.close()
 
     if (choice === "scrap" || choice === "/abort") {
       console.log(chalk.dim("  Discarded."))
