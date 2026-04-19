@@ -767,6 +767,250 @@ wiki
     }
   })
 
+// agentx wiki quiz — reverse interview: operator asks, agent answers
+// via agenticQuery, operator grades with /ok /correct /add /link and the
+// cited article gets patched. Grows the wiki through dialogue instead
+// of structured extraction.
+wiki
+  .command("quiz")
+  .description("reverse interview — ask the wiki questions and patch cited articles with corrections, additions, or links")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "which agent's wiki to quiz (required)")
+  .option("--selector-model <m>", "candidate-selection model", "haiku")
+  .option("--synth-model <m>", "answer synthesis model", "sonnet")
+  .option("--patch-model <m>", "article patch model", "sonnet")
+  .option("--rounds <n>", "stop after N rounds", "20")
+  .option("--script <path>", "non-interactive: question line + /verdict line per entry, entries separated by blank lines")
+  .option("--no-commit", "show proposed patches but don't write")
+  .option("--out <path>", "write a session transcript as markdown")
+  .action(async (opts) => {
+    const readline = await import("node:readline/promises")
+    const { randomUUID } = await import("node:crypto")
+    const { agenticQuery } = await import("@/wiki/query")
+
+    if (!opts.agent) {
+      console.log(chalk.red("  --agent <id> is required."))
+      return
+    }
+    const hub = getHub(opts.dir)
+    let store
+    try { store = hub.getAgentWiki(opts.agent) } catch (e: any) {
+      console.log(chalk.red(`  can't open wiki for agent "${opts.agent}": ${e.message}`))
+      return
+    }
+
+    type Script = { q: string; verdict: string }[]
+    let script: Script | null = null
+    if (opts.script) {
+      const raw = readFileSync(opts.script, "utf-8")
+      const entries = raw.split(/\n\s*\n/).map(e => e.trim()).filter(Boolean)
+      script = []
+      for (const entry of entries) {
+        const lines = entry.split(/\r?\n/).filter(l => l.trim())
+        if (lines.length < 2) continue
+        const q = lines[0].replace(/^Q:\s*/i, "").trim()
+        const verdict = lines.slice(1).join(" ").trim()
+        if (q && verdict) script.push({ q, verdict })
+      }
+    }
+
+    const rl = script
+      ? null
+      : readline.createInterface({ input: process.stdin, output: process.stdout })
+    const ask = async (prompt: string): Promise<string> => {
+      if (rl) return (await rl.question(prompt)).trim()
+      return ""
+    }
+
+    const rounds = Math.min(parseInt(opts.rounds) || 20, script?.length ?? 999)
+    const commit = opts.commit !== false
+
+    console.log()
+    console.log(chalk.bold("  Wiki Quiz"))
+    console.log(chalk.dim(`  Agent: ${opts.agent}  ·  Rounds: ${rounds}  ·  ${commit ? "commit" : "dry-run"}  ·  ${script ? `scripted (${script.length})` : "interactive"}`))
+    console.log(chalk.dim("  Verdicts: /ok  /correct <note>  /add <note>  /link <url>  /skip  /done"))
+    console.log()
+
+    type Entry = { q: string; answer: string; citations: Array<{ title: string; path: string; type?: string }>; verdict: string; patched?: string }
+    const transcript: Entry[] = []
+    let applied = 0
+
+    for (let i = 0; i < rounds; i++) {
+      let q: string
+      let verdict: string
+      if (script) {
+        const entry = script[i]
+        if (!entry) break
+        q = entry.q
+        verdict = entry.verdict
+        console.log(chalk.cyan(`  [${i + 1}] Q: `) + q)
+      } else {
+        q = await ask(chalk.cyan(`  [${i + 1}] Q: `))
+        if (!q || q === "/done" || q === "/abort") break
+        verdict = ""
+      }
+
+      process.stdout.write(chalk.dim("      querying... "))
+      let result
+      try {
+        result = await agenticQuery(q, store, opts.agent, {
+          selectorModel: opts.selectorModel,
+          synthModel: opts.synthModel,
+        })
+      } catch (e: any) {
+        console.log(chalk.red(`failed: ${e.message?.slice(0, 120)}`))
+        continue
+      }
+      console.log(chalk.dim("done"))
+
+      if (result.status !== "ok") {
+        console.log(chalk.yellow(`      (status: ${result.status}${result.error ? " — " + result.error : ""})`))
+      } else {
+        const cites = result.citations.map(c => `${c.title} [${c.type || "?"}]`).join(" · ")
+        console.log()
+        console.log(chalk.dim("      A: ") + result.answer.replace(/\n/g, "\n         "))
+        console.log(chalk.dim("      citations: " + cites))
+      }
+
+      if (!script) {
+        verdict = await ask(chalk.cyan("      verdict > "))
+      }
+      console.log(chalk.dim("      verdict: ") + verdict)
+
+      const entry: Entry = { q, answer: result.answer, citations: result.citations, verdict }
+
+      const m = verdict.match(/^(\/ok|\/correct|\/add|\/link|\/skip)(?:\s+(.+))?$/i)
+      if (!m) {
+        console.log(chalk.yellow("      (verdict not recognised — treating as /skip)"))
+        transcript.push(entry)
+        continue
+      }
+      const action = m[1].toLowerCase()
+      const note = (m[2] || "").trim()
+      transcript.push(entry)
+
+      if (action === "/ok" || action === "/skip") continue
+      if (!note) {
+        console.log(chalk.yellow(`      ${action} without note — skipping.`))
+        continue
+      }
+
+      const primary = result.citations[0]
+      if (!primary) {
+        console.log(chalk.yellow("      no cited article to patch."))
+        continue
+      }
+
+      const article = store.readArticle(primary.path)
+      if (!article) {
+        console.log(chalk.red(`      can't read ${primary.path} to patch.`))
+        continue
+      }
+
+      console.log(chalk.dim(`      patching ${primary.title} (${primary.path})...`))
+      const patchPrompt = buildQuizPatchPrompt(article.content, action, note, article.meta.title, article.meta.type)
+      const tmpDir = resolve(store.baseDir, "_tmp")
+      mkdirSync(tmpDir, { recursive: true })
+      const promptPath = resolve(tmpDir, `quiz-patch-${randomUUID().slice(0, 8)}.txt`)
+      writeFileSync(promptPath, patchPrompt)
+
+      let patched = ""
+      try {
+        const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.patchModel} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
+        const raw = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+        try {
+          const envelope = JSON.parse(raw)
+          patched = String(envelope.result || envelope.content || "")
+        } catch { patched = raw }
+        const fence = patched.trim().match(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/)
+        if (fence) patched = fence[1].trim()
+        patched = patched.trim()
+      } catch (e: any) {
+        console.log(chalk.red(`      patch failed: ${e.message?.slice(0, 120)}`))
+        continue
+      }
+
+      if (!patched || patched.length < 20) {
+        console.log(chalk.yellow("      patch returned nothing usable."))
+        continue
+      }
+
+      const before = article.content.split("\n").length
+      const after = patched.split("\n").length
+      console.log(chalk.dim(`      diff: ${before} → ${after} lines (${after - before >= 0 ? "+" : ""}${after - before})`))
+
+      if (!commit) {
+        console.log(chalk.dim("      (--no-commit: patch not written)"))
+        entry.patched = primary.path + " (dry)"
+        continue
+      }
+
+      const ok = store.writeArticle(primary.path, { ...article.meta, lastUpdated: new Date().toISOString().slice(0, 10) }, patched, opts.agent)
+      if (!ok) {
+        console.log(chalk.red("      write failed (permission?)"))
+        continue
+      }
+      applied++
+      entry.patched = primary.path
+      console.log(chalk.green(`      ✓ patched ${primary.path}`))
+    }
+
+    if (rl) rl.close()
+    if (applied > 0 && commit) store.rebuildIndex()
+
+    console.log()
+    console.log(chalk.bold(`  Session done: ${transcript.length} rounds, ${applied} patches applied.`))
+
+    if (opts.out) {
+      const lines: string[] = [
+        `# Wiki Quiz — ${opts.agent}`,
+        "",
+        `_Generated ${new Date().toISOString()} · ${transcript.length} rounds · ${applied} patches_`,
+        "",
+      ]
+      for (let i = 0; i < transcript.length; i++) {
+        const e = transcript[i]
+        lines.push(
+          `## ${i + 1}. Q: ${e.q}`, "",
+          `**A:** ${e.answer}`, "",
+          `**Citations:** ${e.citations.map(c => `\`${c.title}\``).join(", ") || "_(none)_"}`, "",
+          `**Verdict:** \`${e.verdict}\`` + (e.patched ? ` → patched \`${e.patched}\`` : ""), "",
+        )
+      }
+      writeFileSync(opts.out, lines.join("\n"))
+      console.log(chalk.dim(`  Transcript written to ${opts.out}`))
+    }
+  })
+
+function buildQuizPatchPrompt(content: string, action: string, note: string, title: string, type?: string): string {
+  const instructions: Record<string, string> = {
+    "/correct": `The operator says the article contains an error:\n\n    ${note}\n\nEdit the article to correct ONLY this mistake. Do not rewrite untouched sections. Keep the existing prose style. If the correction invalidates a larger passage, revise the minimum that must change.`,
+    "/add": `The operator wants to add this detail:\n\n    ${note}\n\nIncorporate it into the most relevant existing section, or create a short new section if nothing fits. Keep the prose encyclopedic and under 100 additional words.`,
+    "/link": `The operator wants to add this resource:\n\n    ${note}\n\nAdd it as a Markdown link in the most relevant section, or append a "## References" section at the end if none exists. If it looks like a URL, use it as-is; otherwise treat it as a wikilink target and use [[${note}]].`,
+  }
+
+  return [
+    `You are editing a single wiki article to incorporate operator feedback.`,
+    ``,
+    `## Article: "${title}" (type: ${type || "untyped"})`,
+    ``,
+    `<article-body>`,
+    content,
+    `</article-body>`,
+    ``,
+    `## Edit instruction`,
+    instructions[action] || `Make a minimal edit per: ${note}`,
+    ``,
+    `## Rules`,
+    `- Output ONLY the modified article body (content between the --- frontmatter markers).`,
+    `- Do NOT output frontmatter (title, type, tags, etc.) — the serializer handles that.`,
+    `- Do NOT wrap the output in code fences.`,
+    `- Do NOT prepend any preamble like "Here's the updated article:".`,
+    `- Preserve existing wikilinks, markdown formatting, and section structure unless the edit requires changing them.`,
+    `- If no meaningful edit can be made from the operator's feedback, return the original body unchanged.`,
+  ].join("\n")
+}
+
 // agentx wiki prune — Phase 3 cleanup before un-gating absorb.
 // Collapses legacy per-mode dirs (flat/, unified/) into canonical graph/.
 // Title-level dedup: for each title, the best copy wins (prefer typed,
