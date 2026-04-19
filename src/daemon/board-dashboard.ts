@@ -7,15 +7,15 @@ import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
-import { UI_LABELS, GLOSSARY } from "./ui-labels"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
+import { renderGlossaryPage } from "./ui/pages/glossary"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
-import { renderTopbar, TOPBAR_HEAD, TOPBAR_CSS, TOPBAR_SCRIPT, type TopbarPeer } from "./topbar"
+import type { TopbarPeer } from "./topbar"
 
 // --- Kanban Board Dashboard ---
 //
@@ -117,7 +117,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "GET" && path === "/glossary") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderGlossaryHtml(ctx.config))
+    res.end(renderGlossaryPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
 
@@ -1061,10 +1061,6 @@ async function readJson(req: IncomingMessage): Promise<any> {
 // --- Live full-screen page (/live) ---
 
 
-/** Minimal HTML escaper for server-rendered label text. */
-function escapeHtmlServer(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string))
-}
 
 /**
  * Derive a peer's board-dashboard URL from a dashboard.daemons[] entry.
@@ -1170,71 +1166,6 @@ function findPeer(id: string, config: DaemonConfig): { url: string; token?: stri
  * control with [data-theme-opt="..."] buttons once the DOM is ready.
  */
 
-/** /glossary — plain-English definitions of the terms that appear in the dashboard. */
-function renderGlossaryHtml(config: DaemonConfig): string {
-  const items = GLOSSARY.map((g) => {
-    const alias = g.alias ? `<span class="alias" title="Schema key">${escapeHtmlServer(g.alias)}</span>` : ""
-    return `<article class="term"><h3>${escapeHtmlServer(g.term)}${alias}</h3><p>${escapeHtmlServer(g.definition)}</p></article>`
-  }).join("")
-  const topbar = renderTopbar({ activeTab: "glossary", subtitle: "Glossary", peers: buildTopbarPeers(config) })
-  return `<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtmlServer(UI_LABELS.brand)} · Glossary</title>
-${TOPBAR_HEAD}
-<style>
-:root{
-  --ax-bg:oklch(0.16 0.010 265);--ax-bg-elev:oklch(0.19 0.012 265);
-  --ax-surface:oklch(0.21 0.012 265);--ax-surface-2:oklch(0.24 0.014 265);
-  --ax-border:oklch(0.29 0.014 265);--ax-border-2:oklch(0.35 0.016 265);
-  --ax-text:oklch(0.95 0.005 265);--ax-text-2:oklch(0.80 0.008 265);
-  --ax-muted:oklch(0.60 0.010 265);--ax-accent:oklch(0.78 0.13 165);
-  --ax-font:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
-  --ax-mono:"IBM Plex Mono",ui-monospace,"SF Mono",monospace;
-  color-scheme:dark;
-}
-[data-theme="light"]{--ax-bg:oklch(0.98 0.002 265);--ax-bg-elev:oklch(0.96 0.003 265);
-  --ax-surface:oklch(0.99 0.002 265);--ax-surface-2:oklch(0.955 0.003 265);--ax-border:oklch(0.88 0.006 265);
-  --ax-border-2:oklch(0.78 0.008 265);--ax-text:oklch(0.22 0.010 265);
-  --ax-text-2:oklch(0.36 0.010 265);--ax-muted:oklch(0.54 0.010 265);
-  --ax-accent:oklch(0.55 0.14 165);color-scheme:light}
-[data-theme="crt"]{--ax-bg:#05140a;--ax-bg-elev:#061a0d;--ax-surface:#08201f;--ax-surface-2:#0b2922;
-  --ax-border:#164a30;--ax-border-2:#1f6a44;--ax-text:#b7ffcc;
-  --ax-text-2:#83e3a8;--ax-muted:#4f9a73;--ax-accent:#6dff9e;
-  --ax-font:"IBM Plex Mono",ui-monospace,monospace}
-${TOPBAR_CSS}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100vh;background:var(--ax-bg);color:var(--ax-text);
-  font-family:var(--ax-font);font-size:14px;line-height:1.55;
-  -webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv01"}
-main{max-width:760px;margin:0 auto;padding:32px 24px 80px}
-h1{font-size:22px;margin:0 0 6px;font-weight:600;letter-spacing:-0.01em}
-.lead{color:var(--ax-muted);margin:0 0 28px;font-size:13px;line-height:1.6}
-.lead code{font-family:var(--ax-mono);font-size:12px;background:var(--ax-surface);
-  padding:1px 6px;border-radius:3px;border:1px solid var(--ax-border)}
-article.term{background:var(--ax-surface);border:1px solid var(--ax-border);
-  border-radius:6px;padding:16px 20px;margin:10px 0}
-article.term h3{font-size:14px;margin:0 0 6px;display:flex;align-items:center;
-  gap:10px;font-weight:600;letter-spacing:-0.005em}
-article.term .alias{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;
-  color:var(--ax-muted);background:var(--ax-bg);padding:2px 7px;border-radius:3px;
-  font-weight:500;font-family:var(--ax-mono);border:1px solid var(--ax-border)}
-article.term p{margin:0;color:var(--ax-text-2);font-size:13px;line-height:1.6}
-</style>
-</head>
-<body>
-${topbar}
-<main>
-  <h1>Plain-English glossary</h1>
-  <p class="lead">What the terms on the dashboard mean. Schema keys (shown in the pill on the right of each term) are what you'd write in <code>agentx.json</code> — the dashboard just relabels them for readability.</p>
-  ${items}
-</main>
-${TOPBAR_SCRIPT}
-</body>
-</html>`
-}
 
 
 
