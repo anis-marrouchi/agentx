@@ -982,6 +982,207 @@ wiki
     }
   })
 
+// agentx wiki edit — direct $EDITOR on a known article.
+// Resolves <title-or-path> against the catalog, opens the file in
+// $EDITOR, rebuilds the catalog on exit. No LLM, no confirm step,
+// just the fastest path from "I see a typo" to "it's fixed".
+wiki
+  .command("edit <agent> <titleOrPath>")
+  .description("open an article in $EDITOR (resolves by title or path), rebuild catalog on exit")
+  .option("--dir <path>", "wiki directory")
+  .option("--editor <cmd>", "override $EDITOR for this run")
+  .action((agentId, titleOrPath, opts) => {
+    const hub = getHub(opts.dir)
+    let store
+    try { store = hub.getAgentWiki(agentId) } catch (e: any) {
+      console.log(chalk.red(`  can't open wiki for agent "${agentId}": ${e.message}`))
+      return
+    }
+
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) {
+      console.log(chalk.yellow(`  no article matches "${titleOrPath}" in ${agentId}'s wiki.`))
+      console.log(chalk.dim(`  Tip: ${chalk.green("agentx wiki status")} lists agents; ${chalk.green(`agentx wiki search "term" --agent ${agentId}`)} finds by content.`))
+      return
+    }
+
+    const absPath = resolve(store.baseDir, relPath)
+    const editor = opts.editor || process.env.EDITOR || "vi"
+    console.log(chalk.dim(`  opening ${relPath} in ${editor}...`))
+    try {
+      execSync(`${editor} '${absPath}'`, { stdio: "inherit" })
+    } catch (e: any) {
+      console.log(chalk.red(`  editor exited with error: ${e.message?.slice(0, 150)}`))
+      return
+    }
+
+    // Rebuild catalog so related/title changes propagate
+    try {
+      store.rebuildIndex()
+      console.log(chalk.green(`  ✓ ${relPath} saved. Catalog rebuilt.`))
+    } catch (e: any) {
+      console.log(chalk.yellow(`  saved, but catalog rebuild failed: ${e.message?.slice(0, 100)}`))
+    }
+  })
+
+// agentx wiki patch — LLM-driven minimal edit from a free-form
+// instruction. "quiz without the question" — when you already know
+// what's wrong and just want the patch applied without hunting for
+// the specific line to change.
+wiki
+  .command("patch <agent> <titleOrPath> <instruction>")
+  .description("LLM-patch an article from a free-form instruction; shows diff + confirms before writing")
+  .option("--dir <path>", "wiki directory")
+  .option("--patch-model <m>", "patch model", "sonnet")
+  .option("--yes", "skip confirmation and write immediately")
+  .option("--no-commit", "show the patched body but don't write")
+  .action(async (agentId, titleOrPath, instruction, opts) => {
+    const readline = await import("node:readline/promises")
+    const { randomUUID } = await import("node:crypto")
+    const hub = getHub(opts.dir)
+    let store
+    try { store = hub.getAgentWiki(agentId) } catch (e: any) {
+      console.log(chalk.red(`  can't open wiki for agent "${agentId}": ${e.message}`))
+      return
+    }
+
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) {
+      console.log(chalk.yellow(`  no article matches "${titleOrPath}" in ${agentId}'s wiki.`))
+      return
+    }
+    const article = store.readArticle(relPath)
+    if (!article) {
+      console.log(chalk.red(`  can't read ${relPath}.`))
+      return
+    }
+
+    const prompt = buildWikiPatchPrompt(article.content, article.meta.title, article.meta.type, instruction)
+    const tmpDir = resolve(store.baseDir, "_tmp")
+    mkdirSync(tmpDir, { recursive: true })
+    const promptPath = resolve(tmpDir, `patch-${randomUUID().slice(0, 8)}.txt`)
+    writeFileSync(promptPath, prompt)
+
+    console.log()
+    console.log(chalk.dim(`  Target: ${article.meta.title} (${relPath})`))
+    console.log(chalk.dim(`  Patching with ${opts.patchModel}...`))
+
+    let patched = ""
+    try {
+      const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.patchModel} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
+      const raw = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+      try {
+        const envelope = JSON.parse(raw)
+        patched = String(envelope.result || envelope.content || "")
+      } catch { patched = raw }
+      const fence = patched.trim().match(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/)
+      if (fence) patched = fence[1].trim()
+      patched = patched.trim()
+    } catch (e: any) {
+      console.log(chalk.red(`  patch failed: ${e.message?.slice(0, 150)}`))
+      return
+    }
+
+    if (!patched || patched.length < 20) {
+      console.log(chalk.yellow("  patch returned nothing usable."))
+      return
+    }
+
+    const before = article.content.split("\n").length
+    const after = patched.split("\n").length
+    console.log()
+    console.log(chalk.bold("  === Patched preview ==="))
+    console.log(chalk.dim(`  diff: ${before} → ${after} lines (${after - before >= 0 ? "+" : ""}${after - before})`))
+    console.log()
+    console.log(patched)
+    console.log()
+
+    if (!opts.commit) {
+      console.log(chalk.dim("  --no-commit: preview only, not written."))
+      return
+    }
+
+    let go = !!opts.yes
+    if (!go) {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+      const ans = (await rl.question(chalk.cyan("  apply? [y/N] "))).trim().toLowerCase()
+      rl.close()
+      go = ans === "y" || ans === "yes"
+    }
+    if (!go) {
+      console.log(chalk.dim("  aborted."))
+      return
+    }
+
+    const ok = store.writeArticle(relPath, { ...article.meta, lastUpdated: new Date().toISOString().slice(0, 10) }, patched, agentId)
+    if (!ok) {
+      console.log(chalk.red("  write failed (permission?)"))
+      return
+    }
+    store.rebuildIndex()
+    console.log(chalk.green(`  ✓ ${relPath} patched.`))
+  })
+
+/**
+ * Resolve a user-provided "title or path" to a valid article path within
+ * the given store. Matches by:
+ *   1. Exact case-insensitive title
+ *   2. If the arg looks like a path (has '/' or ends in '.md'), tries that
+ *      path against the store directly
+ *   3. Slug-of-title match (case-insensitive)
+ * Returns the relative path on success, null on no match.
+ */
+function resolveArticlePath(store: any, titleOrPath: string, agentId: string): string | null {
+  const arg = titleOrPath.trim()
+  const articles = store.listArticles(agentId)
+
+  // 1. Exact title match (case-insensitive)
+  const lower = arg.toLowerCase()
+  const byTitle = articles.find((a: any) => a.meta.title.toLowerCase() === lower)
+  if (byTitle) return byTitle.path
+
+  // 2. Path-like: try direct lookup
+  if (arg.includes("/") || arg.endsWith(".md")) {
+    const normPath = arg.endsWith(".md") ? arg : `${arg}.md`
+    const byPath = articles.find((a: any) => a.path === normPath || a.path === arg)
+    if (byPath) return byPath.path
+  }
+
+  // 3. Slug match — both sides slugified, prefix or equality
+  const argSlug = arg.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+  const bySlug = articles.find((a: any) => {
+    const titleSlug = a.meta.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+    return titleSlug === argSlug || titleSlug.includes(argSlug) || a.path.toLowerCase().includes(argSlug)
+  })
+  if (bySlug) return bySlug.path
+
+  return null
+}
+
+function buildWikiPatchPrompt(content: string, title: string, type: string | undefined, instruction: string): string {
+  return [
+    `You are editing a single wiki article to incorporate an operator instruction.`,
+    ``,
+    `## Article: "${title}" (type: ${type || "untyped"})`,
+    ``,
+    `<article-body>`,
+    content,
+    `</article-body>`,
+    ``,
+    `## Operator instruction`,
+    instruction,
+    ``,
+    `## Rules`,
+    `- Output ONLY the modified article body (content between the --- frontmatter markers).`,
+    `- Do NOT output frontmatter (title, type, tags, etc.) — the serializer handles that.`,
+    `- Do NOT wrap the output in code fences.`,
+    `- Do NOT prepend any preamble like "Here's the updated article:".`,
+    `- Preserve existing wikilinks, markdown formatting, and section structure unless the instruction requires changing them.`,
+    `- Make the MINIMUM edit that satisfies the instruction — don't rewrite untouched sections.`,
+    `- If the instruction is ambiguous or can't be applied, return the original body unchanged.`,
+  ].join("\n")
+}
+
 function buildQuizPatchPrompt(content: string, action: string, note: string, title: string, type?: string): string {
   const instructions: Record<string, string> = {
     "/correct": `The operator says the article contains an error:\n\n    ${note}\n\nEdit the article to correct ONLY this mistake. Do not rewrite untouched sections. Keep the existing prose style. If the correction invalidates a larger passage, revise the minimum that must change.`,
