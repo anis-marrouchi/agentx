@@ -22,6 +22,24 @@ export type WikiArticleType =
   | "decision"
   | "pattern"
 
+/** Runtime-iterable source of truth for the `type` enum. Use this for
+ *  write-side validation and CLI/prompt string interpolation. */
+export const WIKI_ARTICLE_TYPES: readonly WikiArticleType[] = [
+  "person",
+  "project",
+  "place",
+  "concept",
+  "event",
+  "decision",
+  "pattern",
+] as const
+
+/** True if `s` is a recognised article type. Use in the write path
+ *  to drop unknown values coming from upstream LLMs. */
+export function isWikiArticleType(s: unknown): s is WikiArticleType {
+  return typeof s === "string" && (WIKI_ARTICLE_TYPES as readonly string[]).includes(s)
+}
+
 /**
  * Article metadata. `type` + `related` are the primary retrieval surface;
  * tags remain as a secondary hint but are no longer central.

@@ -270,6 +270,34 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "agentx_wiki_query",
+    description:
+      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query walks the catalog + wikilink graph and returns a synthesized answer with citations.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        question: {
+          type: "string",
+          description: "The question to answer from the wiki, in natural language.",
+        },
+        agent: {
+          type: "string",
+          description: "Which agent's wiki to query (default: first agent with a catalog). Each agent has its own wiki dir under .agentx/wiki/agents/<id>/",
+        },
+        wiki_dir: {
+          type: "string",
+          description: "Wiki root dir (default: <cwd>/.agentx/wiki).",
+        },
+        max_hops: {
+          type: "number",
+          description: "Wikilink hops from candidates (default 2, max 3).",
+          default: 2,
+        },
+      },
+      required: ["question"],
+    },
+  },
 ]
 
 // Tool handlers
@@ -510,6 +538,40 @@ async function handleToolCall(
       return { content: [{ type: "text", text: `${summary}\n\n${jobs}` }] }
     }
 
+    case "agentx_wiki_query": {
+      const question = String(args.question || "").trim()
+      if (!question) {
+        return { content: [{ type: "text", text: "Error: `question` is required." }] }
+      }
+      const { WikiHub } = await import("@/wiki")
+      const { agenticQuery } = await import("@/wiki/query")
+      const { resolve } = await import("path")
+      const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
+      const hub = new WikiHub(wikiDir, undefined, "graph")
+      let agentId = (args.agent as string) || ""
+      if (!agentId) {
+        // Fall back to first agent with a catalog
+        const { existsSync } = await import("fs")
+        for (const id of hub.listAgents()) {
+          const catPath = resolve(hub.getAgentWiki(id).baseDir, "_index.md")
+          if (existsSync(catPath)) { agentId = id; break }
+        }
+      }
+      if (!agentId) {
+        return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }] }
+      }
+      const store = hub.getAgentWiki(agentId)
+      const maxHops = typeof args.max_hops === "number" ? Math.min(3, Math.max(0, args.max_hops)) : 2
+      const result = await agenticQuery(question, store, agentId, { maxHops })
+      if (result.status !== "ok") {
+        return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
+      }
+      const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
+      const walkCount = result.walked.length
+      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      return { content: [{ type: "text", text: body }] }
+    }
+
     case "agentx_debug": {
       const action = (args.action as string) || "status"
       if (action === "on") {
@@ -533,6 +595,27 @@ async function handleToolCall(
 
 // --- Stdio transport ---
 
+/** Parse one frame + dispatch. Shared between the header-framed and
+ *  newline-framed paths so the routing is in one place. */
+function dispatch(raw: string, log: (...args: unknown[]) => void): void {
+  let msg: any
+  try {
+    msg = JSON.parse(raw)
+  } catch (e) {
+    log("Failed to parse message:", e)
+    return
+  }
+  if (msg.id && typeof msg.id === "string" && msg.id.startsWith("elicit-") && msg.result) {
+    const resolver = elicitationResolvers.get(msg.id)
+    if (resolver) {
+      elicitationResolvers.delete(msg.id)
+      resolver(msg.result)
+    }
+    return
+  }
+  handleMessage(msg, log).catch((e) => log("Error:", e))
+}
+
 export async function startMcpServer(): Promise<void> {
   // Use stderr for logging (stdout is reserved for JSON-RPC)
   const log = (...args: unknown[]) => console.error("[agentx-mcp]", ...args)
@@ -545,55 +628,35 @@ export async function startMcpServer(): Promise<void> {
   process.stdin.on("data", (chunk: string) => {
     buffer += chunk
 
-    // Process complete messages (Content-Length header based)
-    while (true) {
-      const headerEnd = buffer.indexOf("\r\n\r\n")
-      if (headerEnd === -1) break
-
-      const header = buffer.slice(0, headerEnd)
-      const contentLengthMatch = header.match(/Content-Length:\s*(\d+)/)
-      if (!contentLengthMatch) {
-        // Try without header (some clients send raw JSON)
+    // MCP stdio transport is newline-delimited JSON. Some legacy clients
+    // (LSP-style) use `Content-Length: N\r\n\r\n<body>` framing, so we
+    // accept both: prefer header framing when the start of the buffer
+    // looks like a header, otherwise fall back to NDJSON.
+    while (buffer.length > 0) {
+      const looksLikeHeader = buffer.startsWith("Content-Length:")
+      if (looksLikeHeader) {
+        const headerEnd = buffer.indexOf("\r\n\r\n")
+        if (headerEnd === -1) break
+        const header = buffer.slice(0, headerEnd)
+        const m = header.match(/Content-Length:\s*(\d+)/)
+        if (!m) {
+          // Malformed header; drop up to the separator and continue.
+          buffer = buffer.slice(headerEnd + 4)
+          continue
+        }
+        const contentLength = parseInt(m[1], 10)
+        const bodyStart = headerEnd + 4
+        const bodyEnd = bodyStart + contentLength
+        if (buffer.length < bodyEnd) break
+        const body = buffer.slice(bodyStart, bodyEnd)
+        buffer = buffer.slice(bodyEnd)
+        dispatch(body, log)
+      } else {
         const newlineIdx = buffer.indexOf("\n")
         if (newlineIdx === -1) break
-
         const line = buffer.slice(0, newlineIdx).trim()
         buffer = buffer.slice(newlineIdx + 1)
-
-        if (line) {
-          try {
-            const msg = JSON.parse(line)
-            handleMessage(msg, log).catch((e) => log("Error:", e))
-          } catch {
-            // Not valid JSON, skip
-          }
-        }
-        continue
-      }
-
-      const contentLength = parseInt(contentLengthMatch[1], 10)
-      const bodyStart = headerEnd + 4
-      const bodyEnd = bodyStart + contentLength
-
-      if (buffer.length < bodyEnd) break // Need more data
-
-      const body = buffer.slice(bodyStart, bodyEnd)
-      buffer = buffer.slice(bodyEnd)
-
-      try {
-        const msg = JSON.parse(body)
-        // Check if this is a response to an elicitation request
-        if (msg.id && typeof msg.id === "string" && msg.id.startsWith("elicit-") && msg.result) {
-          const resolver = elicitationResolvers.get(msg.id)
-          if (resolver) {
-            elicitationResolvers.delete(msg.id)
-            resolver(msg.result)
-          }
-        } else {
-          handleMessage(msg, log).catch((e) => log("Error:", e))
-        }
-      } catch (e) {
-        log("Failed to parse message:", e)
+        if (line) dispatch(line, log)
       }
     }
   })
@@ -605,9 +668,11 @@ export async function startMcpServer(): Promise<void> {
 }
 
 function send(message: JsonRpcResponse | JsonRpcNotification): void {
-  const body = JSON.stringify(message)
-  const header = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n`
-  process.stdout.write(header + body)
+  // MCP stdio: newline-delimited JSON. Modern MCP clients (Claude Code,
+  // Cursor, Windsurf) all expect this. Content-Length framing is LSP-era
+  // and no observed client requires it; if one does, they can parse the
+  // trailing newline harmlessly.
+  process.stdout.write(JSON.stringify(message) + "\n")
 }
 
 async function handleMessage(

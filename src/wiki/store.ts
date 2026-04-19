@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { resolve, join, relative, dirname } from "path"
+import { isWikiArticleType } from "./types"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
 import { buildIndex, buildIndexCached, scoreAll } from "../memory/bm25"
 import { ancestryScore as ancestryOf } from "@/graph"
@@ -149,6 +150,15 @@ export class WikiStore {
     if (existing && !this.canWrite(existing.meta, agentId)) {
       this.log(`Permission denied: "${agentId}" cannot write "${path}" (owner: ${existing.meta.owner})`)
       return false
+    }
+
+    // Drop invalid `type` at write time. The parser already rejects invalid
+    // values on read (returns type=undefined), so silently serialising a
+    // stray value would cause the round-trip to look fine but the article
+    // to render as "untyped" in the catalog. Log + drop beats surprise.
+    if (meta.type && !isWikiArticleType(meta.type)) {
+      this.log(`Dropping invalid article type "${meta.type}" for "${path}" — enum is [person, project, place, concept, event, decision, pattern]`)
+      meta = { ...meta, type: undefined }
     }
 
     const fullPath = resolve(this.baseDir, path)

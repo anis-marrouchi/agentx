@@ -281,6 +281,137 @@ wiki
     console.log()
   })
 
+// agentx wiki ab-test — compare old BM25 preload vs new agentic query on
+// real messages pulled from .agentx/task-history. Emits a markdown report
+// with both retrieval paths side-by-side so the operator can rate.
+wiki
+  .command("ab-test")
+  .description("side-by-side comparison: BM25 preload (old) vs agentic query (new) on real task-history messages")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "which agent to test against (required)")
+  .option("--history <path>", "task-history root", resolve(process.cwd(), ".agentx/task-history"))
+  .option("--n <n>", "number of messages to sample (newest first)", "10")
+  .option("--out <path>", "markdown output file (default: stdout)")
+  .option("--selector-model <m>", "agentic selector model", "haiku")
+  .option("--synth-model <m>", "agentic synthesis model", "sonnet")
+  .action(async (opts) => {
+    const { agenticQuery } = await import("@/wiki/query")
+    const { readdirSync: rd, readFileSync: rf, existsSync: ex } = await import("fs")
+    const { resolve: rv, join: jn } = await import("path")
+
+    const hub = getHub(opts.dir)
+    const agentId = opts.agent
+    if (!agentId) {
+      console.log(chalk.red("  --agent <id> is required"))
+      return
+    }
+    const store = hub.getAgentWiki(agentId)
+    const n = parseInt(opts.n)
+
+    // Gather recent task messages from .agentx/task-history/<agent>/<YYYY-MM-DD>/*.json
+    const agentHistDir = rv(opts.history, agentId)
+    if (!ex(agentHistDir)) {
+      console.log(chalk.yellow(`  no task-history at ${agentHistDir}`))
+      return
+    }
+    type Task = { id: string; message: string; ts: string }
+    const tasks: Task[] = []
+    const days = rd(agentHistDir).sort().reverse()  // newest day first
+    for (const day of days) {
+      const dayDir = jn(agentHistDir, day)
+      let files: string[] = []
+      try { files = rd(dayDir).filter(f => f.endsWith(".json")).sort().reverse() } catch { continue }
+      for (const f of files) {
+        if (tasks.length >= n) break
+        try {
+          const rec = JSON.parse(rf(jn(dayDir, f), "utf-8"))
+          const msg = rec.message || rec.task?.message
+          if (typeof msg === "string" && msg.trim().length > 10) {
+            tasks.push({ id: rec.id || f.replace(".json", ""), message: msg.trim(), ts: rec.at || rec.timestamp || day })
+          }
+        } catch {}
+      }
+      if (tasks.length >= n) break
+    }
+
+    if (tasks.length === 0) {
+      console.log(chalk.yellow(`  no task messages found under ${agentHistDir}`))
+      return
+    }
+
+    console.log()
+    console.log(chalk.bold(`  A/B harness — ${tasks.length} messages from ${agentId}`))
+    console.log(chalk.dim(`  OLD: findRelevant() BM25 over title+tags+content, top 3 truncated`))
+    console.log(chalk.dim(`  NEW: agenticQuery() catalog+wikilink walk (selector=${opts.selectorModel}, synth=${opts.synthModel})`))
+    console.log()
+
+    const lines: string[] = [
+      `# Wiki A/B: ${agentId}`,
+      "",
+      `_Generated ${new Date().toISOString()} · ${tasks.length} messages sampled_`,
+      "",
+      "For each message, the OLD BM25 retrieval (what Layer 10 used to preload) is shown alongside the NEW agentic query's selected articles + synthesized answer. Rate each pair on relevance 0–2 in the notes column.",
+      "",
+    ]
+
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i]
+      process.stdout.write(chalk.dim(`  [${i + 1}/${tasks.length}] querying... `))
+
+      // OLD
+      const old = store.findRelevant(t.message, agentId, 3)
+      const oldTitles = old.map(a => `- **${a.meta.title}** [${a.meta.type || "?"}] (${a.path})`).join("\n") || "_(none returned)_"
+
+      // NEW
+      let newBlock: string
+      try {
+        const q = await agenticQuery(t.message, store, agentId, {
+          selectorModel: opts.selectorModel,
+          synthModel: opts.synthModel,
+        })
+        if (q.status !== "ok") {
+          newBlock = `_(status: ${q.status}${q.error ? " — " + q.error : ""})_`
+        } else {
+          const cites = q.citations.map(c => `\`${c.title}\` [${c.type || "?"}]`).join(", ")
+          newBlock = `**Answer:**\n\n${q.answer}\n\n**Citations:** ${cites}`
+        }
+      } catch (e: any) {
+        newBlock = `_(error: ${e.message})_`
+      }
+      console.log(chalk.dim("done"))
+
+      lines.push(
+        `## ${i + 1}. ${t.id}`,
+        "",
+        `> ${t.message.replace(/\n/g, " ").slice(0, 400)}${t.message.length > 400 ? "…" : ""}`,
+        "",
+        "### OLD — BM25 preload (top 3)",
+        "",
+        oldTitles,
+        "",
+        "### NEW — agentic query",
+        "",
+        newBlock,
+        "",
+        "| Path | Rating 0–2 | Notes |",
+        "|---|---|---|",
+        "| OLD |   |   |",
+        "| NEW |   |   |",
+        "",
+      )
+    }
+
+    const out = lines.join("\n")
+    if (opts.out) {
+      (await import("fs")).writeFileSync(opts.out, out)
+      console.log()
+      console.log(chalk.green(`  Wrote ${out.length} bytes to ${opts.out}`))
+    } else {
+      console.log()
+      console.log(out)
+    }
+  })
+
 // agentx wiki prune — Phase 3 cleanup before un-gating absorb.
 // Collapses legacy per-mode dirs (flat/, unified/) into canonical graph/.
 // Title-level dedup: for each title, the best copy wins (prefer typed,

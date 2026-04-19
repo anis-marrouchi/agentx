@@ -357,3 +357,64 @@ describe("WikiStore - schema", () => {
     rmSync(TEST_DIR, { recursive: true, force: true })
   })
 })
+
+describe("WikiStore - article type validation", () => {
+  const DIR = resolve(__dirname, "../.test-wiki-type")
+  let s: WikiStore
+
+  beforeEach(() => {
+    rmSync(DIR, { recursive: true, force: true })
+    s = new WikiStore(DIR, () => {})
+  })
+  afterEach(() => {
+    rmSync(DIR, { recursive: true, force: true })
+  })
+
+  const baseMeta = (extra: Partial<{ type: any; related: string[] }> = {}) => ({
+    title: "Example",
+    tags: ["x"],
+    owner: "atlas",
+    access: "public" as const,
+    created: "2026-04-19",
+    lastUpdated: "2026-04-19",
+    sources: ["e1"],
+    ...extra,
+  })
+
+  it("round-trips a valid type (project)", () => {
+    s.writeArticle("projects/foo.md", baseMeta({ type: "project" }), "[[Other]]", "atlas")
+    const a = s.readArticle("projects/foo.md")
+    expect(a?.meta.type).toBe("project")
+  })
+
+  it("accepts all seven enum values", () => {
+    const types = ["person", "project", "place", "concept", "event", "decision", "pattern"] as const
+    for (const t of types) {
+      s.writeArticle(`${t}/test.md`, baseMeta({ type: t }), "body", "atlas")
+      expect(s.readArticle(`${t}/test.md`)?.meta.type).toBe(t)
+    }
+  })
+
+  it("drops an invalid type at write time (parser already rejects on read)", () => {
+    s.writeArticle("x/bad.md", baseMeta({ type: "agent" as any }), "body", "atlas")
+    const raw = require("fs").readFileSync(resolve(DIR, "x/bad.md"), "utf-8")
+    // Serializer must NOT emit the bogus `type: agent` line.
+    expect(raw).not.toMatch(/^type:\s*agent\s*$/m)
+    // Read returns type=undefined rather than the stray string.
+    expect(s.readArticle("x/bad.md")?.meta.type).toBeUndefined()
+  })
+
+  it("drops an invalid type even if the serializer would have accepted it", () => {
+    // Covers the exact stray-type bug we hit on clawd (issue/mr/infrastructure)
+    for (const bad of ["issue", "mr", "infrastructure", "process", "AGENT", "projects", ""]) {
+      const p = `z/${bad || "empty"}.md`
+      s.writeArticle(p, baseMeta({ type: bad as any }), "body", "atlas")
+      expect(s.readArticle(p)?.meta.type).toBeUndefined()
+    }
+  })
+
+  it("preserves related wikilinks regardless of type validity", () => {
+    s.writeArticle("p/with-related.md", baseMeta({ type: "project", related: ["A", "B"] }), "body", "atlas")
+    expect(s.readArticle("p/with-related.md")?.meta.related).toEqual(["A", "B"])
+  })
+})
