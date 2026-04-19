@@ -93,10 +93,18 @@ function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string
   // Ordered lists — match lines like "1. foo" (number, dot, space)
   html = html.replace(/^\d+\. (.+)$/gm, '<li data-ordered="1">$1</li>')
 
-  // Wrap consecutive <li>s in <ul> / <ol> respectively
-  html = html.replace(/(<li data-ordered="1">.*?<\/li>(?:\n?<li data-ordered="1">.*?<\/li>)*)/g,
-    (match) => `<ol>${match.replace(/ data-ordered="1"/g, "")}</ol>`)
+  // Wrap consecutive ordered <li>s into <ol>. Keep the data-ordered marker
+  // on each <li> inside the <ol> so the subsequent <ul> regex below can
+  // correctly skip them via negative lookahead. Marker is stripped once all
+  // list-wrapping is done.
+  html = html.replace(/(<li data-ordered="1">.*?<\/li>(?:\n?<li data-ordered="1">.*?<\/li>)*)/g, '<ol>$1</ol>')
+
+  // Wrap consecutive unordered <li>s — the negative lookahead `(?! data-ordered)`
+  // ensures ordered <li>s inside the <ol> above are NOT re-wrapped in <ul>.
   html = html.replace(/((?:<li(?! data-ordered)[^>]*>.*?<\/li>\n?)+)/g, '<ul>$1</ul>')
+
+  // Clean up the ordered marker now that wrapping is settled.
+  html = html.replace(/ data-ordered="1"/g, "")
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr>')
