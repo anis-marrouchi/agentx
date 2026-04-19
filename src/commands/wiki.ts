@@ -575,25 +575,23 @@ wiki
           continue
         }
 
-        const validTypes = new Set([
-          "person", "project", "place", "concept", "event", "decision", "pattern",
-        ])
-
         for (const article of batch) {
           const c = classifications.find((x) => x.path === article.path)
-          if (!c || !validTypes.has(c.type)) {
+          const norm = normalizeWikiType(c?.type)
+          if (!c || !norm) {
             console.log(chalk.yellow(`    ? ${article.path}: unclassified${c ? ` (got "${c.type}")` : ""}`))
             continue
           }
           const related = agentWiki.extractWikilinks(article.content)
           const newMeta = {
             ...article.meta,
-            type: c.type as any,
+            type: norm.type as any,
             related: related.length ? related : undefined,
             lastUpdated: new Date().toISOString().slice(0, 10),
           }
           const relStr = related.length ? chalk.dim(` → ${related.slice(0, 3).join(", ")}${related.length > 3 ? ", …" : ""}`) : ""
-          console.log(`    ${chalk.green("+")} ${chalk.magenta("[" + c.type + "]")} ${article.path}${relStr}`)
+          const aliasNote = norm.alias ? chalk.dim(` (from "${norm.alias}")`) : ""
+          console.log(`    ${chalk.green("+")} ${chalk.magenta("[" + norm.type + "]")}${aliasNote} ${article.path}${relStr}`)
 
           if (commit) {
             agentWiki.writeArticle(article.path, newMeta, article.content, agentId)
@@ -615,6 +613,42 @@ wiki
     console.log()
   })
 
+/**
+ * Map the classifier's output to the 7-type enum. The LLM often volunteers
+ * domain-specific types (issue, MR, runbook, agent…). Rather than reject
+ * and re-run, map them to the nearest valid enum value. Caller gets back
+ * {type, alias?} — alias is the raw LLM output when it wasn't an exact
+ * match, for logging.
+ */
+function normalizeWikiType(raw: string | undefined): { type: string; alias?: string } | null {
+  if (!raw) return null
+  const key = String(raw).trim().toLowerCase().replace(/^[\s"'`]+|[\s"'`]+$/g, "")
+  if (!key) return null
+  const ALIASES: Record<string, string> = {
+    // Exact enum values
+    person: "person", project: "project", place: "place", concept: "concept",
+    event: "event", decision: "decision", pattern: "pattern",
+    // Plurals
+    people: "person", projects: "project", places: "place", concepts: "concept",
+    events: "event", decisions: "decision", patterns: "pattern",
+    // Domain variants → enum equivalents
+    agent: "project", bot: "project", service: "project", product: "project",
+    tool: "project", repo: "project", repository: "project", app: "project",
+    application: "project", team: "project", organization: "project", company: "project",
+    issue: "event", mr: "event", "merge-request": "event", "merge_request": "event",
+    ticket: "event", incident: "event", deploy: "event", deployment: "event",
+    launch: "event", release: "event",
+    process: "pattern", procedure: "pattern", workflow: "pattern",
+    runbook: "pattern", recipe: "pattern", template: "pattern", sop: "pattern",
+    infrastructure: "place", infra: "place", server: "place", environment: "place",
+    env: "place", location: "place", host: "place",
+    decisionrecord: "decision", adr: "decision", "decision-record": "decision",
+  }
+  const mapped = ALIASES[key]
+  if (!mapped) return null
+  return mapped === key ? { type: mapped } : { type: mapped, alias: key }
+}
+
 function buildMigratePrompt(articles: Array<{ path: string; meta: { title: string; tags?: string[] }; content: string }>): string {
   const items = articles.map((a, i) => {
     const body = a.content.replace(/\s+/g, " ").slice(0, 400)
@@ -622,20 +656,30 @@ function buildMigratePrompt(articles: Array<{ path: string; meta: { title: strin
     return `${i + 1}. path: "${a.path}"\n   title: "${a.meta.title}"\n   tags: [${tags}]\n   body: ${body}${a.content.length > 400 ? "…" : ""}`
   }).join("\n\n")
 
-  return `Classify each of these ${articles.length} wiki articles into EXACTLY ONE type.
+  return `Classify each of these ${articles.length} wiki articles into EXACTLY ONE type from this closed set (no synonyms, no plurals, no new values):
 
-Allowed types:
+  person | project | place | concept | event | decision | pattern
+
+What each type means:
 - person: an individual human (team member, stakeholder, contact)
-- project: a named initiative, repo, product, or service
-- place: a physical or logical location (office, server, environment)
+- project: a named initiative, repo, product, service, bot, agent, team, or org
+- place: a physical or logical location (office, server, environment, infrastructure)
 - concept: a recurring idea, philosophy, methodology, or thinking pattern
-- event: a specific dated thing that happened (incident, deploy, launch)
-- decision: a specific choice made and why (architecture decision, policy)
-- pattern: a reusable workflow, template, or recipe
+- event: a specific dated thing that happened (incident, deploy, launch, GitLab issue, MR)
+- decision: a specific choice made and why (architecture decision, policy, ADR)
+- pattern: a reusable workflow, template, recipe, procedure, runbook, or SOP
+
+Explicit mappings (you WILL be tempted to volunteer these — don't; use the right-hand value):
+- "agent" / "bot" / "service" / "repo" / "team"       → project
+- "issue" / "MR" / "ticket" / "incident" / "deploy"   → event
+- "process" / "procedure" / "runbook" / "workflow"    → pattern
+- "infrastructure" / "server" / "environment"         → place
+- "ADR" / "decision record"                            → decision
 
 Rules:
-- Return EXACTLY one type per article, by path.
-- If the title is a person's name, it's person. If it's a repo/product name, it's project. If it's dated + past tense, it's event.
+- Return EXACTLY one type per article, by path, from the 7 allowed values above.
+- Do not invent new types. Do not return plurals. Do not return synonyms.
+- If the title is a person's name, it's person. If it's a repo/product/bot name, it's project. If it's dated + past tense, it's event.
 - If you genuinely cannot decide, pick "concept" as the fallback.
 - Output ONLY valid JSON, no markdown fencing, no prose.
 
