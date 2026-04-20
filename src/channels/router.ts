@@ -246,6 +246,20 @@ export class MessageRouter {
     this.business = business
   }
 
+  /** Swap the live DaemonConfig reference after a hot-reload. Router reads
+   *  from this.config at send-time for things like per-account Telegram token
+   *  resolution, default agents, and policy allowlists — so any /reload that
+   *  touches channels must call this to avoid sending from a stale snapshot. */
+  updateConfig(next: DaemonConfig): void {
+    this.config = next
+  }
+
+  /** Look up a live adapter by name, e.g. "telegram". Used by the daemon
+   *  reload path to hot-swap account configs without a restart. */
+  getChannel(name: string): ChannelAdapter | undefined {
+    return this.channels.get(name)
+  }
+
   addChannel(adapter: ChannelAdapter): void {
     this.channels.set(adapter.name, adapter)
     adapter.onMessage((msg) => this.handleMessage(adapter, msg))

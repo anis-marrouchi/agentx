@@ -180,6 +180,10 @@ export class TelegramAdapter implements ChannelAdapter {
   private offsetStore: TelegramOffsetStore
   private handler?: (msg: IncomingMessage) => Promise<void>
   private polling = false
+  /** Per-account polling gate — flipped to false when an account is removed
+   *  or its token changes, so its pollLoop observes the stop and exits without
+   *  affecting siblings. Keyed by accountId. */
+  private accountPolling = new Map<string, boolean>()
   private log: (...args: unknown[]) => void
   /** Global allowlist fallback. When a per-account allowFrom is unset,
    *  this list applies. When BOTH are unset, everything is rejected
@@ -240,23 +244,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
     for (let i = 0; i < entries.length; i++) {
       const [accountId, config] = entries[i]
-      this.log(`Starting polling for account "${accountId}" (${i + 1}/${entries.length})`)
-      try {
-        // Drop any stale webhook/long-poll session from a previous run.
-        // This prevents 409 conflicts when restarting.
-        await this.apiCall(config.token, "deleteWebhook", { drop_pending_updates: false }).catch(() => {})
-
-        const me = await this.apiCall(config.token, "getMe")
-        const botUserId = me.result?.id
-        const botUsername = me.result?.username
-        this.log(`Bot @${botUsername} ready (account: ${accountId})`)
-        if (botUserId) {
-          this.botInfo.set(accountId, { userId: botUserId, username: botUsername || accountId })
-        }
-        this.pollLoop(accountId, config)
-      } catch (e: any) {
-        this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
-      }
+      await this.startAccount(accountId, config, { index: i + 1, of: entries.length })
       // Small delay between account starts to avoid Telegram rate limits
       if (i < entries.length - 1) {
         await new Promise((r) => setTimeout(r, 300))
@@ -266,22 +254,127 @@ export class TelegramAdapter implements ChannelAdapter {
     this.log(`All ${entries.length} Telegram account(s) started`)
   }
 
+  /** Start a single account's poll loop. Used by both start() (boot) and
+   *  reloadAccounts() (hot-add on /reload). Verifies the bot token, records
+   *  the bot's identity, then spawns the long-poll loop. No-op if the account
+   *  is already polling. */
+  private async startAccount(
+    accountId: string,
+    config: TelegramAccountConfig,
+    meta: { index?: number; of?: number } = {},
+  ): Promise<void> {
+    if (this.accountPolling.get(accountId)) {
+      this.log(`Account "${accountId}" already polling — skipping duplicate start`)
+      return
+    }
+    const prefix = meta.index != null && meta.of != null
+      ? `(${meta.index}/${meta.of})`
+      : "(hot-reload)"
+    this.log(`Starting polling for account "${accountId}" ${prefix}`)
+    try {
+      // Drop any stale webhook/long-poll session from a previous run.
+      // This prevents 409 conflicts when restarting.
+      await this.apiCall(config.token, "deleteWebhook", { drop_pending_updates: false }).catch(() => {})
+
+      const me = await this.apiCall(config.token, "getMe")
+      const botUserId = me.result?.id
+      const botUsername = me.result?.username
+      this.log(`Bot @${botUsername} ready (account: ${accountId})`)
+      if (botUserId) {
+        this.botInfo.set(accountId, { userId: botUserId, username: botUsername || accountId })
+      }
+      this.accountPolling.set(accountId, true)
+      this.pollLoop(accountId, config)
+    } catch (e: any) {
+      this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
+    }
+  }
+
+  /** Stop a single account's poll loop without touching siblings. Flips the
+   *  per-account gate and aborts the in-flight long-poll so Telegram releases
+   *  the server-side session immediately (otherwise a new start with the same
+   *  token hits 409 Conflict). */
+  private async stopAccount(accountId: string): Promise<void> {
+    this.accountPolling.set(accountId, false)
+    const cfg = this.accounts.get(accountId)
+    if (!cfg) return
+    try {
+      await this.apiCall(cfg.token, "getUpdates", { offset: -1, timeout: 0 })
+    } catch {
+      // Best-effort
+    }
+  }
+
   async stop(): Promise<void> {
     this.polling = false
     // Flush any debounced offset writes BEFORE we release the Telegram session
     // — otherwise a clean stop could drop the last in-memory offset update.
     this.offsetStore.flush()
-    // Abort in-flight long-poll requests by making a short getUpdates call
-    // with offset=-1 on each account. This immediately releases Telegram's
-    // server-side session so the next start won't get 409 conflicts.
-    const aborts = Array.from(this.accounts.entries()).map(async ([accountId, config]) => {
-      try {
-        await this.apiCall(config.token, "getUpdates", { offset: -1, timeout: 0 })
-      } catch {
-        // Best-effort
-      }
-    })
+    const aborts = Array.from(this.accounts.keys()).map((id) => this.stopAccount(id))
     await Promise.allSettled(aborts)
+  }
+
+  /** Hot-reload the account map in place. Diffs the new config against the
+   *  current one: removed accounts get their pollers stopped, added accounts
+   *  get started, and accounts whose token changed get restarted (allowFrom
+   *  changes are effectively read-through via effectiveAllowFrom so they
+   *  don't need a restart, but we do refresh the stored config). Returns the
+   *  diff for the caller to log/surface.
+   *
+   *  Requires the adapter to be already started (polling=true). */
+  async reloadAccounts(
+    next: Record<string, TelegramAccountConfig>,
+    policy?: { allowFrom?: string[] },
+  ): Promise<{ added: string[]; removed: string[]; tokenChanged: string[] }> {
+    if (!this.polling) {
+      // Adapter hasn't been started — just swap the map, start() will use it.
+      this.accounts = new Map(Object.entries(next))
+      this.globalAllowFrom = policy?.allowFrom
+      return { added: [], removed: [], tokenChanged: [] }
+    }
+
+    const oldIds = new Set(this.accounts.keys())
+    const newIds = new Set(Object.keys(next))
+    const added: string[] = []
+    const removed: string[] = []
+    const tokenChanged: string[] = []
+
+    // Update the global allowlist unconditionally — it's read-through.
+    this.globalAllowFrom = policy?.allowFrom
+
+    // 1. Removed accounts — stop + drop from map.
+    for (const id of oldIds) {
+      if (newIds.has(id)) continue
+      await this.stopAccount(id)
+      this.accounts.delete(id)
+      this.botInfo.delete(id)
+      removed.push(id)
+    }
+
+    // 2. Retained accounts — swap config in place (for allowFrom etc.) and
+    //    restart when the token changed, since pollLoop captures the token
+    //    in its closure argument.
+    for (const id of newIds) {
+      if (!oldIds.has(id)) continue
+      const oldCfg = this.accounts.get(id)!
+      const newCfg = next[id]
+      this.accounts.set(id, newCfg)
+      if (oldCfg.token !== newCfg.token) {
+        await this.stopAccount(id)
+        await this.startAccount(id, newCfg)
+        tokenChanged.push(id)
+      }
+    }
+
+    // 3. Added accounts — write config then start polling.
+    for (const id of newIds) {
+      if (oldIds.has(id)) continue
+      this.accounts.set(id, next[id])
+      await this.startAccount(id, next[id])
+      added.push(id)
+    }
+
+    return { added, removed, tokenChanged }
   }
 
   /**
@@ -457,7 +550,7 @@ export class TelegramAdapter implements ChannelAdapter {
   private async pollLoop(accountId: string, config: TelegramAccountConfig): Promise<void> {
     let consecutiveErrors = 0
 
-    while (this.polling) {
+    while (this.polling && this.accountPolling.get(accountId) !== false) {
       try {
         const offset = this.offsetStore.get(accountId) || 0
         const data = await this.apiCall(config.token, "getUpdates", {

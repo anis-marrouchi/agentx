@@ -403,15 +403,61 @@ export class AgentXDaemon {
       }
     }
 
-    // 2. Sections that require a restart
-    const restartKeys: Array<keyof DaemonConfig> = ["agents", "channels", "mesh", "providers", "node", "services"]
+    // 2. Telegram accounts — hot-swap where we can. Adding a new bot account
+    //    (or rotating an existing token) used to need a full restart; now the
+    //    adapter diffs the new map against its live account set and starts/
+    //    stops poll loops surgically. Router also gets the fresh config so
+    //    send-side paths resolve the new token. Policy.allowFrom flips through
+    //    effectiveAllowFrom without restart.
+    const tgPrev = this.config.channels?.telegram
+    const tgNext = next.channels?.telegram
+    const tgChanged = JSON.stringify(tgPrev) !== JSON.stringify(tgNext)
+    let tgHandled = false
+    if (tgChanged && tgNext?.enabled) {
+      const telegram = this.router.getChannel("telegram") as TelegramAdapter | undefined
+      if (telegram) {
+        try {
+          const diff = await telegram.reloadAccounts(tgNext.accounts, tgNext.policy)
+          this.router.updateConfig(next)
+          const parts: string[] = []
+          if (diff.added.length) parts.push(`+${diff.added.join(",")}`)
+          if (diff.removed.length) parts.push(`-${diff.removed.join(",")}`)
+          if (diff.tokenChanged.length) parts.push(`~${diff.tokenChanged.join(",")}`)
+          applied.push(parts.length ? `telegram(${parts.join(" ")})` : "telegram")
+          tgHandled = true
+        } catch (e: any) {
+          this.log(`[reload] telegram hot-reload failed: ${e.message}`)
+        }
+      }
+    } else if (tgChanged && !tgNext?.enabled && tgPrev?.enabled) {
+      // enabled→disabled transition still needs a restart — the adapter and
+      // the channels Map can't be torn down cleanly mid-flight.
+      tgHandled = false
+    } else if (tgChanged && tgNext?.enabled && !tgPrev?.enabled) {
+      // disabled→enabled: adapter doesn't exist yet, needs full init path.
+      tgHandled = false
+    } else if (!tgChanged) {
+      tgHandled = true // no change, nothing to do
+    }
+
+    // 3. Sections that require a restart. Channels are restart-required only
+    //    when something OTHER than telegram accounts/policy changed.
+    const restartKeys: Array<keyof DaemonConfig> = ["agents", "mesh", "providers", "node", "services"]
     for (const k of restartKeys) {
       if (JSON.stringify((this.config as any)[k]) !== JSON.stringify((next as any)[k])) {
         restartRequired.push(String(k))
       }
     }
+    // Channels: hot-handle telegram, everything else is still restart-required.
+    const channelsPrevMinusTg = { ...this.config.channels, telegram: undefined }
+    const channelsNextMinusTg = { ...next.channels, telegram: undefined }
+    if (JSON.stringify(channelsPrevMinusTg) !== JSON.stringify(channelsNextMinusTg)) {
+      restartRequired.push("channels")
+    } else if (tgChanged && !tgHandled) {
+      restartRequired.push("channels.telegram")
+    }
 
-    // 3. Swap in the new config so read-only endpoints (GET /crons etc.) reflect it
+    // 4. Swap in the new config so read-only endpoints (GET /crons etc.) reflect it
     this.config = next
 
     if (applied.length) this.log(`[reload] applied: ${applied.join(", ")}`)
