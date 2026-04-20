@@ -1312,6 +1312,13 @@ function showChannelPane(id) {
       if (def) c.classList.toggle('is-active', def.id === id);
     });
   });
+  // Lazy-render the panes whose content isn't filled by renderChannels(). TG
+  // and Slack are populated unconditionally there; the rest need an explicit
+  // call or their panes stay empty when switched via the connector card.
+  if (id === 'discord') renderDiscordPane();
+  else if (id === 'gitlab') renderGitLabPane();
+  else if (id === 'github') renderGitHubPane();
+  else if (id === 'whatsapp') renderWhatsAppPane();
 }
 
 function channelStatus(id) {
