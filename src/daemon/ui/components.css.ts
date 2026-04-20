@@ -842,10 +842,11 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   font-size: 11px; color: var(--ax-muted); margin-top: 1px;
 }
 
-/* 3-col detail layout (rail + main + test-drive) */
+/* Detail layout — 2-col rail + main. Overlays (test-drive, history, etc.)
+ * dock separately via fixed positioning. */
 .ax-layout {
   max-width: 1400px; margin: 22px auto 0; padding: 0 24px 60px;
-  display: grid; grid-template-columns: 200px 1fr 360px;
+  display: grid; grid-template-columns: 200px 1fr;
   gap: 22px; align-items: flex-start;
 }
 
@@ -1274,13 +1275,19 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-danger-item__name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
 .ax-danger-item__desc { font-size: 12px; color: var(--ax-muted); line-height: 1.5; }
 
-/* Test-drive side panel */
-.ax-td-col { position: sticky; top: 72px; }
+/* Test-drive panel — docked to the right edge, slides in from outside
+ * the viewport when toggled. Similar to the Live page history-panel. */
 .ax-td-panel {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
-  border-radius: var(--ax-radius-lg); overflow: hidden;
+  position: fixed; top: 0; right: 0; bottom: 0; width: 420px;
+  background: var(--ax-bg-elev); border-left: 1px solid var(--ax-border);
+  z-index: 900;
   display: flex; flex-direction: column;
-  height: calc(100vh - 94px); max-height: 760px;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+  transform: translateX(100%); transition: transform 0.22s ease;
+}
+.ax-td-panel.is-open { transform: translateX(0); }
+@media (max-width: 520px) {
+  .ax-td-panel { width: 100vw; }
 }
 .ax-td-head {
   padding: 12px 14px; border-bottom: 1px solid var(--ax-border);
@@ -1403,7 +1410,6 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 /* --- Responsive collapses for the settings primitives --- */
 @media (max-width: 1180px) {
   .ax-layout { grid-template-columns: 180px 1fr; }
-  .ax-td-col { display: none; }
 }
 @media (max-width: 760px) {
   .ax-health-strip { grid-template-columns: repeat(2, 1fr); }

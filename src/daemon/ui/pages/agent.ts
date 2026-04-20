@@ -42,7 +42,8 @@ export function renderAgentPage(opts: AgentPageOpts): string {
     noMain: true,
     body,
     css: AGENT_PAGE_CSS,
-    scripts: `${agentIdScript}${tokenScript}<script>${AGENT_PAGE_SCRIPT}</script>`,
+    headExtras: `<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">`,
+    scripts: `${agentIdScript}${tokenScript}<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script><script>${AGENT_PAGE_SCRIPT}</script>`,
   })
 }
 
@@ -243,7 +244,7 @@ const AGENT_PAGE_BODY = `
       </div>
     </section>
 
-    <!-- Personality -->
+    <!-- Personality — left-docked vertical file list + MD editor -->
     <section id="tab-identity" class="ax-panel__tab">
       <div class="ax-panel">
         <div class="ax-panel__head">
@@ -255,20 +256,29 @@ const AGENT_PAGE_BODY = `
 
         <div class="ax-callout">
           <span class="ax-callout__icon">?</span>
-          <div>This is the raw system prompt. Whatever you type here is injected at the top of every conversation. Markdown is supported. Stored in your agent workspace.</div>
+          <div>These files live in the agent's workspace and are injected at the top of every conversation. Markdown is supported; changes hot-reload on the next turn.</div>
         </div>
 
-        <div class="ax-subtabs" id="identity-files-tabs"></div>
-        <span class="ax-mono muted" id="id-path" style="font-size:11px;float:right;margin-top:-8px;margin-bottom:8px"></span>
+        <div class="ax-identity">
+          <!-- Vertical file list -->
+          <aside class="ax-identity__files" id="identity-files-tabs"></aside>
 
-        <div class="ax-prompt-edit">
-          <textarea class="inp mono" id="id-editor" style="min-height:320px;line-height:1.6;font-family:var(--ax-mono);font-size:12px"></textarea>
-          <div class="ax-prompt-badges"><span class="ax-pbadge" id="id-chars">0 chars</span></div>
-        </div>
-        <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-          <button class="ax-btn ax-btn--primary" id="btn-save-id">Save file</button>
-          <span style="flex:1"></span>
-          <span class="mono muted" id="id-saved-note" style="font-size:11px"></span>
+          <!-- MD editor for the active file -->
+          <div class="ax-identity__editor">
+            <div class="ax-identity__head">
+              <span class="mono muted" id="id-path" style="font-size:11.5px">—</span>
+              <span class="ax-pbadge" id="id-chars">0 chars</span>
+              <span style="flex:1"></span>
+              <button class="ax-btn ax-btn--primary" id="btn-save-id">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save
+              </button>
+            </div>
+            <textarea id="id-editor"></textarea>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+              <span class="mono muted" id="id-saved-note" style="font-size:11px"></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -476,43 +486,45 @@ const AGENT_PAGE_BODY = `
 
   </div>
 
-  <!-- TEST DRIVE SIDE PANEL -->
-  <div class="ax-td-col">
-    <div class="ax-td-panel">
-      <div class="ax-td-head">
-        <div class="ax-td-head__dot"></div>
-        <div>
-          <div class="ax-td-head__t">Test drive</div>
-          <div class="ax-td-head__sub">not recorded · sandbox</div>
-        </div>
-        <div style="flex:1"></div>
-        <div class="ax-td-head__seg">
-          <button class="is-active">Live</button>
-          <button>Dry</button>
-        </div>
-      </div>
 
-      <div class="ax-td-scenarios">
-        <div class="ax-td-scenarios__lbl">Quick scenarios</div>
-        <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">Who are you?</span>
-        <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">What can you help with?</span>
-        <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">Show me your skills</span>
-      </div>
+</div>
 
-      <div class="ax-td-chat" id="td-chat">
-        <div class="ax-td-chat__msg-wrap is-bot">
-          <div class="ax-td-chat__bubble is-bot" id="td-greeting">Hey! I'm ready. Send a message to try me out.</div>
-          <div class="ax-td-chat__meta">Sandbox · nothing here is recorded</div>
-        </div>
-      </div>
+<!-- TEST DRIVE SIDE PANEL — docked to the right, toggled by the Test drive
+     button in the hero. Closed by default; slides in when opened. -->
+<aside class="ax-td-panel" id="td-panel" aria-hidden="true">
+  <div class="ax-td-head">
+    <div class="ax-td-head__dot"></div>
+    <div>
+      <div class="ax-td-head__t">Test drive</div>
+      <div class="ax-td-head__sub">not recorded · sandbox</div>
+    </div>
+    <div style="flex:1"></div>
+    <div class="ax-td-head__seg">
+      <button class="is-active">Live</button>
+      <button>Dry</button>
+    </div>
+    <button class="ax-btn ax-btn--ghost" id="td-close" aria-label="Close" style="padding:4px 9px;font-size:14px;line-height:1;margin-left:4px">×</button>
+  </div>
 
-      <form class="ax-td-input" onsubmit="sendTestMessage(event)">
-        <input id="td-input-el" placeholder="Test a message…" autocomplete="off"/>
-        <button type="submit">Send</button>
-      </form>
+  <div class="ax-td-scenarios">
+    <div class="ax-td-scenarios__lbl">Quick scenarios</div>
+    <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">Who are you?</span>
+    <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">What can you help with?</span>
+    <span class="ax-td-scenario" onclick="sendScenario(this.textContent)">Show me your skills</span>
+  </div>
+
+  <div class="ax-td-chat" id="td-chat">
+    <div class="ax-td-chat__msg-wrap is-bot">
+      <div class="ax-td-chat__bubble is-bot" id="td-greeting">Hey! I'm ready. Send a message to try me out.</div>
+      <div class="ax-td-chat__meta">Sandbox · nothing here is recorded</div>
     </div>
   </div>
-</div>
+
+  <form class="ax-td-input" onsubmit="sendTestMessage(event)">
+    <input id="td-input-el" placeholder="Test a message…" autocomplete="off"/>
+    <button type="submit">Send</button>
+  </form>
+</aside>
 
 <!-- Confirm modal (legacy — used by install/delete flows) -->
 <div class="ax-modal-bd" id="confirm-modal-bd">
@@ -533,6 +545,90 @@ const AGENT_PAGE_CSS = `
 /* Agent-specific layout + legacy styles for bits the migration left in
  * place (EasyMDE theming, skills tree, plain-editor). Shared chrome + tab
  * primitives live in components.css.ts. */
+
+/* Personality tab — vertical file list on the left, MD editor on the right */
+.ax-identity {
+  display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: flex-start;
+}
+.ax-identity__files {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--ax-bg); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 6px;
+}
+.ax-identity__files button {
+  background: transparent; border: 0; color: var(--ax-text-2);
+  padding: 8px 10px; font: inherit; font-size: 12.5px; cursor: pointer;
+  border-radius: 5px; text-align: left;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--ax-mono);
+}
+.ax-identity__files button:hover { background: var(--ax-surface); color: var(--ax-text); }
+.ax-identity__files button.is-active {
+  background: color-mix(in oklch, var(--ax-accent) 14%, var(--ax-surface));
+  color: var(--ax-accent); font-weight: 500;
+}
+.ax-identity__files button .ax-f-glyph {
+  color: var(--ax-muted); font-size: 11px; width: 14px; text-align: center;
+}
+.ax-identity__files button.is-active .ax-f-glyph { color: var(--ax-accent); }
+.ax-identity__files button .ax-f-new {
+  margin-left: auto; font-size: 10px; color: var(--ax-muted);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  font-family: var(--ax-mono);
+}
+.ax-identity__editor {
+  background: var(--ax-bg); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 10px;
+}
+.ax-identity__head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--ax-border);
+}
+
+/* EasyMDE theme tweaks to match AgentX tokens */
+.EasyMDEContainer .editor-toolbar {
+  border-color: var(--ax-border) !important;
+  background: var(--ax-surface); border-radius: 5px 5px 0 0;
+}
+.EasyMDEContainer .editor-toolbar button {
+  color: var(--ax-text-2) !important;
+}
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active {
+  background: var(--ax-surface-2) !important; color: var(--ax-accent) !important;
+  border-color: var(--ax-border-2) !important;
+}
+.EasyMDEContainer .editor-toolbar i.separator {
+  border-color: var(--ax-border) !important;
+}
+.EasyMDEContainer .CodeMirror {
+  border-color: var(--ax-border) !important;
+  background: var(--ax-bg-elev) !important;
+  color: var(--ax-text) !important;
+  font-family: var(--ax-mono) !important;
+  font-size: 12.5px;
+  border-radius: 0 0 5px 5px;
+}
+.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--ax-accent) !important; }
+.EasyMDEContainer .CodeMirror-selected { background: color-mix(in oklch, var(--ax-accent) 25%, transparent) !important; }
+.EasyMDEContainer .editor-statusbar { color: var(--ax-muted) !important; border-color: var(--ax-border) !important; }
+.EasyMDEContainer .editor-preview,
+.EasyMDEContainer .editor-preview-side {
+  background: var(--ax-bg-elev) !important; color: var(--ax-text) !important;
+  border-color: var(--ax-border) !important;
+}
+.EasyMDEContainer.sided--no-fullscreen .editor-preview-side {
+  border-color: var(--ax-border) !important;
+}
+.cm-s-easymde .cm-header, .cm-s-easymde .cm-hr { color: var(--ax-accent) !important; }
+.cm-s-easymde .cm-keyword, .cm-s-easymde .cm-link { color: var(--ax-info) !important; }
+.cm-s-easymde .cm-string, .cm-s-easymde .cm-strong { color: var(--ax-text) !important; }
+.cm-s-easymde .cm-comment { color: var(--ax-muted) !important; }
+
+@media (max-width: 900px) {
+  .ax-identity { grid-template-columns: 1fr; }
+}
+
 .msg { font-size: 12px; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; display: none; }
 .msg.ok { background: color-mix(in oklch, var(--ax-accent) 12%, transparent); color: var(--ax-accent); display: block; }
 .msg.err { background: color-mix(in oklch, var(--ax-err) 12%, transparent); color: var(--ax-err); display: block; }
@@ -759,9 +855,12 @@ $('btn-save-meta').addEventListener('click', async () => {
 });
 
 // --- Identity (Personality tab) ---
-// Renders sub-tabs from the server's identity-file list (CLAUDE.md, SOUL.md,
-// IDENTITY.md, USER.md, AGENTS.md, etc.) and swaps the plain textarea when
-// the user clicks between them.
+// Vertical file list + EasyMDE editor. The file list stays docked on the
+// left; clicking a file swaps the editor's contents. Unsaved edits are
+// persisted per-file in state.idDrafts so switching doesn't lose them.
+let idMde = null;
+state.idDrafts = {};
+
 async function loadIdentity(){
   try {
     const r = await req('GET', '/api/admin/agent/' + AGENT_ID + '/identity');
@@ -769,8 +868,15 @@ async function loadIdentity(){
     host.innerHTML = '';
     for (const f of r.identity) {
       const btn = document.createElement('button');
-      btn.textContent = f.title + (f.exists ? '' : ' (new)');
+      btn.type = 'button';
       btn.dataset.path = f.path;
+      // Derive a small 2-3 char glyph from the filename (CLAUDE.md → CL, etc.).
+      const base = (f.path.split('/').pop() || f.path).replace(/\\.md$/i, '');
+      const glyph = base.slice(0, 2).toUpperCase();
+      btn.innerHTML =
+        '<span class="ax-f-glyph">' + esc(glyph) + '</span>' +
+        '<span>' + esc(f.title) + '</span>' +
+        (f.exists ? '' : '<span class="ax-f-new">new</span>');
       btn.addEventListener('click', () => {
         host.querySelectorAll('button').forEach(x => x.classList.toggle('is-active', x === btn));
         loadIdentityFile(f.path);
@@ -784,43 +890,60 @@ async function loadIdentity(){
   } catch (e) { showMsg('err', e.message); }
 }
 
+function ensureIdMde() {
+  if (idMde) return idMde;
+  if (typeof EasyMDE === 'undefined') return null;
+  const el = document.getElementById('id-editor');
+  if (!el) return null;
+  idMde = new EasyMDE({
+    element: el, spellChecker: false, autoDownloadFontAwesome: true,
+    status: ['lines','words'], autofocus: false,
+    minHeight: '360px',
+    toolbar: ['bold','italic','heading','|','quote','code','unordered-list','ordered-list','|','link','table','|','preview','side-by-side','fullscreen','|','guide'],
+  });
+  idMde.codemirror.on('change', () => {
+    updateIdCharCount();
+    if (state.identityPath) state.idDrafts[state.identityPath] = idMde.value();
+  });
+  return idMde;
+}
+
 async function loadIdentityFile(path){
+  // Stash current draft before switching
+  if (state.identityPath && idMde) state.idDrafts[state.identityPath] = idMde.value();
   state.identityPath = path;
   $('id-path').textContent = path;
   try {
     const f = await req('GET', '/api/admin/agent/' + AGENT_ID + '/identity/file?path=' + encodeURIComponent(path));
-    const ed = $('id-editor');
-    ed.value = f.content || '';
+    const mde = ensureIdMde();
+    const initial = state.idDrafts[path] !== undefined ? state.idDrafts[path] : (f.content || '');
+    if (mde) mde.value(initial);
+    else $('id-editor').value = initial;
     updateIdCharCount();
   } catch (e) {
     showMsg('err', e.message);
-    $('id-editor').value = '';
+    if (idMde) idMde.value(''); else $('id-editor').value = '';
   }
 }
 
 function updateIdCharCount() {
-  const ed = $('id-editor');
-  if (!ed) return;
-  const len = ed.value.length;
+  const val = idMde ? idMde.value() : ($('id-editor')?.value || '');
   const chars = $('id-chars');
-  if (chars) chars.textContent = len.toLocaleString() + ' chars';
+  if (chars) chars.textContent = val.length.toLocaleString() + ' chars';
 }
-
-// Wire once the DOM settles.
-setTimeout(() => {
-  const ed = $('id-editor');
-  if (ed) ed.addEventListener('input', updateIdCharCount);
-}, 0);
 
 $('btn-save-id').addEventListener('click', async () => {
   if (!state.identityPath) return;
+  const content = idMde ? idMde.value() : $('id-editor').value;
   try {
     await req('PUT', '/api/admin/agent/' + AGENT_ID + '/identity/file', {
-      path: state.identityPath, content: $('id-editor').value,
+      path: state.identityPath, content,
     });
     showMsg('ok', 'Saved ' + state.identityPath);
     const note = $('id-saved-note');
-    if (note) note.textContent = 'saved just now';
+    if (note) note.textContent = 'saved ' + new Date().toLocaleTimeString();
+    // Clear the draft now that it's persisted
+    delete state.idDrafts[state.identityPath];
   } catch (e) { showMsg('err', e.message); }
 });
 
@@ -1221,10 +1344,24 @@ $('btn-delete-agent')?.addEventListener('click', () => {
   );
 });
 
-/* ===== Hero test-drive button jumps focus to the side panel's input ===== */
-$('btn-test-drive')?.addEventListener('click', () => {
-  const inp = $('td-input-el');
-  if (inp) { inp.focus(); inp.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+/* ===== Test-drive side panel: open/close ===== */
+function openTestDrive() {
+  const p = $('td-panel');
+  if (!p) return;
+  p.classList.add('is-open');
+  p.setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('td-input-el')?.focus(), 250);
+}
+function closeTestDrive() {
+  const p = $('td-panel');
+  if (!p) return;
+  p.classList.remove('is-open');
+  p.setAttribute('aria-hidden', 'true');
+}
+$('btn-test-drive')?.addEventListener('click', openTestDrive);
+$('td-close')?.addEventListener('click', closeTestDrive);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('td-panel')?.classList.contains('is-open')) closeTestDrive();
 });
 
 /* ===== Boot ===== */

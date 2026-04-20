@@ -727,6 +727,17 @@ function appendOutput(text) {
   if (atBottom) taskModal.output.scrollTop = taskModal.output.scrollHeight;
 }
 
+/** Flush any trailing partial line left in lineBuf. Called at the end of an
+ *  archived-task render so transcripts that don't end with a newline still
+ *  surface their last line. */
+function flushOutput() {
+  if (!taskModal.output) return;
+  if (taskModal.lineBuf && taskModal.lineBuf.length) {
+    processStreamLine(taskModal.lineBuf);
+    taskModal.lineBuf = '';
+  }
+}
+
 function processStreamLine(line) {
   if (line.startsWith('· ')) { closeOpenText(); renderSystemEvent(line.slice(2)); return; }
   if (line.startsWith('→ ')) { closeOpenText(); renderToolUseEvent(line.slice(2)); return; }
@@ -858,6 +869,7 @@ function openTaskModal(opts) {
     setStatus(L.taskModalFinished || 'finished', 'done');
     try { es.close(); } catch {}
     taskModal.es = null;
+    flushOutput();
   });
   es.addEventListener('error', () => {
     if (es.readyState === 2) {
@@ -969,14 +981,28 @@ async function openTaskRecord(opts) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const rec = await r.json();
     setStatus(rec.ok ? (L.taskModalArchived || 'archived') : (L.taskModalFinished || 'failed'), rec.ok ? 'done' : 'err');
-    if (rec.transcript) appendOutput(rec.transcript);
-    if (rec.responseText && rec.transcript.indexOf(rec.responseText) === -1) {
+    const tx = rec.transcript || '';
+    if (tx) appendOutput(tx);
+    // Only append the "Final reply" block if the transcript didn't already
+    // carry it. Guard against a missing transcript (indexOf would throw).
+    if (rec.responseText && (!tx || tx.indexOf(rec.responseText) === -1)) {
       appendOutput('\\n\\n--- ' + (L.taskModalFinalResponse || 'Final reply') + ' ---\\n' + rec.responseText);
     }
     if (rec.error) appendOutput('\\n\\n[error] ' + rec.error);
+    flushOutput();
+    // If the record returned nothing renderable, show an explicit empty
+    // state so the modal doesn't look broken.
+    if (!taskModal.output.children.length) {
+      taskModal.output.innerHTML =
+        '<div class="ax-ev ax-ev--system">' +
+          '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--soft">empty</span>' +
+          '<span>This task has no recorded transcript. It may have finished before history capture kicked in, or the archive file was pruned.</span></div>' +
+        '</div>';
+    }
   } catch (e) {
-    setStatus(L.taskModalLoadFailed || 'couldn\\'t load', 'err');
+    setStatus(L.taskModalLoadFailed || "couldn't load", 'err');
     appendOutput('Error: ' + e.message);
+    flushOutput();
   }
 }
 
