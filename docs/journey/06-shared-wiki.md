@@ -8,6 +8,58 @@ title: "6. Shared wiki — compounding team knowledge"
 
 The wiki pipeline today follows the pattern Karpathy and Farza actually described: typed articles (`person / project / place / concept / event / decision / pattern`), `[[wikilinks]]` as the primary navigation surface, an `_index.md` catalog grouped by type, and an **agentic query** that walks the subgraph instead of BM25-matching keywords. For the full why, see **[An honest review of our Karpathy-inspired wiki](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026)**.
 
+## Day in the life — from MR comment to cited answer
+
+Concrete, end-to-end. Your PM agent watches a GitLab project. A merge request lands:
+
+> **MR !179** — `feat: product items table dropdowns (closes #642)` · author: coding-mtgl-v2 · branch `642-rr-product-items-table-dropdowns`
+> _GitLab webhook fires into AgentX._
+
+**1. Ingest (continuous).** The router writes a raw entry per webhook event and per reply. No LLM, no decision — just durable capture into `.agentx/wiki/raw/entries/`. After a day of MR activity you have ~13 raw entries for this MR: open, push, comment, CI fail, reply, merge.
+
+**2. Absorb (cron, nightly).** `agentx wiki absorb --mode graph` batches each agent's unabsorbed entries into one Claude call that emits typed articles with wikilinks. The 13 raw entries collapse into a single article:
+
+```markdown
+---
+title: "MR !179 — feat: product items table dropdowns (closes #642)"
+type: project
+related: ["Issue #642 — RR Product Items Table Rework (Dropdowns)",
+          "MTGL System V2 — Project Overview",
+          "MTGL V2 Coding Agent — Implementation Agent for MTGL System V2",
+          "DevOps MTGL — Deployment Agent for MTGL System V2",
+          "Staging Server — MTGL System V2"]
+tags: ["mtgl", "merge-request", "product-items"]
+sources: ["pm-mtgl-mnn3f7hj", "pm-mtgl-mnn3j2cc", …]   # traceability to raw entries
+---
+
+MR !179 implements [[Issue #642 — RR Product Items Table Rework]] on
+[[MTGL System V2 — Project Overview]]. Branch: `642-rr-product-items-table-dropdowns`.
+Author: [[MTGL V2 Coding Agent]].
+
+## Scope Drift
+#642 specified "UI only." This MR added new DB tables and FKs
+(`categories`, `sub_services`, `category_id`). Deployment now requires
+running migrations and the `CategoriesAndSubServicesSeeder`.
+```
+
+Notice: the wikilinks form a graph. `MR !179 → Issue #642 → MTGL System V2 → Staging Server → DevOps MTGL` is now a walkable path.
+
+**3. Query (when value lands).** Three days later someone in the Telegram project channel types:
+
+> "why did we ship new DB tables with #642? wasn't that a UI-only ticket?"
+
+The PM agent picks this up and calls `agentx wiki query "scope drift on issue 642"`. Under the hood:
+
+- `_index.md` lists 47 articles by type. Selector LLM picks `project: MR !179` and `project: Issue #642` as candidates.
+- The walker follows `related` wikilinks 2 hops. Subgraph ends up with 5 articles including the event `2026-04-08 CI Pipeline PHP Version Mismatch` and the decision on backfill strategy.
+- Synthesiser replies, citing titles:
+
+> _"Scope expanded from UI-only to schema changes because of the category foreign-key requirement — see [[MR !179 — feat: product items table dropdowns]] > Scope Drift. DevOps confirmed the seeder must run on staging first; see [[2026-04-08 CI Pipeline PHP Version Mismatch]]."_
+
+That's the payoff. Not BM25 over transcripts — a cited answer assembled from typed articles the agent itself compiled. The same pattern works for onboarding ("what is MTGL?"), incident review ("who decided X?"), and cross-project ("has another team hit this?").
+
+**4. Mesh sync.** Clawd-server runs its own absorb pass; macbook runs its own. Agent-wide wikis stay peer-local, but cross-references are published over the mesh — `agentx graph pull` and `wiki sync` keep the two sides in sympathy without either becoming the source of truth (see [Journey 8](/journey/08-mesh-federation)).
+
 ## The command surface
 
 Grouped by what they're for:

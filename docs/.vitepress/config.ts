@@ -46,7 +46,7 @@ export default withMermaid(defineConfig({
             { text: "3. Multi-agent group", link: "/journey/03-multi-agent-group" },
             { text: "4. Cross-channel · planned", link: "/journey/04-cross-channel" },
             { text: "5. Hooks & webhooks · planned", link: "/journey/05-hooks-webhooks" },
-            { text: "6. Shared wiki · planned", link: "/journey/06-shared-wiki" },
+            { text: "6. Shared wiki", link: "/journey/06-shared-wiki" },
             { text: "7. Business layer", link: "/journey/07-business-layer" },
             { text: "8. Mesh federation", link: "/journey/08-mesh-federation" },
             { text: "9. Deterministic services · planned", link: "/journey/09-deterministic-services" },
