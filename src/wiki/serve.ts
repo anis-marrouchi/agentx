@@ -128,87 +128,536 @@ function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string
 
 // --- CSS ---
 
+const HEAD_FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">`
+
+// Paper/ink editorial palette — warm neutrals, Newsreader display font,
+// Inter Tight for UI, JetBrains Mono for code/meta. Ported from the
+// /Users/macbookpro/Downloads/wiki mockup.
 const CSS = `
 :root {
-  --bg: #f8f9fa; --card: #ffffff; --border: #a2a9b1;
-  --link: #0645ad; --link-visited: #0b0080; --link-broken: #ba0000;
-  --heading-border: #a2a9b1; --text: #202122; --text-dim: #54595d;
-  --accent: #eaecf0; --tag: #eaf3ff;
+  --bg: #FAF8F3;
+  --bg-raised: #FFFFFF;
+  --bg-sunk: #F2EFE7;
+  --bg-hover: #EFEBE0;
+  --ink: #1A1915;
+  --ink-2: #3D3A32;
+  --muted: #6B6860;
+  --muted-2: #96918A;
+  --line: #E4DED0;
+  --line-2: #D1CAB8;
+  --accent: oklch(55% 0.14 45);
+  --accent-soft: oklch(55% 0.14 45 / 0.10);
+  --accent-hover: oklch(48% 0.14 45);
+  --cool: oklch(55% 0.08 230);
+  --cool-soft: oklch(55% 0.08 230 / 0.10);
+  --ok: oklch(55% 0.10 145);
+  --warn: oklch(60% 0.14 75);
+  --err: oklch(55% 0.16 20);
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-ui: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --sidebar-w: 260px;
+  --topbar-h: 52px;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-lg: 10px;
+  --shadow-sm: 0 1px 2px rgba(26,25,21,0.04), 0 1px 1px rgba(26,25,21,0.03);
+  --shadow-md: 0 4px 12px rgba(26,25,21,0.06), 0 2px 4px rgba(26,25,21,0.04);
+  --shadow-lg: 0 12px 40px rgba(26,25,21,0.12), 0 4px 12px rgba(26,25,21,0.06);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
-.layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
-.sidebar { background: var(--card); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin: 20px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--accent); }
-.sidebar h2:first-child { margin-top: 0; }
-.sidebar a { display: block; padding: 3px 8px; color: var(--link); text-decoration: none; font-size: 14px; border-radius: 3px; }
-.sidebar a:hover { background: var(--accent); }
-.sidebar a.active { background: var(--tag); font-weight: 600; }
-.sidebar .logo { font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; display: block; margin-bottom: 12px; padding: 4px 8px; }
-.sidebar .search-box { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; margin-bottom: 12px; }
-.sidebar .agent-badge { display: inline-block; background: #dcedc8; color: #33691e; border-radius: 3px; padding: 1px 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
-.main { padding: 32px 48px; max-width: 960px; }
-.main h1 { font-size: 28px; font-weight: 400; border-bottom: 1px solid var(--heading-border); padding-bottom: 8px; margin-bottom: 16px; }
-.main h2 { font-size: 22px; font-weight: 400; border-bottom: 1px solid var(--accent); padding-bottom: 4px; margin: 24px 0 12px; }
-.main h3 { font-size: 18px; margin: 20px 0 8px; }
-.main h4 { font-size: 16px; margin: 16px 0 8px; }
-.main p { margin: 8px 0; }
-.main ul { margin: 8px 0 8px 24px; }
-.main li { margin: 2px 0; }
-.main a { color: var(--link); }
-.main a:visited { color: var(--link-visited); }
-.main a.wikilink.broken { color: var(--link-broken); }
-.meta { background: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; }
-.meta dt { font-weight: 600; color: var(--text-dim); }
-.tag { display: inline-block; background: var(--tag); border-radius: 3px; padding: 1px 8px; font-size: 12px; margin: 1px 2px; color: inherit; text-decoration: none; }
-a.tag:hover { background: var(--border); cursor: pointer; }
-.article-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 0; }
-.article-row .article-title { margin-left: 4px; }
-.article-list { display: flex; flex-direction: column; }
-table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; font-size: 14px; }
-th { background: var(--accent); font-weight: 600; }
-tr:hover td { background: #f0f4ff; }
-pre { background: #f5f5f5; border: 1px solid var(--border); border-radius: 4px; padding: 12px; overflow-x: auto; font-size: 13px; margin: 12px 0; }
-code { font-family: 'SF Mono', Menlo, monospace; font-size: 13px; }
-p code { background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }
-.entry-card { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin: 8px 0; }
-.entry-card .meta-line { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
-.stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 16px; text-align: center; }
-.stat-card .number { font-size: 32px; font-weight: 700; color: var(--link); }
-.stat-card .label { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
-.agent-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 12px 0; transition: box-shadow 0.15s; }
-.agent-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-.agent-card h3 { margin: 0 0 8px; }
-.agent-card h3 a { text-decoration: none; font-size: 20px; }
-.agent-card .agent-stats { display: flex; gap: 16px; font-size: 14px; color: var(--text-dim); }
-.agent-card .agent-stats strong { color: var(--text); }
-.agent-card .article-list { margin-top: 8px; font-size: 13px; }
-.agent-card .article-list a { margin-right: 8px; }
-.backlinks { background: #fffbe6; border: 1px solid #e6d98c; border-radius: 4px; padding: 12px 16px; margin-top: 24px; font-size: 13px; }
-.backlinks h4 { margin-bottom: 4px; }
-.breadcrumb { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
-.breadcrumb a { color: var(--link); text-decoration: none; }
-@media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; height: auto; } .main { padding: 20px; } }
+[data-theme="dark"] {
+  --bg: #0F0E0C;
+  --bg-raised: #1A1815;
+  --bg-sunk: #07060A;
+  --bg-hover: #22201C;
+  --ink: #EBE7DD;
+  --ink-2: #C9C4B7;
+  --muted: #8B867B;
+  --muted-2: #5E5A52;
+  --line: #2A2822;
+  --line-2: #3A3830;
+  --accent: oklch(70% 0.16 45);
+  --accent-soft: oklch(70% 0.16 45 / 0.14);
+  --accent-hover: oklch(78% 0.16 45);
+  --cool: oklch(70% 0.10 230);
+  --cool-soft: oklch(70% 0.10 230 / 0.14);
+  --ok: oklch(70% 0.14 145);
+  --warn: oklch(75% 0.16 75);
+  --err: oklch(68% 0.18 20);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.7);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); font-size: 14px; line-height: 1.55;
+  font-feature-settings: 'ss01','cv11';
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, textarea, select { font: inherit; color: inherit; }
+code, pre, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+.display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+
+/* ——— App shell ——— */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr;
+  min-height: 100vh;
+}
+.topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 16px; padding: 0 20px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 20; backdrop-filter: blur(8px);
+}
+.topbar-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-display); font-size: 18px; color: var(--ink);
+  width: calc(var(--sidebar-w) - 20px); padding-right: 12px;
+  border-right: 1px solid var(--line); height: 100%;
+  text-decoration: none;
+}
+.topbar-logo .mark {
+  width: 22px; height: 22px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--bg-raised);
+  border-radius: 5px; font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700;
+}
+.topbar-search {
+  flex: 1; max-width: 520px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--muted);
+  transition: border-color 0.15s, background 0.15s;
+}
+.topbar-search:focus-within { border-color: var(--line-2); background: var(--bg-hover); }
+.topbar-search input {
+  flex: 1; border: 0; outline: 0; background: transparent;
+  color: var(--ink); font: inherit;
+}
+.topbar-search input::placeholder { color: var(--muted); }
+.topbar-search kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--bg); color: var(--muted);
+}
+.topbar-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.icon-btn {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--ink); }
+.icon-btn.active { color: var(--accent); background: var(--accent-soft); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* ——— Sidebar ——— */
+.sidebar {
+  grid-column: 1; grid-row: 2;
+  background: var(--bg); border-right: 1px solid var(--line);
+  padding: 16px 12px 40px; overflow-y: auto;
+  position: sticky; top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+}
+.nav-section { margin-bottom: 20px; }
+.nav-section-title {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 2px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; color: var(--ink-2);
+  font-size: 13px; border-radius: var(--radius-sm);
+  line-height: 1.35; cursor: pointer;
+  transition: background 0.1s;
+  text-decoration: none;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--ink); }
+.nav-item.active {
+  background: var(--accent-soft); color: var(--accent); font-weight: 500;
+}
+.nav-item .count {
+  margin-left: auto; font-family: var(--font-mono);
+  font-size: 11px; color: var(--muted);
+}
+.nav-item.active .count { color: var(--accent); }
+.nav-agent-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; font-size: 13px; color: var(--ink);
+  cursor: pointer; border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+.nav-agent-header:hover { color: var(--accent); background: var(--bg-hover); }
+.nav-agent-header .name { font-weight: 500; }
+.nav-agent-header .badge {
+  margin-left: auto; font-family: var(--font-mono);
+  font-size: 10.5px; color: var(--muted);
+}
+.nav-agent-type-label {
+  padding: 6px 8px 2px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted-2); font-weight: 600;
+}
+.nav-agent-children {
+  padding-left: 14px; display: flex; flex-direction: column; gap: 1px;
+  margin-top: 2px; border-left: 1px dashed var(--line); margin-left: 10px;
+}
+
+/* ——— Main ——— */
+.main {
+  grid-column: 2; grid-row: 2;
+  padding: 32px 48px 80px;
+  max-width: 1180px; width: 100%;
+}
+.main.article { max-width: 1100px; }
+
+/* ——— Breadcrumb ——— */
+.breadcrumb {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--muted);
+  margin-bottom: 14px; font-family: var(--font-ui);
+}
+.breadcrumb a { color: var(--muted); }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb .sep { color: var(--muted-2); }
+.breadcrumb .current { color: var(--ink-2); }
+
+/* ——— Display heading ——— */
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 24px; padding-bottom: 16px;
+  border-bottom: 1px solid var(--line); margin-bottom: 28px;
+}
+.page-head h1 {
+  font-family: var(--font-display); font-size: 38px;
+  font-weight: 400; letter-spacing: -0.015em; line-height: 1.1;
+}
+.page-head .page-sub {
+  font-size: 13.5px; color: var(--muted);
+  margin-top: 6px; max-width: 60ch; line-height: 1.5;
+}
+.page-head .page-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+/* ——— Buttons ——— */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font-size: 13px;
+  color: var(--ink-2); background: var(--bg-raised);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  transition: all 0.1s; text-decoration: none;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--line-2); color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.primary:hover { background: var(--ink-2); color: var(--bg); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--bg-hover); }
+.btn svg { width: 14px; height: 14px; }
+
+/* ——— Stat strip ——— */
+.stats, .stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0;
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+  margin-bottom: 28px;
+}
+.stat-card, .stat-cell {
+  padding: 16px 20px;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 4px;
+  background: transparent; text-align: left;
+}
+.stat-card:last-child, .stat-cell:last-child { border-right: none; }
+.stat-card .label, .stat-cell .label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); font-weight: 600;
+}
+.stat-card .number, .stat-cell .number {
+  font-family: var(--font-display); font-size: 32px; font-weight: 400;
+  line-height: 1; color: var(--ink);
+}
+
+/* ——— Section heading ——— */
+.section-head, h2.section {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 40px 0 14px;
+}
+.section-head h2 {
+  font-family: var(--font-display); font-size: 22px;
+  font-weight: 400; letter-spacing: -0.01em; color: var(--ink);
+  border: none; padding: 0;
+}
+
+/* ——— Agent grid (hub home) ——— */
+.agent-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.agent-card {
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.agent-card:hover {
+  border-color: var(--line-2); box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.agent-card h3 {
+  font-family: var(--font-display); font-size: 20px; font-weight: 400;
+  color: var(--ink); margin: 0;
+}
+.agent-card h3 a { color: inherit; text-decoration: none; }
+.agent-card h3 a:hover { color: var(--accent); }
+.agent-card .agent-stats {
+  display: flex; gap: 20px; font-size: 13px; color: var(--muted);
+}
+.agent-card .agent-stats strong {
+  color: var(--ink); font-weight: 600; font-family: var(--font-mono);
+}
+.agent-card .article-list {
+  display: flex; flex-direction: column; gap: 4px; margin-top: 4px; font-size: 13px;
+}
+.agent-card .article-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  padding: 2px 0;
+}
+.agent-card .article-row .article-title {
+  color: var(--ink-2); text-decoration: none; margin-left: 4px; flex: 1;
+}
+.agent-card .article-row .article-title:hover { color: var(--accent); }
+
+/* ——— Tags ——— */
+.tag {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-mono); font-size: 11.5px;
+  padding: 1px 7px 2px; background: var(--bg-sunk);
+  color: var(--ink-2); border-radius: 3px;
+  line-height: 1.4; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  text-decoration: none;
+}
+.tag:hover { background: var(--accent-soft); color: var(--accent); }
+.tag.lg { font-size: 12.5px; padding: 3px 10px; }
+
+/* ——— Article meta — inline dl below h1 ——— */
+.meta {
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 18px;
+  margin-bottom: 24px; font-size: 13px;
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 6px 18px;
+}
+.meta dt {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); font-weight: 600;
+  align-self: center;
+}
+.meta dd { color: var(--ink-2); font-family: var(--font-mono); font-size: 12.5px; }
+
+/* ——— Prose body ——— */
+.prose {
+  font-size: 15.5px; line-height: 1.65; color: var(--ink-2);
+  max-width: 68ch;
+}
+.main h1, .prose h1 {
+  font-family: var(--font-display); font-size: 40px;
+  font-weight: 400; letter-spacing: -0.015em; line-height: 1.1;
+  color: var(--ink); margin-bottom: 16px;
+  border: none; padding: 0;
+}
+.main h2, .prose h2 {
+  font-family: var(--font-display); font-size: 26px;
+  font-weight: 400; letter-spacing: -0.01em;
+  margin: 36px 0 12px; color: var(--ink);
+  padding-bottom: 4px; border-bottom: 1px solid var(--line);
+}
+.main h3, .prose h3 {
+  font-family: var(--font-display); font-size: 20px; font-weight: 500;
+  margin: 28px 0 8px; color: var(--ink);
+}
+.main h4, .prose h4 {
+  font-size: 15px; font-weight: 600; margin: 20px 0 6px; color: var(--ink);
+}
+.main p, .prose p { margin: 10px 0; }
+.main ul, .prose ul, .main ol, .prose ol { margin: 10px 0 10px 22px; }
+.main li, .prose li { margin: 4px 0; }
+.main code, .prose code {
+  background: var(--bg-sunk); padding: 1px 5px; border-radius: 3px;
+  font-family: var(--font-mono);
+}
+.main pre, .prose pre {
+  background: var(--bg-sunk); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 14px 16px;
+  overflow-x: auto; margin: 14px 0; font-size: 13px;
+}
+.main pre code, .prose pre code { background: none; padding: 0; }
+.main blockquote, .prose blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 14px; color: var(--muted);
+  font-style: italic; margin: 14px 0;
+}
+
+/* Wikilinks in prose */
+.prose a.wikilink, .main a.wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-soft);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+.prose a.wikilink:hover, .main a.wikilink:hover { text-decoration-color: var(--accent); }
+.prose a.wikilink.broken, .main a.wikilink.broken {
+  color: var(--err); text-decoration-color: var(--err);
+  text-decoration-style: dashed;
+}
+
+/* ——— Tables ——— */
+table {
+  width: 100%; border-collapse: collapse;
+  margin: 14px 0; font-size: 14px;
+}
+th, td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px; text-align: left;
+}
+th {
+  background: var(--bg-sunk); font-weight: 600;
+  color: var(--ink); font-size: 12.5px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+tr:hover td { background: var(--bg-hover); }
+
+/* ——— Entry cards ——— */
+.entry-card {
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 18px; margin: 10px 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.entry-card:hover { border-color: var(--line-2); box-shadow: var(--shadow-sm); }
+.entry-card .meta-line {
+  font-size: 11.5px; color: var(--muted);
+  margin-bottom: 6px; font-family: var(--font-mono);
+}
+.entry-card h3 {
+  font-family: var(--font-display); font-size: 19px; font-weight: 400;
+  color: var(--ink); margin: 4px 0 6px;
+  border: none; padding: 0;
+}
+.entry-card h3 a { color: inherit; }
+.entry-card h3 a:hover { color: var(--accent); }
+.entry-card p {
+  color: var(--ink-2); font-size: 13.5px;
+  line-height: 1.55; margin: 4px 0;
+}
+
+/* ——— Backlinks ——— */
+.backlinks {
+  margin-top: 40px; padding: 16px 18px;
+  background: var(--bg-raised); border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.backlinks h4 {
+  font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted);
+  font-weight: 600; margin-bottom: 8px;
+}
+.backlinks ul { list-style: none; padding: 0; margin: 0; }
+.backlinks li { padding: 4px 0; font-size: 13.5px; }
+
+/* ——— Health issues list ——— */
+.health-list { display: flex; flex-direction: column; gap: 6px; }
+.health-row {
+  display: grid; grid-template-columns: 96px 1fr 2fr;
+  gap: 14px; align-items: center;
+  padding: 10px 14px; background: var(--bg-raised);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.health-row .kind {
+  font-family: var(--font-mono); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.health-row .article { color: var(--ink); font-weight: 500; }
+.health-row .msg { color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .topbar-logo { width: auto; border-right: none; }
+  .sidebar { display: none; }
+  .main { padding: 20px; grid-column: 1; }
+}
 `
 
 // --- HTML Templates ---
 
-function pageLayout(title: string, sidebar: string, content: string): string {
+function pageLayout(title: string, sidebar: string, content: string, searchQuery: string = ""): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)} — AgentX Wiki</title>
+  ${HEAD_FONTS}
   <style>${CSS}</style>
+  <script>(function(){try{var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>
 </head>
 <body>
-  <div class="layout">
+  <div class="app">
+    <header class="topbar">
+      <a href="/" class="topbar-logo">
+        <span class="mark">W</span>
+        <span class="display">AgentX Wiki</span>
+      </a>
+      <form class="topbar-search" action="/search" method="get">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" name="q" placeholder="Search every wiki…" value="${escapeHtml(searchQuery)}" autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </form>
+      <div class="topbar-tools">
+        <button class="icon-btn" id="wiki-theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
     <nav class="sidebar">${sidebar}</nav>
     <main class="main">${content}</main>
   </div>
+  <script>
+    (function(){
+      var btn = document.getElementById('wiki-theme-toggle');
+      if (!btn) return;
+      btn.addEventListener('click', function(){
+        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? '' : 'dark';
+        if (cur) document.documentElement.setAttribute('data-theme', 'dark');
+        else document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem('wiki-theme', cur); } catch(e){}
+      });
+      // Cmd/Ctrl-K focuses search
+      document.addEventListener('keydown', function(e){
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          var inp = document.querySelector('.topbar-search input');
+          if (inp) inp.focus();
+        }
+      });
+    })();
+  </script>
 </body>
 </html>`
 }
@@ -232,26 +681,31 @@ function dirLabel(dir: string): string {
 }
 
 function hubSidebar(agents: AgentWikiSummary[], activePath?: string): string {
-  let html = '<a href="/" class="logo">AgentX Wiki</a>'
-  html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search all wikis..."></form>'
-  html += '<h2>Hub</h2>'
-  html += `<a href="/"${!activePath ? ' class="active"' : ''}>Home</a>`
-  html += '<a href="/entries">All Entries</a>'
+  let html = '<div class="nav-section">'
+  html += `<a class="nav-item${!activePath ? ' active' : ''}" href="/">Home</a>`
+  html += `<a class="nav-item" href="/entries">All entries</a>`
+  html += '</div>'
 
   for (const agent of agents) {
     const agentPrefix = `/agent/${encodeURIComponent(agent.agentId)}`
-    html += `<h2><a href="${agentPrefix}" style="color:inherit;text-decoration:none">${escapeHtml(agent.agentId)}</a> <span class="agent-badge">${agent.totalArticles}</span></h2>`
+    html += '<div class="nav-section">'
+    html += `<a class="nav-agent-header" href="${agentPrefix}">`
+    html += `<span class="name">${escapeHtml(agent.agentId)}</span>`
+    html += `<span class="badge">${agent.totalArticles}</span>`
+    html += `</a>`
+    html += '<div class="nav-agent-children">'
 
-    // Group articles by type
     const byType = groupByDir(agent.articles)
     for (const [type, articles] of byType) {
-      html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#888;margin:8px 8px 2px;font-weight:600">${dirLabel(type)}</div>`
+      html += `<div class="nav-agent-type-label">${dirLabel(type)}</div>`
       for (const a of articles) {
         const fullPath = `${agent.agentId}/${a.path}`
         const isActive = fullPath === activePath
-        html += `<a href="${agentPrefix}/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''} style="padding-left:16px;font-size:13px">${escapeHtml(a.title)}</a>`
+        html += `<a class="nav-item${isActive ? ' active' : ''}" href="${agentPrefix}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a>`
       }
     }
+    html += '</div>'
+    html += '</div>'
   }
 
   return html
@@ -265,49 +719,62 @@ function hubHome(hub: WikiHub, allAgents?: AgentWikiSummary[], remoteAgents?: Ar
   const totalUnabsorbed = agents.reduce((s, a) => s + a.unabsorbed, 0)
   const remoteIds = new Set((remoteAgents || []).map(r => r.agentId))
 
-  let content = '<h1>AgentX Wiki Hub</h1>'
+  let content = `<div class="page-head">
+    <div>
+      <h1>AgentX Wiki</h1>
+      <p class="page-sub">Agent-owned institutional knowledge, typed and cross-referenced. Everything here compiles from raw conversation entries through the nightly absorb pass.</p>
+    </div>
+  </div>`
 
-  // Stats
-  content += '<div class="stats">'
-  content += `<div class="stat-card"><div class="number">${agents.length}</div><div class="label">Agents</div></div>`
-  content += `<div class="stat-card"><div class="number">${totalArticles}</div><div class="label">Articles</div></div>`
-  content += `<div class="stat-card"><div class="number">${totalEntries}</div><div class="label">Raw Entries</div></div>`
+  // Stat strip
+  content += '<div class="stat-strip">'
+  content += `<div class="stat-cell"><div class="label">Agents</div><div class="number">${agents.length}</div></div>`
+  content += `<div class="stat-cell"><div class="label">Articles</div><div class="number">${totalArticles}</div></div>`
+  content += `<div class="stat-cell"><div class="label">Raw entries</div><div class="number">${totalEntries}</div></div>`
+  if (totalUnabsorbed > 0) {
+    content += `<div class="stat-cell"><div class="label">Unabsorbed</div><div class="number">${totalUnabsorbed}</div></div>`
+  }
   if (remoteAgents && remoteAgents.length > 0) {
     const nodes = new Set(remoteAgents.map(r => r.nodeId))
-    content += `<div class="stat-card"><div class="number">${nodes.size}</div><div class="label">Mesh Nodes</div></div>`
+    content += `<div class="stat-cell"><div class="label">Mesh nodes</div><div class="number">${nodes.size}</div></div>`
   }
   content += '</div>'
 
-  // Agent cards
-  content += '<h2>Agent Wikis</h2>'
+  // Agent cards grid
+  content += '<div class="section-head"><h2>Agent wikis</h2></div>'
+  content += '<div class="agent-grid">'
   for (const agent of agents) {
-    const status = agent.unabsorbed > 0
-      ? `<span style="color: #e6a700;">${agent.unabsorbed} unabsorbed</span>`
-      : '<span style="color: green;">up to date</span>'
+    const statusChip = agent.unabsorbed > 0
+      ? `<span class="tag" style="color:var(--warn);background:color-mix(in oklch, var(--warn) 12%, transparent)">${agent.unabsorbed} unabsorbed</span>`
+      : `<span class="tag" style="color:var(--ok);background:color-mix(in oklch, var(--ok) 12%, transparent)">up to date</span>`
 
     const isRemote = remoteIds.has(agent.agentId) && !hub.listAgents().includes(agent.agentId)
-    const remoteBadge = isRemote ? ' <span class="tag" style="background:#fff3cd;color:#856404">remote</span>' : ''
+    const remoteBadge = isRemote
+      ? ` <span class="tag" style="color:var(--cool);background:var(--cool-soft)">remote</span>`
+      : ''
 
     content += `<div class="agent-card">`
     content += `<h3><a href="/agent/${encodeURIComponent(agent.agentId)}">${escapeHtml(agent.agentId)}</a>${remoteBadge}</h3>`
     content += `<div class="agent-stats">
       <span><strong>${agent.totalArticles}</strong> articles</span>
       <span><strong>${agent.totalEntries}</strong> entries</span>
-      <span>${status}</span>
+      ${statusChip}
     </div>`
 
     if (agent.articles.length > 0) {
       content += '<div class="article-list">'
-      for (const a of agent.articles) {
-        // Tags are individual anchors so each is independently clickable.
-        // Article title is its own anchor, so nesting doesn't apply.
-        const tagPart = tagLinks((a.tags || []).slice(0, 3), agent.agentId)
+      for (const a of agent.articles.slice(0, 6)) {
+        const tagPart = tagLinks((a.tags || []).slice(0, 2), agent.agentId)
         content += `<div class="article-row">${tagPart} <a class="article-title" href="/agent/${encodeURIComponent(agent.agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></div>`
+      }
+      if (agent.articles.length > 6) {
+        content += `<div class="article-row"><a class="article-title" style="color:var(--muted)" href="/agent/${encodeURIComponent(agent.agentId)}">+ ${agent.articles.length - 6} more →</a></div>`
       }
       content += '</div>'
     }
     content += '</div>'
   }
+  content += '</div>'
 
   return pageLayout("Hub", hubSidebar(agents), content)
 }
@@ -322,40 +789,42 @@ function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSu
   const entries = hub.getAgentEntries(agentId)
   const articles = agentSummary.articles || []
 
-  let content = `<div class="breadcrumb"><a href="/">Hub</a> / ${escapeHtml(agentId)}</div>`
-  content += `<h1>${escapeHtml(agentId)}</h1>`
+  let content = `<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <span class="current">${escapeHtml(agentId)}</span></nav>`
+  content += `<div class="page-head"><div><h1>${escapeHtml(agentId)}</h1>`
   if (isRemote) {
-    content += `<p><span class="tag" style="background:#fff3cd;color:#856404">remote @ ${escapeHtml((agentSummary as any).nodeId)}</span></p>`
+    content += `<p class="page-sub"><span class="tag" style="color:var(--cool);background:var(--cool-soft)">remote @ ${escapeHtml((agentSummary as any).nodeId)}</span></p>`
   }
+  content += `</div></div>`
 
   // Stats
-  content += '<div class="stats">'
-  content += `<div class="stat-card"><div class="number">${agentSummary.totalArticles}</div><div class="label">Articles</div></div>`
-  content += `<div class="stat-card"><div class="number">${agentSummary.totalEntries}</div><div class="label">Entries</div></div>`
-  content += `<div class="stat-card"><div class="number">${agentSummary.unabsorbed}</div><div class="label">Unabsorbed</div></div>`
+  content += '<div class="stat-strip">'
+  content += `<div class="stat-cell"><div class="label">Articles</div><div class="number">${agentSummary.totalArticles}</div></div>`
+  content += `<div class="stat-cell"><div class="label">Entries</div><div class="number">${agentSummary.totalEntries}</div></div>`
+  content += `<div class="stat-cell"><div class="label">Unabsorbed</div><div class="number">${agentSummary.unabsorbed}</div></div>`
   content += '</div>'
 
-  // Articles table
+  // Articles grouped by type
   if (articles.length > 0) {
-    content += '<h2>Articles</h2><table>'
-    content += '<tr><th>Title</th><th>Tags</th></tr>'
-    for (const a of articles) {
-      content += `<tr>
-        <td><a href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></td>
-        <td>${tagLinks(((a.tags || []) as string[]).slice(0, 4), agentId)}</td>
-      </tr>`
+    content += '<div class="section-head"><h2>Articles</h2><span class="mono" style="font-size:12px;color:var(--muted)">' + articles.length + ' total</span></div>'
+    const byType = groupByDir(articles as Array<{ title: string; path: string; tags?: string[] }>)
+    for (const [type, list] of byType) {
+      content += `<h3 class="display" style="font-size:17px;color:var(--muted);font-weight:500;margin:20px 0 8px">${dirLabel(type)}</h3>`
+      content += '<div class="agent-card" style="padding:4px 14px"><div class="article-list">'
+      for (const a of list) {
+        content += `<div class="article-row">${tagLinks(((a.tags || []) as string[]).slice(0, 3), agentId)} <a class="article-title" href="/agent/${encodeURIComponent(agentId)}/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a></div>`
+      }
+      content += '</div></div>'
     }
-    content += '</table>'
   }
 
   // Recent entries
   const recent = entries.slice(-5).reverse()
   if (recent.length > 0) {
-    content += '<h2>Recent Entries</h2>'
+    content += '<div class="section-head"><h2>Recent entries</h2><a class="btn ghost" href="/entries">See all →</a></div>'
     for (const e of recent) {
       content += `<div class="entry-card">
-        <div class="meta-line">${e.date} via ${e.source} &middot; <code>${e.id}</code></div>
-        <p>${escapeHtml(e.content.slice(0, 300))}${e.content.length > 300 ? "..." : ""}</p>
+        <div class="meta-line">${e.date} · via ${escapeHtml(e.source)} · <code>${escapeHtml(e.id)}</code></div>
+        <p>${escapeHtml(e.content.slice(0, 300))}${e.content.length > 300 ? "…" : ""}</p>
       </div>`
     }
   }
@@ -364,12 +833,16 @@ function hubAgentOverview(hub: WikiHub, agentId: string, allAgents?: AgentWikiSu
   const agentStore = hub.getAgentWiki(agentId)
   const issues = agentStore.lint()
   if (issues.length > 0) {
-    content += `<h2>Health Issues (${issues.length})</h2><table>`
-    content += '<tr><th>Type</th><th>Article</th><th>Issue</th></tr>'
+    content += `<div class="section-head"><h2>Health issues</h2><span class="mono" style="font-size:12px;color:var(--warn)">${issues.length}</span></div>`
+    content += '<div class="health-list">'
     for (const issue of issues) {
-      content += `<tr><td><span class="tag">${issue.type}</span></td><td>${escapeHtml(issue.article)}</td><td>${escapeHtml(issue.message)}</td></tr>`
+      content += `<div class="health-row">
+        <span class="kind">${escapeHtml(issue.type)}</span>
+        <span class="article">${escapeHtml(issue.article)}</span>
+        <span class="msg">${escapeHtml(issue.message)}</span>
+      </div>`
     }
-    content += '</table>'
+    content += '</div>'
   }
 
   return pageLayout(agentId, hubSidebar(agents, agentId), content)
@@ -389,18 +862,20 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string, allA
   const backlinks = store.buildBacklinks()
   const inbound = backlinks[article.meta.title] || []
 
-  let content = `<div class="breadcrumb"><a href="/">Hub</a> / <a href="${prefix}">${escapeHtml(agentId)}</a> / ${escapeHtml(article.meta.title)}</div>`
-  content += `<h1>${escapeHtml(article.meta.title)}</h1>`
+  let content = `<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <a href="${prefix}">${escapeHtml(agentId)}</a> <span class="sep">/</span> <span class="current">${escapeHtml(article.meta.title)}</span></nav>`
+  content += `<article class="prose"><h1>${escapeHtml(article.meta.title)}</h1>`
 
   // Meta box
   content += '<dl class="meta">'
   if (article.meta.type) {
     content += `<dt>Type</dt><dd>${tagLink(article.meta.type, agentId)}</dd>`
   }
-  content += `<dt>Tags</dt><dd>${tagLinks(article.meta.tags, agentId)}</dd>`
-  content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
-  content += `<dt>Created</dt><dd>${article.meta.created}</dd>`
-  content += `<dt>Updated</dt><dd>${article.meta.lastUpdated}</dd>`
+  if (article.meta.tags?.length) {
+    content += `<dt>Tags</dt><dd>${tagLinks(article.meta.tags, agentId)}</dd>`
+  }
+  if (article.meta.owner) content += `<dt>Owner</dt><dd>${escapeHtml(article.meta.owner)}</dd>`
+  content += `<dt>Created</dt><dd>${escapeHtml(article.meta.created || '—')}</dd>`
+  content += `<dt>Updated</dt><dd>${escapeHtml(article.meta.lastUpdated || '—')}</dd>`
   if (article.meta.sources?.length) {
     content += `<dt>Sources</dt><dd>${article.meta.sources.length} entries</dd>`
   }
@@ -409,13 +884,14 @@ function hubArticlePage(hub: WikiHub, agentId: string, articlePath: string, allA
   content += md(article.content, titleToPath, prefix)
 
   if (inbound.length > 0) {
-    content += '<div class="backlinks"><h4>Pages that link here:</h4><ul>'
+    content += '<div class="backlinks"><h4>Pages that link here</h4><ul>'
     for (const link of inbound) {
       const linked = store.readArticle(link)
       content += `<li><a href="${prefix}/article/${encodeURIComponent(link)}">${escapeHtml(linked?.meta.title || link)}</a></li>`
     }
     content += '</ul></div>'
   }
+  content += `</article>`
 
   return pageLayout(article.meta.title, hubSidebar(agents, `${agentId}/${articlePath}`), content)
 }
@@ -425,8 +901,8 @@ function hubEntries(hub: WikiHub, allAgents?: AgentWikiSummary[]): string {
   const shared = hub.getSharedStore()
   const entries = shared.listEntries()
 
-  let content = '<div class="breadcrumb"><a href="/">Hub</a> / Entries</div>'
-  content += `<h1>All Raw Entries (${entries.length})</h1>`
+  let content = '<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <span class="current">Entries</span></nav>'
+  content += `<div class="page-head"><div><h1>All raw entries</h1><p class="page-sub">Every conversation line that the ingest pipeline captured. Absorb compiles these into typed articles nightly.</p></div></div>`
 
   const byDate = new Map<string, typeof entries>()
   for (const e of entries) {
@@ -436,14 +912,14 @@ function hubEntries(hub: WikiHub, allAgents?: AgentWikiSummary[]): string {
   }
 
   for (const [date, dateEntries] of [...byDate].reverse()) {
-    content += `<h2>${date} (${dateEntries.length})</h2>`
+    content += `<div class="section-head"><h2>${date}</h2><span class="mono" style="font-size:12px;color:var(--muted)">${dateEntries.length} entries</span></div>`
     for (const e of dateEntries) {
       content += `<div class="entry-card">
         <div class="meta-line">
           <a href="/agent/${encodeURIComponent(e.agentId)}">${escapeHtml(e.agentId)}</a>
-          via ${e.source} &middot; <code>${e.id}</code>
+          · via ${escapeHtml(e.source)} · <code>${escapeHtml(e.id)}</code>
         </div>
-        <p>${escapeHtml(e.content.slice(0, 400))}${e.content.length > 400 ? "..." : ""}</p>
+        <p>${escapeHtml(e.content.slice(0, 400))}${e.content.length > 400 ? "…" : ""}</p>
       </div>`
     }
   }
@@ -453,30 +929,34 @@ function hubEntries(hub: WikiHub, allAgents?: AgentWikiSummary[]): string {
 
 function hubSearch(hub: WikiHub, query: string, allAgents?: AgentWikiSummary[]): string {
   const agents = allAgents || hub.summary()
-  let content = `<h1>Search: "${escapeHtml(query)}"</h1>`
+  let content = `<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <span class="current">Search</span></nav>`
+  content += `<div class="page-head"><div><h1>“${escapeHtml(query)}”</h1><p class="page-sub">Full-text search across every agent's wiki.</p></div></div>`
+
   let totalResults = 0
+  const blocks: string[] = []
 
   for (const agentSummary of agents) {
     const store = hub.getAgentWiki(agentSummary.agentId)
     const results = store.findRelevant(query, undefined, 10)
 
     if (results.length > 0) {
-      content += `<h2>${escapeHtml(agentSummary.agentId)} (${results.length})</h2>`
+      blocks.push(`<div class="section-head"><h2>${escapeHtml(agentSummary.agentId)}</h2><span class="mono" style="font-size:12px;color:var(--muted)">${results.length} match${results.length === 1 ? '' : 'es'}</span></div>`)
       for (const r of results) {
         const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
-        content += `<div class="entry-card">
+        blocks.push(`<div class="entry-card">
           <div class="meta-line">${tagLinks((r.meta.tags || []).slice(0, 3), agentSummary.agentId)}</div>
           <h3><a href="${prefix}/article/${encodeURIComponent(r.path)}">${escapeHtml(r.meta.title)}</a></h3>
-          <p>${escapeHtml(r.content.slice(0, 200))}...</p>
-        </div>`
+          <p>${escapeHtml(r.content.slice(0, 240))}…</p>
+        </div>`)
       }
       totalResults += results.length
     }
   }
+  content += blocks.join('')
 
-  if (totalResults === 0) content += '<p>No matching articles found.</p>'
+  if (totalResults === 0) content += '<p style="color:var(--muted);margin-top:24px">No matching articles found.</p>'
 
-  return pageLayout(`Search: ${query}`, hubSidebar(agents), content)
+  return pageLayout(`Search: ${query}`, hubSidebar(agents), content, query)
 }
 
 /**
@@ -485,14 +965,15 @@ function hubSearch(hub: WikiHub, query: string, allAgents?: AgentWikiSummary[]):
  */
 function hubTagPage(hub: WikiHub, tag: string, allAgents?: AgentWikiSummary[]): string {
   const agents = allAgents || hub.summary()
-  let content = `<h1>Tag: <span class="tag">${escapeHtml(tag)}</span></h1>`
+  let content = `<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <span class="current">Tag</span></nav>`
+  content += `<div class="page-head"><div><h1>${escapeHtml(tag)}</h1><p class="page-sub">All articles tagged <span class="tag">${escapeHtml(tag)}</span>, across every agent.</p></div></div>`
   let total = 0
   for (const agentSummary of agents) {
     let store
     try { store = hub.getAgentWiki(agentSummary.agentId) } catch { continue }
     const matches = store.findByTags([tag], undefined, 100)
     if (matches.length === 0) continue
-    content += `<h2>${escapeHtml(agentSummary.agentId)} (${matches.length})</h2>`
+    content += `<div class="section-head"><h2>${escapeHtml(agentSummary.agentId)}</h2><span class="mono" style="font-size:12px;color:var(--muted)">${matches.length}</span></div>`
     for (const a of matches) {
       const prefix = `/agent/${encodeURIComponent(agentSummary.agentId)}`
       content += `<div class="entry-card">
@@ -502,7 +983,7 @@ function hubTagPage(hub: WikiHub, tag: string, allAgents?: AgentWikiSummary[]): 
     }
     total += matches.length
   }
-  if (total === 0) content += `<p>No articles tagged <code>${escapeHtml(tag)}</code>.</p>`
+  if (total === 0) content += `<p style="color:var(--muted);margin-top:24px">No articles tagged <code>${escapeHtml(tag)}</code>.</p>`
   return pageLayout(`Tag: ${tag}`, hubSidebar(agents), content)
 }
 
@@ -515,9 +996,8 @@ function hubAgentTagPage(hub: WikiHub, agentId: string, tag: string, allAgents?:
   }
   const matches = store.findByTags([tag], undefined, 100)
   const prefix = `/agent/${encodeURIComponent(agentId)}`
-  let content = `<div class="breadcrumb"><a href="/">Hub</a> / <a href="${prefix}">${escapeHtml(agentId)}</a> / Tag: ${escapeHtml(tag)}</div>`
-  content += `<h1>${escapeHtml(agentId)} · Tag: <span class="tag">${escapeHtml(tag)}</span></h1>`
-  content += `<p>${matches.length} article${matches.length === 1 ? "" : "s"} tagged <code>${escapeHtml(tag)}</code></p>`
+  let content = `<nav class="breadcrumb"><a href="/">Hub</a> <span class="sep">/</span> <a href="${prefix}">${escapeHtml(agentId)}</a> <span class="sep">/</span> <span class="current">${escapeHtml(tag)}</span></nav>`
+  content += `<div class="page-head"><div><h1>${escapeHtml(tag)}</h1><p class="page-sub">${matches.length} article${matches.length === 1 ? "" : "s"} tagged <code>${escapeHtml(tag)}</code> in <b>${escapeHtml(agentId)}</b>.</p></div></div>`
   for (const a of matches) {
     content += `<div class="entry-card">
       <div class="meta-line">${tagLinks((a.meta.tags || []).slice(0, 6), agentId)}</div>
@@ -533,18 +1013,20 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
   const index = store.rebuildIndex()
   const byType = groupByDir(index.articles.map(a => ({ title: a.title, path: a.path, tags: a.tags })))
 
-  let html = `<a href="/" class="logo">${escapeHtml(agentId)}</a>`
-  html += '<form action="/search" method="get"><input type="text" name="q" class="search-box" placeholder="Search..."></form>'
-  html += '<h2>Navigation</h2>'
-  html += `<a href="/"${!activePath ? ' class="active"' : ''}>Home</a>`
-  html += '<a href="/lint">Health Check</a>'
+  let html = '<div class="nav-section">'
+  html += `<div class="nav-section-title">${escapeHtml(agentId)}</div>`
+  html += `<a class="nav-item${!activePath ? ' active' : ''}" href="/">Home</a>`
+  html += `<a class="nav-item" href="/lint">Health check</a>`
+  html += '</div>'
 
   for (const [type, articles] of byType) {
-    html += `<h2>${dirLabel(type)}</h2>`
+    html += '<div class="nav-section">'
+    html += `<div class="nav-section-title">${dirLabel(type)}</div>`
     for (const a of articles) {
       const isActive = a.path === activePath
-      html += `<a href="/article/${encodeURIComponent(a.path)}"${isActive ? ' class="active"' : ''}>${escapeHtml(a.title)}</a>`
+      html += `<a class="nav-item${isActive ? ' active' : ''}" href="/article/${encodeURIComponent(a.path)}">${escapeHtml(a.title)}</a>`
     }
+    html += '</div>'
   }
 
   return html
