@@ -353,19 +353,98 @@ const ADMIN_PAGE_BODY = `
       persistKey: "crons",
       bodyHtml: `<b>What's a good schedule?</b> Anything recurring. A <i>Reports agent</i> sending Monday-morning numbers, a <i>Health agent</i> pinging you at 3am if a server's down, a <i>Standup agent</i> reminding the team. Pick a time below.`,
     })}
-    <div id="cron-list" class="ax-stack"></div>
-    <div class="add-form">
-      <h3>Add a schedule</h3>
-      <div class="rowf">
-        <div><label>Schedule id<span class="hint">(lowercase)</span></label><input id="c-id" placeholder="weekly-report" /></div>
-        <div><label>Agent</label><select id="c-agent"></select></div>
+    <div id="cron-list" class="ax-stack" style="margin-bottom:22px"></div>
+
+    <div class="ax-builder">
+      <!-- Hidden fields shared between guided + expert modes. addCron()
+           reads these canonical ids; the mode-specific inputs mirror
+           their values in. -->
+      <select id="c-agent" style="display:none"></select>
+      <h3>Create a new schedule</h3>
+      <p class="ax-builder__hint">Build your timing here. Switch to expert mode if you'd rather type a cron expression.</p>
+      <div class="ax-mode-switch" id="sched-mode">
+        <button data-mode="simple" class="is-active">Guided</button>
+        <button data-mode="expert">Expert (cron)</button>
       </div>
-      <label>Cron expression<span class="hint">(<a href="https://crontab.guru/" target="_blank" style="color:var(--accent)">crontab.guru</a> can help)</span></label>
-      <input id="c-schedule" placeholder="0 9 * * 1" />
-      <div id="c-preview" class="hint-block" style="margin-top:4px;min-height:32px"></div>
-      <label>Prompt<span class="hint">(what the agent should do on every tick)</span></label>
-      <textarea id="c-prompt" placeholder="Send me the weekly sales summary."></textarea>
-      <div class="actions"><button class="primary" onclick="addCron()">Add schedule</button><div id="c-msg" class="msg"></div></div>
+
+      <!-- Guided mode — sentence builder. The pill-picks emit a cron
+           string into the hidden #c-schedule input used by addCron(). -->
+      <div id="sched-simple">
+        <div class="ax-sentence">
+          <span>Run</span>
+          <select class="ax-pill-pick" id="s-agent"></select>
+          <select class="ax-pill-pick" id="s-freq">
+            <option value="daily">every day</option>
+            <option value="weekly" selected>every week</option>
+            <option value="weekdays">every weekday</option>
+            <option value="hourly">every hour</option>
+            <option value="15min">every 15 minutes</option>
+          </select>
+          <div id="s-days" class="ax-day-picker">
+            <button data-day="1">M</button><button data-day="2">T</button><button data-day="3">W</button><button data-day="4">T</button><button data-day="5">F</button><button data-day="6">S</button><button data-day="0">S</button>
+          </div>
+          <span id="s-at" class="ax-sentence__when">at</span>
+          <select class="ax-pill-pick ax-pill-pick--sm" id="s-hour">
+            <option>6:00 am</option><option>7:00 am</option><option>8:00 am</option>
+            <option selected>9:00 am</option><option>10:00 am</option><option>11:00 am</option>
+            <option>12:00 pm</option><option>1:00 pm</option><option>2:00 pm</option>
+            <option>3:00 pm</option><option>4:00 pm</option><option>5:00 pm</option>
+            <option>6:00 pm</option><option>7:00 pm</option><option>8:00 pm</option>
+            <option>9:00 pm</option><option>10:00 pm</option>
+          </select>
+        </div>
+
+        <label class="ax-builder__lbl">Give it a name <span class="opt">lowercase, no spaces</span></label>
+        <input class="ax-builder__inp" id="c-id" placeholder="weekly-sales-digest" />
+
+        <label class="ax-builder__lbl">What should the agent do?</label>
+        <textarea class="ax-builder__inp" id="c-prompt" placeholder="Send me the weekly sales summary, with the top 3 wins and anything that regressed."></textarea>
+
+        <div class="ax-preview-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span id="s-preview-text"></span>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+          <button class="ax-btn ax-btn--primary" onclick="addCron()">Add schedule</button>
+          <div id="c-msg" class="msg"></div>
+          <div style="flex:1"></div>
+          <span class="muted" style="font-size:11.5px">Cron equivalent: <span class="mono" style="color:var(--ax-text-2)" id="s-cron-echo">0 9 * * 1</span></span>
+        </div>
+      </div>
+
+      <!-- Expert mode — original cron + prompt form. Shares the #c-id /
+           #c-prompt / #c-agent fields with guided mode so addCron() is
+           mode-agnostic. -->
+      <div id="sched-expert" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label class="ax-builder__lbl">Schedule id <span class="opt">lowercase, no spaces</span></label>
+            <input class="ax-builder__inp" id="c-id-expert" placeholder="weekly-report" />
+          </div>
+          <div>
+            <label class="ax-builder__lbl">Agent</label>
+            <select class="ax-builder__inp" id="c-agent-expert"></select>
+          </div>
+        </div>
+        <label class="ax-builder__lbl">Cron expression <span class="opt">standard five-field cron</span></label>
+        <input class="ax-builder__inp mono" id="c-schedule" value="0 9 * * 1" />
+        <div id="c-preview" class="ax-preview-box" style="margin-top:10px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span id="c-preview-text">At 9:00 AM, only on Monday</span>
+        </div>
+        <div class="ax-cron-hints">
+          <div><code>0 9 * * 1</code>Mondays at 9am</div>
+          <div><code>*/15 * * * *</code>Every 15 minutes</div>
+          <div><code>0 0 1 * *</code>First of every month</div>
+          <div><code>0 17 * * 5</code>Fridays at 5pm</div>
+        </div>
+        <label class="ax-builder__lbl" style="margin-top:12px">Prompt</label>
+        <textarea class="ax-builder__inp" id="c-prompt-expert" placeholder="What should the agent do on every tick?"></textarea>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="ax-btn ax-btn--primary" onclick="addCronExpert()">Add schedule</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -452,13 +531,29 @@ const ADMIN_PAGE_BODY = `
     ${sectionHead({
       icon: ICONS.advanced,
       title: "Raw configuration",
-      lead: "Direct editor for the full agentx.json. Saving creates a timestamped backup so you can roll back.",
+      lead: "Everything on the other tabs writes to this file. Edit here for bulk changes, diffs, or fields we haven't put in the UI yet. Saving creates a timestamped backup.",
     })}
     ${witBanner({
       persistKey: "advanced",
-      bodyHtml: `<b>Safe to look, careful editing.</b> Invalid JSON is refused before saving. Schema-level errors surface after the daemon tries to use the new config — you'll see them in the status bar.`,
+      bodyHtml: `<b>Safe to look, careful editing.</b> We've pretty-printed and annotated each section so you can read it. Click any <span class="mono" style="color:var(--ax-muted)">▸</span> to fold. Switch to <b>Edit</b> to change values — invalid JSON is refused before saving.`,
     })}
-    <textarea id="raw-editor" class="raw" spellcheck="false"></textarea>
+
+    <div class="ax-jv-toolbar">
+      <input class="ax-jv-search" id="jv-search" placeholder="Search keys & values…" />
+      <div class="ax-jv-seg" id="jv-mode">
+        <button data-jv-mode="tree" class="is-active">Tree</button>
+        <button data-jv-mode="raw">Raw</button>
+        <button data-jv-mode="edit">Edit</button>
+      </div>
+      <div class="ax-jv-spacer"></div>
+      <span class="muted mono" id="jv-meta" style="font-size:11px">agentx.json</span>
+      <button class="ax-btn" id="jv-expand-all">Expand all</button>
+      <button class="ax-btn" id="jv-collapse-all">Collapse all</button>
+      <button class="ax-btn ax-btn--primary" id="jv-save">Save</button>
+    </div>
+    <div class="ax-jv-viewer" id="jv-viewer"></div>
+    <textarea id="raw-editor" class="raw" style="display:none" spellcheck="false"></textarea>
+    <div id="r-msg" class="msg" style="margin-top:10px"></div>
     <div class="actions">
       <button class="primary" onclick="saveRaw()">Save config</button>
       <button class="ghost" onclick="loadRaw()">Reload from disk</button>
@@ -725,6 +820,8 @@ async function refresh() {
     renderCrons();
     renderWebhooks();
     renderMesh();
+    initScheduleBuilder();
+    initScheduleExpertAgentSelect();
   } catch (e) {
     showMsg($('global-msg'), 'err', e.message);
   }
@@ -1585,18 +1682,33 @@ async function deleteTelegram(id) {
 
 function renderCrons() {
   const list = $('cron-list');
-  if (!state.crons.length) { list.innerHTML = '<div class="empty">No schedules yet.</div>'; return; }
+  if (!state.crons.length) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">No schedules yet</h3><p style="margin:0;font-size:13px">Create one below to nudge an agent on a timer.</p></div>';
+    return;
+  }
   list.innerHTML = '';
   for (const c of state.crons) {
-    const div = document.createElement('div');
-    div.className = 'row-card';
-    div.innerHTML =
-      '<div class="info"><h3>' + escapeHtml(c.id) + '</h3>' +
-        '<div class="meta"><span class="chip">' + escapeHtml(c.schedule) + '</span> agent: <b>' + escapeHtml(c.agent) + '</b> — ' + escapeHtml(c.prompt) + '</div>' +
-      '</div>' +
-      '<button class="danger" data-id="' + escapeHtml(c.id) + '">Delete</button>';
-    div.querySelector('button.danger').addEventListener('click', () => deleteCron(c.id));
-    list.appendChild(div);
+    const card = document.createElement('div');
+    card.className = 'ax-row-card';
+    card.innerHTML =
+      '<div class="ax-row-card__top">' +
+        '<div class="ax-avatar ax-avatar--' + avatarVariant(c.id) + '">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+        '</div>' +
+        '<div class="ax-row-card__info">' +
+          '<div class="ax-name">' + escapeHtml(c.id) + '</div>' +
+          '<div class="ax-sub">' +
+            '<span class="ax-pill"><span class="ax-pill__dot" style="background:var(--ax-accent)"></span>' + escapeHtml(c.schedule) + '</span>' +
+            ' runs <b>' + escapeHtml(c.agent) + '</b>' +
+            (c.prompt ? ' · ' + escapeHtml(c.prompt.slice(0, 80) + (c.prompt.length > 80 ? '…' : '')) : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="ax-row-card__actions">' +
+          '<button class="ax-btn ax-btn--danger" data-id="' + escapeHtml(c.id) + '">Delete</button>' +
+        '</div>' +
+      '</div>';
+    card.querySelector('[data-id]').addEventListener('click', () => deleteCron(c.id));
+    list.appendChild(card);
   }
 }
 
@@ -1619,6 +1731,140 @@ async function deleteCron(id) {
   if (!confirm('Delete schedule "' + id + '"?')) return;
   try { await req('DELETE', '/api/admin/crons', { id }); refresh(); }
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+/* ========== Schedule builder (Guided mode) ==========
+ * Translates sentence-builder selections (agent/frequency/days/hour) into a
+ * cron expression and populates the hidden #c-schedule input used by
+ * addCron(). Also keeps the /preview endpoint happy with the natural-
+ * language preview line. */
+
+let __scheduleState = { agent: '', freq: 'weekly', days: [1], hour: 9 };
+
+function scheduleCronFromState() {
+  const s = __scheduleState;
+  if (s.freq === 'hourly') return '0 * * * *';
+  if (s.freq === '15min')  return '*/15 * * * *';
+  if (s.freq === 'daily')  return '0 ' + s.hour + ' * * *';
+  if (s.freq === 'weekdays') return '0 ' + s.hour + ' * * 1-5';
+  // weekly → days
+  const dow = s.days.length ? s.days.slice().sort().join(',') : '1';
+  return '0 ' + s.hour + ' * * ' + dow;
+}
+
+function schedulePreviewText() {
+  const s = __scheduleState;
+  const hh = ((s.hour + 11) % 12) + 1;
+  const ap = s.hour < 12 ? 'am' : 'pm';
+  const time = hh + ':00 ' + ap;
+  if (s.freq === 'hourly') return 'Every hour on the hour';
+  if (s.freq === '15min')  return 'Every 15 minutes';
+  if (s.freq === 'daily')  return 'Every day at ' + time;
+  if (s.freq === 'weekdays') return 'Weekdays at ' + time;
+  const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const pretty = s.days.slice().sort().map(d => names[d]).join(', ');
+  return (pretty || 'No day picked') + ' at ' + time;
+}
+
+function updateSchedulePreview() {
+  const cron = scheduleCronFromState();
+  const $id = (x) => document.getElementById(x);
+  const preview = $id('s-preview-text');
+  if (preview) preview.innerHTML = '<b>' + schedulePreviewText() + '</b> &nbsp;·&nbsp; cron: <span class="mono" style="color:var(--ax-text)">' + cron + '</span>';
+  const echo = $id('s-cron-echo');
+  if (echo) echo.textContent = cron;
+  // Keep the hidden #c-schedule + #c-agent in sync so addCron() reads them.
+  const schedInp = $id('c-schedule');
+  if (schedInp) schedInp.value = cron;
+  const agentSel = $id('c-agent');
+  if (agentSel) agentSel.value = __scheduleState.agent || (agentSel.options[0] && agentSel.options[0].value);
+}
+
+function initScheduleBuilder() {
+  const freq = document.getElementById('s-freq');
+  const hour = document.getElementById('s-hour');
+  const agent = document.getElementById('s-agent');
+  const sAt = document.getElementById('s-at');
+  if (!freq || !hour || !agent) return;
+  // Default active day = Monday
+  const dayBtns = document.querySelectorAll('#s-days button');
+  dayBtns.forEach((b) => {
+    if (b.dataset.day === '1') b.classList.add('is-active');
+    b.addEventListener('click', () => {
+      b.classList.toggle('is-active');
+      __scheduleState.days = [...document.querySelectorAll('#s-days button.is-active')]
+        .map(el => parseInt(el.dataset.day, 10));
+      updateSchedulePreview();
+    });
+  });
+  // Populate agent select from state
+  agent.innerHTML = state.agents.map((a) =>
+    '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + '</option>'
+  ).join('');
+  if (agent.options.length) __scheduleState.agent = agent.options[0].value;
+
+  // Mode switch
+  document.querySelectorAll('#sched-mode button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#sched-mode button').forEach((x) => x.classList.toggle('is-active', x === b));
+      const simple = document.getElementById('sched-simple');
+      const expert = document.getElementById('sched-expert');
+      if (!simple || !expert) return;
+      const mode = b.dataset.mode;
+      simple.style.display = mode === 'simple' ? '' : 'none';
+      expert.style.display = mode === 'expert' ? '' : 'none';
+    });
+  });
+
+  // Hide day-picker + "at" unless frequency is weekly
+  const reflectFreq = () => {
+    const days = document.getElementById('s-days');
+    const show = __scheduleState.freq === 'weekly';
+    if (days) days.style.display = show ? '' : 'none';
+    const alwaysTimeless = (__scheduleState.freq === 'hourly' || __scheduleState.freq === '15min');
+    if (sAt) sAt.style.display = alwaysTimeless ? 'none' : '';
+    hour.style.display = alwaysTimeless ? 'none' : '';
+  };
+
+  agent.addEventListener('change', () => { __scheduleState.agent = agent.value; updateSchedulePreview(); });
+  freq.addEventListener('change', () => { __scheduleState.freq = freq.value; reflectFreq(); updateSchedulePreview(); });
+  hour.addEventListener('change', () => {
+    // "9:00 am" → 9, "2:00 pm" → 14
+    const text = hour.value.trim().toLowerCase();
+    const m = text.match(/^(\\d+):\\d+\\s*(am|pm)/);
+    if (m) {
+      let h = parseInt(m[1], 10);
+      if (m[2] === 'pm' && h !== 12) h += 12;
+      if (m[2] === 'am' && h === 12) h = 0;
+      __scheduleState.hour = h;
+    }
+    updateSchedulePreview();
+  });
+
+  reflectFreq();
+  updateSchedulePreview();
+}
+
+async function addCronExpert() {
+  // Expert mode has its own id/agent/prompt inputs; mirror them into
+  // the canonical #c-* ids before dispatching.
+  const $id = (x) => document.getElementById(x);
+  $id('c-id').value = $id('c-id-expert').value.trim();
+  const expertAgent = $id('c-agent-expert');
+  if (expertAgent && expertAgent.value) {
+    $id('c-agent').value = expertAgent.value;
+  }
+  $id('c-prompt').value = $id('c-prompt-expert').value.trim();
+  await addCron();
+}
+
+// Expert-mode agent dropdown mirrors the guided one.
+function initScheduleExpertAgentSelect() {
+  const sel = document.getElementById('c-agent-expert');
+  if (!sel) return;
+  sel.innerHTML = state.agents.map((a) =>
+    '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>'
+  ).join('');
 }
 
 // Live cron preview — debounced so each keystroke doesn't hit the server.
@@ -2112,23 +2358,240 @@ async function revokeToken(id) {
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
+/* ========== Advanced tab: JSON tree viewer ==========
+ *
+ * Three modes:
+ *   tree  — collapsible key/value tree with search + inline hints
+ *   raw   — pretty-printed read-only JSON
+ *   edit  — writable textarea (same behavior as the legacy Advanced tab)
+ *
+ * All three populate from the SAME /api/admin/config payload. When saving,
+ * we send the text back to /api/admin/config/raw (only "edit" mode has a
+ * writable textarea; tree and raw are read-only). */
+
+const JV_HINTS = {
+  'node.name': 'friendly name of this daemon',
+  'node.id': 'stable identifier, used in logs',
+  'agents[].id': 'lowercase handle, used in logs',
+  'agents[].tier': 'which AI engine runs this agent (claude-code / sdk / orchestrator)',
+  'agents[].mentions': 'trigger words that wake this agent',
+  'channels.telegram.accounts[].botToken': 'reference to an env-var, not the token itself',
+  'channels.telegram.accounts[].agentBinding': 'which agent answers messages to this bot',
+  'crons[].schedule': 'standard five-field cron',
+  'mesh.peers[].url': 'full URL including port',
+  'tokens[].scopes': 'permissions this token grants',
+};
+
+let __jvMode = 'tree';
+let __jvRawConfig = null;
+
+function renderJvLine(value, path, keyLabel, parent) {
+  const isArr = Array.isArray(value);
+  const isObj = value && typeof value === 'object' && !isArr;
+  const line = document.createElement('div');
+  line.className = 'ax-jv-line';
+  line.dataset.path = path;
+
+  const tog = document.createElement('span');
+  tog.className = 'ax-jv-toggle';
+  const empty = (isArr ? value.length === 0 : (isObj ? Object.keys(value).length === 0 : true));
+  if ((isArr || isObj) && !empty) {
+    tog.textContent = '▾';
+    tog.addEventListener('click', () => {
+      const kids = line.nextElementSibling;
+      if (kids && kids.classList.contains('ax-jv-children')) {
+        const willCollapse = !kids.classList.contains('is-collapsed');
+        kids.classList.toggle('is-collapsed');
+        tog.textContent = willCollapse ? '▸' : '▾';
+      }
+    });
+  } else {
+    tog.className += ' empty';
+  }
+  line.appendChild(tog);
+
+  if (keyLabel !== null) {
+    const k = document.createElement('span');
+    k.className = 'ax-jv-key';
+    k.textContent = '"' + keyLabel + '"';
+    line.appendChild(k);
+    const colon = document.createElement('span');
+    colon.className = 'ax-jv-punc';
+    colon.textContent = ': ';
+    line.appendChild(colon);
+  }
+
+  if (isArr || isObj) {
+    const open = document.createElement('span');
+    open.className = 'ax-jv-punc';
+    open.textContent = isArr ? '[' : '{';
+    line.appendChild(open);
+    if (empty) {
+      const close = document.createElement('span');
+      close.className = 'ax-jv-empty-brace';
+      close.textContent = isArr ? ']' : '}';
+      line.appendChild(close);
+    }
+  } else if (value === null) {
+    const v = document.createElement('span'); v.className = 'ax-jv-null'; v.textContent = 'null'; line.appendChild(v);
+  } else if (typeof value === 'boolean') {
+    const v = document.createElement('span'); v.className = 'ax-jv-bool'; v.textContent = String(value); line.appendChild(v);
+  } else if (typeof value === 'number') {
+    const v = document.createElement('span'); v.className = 'ax-jv-number'; v.textContent = String(value); line.appendChild(v);
+  } else {
+    const v = document.createElement('span'); v.className = 'ax-jv-string'; v.textContent = '"' + String(value) + '"'; line.appendChild(v);
+  }
+
+  const hintKey = path.replace(/\\[\\d+\\]/g, '[]');
+  const hint = JV_HINTS[hintKey];
+  if (hint) {
+    const c = document.createElement('span');
+    c.className = 'ax-jv-comment';
+    c.textContent = '// ' + hint;
+    line.appendChild(c);
+  }
+
+  parent.appendChild(line);
+
+  if ((isArr || isObj) && !empty) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ax-jv-children';
+    const entries = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
+    entries.forEach(([k, v]) => {
+      const childPath = isArr ? path + '[' + k + ']' : (path ? path + '.' + k : String(k));
+      renderJvLine(v, childPath, isArr ? null : k, wrap);
+    });
+    parent.appendChild(wrap);
+    const close = document.createElement('div');
+    close.className = 'ax-jv-line';
+    const spacer = document.createElement('span');
+    spacer.className = 'ax-jv-toggle empty';
+    close.appendChild(spacer);
+    const b = document.createElement('span');
+    b.className = 'ax-jv-punc';
+    b.textContent = isArr ? ']' : '}';
+    close.appendChild(b);
+    parent.appendChild(close);
+  }
+}
+
+function renderJvTree(cfg) {
+  const root = document.getElementById('jv-viewer');
+  if (!root) return;
+  root.innerHTML = '';
+  root.style.whiteSpace = '';
+  renderJvLine(cfg, '', null, root);
+}
+
+function renderJvRaw(cfg) {
+  const root = document.getElementById('jv-viewer');
+  if (!root) return;
+  root.innerHTML = '<pre style="margin:0;font:inherit;color:var(--ax-text-2);white-space:pre-wrap">' +
+    escapeHtml(JSON.stringify(cfg, null, 2)) + '</pre>';
+}
+
+function renderJvEdit(cfg) {
+  const root = document.getElementById('jv-viewer');
+  const ta = document.getElementById('raw-editor');
+  if (!root || !ta) return;
+  root.innerHTML = '';
+  ta.value = JSON.stringify(cfg, null, 2);
+  ta.style.cssText = 'display:block;width:100%;min-height:500px;background:var(--ax-bg-elev);color:var(--ax-text);border:1px solid var(--ax-border);border-top:0;border-radius:0 0 var(--ax-radius) var(--ax-radius);font:inherit;font-family:var(--ax-mono);font-size:12.5px;padding:14px 18px;resize:vertical;outline:none';
+  root.style.display = 'none';
+}
+
+function applyJvMode(mode) {
+  __jvMode = mode;
+  const root = document.getElementById('jv-viewer');
+  const ta = document.getElementById('raw-editor');
+  if (!root || !ta) return;
+  if (mode !== 'edit') { root.style.display = ''; ta.style.display = 'none'; }
+  if (mode === 'tree') renderJvTree(__jvRawConfig);
+  if (mode === 'raw')  renderJvRaw(__jvRawConfig);
+  if (mode === 'edit') renderJvEdit(__jvRawConfig);
+  document.querySelectorAll('#jv-mode button').forEach((b) => {
+    b.classList.toggle('is-active', b.dataset.jvMode === mode);
+  });
+}
+
 async function loadRaw() {
   try {
     const r = await fetch('/api/admin/config');
     const txt = await r.text();
-    $('raw-editor').value = txt;
-    showMsg($('r-msg'), 'ok', 'Loaded.');
+    // Try parsing; if it fails, fall back to edit mode with the raw text.
+    try {
+      __jvRawConfig = JSON.parse(txt);
+      applyJvMode(__jvMode);
+      const meta = document.getElementById('jv-meta');
+      if (meta) {
+        const kb = (txt.length / 1024).toFixed(1);
+        meta.textContent = 'agentx.json · ' + kb + ' KB';
+      }
+      showMsg($('r-msg'), 'ok', 'Loaded.');
+    } catch (pe) {
+      __jvRawConfig = null;
+      applyJvMode('edit');
+      $('raw-editor').value = txt;
+      showMsg($('r-msg'), 'err', 'Config is not valid JSON — open Edit mode to fix it.');
+    }
   } catch (e) { showMsg($('r-msg'), 'err', e.message); }
 }
 
 async function saveRaw() {
-  const raw = $('raw-editor').value;
+  // Save from the editor textarea if in edit mode; otherwise serialize the
+  // in-memory config (useful after users read the Tree view and just click
+  // Save to re-validate).
+  const raw = __jvMode === 'edit' ? $('raw-editor').value : JSON.stringify(__jvRawConfig, null, 2);
   try {
     const r = await req('POST', '/api/admin/config/raw', { raw });
     showMsg($('r-msg'), 'ok', (r.summary || 'Saved.') + (r.backupPath ? ' (backup: ' + r.backupPath.split('/').pop() + ')' : ''));
     refresh();
+    loadRaw();
   } catch (e) { showMsg($('r-msg'), 'err', e.message); }
 }
+
+function initJvControls() {
+  const modeWrap = document.getElementById('jv-mode');
+  if (modeWrap) {
+    modeWrap.querySelectorAll('button').forEach((b) => {
+      b.addEventListener('click', () => applyJvMode(b.dataset.jvMode));
+    });
+  }
+  const search = document.getElementById('jv-search');
+  if (search) {
+    search.addEventListener('input', (e) => {
+      const q = String(e.target.value || '').trim().toLowerCase();
+      document.querySelectorAll('.ax-jv-line').forEach((line) => {
+        const text = line.textContent.toLowerCase();
+        line.classList.toggle('is-match', !!q && text.includes(q));
+      });
+      if (q) {
+        document.querySelectorAll('.ax-jv-children.is-collapsed').forEach((c) => {
+          if (c.textContent.toLowerCase().includes(q)) {
+            c.classList.remove('is-collapsed');
+            const sib = c.previousElementSibling;
+            const tog = sib && sib.querySelector('.ax-jv-toggle:not(.empty)');
+            if (tog) tog.textContent = '▾';
+          }
+        });
+      }
+    });
+  }
+  const expand = document.getElementById('jv-expand-all');
+  if (expand) expand.addEventListener('click', () => {
+    document.querySelectorAll('.ax-jv-children').forEach((c) => c.classList.remove('is-collapsed'));
+    document.querySelectorAll('.ax-jv-toggle').forEach((t) => { if (!t.classList.contains('empty')) t.textContent = '▾'; });
+  });
+  const collapse = document.getElementById('jv-collapse-all');
+  if (collapse) collapse.addEventListener('click', () => {
+    document.querySelectorAll('.ax-jv-children').forEach((c) => c.classList.add('is-collapsed'));
+    document.querySelectorAll('.ax-jv-toggle').forEach((t) => { if (!t.classList.contains('empty')) t.textContent = '▸'; });
+  });
+  const save = document.getElementById('jv-save');
+  if (save) save.addEventListener('click', () => saveRaw());
+}
+// Wire up once on script load (doesn't depend on /api/admin/state).
+initJvControls();
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
