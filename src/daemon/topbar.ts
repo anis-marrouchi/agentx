@@ -187,7 +187,15 @@ export const TOPBAR_SCRIPT = `<script>
     });
     reflectPeerPill();
   }
-  function wire(){ wireTheme(); wireMesh(); }
+  function wireHostRewrite(){
+    try {
+      var h = location.hostname || 'localhost';
+      document.querySelectorAll('.ax-topbar__tab[href*="__HOST__"]').forEach(function(a){
+        a.href = a.getAttribute('href').replace(/__HOST__/g, h);
+      });
+    } catch (e) {}
+  }
+  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', wire);
   } else { wire(); }
@@ -240,14 +248,26 @@ export function renderTopbar(opts: TopbarOpts): string {
   // /admin/graph for debugging the classifier, but we don't promote it in the
   // main nav until it earns its keep (wiki absorb writing graphPath, or
   // graph-based routing).
+  // Usage + Wiki run on their own ports. Emit a __HOST__ sentinel the
+  // client-side TOPBAR_SCRIPT rewrites to location.hostname, so the link
+  // works on localhost and Tailscale/LAN hostnames alike. Override with
+  // AGENTX_USAGE_URL / AGENTX_WIKI_URL when those surfaces live on a
+  // different host.
+  const usageUrl = process.env.AGENTX_USAGE_URL || `http://__HOST__:4201`
+  const wikiUrl = process.env.AGENTX_WIKI_URL || `http://__HOST__:4200`
+
   const tabs = [
-    { id: "live", label: "Live", href: "/live" },
-    { id: "boards", label: "Boards", href: "/" },
-    { id: "admin", label: "Settings", href: "/admin" },
-    { id: "glossary", label: "Glossary", href: "/glossary" },
+    { id: "live", label: "Live", href: "/live", external: false },
+    { id: "boards", label: "Boards", href: "/", external: false },
+    { id: "admin", label: "Settings", href: "/admin", external: false },
+    { id: "wiki", label: "Wiki", href: wikiUrl, external: true },
+    { id: "usage", label: "Usage", href: usageUrl, external: true },
+    { id: "glossary", label: "Glossary", href: "/glossary", external: false },
   ].map((t) => {
     const cls = t.id === opts.activeTab ? "ax-topbar__tab is-active" : "ax-topbar__tab"
-    return `<a href="${t.href}" class="${cls}">${t.label}</a>`
+    const extAttrs = t.external ? ` target="_blank" rel="noopener"` : ""
+    const extGlyph = t.external ? ' <span style="font-size:9px;opacity:0.6">↗</span>' : ""
+    return `<a href="${t.href}" class="${cls}"${extAttrs}>${t.label}${extGlyph}</a>`
   }).join("")
 
   const header = `<header class="ax-topbar">
