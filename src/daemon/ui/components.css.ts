@@ -758,7 +758,653 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-jv-empty-brace { color: var(--ax-muted); }
 
+/* ============================================================
+ * Detail-page primitives (Agent manage, and any future
+ * detail-view). Built around a 3-col layout:
+ *
+ *   [rail 200px] [main] [test-drive 360px]
+ *
+ * Scales down: test-drive hides at 1180px, rail hides at 780px.
+ * ============================================================ */
+
+/* Crumb */
+.ax-crumb {
+  max-width: 1400px; margin: 0 auto; padding: 16px 24px 0;
+  font-size: 12px; color: var(--ax-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.ax-crumb a { color: var(--ax-muted); }
+.ax-crumb a:hover { color: var(--ax-accent); text-decoration: none; }
+.ax-crumb .ax-crumb__sep { color: var(--ax-border-2); }
+.ax-crumb .ax-crumb__cur { color: var(--ax-text); }
+
+/* Hero — large avatar + editable name + chip row + actions */
+.ax-hero {
+  max-width: 1400px; margin: 0 auto; padding: 14px 24px 18px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.ax-hero__ava {
+  width: 64px; height: 64px; border-radius: 14px;
+  background: color-mix(in oklch, var(--ax-accent) 20%, var(--ax-surface));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 40%, var(--ax-border));
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 22px; letter-spacing: -0.02em;
+  color: var(--ax-accent); flex-shrink: 0; position: relative;
+}
+.ax-hero__on {
+  position: absolute; bottom: -2px; right: -2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--ax-accent); border: 3px solid var(--ax-bg);
+}
+.ax-hero__title { flex: 1; min-width: 260px; }
+.ax-hero h1 {
+  margin: 0 0 3px; font-size: 22px; font-weight: 600;
+  letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px;
+}
+.ax-hero h1 input {
+  background: transparent; border: 0; color: var(--ax-text);
+  font: inherit; padding: 0; border-bottom: 1px dashed transparent;
+  transition: border-color 120ms; max-width: 260px;
+}
+.ax-hero h1 input:hover { border-color: var(--ax-border-2); }
+.ax-hero h1 input:focus { outline: none; border-color: var(--ax-accent); }
+.ax-hero__sub {
+  color: var(--ax-text-2); font-size: 13px; margin-top: 2px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.ax-hero__sub .ax-hero__dot {
+  width: 3px; height: 3px; background: var(--ax-border-2); border-radius: 50%;
+}
+.ax-hero__actions { display: flex; gap: 8px; align-items: center; }
+
+/* Inline stats strip (smaller than the settings health strip — fits in
+ * the detail page hero below the hero title). */
+.ax-stats-inline {
+  max-width: 1400px; margin: 0 auto; padding: 0 24px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+}
+.ax-stat-inline {
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 10px 12px;
+  display: flex; align-items: center; gap: 11px;
+}
+.ax-stat-inline__icon {
+  width: 26px; height: 26px; border-radius: 6px;
+  background: color-mix(in oklch, var(--ax-accent) 12%, var(--ax-surface-2));
+  display: grid; place-items: center;
+  color: var(--ax-accent); flex-shrink: 0;
+}
+.ax-stat-inline__icon svg { width: 14px; height: 14px; }
+.ax-stat-inline__v {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1;
+}
+.ax-stat-inline__l {
+  font-size: 11px; color: var(--ax-muted); margin-top: 1px;
+}
+
+/* 3-col detail layout (rail + main + test-drive) */
+.ax-layout {
+  max-width: 1400px; margin: 22px auto 0; padding: 0 24px 60px;
+  display: grid; grid-template-columns: 200px 1fr 360px;
+  gap: 22px; align-items: flex-start;
+}
+
+/* Left rail — sticky nav list with grouped items */
+.ax-rail {
+  position: sticky; top: 72px;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ax-rail a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 6px;
+  color: var(--ax-text-2); font-size: 13px; font-weight: 500;
+  cursor: pointer; position: relative;
+  transition: background 120ms, color 120ms;
+}
+.ax-rail a svg {
+  width: 15px; height: 15px; flex-shrink: 0; color: var(--ax-muted);
+}
+.ax-rail a:hover {
+  background: var(--ax-surface); color: var(--ax-text); text-decoration: none;
+}
+.ax-rail a:hover svg { color: var(--ax-text); }
+.ax-rail a.is-active {
+  background: color-mix(in oklch, var(--ax-accent) 12%, var(--ax-surface));
+  color: var(--ax-accent);
+}
+.ax-rail a.is-active svg { color: var(--ax-accent); }
+.ax-rail a.is-active::before {
+  content: ""; position: absolute; left: -3px; top: 7px; bottom: 7px;
+  width: 2px; border-radius: 2px; background: var(--ax-accent);
+}
+.ax-rail__count {
+  margin-left: auto; font-family: var(--ax-mono);
+  font-size: 10px; padding: 1px 6px; background: var(--ax-surface-2);
+  color: var(--ax-muted); border-radius: 9px; line-height: 14px;
+}
+.ax-rail a.is-active .ax-rail__count {
+  background: color-mix(in oklch, var(--ax-accent) 22%, transparent);
+  color: var(--ax-accent);
+}
+.ax-rail__sep { height: 1px; background: var(--ax-border); margin: 8px 4px; }
+.ax-rail__label {
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ax-muted); padding: 6px 11px 4px; font-family: var(--ax-mono);
+}
+
+/* Main panel containers (one per section) */
+.ax-panel {
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); padding: 22px;
+}
+.ax-panel + .ax-panel { margin-top: 12px; }
+.ax-panel h2 {
+  margin: 0 0 4px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em;
+}
+.ax-panel .ax-lead {
+  margin: 0 0 16px; font-size: 12.5px; color: var(--ax-text-2); line-height: 1.55;
+}
+.ax-panel__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px;
+}
+.ax-panel__head h2 { margin: 0 0 3px; }
+.ax-panel__tab { display: none; animation: ax-fade 180ms ease; }
+.ax-panel__tab.is-active { display: block; }
+@keyframes ax-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Grids for form rows */
+.ax-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ax-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* Slider-style setting row — label + hint + segmented options */
+.ax-slider-row {
+  display: grid; grid-template-columns: 140px 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 10px 0; border-bottom: 1px dashed var(--ax-border);
+}
+.ax-slider-row:last-child { border-bottom: 0; }
+.ax-slider-row label { font-size: 12.5px; color: var(--ax-text); margin: 0; }
+.ax-slider-row .ax-hint {
+  margin: 0; color: var(--ax-muted); font-size: 11.5px;
+}
+.ax-slider-row .ax-opts {
+  display: flex; gap: 4px; background: var(--ax-bg);
+  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+}
+.ax-slider-row .ax-opts button {
+  background: transparent; border: 0; color: var(--ax-muted);
+  padding: 5px 11px; font: inherit; font-size: 11.5px;
+  cursor: pointer; border-radius: 3px; white-space: nowrap;
+}
+.ax-slider-row .ax-opts button.is-active {
+  background: var(--ax-surface-2); color: var(--ax-text);
+}
+
+/* Sub-tabs (Guided/Freeform, CLAUDE.md/SOUL.md/IDENTITY.md) */
+.ax-subtabs {
+  display: inline-flex; background: var(--ax-bg);
+  border: 1px solid var(--ax-border); border-radius: 6px;
+  padding: 3px; margin-bottom: 16px;
+}
+.ax-subtabs button {
+  background: transparent; border: 0; color: var(--ax-muted);
+  padding: 6px 14px; font: inherit; font-size: 12px;
+  cursor: pointer; border-radius: 4px; font-weight: 500;
+}
+.ax-subtabs button.is-active {
+  background: var(--ax-surface-2); color: var(--ax-text);
+}
+
+/* Trigger-word chips with inline input (for Wake words field) */
+.ax-triggers-edit {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  background: var(--ax-bg); border: 1px solid var(--ax-border);
+  padding: 7px; border-radius: 5px; min-height: 38px;
+  align-items: center; cursor: text;
+}
+.ax-triggers-edit:focus-within {
+  border-color: var(--ax-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ax-accent) 18%, transparent);
+}
+.ax-trig-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--ax-mono); font-size: 11px;
+  padding: 3px 4px 3px 9px;
+  background: color-mix(in oklch, var(--ax-accent) 16%, var(--ax-surface));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border));
+  border-radius: 4px; color: var(--ax-accent);
+}
+.ax-trig-pill button {
+  background: transparent; border: 0; color: currentColor;
+  opacity: 0.6; cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 0 2px; border-radius: 3px;
+}
+.ax-trig-pill button:hover {
+  opacity: 1;
+  background: color-mix(in oklch, var(--ax-accent) 20%, transparent);
+}
+.ax-triggers-edit input {
+  flex: 1; min-width: 120px;
+  background: transparent; border: 0; color: var(--ax-text);
+  font: inherit; font-size: 12.5px;
+  padding: 4px 6px; font-family: var(--ax-mono);
+}
+.ax-triggers-edit input:focus { outline: none; }
+
+/* Prompt editor (freeform CLAUDE.md) */
+.ax-prompt-edit { position: relative; }
+.ax-prompt-edit textarea { min-height: 220px; line-height: 1.6; }
+.ax-prompt-badges {
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
+}
+.ax-prompt-badges .ax-pbadge {
+  font-size: 10px; padding: 3px 7px; border-radius: 3px;
+  background: var(--ax-surface-2); color: var(--ax-muted);
+  font-family: var(--ax-mono); letter-spacing: 0.03em;
+}
+
+/* Skill gallery */
+.ax-skill-toolbar {
+  display: flex; gap: 10px; align-items: center;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.ax-search {
+  position: relative; flex: 1; min-width: 220px;
+}
+.ax-search svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 13px; height: 13px; color: var(--ax-muted); pointer-events: none;
+}
+.ax-search input { width: 100%; padding-left: 30px; }
+.ax-skill-filter {
+  display: flex; gap: 4px; background: var(--ax-bg);
+  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+}
+.ax-skill-filter button {
+  background: transparent; border: 0; color: var(--ax-muted);
+  padding: 5px 10px; font: inherit; font-size: 11.5px;
+  cursor: pointer; border-radius: 3px;
+}
+.ax-skill-filter button.is-active {
+  background: var(--ax-surface-2); color: var(--ax-text);
+}
+.ax-skill-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.ax-skill-card {
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  cursor: pointer; position: relative; overflow: hidden;
+  transition: border-color 160ms, transform 160ms, background 160ms;
+}
+.ax-skill-card:hover { border-color: var(--ax-border-2); transform: translateY(-1px); }
+.ax-skill-card.is-on {
+  border-color: color-mix(in oklch, var(--ax-accent) 40%, var(--ax-border));
+  background: color-mix(in oklch, var(--ax-accent) 5%, var(--ax-bg-elev));
+}
+.ax-skill-card.is-on::after {
+  content: ""; position: absolute; top: 0; right: 0;
+  width: 0; height: 0;
+  border-left: 26px solid transparent;
+  border-top: 26px solid var(--ax-accent);
+}
+.ax-skill-card.is-on::before {
+  content: ""; position: absolute; top: 5px; right: 3px;
+  width: 7px; height: 4px;
+  border-left: 2px solid var(--ax-bg);
+  border-bottom: 2px solid var(--ax-bg);
+  transform: rotate(-45deg); z-index: 2;
+}
+.ax-skill-card__top { display: flex; align-items: center; gap: 10px; }
+.ax-skill-card__icon {
+  width: 32px; height: 32px; border-radius: 7px;
+  background: var(--ax-surface-2);
+  display: grid; place-items: center; flex-shrink: 0;
+  color: var(--ax-accent);
+}
+.ax-skill-card__icon svg { width: 16px; height: 16px; }
+.ax-skill-card__name {
+  font-weight: 600; font-size: 13px; letter-spacing: -0.005em;
+}
+.ax-skill-card__slug {
+  font-family: var(--ax-mono); font-size: 10.5px;
+  color: var(--ax-muted); margin-top: 1px;
+}
+.ax-skill-card__desc {
+  font-size: 12px; color: var(--ax-text-2); line-height: 1.5;
+  flex: 1; min-height: 32px;
+}
+.ax-skill-card__foot {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--ax-muted);
+}
+
+/* Info callout (similar to wit but inline inside panels) */
+.ax-callout {
+  background: color-mix(in oklch, var(--ax-info) 5%, var(--ax-bg-elev));
+  border: 1px solid color-mix(in oklch, var(--ax-info) 20%, var(--ax-border));
+  border-radius: var(--ax-radius-sm); padding: 12px 14px;
+  font-size: 12.5px; color: var(--ax-text-2); line-height: 1.6;
+  display: flex; gap: 10px; align-items: flex-start; margin-bottom: 16px;
+}
+.ax-callout__icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: color-mix(in oklch, var(--ax-info) 18%, transparent);
+  color: var(--ax-info); display: grid; place-items: center;
+  font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 1px;
+}
+.ax-callout b { color: var(--ax-text); }
+.ax-callout code {
+  font-family: var(--ax-mono); font-size: 11.5px;
+  background: var(--ax-bg); padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--ax-border);
+}
+
+/* Channel-binding rows (agent-specific view) */
+.ax-chan-row {
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+}
+.ax-chan-row__logo {
+  width: 32px; height: 32px; border-radius: 7px;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 13px; color: white; flex-shrink: 0;
+  font-family: var(--ax-mono);
+}
+.ax-chan-row__info { flex: 1; }
+.ax-chan-row__name { font-size: 13px; font-weight: 600; }
+.ax-chan-row__desc {
+  font-size: 12px; color: var(--ax-muted);
+  margin-top: 2px; font-family: var(--ax-mono);
+}
+
+/* Handover viz (from-agent → to-agent arrow) */
+.ax-handover-viz {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 16px 18px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); margin-bottom: 14px;
+}
+.ax-ho-side {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; flex: 0 0 130px;
+}
+.ax-ho-side__av {
+  width: 42px; height: 42px; border-radius: 10px;
+  display: grid; place-items: center;
+  font-weight: 600; font-size: 15px;
+}
+.ax-ho-side--from .ax-ho-side__av {
+  background: color-mix(in oklch, var(--ax-accent) 18%, var(--ax-surface));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 35%, var(--ax-border));
+  color: var(--ax-accent);
+}
+.ax-ho-side--to .ax-ho-side__av {
+  background: var(--ax-surface-2); border: 1px solid var(--ax-border-2);
+  color: var(--ax-text);
+}
+.ax-ho-side__nm { font-size: 12px; font-weight: 600; }
+.ax-ho-side__rl {
+  font-size: 10px; color: var(--ax-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-family: var(--ax-mono);
+}
+.ax-ho-wire {
+  flex: 1; height: 2px; position: relative;
+  background: repeating-linear-gradient(90deg,
+    var(--ax-border-2) 0, var(--ax-border-2) 4px,
+    transparent 4px, transparent 8px);
+}
+.ax-ho-wire svg {
+  position: absolute; right: -6px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--ax-accent);
+}
+.ax-ho-list-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.ax-ho-list-row .ax-who { flex: 1; color: var(--ax-text-2); }
+.ax-ho-list-row .ax-who b {
+  color: var(--ax-text); font-family: var(--ax-mono); font-weight: 500;
+}
+.ax-ho-list-row .ax-when { color: var(--ax-muted); font-size: 11px; }
+
+/* Activity cells + spark + session rows */
+.ax-activity-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 10px; margin-bottom: 18px;
+}
+.ax-activity-cell {
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 14px;
+}
+.ax-activity-cell .ax-v {
+  font-size: 20px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2;
+}
+.ax-activity-cell .ax-l {
+  font-size: 11px; color: var(--ax-muted); margin-top: 2px;
+}
+.ax-activity-cell .ax-delta {
+  font-size: 11px; margin-top: 6px;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.ax-activity-cell .ax-delta--up { color: var(--ax-accent); }
+.ax-activity-cell .ax-delta--down { color: var(--ax-muted); }
+
+.ax-spark { width: 100%; height: 100px; margin: 10px 0 14px; }
+
+.ax-session {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.ax-session__ch {
+  width: 24px; height: 24px; border-radius: 5px;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 10px; color: white;
+  flex-shrink: 0; font-family: var(--ax-mono);
+}
+.ax-session__body { flex: 1; min-width: 0; }
+.ax-session__txt {
+  color: var(--ax-text); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ax-session__meta {
+  font-size: 11px; color: var(--ax-muted);
+  margin-top: 1px; font-family: var(--ax-mono);
+}
+
+/* Log row (Conversations tab) */
+.ax-log-head {
+  display: grid; grid-template-columns: 24px 90px 160px 1fr auto;
+  gap: 12px; padding: 8px 10px;
+  border-bottom: 1px solid var(--ax-border-2);
+  font-size: 10px; color: var(--ax-muted);
+  text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--ax-mono);
+}
+.ax-log-row {
+  display: grid; grid-template-columns: 24px 90px 160px 1fr auto;
+  gap: 12px; align-items: center; padding: 9px 10px;
+  border-bottom: 1px solid var(--ax-border); font-size: 12px;
+}
+.ax-log-row:hover { background: color-mix(in oklch, var(--ax-accent) 4%, transparent); }
+.ax-log-row .ax-sev {
+  width: 8px; height: 8px; border-radius: 50%; margin-left: 8px;
+}
+.ax-log-row .ax-sev--ok { background: var(--ax-accent); }
+.ax-log-row .ax-sev--warn { background: var(--ax-warn); }
+.ax-log-row .ax-sev--err { background: var(--ax-err); }
+.ax-log-row .ax-t {
+  font-family: var(--ax-mono); color: var(--ax-muted); font-size: 11px;
+}
+.ax-log-row .ax-who {
+  font-family: var(--ax-mono); font-size: 11px; color: var(--ax-text-2);
+}
+.ax-log-row .ax-msg {
+  color: var(--ax-text); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.ax-log-row .ax-ms {
+  color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px;
+}
+
+/* Danger zone */
+.ax-panel--danger {
+  border-color: color-mix(in oklch, var(--ax-err) 30%, var(--ax-border));
+}
+.ax-danger-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 0; border-bottom: 1px dashed var(--ax-border);
+}
+.ax-danger-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.ax-danger-item:first-child { padding-top: 4px; }
+.ax-danger-item__info { flex: 1; }
+.ax-danger-item__name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.ax-danger-item__desc { font-size: 12px; color: var(--ax-muted); line-height: 1.5; }
+
+/* Test-drive side panel */
+.ax-td-col { position: sticky; top: 72px; }
+.ax-td-panel {
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); overflow: hidden;
+  display: flex; flex-direction: column;
+  height: calc(100vh - 94px); max-height: 760px;
+}
+.ax-td-head {
+  padding: 12px 14px; border-bottom: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev);
+  display: flex; align-items: center; gap: 10px;
+}
+.ax-td-head__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ax-accent);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--ax-accent) 60%, transparent);
+  animation: ax-pulse 2.2s infinite;
+}
+.ax-td-head__t { flex: 1; font-size: 12px; font-weight: 600; }
+.ax-td-head__sub {
+  font-size: 11px; color: var(--ax-muted); font-family: var(--ax-mono);
+}
+.ax-td-head__seg {
+  display: inline-flex; background: var(--ax-surface);
+  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+}
+.ax-td-head__seg button {
+  background: transparent; border: 0; color: var(--ax-muted);
+  padding: 3px 8px; font: inherit; font-size: 10.5px;
+  cursor: pointer; border-radius: 3px; font-family: var(--ax-mono);
+}
+.ax-td-head__seg button.is-active {
+  background: var(--ax-surface-2); color: var(--ax-text);
+}
+
+.ax-td-scenarios {
+  padding: 10px 14px; background: var(--ax-bg-elev);
+  border-bottom: 1px solid var(--ax-border);
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.ax-td-scenarios__lbl {
+  font-size: 10px; color: var(--ax-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-family: var(--ax-mono); width: 100%; margin-bottom: 3px;
+}
+.ax-td-scenario {
+  font-size: 11px; padding: 3px 8px;
+  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  border-radius: 10px; color: var(--ax-text-2);
+  cursor: pointer; transition: all 120ms;
+}
+.ax-td-scenario:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
+
+.ax-td-chat {
+  flex: 1; overflow-y: auto; padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--ax-bg);
+}
+.ax-td-chat__msg-wrap {
+  display: flex; flex-direction: column; gap: 2px; max-width: 86%;
+}
+.ax-td-chat__msg-wrap.is-user { align-self: flex-end; align-items: flex-end; }
+.ax-td-chat__msg-wrap.is-bot { align-self: flex-start; }
+.ax-td-chat__bubble {
+  padding: 8px 12px; border-radius: 12px;
+  font-size: 12.5px; line-height: 1.55; word-wrap: break-word;
+}
+.ax-td-chat__bubble.is-user {
+  background: var(--ax-accent); color: var(--ax-bg);
+  border-bottom-right-radius: 3px; font-weight: 500;
+}
+.ax-td-chat__bubble.is-bot {
+  background: var(--ax-surface-2); color: var(--ax-text);
+  border-bottom-left-radius: 3px; border: 1px solid var(--ax-border);
+}
+.ax-td-chat__meta {
+  font-size: 9.5px; color: var(--ax-muted);
+  font-family: var(--ax-mono); padding: 0 4px;
+}
+.ax-td-chat__typing {
+  align-self: flex-start; padding: 10px 14px;
+  background: var(--ax-surface-2); border: 1px solid var(--ax-border);
+  border-radius: 12px; border-bottom-left-radius: 3px;
+  display: inline-flex; gap: 4px;
+}
+.ax-td-chat__typing span {
+  width: 6px; height: 6px; background: var(--ax-muted);
+  border-radius: 50%; animation: axTypingBounce 1.2s infinite;
+}
+.ax-td-chat__typing span:nth-child(2) { animation-delay: 0.15s; }
+.ax-td-chat__typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes axTypingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+.ax-td-input {
+  padding: 10px; border-top: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); display: flex; gap: 6px;
+}
+.ax-td-input input {
+  flex: 1; background: var(--ax-bg); border: 1px solid var(--ax-border);
+  border-radius: 6px; padding: 8px 11px;
+  color: var(--ax-text); font: inherit; font-size: 12.5px;
+}
+.ax-td-input input:focus { outline: none; border-color: var(--ax-accent); }
+.ax-td-input button {
+  background: var(--ax-accent); color: var(--ax-bg); border: 0;
+  border-radius: 6px; padding: 0 12px;
+  cursor: pointer; font-weight: 600;
+}
+.ax-td-input button:hover {
+  background: color-mix(in oklch, var(--ax-accent) 88%, white);
+}
+
+/* Section mini-label used throughout detail pages */
+.ax-sec-label-d {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 20px 0 10px;
+}
+.ax-sec-label-d h3 {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ax-muted);
+  margin: 0; font-family: var(--ax-mono);
+}
+
 /* --- Responsive collapses for the settings primitives --- */
+@media (max-width: 1180px) {
+  .ax-layout { grid-template-columns: 180px 1fr; }
+  .ax-td-col { display: none; }
+}
 @media (max-width: 760px) {
   .ax-health-strip { grid-template-columns: repeat(2, 1fr); }
   .ax-connectors { grid-template-columns: 1fr; }
@@ -766,4 +1412,11 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   .ax-mesh-hero { grid-template-columns: 1fr; }
   .ax-mesh-viz { margin: 0 auto; }
   .ax-cron-hints { grid-template-columns: 1fr; }
+  .ax-layout { grid-template-columns: 1fr; }
+  .ax-rail { display: none; }
+  .ax-stats-inline { grid-template-columns: repeat(2, 1fr); }
+  .ax-activity-grid { grid-template-columns: repeat(2, 1fr); }
+  .ax-log-head, .ax-log-row { grid-template-columns: 8px 80px 1fr auto; }
+  .ax-log-head span:nth-child(3), .ax-log-row .ax-who { display: none; }
+  .ax-grid-2, .ax-grid-3 { grid-template-columns: 1fr; }
 }`
