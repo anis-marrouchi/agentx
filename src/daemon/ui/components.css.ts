@@ -238,7 +238,7 @@ export const AX_COMPONENTS_CSS = `
 
 /* --- Health strip --- */
 .ax-health-strip {
-  max-width: 1040px; margin: 18px auto 0; padding: 0 24px;
+  max-width: 1040px; margin: 18px auto 22px; padding: 0 24px;
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
 }
 .ax-health-card {
