@@ -440,13 +440,117 @@ export class AgentXDaemon {
       tgHandled = true // no change, nothing to do
     }
 
-    // 3. Sections that require a restart. Channels are restart-required only
-    //    when something OTHER than telegram accounts/policy changed.
-    const restartKeys: Array<keyof DaemonConfig> = ["agents", "mesh", "providers", "node", "services"]
-    for (const k of restartKeys) {
-      if (JSON.stringify((this.config as any)[k]) !== JSON.stringify((next as any)[k])) {
-        restartRequired.push(String(k))
+    // 3. Providers — hot-swap the credential table. Registry re-reads it
+    //    per-task execution, so rotating API keys or adding a provider lands
+    //    instantly for the next task (in-flight tasks keep their closure).
+    if (JSON.stringify(this.config.providers) !== JSON.stringify(next.providers)) {
+      try {
+        this.registry.setProviders(next.providers)
+        applied.push("providers")
+      } catch (e: any) {
+        this.log(`[reload] providers hot-reload failed: ${e.message}`)
       }
+    }
+
+    // 4. Mesh peers — diff the peer list: adds, removes, and url/token
+    //    rotations are handled in-place and trigger an immediate rediscovery
+    //    for changed peers. Health-check interval change needs restart.
+    const meshPrev = this.config.mesh
+    const meshNext = next.mesh
+    const meshChanged = JSON.stringify(meshPrev) !== JSON.stringify(meshNext)
+    let meshHandled = !meshChanged
+    if (meshChanged && meshNext.enabled && meshPrev.enabled && this.mesh) {
+      // Only the peers list and per-peer url/token are hot. healthCheck
+      // interval/timeout changes still need a restart because we'd have to
+      // re-install setInterval.
+      const intervalChanged = JSON.stringify(meshPrev.healthCheck) !== JSON.stringify(meshNext.healthCheck)
+      if (!intervalChanged) {
+        try {
+          const diff = await this.mesh.reloadPeers(next)
+          const parts: string[] = []
+          if (diff.added.length) parts.push(`+${diff.added.join(",")}`)
+          if (diff.removed.length) parts.push(`-${diff.removed.join(",")}`)
+          if (diff.updated.length) parts.push(`~${diff.updated.join(",")}`)
+          applied.push(parts.length ? `mesh(${parts.join(" ")})` : "mesh")
+          meshHandled = true
+        } catch (e: any) {
+          this.log(`[reload] mesh hot-reload failed: ${e.message}`)
+        }
+      }
+    }
+
+    // 5. Services — recompile the matcher's regex table. match() is sync and
+    //    stateless, so a swap between iterations is safe.
+    if (JSON.stringify(this.config.services) !== JSON.stringify(next.services)) {
+      try {
+        const matcher = this.router.getServiceMatcher()
+        if (matcher) {
+          const { count } = matcher.reload(next.services)
+          applied.push(`services(${count})`)
+        } else if (Object.keys(next.services).length > 0) {
+          // Services went from empty at boot to non-empty — we never created
+          // a matcher, so we do create one now and wire it into the router.
+          const fresh = new ServiceMatcher(next.services, this.log)
+          this.router.setServiceMatcher(fresh)
+          applied.push(`services(${Object.keys(next.services).length})`)
+        }
+      } catch (e: any) {
+        this.log(`[reload] services hot-reload failed: ${e.message}`)
+      }
+    }
+
+    // 6. Hooks — clear + reload from disk. Registry is just a Map<event, defs>
+    //    so the swap is atomic between events.
+    try {
+      const beforeSize = this.hooks.size?.() ?? 0
+      this.hooks.clear()
+      loadHooks(process.cwd(), this.hooks)
+      const afterSize = this.hooks.size?.() ?? 0
+      if (beforeSize !== afterSize) applied.push(`hooks(${afterSize})`)
+    } catch (e: any) {
+      this.log(`[reload] hooks reload failed: ${e.message}`)
+    }
+
+    // 7. Landscape — cheap rebuild, always safe.
+    if (JSON.stringify(this.config.business) !== JSON.stringify(next.business)
+        || JSON.stringify(this.config.agents) !== JSON.stringify(next.agents)) {
+      try {
+        this.landscape = new LandscapeBuilder(next)
+        this.registry.setLandscape(this.landscape)
+        applied.push("landscape")
+      } catch (e: any) {
+        this.log(`[reload] landscape rebuild failed: ${e.message}`)
+      }
+    }
+
+    // 8. Sections that still require a full restart — narrowed down to:
+    //    agents (runtime state captured per-task), node.bind (listen socket),
+    //    non-telegram channels (session-bound sockets), mesh.healthCheck
+    //    (interval timer), and enabling/disabling a channel adapter wholesale.
+    if (JSON.stringify(this.config.agents) !== JSON.stringify(next.agents)) {
+      // Let registry swap the config reference so landscape/business reads
+      // pick up new agent metadata (avatar, access, tier display). New
+      // physical agents (adding/removing keys) still need restart because
+      // the registry initializes state maps on construction.
+      const oldIds = Object.keys(this.config.agents).sort().join(",")
+      const newIds = Object.keys(next.agents).sort().join(",")
+      if (oldIds === newIds) {
+        // Same set of agent ids — hot-swap config-only fields through the
+        // registry. Model changes still need a restart because Claude Code
+        // subprocesses capture it at spawn; we surface this below.
+        this.registry.setConfig(next)
+        applied.push("agents.meta")
+      }
+      // Detect which specific fields changed and whether restart is needed.
+      const restartFields = detectAgentRestartFields(this.config.agents, next.agents)
+      if (restartFields.length > 0) {
+        restartRequired.push(`agents(${restartFields.join(",")})`)
+      }
+    }
+
+    if (!meshHandled) restartRequired.push("mesh")
+    if (JSON.stringify(this.config.node) !== JSON.stringify(next.node)) {
+      restartRequired.push("node")
     }
     // Channels: hot-handle telegram, everything else is still restart-required.
     const channelsPrevMinusTg = { ...this.config.channels, telegram: undefined }
@@ -457,8 +561,10 @@ export class AgentXDaemon {
       restartRequired.push("channels.telegram")
     }
 
-    // 4. Swap in the new config so read-only endpoints (GET /crons etc.) reflect it
+    // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
+    //    reflect it, and router send-side paths see fresh channel config.
     this.config = next
+    this.router.updateConfig(next)
 
     if (applied.length) this.log(`[reload] applied: ${applied.join(", ")}`)
     if (restartRequired.length) {
@@ -1493,6 +1599,33 @@ function toSpeakable(text: string): string {
   }
 
   return s
+}
+
+/**
+ * Diff two agent-definition maps and return the list of field names that
+ * would require a daemon restart to take effect. Hot-swappable fields
+ * (systemPrompt, mentions, maxConcurrent, access, avatar, queueMode,
+ * heartbeat, tags) are read fresh per-task so the registry.setConfig swap
+ * is enough. Restart-required fields are those captured at Claude Code
+ * subprocess spawn time: model, workspace, tier, permissionMode, mcpServers.
+ */
+function detectAgentRestartFields(
+  prev: Record<string, any>,
+  next: Record<string, any>,
+): string[] {
+  const restartFields = ["model", "workspace", "tier", "permissionMode", "mcpServers"]
+  const changed = new Set<string>()
+  const ids = new Set([...Object.keys(prev), ...Object.keys(next)])
+  for (const id of ids) {
+    const p = prev[id], n = next[id]
+    if (!p || !n) { changed.add("add/remove"); continue }
+    for (const f of restartFields) {
+      if (JSON.stringify(p[f]) !== JSON.stringify(n[f])) {
+        changed.add(`${id}.${f}`)
+      }
+    }
+  }
+  return Array.from(changed).slice(0, 6) // cap to keep summary readable
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {

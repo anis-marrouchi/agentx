@@ -53,7 +53,22 @@ export class ServiceMatcher {
     log: (...args: unknown[]) => void = console.error.bind(console, "[services]"),
   ) {
     this.log = log
+    this.compile(serviceDefs)
+    this.log(`${this.services.length} service(s) loaded`)
+  }
 
+  /** Recompile the service set from a fresh config. Safe to call at runtime —
+   *  the only state is the compiled regex array, which is fully replaced. A
+   *  message currently inside match() sees the old list for one iteration,
+   *  but that's fine: match() is synchronous and holds no cross-call state. */
+  reload(serviceDefs: Record<string, Omit<ServiceDef, "id">>): { count: number } {
+    this.compile(serviceDefs)
+    this.log(`Services reloaded — ${this.services.length} active`)
+    return { count: this.services.length }
+  }
+
+  private compile(serviceDefs: Record<string, Omit<ServiceDef, "id">>): void {
+    const fresh: CompiledService[] = []
     for (const [id, def] of Object.entries(serviceDefs)) {
       const compiled: CompiledService = {
         def: { ...def, id },
@@ -72,11 +87,10 @@ export class ServiceMatcher {
       }
 
       if (compiled.patterns.length > 0) {
-        this.services.push(compiled)
+        fresh.push(compiled)
       }
     }
-
-    this.log(`${this.services.length} service(s) loaded`)
+    this.services = fresh
   }
 
   /**

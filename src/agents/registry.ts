@@ -269,6 +269,22 @@ export class AgentRegistry {
     this.landscape = builder
   }
 
+  /** Hot-swap the provider map. Daemon reload calls this after agentx.json
+   *  changes — the next task that executes will resolve credentials through
+   *  the fresh table (see executeTask call-site). In-flight tasks keep the
+   *  old provider reference from their closure, which is the desired behavior
+   *  (rotating a key mid-task shouldn't fail the task). */
+  setProviders(next: Record<string, { apiKey?: string }>): void {
+    this.providers = next
+  }
+
+  /** Hot-swap the live DaemonConfig reference. Registry reads it lazily at
+   *  execute-time for landscape + session policies, so next-task semantics
+   *  match setProviders. */
+  setConfig(next: DaemonConfig): void {
+    this.config = next
+  }
+
   /**
    * If there's an active handover routing TO this agent for this (channel,
    * chatId) pair AND the operator's summary hasn't been consumed yet, pull

@@ -242,6 +242,13 @@ export class MessageRouter {
     this.serviceMatcher = matcher
   }
 
+  /** Accessor so the daemon reload path can call matcher.reload() without
+   *  holding a duplicate reference. Returns undefined if services were
+   *  empty at boot. */
+  getServiceMatcher(): ServiceMatcher | undefined {
+    return this.serviceMatcher
+  }
+
   setBusiness(business: BusinessLayer): void {
     this.business = business
   }

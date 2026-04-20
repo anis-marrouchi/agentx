@@ -97,6 +97,14 @@ export class HookRegistry {
     this.hooks.clear()
   }
 
+  /** Total number of registered hook entries across all events. Used by the
+   *  daemon reload path to surface hook-count deltas in the reload summary. */
+  size(): number {
+    let n = 0
+    for (const list of this.hooks.values()) n += list.length
+    return n
+  }
+
   /**
    * Create a HookHandler from a HookDefinition.
    */

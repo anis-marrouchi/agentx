@@ -56,6 +56,64 @@ export class A2AMesh {
     }
   }
 
+  /** Hot-reload the peer set from a fresh config. Adds new peers (kicks off
+   *  immediate discovery), removes vanished ones, and rebuilds the A2AClient
+   *  for peers whose url or token changed. Health-check interval is honored
+   *  on the next tick — we don't reset the timer just for peer-set edits.
+   *  Returns the diff for the caller to log. */
+  async reloadPeers(next: DaemonConfig): Promise<{ added: string[]; removed: string[]; updated: string[] }> {
+    this.config = next
+    const oldIds = new Set(this.peers.keys())
+    const newPeers = new Map(next.mesh.peers.map((p) => [p.name, p] as const))
+    const added: string[] = []
+    const removed: string[] = []
+    const updated: string[] = []
+
+    // Remove vanished peers.
+    for (const id of oldIds) {
+      if (!newPeers.has(id)) {
+        this.peers.delete(id)
+        removed.push(id)
+      }
+    }
+
+    // Add or update the rest.
+    const rediscover: Array<[string, PeerState]> = []
+    for (const [id, peer] of newPeers) {
+      const existing = this.peers.get(id)
+      if (!existing) {
+        const state: PeerState = {
+          peer,
+          client: new A2AClient(peer.url, peer.token),
+          healthy: false,
+          agents: [],
+        }
+        this.peers.set(id, state)
+        added.push(id)
+        rediscover.push([id, state])
+        continue
+      }
+      // URL or token changed — rebuild the client and redo discovery.
+      if (existing.peer.url !== peer.url || existing.peer.token !== peer.token) {
+        existing.peer = peer
+        existing.client = new A2AClient(peer.url, peer.token)
+        existing.healthy = false
+        updated.push(id)
+        rediscover.push([id, existing])
+      } else {
+        existing.peer = peer // pick up tag/other metadata edits
+      }
+    }
+
+    // Immediate discovery for changed/new peers — don't wait for the next
+    // interval tick since the whole point of /reload is instant feedback.
+    if (rediscover.length) {
+      await Promise.allSettled(rediscover.map(([id, state]) => this.discoverPeer(id, state)))
+    }
+
+    return { added, removed, updated }
+  }
+
   /**
    * Discover agent cards from all peers.
    */
