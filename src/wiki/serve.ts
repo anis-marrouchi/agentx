@@ -33,6 +33,42 @@ function tagLinks(tags: string[] | undefined, agentId?: string): string {
   return (tags || []).map(t => tagLink(t, agentId)).join(" ")
 }
 
+/**
+ * Resolve the body of a `[[...]]` wikilink to a relative article path.
+ *
+ * Authors write wikilinks three ways: by title, by path (without `.md`), or
+ * by full path (with `.md`). wikiArticles is a title→path map, so we build
+ * a path-set on first call and try several normalisations:
+ *
+ *   1. Exact title lookup                      (handles [[My Article]])
+ *   2. Exact path lookup                       (handles [[people/anis.md]])
+ *   3. Path + ".md" suffix                     (handles [[people/anis]])
+ *   4. Case-insensitive title scan             (forgives minor casing drift)
+ *
+ * Return the path if any matches, else undefined so the caller can render
+ * a broken-link marker.
+ */
+function resolveWikilink(target: string, wikiArticles: Map<string, string>): string | undefined {
+  if (!target) return undefined
+  // (1) exact title
+  const byTitle = wikiArticles.get(target)
+  if (byTitle) return byTitle
+
+  // (2) + (3) path lookups
+  const pathSet = new Set(wikiArticles.values())
+  if (pathSet.has(target)) return target
+  const withExt = target.endsWith('.md') ? target : `${target}.md`
+  if (pathSet.has(withExt)) return withExt
+
+  // (4) case-insensitive title fallback — common when the user writes
+  // "Anis Marrouchi" but the canonical title is "anis marrouchi".
+  const targetLower = target.toLowerCase()
+  for (const [title, path] of wikiArticles) {
+    if (title.toLowerCase() === targetLower) return path
+  }
+  return undefined
+}
+
 function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string = ""): string {
   // Strip section-tag HTML comments before escaping so they don't render
   // as literal "<!-- tags: ... -->" in the output.
@@ -65,13 +101,20 @@ function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
 
-  // Wikilinks
-  html = html.replace(/\[\[([^\]]+)\]\]/g, (_m, title) => {
-    const path = wikiArticles.get(title)
+  // Wikilinks — support three forms for the [[...]] body:
+  //   [[Title]]                        exact article title
+  //   [[path/to/article]]              path without .md (e.g. "people/anis")
+  //   [[path/to/article.md]]           full relative path
+  //   [[Title|custom display text]]    optional display override (Obsidian-style)
+  html = html.replace(/\[\[([^\]]+)\]\]/g, (_m, body: string) => {
+    const [rawTarget, rawDisplay] = body.split("|", 2)
+    const target = rawTarget.trim().replace(/^\//, "")
+    const display = (rawDisplay || rawTarget).trim()
+    const path = resolveWikilink(target, wikiArticles)
     if (path) {
-      return `<a href="${agentPrefix}/article/${encodeURIComponent(path)}" class="wikilink">${title}</a>`
+      return `<a href="${agentPrefix}/article/${encodeURIComponent(path)}" class="wikilink">${display}</a>`
     }
-    return `<a href="${agentPrefix}/search?q=${encodeURIComponent(title)}" class="wikilink broken">${title}</a>`
+    return `<a href="${agentPrefix}/search?q=${encodeURIComponent(target)}" class="wikilink broken" title="Not found — click to search">${display}</a>`
   })
 
   // External links
