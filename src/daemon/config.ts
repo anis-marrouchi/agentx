@@ -278,6 +278,8 @@ export const daemonConfigSchema = z.object({
     secretEnv: z.string().optional(),
     description: z.string().optional(),
     enabled: z.boolean().default(true),
+    /** Route to a mesh peer instead of local execution. */
+    node: z.string().optional(),
   })).default([]),
   /** Session cache-reuse policy. `staleMinutes` controls how long a Claude
    *  session can idle before we rebuild the prompt from scratch (paying the

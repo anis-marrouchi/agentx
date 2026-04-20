@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import type { AgentRegistry } from "@/agents/registry"
+import type { A2AMesh } from "@/a2a/mesh"
+import type { DaemonConfig } from "./config"
 
 // --- Webhook handler ---
 // Routes incoming webhooks from GitLab, GitHub, Stripe, Sentry, etc.
@@ -20,16 +22,22 @@ interface WebhookConfig {
 export class WebhookHandler {
   private registry: AgentRegistry
   private config: WebhookConfig
+  private mesh?: A2AMesh
+  private webhookEntries: DaemonConfig["webhooks"]
   private log: (...args: unknown[]) => void
 
   constructor(
     registry: AgentRegistry,
     config: WebhookConfig = {},
     log: (...args: unknown[]) => void = console.error.bind(console, "[webhook]"),
+    mesh?: A2AMesh,
+    webhookEntries: DaemonConfig["webhooks"] = [],
   ) {
     this.registry = registry
     this.config = config
     this.log = log
+    this.mesh = mesh
+    this.webhookEntries = webhookEntries
   }
 
   /**
@@ -58,7 +66,31 @@ export class WebhookHandler {
 
     this.log(`Webhook [${source}] -> ${agentId}: ${summary.slice(0, 100)}`)
 
-    // Execute on the agent
+    // Check if there's a webhook entry with mesh routing
+    const meshEntry = this.webhookEntries.find(
+      w => w.enabled && w.node && w.agentId === agentId && w.source === source,
+    )
+
+    if (meshEntry?.node && this.mesh) {
+      // Forward to mesh peer
+      try {
+        this.log(`Mesh-forwarding webhook [${source}] -> ${meshEntry.node}/${agentId}`)
+        const response = await this.mesh.sendTask(meshEntry.node, summary, agentId)
+        this.sendJson(res, 200, {
+          ok: true,
+          agent: agentId,
+          source,
+          node: meshEntry.node,
+          response: response?.slice(0, 500),
+        })
+      } catch (e: any) {
+        this.log(`Mesh forward failed: ${e.message}`)
+        this.sendJson(res, 502, { error: `Mesh forward failed: ${e.message}` })
+      }
+      return
+    }
+
+    // Execute on the local agent
     try {
       const response = await this.registry.execute({
         message: summary,

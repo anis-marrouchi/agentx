@@ -94,7 +94,6 @@ export class AgentXDaemon {
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
-    this.webhooks = new WebhookHandler(this.registry, {}, this.log)
 
     // Initialize service matcher (automated client services)
     if (Object.keys(this.config.services).length > 0) {
@@ -131,6 +130,9 @@ export class AgentXDaemon {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
     }
+
+    // Initialize webhook handler (after mesh so mesh-forwarding works)
+    this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks)
 
     // Initialize business layer (if enabled)
     if (this.config.business?.enabled) {
