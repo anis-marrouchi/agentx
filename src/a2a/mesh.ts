@@ -11,7 +11,21 @@ export interface PeerState {
   lastCheck?: Date
   agentCard?: AgentCard
   agents: AgentSkill[]
+  /** Count of back-to-back failed health probes since the last successful one.
+   *  Used to suppress transient flaps: the `healthy` flag only flips to false
+   *  after N consecutive failures (see UNHEALTHY_AFTER). Reset to 0 on success. */
+  consecutiveFailures: number
+  /** Last probe error message — surfaced for debugging via /mesh. */
+  lastError?: string
 }
+
+/** Number of consecutive failed probes required before we mark a peer
+ *  unhealthy. A busy remote daemon whose event loop stalls for one probe
+ *  cycle (e.g. during a 200K-token tier-2 agent turn) used to flip to
+ *  "unreachable" and back on the next tick, which was visible in the
+ *  dashboard as a cycling peer. With hysteresis, a single slow probe is
+ *  tolerated; only sustained unreachability actually flips the flag. */
+const UNHEALTHY_AFTER = 3
 
 export class A2AMesh {
   private peers: Map<string, PeerState> = new Map()
@@ -32,6 +46,7 @@ export class A2AMesh {
         client: new A2AClient(peer.url, peer.token),
         healthy: false,
         agents: [],
+        consecutiveFailures: 0,
       })
     }
   }
@@ -87,6 +102,7 @@ export class A2AMesh {
           client: new A2AClient(peer.url, peer.token),
           healthy: false,
           agents: [],
+          consecutiveFailures: 0,
         }
         this.peers.set(id, state)
         added.push(id)
@@ -98,6 +114,7 @@ export class A2AMesh {
         existing.peer = peer
         existing.client = new A2AClient(peer.url, peer.token)
         existing.healthy = false
+        existing.consecutiveFailures = 0  // fresh client; old counter is stale
         updated.push(id)
         rediscover.push([id, existing])
       } else {
@@ -138,16 +155,36 @@ export class A2AMesh {
       const card = await state.client.getAgentCard()
       clearTimeout(timer)
 
+      // Success — clear failure counter, flip healthy on if it was off.
+      const wasDown = !state.healthy
       state.healthy = true
       state.lastCheck = new Date()
       state.agentCard = card
       state.agents = card.skills || []
+      state.consecutiveFailures = 0
+      state.lastError = undefined
 
-      this.log(`Peer "${name}" healthy: ${card.name} (${state.agents.length} skills)`)
+      // Only log on state transition (healthy→healthy is spammy when the
+      // health check interval is 60s). Still log "recovered" transitions
+      // so operators see a peer coming back.
+      if (wasDown) {
+        this.log(`Peer "${name}" recovered: ${card.name} (${state.agents.length} skills)`)
+      } else {
+        this.log(`Peer "${name}" healthy: ${card.name} (${state.agents.length} skills)`)
+      }
     } catch (e: any) {
-      state.healthy = false
       state.lastCheck = new Date()
-      this.log(`Peer "${name}" unreachable: ${e.message}`)
+      state.lastError = e.message
+      state.consecutiveFailures++
+      // Hysteresis: require UNHEALTHY_AFTER consecutive failures before
+      // flipping the flag. Prevents transient event-loop stalls on the
+      // remote daemon from cycling the peer as seen from the dashboard.
+      if (state.consecutiveFailures >= UNHEALTHY_AFTER && state.healthy) {
+        state.healthy = false
+        this.log(`Peer "${name}" unreachable (${state.consecutiveFailures} consecutive failures): ${e.message}`)
+      } else if (state.consecutiveFailures < UNHEALTHY_AFTER) {
+        this.log(`Peer "${name}" probe failed (${state.consecutiveFailures}/${UNHEALTHY_AFTER}): ${e.message}`)
+      }
     }
   }
 
