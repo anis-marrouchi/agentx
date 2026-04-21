@@ -10,6 +10,8 @@ import { DiscordAdapter } from "@/channels/discord"
 import { SlackAdapter } from "@/channels/slack"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter } from "@/channels/github"
+import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
+import { CALL_PAGE_HTML } from "./call-page"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
@@ -42,6 +44,7 @@ export class AgentXDaemon {
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
+  private webrtc?: WebRtcSignalBroker
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -324,6 +327,12 @@ export class AgentXDaemon {
       if (this.mesh) {
         this.log("  Stopping mesh...")
         await this.mesh.stop()
+      }
+    } catch {}
+
+    try {
+      if (this.webrtc) {
+        this.webrtc.shutdown()
       }
     } catch {}
 
@@ -855,6 +864,28 @@ export class AgentXDaemon {
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
 
+    // WebRTC signaling — control plane only. Media flows browser-to-browser
+    // via WebRTC direct, never through this daemon. See src/channels/webrtc-signal.ts.
+    if (this.config.channels.webrtc?.enabled) {
+      const wrtcCfg = this.config.channels.webrtc
+      this.webrtc = new WebRtcSignalBroker(
+        this.config.node.name,
+        wrtcCfg.allowedCallers,
+        this.log,
+      )
+      if (this.mesh) {
+        this.webrtc.setForwarder(async (peer, signal) => {
+          try {
+            return await this.mesh!.sendSignal(peer, signal)
+          } catch (e: any) {
+            this.log(`[webrtc] forward to "${peer}" failed: ${e.message}`)
+            return false
+          }
+        })
+      }
+      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"})`)
+    }
+
     await this.router.startAll()
   }
 
@@ -969,6 +1000,50 @@ export class AgentXDaemon {
     })
   }
 
+  /**
+   * SSE stream for WebRTC signaling. Browser connects here identifying itself
+   * with (callId, as). The broker fans out any signal addressed `to=<as>` on
+   * this `callId` to the stream.
+   */
+  private handleWebRtcSSE(req: IncomingMessage, res: ServerResponse, url: URL): void {
+    if (!this.webrtc) {
+      this.json(res, 404, { error: "WebRTC signaling not enabled" })
+      return
+    }
+    const callId = url.searchParams.get("callId")
+    const as = url.searchParams.get("as")
+    if (!callId || !as) {
+      this.json(res, 400, { error: "Missing ?callId= and ?as=" })
+      return
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "X-Accel-Buffering": "no",
+    })
+    res.write(`event: ready\ndata: ${JSON.stringify({ callId, as })}\n\n`)
+    const unsubscribe = this.webrtc.subscribe(callId, as, res)
+    // Proxies kill idle SSE; ping every 15s.
+    const heartbeat = setInterval(() => {
+      try { res.write(": ping\n\n") } catch { /* best effort */ }
+    }, 15000)
+    req.on("close", () => {
+      clearInterval(heartbeat)
+      unsubscribe()
+    })
+  }
+
+  /**
+   * Serve the minimal browser call page. Static HTML; no framework.
+   * The page does getUserMedia, RTCPeerConnection, and POSTs/listens signals.
+   */
+  private serveCallPage(res: ServerResponse): void {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(CALL_PAGE_HTML)
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -977,6 +1052,19 @@ export class AgentXDaemon {
       // SSE live event stream
       if (req.method === "GET" && path === "/events") {
         this.handleSSE(req, res)
+        return
+      }
+
+      // WebRTC signaling SSE stream (browser subscribes here to receive
+      // offers/answers/ICE forwarded by the daemon).
+      if (req.method === "GET" && path === "/webrtc/events") {
+        this.handleWebRtcSSE(req, res, url)
+        return
+      }
+
+      // Static browser call page.
+      if (req.method === "GET" && path === "/call") {
+        this.serveCallPage(res)
         return
       }
 
@@ -1514,6 +1602,58 @@ export class AgentXDaemon {
           break
         }
 
+        // Browser → daemon → remote peer
+        case "POST /webrtc/signal/out": {
+          if (!this.webrtc) {
+            this.json(res, 404, { error: "WebRTC signaling not enabled" })
+            return
+          }
+          const body = await readBody(req)
+          const signal = body as unknown as WebRtcSignal
+          if (!signal.kind || !signal.callId || !signal.from || !signal.to) {
+            this.json(res, 400, { error: "Missing: kind, callId, from, to" })
+            return
+          }
+          const result = await this.webrtc.handleOutgoing(signal)
+          this.json(res, result.ok ? 200 : 400, result)
+          break
+        }
+
+        // Remote peer → daemon → local browser (SSE fan-out).
+        // Called by `A2AMesh.sendSignal()` on the sending peer.
+        case "POST /webrtc/signal": {
+          if (!this.webrtc) {
+            this.json(res, 404, { error: "WebRTC signaling not enabled" })
+            return
+          }
+          const body = await readBody(req)
+          const signal = body as unknown as WebRtcSignal
+          if (!signal.kind || !signal.callId || !signal.from || !signal.to) {
+            this.json(res, 400, { error: "Missing: kind, callId, from, to" })
+            return
+          }
+          const result = this.webrtc.handleIncoming(signal)
+          this.json(res, result.ok ? 200 : 400, result)
+          break
+        }
+
+        case "GET /webrtc/config": {
+          const wrtc = this.config.channels.webrtc
+          if (!wrtc?.enabled) {
+            this.json(res, 404, { error: "WebRTC signaling not enabled" })
+            return
+          }
+          this.json(res, 200, {
+            localName: this.config.node.name,
+            iceServers: [
+              ...wrtc.stunServers.map(urls => ({ urls })),
+              ...wrtc.turnServers,
+            ],
+            peers: this.mesh?.directory().map(p => ({ name: p.peer, healthy: p.healthy })) || [],
+          })
+          break
+        }
+
         // A2A agent card discovery
         case "GET /.well-known/agent-card.json":
           this.json(res, 200, {
@@ -1672,6 +1812,11 @@ export class AgentXDaemon {
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
               "GET  /.well-known/agent-card.json",
+              "GET  /call  — browser UI for P2P A/V calls (requires channels.webrtc.enabled)",
+              "GET  /webrtc/config  — ICE servers + peer directory for the call page",
+              "GET  /webrtc/events?callId=&as=  — SSE stream of signaling events",
+              "POST /webrtc/signal/out  — browser-originated signal, forwarded to remote peer",
+              "POST /webrtc/signal  — remote-peer-originated signal, fanned out to local browser",
             ],
           })
       }

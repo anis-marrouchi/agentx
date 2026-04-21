@@ -224,6 +224,34 @@ export class A2AMesh {
   }
 
   /**
+   * Forward a WebRTC signaling message (SDP / ICE / hangup) to a remote peer's
+   * /webrtc/signal endpoint. Not gated by peer health — a healthy control plane
+   * is useful but a one-off probe miss should not drop a live call; the browser
+   * layer will retry on timeout.
+   */
+  async sendSignal(peerName: string, signal: unknown): Promise<boolean> {
+    const state = this.peers.get(peerName)
+    if (!state) throw new Error(`Unknown peer: ${peerName}`)
+
+    const url = `${state.peer.url}/webrtc/signal`
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (state.peer.token) {
+      headers["Authorization"] = `Bearer ${state.peer.token}`
+    }
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(signal),
+      })
+      return res.ok
+    } catch (e: any) {
+      this.log(`sendSignal to "${peerName}" failed: ${e.message}`)
+      return false
+    }
+  }
+
+  /**
    * Find a peer that has a specific skill.
    */
   findPeerWithSkill(skillId: string): PeerState | undefined {

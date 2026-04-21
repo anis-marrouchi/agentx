@@ -193,6 +193,19 @@ const channelsConfigSchema = z.object({
       node: z.string().optional(),
     })).default([]),
   }).default({}),
+  webrtc: z.object({
+    enabled: z.boolean().default(false),
+    /** ICE STUN servers for NAT discovery. Default is Google's public STUN. */
+    stunServers: z.array(z.string()).default(["stun:stun.l.google.com:19302"]),
+    /** Optional TURN relays (required when both peers are behind symmetric NAT). */
+    turnServers: z.array(z.object({
+      urls: z.string(),
+      username: z.string().optional(),
+      credential: z.string().optional(),
+    })).default([]),
+    /** Peer names permitted to *initiate* a call into this daemon. Empty = allow all mesh peers. */
+    allowedCallers: z.array(z.string()).default([]),
+  }).default({}),
 })
 
 const cronJobSchema = z.object({
