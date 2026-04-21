@@ -297,6 +297,15 @@ export const daemonConfigSchema = z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(45),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(15),
     tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
+    /** Context assembly strategy:
+     *  - "layered" (default): the classic stacked layers — session history,
+     *    memory, cross-chat, wiki hint all appended every turn.
+     *  - "planner": a Haiku pre-call decides what to retrieve before the
+     *    main agent runs. Always-on core is kept (channel/scope/landscape/
+     *    identity/intent + last 3 turns verbatim); history blob, wiki hint,
+     *    and cross-chat are replaced by planner-selected bundles. Per-task
+     *    overrides via AgentTask.contextStrategy for A/B benchmarking. */
+    contextStrategy: z.enum(["layered", "planner"]).default("layered"),
   }).default({}),
 })
 

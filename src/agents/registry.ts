@@ -548,7 +548,9 @@ export class AgentRegistry {
 
     // Load persistent agent memory (cross-session facts)
     const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, 8)
-    const memoryContext = this.memoryStore.buildContext(relevantMemories)
+    // `let`, not `const`, because the planner strategy (below) may overwrite
+    // this with its own curated memory bundle when enabled.
+    let memoryContext = this.memoryStore.buildContext(relevantMemories)
 
     // Load behavioral patterns (self-improving loop)
     const relevantPatterns = this.patternStore.findRelevant(task.message, task.agentId, 5)
@@ -629,9 +631,53 @@ export class AgentRegistry {
     // Gated on the current message — we only ship the hint when the user
     // actually refers to another conversation, a peer agent, or earlier
     // activity. Otherwise it's pure waste AND breaks prompt cache every turn.
-    const crossChatContext = this.sessions.getCrossSessionSummary(
+    let crossChatContext = this.sessions.getCrossSessionSummary(
       task.agentId, channel, chatId, task.message,
     )
+
+    // Context strategy: "layered" (above) or "planner". Planner is a Haiku
+    // pre-call that curates just the bits of history/memory/cross-chat the
+    // current message needs, replacing the full-blob layered approach.
+    // Per-task override (for benchmarks) wins over config default.
+    // Fail-open: if the planner errors or times out, we fall through with
+    // the layered values already computed above.
+    const strategy: "layered" | "planner" =
+      task.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
+    let sessionHistoryOverride: string | undefined
+    let planDebug: Record<string, unknown> | undefined
+    if (strategy === "planner") {
+      try {
+        const { planContext } = await import("./context-planner")
+        const plan = await planContext({
+          agentId: task.agentId,
+          channel,
+          chatId,
+          message: task.message,
+          sessions: this.sessions,
+          memoryStore: this.memoryStore,
+        })
+        if (plan) {
+          sessionHistoryOverride = plan.sessionHistory
+          memoryContext = plan.memoryContext
+          crossChatContext = plan.crossChatContext
+          planDebug = plan.debug as unknown as Record<string, unknown>
+          this.log(`[${task.agentId}] planner: turns=${plan.debug.recentTurns}, mem=${plan.debug.memoryIncluded ? "yes" : "no"}, xchat=${plan.debug.crossChatIncluded ? "yes" : "no"} (${plan.debug.planLatencyMs}ms) — ${plan.debug.reasoning ?? ""}`)
+        } else {
+          this.log(`[${task.agentId}] planner returned null — falling back to layered`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] planner failed (non-fatal): ${e.message} — falling back to layered`)
+      }
+      // Planner mode: force a fresh Claude session. --resume replay is what
+      // causes the bloat we're trying to avoid; the planner's whole point
+      // is a curated small prompt, which is incompatible with replaying
+      // the prior tool-result stream from --resume.
+      if (resumeSessionId) {
+        this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+        resumeSessionId = undefined
+      }
+    }
+    void planDebug // reserved for the bench harness; not injected into context
 
     // Soul switching: detect /soul command and track active profile
     const soulSessionKey = `${task.agentId}:${channel}:${chatId}`
@@ -687,7 +733,10 @@ export class AgentRegistry {
       patternContext: patternContext || undefined,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
-      sessionHistory,
+      // Planner override takes precedence when set — falls back to the
+      // layered `sessionHistory` (full buildHistoryContext, scoped by
+      // resumeSessionId presence) otherwise.
+      sessionHistory: sessionHistoryOverride ?? sessionHistory,
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       wikiContext,

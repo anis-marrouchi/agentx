@@ -26,6 +26,11 @@ export interface AgentTask {
    *  here (instead of in the user-message body) keeps it inside Claude's
    *  cached system prompt across session resumes. */
   systemPromptAppend?: string
+  /** Per-invocation override for the context assembly strategy. When unset,
+   *  the registry falls back to config.session.contextStrategy. Set this
+   *  from benchmark harnesses that want to A/B the same request under
+   *  "layered" and "planner" without reloading daemon config. */
+  contextStrategy?: "layered" | "planner"
   context?: {
     channel?: string
     sender?: string

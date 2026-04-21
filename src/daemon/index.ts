@@ -1204,6 +1204,14 @@ export class AgentXDaemon {
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
             return
           }
+          // Per-task context strategy override. When absent, registry falls
+          // back to config.session.contextStrategy. Used by the bench
+          // harness to A/B the same request under "layered" vs "planner"
+          // without a daemon reload.
+          const contextStrategy =
+            body.contextStrategy === "layered" || body.contextStrategy === "planner"
+              ? body.contextStrategy
+              : undefined
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
           // awaits the final response — they don't see deltas, just the result.
@@ -1212,6 +1220,7 @@ export class AgentXDaemon {
               agentId,
               message: body.message as string,
               context: body.context as any,
+              contextStrategy,
             },
             () => {},
           )
