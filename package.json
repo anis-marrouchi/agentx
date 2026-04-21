@@ -61,6 +61,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@roamhq/wrtc": "^0.10.0",
     "@whiskeysockets/baileys": "7.0.0-rc.9",
     "chalk": "5.2.0",
     "commander": "^10.0.0",

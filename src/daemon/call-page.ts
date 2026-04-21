@@ -71,8 +71,14 @@ export const CALL_PAGE_HTML = `<!doctype html>
   const qs = new URLSearchParams(location.search);
   if (qs.get("to")) $("to").value = qs.get("to");
   $("callId").value = qs.get("callId") || Math.random().toString(36).slice(2, 10);
+  const botName = qs.get("bot") || null;  // e.g. ?bot=atlas → invite server-side bot
 
-  let state = null; // { pc, es, localStream, iceServers, selfName, to, callId }
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Multi-peer state. For a pair call there's one entry (the human). When a
+  // server-side bot joins, a second entry is added whose `isPrimary=false`
+  // so we don't overwrite the remote video with the bot's (silent) stream.
+  let state = null; // { es, localStream, cfg, primary, callId, peers: Map<name, {pc, isPrimary}> }
 
   async function loadConfig() {
     const r = await fetch("/webrtc/config");
@@ -98,6 +104,78 @@ export const CALL_PAGE_HTML = `<!doctype html>
     if (!r.ok) log("send " + signal.kind + " -> " + signal.to + " failed: " + r.status, "err");
   }
 
+  /** Build an RTCPeerConnection for a specific remote peer. Primary peer
+   *  drives the remote video tile; non-primary peers (bots) just receive. */
+  function createPeer(peerName, isPrimary) {
+    const pc = new RTCPeerConnection({ iceServers: state.cfg.iceServers });
+    for (const track of state.localStream.getTracks()) pc.addTrack(track, state.localStream);
+    pc.ontrack = (ev) => {
+      if (isPrimary) {
+        $("remote").srcObject = ev.streams[0];
+        $("remoteLabel").textContent = peerName;
+      }
+      log("track from " + peerName + (isPrimary ? " (primary)" : " (bot)"), "ok");
+    };
+    pc.onicecandidate = (ev) => {
+      if (!ev.candidate) return;
+      sendSignal({
+        kind: "ice",
+        callId: state.callId, from: state.cfg.localName, to: peerName,
+        candidate: {
+          candidate: ev.candidate.candidate,
+          sdpMid: ev.candidate.sdpMid,
+          sdpMLineIndex: ev.candidate.sdpMLineIndex,
+          usernameFragment: ev.candidate.usernameFragment,
+        },
+      });
+    };
+    pc.onconnectionstatechange = () => {
+      log("pc[" + peerName + "] state: " + pc.connectionState);
+    };
+    state.peers.set(peerName, { pc, isPrimary });
+    return pc;
+  }
+
+  async function handleInboundSignal(sig) {
+    if (sig.callId !== state.callId) return;
+    if (sig.kind === "hangup") {
+      log("<- hangup from " + sig.from, "err");
+      teardown();
+      return;
+    }
+    // Find or lazy-create the PC for this remote.
+    let entry = state.peers.get(sig.from);
+    if (!entry && sig.kind === "offer") {
+      // New peer offering — create a non-primary PC. The `to` field in the
+      // signal is us; we treat the sender as a new peer. Only an offer can
+      // introduce a new peer; answer/ice without a PC is a stale signal.
+      log("new peer offering: " + sig.from);
+      createPeer(sig.from, /* isPrimary */ false);
+      entry = state.peers.get(sig.from);
+    }
+    if (!entry) {
+      log("signal from unknown peer " + sig.from + " kind=" + sig.kind + " (dropped)", "err");
+      return;
+    }
+    const { pc } = entry;
+    try {
+      if (sig.kind === "offer") {
+        await pc.setRemoteDescription({ type: "offer", sdp: sig.sdp });
+        const ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        await sendSignal({ kind: "answer", callId: state.callId, from: state.cfg.localName, to: sig.from, sdp: ans.sdp });
+        log("<- offer from " + sig.from + " → answered");
+      } else if (sig.kind === "answer") {
+        await pc.setRemoteDescription({ type: "answer", sdp: sig.sdp });
+        log("<- answer from " + sig.from);
+      } else if (sig.kind === "ice") {
+        await pc.addIceCandidate(sig.candidate);
+      }
+    } catch (err) {
+      log(sig.kind + " handling error from " + sig.from + ": " + err.message, "err");
+    }
+  }
+
   async function join(e) {
     e?.preventDefault();
     const cfg = state?.cfg || await loadConfig();
@@ -107,7 +185,7 @@ export const CALL_PAGE_HTML = `<!doctype html>
     const callId = $("callId").value.trim();
     if (!to || !callId) return;
 
-    log("joining call " + callId + " with peer=" + to);
+    log("joining call " + callId + " with peer=" + to + (botName ? " + bot=" + botName : ""));
 
     let localStream;
     try {
@@ -118,77 +196,34 @@ export const CALL_PAGE_HTML = `<!doctype html>
     }
     $("local").srcObject = localStream;
 
-    const pc = new RTCPeerConnection({ iceServers: cfg.iceServers });
-    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+    state = { cfg, localStream, callId, primary: to, peers: new Map(), es: null };
 
-    pc.ontrack = (ev) => {
-      $("remote").srcObject = ev.streams[0];
-      $("remoteLabel").textContent = to;
-      log("remote track received", "ok");
-    };
-    pc.onicecandidate = (ev) => {
-      if (!ev.candidate) return;
-      sendSignal({
-        kind: "ice",
-        callId, from: cfg.localName, to,
-        candidate: {
-          candidate: ev.candidate.candidate,
-          sdpMid: ev.candidate.sdpMid,
-          sdpMLineIndex: ev.candidate.sdpMLineIndex,
-          usernameFragment: ev.candidate.usernameFragment,
-        },
-      });
-    };
-    pc.onconnectionstatechange = () => {
-      log("pc state: " + pc.connectionState);
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-        log("connection " + pc.connectionState, "err");
-      }
-    };
-
-    // Subscribe to inbound signals BEFORE sending the offer so we don't miss
-    // the answer or ICE candidates from the callee.
+    // Subscribe to inbound signals BEFORE sending any offer so we don't miss
+    // the answer or ICE candidates from the callee. The broker's 30s buffer
+    // also covers late subscribes.
     const esUrl = "/webrtc/events?callId=" + encodeURIComponent(callId) + "&as=" + encodeURIComponent(cfg.localName);
     const es = new EventSource(esUrl);
-    es.addEventListener("signal", async (evt) => {
+    state.es = es;
+    es.addEventListener("signal", (evt) => {
       let sig; try { sig = JSON.parse(evt.data); } catch { return; }
-      if (sig.callId !== callId) return;
-      if (sig.kind === "offer") {
-        log("<- offer from " + sig.from);
-        await pc.setRemoteDescription({ type: "offer", sdp: sig.sdp });
-        const ans = await pc.createAnswer();
-        await pc.setLocalDescription(ans);
-        await sendSignal({ kind: "answer", callId, from: cfg.localName, to: sig.from, sdp: ans.sdp });
-      } else if (sig.kind === "answer") {
-        log("<- answer from " + sig.from);
-        await pc.setRemoteDescription({ type: "answer", sdp: sig.sdp });
-      } else if (sig.kind === "ice") {
-        try { await pc.addIceCandidate(sig.candidate); }
-        catch (err) { log("addIceCandidate: " + err.message, "err"); }
-      } else if (sig.kind === "hangup") {
-        log("<- hangup from " + sig.from, "err");
-        teardown();
-      }
+      handleInboundSignal(sig);
     });
     es.addEventListener("ready", () => log("signaling SSE ready", "ok"));
     es.onerror = () => log("signaling SSE error (will reconnect)", "err");
 
-    // Deterministic caller selection to avoid glare: compare the two peer
-    // names lexicographically (normalized — case/punctuation-insensitive) and
-    // only the smaller name side sends the offer. The other side waits for
-    // the offer to arrive. With the daemon's 30s signal buffer, this still
-    // works if the caller joins before the callee.
-    const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Create the primary PC to the human peer.
+    const primaryPc = createPeer(to, /* isPrimary */ true);
+
+    // Deterministic caller role between us and the human peer. If we're
+    // smaller, we offer; otherwise we wait for the offer (handled in
+    // handleInboundSignal).
     const isCaller = norm(cfg.localName) < norm(to);
-    log(isCaller ? "role: caller (will offer)" : "role: callee (waiting for offer)");
+    log(isCaller ? "role: caller (will offer to " + to + ")" : "role: callee (waiting for offer from " + to + ")");
     if (isCaller) {
-      // Ring first so the callee's channels (Telegram, Slack, ...) light up
-      // even if their browser isn't open yet. Ring isn't fanned out over
-      // SSE — it's purely an out-of-band notification.
       await sendSignal({ kind: "ring", callId, from: cfg.localName, to });
       try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        const offer = await primaryPc.createOffer();
+        await primaryPc.setLocalDescription(offer);
         await sendSignal({ kind: "offer", callId, from: cfg.localName, to, sdp: offer.sdp });
         log("-> offer sent to " + to, "ok");
       } catch (err) {
@@ -196,14 +231,30 @@ export const CALL_PAGE_HTML = `<!doctype html>
       }
     }
 
-    state = { pc, es, localStream, cfg, to, callId };
+    // If a bot is requested, ask this daemon to spawn it. The bot will join
+    // as a separate peer; the existing signal handler creates its PC when
+    // its offer arrives.
+    if (botName) {
+      try {
+        const r = await fetch("/webrtc/bot/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callId, target: cfg.localName, agentId: botName }),
+        });
+        if (r.ok) log("bot '" + botName + "' invited", "ok");
+        else log("bot invite failed: " + r.status, "err");
+      } catch (err) {
+        log("bot invite error: " + err.message, "err");
+      }
+    }
+
     $("joinBtn").disabled = true;
     $("hangupBtn").disabled = false;
   }
 
   function teardown() {
     if (!state) return;
-    try { state.pc.close(); } catch {}
+    for (const { pc } of state.peers.values()) { try { pc.close(); } catch {} }
     try { state.es.close(); } catch {}
     try { state.localStream.getTracks().forEach(t => t.stop()); } catch {}
     $("local").srcObject = null;
@@ -215,8 +266,13 @@ export const CALL_PAGE_HTML = `<!doctype html>
 
   async function hangup() {
     if (!state) return;
-    await sendSignal({ kind: "hangup", callId: state.callId, from: state.cfg.localName, to: state.to });
-    log("-> hangup sent");
+    // Send hangup to every active peer (human + any bots).
+    for (const peerName of state.peers.keys()) {
+      try {
+        await sendSignal({ kind: "hangup", callId: state.callId, from: state.cfg.localName, to: peerName });
+      } catch { /* best effort */ }
+    }
+    log("-> hangup sent to " + state.peers.size + " peer(s)");
     teardown();
   }
 
