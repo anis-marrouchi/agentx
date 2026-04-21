@@ -281,12 +281,22 @@ export const daemonConfigSchema = z.object({
     /** Route to a mesh peer instead of local execution. */
     node: z.string().optional(),
   })).default([]),
-  /** Session cache-reuse policy. `staleMinutes` controls how long a Claude
-   *  session can idle before we rebuild the prompt from scratch (paying the
-   *  full cache-create tax again). Longer is cheaper at Opus rates but means
-   *  an agent may resume with mildly outdated context. */
+  /** Session cache-reuse policy. Controls when we drop a Claude `--resume`
+   *  session and rebuild the prompt from scratch.
+   *  - `staleMinutes`: idle timeout before rotation. Longer is cheaper at
+   *    Opus rates but lets a session accumulate tool-result bloat across an
+   *    all-day chat.
+   *  - `maxTurnsPerSession`: hard cap on turns per Claude session. Prevents
+   *    unbounded `--resume` growth. When hit, next turn starts fresh with
+   *    the compacted summary + recent-messages context.
+   *  - `tierTwoThresholdTokens`: if the prior turn's (input + cacheRead +
+   *    cacheCreate) exceeded this, rotate proactively. Claude bills tier-2
+   *    at 1.5× above 200K total input, so rotating before that threshold
+   *    undercuts the multiplier. */
   session: z.object({
-    staleMinutes: z.number().int().min(1).max(1440).default(120),
+    staleMinutes: z.number().int().min(1).max(1440).default(45),
+    maxTurnsPerSession: z.number().int().min(2).max(200).default(15),
+    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
   }).default({}),
 })
 

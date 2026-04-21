@@ -23,6 +23,16 @@ export interface Session {
   messages: SessionMessage[]
   createdAt: string
   updatedAt: string
+  /** Number of completed turns on the current claudeSessionId. Resets to 0
+   *  when the session is rotated (cleared). Used to bound --resume growth:
+   *  Claude CLI replays the entire prior session on every turn, so long
+   *  sessions pay a linearly growing cache-read tax. */
+  turnCount?: number
+  /** Total billable input of the LAST turn on this claudeSessionId
+   *  (inputTokens + cacheReadTokens + cacheCreateTokens). Used to detect
+   *  tier-2 hits (>200K) from the prior turn so we can rotate before the
+   *  next turn pays the 1.5× multiplier again. */
+  lastTurnInputTokens?: number
 }
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
@@ -31,8 +41,20 @@ const MAX_MESSAGES = 30          // Keep last 30 messages max
  *  can trade cache-hit ratio (long timeout → prompt cache survives work
  *  pauses) against "fresh context" (short timeout → new session rebuilds the
  *  prompt from scratch). Agents on Opus pay ~$0.50 cache-create per task,
- *  so the higher the timeout, the less often that cost recurs. */
-const DEFAULT_STALE_SESSION_MINUTES = 120
+ *  so the higher the timeout, the less often that cost recurs. 45 min keeps
+ *  cache warm for an active conversation but stops an all-day chat from
+ *  snowballing a single Claude CLI session into 500K+ tokens of replay. */
+const DEFAULT_STALE_SESSION_MINUTES = 45
+/** Default hard cap on turns per Claude session. Claude CLI `--resume`
+ *  replays the entire prior session (every tool result, every file read)
+ *  on each turn, so cache-read grows linearly. 15 turns keeps the replay
+ *  under ~200K for most agents; rotate after that and seed the next
+ *  session from the compacted summary + recent-messages history. */
+const DEFAULT_MAX_TURNS_PER_SESSION = 15
+/** Default tier-2 trigger. Claude bills tier-2 (1.5× rate) when a single
+ *  request's total input exceeds 200K. Rotating at 180K leaves headroom
+ *  for the next turn's additions before we re-enter the multiplier. */
+const DEFAULT_TIER_TWO_THRESHOLD_TOKENS = 180_000
 
 /** Session has a compacted summary prepended to its messages */
 const COMPACTION_MARKER = "[Compacted conversation summary"
@@ -54,13 +76,24 @@ export class SessionStore {
   private sessionsDir: string
   private cache: Map<string, Session> = new Map()
   private staleMinutes: number
+  private maxTurnsPerSession: number
+  private tierTwoThresholdTokens: number
 
-  constructor(baseDir: string = process.cwd(), opts: { staleMinutes?: number } = {}) {
+  constructor(
+    baseDir: string = process.cwd(),
+    opts: {
+      staleMinutes?: number
+      maxTurnsPerSession?: number
+      tierTwoThresholdTokens?: number
+    } = {},
+  ) {
     this.sessionsDir = resolve(baseDir, ".agentx/sessions")
     if (!existsSync(this.sessionsDir)) {
       mkdirSync(this.sessionsDir, { recursive: true })
     }
     this.staleMinutes = Math.max(1, opts.staleMinutes ?? DEFAULT_STALE_SESSION_MINUTES)
+    this.maxTurnsPerSession = Math.max(2, opts.maxTurnsPerSession ?? DEFAULT_MAX_TURNS_PER_SESSION)
+    this.tierTwoThresholdTokens = Math.max(50_000, opts.tierTwoThresholdTokens ?? DEFAULT_TIER_TWO_THRESHOLD_TOKENS)
   }
 
   /**
@@ -286,8 +319,12 @@ export class SessionStore {
     session.messages = applyCompaction(session.messages, result)
     session.updatedAt = new Date().toISOString()
 
-    // Clear Claude session ID — the compacted context needs a fresh session
+    // Clear Claude session ID — the compacted context needs a fresh session.
+    // Reset the turn counter and last-turn usage alongside, since both are
+    // tied to the now-discarded claudeSessionId.
     delete session.claudeSessionId
+    delete session.turnCount
+    delete session.lastTurnInputTokens
 
     this.save(session)
     return {
@@ -309,13 +346,66 @@ export class SessionStore {
 
   /**
    * Clear the stored Claude session ID so next invocation starts fresh.
+   * Also resets the per-session turn counter and last-turn input size —
+   * those are only meaningful relative to the current claudeSessionId.
    */
   clearClaudeSessionId(agentId: string, channel: string, chatId: string): void {
     const session = this.getSession(agentId, channel, chatId)
     delete session.claudeSessionId
+    delete session.turnCount
+    delete session.lastTurnInputTokens
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
+
+  /**
+   * Check whether this session has hit the max-turns cap. Rotate when true
+   * to stop --resume replay from growing unbounded across a long chat.
+   */
+  shouldRotateByTurns(agentId: string, channel: string, chatId: string): boolean {
+    const session = this.getSession(agentId, channel, chatId)
+    if (!session.claudeSessionId) return false
+    return (session.turnCount ?? 0) >= this.maxTurnsPerSession
+  }
+
+  /**
+   * Check whether the LAST turn on this session pushed total input past
+   * the tier-2 threshold. If yes, rotate so we don't pay the 1.5×
+   * multiplier again on the next turn.
+   */
+  shouldRotateByTierTwo(agentId: string, channel: string, chatId: string): boolean {
+    const session = this.getSession(agentId, channel, chatId)
+    if (!session.claudeSessionId) return false
+    return (session.lastTurnInputTokens ?? 0) >= this.tierTwoThresholdTokens
+  }
+
+  /**
+   * Record a completed turn's token usage and bump the turn counter.
+   * Called after a successful Claude response returns with usage info.
+   */
+  recordTurnUsage(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number },
+  ): void {
+    const session = this.getSession(agentId, channel, chatId)
+    session.turnCount = (session.turnCount ?? 0) + 1
+    session.lastTurnInputTokens =
+      (usage.inputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheCreateTokens || 0)
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
+  }
+
+  /** Diagnostic getters — used by registry logging. */
+  getTurnCount(agentId: string, channel: string, chatId: string): number {
+    return this.getSession(agentId, channel, chatId).turnCount ?? 0
+  }
+  getLastTurnInputTokens(agentId: string, channel: string, chatId: string): number {
+    return this.getSession(agentId, channel, chatId).lastTurnInputTokens ?? 0
+  }
+  getMaxTurnsPerSession(): number { return this.maxTurnsPerSession }
+  getTierTwoThresholdTokens(): number { return this.tierTwoThresholdTokens }
 
   /**
    * Trim session to stay within limits.

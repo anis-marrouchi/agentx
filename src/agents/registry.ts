@@ -225,7 +225,11 @@ export class AgentRegistry {
     this.log = log
     this.config = config
     this.providers = config.providers
-    this.sessions = new SessionStore(process.cwd(), { staleMinutes: config.session.staleMinutes })
+    this.sessions = new SessionStore(process.cwd(), {
+      staleMinutes: config.session.staleMinutes,
+      maxTurnsPerSession: config.session.maxTurnsPerSession,
+      tierTwoThresholdTokens: config.session.tierTwoThresholdTokens,
+    })
     this.wikiHub = new WikiHub(undefined, undefined, "unified")
     this.memoryStore = new MemoryStore()
     this.patternStore = new PatternStore()
@@ -565,9 +569,31 @@ export class AgentRegistry {
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : undefined
 
-    // If session is stale (idle > 15min), start fresh with full context rebuild
+    // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
+      this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      resumeSessionId = undefined
+    }
+
+    // If prior turn pushed total input past the tier-2 threshold (>200K billed
+    // at 1.5×), rotate before paying the multiplier again. Claude CLI --resume
+    // replays every past tool result, so one bloated turn keeps billing
+    // tier-2 indefinitely until we drop the session.
+    if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
+      const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
+      this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
+      this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      resumeSessionId = undefined
+    }
+
+    // If session has accumulated too many turns, rotate even before it hits
+    // tier-2. Claude CLI replays grow linearly with turn count — capping
+    // here keeps the per-turn cache-read tax bounded. Compacted summary +
+    // recent-messages history seed the next session so nothing is lost.
+    if (resumeSessionId && this.sessions.shouldRotateByTurns(task.agentId, channel, chatId)) {
+      const turns = this.sessions.getTurnCount(task.agentId, channel, chatId)
+      this.log(`[${task.agentId}] max-turns rotation for ${channel}:${chatId} (${turns} turns ≥ ${this.sessions.getMaxTurnsPerSession()})`)
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       resumeSessionId = undefined
     }
@@ -706,6 +732,14 @@ export class AgentRegistry {
         // Store Claude session ID for future --resume
         if (response.claudeSessionId) {
           this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId)
+        }
+
+        // Record this turn's usage so next task can decide whether to rotate:
+        // tracks turnCount + lastTurnInputTokens (input + cacheRead + cacheCreate).
+        // Only meaningful when we kept a claude session — skip otherwise so the
+        // counter isn't incremented for tiers that don't use --resume.
+        if (response.claudeSessionId && response.usage) {
+          this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage)
         }
 
         // Wiki: export conversation as raw entry for later absorption
