@@ -97,6 +97,38 @@ const channelsConfigSchema = z.object({
       group: z.string().optional(),
       agent: z.string(),
     })).default([]),
+    /** Data-source ingestion — turns WhatsApp from a messaging-only channel
+     *  into a source that seeds the wiki with contact/group metadata (and
+     *  optionally bounded message windows) per an explicit allowlist.
+     *  Default-deny: `enabled: false` and empty allowlists mean nothing is
+     *  ingested. See docs/reference/whatsapp-ingest.md for the full story. */
+    ingest: z.object({
+      enabled: z.boolean().default(false),
+      /** `metadata-only` pulls contact/group info; `messages` additionally
+       *  pulls the last `messageCap` messages per allowlisted chat. */
+      mode: z.enum(["metadata-only", "messages"]).default("metadata-only"),
+      /** Phone numbers or JIDs. Substring match, same semantics as allowFrom. */
+      allowContacts: z.array(z.string()).default([]),
+      allowGroups: z.array(z.string()).default([]),
+      denyContacts: z.array(z.string()).default([]),
+      denyGroups: z.array(z.string()).default([]),
+      /** Per-chat cap when mode = "messages". Keeps the raw-entry size bounded. */
+      messageCap: z.number().int().min(1).max(500).default(50),
+      /** Max age (days) of messages to consider for the bounded window. */
+      historyDays: z.number().int().min(1).max(365).default(30),
+      /** Skip re-writing a contact entry unless this many days have passed
+       *  OR the profile hash differs. Prevents churn on unchanged profiles. */
+      contactRefreshDays: z.number().int().min(1).max(90).default(7),
+      /** Safety rails on live Baileys reads — personal-account accounts
+       *  can get throttled/banned under burst reads. */
+      throttle: z.object({
+        minMsBetweenCalls: z.number().int().min(100).default(1500),
+        maxCallsPerMinute: z.number().int().min(1).default(20),
+        maxChatsPerSweep: z.number().int().min(1).default(25),
+      }).default({}),
+      /** Purge absorbed raw entries older than this many days. `0` = never. */
+      retentionDays: z.number().int().min(0).default(0),
+    }).default({}),
   }).default({}),
   discord: z.object({
     enabled: z.boolean().default(false),

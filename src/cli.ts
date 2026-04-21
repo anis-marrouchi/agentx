@@ -15,6 +15,7 @@ import { graph } from "@/commands/graph"
 import { procedure } from "@/commands/procedure"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
+import { whatsapp } from "@/commands/whatsapp"
 import { getPackageInfo } from "@/utils/get-package-info"
 
 process.on("SIGINT", () => process.exit(0))
@@ -57,6 +58,7 @@ async function main() {
     .addCommand(doctor)
     .addCommand(serve)
     .addCommand(bench)
+    .addCommand(whatsapp)
 
   const args = process.argv.slice(2)
   if (args.length === 0) {

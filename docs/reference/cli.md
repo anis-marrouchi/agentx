@@ -166,6 +166,23 @@ Supported events (PreToolUse, PostToolUse, SessionStart, Notification, Stop); ty
 | `agentx usage serve [--port <n>]` | Web dashboard |
 | `agentx usage report [--days <n>]` | Full session analysis across Claude Code JSONL |
 
+## WhatsApp
+
+Ingest WhatsApp contact/group data into the wiki as a data source. See [WhatsApp as a data source](/reference/whatsapp-ingest) for the architecture + walkthrough.
+
+| Command | Description |
+|---|---|
+| `agentx whatsapp list-chats [--format json] [--group] [--dm]` | List cached chats (no live fetch) |
+| `agentx whatsapp list-contacts [--format json]` | List cached contacts |
+| `agentx whatsapp ingest-all [--dry-run] [--agent <id>] [--force]` | Run a sweep against the configured allowlist |
+| `agentx whatsapp ingest-contact <jid> [--dry-run] [--agent <id>]` | Ingest one contact (bypasses allowlist) |
+| `agentx whatsapp ingest-chat <jid> [--dry-run] [--messages] [--agent <id>]` | Ingest one DM or group (bypasses allowlist). `--messages` forces a message-window pull for this pass |
+| `agentx whatsapp status` | Connection + cache counts |
+
+::: warning
+`ingest-*` commands issue real reads against the Baileys session on the running daemon. They use a central throttle, but aggressive runs on a personal account still risk a ban — start with `--dry-run` and one allowlisted contact.
+:::
+
 ## Bench
 
 A/B the context-assembly strategies (`layered` vs `planner`) on the same message. Posts twice to the running daemon's `/task` endpoint and prints a side-by-side token/cost/latency comparison. See [Context strategies](/reference/context-strategies) for the background.

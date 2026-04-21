@@ -80,6 +80,26 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | `routes[].contact` / `.group` | string | — | Match |
 | `routes[].agent` | string | — | Target agent |
 
+## `channels.whatsapp.ingest`
+
+Data-source ingestion — turns WhatsApp from a messaging-only channel into a source that seeds the wiki with contact/group metadata (and optionally bounded message windows) per an explicit allowlist. See [WhatsApp as a data source](/reference/whatsapp-ingest) for the full walkthrough.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `enabled` | bool | `false` | Master switch. Default-deny |
+| `mode` | `"metadata-only"` \| `"messages"` | `"metadata-only"` | `metadata-only` pulls contact/group info; `messages` additionally pulls the last `messageCap` messages per allowlisted chat |
+| `allowContacts` | string[] | `[]` | Phone numbers or JIDs, substring match (same semantics as `allowFrom`) |
+| `allowGroups` | string[] | `[]` | Group JIDs, substring match |
+| `denyContacts` | string[] | `[]` | Wins over allow |
+| `denyGroups` | string[] | `[]` | Wins over allow |
+| `messageCap` | number (1–500) | `50` | Per-chat message cap when `mode = "messages"` |
+| `historyDays` | number (1–365) | `30` | Max age of messages to include in a window |
+| `contactRefreshDays` | number (1–90) | `7` | Skip re-writing a contact entry unless this many days have passed and the profile hash differs |
+| `throttle.minMsBetweenCalls` | number (≥100) | `1500` | Minimum spacing between live Baileys reads (ban-safety) |
+| `throttle.maxCallsPerMinute` | number (≥1) | `20` | Per-minute cap on live reads |
+| `throttle.maxChatsPerSweep` | number (≥1) | `25` | Per-sweep cap on targets (protects personal accounts) |
+| `retentionDays` | number (≥0) | `0` | Purge absorbed raw entries older than this; `0` = never (phase 2) |
+
 ## `channels.discord`
 
 | Field | Type | |

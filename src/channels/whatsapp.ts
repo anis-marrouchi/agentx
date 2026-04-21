@@ -2,6 +2,43 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
 import { resolve, join } from "path"
 import { randomUUID } from "crypto"
+import { WhatsAppCache, type ContactRecord, type ChatRecord, type GroupRecord } from "./whatsapp-cache"
+
+/** Shapes returned by the adapter's read API — used by the wiki ingestor.
+ *  These are stable contracts so the ingestor can mock the adapter without
+ *  pulling in Baileys types. */
+export interface ContactSummary {
+  jid: string
+  phone: string
+  name?: string         // best display name (savedName → pushName → phone)
+  pushName?: string
+  savedName?: string
+  status?: string
+  updatedAt?: string
+}
+export interface ChatSummary {
+  jid: string
+  name: string          // "best we have" — never undefined so CLI output is useful
+  isGroup: boolean
+  lastMessageAt?: number
+  unreadCount?: number
+}
+export interface GroupInfo {
+  jid: string
+  subject: string
+  description?: string
+  owner?: string
+  members: Array<{ jid: string; admin?: "admin" | "superadmin" }>
+  memberCount: number
+}
+export interface HistoryMessage {
+  id: string
+  fromJid: string       // sender JID (for groups) or chat JID (for DMs)
+  fromMe: boolean
+  timestamp?: number    // unix seconds
+  text: string          // empty string when the message was media-only with no caption
+  media?: { kind: "image" | "audio" | "video" | "document" | "sticker"; caption?: string; filename?: string }
+}
 
 // --- WhatsApp adapter using Baileys (WhatsApp Web multi-device) ---
 // Baileys is an optional dependency. If not installed, adapter logs a warning.
@@ -29,6 +66,18 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private sentMessageIds: Set<string> = new Set()  // Track our own replies to prevent loops
   private log: (...args: unknown[]) => void
 
+  /** Passive snapshot of contacts/chats/groups populated from Baileys events.
+   *  Consumed by the wiki ingestor. Persisted to {sessionDir}/cache.json on stop. */
+  private cache: WhatsAppCache
+
+  /** Token-bucket throttle for live Baileys reads. Configurable via
+   *  channels.whatsapp.ingest.throttle. Defaults keep the read surface
+   *  below what personal-account rate limits tend to trigger. */
+  private throttleMinMs = 1500
+  private throttleMaxPerMinute = 20
+  private lastReadAt = 0
+  private readsInWindow: number[] = []
+
   /** Fires whenever the underlying WhatsApp socket emits a new QR or clears it.
    *  Passing null means the session is now connected. */
   private onQR?: (qr: string | null) => void
@@ -43,6 +92,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
       routes?: WhatsAppRoute[]
       onQR?: (qr: string | null) => void
       onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
+      /** Throttle settings for live Baileys reads. Falls back to safe defaults. */
+      throttle?: { minMsBetweenCalls?: number; maxCallsPerMinute?: number }
     },
     log: (...args: unknown[]) => void = console.error.bind(console, "[whatsapp]"),
   ) {
@@ -53,6 +104,20 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.onQR = config.onQR
     this.onStatus = config.onStatus
     this.log = log
+    this.cache = new WhatsAppCache(this.sessionDir)
+    if (config.throttle?.minMsBetweenCalls) this.throttleMinMs = config.throttle.minMsBetweenCalls
+    if (config.throttle?.maxCallsPerMinute) this.throttleMaxPerMinute = config.throttle.maxCallsPerMinute
+  }
+
+  /** Read-only access for the wiki ingestor. Exposed so the ingestor can
+   *  iterate the passive snapshot without reaching into adapter internals. */
+  getCache(): WhatsAppCache { return this.cache }
+
+  /** True once the socket has connected at least once and emitted the
+   *  authenticated user. The ingestor checks this before attempting any
+   *  live read — a torn-down session will otherwise throw a cryptic error. */
+  isConnected(): boolean {
+    return !!this.sock && !!this.sock.user
   }
 
   /**
@@ -154,9 +219,33 @@ export class WhatsAppAdapter implements ChannelAdapter {
     // Save credentials on update
     this.sock.ev.on("creds.update", saveCreds)
 
-    // Debug: log all events to diagnose message reception
+    // Debug + cache hydration: history-set carries chats+contacts we can
+    // seed the cache with (message bodies are intentionally ignored —
+    // see whatsapp-cache.ts for why).
     this.sock.ev.on("messaging-history.set", (data: any) => {
       this.log(`WA history sync: ${data.messages?.length || 0} messages, ${data.isLatest ? "latest" : "partial"}`)
+      try { this.cache.applyHistorySet(data) } catch (e: any) { this.log(`cache history-set error: ${e.message}`) }
+    })
+
+    // Passive cache maintenance. These four events arrive for free whenever
+    // Baileys observes updates; previously ignored. The wiki ingestor
+    // reads from this cache instead of hitting Baileys live, which keeps
+    // ingest latency low and avoids adding to the personal-account
+    // ban-risk surface.
+    this.sock.ev.on("contacts.update", (updates: any) => {
+      try { this.cache.applyContactsUpdate(updates) } catch (e: any) { this.log(`cache contacts.update error: ${e.message}`) }
+    })
+    this.sock.ev.on("contacts.upsert", (contacts: any) => {
+      try { this.cache.applyContactsUpdate(contacts) } catch (e: any) { this.log(`cache contacts.upsert error: ${e.message}`) }
+    })
+    this.sock.ev.on("chats.upsert", (chats: any) => {
+      try { this.cache.applyChatsUpsert(chats) } catch (e: any) { this.log(`cache chats.upsert error: ${e.message}`) }
+    })
+    this.sock.ev.on("chats.update", (updates: any) => {
+      try { this.cache.applyChatsUpsert(updates) } catch (e: any) { this.log(`cache chats.update error: ${e.message}`) }
+    })
+    this.sock.ev.on("groups.update", (updates: any) => {
+      try { this.cache.applyGroupsUpdate(updates) } catch (e: any) { this.log(`cache groups.update error: ${e.message}`) }
     })
 
     // Handle connection updates (ignore events from stale sockets via generation check)
@@ -391,6 +480,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
   }
 
   async stop(): Promise<void> {
+    // Snapshot the passive cache before tearing down the socket — Baileys
+    // events stop firing once `sock.end()` runs, so anything we haven't
+    // persisted is lost on restart otherwise.
+    try { this.cache.save() } catch (e: any) { this.log(`cache save error: ${e.message}`) }
     if (this.sock) {
       this.sock.end()
       this.sock = null
@@ -448,4 +541,175 @@ export class WhatsAppAdapter implements ChannelAdapter {
       })
     } catch { /* best-effort */ }
   }
+
+  // --- Read API (consumed by src/wiki/ingest-whatsapp.ts) ---
+  //
+  // All methods prefer the passive cache. Live Baileys calls happen only
+  // for getHistory (there's no cached message body) and are routed through
+  // `throttleGate()`. Callers never import Baileys.
+
+  listContacts(): ContactSummary[] {
+    return this.cache.listContacts().map(contactRecordToSummary)
+  }
+
+  listChats(): ChatSummary[] {
+    return this.cache.listChats().map(chatRecordToSummary)
+  }
+
+  async getContactProfile(jid: string): Promise<ContactSummary | null> {
+    const record = this.cache.getContact(jid)
+    // Live enrichment is optional — we return whatever the cache has even
+    // if the status field is empty. Keeps the ingestor's happy path fast
+    // on bulk list-then-ingest workflows.
+    return record ? contactRecordToSummary(record) : null
+  }
+
+  async getGroupMetadata(jid: string): Promise<GroupInfo | null> {
+    // Cache hit? return immediately. Otherwise fall back to a live call
+    // via the throttle — first-time lookups on freshly-added groups go
+    // this path, and bulk sweeps respect the rate limit.
+    const cached = this.cache.getGroup(jid)
+    if (cached && cached.subject) return groupRecordToInfo(cached)
+    if (!this.isConnected()) return cached ? groupRecordToInfo(cached) : null
+    try {
+      const live: any = await this.throttleGate(() => this.sock.groupMetadata(jid))
+      // Hydrate the cache so subsequent sweeps hit in memory.
+      this.cache.applyGroupsUpdate([{
+        id: jid,
+        subject: live?.subject,
+        desc: live?.desc,
+        owner: live?.owner,
+        participants: live?.participants,
+      }])
+      const refreshed = this.cache.getGroup(jid)
+      return refreshed ? groupRecordToInfo(refreshed) : null
+    } catch (e: any) {
+      this.log(`getGroupMetadata(${jid}) failed: ${e.message}`)
+      return cached ? groupRecordToInfo(cached) : null
+    }
+  }
+
+  /** Fetch up to `limit` recent messages for `jid`. This is the one read
+   *  that always hits Baileys live — there's no cached message body and
+   *  baileys doesn't persist history by default with the options we use.
+   *  Throttled. */
+  async getHistory(
+    jid: string,
+    opts: { limit?: number; before?: string } = {},
+  ): Promise<HistoryMessage[]> {
+    if (!this.isConnected()) return []
+    const limit = Math.max(1, Math.min(500, opts.limit ?? 50))
+    try {
+      const messages = await this.throttleGate(async () => {
+        // Baileys' `fetchMessagesFromWA` signature varies across versions.
+        // Call the stable `loadMessages` if present, else `fetchMessagesFromWA`.
+        const sock: any = this.sock
+        if (typeof sock.loadMessages === "function") {
+          return await sock.loadMessages(jid, limit, opts.before ? { before: { id: opts.before } } : undefined)
+        }
+        if (typeof sock.fetchMessagesFromWA === "function") {
+          return await sock.fetchMessagesFromWA(jid, limit, opts.before ? { before: { id: opts.before } } : undefined)
+        }
+        return []
+      })
+      return (messages || []).map(mapBaileysMessage).filter(Boolean) as HistoryMessage[]
+    } catch (e: any) {
+      this.log(`getHistory(${jid}) failed: ${e.message}`)
+      return []
+    }
+  }
+
+  /** Token-bucket gate for live Baileys reads. Enforces
+   *  `throttleMinMs` between calls and caps the per-minute call count.
+   *  Returns a promise that resolves once it's safe to fire. */
+  private async throttleGate<T>(fn: () => Promise<T>): Promise<T> {
+    const now = Date.now()
+    // Remove calls older than the 60s window
+    this.readsInWindow = this.readsInWindow.filter((t) => now - t < 60_000)
+    // If we're over the per-minute cap, wait until the oldest call ages out
+    if (this.readsInWindow.length >= this.throttleMaxPerMinute) {
+      const wait = 60_000 - (now - this.readsInWindow[0]!) + 10
+      await delay(wait)
+    }
+    // Enforce minimum spacing between calls
+    const sinceLast = Date.now() - this.lastReadAt
+    if (sinceLast < this.throttleMinMs) {
+      await delay(this.throttleMinMs - sinceLast)
+    }
+    this.lastReadAt = Date.now()
+    this.readsInWindow.push(this.lastReadAt)
+    return fn()
+  }
+}
+
+// --- Helpers: shape translators (keep the public API decoupled from cache schema) ---
+
+function contactRecordToSummary(r: ContactRecord): ContactSummary {
+  return {
+    jid: r.jid,
+    phone: r.phone,
+    name: r.savedName || r.pushName || r.phone || r.jid,
+    pushName: r.pushName,
+    savedName: r.savedName,
+    status: r.status,
+    updatedAt: r.updatedAt,
+  }
+}
+
+function chatRecordToSummary(r: ChatRecord): ChatSummary {
+  return {
+    jid: r.jid,
+    name: r.name || r.jid.replace(/@.*$/, ""),
+    isGroup: r.isGroup,
+    lastMessageAt: r.lastMessageAt,
+    unreadCount: r.unreadCount,
+  }
+}
+
+function groupRecordToInfo(r: GroupRecord): GroupInfo {
+  return {
+    jid: r.jid,
+    subject: r.subject || "",
+    description: r.description,
+    owner: r.owner,
+    members: r.members.map((m) => ({ jid: m.jid, admin: m.admin })),
+    memberCount: r.members.length,
+  }
+}
+
+function mapBaileysMessage(raw: any): HistoryMessage | null {
+  if (!raw || !raw.key) return null
+  const msg = raw.message || {}
+  const text =
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    ""
+  let media: HistoryMessage["media"] | undefined
+  if (msg.imageMessage) media = { kind: "image", caption: msg.imageMessage.caption }
+  else if (msg.audioMessage) media = { kind: "audio" }
+  else if (msg.videoMessage) media = { kind: "video", caption: msg.videoMessage.caption }
+  else if (msg.documentMessage) media = { kind: "document", filename: msg.documentMessage.fileName }
+  else if (msg.stickerMessage) media = { kind: "sticker" }
+  // Skip empty-text messages with no media — they're almost always
+  // receipts, reactions, or protocol frames not useful to the wiki.
+  if (!text && !media) return null
+  const timestamp = typeof raw.messageTimestamp === "number"
+    ? raw.messageTimestamp
+    : (raw.messageTimestamp?.low ?? undefined)
+  return {
+    id: raw.key.id,
+    fromJid: raw.key.fromMe
+      ? (raw.key.remoteJid || "")
+      : (raw.key.participant || raw.key.remoteJid || ""),
+    fromMe: !!raw.key.fromMe,
+    timestamp,
+    text,
+    media,
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, Math.max(0, ms)))
 }

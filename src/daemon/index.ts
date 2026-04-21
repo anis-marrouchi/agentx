@@ -676,6 +676,13 @@ export class AgentXDaemon {
           defaultAgent: this.config.channels.whatsapp.defaultAgent,
           allowFrom: this.config.channels.whatsapp.allowFrom,
           routes: this.config.channels.whatsapp.routes,
+          // Throttle for live Baileys reads (ingestor). Defaults in the
+          // adapter are conservative; operators can tighten/loosen via
+          // channels.whatsapp.ingest.throttle.
+          throttle: {
+            minMsBetweenCalls: this.config.channels.whatsapp.ingest?.throttle?.minMsBetweenCalls,
+            maxCallsPerMinute: this.config.channels.whatsapp.ingest?.throttle?.maxCallsPerMinute,
+          },
           // Publish QR + status so /api/admin/channels/whatsapp/state can
           // surface the pairing code in the browser.
           onQR: setWhatsAppQR,
@@ -1013,6 +1020,75 @@ export class AgentXDaemon {
             res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" })
             res.end("qrcode package not installed or failed: " + (e?.message || "unknown"))
           }
+          break
+        }
+
+        case "GET /whatsapp/chats": {
+          const wa = this.router.getChannel("whatsapp") as WhatsAppAdapter | undefined
+          if (!wa) { this.json(res, 503, { error: "WhatsApp channel not enabled" }); break }
+          this.json(res, 200, { chats: wa.listChats() })
+          break
+        }
+
+        case "GET /whatsapp/contacts": {
+          const wa = this.router.getChannel("whatsapp") as WhatsAppAdapter | undefined
+          if (!wa) { this.json(res, 503, { error: "WhatsApp channel not enabled" }); break }
+          this.json(res, 200, { contacts: wa.listContacts() })
+          break
+        }
+
+        case "POST /whatsapp/ingest": {
+          const wa = this.router.getChannel("whatsapp") as WhatsAppAdapter | undefined
+          if (!wa) { this.json(res, 503, { error: "WhatsApp channel not enabled" }); break }
+          const body = await readBody(req)
+          const cfg = this.config.channels.whatsapp.ingest
+          if (!cfg.enabled && !body.force) {
+            this.json(res, 400, { error: "channels.whatsapp.ingest.enabled is false. Set it to true in agentx.json or pass {\"force\": true}." })
+            break
+          }
+          const agentId = (typeof body.agent === "string" && body.agent)
+            || this.config.channels.whatsapp.defaultAgent
+            || this.config.node.defaultAgent
+          if (!agentId) {
+            this.json(res, 400, { error: "No agent to own the entries. Pass {agent: '...'} or set channels.whatsapp.defaultAgent." })
+            break
+          }
+          const dryRun = !!body.dryRun
+          const { runSweep } = await import("@/wiki/ingest-whatsapp")
+          const store = this.registry.getWikiHub().getAgentWiki(agentId)
+          // Support per-chat CLI commands (ingest-contact / ingest-chat):
+          // narrow the allowlist to the single JID and optionally override
+          // the ingest mode for this pass only. Leaves the persistent
+          // allowlist in agentx.json untouched.
+          let effectiveCfg = cfg
+          if (typeof body.onlyJid === "string") {
+            const jid = body.onlyJid as string
+            const isGroup = jid.endsWith("@g.us")
+            const forced: "metadata-only" | "messages" | undefined =
+              body.forceMode === "metadata-only" || body.forceMode === "messages"
+                ? body.forceMode
+                : undefined
+            effectiveCfg = {
+              ...cfg,
+              // Ignore the master enabled flag when a specific JID was named
+              // via the CLI — operator has explicitly pointed at this one.
+              enabled: true,
+              mode: forced ?? cfg.mode,
+              // Narrow scope to exactly this JID regardless of existing lists.
+              allowContacts: isGroup || body.onlyKind === "group" ? [] : [jid],
+              allowGroups: isGroup || body.onlyKind === "group" ? [jid] : [],
+              denyContacts: [],
+              denyGroups: [],
+            }
+          }
+          const report = await runSweep({
+            source: wa,
+            store,
+            config: effectiveCfg,
+            agentId,
+            dryRun,
+          })
+          this.json(res, 200, report)
           break
         }
 

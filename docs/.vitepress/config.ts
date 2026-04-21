@@ -61,6 +61,7 @@ export default withMermaid(defineConfig({
             { text: "Config schema", link: "/reference/config-schema" },
             { text: "Communication matrix", link: "/reference/communication-matrix" },
             { text: "Context strategies", link: "/reference/context-strategies" },
+            { text: "WhatsApp as a data source", link: "/reference/whatsapp-ingest" },
             { text: "Telegram without the jargon", link: "/reference/telegram-setup" },
             { text: "Boards (Kanban)", link: "/reference/boards" },
             { text: "Slack channel", link: "/reference/slack" },
