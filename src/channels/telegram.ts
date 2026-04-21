@@ -36,6 +36,8 @@ interface TelegramAccountConfig {
   token: string
   agentBinding: string
   allowFrom?: string[]
+  /** When false, register the token for outbound send only (no long-poll). */
+  pollInbound?: boolean
 }
 
 // --- Persistent group membership store ---
@@ -270,6 +272,23 @@ export class TelegramAdapter implements ChannelAdapter {
     const prefix = meta.index != null && meta.of != null
       ? `(${meta.index}/${meta.of})`
       : "(hot-reload)"
+    // Send-only mode: keep the token registered for outbound send()/ring but
+    // don't long-poll. Used when the bound agent lives on a different daemon
+    // — otherwise both daemons race on getUpdates and Telegram returns 409.
+    if (config.pollInbound === false) {
+      this.log(`Account "${accountId}" ${prefix} — send-only (pollInbound=false), skipping getUpdates loop`)
+      try {
+        const me = await this.apiCall(config.token, "getMe")
+        const botUserId = me.result?.id
+        const botUsername = me.result?.username
+        if (botUserId) {
+          this.botInfo.set(accountId, { userId: botUserId, username: botUsername || accountId })
+        }
+      } catch (e: any) {
+        this.log(`Send-only account "${accountId}" getMe failed: ${e.message} — send may still work if token is valid`)
+      }
+      return
+    }
     this.log(`Starting polling for account "${accountId}" ${prefix}`)
     try {
       // Drop any stale webhook/long-poll session from a previous run.

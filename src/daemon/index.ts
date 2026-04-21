@@ -883,7 +883,30 @@ export class AgentXDaemon {
           }
         })
       }
-      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"})`)
+      // Ring notifications: when a remote peer rings us, emit a "tap to join"
+      // message through each configured channel so the callee actually sees
+      // the incoming call even if their browser isn't open.
+      if (wrtcCfg.ringNotify.length > 0) {
+        const urlBase = wrtcCfg.callUrlBase || `http://${this.config.node.bind}`
+        this.webrtc.setRingHandler(async (signal) => {
+          const link = `${urlBase}/call?to=${encodeURIComponent(signal.from)}&callId=${encodeURIComponent(signal.callId)}`
+          const text = `📞 ${signal.from} is calling — tap to join: ${link}`
+          for (const target of wrtcCfg.ringNotify) {
+            try {
+              await this.router.sendOutbound({
+                channel: target.channel,
+                chatId: target.chatId,
+                text,
+                parseMode: "plain",
+                ...(target.accountId ? { accountId: target.accountId } : {}),
+              })
+            } catch (e: any) {
+              this.log(`[webrtc] ring notify via ${target.channel}:${target.chatId} failed: ${e.message}`)
+            }
+          }
+        })
+      }
+      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length})`)
     }
 
     await this.router.startAll()

@@ -71,6 +71,13 @@ const telegramAccountSchema = z.object({
    *    - "@username"                             — matches sender username
    *  A message is dispatched iff at least one entry matches. */
   allowFrom: z.array(z.string()).optional(),
+  /** When false, the daemon keeps the bot token registered so outbound
+   *  `send()` / ring notifications work, but does NOT long-poll for inbound
+   *  updates. Use this on nodes where the bound agent lives on a different
+   *  daemon — otherwise two daemons race on the same `getUpdates` cursor and
+   *  Telegram responds 409 Conflict on every poll.
+   *  Defaults to true (poll) so existing single-node setups are unchanged. */
+  pollInbound: z.boolean().default(true),
 })
 
 const channelsConfigSchema = z.object({
@@ -205,6 +212,18 @@ const channelsConfigSchema = z.object({
     })).default([]),
     /** Peer names permitted to *initiate* a call into this daemon. Empty = allow all mesh peers. */
     allowedCallers: z.array(z.string()).default([]),
+    /** Where to send "someone is calling" notifications when an inbound ring
+     *  arrives. Each entry is delivered via the matching channel adapter —
+     *  same plumbing as any other outbound message. Empty disables notifications. */
+    ringNotify: z.array(z.object({
+      channel: z.string(),
+      chatId: z.string(),
+      accountId: z.string().optional(),
+    })).default([]),
+    /** Base URL used when building the tap-to-join link in ring notifications.
+     *  Defaults to `http://<node.bind>` — override when the daemon's public
+     *  hostname differs (e.g. HTTPS-terminated tunnel, Tailscale MagicDNS). */
+    callUrlBase: z.string().optional(),
   }).default({}),
 })
 

@@ -173,14 +173,19 @@ export const CALL_PAGE_HTML = `<!doctype html>
     es.addEventListener("ready", () => log("signaling SSE ready", "ok"));
     es.onerror = () => log("signaling SSE error (will reconnect)", "err");
 
-    // Caller sends the offer. The callee reaches this page via a link the
-    // caller shared and *both* arrive here; whichever clicks Join first
-    // becomes the caller (the other side will process the offer once it
-    // subscribes). If both create offers, the glare is resolved by a
-    // randomized delay below.
-    const delay = Math.floor(Math.random() * 400);
-    setTimeout(async () => {
-      if (pc.signalingState !== "stable") return; // other side beat us to it
+    // Deterministic caller selection to avoid glare: compare the two peer
+    // names lexicographically (normalized — case/punctuation-insensitive) and
+    // only the smaller name side sends the offer. The other side waits for
+    // the offer to arrive. With the daemon's 30s signal buffer, this still
+    // works if the caller joins before the callee.
+    const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const isCaller = norm(cfg.localName) < norm(to);
+    log(isCaller ? "role: caller (will offer)" : "role: callee (waiting for offer)");
+    if (isCaller) {
+      // Ring first so the callee's channels (Telegram, Slack, ...) light up
+      // even if their browser isn't open yet. Ring isn't fanned out over
+      // SSE — it's purely an out-of-band notification.
+      await sendSignal({ kind: "ring", callId, from: cfg.localName, to });
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -189,7 +194,7 @@ export const CALL_PAGE_HTML = `<!doctype html>
       } catch (err) {
         log("offer failed: " + err.message, "err");
       }
-    }, delay);
+    }
 
     state = { pc, es, localStream, cfg, to, callId };
     $("joinBtn").disabled = true;

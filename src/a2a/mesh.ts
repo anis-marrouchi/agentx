@@ -228,9 +228,14 @@ export class A2AMesh {
    * /webrtc/signal endpoint. Not gated by peer health — a healthy control plane
    * is useful but a one-off probe miss should not drop a live call; the browser
    * layer will retry on timeout.
+   *
+   * Peer lookup is tolerant: the `to` field comes from whichever daemon
+   * originated the signal, which often spells the same node differently
+   * ("MacBook-Local" vs "macbook-local"). Match on a normalized name so config
+   * drift across sides doesn't break the signaling path.
    */
   async sendSignal(peerName: string, signal: unknown): Promise<boolean> {
-    const state = this.peers.get(peerName)
+    const state = this.peers.get(peerName) || this.findPeerByNormalizedName(peerName)
     if (!state) throw new Error(`Unknown peer: ${peerName}`)
 
     const url = `${state.peer.url}/webrtc/signal`
@@ -249,6 +254,18 @@ export class A2AMesh {
       this.log(`sendSignal to "${peerName}" failed: ${e.message}`)
       return false
     }
+  }
+
+  /** Look up a peer by a name that differs only in case / non-alphanumeric
+   *  characters (e.g. spaces, hyphens). Used by WebRTC signaling where the
+   *  `to` value is controlled by the opposite daemon and may not match the
+   *  exact spelling in this daemon's `mesh.peers[].name`. */
+  private findPeerByNormalizedName(name: string): PeerState | undefined {
+    const want = name.toLowerCase().replace(/[^a-z0-9]/g, "")
+    for (const [key, state] of this.peers) {
+      if (key.toLowerCase().replace(/[^a-z0-9]/g, "") === want) return state
+    }
+    return undefined
   }
 
   /**
