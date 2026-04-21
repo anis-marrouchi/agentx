@@ -166,6 +166,29 @@ Supported events (PreToolUse, PostToolUse, SessionStart, Notification, Stop); ty
 | `agentx usage serve [--port <n>]` | Web dashboard |
 | `agentx usage report [--days <n>]` | Full session analysis across Claude Code JSONL |
 
+## Bench
+
+A/B the context-assembly strategies (`layered` vs `planner`) on the same message. Posts twice to the running daemon's `/task` endpoint and prints a side-by-side token/cost/latency comparison. See [Context strategies](/reference/context-strategies) for the background.
+
+| Command | Description |
+|---|---|
+| `agentx bench context --agent <id> --message <text> [--channel <name>] [--chat-id <id>] [--sender <name>] [--runs <n>] [--preview <chars>] [--url <url>]` | Run the same message under both strategies and compare |
+
+**Example:**
+
+```bash
+agentx bench context \
+  --agent devops-agent \
+  --message "In one short sentence, what is your role?" \
+  --channel bench \
+  --chat-id bench-1 \
+  --runs 1
+```
+
+::: warning
+`bench context` issues real agent tasks. Agents with `permissionMode: "bypassPermissions"` (e.g. `devops-agent`, `coder-agent`) will execute command-shaped messages for real — e.g. "restart daemond" will actually restart the daemon. Use observation-only phrasing for bench scenarios.
+:::
+
 ## Config
 
 | Command | Description |

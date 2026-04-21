@@ -26,7 +26,7 @@ const scenarios: Array<{ label: string; priorTail: SessionMessage[]; message: st
       user("We just added a new agent — Coder. Do you want me to restart the daemon so it picks up the telegram bot?"),
       agent("I'll restart. Confirming first — restart daemond?"),
     ],
-    message: "restart daemond",
+    message: "reload daemond",
     why: "Typical 'ok do it' — layered dumps the full day's 12K blob. Planner should keep ~2 turns and skip memory.",
   },
   {

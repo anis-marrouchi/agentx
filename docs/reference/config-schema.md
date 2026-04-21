@@ -14,6 +14,7 @@ Environment variables are expanded inline: `${MY_TOKEN}` → `process.env.MY_TOK
   "channels":      { "telegram": {...}, "whatsapp": {...}, "discord": {...}, "gitlab": {...} },
   "crons":         { "<cronId>":   { ... } },
   "services":      { "<serviceId>":{ ... } },
+  "session":       { "staleMinutes": 45, "maxTurnsPerSession": 15, "tierTwoThresholdTokens": 180000, "contextStrategy": "layered" },
   "notifications": { ... },
   "mesh":          { ... },
   "business":      { ... }
@@ -143,6 +144,26 @@ Deterministic handlers that intercept messages **before** agent routing — no L
 | `discovery` | `static` \| `mdns` | `static` | |
 | `healthCheck.interval` | number | `60` | seconds |
 | `healthCheck.timeout` | number | `10` | |
+
+## `session`
+
+Controls Claude CLI `--resume` session reuse and the context-assembly strategy. See [Context strategies](/reference/context-strategies) for the full picture + bench results.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `staleMinutes` | number (1–1440) | `45` | Idle timeout for `--resume`. After this many minutes of no activity the session is dropped and the next turn starts fresh. Longer = better prompt-cache hit; shorter = less `--resume` replay bloat |
+| `maxTurnsPerSession` | number (2–200) | `15` | Hard cap on turns per Claude CLI session. On hit, the next turn rotates. Prevents `--resume` replay growing unbounded across a long chat |
+| `tierTwoThresholdTokens` | number (50 000–200 000) | `180000` | If the prior turn's total input (input + cacheRead + cacheCreate) crosses this, rotate before the next turn. Claude bills tier-2 at 1.5× above 200K; 180K leaves headroom |
+| `contextStrategy` | `"layered"` \| `"planner"` | `"layered"` | Context assembly strategy. Per-task override via the `contextStrategy` field in `POST /task` or `AgentTask` |
+
+```json
+"session": {
+  "staleMinutes": 45,
+  "maxTurnsPerSession": 15,
+  "tierTwoThresholdTokens": 180000,
+  "contextStrategy": "layered"
+}
+```
 
 ## `notifications`
 

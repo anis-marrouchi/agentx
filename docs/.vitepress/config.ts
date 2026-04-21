@@ -60,6 +60,7 @@ export default withMermaid(defineConfig({
             { text: "CLI", link: "/reference/cli" },
             { text: "Config schema", link: "/reference/config-schema" },
             { text: "Communication matrix", link: "/reference/communication-matrix" },
+            { text: "Context strategies", link: "/reference/context-strategies" },
             { text: "Telegram without the jargon", link: "/reference/telegram-setup" },
             { text: "Boards (Kanban)", link: "/reference/boards" },
             { text: "Slack channel", link: "/reference/slack" },
