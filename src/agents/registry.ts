@@ -707,6 +707,21 @@ export class AgentRegistry {
 
     const historyContext = buildAgentContext(contextInput)
 
+    // Context-size telemetry. Bytes we control: the layered context string +
+    // the cacheable system-prompt append + the current message. Bytes we
+    // don't: the Claude CLI --resume replay (tool results from prior turns),
+    // which shows up as cacheReadTokens in response.usage. Log a warning
+    // when our controllable assembly is unusually large (>16K chars ≈ 4K
+    // tokens) — anything that big is usually a runaway layer worth
+    // investigating before it snowballs via --resume.
+    const agentxContextBytes =
+      (historyContext?.length ?? 0) +
+      (systemPromptAppend?.length ?? 0) +
+      (task.message?.length ?? 0)
+    if (agentxContextBytes > 16_000) {
+      this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${historyContext?.length ?? 0}, sysPrompt=${systemPromptAppend?.length ?? 0}, message=${task.message?.length ?? 0})`)
+    }
+
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
@@ -745,6 +760,20 @@ export class AgentRegistry {
         // counter isn't incremented for tiers that don't use --resume.
         if (response.claudeSessionId && response.usage) {
           this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage)
+        }
+
+        // Tier-2 warning: Claude bills at 1.5× when a single turn's total
+        // input crosses 200K. Surface it visibly so operators don't need to
+        // read raw usage JSON to notice. Next turn will auto-rotate (see
+        // shouldRotateByTierTwo), but logging THIS turn keeps it observable.
+        if (response.usage) {
+          const totalInput =
+            (response.usage.inputTokens || 0) +
+            (response.usage.cacheReadTokens || 0) +
+            (response.usage.cacheCreateTokens || 0)
+          if (totalInput >= this.sessions.getTierTwoThresholdTokens()) {
+            this.log(`[${task.agentId}] TIER-2 HIT on ${channel}:${chatId}: ${totalInput} total input tokens (input=${response.usage.inputTokens}, cacheRead=${response.usage.cacheReadTokens}, cacheCreate=${response.usage.cacheCreateTokens}) — next turn will rotate`)
+          }
         }
 
         // Wiki: export conversation as raw entry for later absorption
