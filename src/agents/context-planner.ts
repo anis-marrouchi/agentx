@@ -92,24 +92,30 @@ export async function planContext(input: PlanContextInput): Promise<ContextPlan 
     `Current message: ${input.message.slice(0, 1500)}`,
   ].join("\n")
 
+  // Spawn the Claude CLI directly (same auth path the rest of the runtime
+  // uses — no dependency on ANTHROPIC_OAUTH_TOKEN / api-key env vars that
+  // the SDK providers need). The CLI is always authenticated if the daemon
+  // is running, since the daemon itself invokes `claude` for every task.
   let planJson: any
   try {
-    const { createProvider } = await import("@/agent/providers")
-    const provider = createProvider("claude")
-    const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), timeoutMs)
-    try {
-      const result = await provider.generate(
-        [
-          { role: "system", content: PLANNER_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        { model: PLANNER_MODEL, maxTokens: 256 },
+    const { execFile } = await import("child_process")
+    const combinedPrompt = `${PLANNER_PROMPT}\n\n${userPrompt}`
+    const stdout = await new Promise<string>((resolvePromise, rejectPromise) => {
+      const proc = execFile(
+        "claude",
+        ["-p", combinedPrompt, "--model", "haiku", "--output-format", "json"],
+        { timeout: timeoutMs, maxBuffer: 1 * 1024 * 1024 },
+        (err, stdout) => {
+          if (err) rejectPromise(err)
+          else resolvePromise(stdout)
+        },
       )
-      planJson = extractJson(result.content)
-    } finally {
-      clearTimeout(timer)
-    }
+      proc.stdin?.end()
+    })
+    // Claude CLI returns {"result": "...", "session_id": "...", ...}
+    const cliResponse = JSON.parse(stdout)
+    const text: string = cliResponse.result ?? cliResponse.content ?? ""
+    planJson = extractJson(text)
   } catch {
     return null
   }
