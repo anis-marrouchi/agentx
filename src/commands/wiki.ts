@@ -115,7 +115,7 @@ wiki
   .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
-  .option("--max <n>", "max entries per agent", "20")
+  .option("--max <n>", "max entries per agent", "10")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -167,7 +167,7 @@ wiki
         try {
           rawOutput = execSync(
             `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
-            { encoding: "utf-8", timeout: 300_000, maxBuffer: 10 * 1024 * 1024 },
+            { encoding: "utf-8", timeout: 900_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
           rawOutput = execErr.stdout || ""
