@@ -76,7 +76,7 @@ export const CALL_PAGE_HTML = `<!doctype html>
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   // Multi-peer state. For a pair call there's one entry (the human). When a
-  // server-side bot joins, a second entry is added whose `isPrimary=false`
+  // server-side bot joins, a second entry is added whose isPrimary is false
   // so we don't overwrite the remote video with the bot's (silent) stream.
   let state = null; // { es, localStream, cfg, primary, callId, peers: Map<name, {pc, isPrimary}> }
 
@@ -146,7 +146,7 @@ export const CALL_PAGE_HTML = `<!doctype html>
     // Find or lazy-create the PC for this remote.
     let entry = state.peers.get(sig.from);
     if (!entry && sig.kind === "offer") {
-      // New peer offering — create a non-primary PC. The `to` field in the
+      // New peer offering — create a non-primary PC. The 'to' field in the
       // signal is us; we treat the sender as a new peer. Only an offer can
       // introduce a new peer; answer/ice without a PC is a stale signal.
       log("new peer offering: " + sig.from);
