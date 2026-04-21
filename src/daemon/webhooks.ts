@@ -72,21 +72,19 @@ export class WebhookHandler {
     )
 
     if (meshEntry?.node && this.mesh) {
-      // Forward to mesh peer
-      try {
-        this.log(`Mesh-forwarding webhook [${source}] -> ${meshEntry.node}/${agentId}`)
-        const response = await this.mesh.sendTask(meshEntry.node, summary, agentId)
-        this.sendJson(res, 200, {
-          ok: true,
-          agent: agentId,
-          source,
-          node: meshEntry.node,
-          response: response?.slice(0, 500),
-        })
-      } catch (e: any) {
-        this.log(`Mesh forward failed: ${e.message}`)
-        this.sendJson(res, 502, { error: `Mesh forward failed: ${e.message}` })
-      }
+      // Respond immediately — GitHub/GitLab have short delivery timeouts.
+      // Forward to mesh peer asynchronously.
+      this.sendJson(res, 202, {
+        ok: true,
+        agent: agentId,
+        source,
+        node: meshEntry.node,
+        status: "accepted",
+      })
+      this.mesh.sendTask(meshEntry.node, summary, agentId).then(
+        (response) => this.log(`Mesh-forwarded webhook [${source}] -> ${meshEntry.node}/${agentId}: ${response?.slice(0, 100) || "ok"}`),
+        (e: any) => this.log(`Mesh forward failed [${source}] -> ${meshEntry.node}/${agentId}: ${e.message}`),
+      )
       return
     }
 

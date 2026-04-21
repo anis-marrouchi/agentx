@@ -165,6 +165,34 @@ const channelsConfigSchema = z.object({
       node: z.string().optional(),
     })).default([]),
   }).default({}),
+  github: z.object({
+    enabled: z.boolean().default(false),
+    /** GitHub PAT or env var (${GITHUB_TOKEN}) for posting comments back. */
+    token: z.string().optional(),
+    /** Path to file containing the token (first line read at startup). */
+    tokenFile: z.string().optional(),
+    /** GitHub App ID (legacy issuer). */
+    appId: z.number().optional(),
+    /** GitHub App Client ID (preferred JWT issuer per GitHub's updated docs). */
+    clientId: z.string().optional(),
+    /** Path to the GitHub App private key PEM file. */
+    privateKeyFile: z.string().optional(),
+    /** Webhook secret for validating X-Hub-Signature-256. */
+    webhookSecret: z.string().optional(),
+    /** Repo → agent routing. Use "owner/repo" or "*" for default. */
+    routes: z.array(z.object({
+      repo: z.string(),
+      agent: z.string(),
+    })).default([]),
+    /** Per-agent identity mappings (GitHub usernames, tokens, mesh nodes). */
+    agentMappings: z.array(z.object({
+      agentId: z.string(),
+      githubUsernames: z.array(z.string()).default([]),
+      token: z.string().optional(),
+      tokenFile: z.string().optional(),
+      node: z.string().optional(),
+    })).default([]),
+  }).default({}),
 })
 
 const cronJobSchema = z.object({

@@ -1117,6 +1117,7 @@ export class MessageRouter {
           text: response,
           replyTo: msg.id,
           accountId: replyAccountId,
+          agentId,
         })
       }
 

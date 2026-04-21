@@ -9,6 +9,7 @@ import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
 import { SlackAdapter } from "@/channels/slack"
 import { GitLabAdapter } from "@/channels/gitlab"
+import { GitHubAdapter } from "@/channels/github"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
@@ -40,6 +41,7 @@ export class AgentXDaemon {
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private webhooks: WebhookHandler
+  private github?: GitHubAdapter
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -809,6 +811,50 @@ export class AgentXDaemon {
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
 
+    // GitHub
+    if (this.config.channels.github?.enabled) {
+      const githubConfig = this.config.channels.github
+      this.github = new GitHubAdapter(
+        {
+          token: githubConfig.token,
+          tokenFile: githubConfig.tokenFile,
+          appId: githubConfig.appId,
+          clientId: githubConfig.clientId,
+          privateKeyFile: githubConfig.privateKeyFile,
+          webhookSecret: githubConfig.webhookSecret,
+          routes: githubConfig.routes,
+          agentMappings: githubConfig.agentMappings,
+        },
+        this.log,
+      )
+      // Wire mesh comment forwarder for remote agents
+      if (this.mesh) {
+        this.github.setSendCommentForwarder(async (node, repo, issueNumber, agentId, text): Promise<string> => {
+          const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
+          if (!peer) {
+            this.log(`[github] send-comment forward: peer "${node}" not found or unhealthy`)
+            return ""
+          }
+          const url = `${peer.peerUrl}/github/send-comment`
+          try {
+            const r = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ repo, issueNumber, agentId, text }),
+            })
+            const data = await r.json().catch(() => ({}))
+            this.log(`[github] send-comment forward -> ${url} : ${r.status} commentId=${(data as any).commentId || "?"}`)
+            return (data as any).commentId || ""
+          } catch (e: any) {
+            this.log(`[github] send-comment forward FAILED -> ${url} : ${e.message}`)
+            return ""
+          }
+        })
+      }
+      this.router.addChannel(this.github)
+      this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
+    }
+
     await this.router.startAll()
   }
 
@@ -936,6 +982,37 @@ export class AgentXDaemon {
 
       // Dynamic routes (before static switch)
       if (req.method === "POST" && path.startsWith("/webhook/")) {
+        // GitHub channel adapter: intercept webhooks with X-GitHub-Event header
+        // when the GitHub channel is enabled — routes internally by repo.
+        if (this.github && req.headers["x-github-event"]) {
+          const body = await new Promise<string>((resolve) => {
+            let data = ""
+            req.on("data", (chunk: Buffer) => (data += chunk.toString()))
+            req.on("end", () => resolve(data))
+            req.on("error", () => resolve(""))
+          })
+          let parsed: Record<string, unknown>
+          try {
+            // GitHub may send as application/json or application/x-www-form-urlencoded
+            const contentType = req.headers["content-type"] || ""
+            if (contentType.includes("form-urlencoded") && body.startsWith("payload=")) {
+              parsed = JSON.parse(decodeURIComponent(body.slice(8)))
+            } else {
+              parsed = body ? JSON.parse(body) : {}
+            }
+          } catch { parsed = {} }
+          this.log(`[github] webhook body keys: ${Object.keys(parsed).slice(0, 5).join(", ")} | repo: ${(parsed.repository as any)?.full_name || "MISSING"}`)
+          // Respond immediately (GitHub has a 10s timeout)
+          res.writeHead(202, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ ok: true, channel: "github", status: "accepted" }))
+          // Process asynchronously
+          this.github.handleWebhook(
+            req.headers as Record<string, string | string[] | undefined>,
+            parsed,
+            body,  // raw body for signature verification
+          ).catch(e => this.log(`[github] webhook handler error: ${(e as Error).message}`))
+          return
+        }
         await this.webhooks.handle(req, res, path)
         return
       }
@@ -1227,6 +1304,82 @@ export class AgentXDaemon {
             this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration })
           } catch (e: any) {
             this.log(`[gitlab/log-time] FETCH ERROR: ${e.message}`)
+            this.json(res, 500, { error: e.message })
+          }
+          break
+        }
+
+        case "POST /github/send-comment": {
+          // Forwarded from a mesh peer: post a comment using the local GitHub token.
+          const body = await readBody(req)
+          const { repo, issueNumber, agentId, text } = body as any
+          // Resolve token: per-agent tokenFile, per-agent token, or global
+          const ghConfig = this.config.channels.github
+          const mappings = ghConfig?.agentMappings || []
+          const mapping = mappings.find((m: any) => m.agentId === agentId)
+          let token: string | undefined
+          if (mapping?.tokenFile) {
+            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+          }
+          token = token || mapping?.token
+          if (!token && ghConfig?.tokenFile) {
+            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+          }
+          token = token || ghConfig?.token
+          if (!token) {
+            this.json(res, 404, { error: "no github token for agent", debug: { agentId, hasMapping: !!mapping } })
+            break
+          }
+          const ep = `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments`
+          try {
+            const ghRes = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": "AgentX" },
+              body: JSON.stringify({ body: text }),
+            })
+            const respBody = await ghRes.text().catch(() => "")
+            let commentId = ""
+            try { commentId = String((JSON.parse(respBody) as any).id || "") } catch { /* */ }
+            this.log(`[github/send-comment] agent="${agentId}" -> POST ${ep} : ${ghRes.status} commentId=${commentId || "?"}`)
+            this.json(res, 200, { ok: ghRes.ok, status: ghRes.status, commentId })
+          } catch (e: any) {
+            this.log(`[github/send-comment] FETCH ERROR: ${e.message}`)
+            this.json(res, 500, { error: e.message })
+          }
+          break
+        }
+
+        case "POST /github/react": {
+          // Forwarded from a mesh peer: react with 👀 on a GitHub comment.
+          const body = await readBody(req)
+          const { repo, commentId, agentId } = body as any
+          const ghConfig = this.config.channels.github
+          const mappings = ghConfig?.agentMappings || []
+          const mapping = mappings.find((m: any) => m.agentId === agentId)
+          let token: string | undefined
+          if (mapping?.tokenFile) {
+            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+          }
+          token = token || mapping?.token
+          if (!token && ghConfig?.tokenFile) {
+            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+          }
+          token = token || ghConfig?.token
+          if (!token) {
+            this.json(res, 404, { error: "no github token for agent" })
+            break
+          }
+          const ep = `https://api.github.com/repos/${repo}/issues/comments/${commentId}/reactions`
+          try {
+            const ghRes = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": "AgentX" },
+              body: JSON.stringify({ content: "eyes" }),
+            })
+            this.log(`[github/react] agent="${agentId}" -> POST ${ep} : ${ghRes.status}`)
+            this.json(res, 200, { ok: ghRes.ok, status: ghRes.status })
+          } catch (e: any) {
+            this.log(`[github/react] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
           }
           break
