@@ -59,6 +59,45 @@ const DEFAULT_TIER_TWO_THRESHOLD_TOKENS = 180_000
 /** Session has a compacted summary prepended to its messages */
 const COMPACTION_MARKER = "[Compacted conversation summary"
 
+/** Keywords that suggest the current message references another chat, an
+ *  earlier conversation, or a peer agent — and therefore benefits from the
+ *  cross-chat summary. Tuned for English + Arabic (Tunisian team usage);
+ *  extend as needed. Matched case-insensitively against raw substrings so
+ *  "mentioned" also catches "mention", "mentioning", etc. */
+const CROSS_CHAT_HINT_PATTERNS: RegExp[] = [
+  // English — temporal/conversational references
+  /\bearlier\b/i, /\bbefore\b/i, /\bjust said\b/i, /\btold (?:me|you|us|him|her|them)\b/i,
+  /\bmention(?:ed|ing)?\b/i, /\bask(?:ed)? (?:me|you|him|her|them|about)\b/i,
+  /\bping(?:ed)?\b/i, /\bdm\b/i, /\bdirect message\b/i,
+  // Explicit cross-chat references
+  /\bother (?:chat|group|conversation|thread)\b/i, /\bthat (?:chat|group|conversation|thread)\b/i,
+  /\bsame (?:issue|thread|conversation)\b/i, /\bcontinuing\b/i,
+  // Bot mention — @something_bot / @handle (peer agent reference)
+  /@\w{2,}_?(?:bot|agent)\b/i,
+  // Arabic — conversational refs the team actually uses
+  /قلت/, /قال(?:لك|لي|له|لها|لنا)?/, /قبل/, /الحين/, /الثاني/, /المجموعة/,
+]
+
+export function referencesOtherChat(message: string): boolean {
+  if (!message) return false
+  return CROSS_CHAT_HINT_PATTERNS.some((re) => re.test(message))
+}
+
+/** True when appending `(role, name, content)` would duplicate the last
+ *  message in `messages`. Used to collapse retries and double-sends at
+ *  insert time, so dedup is stable across reload (duplicates never reach
+ *  disk in the first place). */
+function isDuplicateOfLast(
+  messages: SessionMessage[],
+  role: "user" | "agent",
+  name: string,
+  content: string,
+): boolean {
+  if (messages.length === 0) return false
+  const last = messages[messages.length - 1]
+  return last.role === role && (last.name ?? "") === name && last.content === content
+}
+
 /** Bucket an ISO timestamp into a stable 15-min window label (e.g. "14:45").
  *  Used in history rendering so the prompt's bucket headers change at most
  *  every 15 minutes — the prefix stays byte-stable across intra-bucket
@@ -152,10 +191,16 @@ export class SessionStore {
   }
 
   /**
-   * Add a user message to the session.
+   * Add a user message to the session. Consecutive duplicates from the same
+   * sender are collapsed — when a user re-sends the exact same text (retry,
+   * accidental double-tap, telegram glitches), storing every copy bloats the
+   * replayed history and re-burns tokens on every subsequent turn.
    */
   addUserMessage(agentId: string, channel: string, chatId: string, senderName: string, content: string): void {
     const session = this.getSession(agentId, channel, chatId)
+    if (isDuplicateOfLast(session.messages, "user", senderName, content)) {
+      return
+    }
     session.messages.push({
       role: "user",
       name: senderName,
@@ -168,10 +213,14 @@ export class SessionStore {
   }
 
   /**
-   * Add an agent response to the session.
+   * Add an agent response to the session. Same dedup rule as user messages —
+   * retries and duplicate responses shouldn't be replayed on every turn.
    */
   addAgentMessage(agentId: string, channel: string, chatId: string, content: string): void {
     const session = this.getSession(agentId, channel, chatId)
+    if (isDuplicateOfLast(session.messages, "agent", agentId, content)) {
+      return
+    }
     session.messages.push({
       role: "agent",
       name: agentId,
@@ -251,8 +300,23 @@ export class SessionStore {
    * Build a summary of recent messages from OTHER sessions for the same agent today.
    * This bridges the cross-chat amnesia gap — if someone shared info in a DM,
    * the group session gets a hint about it.
+   *
+   * Gated by `message`: cross-chat hints are expensive (up to ~1.5K tokens of
+   * unrelated conversation) AND cache-breaking (the content changes as other
+   * chats get traffic, invalidating the prompt cache every turn). We only
+   * return hints when the current message actually references another
+   * conversation or a peer agent. Pass `message = ""` to force-include
+   * (legacy behavior) — useful for testing.
    */
-  getCrossSessionSummary(agentId: string, channel: string, chatId: string): string {
+  getCrossSessionSummary(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    message?: string,
+  ): string {
+    if (message !== undefined && message !== "" && !referencesOtherChat(message)) {
+      return ""
+    }
     const day = new Date().toISOString().slice(0, 10)
     const currentKey = this.sessionKey(agentId, channel, chatId)
 

@@ -625,8 +625,13 @@ export class AgentRegistry {
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
 
-    // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group)
-    const crossChatContext = this.sessions.getCrossSessionSummary(task.agentId, channel, chatId)
+    // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group).
+    // Gated on the current message — we only ship the hint when the user
+    // actually refers to another conversation, a peer agent, or earlier
+    // activity. Otherwise it's pure waste AND breaks prompt cache every turn.
+    const crossChatContext = this.sessions.getCrossSessionSummary(
+      task.agentId, channel, chatId, task.message,
+    )
 
     // Soul switching: detect /soul command and track active profile
     const soulSessionKey = `${task.agentId}:${channel}:${chatId}`
