@@ -181,8 +181,21 @@ export class AgentXDaemon {
     this.landscape.build(meshPeers)
     this.log(`  Landscape: built for ${Object.keys(this.config.agents).length} agents`)
 
-    // 5. Schedule midnight cost tracking hook
+    // 5. Schedule midnight cost tracking hook + catch up any missed days.
+    // Catch-up is idempotent and bounded to 30 days — a daemon restarted
+    // after an outage backfills TOKEN_COSTS.md instead of silently losing
+    // those rows. (The previous behavior only ever scheduled tomorrow's
+    // midnight run; any restart before midnight lost that day's row.)
     this.scheduleMidnightHook()
+    try {
+      const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
+      const appended = this.registry.getTokenTracker().catchUpTokenCosts(yesterday)
+      if (appended.length > 0) {
+        this.log(`  Cost tracking: caught up ${appended.length} missed day${appended.length === 1 ? "" : "s"} (${appended[0]}${appended.length > 1 ? ` → ${appended[appended.length - 1]}` : ""})`)
+      }
+    } catch (err: any) {
+      this.log(`  Cost tracking: catch-up failed (non-fatal): ${err.message}`)
+    }
 
     // 5b. Start business layer day cycle (if configured)
     if (this.business) {
@@ -607,8 +620,16 @@ export class AgentXDaemon {
   private async runDailyCostReport(): Promise<void> {
     const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
     const tracker = this.registry.getTokenTracker()
-    const report = tracker.generateDailyReport(yesterday)
 
+    // Idempotent guard — catch-up at startup may have already appended this
+    // date, and a timer-edge double-fire would otherwise produce duplicate
+    // rows (as happened with the 2026-04-08 duplicate in the current file).
+    if (tracker.hasTokenCostsEntry(yesterday)) {
+      this.log(`  Cost tracking: ${yesterday} already logged, skipping`)
+      return
+    }
+
+    const report = tracker.generateDailyReport(yesterday)
     if (!report || report.totalTasks === 0) {
       this.log(`  Cost tracking: no usage for ${yesterday}, skipping`)
       return

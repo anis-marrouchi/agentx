@@ -408,6 +408,84 @@ export class TokenTracker {
   }
 
   /**
+   * Return true if TOKEN_COSTS.md already has a row for `date`. Lets callers
+   * skip duplicate appends after daemon restarts or timer-edge double fires.
+   */
+  hasTokenCostsEntry(date: string, filePath?: string): boolean {
+    const file = filePath || resolve(process.cwd(), ".agentx/TOKEN_COSTS.md")
+    if (!existsSync(file)) return false
+    try {
+      const content = readFileSync(file, "utf-8")
+      // Rows look like: `| 2026-04-18 | ...`
+      return new RegExp(`^\\|\\s*${date}\\s*\\|`, "m").test(content)
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Find the most recent date already logged to TOKEN_COSTS.md (YYYY-MM-DD).
+   * Returns null when the file doesn't exist or has no rows.
+   */
+  lastTokenCostsDate(filePath?: string): string | null {
+    const file = filePath || resolve(process.cwd(), ".agentx/TOKEN_COSTS.md")
+    if (!existsSync(file)) return null
+    try {
+      const content = readFileSync(file, "utf-8")
+      const dates = content.match(/^\|\s*(\d{4}-\d{2}-\d{2})\s*\|/gm) ?? []
+      if (dates.length === 0) return null
+      // Extract the date portion and pick the max — rows can be out of order
+      // after a catch-up, so don't rely on file order.
+      const parsed = dates
+        .map((m) => m.match(/(\d{4}-\d{2}-\d{2})/)?.[1])
+        .filter((d): d is string => !!d)
+      parsed.sort()
+      return parsed[parsed.length - 1] ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Append reports for any days between (lastLogged + 1) and `throughDate`
+   * that have usage on disk but no row in TOKEN_COSTS.md. Idempotent —
+   * safe to call on every daemon startup. Bounded to `maxDays` to avoid
+   * a stalled daemon backfilling a year's worth on first start.
+   *
+   * Returns the list of dates actually appended, for logging.
+   */
+  catchUpTokenCosts(
+    throughDate: string,
+    opts: { maxDays?: number; filePath?: string } = {},
+  ): string[] {
+    const maxDays = opts.maxDays ?? 30
+    const appended: string[] = []
+
+    const last = this.lastTokenCostsDate(opts.filePath)
+    // Walk backward from throughDate, collecting dates to fill. Stop at the
+    // last-logged date (exclusive) or after maxDays, whichever comes first.
+    const candidates: string[] = []
+    const cursor = new Date(`${throughDate}T00:00:00Z`)
+    for (let i = 0; i < maxDays; i++) {
+      const date = cursor.toISOString().slice(0, 10)
+      if (last && date <= last) break
+      candidates.push(date)
+      cursor.setUTCDate(cursor.getUTCDate() - 1)
+    }
+    // Oldest-first so the file stays chronological.
+    candidates.reverse()
+
+    for (const date of candidates) {
+      if (this.hasTokenCostsEntry(date, opts.filePath)) continue
+      const report = this.generateDailyReport(date)
+      if (!report || report.totalTasks === 0) continue
+      this.appendToTokenCosts(report, opts.filePath)
+      appended.push(date)
+    }
+    return appended
+  }
+
+  /**
    * Get summary across last N days.
    */
   summary(days: number = 7): {
