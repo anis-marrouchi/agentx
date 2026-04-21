@@ -16,7 +16,7 @@ export default withMermaid(defineConfig({
   ],
 
   themeConfig: {
-    logo: "/logo.svg",
+    logo: "/logo.png",
     siteTitle: "AgentX",
 
     nav: [
