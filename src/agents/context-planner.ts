@@ -61,7 +61,7 @@ export interface PlanContextInput {
   timeoutMs?: number
 }
 
-const PLANNER_MODEL = "claude-haiku-4-20250514"
+const PLANNER_MODEL = "claude-haiku-4-5-20251001"
 const PLANNER_PROMPT = `You are a context planner for an AI agent. Given the user's current message and recent conversation tail, decide what historical context the agent needs.
 
 Output ONE JSON object on one line, no prose, no fences:
@@ -92,31 +92,36 @@ export async function planContext(input: PlanContextInput): Promise<ContextPlan 
     `Current message: ${input.message.slice(0, 1500)}`,
   ].join("\n")
 
-  // Spawn the Claude CLI directly (same auth path the rest of the runtime
-  // uses — no dependency on ANTHROPIC_OAUTH_TOKEN / api-key env vars that
-  // the SDK providers need). The CLI is always authenticated if the daemon
-  // is running, since the daemon itself invokes `claude` for every task.
+  // Use the Anthropic SDK path — warm HTTP client, no subprocess cold-start.
+  // resolveToken now recognizes CLAUDE_CODE_OAUTH_TOKEN so this works out
+  // of the box for any operator who already has Claude CLI auth set up.
+  // Planner timeout is tight (8s default) because plan latency is in the
+  // critical path before the main agent runs.
   let planJson: any
   try {
-    const { execFile } = await import("child_process")
-    const combinedPrompt = `${PLANNER_PROMPT}\n\n${userPrompt}`
-    const stdout = await new Promise<string>((resolvePromise, rejectPromise) => {
-      const proc = execFile(
-        "claude",
-        ["-p", combinedPrompt, "--model", "haiku", "--output-format", "json"],
-        { timeout: timeoutMs, maxBuffer: 1 * 1024 * 1024 },
-        (err, stdout) => {
-          if (err) rejectPromise(err)
-          else resolvePromise(stdout)
-        },
+    const { createProvider } = await import("@/agent/providers")
+    const provider = createProvider("claude")
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), timeoutMs)
+    try {
+      const result = await provider.generate(
+        [
+          { role: "system", content: PLANNER_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        { model: PLANNER_MODEL, maxTokens: 256 },
       )
-      proc.stdin?.end()
-    })
-    // Claude CLI returns {"result": "...", "session_id": "...", ...}
-    const cliResponse = JSON.parse(stdout)
-    const text: string = cliResponse.result ?? cliResponse.content ?? ""
-    planJson = extractJson(text)
-  } catch {
+      planJson = extractJson(result.content)
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch (err: any) {
+    // Temporary: surface planner errors for debugging. Will silence once
+    // we're confident the SDK path is stable.
+    if (process.env.AGENTX_PLANNER_DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(`[planner] error: ${err?.message ?? err}`)
+    }
     return null
   }
 

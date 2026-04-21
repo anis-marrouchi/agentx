@@ -57,6 +57,16 @@ export function resolveToken(explicitKey?: string): {
     return { token: envOAuth.trim(), authType: "oauth" }
   }
 
+  // Claude Code's native env var (sk-ant-oat01-...). Same OAuth token format
+  // as ANTHROPIC_OAUTH_TOKEN but Claude Code sets it under its own name, so
+  // without this fallback the SDK providers fail to resolve even though the
+  // `claude` CLI in the same shell works fine. Enables the context planner
+  // to use the fast SDK path instead of cold-spawning a subprocess.
+  const envClaudeCodeOAuth = process.env.CLAUDE_CODE_OAUTH_TOKEN
+  if (envClaudeCodeOAuth?.trim()) {
+    return { token: envClaudeCodeOAuth.trim(), authType: "oauth" }
+  }
+
   const envApiKey = process.env.ANTHROPIC_API_KEY
   if (envApiKey?.trim()) {
     return { token: envApiKey.trim(), authType: "api-key" }
