@@ -928,6 +928,7 @@ export class AgentXDaemon {
           whisperBackend: botCfg.whisperBackend,
           whisperModel: botCfg.whisperModel,
           whisperLanguage: botCfg.whisperLanguage,
+          mlxBinary: botCfg.mlxBinary,
           maxCallMinutes: botCfg.maxCallMinutes,
           log: this.log,
           onTranscript: async ({ invite, text, durationMs }) => {

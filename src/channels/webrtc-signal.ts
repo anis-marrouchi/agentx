@@ -194,19 +194,31 @@ export class WebRtcSignalBroker {
     }
   }
 
-  /** Called when a browser POSTs a signal. Forwards to the remote peer by name. */
+  /** Called when a browser POSTs a signal. Routes locally if the target is
+   *  this node OR matches a local in-process subscriber (e.g. the AI bot
+   *  peer); otherwise forwards through the mesh. */
   async handleOutgoing(signal: WebRtcSignal): Promise<{ ok: boolean; error?: string }> {
-    if (!this.forwarder) {
-      return { ok: false, error: "mesh forwarder not wired" }
-    }
-    // If the signal is addressed to ourselves (loopback / same-node test),
-    // fan it out locally instead of bouncing through the mesh.
-    if (normalizeName(signal.to) === normalizeName(this.localName)) {
+    // Local fan-out: addressed to ourselves (loopback) OR addressed to a
+    // peer we're hosting in-process (the bot subscribes via callback, not via
+    // mesh — its name like "bot:atlas" isn't in mesh.peers[]).
+    const wantRecipient = normalizeName(signal.to)
+    const hasLocalSub = wantRecipient === normalizeName(this.localName) || this.hasSubscriberFor(signal.callId, wantRecipient)
+    if (hasLocalSub) {
       this.fanOut(signal)
       return { ok: true }
     }
+    if (!this.forwarder) {
+      return { ok: false, error: "mesh forwarder not wired" }
+    }
     const ok = await this.forwarder(signal.to, signal)
     return ok ? { ok } : { ok: false, error: `forward to "${signal.to}" failed` }
+  }
+
+  private hasSubscriberFor(callId: string, normalizedRecipient: string): boolean {
+    for (const sub of this.subs) {
+      if (sub.callId === callId && normalizeName(sub.recipient) === normalizedRecipient) return true
+    }
+    return false
   }
 
   /** Called when the daemon receives a signal from a remote peer via /webrtc/signal. */

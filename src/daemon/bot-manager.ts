@@ -24,6 +24,8 @@ export interface BotManagerOptions {
   whisperBackend: WhisperBackend
   whisperModel?: string
   whisperLanguage?: string
+  /** Absolute path override for mlx_whisper. */
+  mlxBinary?: string
   /** Hard cap to stop runaway bots. */
   maxCallMinutes: number
   log: (...args: unknown[]) => void
@@ -51,6 +53,7 @@ export class BotManager {
       backend: opts.whisperBackend,
       model: opts.whisperModel,
       language: opts.whisperLanguage,
+      mlxBinary: opts.mlxBinary,
       log: opts.log,
     })
   }

@@ -22,6 +22,10 @@ export interface WhisperOptions {
   model?: string
   /** Language hint (BCP-47). "auto" lets the model detect. */
   language?: string
+  /** Absolute path to mlx_whisper if not on PATH. launchd-managed daemons on
+   *  macOS often have a stripped PATH that misses ~/.pyenv/shims, so a
+   *  config-level override beats trying to inject env vars. */
+  mlxBinary?: string
   log: (...args: unknown[]) => void
 }
 
@@ -75,9 +79,13 @@ export class Whisper {
     return this.resolvedBackend
   }
 
+  private mlxCmd(): string {
+    return this.opts.mlxBinary || "mlx_whisper"
+  }
+
   private async probeMlx(): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn("mlx_whisper", ["--help"], { stdio: "ignore" })
+      const child = spawn(this.mlxCmd(), ["--help"], { stdio: "ignore" })
       child.on("error", () => resolve(false))
       child.on("exit", (code) => resolve(code === 0))
     })
@@ -97,7 +105,7 @@ export class Whisper {
         args.push("--language", this.opts.language)
       }
       args.push(wavPath)
-      const text = await runProcess("mlx_whisper", args)
+      const text = await runProcess(this.mlxCmd(), args)
       // mlx_whisper writes <basename>.txt to the output dir AND echoes to stdout
       // depending on version. Prefer stdout if non-empty.
       if (text.trim()) return text

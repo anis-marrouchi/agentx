@@ -236,6 +236,9 @@ const channelsConfigSchema = z.object({
       whisperBackend: z.enum(["auto", "mlx", "openai"]).default("auto"),
       whisperModel: z.string().optional(),
       whisperLanguage: z.string().default("auto"),
+      /** Absolute path to mlx_whisper if not on the daemon's PATH (common
+       *  on macOS launchd, where ~/.pyenv/shims is missing from the env). */
+      mlxBinary: z.string().optional(),
       /** Where to send each transcribed chunk. Same shape as ringNotify[]. */
       transcriptChannel: z.object({
         channel: z.string(),
