@@ -35,10 +35,17 @@ export interface WebRtcSignal {
   reason?: string
 }
 
+/** A subscriber may be either an SSE-backed browser (we write the raw event
+ *  stream into its ServerResponse) OR an in-process consumer like the
+ *  WebRtcBot (we just call its callback). One Set, two delivery shapes. */
+type SubscriberSink =
+  | { kind: "sse"; res: ServerResponse }
+  | { kind: "callback"; deliver: (signal: WebRtcSignal) => void }
+
 interface Subscriber {
   callId: string
   recipient: string
-  res: ServerResponse
+  sink: SubscriberSink
 }
 
 interface BufferedSignal {
@@ -134,11 +141,22 @@ export class WebRtcSignalBroker {
     this.ringHandler = fn
   }
 
-  /** Register an SSE subscriber. Returns an unsubscribe fn. */
+  /** Register an SSE subscriber (a browser tab). Returns an unsubscribe fn. */
   subscribe(callId: string, recipient: string, res: ServerResponse): () => void {
-    const sub: Subscriber = { callId, recipient, res }
+    return this.addSubscriber(callId, recipient, { kind: "sse", res })
+  }
+
+  /** Register an in-process subscriber (a server-side bot). The callback fires
+   *  for every signal addressed to `recipient` on `callId`. Returns unsubscribe. */
+  subscribeInternal(callId: string, recipient: string, deliver: (signal: WebRtcSignal) => void): () => void {
+    return this.addSubscriber(callId, recipient, { kind: "callback", deliver })
+  }
+
+  private addSubscriber(callId: string, recipient: string, sink: SubscriberSink): () => void {
+    const sub: Subscriber = { callId, recipient, sink }
     this.subs.add(sub)
-    this.log(`subscribe call=${callId} as=${recipient} (${this.subs.size} total)`)
+    const tag = sink.kind === "sse" ? "sse" : "internal"
+    this.log(`subscribe[${tag}] call=${callId} as=${recipient} (${this.subs.size} total)`)
 
     // Flush any signals that arrived before this subscriber. Common race: the
     // caller offers before the callee opens its page, or SSE connects slightly
@@ -149,8 +167,7 @@ export class WebRtcSignalBroker {
       const now = Date.now()
       const fresh = buffered.filter(b => b.expiresAt > now)
       for (const { signal } of fresh) {
-        const payload = `event: signal\ndata: ${JSON.stringify(signal)}\n\n`
-        try { res.write(payload) } catch { /* client already gone */ }
+        this.deliverTo(sub, signal)
       }
       this.pending.delete(key)
       if (fresh.length) this.log(`flushed ${fresh.length} buffered signal(s) to new subscriber call=${callId} as=${recipient}`)
@@ -158,7 +175,22 @@ export class WebRtcSignalBroker {
 
     return () => {
       this.subs.delete(sub)
-      this.log(`unsubscribe call=${callId} as=${recipient} (${this.subs.size} remaining)`)
+      this.log(`unsubscribe[${tag}] call=${callId} as=${recipient} (${this.subs.size} remaining)`)
+    }
+  }
+
+  /** Deliver a single signal to a subscriber, regardless of sink kind.
+   *  Returns false if the sink looks dead (caller should drop the sub). */
+  private deliverTo(sub: Subscriber, signal: WebRtcSignal): boolean {
+    try {
+      if (sub.sink.kind === "sse") {
+        sub.sink.res.write(`event: signal\ndata: ${JSON.stringify(signal)}\n\n`)
+      } else {
+        sub.sink.deliver(signal)
+      }
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -226,17 +258,12 @@ export class WebRtcSignalBroker {
 
   private fanOut(signal: WebRtcSignal): number {
     let delivered = 0
-    const payload = `event: signal\ndata: ${JSON.stringify(signal)}\n\n`
     const wantRecipient = normalizeName(signal.to)
     for (const sub of this.subs) {
       if (sub.callId !== signal.callId) continue
       if (normalizeName(sub.recipient) !== wantRecipient) continue
-      try {
-        sub.res.write(payload)
-        delivered++
-      } catch {
-        this.subs.delete(sub)
-      }
+      if (this.deliverTo(sub, signal)) delivered++
+      else this.subs.delete(sub)
     }
     return delivered
   }
@@ -246,11 +273,15 @@ export class WebRtcSignalBroker {
     return this.subs.size
   }
 
-  /** Close every open SSE stream (daemon shutdown). */
+  /** Close every open SSE stream (daemon shutdown). Internal subscribers
+   *  are simply dropped — they're owned by the bot manager which has its own
+   *  shutdown path. */
   shutdown(): void {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer)
     for (const sub of this.subs) {
-      try { sub.res.end() } catch { /* already closed */ }
+      if (sub.sink.kind === "sse") {
+        try { sub.sink.res.end() } catch { /* already closed */ }
+      }
     }
     this.subs.clear()
     this.pending.clear()

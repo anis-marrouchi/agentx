@@ -224,6 +224,27 @@ const channelsConfigSchema = z.object({
      *  Defaults to `http://<node.bind>` — override when the daemon's public
      *  hostname differs (e.g. HTTPS-terminated tunnel, Tailscale MagicDNS). */
     callUrlBase: z.string().optional(),
+    /** AI participant ("bot") joins calls when a browser opens with `?bot=<id>`.
+     *  v1 is transcribe-only — bot consumes remote audio, transcribes via
+     *  Whisper, posts chunks to the configured channel. No TTS-back. */
+    bot: z.object({
+      enabled: z.boolean().default(false),
+      /** Default agent id used to attribute the transcript when the URL
+       *  doesn't override via `?bot=<other-agent>`. */
+      defaultAgentId: z.string().optional(),
+      /** "auto" tries mlx-whisper, falls back to OpenAI; explicit forces. */
+      whisperBackend: z.enum(["auto", "mlx", "openai"]).default("auto"),
+      whisperModel: z.string().optional(),
+      whisperLanguage: z.string().default("auto"),
+      /** Where to send each transcribed chunk. Same shape as ringNotify[]. */
+      transcriptChannel: z.object({
+        channel: z.string(),
+        chatId: z.string(),
+        accountId: z.string().optional(),
+      }).optional(),
+      /** Hard cap so a forgotten bot doesn't run forever. */
+      maxCallMinutes: z.number().int().min(1).max(240).default(30),
+    }).default({}),
   }).default({}),
 })
 

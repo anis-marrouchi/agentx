@@ -12,6 +12,7 @@ import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter } from "@/channels/github"
 import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
+import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
@@ -45,6 +46,7 @@ export class AgentXDaemon {
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
+  private botManager?: BotManager
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -327,6 +329,12 @@ export class AgentXDaemon {
       if (this.mesh) {
         this.log("  Stopping mesh...")
         await this.mesh.stop()
+      }
+    } catch {}
+
+    try {
+      if (this.botManager) {
+        this.botManager.shutdown()
       }
     } catch {}
 
@@ -906,7 +914,42 @@ export class AgentXDaemon {
           }
         })
       }
-      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length})`)
+      // AI participant ("bot") — server-side WebRTC peer that joins on
+      // ?bot=<id>, transcribes remote audio, posts chunks to a channel.
+      if (wrtcCfg.bot.enabled) {
+        const botCfg = wrtcCfg.bot
+        const iceServers: RTCIceServer[] = [
+          ...wrtcCfg.stunServers.map(urls => ({ urls })),
+          ...wrtcCfg.turnServers,
+        ]
+        this.botManager = new BotManager({
+          broker: this.webrtc,
+          iceServers,
+          whisperBackend: botCfg.whisperBackend,
+          whisperModel: botCfg.whisperModel,
+          whisperLanguage: botCfg.whisperLanguage,
+          maxCallMinutes: botCfg.maxCallMinutes,
+          log: this.log,
+          onTranscript: async ({ invite, text, durationMs }) => {
+            const dest = botCfg.transcriptChannel
+            if (!dest) return
+            const stamp = `[${new Date().toLocaleTimeString()} • ${(durationMs / 1000).toFixed(1)}s • ${invite.target}]`
+            try {
+              await this.router.sendOutbound({
+                channel: dest.channel,
+                chatId: dest.chatId,
+                text: `${stamp}\n${text}`,
+                parseMode: "plain",
+                ...(dest.accountId ? { accountId: dest.accountId } : {}),
+              })
+            } catch (e: any) {
+              this.log(`[bot-manager] transcript send via ${dest.channel}:${dest.chatId} failed: ${e.message}`)
+            }
+          },
+        })
+        this.log(`  WebRTC bot: enabled (whisper=${botCfg.whisperBackend}, default-agent=${botCfg.defaultAgentId || "(none)"}, transcript=${botCfg.transcriptChannel ? `${botCfg.transcriptChannel.channel}:${botCfg.transcriptChannel.chatId}` : "(none)"})`)
+      }
+      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length}, bot=${wrtcCfg.bot.enabled ? "on" : "off"})`)
     }
 
     await this.router.startAll()
@@ -1660,6 +1703,34 @@ export class AgentXDaemon {
           break
         }
 
+        // Browser asks the local daemon to spawn a bot peer for this call.
+        case "POST /webrtc/bot/invite": {
+          if (!this.botManager) {
+            this.json(res, 404, { error: "WebRTC bot not enabled (channels.webrtc.bot.enabled=false)" })
+            return
+          }
+          const body = await readBody(req)
+          const callId = body.callId as string | undefined
+          const target = body.target as string | undefined
+          const agentId = (body.agentId as string | undefined) || this.config.channels.webrtc?.bot.defaultAgentId
+          if (!callId || !target || !agentId) {
+            this.json(res, 400, { error: "Missing: callId, target, agentId (or defaultAgentId in config)" })
+            return
+          }
+          const result = await this.botManager.invite({ callId, target, agentId })
+          this.json(res, result.ok ? 200 : 500, result)
+          break
+        }
+
+        case "GET /webrtc/bots": {
+          if (!this.botManager) {
+            this.json(res, 404, { error: "WebRTC bot not enabled" })
+            return
+          }
+          this.json(res, 200, { active: this.botManager.active() })
+          break
+        }
+
         case "GET /webrtc/config": {
           const wrtc = this.config.channels.webrtc
           if (!wrtc?.enabled) {
@@ -1840,6 +1911,8 @@ export class AgentXDaemon {
               "GET  /webrtc/events?callId=&as=  — SSE stream of signaling events",
               "POST /webrtc/signal/out  — browser-originated signal, forwarded to remote peer",
               "POST /webrtc/signal  — remote-peer-originated signal, fanned out to local browser",
+              "POST /webrtc/bot/invite { callId, target, agentId }  — spawn a transcribing bot peer for a call",
+              "GET  /webrtc/bots  — active bot sessions",
             ],
           })
       }
