@@ -104,6 +104,17 @@ export const CALL_PAGE_HTML = `<!doctype html>
     if (!r.ok) log("send " + signal.kind + " -> " + signal.to + " failed: " + r.status, "err");
   }
 
+  /** Find an existing peer by name (normalized — handles MacBook-Local vs
+   *  macbook-local spelling drift between the URL and the remote's node.name). */
+  function findPeerEntry(name) {
+    if (!state) return null;
+    const want = norm(name);
+    for (const [key, entry] of state.peers) {
+      if (norm(key) === want) return entry;
+    }
+    return null;
+  }
+
   /** Build an RTCPeerConnection for a specific remote peer. Primary peer
    *  drives the remote video tile; non-primary peers (bots) just receive. */
   function createPeer(peerName, isPrimary) {
@@ -143,15 +154,17 @@ export const CALL_PAGE_HTML = `<!doctype html>
       teardown();
       return;
     }
-    // Find or lazy-create the PC for this remote.
-    let entry = state.peers.get(sig.from);
+    // Find by normalized name so URL-spelling vs node.name-spelling mismatches
+    // don't drop signals (same trick the broker uses for its fan-out).
+    let entry = findPeerEntry(sig.from);
     if (!entry && sig.kind === "offer") {
-      // New peer offering — create a non-primary PC. The 'to' field in the
-      // signal is us; we treat the sender as a new peer. Only an offer can
-      // introduce a new peer; answer/ice without a PC is a stale signal.
-      log("new peer offering: " + sig.from);
-      createPeer(sig.from, /* isPrimary */ false);
-      entry = state.peers.get(sig.from);
+      // New peer offering — figure out if it's the primary human (matches the
+      // URL's 'to' after normalization) or an additional peer (bot). Only an
+      // offer can introduce a new peer; answer/ice without a PC is stale.
+      const isPrimary = norm(sig.from) === norm(state.primary);
+      log("new peer offering: " + sig.from + (isPrimary ? " (primary)" : " (additional)"));
+      createPeer(sig.from, isPrimary);
+      entry = findPeerEntry(sig.from);
     }
     if (!entry) {
       log("signal from unknown peer " + sig.from + " kind=" + sig.kind + " (dropped)", "err");
