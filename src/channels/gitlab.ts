@@ -497,14 +497,20 @@ export class GitLabAdapter implements ChannelAdapter {
   private async handleIssue(event: GitLabIssueEvent, res: ServerResponse): Promise<void> {
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
-    // Skip bot-triggered issue updates (label changes, assignments by agents)
-    if (this.isBotUser(event.user.username)) {
-      res.writeHead(200); res.end("ok"); return
-    }
-
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
     const defaultAgentId = this.resolveAgent(project)
+
+    // Bot-authored issue events (label changes, assignments by agents) skip
+    // the DEFAULT agent dispatch path to prevent cascade loops — but still
+    // fire the `on:gitlab-issue` hook below so workflow subscribers and
+    // custom hook handlers can opt in to them. This matters for BPM-style
+    // workflows (gitlab-sdlc-loop, etc.) that want to react to every label
+    // transition, including bot-driven ones.
+    const authoredByBot = this.isBotUser(event.user.username)
+    if (authoredByBot) {
+      this.log(`Issue #${attrs.iid} authored by bot "${event.user.username}" — default dispatch suppressed (hooks still fire)`)
+    }
 
     // Fire `on:gitlab-issue` hook so projects can customize routing — e.g.
     // trigger a specific agent on assignment rather than the project default.
@@ -580,6 +586,10 @@ export class GitLabAdapter implements ChannelAdapter {
       this.log(`Issue #${attrs.iid}: on:gitlab-issue hook suppressed default dispatch`)
       res.writeHead(200); res.end("ok"); return
     }
+
+    // Bot-authored events: hook(s) above already ran; we stop before default
+    // agent dispatch to prevent cascade loops.
+    if (authoredByBot) { res.writeHead(200); res.end("ok"); return }
 
     // Default: route generic issue event to the project's configured agent.
     const incoming: IncomingMessage = {
