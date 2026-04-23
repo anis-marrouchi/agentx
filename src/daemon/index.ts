@@ -1023,6 +1023,7 @@ export class AgentXDaemon {
             agentId: req.agentId,
             message: req.message,
             workflowRunId: req.workflowRunId,
+            timeoutMinutes: req.timeoutMinutes,
           })
           return {
             content: resp.content ?? "",

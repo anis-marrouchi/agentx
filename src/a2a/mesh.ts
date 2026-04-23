@@ -193,7 +193,7 @@ export class A2AMesh {
    * Uses the peer's /task HTTP endpoint (agentx daemon API).
    * If no agent specified, uses the first available agent on the peer.
    */
-  async sendTask(peerName: string, text: string, agentId?: string): Promise<string> {
+  async sendTask(peerName: string, text: string, agentId?: string, opts: { timeoutMs?: number } = {}): Promise<string> {
     const state = this.peers.get(peerName)
     if (!state) throw new Error(`Unknown peer: ${peerName}`)
     if (!state.healthy) throw new Error(`Peer "${peerName}" is not healthy`)
@@ -208,11 +208,31 @@ export class A2AMesh {
       headers["Authorization"] = `Bearer ${state.peer.token}`
     }
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ agent, message: text }),
-    })
+    // Agent tasks frequently run for minutes (Claude Code sessions in
+    // particular). Node's default undici fetch aborts at 300s, which
+    // surfaces as an opaque "fetch failed" — exactly what tripped the
+    // gitlab-sdlc-loop implement-code step. Default to 30 minutes and
+    // let callers pass their workflow's agent-node timeoutMinutes when
+    // they know a tighter bound.
+    const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ agent, message: text }),
+        signal: controller.signal,
+      })
+    } catch (e: any) {
+      clearTimeout(timer)
+      if (controller.signal.aborted) {
+        throw new Error(`Peer "${peerName}" /task timed out after ${Math.round(timeoutMs / 1000)}s`)
+      }
+      throw e
+    }
+    clearTimeout(timer)
 
     if (!res.ok) {
       throw new Error(`Peer "${peerName}" /task error: ${res.status}`)

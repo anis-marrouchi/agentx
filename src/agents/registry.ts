@@ -207,7 +207,7 @@ export class AgentRegistry {
    *  we don't create a circular import with src/a2a/mesh.ts. */
   private meshFallback?: {
     findPeerWithSkill: (skillId: string) => { peer: { url: string; token?: string } } | undefined
-    sendTask: (peerName: string, text: string, agentId?: string) => Promise<string>
+    sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
   private messageQueue: MessageQueue
@@ -435,7 +435,14 @@ export class AgentRegistry {
         if (peerEntry) {
           this.log(`[${task.agentId}] not local — routing to mesh peer "${peerEntry.peer}"`)
           try {
-            const content = await this.meshFallback.sendTask(peerEntry.peer, task.message, task.agentId)
+            // Agent tasks can run for minutes. If the caller (workflow
+            // agent node) passed a timeoutMinutes, honour it; otherwise
+            // mesh.sendTask defaults to 30 minutes which beats Node's
+            // 300s fetch default that was silently aborting long runs.
+            const timeoutMs = typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0
+              ? task.timeoutMinutes * 60 * 1000
+              : undefined
+            const content = await this.meshFallback.sendTask(peerEntry.peer, task.message, task.agentId, { timeoutMs })
             return { content, viaMesh: peerEntry.peer } as AgentResponse
           } catch (e: any) {
             this.log(`[${task.agentId}] mesh fallback to "${peerEntry.peer}" failed: ${e?.message ?? e}`)

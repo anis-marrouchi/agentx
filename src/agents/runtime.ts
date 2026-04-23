@@ -35,6 +35,11 @@ export interface AgentTask {
    *  from benchmark harnesses that want to A/B the same request under
    *  "layered" and "planner" without reloading daemon config. */
   contextStrategy?: "layered" | "planner"
+  /** Upper bound on how long this task may run. Applied to mesh
+   *  forwarding (as fetch timeout) and local execution when the runtime
+   *  supports it. Workflow `agent` nodes pass this through from their
+   *  config.timeoutMinutes. */
+  timeoutMinutes?: number
   context?: {
     channel?: string
     sender?: string
