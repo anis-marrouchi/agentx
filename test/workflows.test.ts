@@ -1081,6 +1081,114 @@ describe("BPM Phase 2: gateway.parallel (fanOut + join)", () => {
     expect(byNode.filter((n) => n === "after")).toHaveLength(1)
     expect(sends.map((s) => s.text).sort()).toEqual(["branch a", "branch b", "branch c", "joined"].sort())
   })
+
+  it("runs fan-out branches concurrently (not serially)", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    store.save(workflowSchema.parse({
+      id: "parallel-timing", version: 2, title: "timing", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
+        { id: "fan",     type: "gateway.parallel", config: { mode: "fanOut" } },
+        { id: "a",       type: "action.send", config: { channel: "slow", chatId: "c", text: "a" } },
+        { id: "b",       type: "action.send", config: { channel: "slow", chatId: "c", text: "b" } },
+        { id: "c",       type: "action.send", config: { channel: "slow", chatId: "c", text: "c" } },
+        { id: "join",    type: "gateway.parallel", config: { mode: "join" } },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [
+        { from: "trigger", to: "fan" },
+        { from: "fan", to: "a" }, { from: "fan", to: "b" }, { from: "fan", to: "c" },
+        { from: "a", to: "join" }, { from: "b", to: "join" }, { from: "c", to: "join" },
+        { from: "join", to: "done" },
+      ],
+    }))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    // Each send takes 80ms. Serial execution would be 3*80 = 240ms; parallel
+    // execution is ~80ms (the walk loop dispatches the whole batch at once).
+    const channels = {
+      slow: { send: async () => { await new Promise((r) => setTimeout(r, 80)); return "m" } },
+    }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents })
+
+    const start = Date.now()
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-timing" },
+      event: { id: "evt-1", payload: {} },
+    })
+    // Wait until the run finishes — the walk loop is async-kicked.
+    let final = runs.list({ workflowId: "parallel-timing" })[0]
+    for (let i = 0; i < 40 && (!final || final.status === "running"); i++) {
+      await new Promise((r) => setTimeout(r, 10))
+      final = runs.list({ workflowId: "parallel-timing" })[0]
+    }
+    const elapsed = Date.now() - start
+    expect(final.status).toBe("completed")
+    // Parallel: ~80ms + walk overhead. Give it generous headroom (180ms)
+    // but still well below serial (240ms+overhead).
+    expect(elapsed).toBeLessThan(180)
+  })
+
+  it("no duplicate exec entries or stale joinCounters under 6-way fan-out", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    const branches = ["a", "b", "c", "d", "e", "f"]
+    store.save(workflowSchema.parse({
+      id: "parallel-race", version: 2, title: "race", priority: 0, fanOut: false,
+      envAllow: [], retention: { maxRuns: 10, maxDays: 10 },
+      nodes: [
+        { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
+        { id: "fan",     type: "gateway.parallel", config: { mode: "fanOut" } },
+        ...branches.map((id) => ({
+          id, type: "action.send" as const,
+          config: { channel: "fake", chatId: "c", text: id },
+        })),
+        { id: "join",    type: "gateway.parallel", config: { mode: "join" } },
+        { id: "done",    type: "end", config: {} },
+      ],
+      edges: [
+        { from: "trigger", to: "fan" },
+        ...branches.map((id) => ({ from: "fan", to: id })),
+        ...branches.map((id) => ({ from: id, to: "join" })),
+        { from: "join", to: "done" },
+      ],
+    }))
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const channels = {
+      fake: { send: async () => {
+        // Force a few microtask yields so branches actually interleave.
+        for (let i = 0; i < 3; i++) await Promise.resolve()
+        return "m"
+      } },
+    }
+    const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents })
+
+    await dispatcher.dispatch({
+      trigger: { source: "manual" },
+      entityRef: { backend: "manual", id: "e-race" },
+      event: { id: "evt-1", payload: {} },
+    })
+    let final = runs.list({ workflowId: "parallel-race" })[0]
+    for (let i = 0; i < 40 && (!final || final.status === "running"); i++) {
+      await new Promise((r) => setTimeout(r, 10))
+      final = runs.list({ workflowId: "parallel-race" })[0]
+    }
+
+    expect(final.status).toBe("completed")
+    // Every branch + join + end execute exactly once.
+    for (const id of branches) {
+      expect(final.history.filter((h) => h.nodeId === id && h.status === "ok")).toHaveLength(1)
+    }
+    expect(final.history.filter((h) => h.nodeId === "join" && h.status === "ok")).toHaveLength(1)
+    expect(final.history.filter((h) => h.nodeId === "done")).toHaveLength(1)
+    // joinCounters should be empty — the join fired and consumed the entry.
+    expect(final.joinCounters).toEqual({})
+    // No duplicate idempotency keys (dedup held under concurrency).
+    const keys = final.history.map((h) => h.idempotencyKey)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
 })
 
 describe("BPM Phase 2: timer service + signal bus", () => {
