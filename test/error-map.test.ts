@@ -47,6 +47,15 @@ describe("friendlyModelError", () => {
     expect(f.retryable).toBe(true)
   })
 
+  it("classifies 'Not logged in · Please run /login' as retryable auth", () => {
+    const raw = "Not logged in · Please run /login"
+    const f = friendlyModelError(raw)
+    expect(f.kind).toBe("auth")
+    expect(f.retryable).toBe(true)
+    expect(f.message).toMatch(/logged out/i)
+    expect(f.fix).toMatch(/\/login/)
+  })
+
   it("falls back to 'unknown' for unstructured text", () => {
     const f = friendlyModelError("Random wall of noise that isn't an API error at all.")
     expect(f.kind).toBe("unknown")

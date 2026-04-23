@@ -45,6 +45,21 @@ export function friendlyModelError(raw: string | undefined | null): FriendlyErro
     return { message: source.slice(0, 300), kind: "timeout", retryable: true, raw: source }
   }
 
+  // Claude Code CLI lost its OAuth session — "Not logged in · Please run /login".
+  // Usually a transient refresh race when multiple agents share one credentials
+  // file on the same host; occasionally the token is genuinely stale. Either way
+  // it comes through as plain CLI text with no JSON envelope, so match it before
+  // the parse step below.
+  if (/not logged in|please run \/login/i.test(source)) {
+    return {
+      kind: "auth",
+      retryable: true,
+      message: "The agent's Claude Code session is logged out.",
+      fix: "Usually a transient OAuth refresh race under concurrent load — retry in a moment. If it persists, run `/login` in the agent's workspace.",
+      raw: source,
+    }
+  }
+
   // Look for the standard Anthropic JSON envelope anywhere in the string —
   // the CLI prefixes it with "API Error: <status>".
   const jsonMatch = source.match(/\{.*\}\s*$/s) || source.match(/\{[\s\S]*\}/)

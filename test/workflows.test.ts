@@ -169,6 +169,12 @@ describe("template rendering", () => {
     )
     expect(out).toEqual({ body: "hi world", tags: ["t-world", 42], nested: { key: "world" } })
   })
+  it("resolves dotted paths whose node ids contain hyphens", () => {
+    // Auto-generated ids from the editor look like "n-fcjwrx" — they
+    // must resolve the same as underscore-ids.
+    expect(render("{{n-fcjwrx.sender.name}}", { "n-fcjwrx": { sender: { name: "Ana" } } })).toBe("Ana")
+    expect(render("{{a-b-c.x}}", { "a-b-c": { x: 1 } })).toBe("1")
+  })
   it("env allowlist gates reads", () => {
     process.env.WF_TEST_ALLOWED = "ok"
     process.env.WF_TEST_SECRET = "nope"

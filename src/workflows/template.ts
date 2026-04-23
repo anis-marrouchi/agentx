@@ -36,7 +36,11 @@ function lookup(path: string, ctx: Record<string, unknown>, envAllow: Set<string
 
 export function render(template: string, ctx: Record<string, unknown>, opts: RenderOptions = {}): string {
   const envAllow = new Set(opts.envAllow || [])
-  return template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}/g, (_, path: string) => lookup(path, ctx, envAllow))
+  // Character class matches the workflow node-id regex (letters, digits,
+  // underscore, hyphen, plus the dotted-path separator). Without the
+  // hyphen, auto-generated ids like "n-fcjwrx" silently fail to
+  // resolve — the {{…}} literal leaks into rendered output.
+  return template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\}\}/g, (_, path: string) => lookup(path, ctx, envAllow))
 }
 
 /** Walks a params object and renders every string-valued leaf. Used by
