@@ -60,9 +60,39 @@ daemon
     }
     writeFileSync(pidPath, String(process.pid))
 
+    // Auto-load .env from the working directory so `{{env.FOO}}` in
+    // workflows + agent prompts just works without editing systemd
+    // units. Existing process.env values win — we never overwrite what
+    // the runtime was launched with.
+    try { loadDotenv(resolve(process.cwd(), ".env")) } catch { /* best effort */ }
+
     const d = new AgentXDaemon(opts.config)
     await d.start()
   })
+
+/** Minimal .env parser: KEY=VALUE lines. Quotes around the value are
+ *  stripped. Blank lines + comments ignored. No substitution, no export
+ *  keyword — we don't want to pull dotenv for this. Variables already in
+ *  process.env take precedence so a systemd override always wins. */
+function loadDotenv(path: string): void {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { existsSync, readFileSync } = require("fs") as typeof import("fs")
+  if (!existsSync(path)) return
+  const text = readFileSync(path, "utf-8")
+  for (const raw of text.split("\n")) {
+    const line = raw.trim()
+    if (!line || line.startsWith("#")) continue
+    const eq = line.indexOf("=")
+    if (eq < 0) continue
+    const key = line.slice(0, eq).trim()
+    if (!key || process.env[key] !== undefined) continue
+    let val = line.slice(eq + 1).trim()
+    if ((val.startsWith("\"") && val.endsWith("\"")) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    process.env[key] = val
+  }
+}
 
 // agentx daemon stop
 daemon

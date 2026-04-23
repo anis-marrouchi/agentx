@@ -84,7 +84,20 @@ const sendHandler: NodeHandler = async (ctx) => {
   const channel = String(rendered.channel ?? "")
   const chatId = String(rendered.chatId ?? "")
   const text = String(rendered.text ?? "")
-  if (!channel || !chatId) return { error: `action.send "${ctx.node.id}" needs channel + chatId` }
+  if (!channel || !chatId) {
+    // Surface which template source was empty — usually the culprit is an
+    // unallowed env var or a typo in a {{node.path}} reference. Without
+    // this the author sees only "needs channel + chatId" and has to dig.
+    const rawChat = String((ctx.node.config as Record<string, unknown>).chatId ?? "")
+    const rawChan = String((ctx.node.config as Record<string, unknown>).channel ?? "")
+    const hints: string[] = []
+    if (!channel) hints.push(`channel config="${rawChan}" rendered=""`)
+    if (!chatId)  hints.push(`chatId config="${rawChat}" rendered=""`)
+    if (/\{\{\s*env\./.test(rawChat) || /\{\{\s*env\./.test(rawChan)) {
+      hints.push(`(env.* templates only resolve for names listed in workflow.envAllow and actually set in process.env)`)
+    }
+    return { error: `action.send "${ctx.node.id}" needs channel + chatId — ${hints.join("; ")}` }
+  }
 
   const accountId = resolveAccountId(ctx, rendered.accountId)
 
