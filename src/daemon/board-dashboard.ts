@@ -357,6 +357,29 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
   }
 
+  // Workflow-builder chat (proxies to main daemon where the dispatcher
+  // + AgentRegistry live). The board-dashboard serves /workflows/editor
+  // but runs its own workflow stores; the chat endpoint needs the
+  // running agent registry, which only the main daemon has.
+  if (method === "POST" && path === "/api/workflows/editor/chat") {
+    try {
+      const body = await readJson(req)
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const r = await fetch(`${daemonUrl}/api/workflows/editor/chat`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body ?? {}),
+      })
+      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      sendJson(res, r.status, data)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
+    return
+  }
+
   // Workflow API — read (dashboard:read) / write (dashboard:write). Fine-
   // grained scope checks let read-only scoped tokens still populate the
   // /workflows observability page when dashboard.token isn't configured.
