@@ -14,6 +14,7 @@ export interface FriendlyError {
   /** Machine-readable error category for routing / retries. */
   kind:
     | "out_of_credits"
+    | "overage_disabled"
     | "auth"
     | "permission"
     | "rate_limit"
@@ -75,7 +76,23 @@ export function friendlyModelError(raw: string | undefined | null): FriendlyErro
   const statusMatch = source.match(/API Error:\s*(\d{3})/i)
   const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined
 
-  // Credits exhausted — the specific case the user flagged.
+  // Max-plan overage disabled — the most common root cause on subscription
+  // accounts. Anthropic returns "You're out of extra usage" when a request
+  // would spill past the regular Max allotment AND overage ("extra usage")
+  // is disabled at the org level. Operator fix is flipping a toggle on
+  // claude.ai, not topping up API credits — so route this to its own kind
+  // with a retryable:true hint (re-enabling overage unblocks immediately).
+  if (errMessage && /out of extra usage/i.test(errMessage)) {
+    return {
+      kind: "overage_disabled",
+      retryable: true,
+      message: "Claude Max-plan overage is unavailable (disabled or depleted at the org level).",
+      fix: "Enable overage / extra usage at https://claude.ai/settings/usage (this is the subscription account's toggle — not Anthropic API billing). Warm sessions can still succeed via prompt cache; cold dispatches will keep failing until overage is re-enabled.",
+      raw: source,
+    }
+  }
+
+  // Real API credit exhaustion (programmatic ANTHROPIC_API_KEY accounts).
   if (errMessage && /out of (extra )?usage|out of credit|credit(s)? exhausted|insufficient credit/i.test(errMessage)) {
     return {
       kind: "out_of_credits",

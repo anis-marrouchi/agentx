@@ -13,6 +13,8 @@ import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queu
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
 import type { LandscapeBuilder } from "./landscape"
+import { preflightOverageGate } from "./overage-status"
+import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
@@ -244,6 +246,14 @@ export class AgentRegistry {
     this.rateLimiter = new RateLimiter()
     this.tokenTracker = new TokenTracker()
     this.messageQueue = new MessageQueue()
+
+    // Apply the claude-code fleet dispatch budget. See DaemonConfig.session
+    // for the tuning knobs. Pools all claude-code agents under one counter
+    // because they share the Max OAuth.
+    setDispatchBudget({
+      maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
+      maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
+    })
 
     if (config.graph?.enabled) {
       this.graphStore = new GraphStore({
@@ -821,6 +831,48 @@ export class AgentRegistry {
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
+
+    // Pre-flight gates (claude-code tier only). Two separate heuristics that
+    // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
+    // subprocess to reproduce the same failure:
+    //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
+    //       at the org level. A cold dispatch's fresh cache-create spills
+    //       past the regular allotment and gets rejected.
+    //   (2) Quota gate — when our own dispatch-budget counters say the
+    //       fleet has burned through the hourly or 5-hour cap. Warm
+    //       sessions still pass; cold dispatches are deferred.
+    // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
+    // replay keeps them inside the regular allotment.
+    if (state.def.tier === "claude-code") {
+      const hasWarmSession = Boolean(resumeSessionId)
+      const gates = [
+        preflightOverageGate(hasWarmSession),
+        preflightQuotaGate(hasWarmSession),
+      ]
+      const abort = gates.find((g) => g && g.abort)
+      if (abort) {
+        state.errors++
+        this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
+        const preflightResponse: AgentResponse = {
+          content: "",
+          error: abort.message,
+          duration: 0,
+        }
+        if (!onDelta) {
+          output.buffer = `[error] ${abort.message}`
+          for (const sub of output.subscribers) {
+            try { sub(output.buffer) } catch { /* */ }
+          }
+        }
+        return preflightResponse
+      }
+      // Past the gates — commit the dispatch to the rolling budget and log
+      // a warning if we've crossed warnRatio so the operator sees pressure
+      // building before it turns into rejections.
+      recordClaudeCodeDispatch()
+      const warning = warnIfNearingCap()
+      if (warning) this.log(`[${task.agentId}] ${warning}`)
+    }
 
     let finalResponse: AgentResponse | undefined
     try {
