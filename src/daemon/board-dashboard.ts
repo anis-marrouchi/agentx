@@ -365,26 +365,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/api/workflows/runs") {
     try {
       const url = new URL(req.url || "/", "http://localhost")
-      const limit = url.searchParams.get("limit") || "50"
-      const workflowId = url.searchParams.get("workflowId")
-      const local = ctx.workflowRuns.list({ limit: Math.max(1, Math.min(500, Number(limit))), workflowId: workflowId || undefined })
-      const headers: Record<string, string> = {}
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const qs = `?limit=${encodeURIComponent(limit)}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}`
-      let remote: WorkflowRun[] = []
-      try {
-        const r = await fetch(`${daemonUrl}/api/workflows/runs${qs}`, { headers })
-        if (r.ok) {
+      const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 50)))
+      const workflowId = url.searchParams.get("workflowId") || undefined
+      const local = ctx.workflowRuns.list({ limit, workflowId })
+      const qs = `?limit=${limit}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}`
+      // Fan out to every configured peer daemon in parallel. Primary
+      // (dashboard.daemonUrl) gets the dashboard.token; entries in
+      // dashboard.daemons use their own per-peer token.
+      const targets: Array<{ url: string; token?: string }> = [
+        { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
+        ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
+      ]
+      const remoteLists = await Promise.all(targets.map(async (t) => {
+        const headers: Record<string, string> = {}
+        if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+        try {
+          const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs${qs}`, { headers })
+          if (!r.ok) return []
           const data = await r.json() as { runs?: WorkflowRun[] }
-          if (Array.isArray(data.runs)) remote = data.runs
-        }
-      } catch { /* remote unreachable — show local only */ }
-      // Union by id, prefer remote (it's the authoritative home-node view).
+          return Array.isArray(data.runs) ? data.runs : []
+        } catch { return [] }
+      }))
       const byId = new Map<string, WorkflowRun>()
       for (const r of local) byId.set(r.id, r)
-      for (const r of remote) byId.set(r.id, r)
-      const merged = Array.from(byId.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, Number(limit))
+      for (const list of remoteLists) for (const r of list) byId.set(r.id, r)
+      const merged = Array.from(byId.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, limit)
       sendJson(res, 200, { runs: merged })
     } catch (e: any) {
       sendJson(res, 502, { error: "runs fetch failed", message: e.message || String(e) })
@@ -396,16 +401,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     const runId = decodeURIComponent(runDetailMatch[1])
     const local = ctx.workflowRuns.get(runId)
     if (local) { sendJson(res, 200, { run: local }); return }
-    try {
-      const headers: Record<string, string> = {}
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const r = await fetch(`${daemonUrl}/api/workflows/runs/${encodeURIComponent(runId)}`, { headers })
-      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
-      sendJson(res, r.status, data)
-    } catch (e: any) {
-      sendJson(res, 404, { error: "run not found (neither local nor remote reachable)", message: e.message || String(e) })
+    // Try every peer until one returns the run. First hit wins.
+    const targets: Array<{ url: string; token?: string }> = [
+      { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
+      ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
+    ]
+    for (const t of targets) {
+      try {
+        const headers: Record<string, string> = {}
+        if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs/${encodeURIComponent(runId)}`, { headers })
+        if (r.ok) {
+          sendJson(res, 200, await r.json())
+          return
+        }
+      } catch { /* try next */ }
     }
+    sendJson(res, 404, { error: "run not found on any configured peer" })
     return
   }
 
