@@ -41,6 +41,17 @@ export interface GitLabChannelConfig {
   token: string
   routes: GitLabRoute[]
   agentMappings?: GitLabAgentMapping[]  // @mention -> agent mappings
+  /** All known agent ids in this daemon — passed from the outer config by
+   *  the daemon at construction time. Used to auto-derive default GitLab
+   *  username mappings so operators don't have to hand-register every agent
+   *  for @mentions to work. Explicit entries in `agentMappings` always take
+   *  precedence (they carry per-agent tokens, non-standard usernames, etc.)
+   *  The auto-derived defaults use the convention `{agentId, noqta-<agentId>}`
+   *  which mirrors the existing hand-maintained rows (pm-mtgl, atlas, ...).
+   *
+   *  Removal: when an agent is deleted from agents.<id>, its default mapping
+   *  disappears on next daemon restart. */
+  knownAgentIds?: string[]
 }
 
 interface GitLabNoteEvent {
@@ -214,8 +225,39 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     }
 
+    // Auto-derived defaults: every agent in the daemon that doesn't have an
+    // explicit `agentMappings` row gets a default entry so @-mentions route
+    // without operators hand-maintaining a parallel list.
+    //
+    // Convention: `@<agentId>` and `@noqta-<agentId>` both route to the
+    // agent — mirrors existing hand-maintained rows (pm-mtgl → [pm-mtgl,
+    // noqta-pm-mtgl], atlas → [atlas, noqta-atlas], ...). Author explicit
+    // entries in agentMappings when an agent needs a per-agent token or a
+    // non-standard username.
+    const explicitAgentIds = new Set((this.config.agentMappings ?? []).map((m) => m.agentId))
+    const autoMapped: string[] = []
+    for (const agentId of this.config.knownAgentIds ?? []) {
+      if (explicitAgentIds.has(agentId)) continue
+      // Skip internal/utility ids that aren't actual agents in the GitLab
+      // sense (e.g. "graph-agent" only ever talks on the a2a mesh).
+      const defaultUsernames = [agentId, `noqta-${agentId}`]
+      for (const username of defaultUsernames) {
+        this.botUsernames.add(username)
+        if (!this.usernameToAgent.has(username.toLowerCase())) {
+          this.usernameToAgent.set(username.toLowerCase(), agentId)
+        }
+      }
+      if (!this.agentToUsername.has(agentId)) {
+        this.agentToUsername.set(agentId, agentId.toLowerCase())
+      }
+      autoMapped.push(agentId)
+    }
+
     this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
     this.log(`Username->Agent map: ${[...this.usernameToAgent.entries()].map(([u, a]) => `@${u}->${a}`).join(", ")}`)
+    if (autoMapped.length > 0) {
+      this.log(`GitLab auto-derived defaults for ${autoMapped.length} agent(s): ${autoMapped.join(", ")} (override by adding an agentMappings entry)`)
+    }
 
     this.server = createServer(async (req, res) => {
       if (req.method === "POST") {

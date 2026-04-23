@@ -775,6 +775,11 @@ export class AgentXDaemon {
           token: this.config.channels.gitlab.token,
           routes: this.config.channels.gitlab.routes,
           agentMappings: this.config.channels.gitlab.agentMappings,
+          // Every agent becomes an @-mention target on GitLab by default.
+          // Explicit agentMappings above take precedence (per-agent token,
+          // custom usernames); anything else gets a default derivation on
+          // (re)start. Add/remove an agent → no GitLab config change needed.
+          knownAgentIds: Object.keys(this.config.agents),
         },
         this.log,
         this.hooks,
