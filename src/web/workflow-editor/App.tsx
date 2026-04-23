@@ -3,6 +3,7 @@ import { Canvas, type RunState, type Selection, type ViewBox } from "./Canvas"
 import { Inspector } from "./Inspector"
 import { Palette } from "./Palette"
 import { KbdOverlay, RunPanel, Toolbar, Tweaks, type RunStep, type SaveStatus } from "./Toolbar"
+import { ChatWidget } from "./ChatWidget"
 import { blankGraph, graphToWorkflow, type GraphEdge, type GraphModel, type GraphNode, workflowToGraph, TRIGGER_NODE_ID } from "./graph"
 import { deleteWorkflow, fetchAgents, fetchLayout, fetchWorkflow, saveLayout, saveWorkflow, validate, type AgentSummary } from "./api"
 import { MOCK_AGENTS, type AgentInfo, type PaletteItem, type TemplateCard } from "./data"
@@ -545,6 +546,14 @@ export function App() {
           Delete workflow
         </button>
       )}
+      <ChatWidget
+        currentWorkflow={graphToWorkflow({ meta, nodes, edges }).workflow}
+        onApplyWorkflow={(wf) => {
+          const g = workflowToGraph(wf)
+          dispatch({ type: "setAll", state: { meta: g.meta, nodes: g.nodes, edges: g.edges, selection: null, isNew: false } })
+          showToast("Applied workflow from chat", "ok")
+        }}
+      />
       {toast && <div className={"toast" + (toast.kind === "err" ? " err" : "")}><span className="dot" />{toast.msg}</div>}
     </div>
   )

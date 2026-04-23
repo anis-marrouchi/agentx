@@ -1404,6 +1404,17 @@ export class AgentXDaemon {
         await this.handleChannelSend(req, res)
         return
       }
+      // Known-chats discovery. Local if this node hosts the channel; else
+      // forward to a peer that does. Lets the workflow editor populate a
+      // chatId picker without authors memorizing platform ids. The `local=1`
+      // query param suppresses mesh fan-out so peer-to-peer recursion
+      // (both nodes advertise the same channel) can't loop forever.
+      const channelChatsMatch = req.method === "GET" && path.match(/^\/channels\/([^/]+)\/chats$/)
+      if (channelChatsMatch) {
+        const localOnly = url.searchParams.get("local") === "1"
+        await this.handleChannelChats(res, decodeURIComponent(channelChatsMatch[1]), { localOnly })
+        return
+      }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
@@ -1421,6 +1432,59 @@ export class AgentXDaemon {
         this.json(res, 200, computeKpis(this.workflowDispatcher.tasks))
         return
       }
+      // POST /api/workflows/editor/chat — author chat dispatched to an agent.
+      //
+      // Body: { messages: [{role, content}], currentWorkflow?, agentId?, context? }
+      // Returns: { reply, workflow? | null, error? }
+      //
+      // The endpoint packs the full V2 schema + environment (available
+      // agents, actors, roles, channels, existing workflows) into the
+      // agent's prompt so a generic agent with no special training can
+      // still produce a valid workflow JSON.
+      if (req.method === "POST" && path === "/api/workflows/editor/chat" && this.workflowDispatcher) {
+        let body: any
+        try { body = await readJsonBody(req) } catch (e: any) {
+          this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+        }
+        const messages = Array.isArray(body?.messages) ? body.messages as Array<{ role: string; content: string }> : []
+        if (!messages.length) { this.json(res, 400, { error: "messages array required" }); return }
+        const normMessages = messages
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+        if (!normMessages.length) { this.json(res, 400, { error: "messages must contain at least one {role: 'user'|'assistant', content}" }); return }
+
+        const agentId = typeof body?.agentId === "string" && body.agentId
+          ? body.agentId
+          : (process.env.AGENTX_WORKFLOW_AUTHOR_AGENT || this.registry.list()[0]?.id)
+        if (!agentId) { this.json(res, 503, { error: "no authoring agent available — register an agent or set AGENTX_WORKFLOW_AUTHOR_AGENT" }); return }
+
+        const { buildWorkflowAuthorPrompt, extractWorkflowJson } = await import("@/workflows/editor-chat")
+        const availableChannels = Object.keys(this.workflowDispatcher["channels"] as Record<string, unknown>).sort()
+        const availableAgents = this.registry.list().map((a) => ({ id: a.id, description: a.name }))
+        const prompt = buildWorkflowAuthorPrompt({
+          messages: normMessages,
+          store: this.workflowStore!,
+          actors: this.workflowDispatcher.actors,
+          availableAgents,
+          availableChannels,
+          currentWorkflow: body?.currentWorkflow,
+        })
+        try {
+          const resp = await this.registry.execute({
+            agentId,
+            message: prompt,
+            context: { channel: "workflow-editor", chatId: "editor", sender: "editor" } as any,
+          })
+          if (resp.error) { this.json(res, 502, { error: resp.error, agentId }); return }
+          const reply = resp.content ?? ""
+          const workflow = extractWorkflowJson(reply)
+          this.json(res, 200, { reply, workflow, agentId })
+        } catch (e: any) {
+          this.json(res, 500, { error: "agent execute failed", message: e.message })
+        }
+        return
+      }
+
       // POST /api/workflows/signal/:name — manual signal emission.
       if (req.method === "POST" && path.startsWith("/api/workflows/signal/") && this.workflowDispatcher) {
         const name = decodeURIComponent(path.replace(/^\/api\/workflows\/signal\//, ""))
@@ -2538,6 +2602,72 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       this.log(`[mesh] /channel/send "${channel}" failed: ${e.message}`)
       this.json(res, 500, { error: e.message })
     }
+  }
+
+  /** List chats the given channel adapter has observed. Merges local with
+   *  every healthy mesh peer that hosts the channel — a channel's "true"
+   *  chat list is spread across whichever nodes are actually paired
+   *  (e.g. macbook has the channel enabled but WhatsApp Baileys is unpaired,
+   *  while clawd-server is paired; macbook's list is empty but we still want
+   *  the author to pick from clawd-server's cache). Dedup by `id`; the first
+   *  source with a given id wins.
+   *
+   *  `sources` in the response tells the editor where the entries came from
+   *  so it can show that metadata alongside. */
+  private async handleChannelChats(
+    res: ServerResponse,
+    channel: string,
+    opts: { localOnly?: boolean } = {},
+  ): Promise<void> {
+    const seen = new Set<string>()
+    const chats: Array<{ id: string; name?: string; kind: "dm" | "group"; accountId?: string; source: string }> = []
+    const sources: string[] = []
+    const add = (items: Array<{ id: string; name?: string; kind: "dm" | "group"; accountId?: string }>, source: string) => {
+      let added = 0
+      for (const c of items) {
+        if (!c.id || seen.has(c.id)) continue
+        seen.add(c.id)
+        chats.push({ ...c, source })
+        added++
+      }
+      if (added > 0) sources.push(`${source}:${added}`)
+    }
+
+    // Local adapter — Telegram or WhatsApp shape (duck-typed).
+    const local = this.router.getChannel(channel) as unknown as
+      | { listKnownChats?: () => Array<{ id: string; name?: string; kind: "dm" | "group"; accountId?: string }>
+          listChats?: () => Array<{ jid: string; name: string; isGroup: boolean }> }
+      | undefined
+    if (local?.listKnownChats) {
+      try { add(local.listKnownChats(), "local") } catch { /* adapter still booting */ }
+    } else if (local?.listChats) {
+      try {
+        add(local.listChats().map((c) => ({ id: c.jid, name: c.name, kind: c.isGroup ? ("group" as const) : ("dm" as const) })), "local")
+      } catch { /* */ }
+    }
+
+    // Mesh peers — fan out in parallel with `?local=1` so peers only report
+    // their OWN adapter's chats (no recursive fan-out back to us). Failures
+    // don't block the response; a partial result is better than a timeout.
+    if (!opts.localOnly && this.mesh) {
+      const peers = this.mesh.directory().filter((p) => p.healthy && p.channels?.includes(channel))
+      await Promise.allSettled(peers.map(async (peer) => {
+        try {
+          const r = await fetch(`${peer.peerUrl}/channels/${encodeURIComponent(channel)}/chats?local=1`, {
+            signal: AbortSignal.timeout(5000),
+          })
+          if (!r.ok) return
+          const body = await r.json() as { chats?: Array<{ id: string; name?: string; kind?: "dm" | "group"; accountId?: string }> }
+          if (Array.isArray(body.chats)) {
+            add(body.chats.map((c) => ({ id: c.id, name: c.name, kind: c.kind ?? "dm", accountId: c.accountId })), `mesh:${peer.peer}`)
+          }
+        } catch {
+          // ignore — soft availability; we'll just return what we have
+        }
+      }))
+    }
+
+    this.json(res, 200, { channel, source: sources.join(", ") || "none", chats })
   }
 
   /** Manual run endpoint used by `agentx workflow run <id>`. Only workflows

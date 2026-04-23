@@ -214,6 +214,19 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
 
 // -------------------- save (create/update) --------------------
 
+// Top-level workflow keys the editor doesn't yet have UI controls for. When
+// the editor saves a workflow without these keys present in the raw payload
+// (typical when an older cached IIFE bundle is in the user's browser), we
+// preserve the on-disk value instead of letting Zod's default silently flip
+// the field back. Without this guard, server-only behaviours like
+// `mesh.allowRemote: true` get reset on every Save until the user
+// hard-refreshes — see 2026-04-23 incident where a cached editor repeatedly
+// stripped mesh and broke the cross-mesh broadcast.
+//
+// Add new keys here when you ship a server-side workflow feature ahead of
+// matching editor UI; remove a key once the editor sends it.
+const EDITOR_BLIND_KEYS = ["mesh"] as const
+
 function handleSave(
   res: ServerResponse,
   deps: WorkflowsApiDeps,
@@ -241,6 +254,22 @@ function handleSave(
   if (opts.mode === "create" && deps.store.get(wf.id)) {
     return sendJson(res, 409, { error: `workflow "${wf.id}" already exists` })
   }
+
+  // Preserve editor-blind keys from disk. We check the RAW payload (not the
+  // parsed one — Zod has already filled defaults) to distinguish "editor
+  // omitted this field" from "editor explicitly set the default value".
+  if (opts.mode === "update" && body && typeof body === "object") {
+    const raw = body as Record<string, unknown>
+    const existing = deps.store.get(opts.id)
+    if (existing) {
+      for (const key of EDITOR_BLIND_KEYS) {
+        if (!(key in raw) && key in existing) {
+          ;(wf as Record<string, unknown>)[key] = (existing as Record<string, unknown>)[key]
+        }
+      }
+    }
+  }
+
   const saved = deps.store.save(wf)
   // Prune stale layout entries if any nodes were removed since the last save.
   deps.layouts.sync(saved.id, saved.nodes.map((n) => n.id))

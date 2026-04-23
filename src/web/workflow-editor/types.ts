@@ -65,6 +65,10 @@ export interface Workflow {
   edges: WorkflowEdge[]
   envAllow: string[]
   retention: { maxRuns: number; maxDays: number }
+  maxChildDepth?: number
+  /** Mesh integration. Optional in the editor — populated by the server
+   *  schema with a default of { allowRemote: false }. */
+  mesh?: { allowRemote: boolean; peers?: string[] }
   created?: string
   updated?: string
 }

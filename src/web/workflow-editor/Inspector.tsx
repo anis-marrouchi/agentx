@@ -45,8 +45,8 @@ function Field({ label, hint, err, children, mono }: { label: string; hint?: str
   )
 }
 
-function Input({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
-  return <input className={"fld__input" + (mono ? " mono" : "")} type="text" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+function Input({ value, onChange, placeholder, mono, list }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean; list?: string }) {
+  return <input className={"fld__input" + (mono ? " mono" : "")} type="text" value={value} placeholder={placeholder} list={list} onChange={(e) => onChange(e.target.value)} />
 }
 
 function NumInput({ value, onChange, placeholder }: { value: number | undefined; onChange: (v: number | undefined) => void; placeholder?: string }) {
@@ -660,6 +660,49 @@ function EndForm({ node, patchData }: FormProps) {
 
 const CHANNEL_OPTIONS = ["gitlab", "github", "whatsapp", "telegram", "discord", "slack"]
 
+/** Module-level cache keyed by channel name. Known-chat lookups are shared
+ *  across every ActionSendForm mount (one per selected node) in a session,
+ *  so a cache avoids a fresh /channels/<name>/chats round-trip every time
+ *  the user clicks a different action.send node. TTL is deliberately short
+ *  (60 s) — new chats appear as soon as a peer observes them.
+ *
+ *  Not persisted; Map lives for the tab's lifetime. */
+type KnownChat = { id: string; name?: string; kind: "dm" | "group"; accountId?: string }
+const knownChatCache: Map<string, { at: number; chats: KnownChat[]; source: string }> = new Map()
+const KNOWN_CHATS_TTL_MS = 60_000
+
+function useKnownChats(channel: string): { chats: KnownChat[]; source: string; loading: boolean } {
+  const [state, setState] = useState<{ chats: KnownChat[]; source: string; loading: boolean }>(() => {
+    const cached = knownChatCache.get(channel)
+    if (cached && Date.now() - cached.at < KNOWN_CHATS_TTL_MS) return { chats: cached.chats, source: cached.source, loading: false }
+    return { chats: [], source: "", loading: true }
+  })
+  useEffect(() => {
+    let cancelled = false
+    const cached = knownChatCache.get(channel)
+    if (cached && Date.now() - cached.at < KNOWN_CHATS_TTL_MS) {
+      setState({ chats: cached.chats, source: cached.source, loading: false })
+      return
+    }
+    setState((s) => ({ ...s, loading: true }))
+    fetch(`/channels/${encodeURIComponent(channel)}/chats`)
+      .then((r) => r.ok ? r.json() : { chats: [], source: "" })
+      .then((body: { chats?: KnownChat[]; source?: string }) => {
+        if (cancelled) return
+        const chats = Array.isArray(body.chats) ? body.chats : []
+        const source = typeof body.source === "string" ? body.source : ""
+        knownChatCache.set(channel, { at: Date.now(), chats, source })
+        setState({ chats, source, loading: false })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setState({ chats: [], source: "", loading: false })
+      })
+    return () => { cancelled = true }
+  }, [channel])
+  return state
+}
+
 function ActionSendForm({ node, patchData, nodes }: FormProps) {
   const cfg = node.config as { channel?: string; chatId?: string; text?: string; parseMode?: string; accountId?: string; replyTo?: string }
   // Find this workflow's actual trigger node id so the placeholder template
@@ -668,16 +711,40 @@ function ActionSendForm({ node, patchData, nodes }: FormProps) {
   // which then trips the "needs channel + chatId" guard.
   const triggerId = nodes.find((n) => n.type.startsWith("trigger."))?.id ?? "trigger"
   const tmpl = (path: string) => `{{${triggerId}.${path}}}`
+  const channel = String(cfg.channel ?? "whatsapp")
+  const chats = useKnownChats(channel)
+  const datalistId = `chats-${channel}`
   return (
     <Section title="Send message">
       <Field label="Channel">
-        <Select value={String(cfg.channel ?? "whatsapp")} onChange={(v) => patchData({ channel: v })} options={CHANNEL_OPTIONS} />
+        <Select value={channel} onChange={(v) => patchData({ channel: v })} options={CHANNEL_OPTIONS} />
       </Field>
       <Field
         label="Chat id"
-        hint={`Use ${tmpl("chatId")} to reply on the same chat the trigger fired on. For a different destination, paste the channel-specific id.`}
+        hint={
+          chats.chats.length > 0
+            ? `Use ${tmpl("chatId")} to reply to the trigger's chat, or pick one of the ${chats.chats.length} known chat(s) ${chats.source === "local" ? "on this node" : `from ${chats.source}`} (click the field to see the list).`
+            : chats.loading
+              ? `Loading known chats for "${channel}"…`
+              : `Use ${tmpl("chatId")} to reply to the trigger's chat. For a different destination, paste the channel-specific id (no discovered chats for "${channel}" yet).`
+        }
       >
-        <Input mono value={String(cfg.chatId ?? "")} onChange={(v) => patchData({ chatId: v })} placeholder={tmpl("chatId")} />
+        <Input
+          mono
+          value={String(cfg.chatId ?? "")}
+          onChange={(v) => patchData({ chatId: v })}
+          placeholder={tmpl("chatId")}
+          list={chats.chats.length > 0 ? datalistId : undefined}
+        />
+        {chats.chats.length > 0 && (
+          <datalist id={datalistId}>
+            {chats.chats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name ? `${c.name} — ${c.id}${c.kind === "group" ? " (group)" : ""}` : `${c.id}${c.kind === "group" ? " (group)" : ""}`}
+              </option>
+            ))}
+          </datalist>
+        )}
       </Field>
       <Field label="Text" hint="Supports {{nodeId.path}} templates from any upstream node">
         <ExprField value={String(cfg.text ?? "")} onChange={(v) => patchData({ text: v })} rows={4} placeholder={`Thanks ${tmpl("sender.name")} — working on it.`} />

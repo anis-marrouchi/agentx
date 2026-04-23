@@ -122,6 +122,15 @@ class TelegramGroupStore {
   hasGroup(groupId: string): boolean {
     return !!this.data[groupId]
   }
+
+  /** All groups this store knows about, with their best-effort display name. */
+  listGroups(): Array<{ id: string; name?: string; botCount: number }> {
+    return Object.entries(this.data).map(([id, g]) => ({
+      id,
+      name: g.name,
+      botCount: Object.values(g.bots).filter((b) => b.status !== "left" && b.status !== "kicked").length,
+    }))
+  }
 }
 
 /**
@@ -866,6 +875,25 @@ export class TelegramAdapter implements ChannelAdapter {
    * Get verified context for a Telegram chat.
    * Reads from persistent group store (fed by my_chat_member events + API seed).
    */
+  /** Surface chats the adapter has observed, so the workflow editor (or CLI)
+   *  can present a picker when an author is authoring an `action.send` that
+   *  targets a different chat than the trigger's. DMs come from the per-chat
+   *  account map (populated when a user messages a bot); groups come from
+   *  the persistent group membership store. Both lists are small — bounded
+   *  by the number of distinct chats the bots have been in. */
+  listKnownChats(): Array<{ id: string; name?: string; kind: "dm" | "group"; accountId?: string }> {
+    const out: Array<{ id: string; name?: string; kind: "dm" | "group"; accountId?: string }> = []
+    for (const [id, accountId] of this.chatAccountMap) {
+      if (TelegramAdapter.isDirectMessage(id)) {
+        out.push({ id, kind: "dm", accountId })
+      }
+    }
+    for (const g of this.groupStore.listGroups()) {
+      out.push({ id: g.id, name: g.name, kind: "group" })
+    }
+    return out
+  }
+
   async getChannelMeta(chatId: string): Promise<ChannelMeta | undefined> {
     const bots = this.groupStore.getGroupBots(chatId)
     if (!bots.length) return undefined
