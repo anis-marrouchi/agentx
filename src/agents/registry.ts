@@ -633,7 +633,15 @@ export class AgentRegistry {
       resumeSessionId = undefined
     }
 
-    // Compact session if history is getting too long (summarize older messages)
+    // Compact session if history is getting too long (summarize older messages).
+    //
+    // Compaction NO LONGER drops resumeSessionId — Claude's own session has
+    // its own history that --resume replays, independent of our stored copy.
+    // The summary gets used at the next legitimate rotation (tier-2,
+    // max-turns, stale) when we genuinely need a fresh Claude session and
+    // have to seed it from the stored messages. Until then, the hot session
+    // stays cache-friendly. See sessions.ts compactIfNeeded for the longer
+    // explanation.
     try {
       const compactResult = await this.sessions.compactIfNeeded(
         task.agentId, channel, chatId, this.memoryStore,
@@ -650,7 +658,6 @@ export class AgentRegistry {
           this.log(`[${task.agentId}] DRIFT DETECTED: score=${d.overallScore} (lexicon=${d.lexiconDecay}, tools=${d.toolShift}, semantic=${d.semanticDrift})`)
           if (d.lostWords.length) this.log(`[${task.agentId}] lost domain words: ${d.lostWords.slice(0, 5).join(", ")}`)
         }
-        resumeSessionId = undefined
       }
     } catch (e: any) {
       this.log(`[${task.agentId}] compaction failed (non-fatal): ${e.message}`)

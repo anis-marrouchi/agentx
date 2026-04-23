@@ -383,12 +383,21 @@ export class SessionStore {
     session.messages = applyCompaction(session.messages, result)
     session.updatedAt = new Date().toISOString()
 
-    // Clear Claude session ID — the compacted context needs a fresh session.
-    // Reset the turn counter and last-turn usage alongside, since both are
-    // tied to the now-discarded claudeSessionId.
-    delete session.claudeSessionId
-    delete session.turnCount
-    delete session.lastTurnInputTokens
+    // We deliberately KEEP claudeSessionId, turnCount, and lastTurnInputTokens.
+    //
+    // Why: AgentX's `session.messages` is a stored copy used to seed a fresh
+    // Claude session whenever one legitimately rotates (tier-2, max-turns,
+    // stale, restart). Claude's own session has its own copy of the
+    // conversation that --resume replays — it doesn't read from
+    // session.messages. So compacting our copy doesn't reduce what Claude
+    // sees on resume; dropping claudeSessionId here was just paying a fresh
+    // ~16K-token cache-create tax on the next call without any context
+    // benefit. Particularly painful for bursty workloads (project-bot
+    // queues) where each burst trips compaction and forces N cache rebuilds
+    // per Max-plan window.
+    //
+    // The compacted summary gets used at the next legitimate rotation —
+    // exactly when it matters. Until then, Claude keeps its hot session.
 
     this.save(session)
     return {

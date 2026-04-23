@@ -14,8 +14,16 @@ import { buildFingerprint, detectDrift, saveFingerprint, loadFingerprint, type D
 // 4. Preserves recent messages verbatim, compacts older ones
 
 const COMPACTION_MODEL = "claude-haiku-4-20250514"
-const MAX_HISTORY_CHARS = 12000
-const COMPACT_THRESHOLD = 10000   // Start compacting when history exceeds this
+const MAX_HISTORY_CHARS = 60_000
+// Start compacting when stored history exceeds this. Bumped 10K → 50K
+// because the original threshold tripped on trivial multi-message bursts
+// (project-bot queues, daily-tick storms), spending Haiku tokens to reduce
+// stored history that Claude itself never reads — Claude --resume replays
+// from its own copy. The cost-relevant thresholds are tier-2 token rotation
+// (~200K tokens / ~800K chars of input) and max-turns; compaction is just
+// for our local storage hygiene + cross-session summary seeding, so a
+// generous threshold is fine.
+const COMPACT_THRESHOLD = 50_000
 const KEEP_RECENT = 6             // Always keep last N messages verbatim
 const MIN_MESSAGES_TO_COMPACT = 8 // Don't compact if fewer than this
 
