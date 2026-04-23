@@ -120,6 +120,8 @@ export class GitLabAdapter implements ChannelAdapter {
   private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
   private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
+  private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>
+  private setLabelsForwarder?: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]"), hooks?: HookRegistry) {
     this.config = config
@@ -137,6 +139,14 @@ export class GitLabAdapter implements ChannelAdapter {
 
   setLogTimeForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>): void {
     this.logTimeForwarder = fn
+  }
+
+  setCreateIssueForwarder(fn: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>): void {
+    this.createIssueForwarder = fn
+  }
+
+  setSetLabelsForwarder(fn: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>): void {
+    this.setLabelsForwarder = fn
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -892,6 +902,157 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     } catch (e: any) {
       this.log(`Time log error: ${e.message}`)
+    }
+  }
+
+  /** Create a new GitLab issue. Mirrors `logTimeSpent`'s identity resolution:
+   *  prefers the per-agent token; if the agent is hosted on a remote peer
+   *  and no local token exists, forwards via mesh so the issue appears under
+   *  the agent's real GitLab user. Returns `{ iid, url }` or null on failure. */
+  async createIssue(args: {
+    project: string
+    title: string
+    description?: string
+    labels?: string[]
+    assignees?: string[]
+    agentId?: string
+  }): Promise<{ iid: number; url: string } | null> {
+    const { project, title, description = "", labels = [], assignees = [], agentId } = args
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const agentToken = this.getAgentToken(agentId)
+
+    // Remote-hosted agent with no local token — forward to peer.
+    if (!agentToken && mapping?.node && this.createIssueForwarder) {
+      try {
+        const result = await this.createIssueForwarder(mapping.node, project, title, description, labels, assignees, agentId || "")
+        if (result) this.log(`Issue created (via peer "${mapping.node}") #${result.iid} on ${project}`)
+        return result
+      } catch (e: any) {
+        this.log(`Issue-create forward to "${mapping.node}" failed: ${e.message}`)
+        return null
+      }
+    }
+
+    const token = agentToken || this.config.token
+    if (!token) {
+      this.log(`Issue-create failed: no token available for agent "${agentId || "global"}"`)
+      return null
+    }
+
+    const encodedProject = encodeURIComponent(project)
+    const endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/issues`
+    const body = new URLSearchParams()
+    body.set("title", title)
+    if (description) body.set("description", description)
+    if (labels.length > 0) body.set("labels", labels.join(","))
+    // GitLab takes `assignee_ids[]`; users pass usernames for ergonomics,
+    // so resolve them to numeric ids first. Failure to resolve any one
+    // assignee is logged but doesn't block the create.
+    for (const username of assignees) {
+      try {
+        const r = await fetch(`${this.config.host}/api/v4/users?username=${encodeURIComponent(username)}`, {
+          headers: { "PRIVATE-TOKEN": token },
+        })
+        if (r.ok) {
+          const users = await r.json() as Array<{ id: number }>
+          if (users[0]?.id) body.append("assignee_ids[]", String(users[0].id))
+        }
+      } catch (e: any) {
+        this.log(`Issue-create: failed to resolve assignee "${username}": ${e.message}`)
+      }
+    }
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "PRIVATE-TOKEN": token,
+        },
+        body: body.toString(),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        this.log(`Issue-create failed (${res.status}): ${text.slice(0, 200)}`)
+        return null
+      }
+      const issue = await res.json() as { iid: number; web_url: string }
+      this.log(`Issue created #${issue.iid} on ${project} (${agentId || "global"})`)
+      return { iid: issue.iid, url: issue.web_url }
+    } catch (e: any) {
+      this.log(`Issue-create error: ${e.message}`)
+      return null
+    }
+  }
+
+  /** Add / remove labels on an existing issue or MR. Same identity
+   *  resolution as createIssue: per-agent token > mesh-forward to home > global.
+   *  Returns the updated label set on success, or null. */
+  async setLabels(args: {
+    project: string
+    kind?: "issue" | "merge_request"
+    iid: string
+    add?: string[]
+    remove?: string[]
+    agentId?: string
+  }): Promise<string[] | null> {
+    const { project, kind = "issue", iid, add = [], remove = [], agentId } = args
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const agentToken = this.getAgentToken(agentId)
+
+    if (!agentToken && mapping?.node && this.setLabelsForwarder) {
+      try {
+        const labels = await this.setLabelsForwarder(mapping.node, project, kind, iid, add, remove, agentId || "")
+        if (labels) this.log(`Labels updated (via peer "${mapping.node}") on ${project} ${kind}/${iid}`)
+        return labels
+      } catch (e: any) {
+        this.log(`setLabels forward to "${mapping.node}" failed: ${e.message}`)
+        return null
+      }
+    }
+    const token = agentToken || this.config.token
+    if (!token) { this.log(`setLabels failed: no token for "${agentId || "global"}"`); return null }
+
+    const segment = kind === "merge_request" ? "merge_requests" : "issues"
+    const endpoint = `${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${segment}/${iid}`
+    const body = new URLSearchParams()
+    if (add.length) body.set("add_labels", add.join(","))
+    if (remove.length) body.set("remove_labels", remove.join(","))
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
+        body: body.toString(),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        this.log(`setLabels failed (${res.status}): ${text.slice(0, 200)}`)
+        return null
+      }
+      const data = await res.json() as { labels?: string[] }
+      return data.labels ?? []
+    } catch (e: any) {
+      this.log(`setLabels error: ${e.message}`)
+      return null
+    }
+  }
+
+  /** Read current labels on an issue or MR. Read-only, so doesn't need
+   *  per-agent identity. Uses the global token. */
+  async getLabels(args: { project: string; kind?: "issue" | "merge_request"; iid: string }): Promise<string[] | null> {
+    const { project, kind = "issue", iid } = args
+    if (!this.config.token) return null
+    const segment = kind === "merge_request" ? "merge_requests" : "issues"
+    const endpoint = `${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${segment}/${iid}`
+    try {
+      const res = await fetch(endpoint, { headers: { "PRIVATE-TOKEN": this.config.token } })
+      if (!res.ok) { this.log(`getLabels failed (${res.status})`); return null }
+      const data = await res.json() as { labels?: string[] }
+      return data.labels ?? []
+    } catch (e: any) {
+      this.log(`getLabels error: ${e.message}`)
+      return null
     }
   }
 

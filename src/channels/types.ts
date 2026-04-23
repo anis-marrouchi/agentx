@@ -47,6 +47,11 @@ export interface IncomingMessage {
   resolvedAgent?: string // pre-resolved agent ID (for route-based channels like WhatsApp)
   preferNode?: string    // if set, skip local routing and forward to this mesh peer
   channelMeta?: ChannelMeta // verified context from the channel adapter
+  /** Correlator threaded by the workflow engine. When a workflow dispatches
+   *  an agent, this carries the run id through the pipeline so post:response
+   *  can re-enter the engine with `kind: agentResult` transitions. Opaque
+   *  everywhere outside src/workflows/. */
+  workflowRunId?: string
 }
 
 export interface OutgoingMessage {

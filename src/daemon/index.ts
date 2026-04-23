@@ -18,6 +18,16 @@ import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
+import {
+  RunStore as WorkflowRunStore,
+  WorkflowDispatcher,
+  WorkflowStore,
+  startWorkflowTriggers,
+  type AgentExecuteRequest,
+  type AgentExecuteResponse,
+  type MeshForwarder as WorkflowMeshForwarder,
+} from "@/workflows"
+import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
@@ -47,6 +57,8 @@ export class AgentXDaemon {
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
+  private workflowDispatcher?: WorkflowDispatcher
+  private workflowStore?: WorkflowStore
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -953,7 +965,115 @@ export class AgentXDaemon {
       this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length}, bot=${wrtcCfg.bot.enabled ? "on" : "off"})`)
     }
 
+    // Workflow engine — register hook subscribers BEFORE startAll so a
+    // webhook arriving immediately sees an engine ready to evaluate. Skipped
+    // when `workflows.enabled` is false to keep existing installs silent.
+    this.bootWorkflowEngine()
+
     await this.router.startAll()
+  }
+
+  /** Wires the workflow dispatcher + hook subscribers against the running
+   *  daemon. No-op when `workflows.enabled` is false — the observability
+   *  page + editor still work (they read/write disk directly via the
+   *  board-dashboard routes), but no transitions fire. */
+  private bootWorkflowEngine(): void {
+    const cfg = this.config.workflows
+    if (!cfg?.enabled) {
+      this.log("  Workflows: disabled (set workflows.enabled to turn the engine on)")
+      return
+    }
+
+    const store = new WorkflowStore({ baseDir: resolve(process.cwd(), cfg.dir) })
+    const runs = new WorkflowRunStore({ baseDir: resolve(process.cwd(), cfg.dir), nodeId: this.config.node.id })
+
+    // channels record: name -> adapter instance. Node handlers narrow to the
+    // specific method they need (send / createIssue / logTimeSpent / ...).
+    const channels: Record<string, unknown> = {}
+    for (const name of this.router.getChannelNames()) {
+      const adapter = this.router.getChannel(name)
+      if (adapter) channels[name] = adapter
+    }
+
+    // Agent-execute shim for the `agent` node handler. Awaits AgentRegistry
+    // inside the walk loop — the walk itself runs in a background async
+    // context detached from the webhook response, so long-running agent
+    // calls don't block webhook delivery.
+    const agents = {
+      execute: async (req: AgentExecuteRequest): Promise<AgentExecuteResponse> => {
+        const start = Date.now()
+        try {
+          const resp = await this.registry.execute({
+            agentId: req.agentId,
+            message: req.message,
+            workflowRunId: req.workflowRunId,
+          })
+          return {
+            content: resp.content ?? "",
+            error: resp.error,
+            taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
+            durationMs: Date.now() - start,
+          }
+        } catch (e: any) {
+          return { content: "", error: e.message }
+        }
+      },
+    }
+
+    // Mesh forwarder: when an event arrives here but the run is home'd on
+    // another peer, POST directly to the peer's /workflow/event endpoint.
+    const forwarder: WorkflowMeshForwarder | undefined = this.mesh ? {
+      forwardTransition: async (peerName, payload) => {
+        const peer = this.mesh!.directory().find((p) => p.peer === peerName && p.healthy)
+        if (!peer) {
+          this.log(`[workflows] forward to "${peerName}" skipped — peer not found or unhealthy`)
+          return
+        }
+        const url = `${peer.peerUrl}/workflow/event`
+        try {
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload }),
+          })
+          if (!r.ok) this.log(`[workflows] forward ${url} -> ${r.status}`)
+        } catch (e: any) {
+          this.log(`[workflows] forward ${url} failed: ${e.message}`)
+        }
+      },
+    } : undefined
+
+    const dispatcher = new WorkflowDispatcher({
+      store, runs,
+      nodeId: this.config.node.id,
+      channels,
+      agents,
+      forwarder,
+      log: (m) => this.log(m),
+    })
+
+    // Subscribe the built-in hook handlers.
+    const handlers = createWorkflowHookHandlers(dispatcher)
+    for (const [event, handler] of Object.entries(handlers)) {
+      if (!handler) continue
+      this.hooks.registerHandler(event as any, `workflows:${event}`, handler, 50)
+    }
+
+    // Stash for the mesh receiver endpoint and for manual-run RPC — see the
+    // HTTP handler in startHttpApi where /workflow/transition arrives.
+    this.workflowDispatcher = dispatcher
+    this.workflowStore = store
+
+    // Phase 3: wire trigger.cron timers + trigger.hook subscribers for
+    // workflows that declare them. Channel-triggered workflows (gitlab-issue,
+    // whatsapp-message, ...) are already wired via the hooks registered
+    // above.
+    const { cronTimers, hookSubscribers } = startWorkflowTriggers({
+      store, dispatcher, hooks: this.hooks, log: (m) => this.log(m),
+    })
+
+    const count = store.list().length
+    this.log(`  Workflows: enabled (${count} definition${count === 1 ? "" : "s"} loaded from ${cfg.dir}, editor=${cfg.editor}, cron=${cronTimers}, hook=${hookSubscribers})`)
   }
 
   private async startHttpApi(): Promise<void> {
@@ -1126,6 +1246,28 @@ export class AgentXDaemon {
       // offers/answers/ICE forwarded by the daemon).
       if (req.method === "GET" && path === "/webrtc/events") {
         this.handleWebRtcSSE(req, res, url)
+        return
+      }
+
+      // --- Workflow RPC endpoints ---
+      //
+      // /workflow/transition — mesh receiver. Peer node B forwarded a
+      //   triggering event here because this node is the run's home. We
+      //   just re-enter the local dispatcher with the payload.
+      //
+      // /workflows/:id/run — manual trigger. The CLI's `agentx workflow
+      //   run <id> --input ...` POSTs here. Only workflows whose trigger
+      //   source is "manual" are allowed.
+      // Workflow mesh + manual-run endpoints. /workflow/event receives
+      // forwarded dispatches from peers when the run is home'd here.
+      // /workflows/:id/run fires a manual-triggered workflow.
+      if (req.method === "POST" && (path === "/workflow/event" || path === "/workflow/transition")) {
+        await this.handleWorkflowEvent(req, res)
+        return
+      }
+      const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
+      if (manualRun) {
+        await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
         return
       }
 
@@ -2028,6 +2170,127 @@ export class AgentXDaemon {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
   }
+
+  /** Mesh receiver for forwarded workflow events. Peers POST the same
+   *  payload shape the MeshForwarder sends. Enforces that the run is
+   *  actually home'd here before acting — protects against routing loops. */
+  private async handleWorkflowEvent(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.workflowDispatcher) {
+      this.json(res, 503, { error: "workflow engine not enabled on this node" })
+      return
+    }
+    let body: any
+    try { body = await readJsonBody(req) } catch (e: any) {
+      this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+    }
+    const payload = body?.payload ?? body
+    const event = payload?.event
+    const entityRef = payload?.entityRef
+    if (!event?.id || !entityRef?.backend || !entityRef?.id) {
+      this.json(res, 400, { error: "missing event or entityRef" }); return
+    }
+    // Reconstruct the trigger filter from the target workflow's trigger
+    // node so the dispatcher can match correctly.
+    try {
+      const wf = payload.workflowId ? this.workflowStore?.get(payload.workflowId) : null
+      const triggerNode = wf?.nodes.find((n) => n.type.startsWith("trigger."))
+      const cfg = (triggerNode?.config ?? {}) as {
+        source?: string
+        filter?: { project?: string; repo?: string; chat?: string; labels?: string[] }
+      }
+      const trigger = {
+        source: String(cfg.source ?? "hook"),
+        project: cfg.filter?.project,
+        repo: cfg.filter?.repo,
+        chat: cfg.filter?.chat,
+        labels: cfg.filter?.labels,
+      }
+      await this.workflowDispatcher.dispatch({ trigger, entityRef, event })
+      this.json(res, 202, { ok: true })
+    } catch (e: any) {
+      this.log(`[workflows] /workflow/event failed: ${e.message}`)
+      this.json(res, 500, { error: e.message })
+    }
+  }
+
+  /** Manual run endpoint used by `agentx workflow run <id>`. Only workflows
+   *  whose trigger node is `trigger.manual` are runnable here — any other
+   *  source expects a live event and shouldn't race with a manual kick. */
+  private async handleWorkflowManualRun(req: IncomingMessage, res: ServerResponse, workflowId: string): Promise<void> {
+    if (!this.workflowDispatcher || !this.workflowStore) {
+      this.json(res, 503, { error: "workflow engine not enabled on this node" })
+      return
+    }
+    const wf = this.workflowStore.get(workflowId)
+    if (!wf) { this.json(res, 404, { error: `unknown workflow "${workflowId}"` }); return }
+    const triggerNode = wf.nodes.find((n) => n.type.startsWith("trigger."))
+    if (!triggerNode) { this.json(res, 400, { error: `workflow "${workflowId}" has no trigger node` }); return }
+
+    let body: any
+    try { body = await readJsonBody(req) } catch { body = {} }
+    const force = !!body?.force
+    const payload = body?.payload || {}
+
+    // By default we only allow running workflows whose trigger is
+    // `trigger.manual` — otherwise a manual kick would race against live
+    // channel events. `force: true` overrides this for testing: we
+    // synthesize a trigger event with the workflow's declared source so
+    // the dispatcher's filter still matches, and seed the provided payload
+    // into the trigger node's output bundle. Useful when the live channel
+    // is disconnected (WhatsApp not paired, Telegram 409 conflict) and
+    // you just want to exercise the graph.
+    if (triggerNode.type !== "trigger.manual" && !force) {
+      this.json(res, 409, {
+        error: `workflow "${workflowId}" trigger is "${triggerNode.type}"`,
+        hint: `pass { "force": true } to fire anyway with a synthesized event (for testing)`,
+      })
+      return
+    }
+
+    const cfg = (triggerNode.config ?? {}) as {
+      source?: string
+      filter?: { project?: string; repo?: string; chat?: string; labels?: string[] }
+    }
+    const source = force ? String(cfg.source ?? "manual") : "manual"
+    const entityId = String(payload.entityId || payload.chatId || `manual-${Date.now().toString(36)}`)
+    const entityRef = {
+      backend: force ? (cfg.source ? "channel" : "manual") : "manual",
+      id: entityId,
+    }
+    const eventId = `manual:${workflowId}:${entityId}:${Date.now()}`
+    try {
+      const updated = await this.workflowDispatcher.dispatch({
+        trigger: force
+          ? {
+              source,
+              project: cfg.filter?.project,
+              repo: cfg.filter?.repo,
+              chat: cfg.filter?.chat,
+              labels: cfg.filter?.labels,
+            }
+          : { source: "manual" },
+        entityRef,
+        event: { id: eventId, payload },
+      })
+      const runId = updated.runs[0]?.id
+      this.json(res, runId ? 200 : 202, { ok: true, runId, entityRef, source, force })
+    } catch (e: any) {
+      this.log(`[workflows] manual run "${workflowId}" failed: ${e.message}`)
+      this.json(res, 500, { error: e.message })
+    }
+  }
+}
+
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let raw = ""
+    req.setEncoding("utf8")
+    req.on("data", (chunk) => { raw += chunk })
+    req.on("end", () => {
+      try { resolve(raw ? JSON.parse(raw) : {}) } catch (e) { reject(e) }
+    })
+    req.on("error", reject)
+  })
 }
 
 /**

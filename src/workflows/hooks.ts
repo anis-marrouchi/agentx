@@ -1,0 +1,169 @@
+import type { HookContext, HookEvent, HookResult } from "@/hooks/types"
+import type { IncomingMessage } from "@/channels/types"
+import type { WorkflowDispatcher } from "./dispatcher"
+import type { EntityRef } from "./types"
+
+// --- Workflow hook subscribers (V2) ---
+//
+// Thin mappers: take whatever raw payload a hook fires with, produce a
+// typed trigger bundle, and call the dispatcher. No routing decisions
+// here — the dispatcher picks matching workflows, the engine walks the
+// DAG, node handlers do the work.
+//
+// For channel-triggered workflows, the subscriber returns
+// { blocked: true } when the event is claimed by a workflow so the router
+// skips its default agent reply — otherwise BOTH the workflow's action.send
+// AND the router's own reply would fire, producing duplicate messages.
+// GitLab/pipeline subscribers stay non-blocking because those events run
+// side-by-side with agent routing by design.
+//
+// A workflow can opt out per-trigger with `trigger.config.passthrough = true`
+// to let the default router reply alongside the workflow (useful for
+// observability-only workflows that just log or tag).
+
+export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Partial<Record<HookEvent, (ctx: HookContext) => Promise<HookResult>>> {
+  return {
+    // Generic inbound channel message — WhatsApp, Telegram, Discord, Slack.
+    // The router fires this before resolving an agent, so workflows see the
+    // message with full structured detail (sender, group, media, etc.).
+    "pre:channel-message": async (ctx) => {
+      const msg = ctx.msg as IncomingMessage | undefined
+      if (!msg) return {}
+      const source = channelToTriggerSource(msg.channel)
+      if (!source) return {}
+
+      const chatId = msg.group?.id ?? msg.sender.id
+      const entityRef: EntityRef = { backend: msg.channel, id: `${msg.channel}:${chatId}` }
+
+      const { claimed } = await dispatcher.dispatch({
+        trigger: {
+          source,
+          chat: chatId,
+        },
+        entityRef,
+        event: {
+          id: `${msg.channel}:${msg.accountId}:${msg.id}`,
+          payload: buildChannelTriggerPayload(msg),
+        },
+      })
+
+      if (claimed.length === 0) return {}
+
+      // Opt-out: if every matched workflow declared `passthrough: true` on its
+      // trigger node, let the router's default reply run alongside. Otherwise
+      // the workflow owns the conversation — block the router.
+      const allPassthrough = claimed.every((wf) => {
+        const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
+        return (trigger?.config as { passthrough?: boolean } | undefined)?.passthrough === true
+      })
+      if (allPassthrough) return {}
+
+      return {
+        blocked: true,
+        message: `handled by workflow${claimed.length > 1 ? "s" : ""}: ${claimed.map((w) => w.id).join(", ")}`,
+      }
+    },
+
+    // GitLab issue events — open, update, close. Existing subscriber shape
+    // from V1 is preserved so the GitLab adapter doesn't need changes.
+    "on:gitlab-issue": async (ctx) => {
+      const project = ctx.project as string | undefined
+      const iid = ctx.iid as string | number | undefined
+      const issueEvent = ctx.issueEvent as any
+      if (!project || iid === undefined) return {}
+
+      const labels: string[] = Array.isArray(issueEvent?.object_attributes?.labels)
+        ? issueEvent.object_attributes.labels.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
+        : (issueEvent?.labels?.map((l: any) => l?.title) ?? [])
+      const assignees = issueEvent?.assignees ?? issueEvent?.object_attributes?.assignee_ids ?? []
+
+      const entityRef: EntityRef = { backend: "gitlab", id: `${project}#${iid}` }
+      await dispatcher.dispatch({
+        trigger: { source: "gitlab-issue", project, labels },
+        entityRef,
+        event: {
+          id: `gitlab-issue:${project}:${iid}:${issueEvent?.object_attributes?.updated_at || issueEvent?.object_attributes?.action || "evt"}`,
+          payload: {
+            issue: {
+              iid,
+              title: issueEvent?.object_attributes?.title,
+              description: issueEvent?.object_attributes?.description,
+              url: issueEvent?.object_attributes?.url,
+              action: issueEvent?.object_attributes?.action,
+              labels,
+              assignees,
+            },
+            project,
+            channel: "gitlab",
+            chatId: `${project}:issue:${iid}`,
+          },
+        },
+      })
+      return {}
+    },
+
+    // GitLab pipeline events (success / failed / canceled). Scoped to
+    // MR-linked pipelines — pushes to branches without an MR don't enter
+    // the workflow dispatcher.
+    "on:gitlab-pipeline": async (ctx) => {
+      const project = ctx.project as string | undefined
+      const pipelineId = ctx.pipelineId as string | number | undefined
+      const status = ctx.status as string | undefined
+      const ref = ctx.ref as string | undefined
+      if (!project || !status) return {}
+
+      const raw = ctx.raw as any
+      const mrIid = raw?.merge_request?.iid
+      if (!mrIid) return {}
+
+      const entityRef: EntityRef = { backend: "gitlab", id: `${project}!${mrIid}` }
+      await dispatcher.dispatch({
+        trigger: { source: "gitlab-pipeline", project },
+        entityRef,
+        event: {
+          id: `gitlab-pipeline:${project}:${pipelineId}:${status}`,
+          payload: {
+            pipeline: { id: pipelineId, status, ref },
+            project,
+            channel: "gitlab",
+            chatId: `${project}:merge_request:${mrIid}`,
+          },
+        },
+      })
+      return {}
+    },
+  }
+}
+
+function channelToTriggerSource(channel: string): string | null {
+  switch (channel) {
+    case "telegram":    return "telegram-message"
+    case "whatsapp":    return "whatsapp-message"
+    case "discord":     return "discord-message"
+    case "slack":       return "slack-message"
+    default:            return null
+  }
+}
+
+function buildChannelTriggerPayload(msg: IncomingMessage): Record<string, unknown> {
+  const chatId = msg.group?.id ?? msg.sender.id
+  return {
+    channel: msg.channel,
+    chatId,
+    accountId: msg.accountId,
+    text: msg.text,
+    fromJid: msg.sender.id,
+    sender: {
+      id: msg.sender.id,
+      name: msg.sender.name,
+      username: msg.sender.username,
+    },
+    contact: msg.channelMeta?.facts ? { facts: msg.channelMeta.facts } : undefined,
+    group: msg.group ? { id: msg.group.id, name: msg.group.name } : undefined,
+    channelMeta: msg.channelMeta,
+    replyTo: msg.replyTo,
+    replyToText: msg.replyToText,
+    media: msg.media,
+    event: { id: msg.id, timestamp: msg.timestamp?.toISOString?.() ?? new Date().toISOString() },
+  }
+}

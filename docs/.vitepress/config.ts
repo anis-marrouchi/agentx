@@ -68,6 +68,7 @@ export default withMermaid(defineConfig({
             { text: "Scoped API tokens", link: "/reference/tokens" },
             { text: "Public agents", link: "/reference/public-agents" },
             { text: "Intent knowledge graph", link: "/reference/graph" },
+            { text: "Workflows", link: "/reference/workflows" },
             { text: "Tailscale mesh VPN", link: "/reference/tailscale-setup" },
             { text: "agentx doctor", link: "/reference/doctor" },
           ],

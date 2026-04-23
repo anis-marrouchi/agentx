@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
-import { resolve } from "path"
+import { readFile } from "fs/promises"
+import { fileURLToPath } from "url"
+import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
@@ -14,6 +16,10 @@ import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
+import { renderWorkflowsPage } from "./ui/pages/workflows"
+import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
+import { handleWorkflowsApi } from "./workflows-api"
+import { LayoutStore, RunStore, WorkflowStore } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import type { TopbarPeer } from "./topbar"
 
@@ -49,9 +55,24 @@ export function startBoardDashboard(config: DaemonConfig): void {
     }
   }
 
+  // Workflow stores are lightweight (filesystem-backed, no network). Created
+  // once per dashboard so the /workflows page + editor API don't re-scan
+  // directories on every request.
+  //
+  // Home-node id comes from the mesh config when available; falls back to a
+  // stable "local" so single-node runs work out of the box. Until the
+  // integration seam commits, the dispatcher itself isn't booted in the
+  // daemon — the editor's view over these stores is read/write, but the
+  // engine's run-time dispatch + mesh forwarding aren't wired yet.
+  const wfNodeId = config.node?.id || "local"
+  const wfDir = config.workflows?.dir ? resolve(process.cwd(), config.workflows.dir) : undefined
+  const workflowStore = new WorkflowStore(wfDir ? { baseDir: wfDir } : undefined)
+  const workflowRuns = new RunStore(wfDir ? { baseDir: wfDir, nodeId: wfNodeId } : { nodeId: wfNodeId })
+  const workflowLayouts = new LayoutStore(wfDir ? { baseDir: wfDir } : undefined)
+
   const server = createServer(async (req, res) => {
     try {
-      await handleRequest(req, res, { boards, sources, token, config })
+      await handleRequest(req, res, { boards, sources, token, config, workflowStore, workflowRuns, workflowLayouts })
     } catch (e: any) {
       sendJson(res, 500, { error: e.message || "internal error" })
     }
@@ -79,6 +100,9 @@ interface Ctx {
   sources: Map<string, WorkSource>
   token?: string
   config: DaemonConfig
+  workflowStore: WorkflowStore
+  workflowRuns: RunStore
+  workflowLayouts: LayoutStore
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
@@ -118,6 +142,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/glossary") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderGlossaryPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/workflows") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/workflows/editor") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
 
@@ -194,6 +228,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/sortable.min.js") {
     res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=86400" })
     res.end(SORTABLE_JS)
+    return
+  }
+
+  // Serve the web-bundled editor artifact. Built by `tsup --config tsup.web.config.ts`
+  // to dist/web/workflow-editor.js. Any `/assets/<name>` request is mapped
+  // 1:1 into dist/web so future bundles (graph editor, ...) can live there
+  // without another route registration.
+  if (method === "GET" && path.startsWith("/assets/")) {
+    const rel = path.slice("/assets/".length)
+    // Allow dotted stems (e.g. "workflow-editor.global.js") but keep the
+    // whitelist narrow to script/map/style files.
+    if (!/^[a-zA-Z0-9._-]+\.(js|map|css)$/.test(rel)) {
+      sendJson(res, 400, { error: "invalid asset name" }); return
+    }
+    const assetPath = resolveFromHere("web/" + rel)
+    try {
+      const buf = await readAsset(assetPath)
+      const ct = rel.endsWith(".map") ? "application/json; charset=utf-8"
+        : rel.endsWith(".css") ? "text/css; charset=utf-8"
+        : "application/javascript; charset=utf-8"
+      res.writeHead(200, { "Content-Type": ct, "Cache-Control": "public, max-age=60" })
+      res.end(buf)
+    } catch {
+      sendJson(res, 404, { error: "asset not found", hint: "run: npm run build:web" })
+    }
     return
   }
 
@@ -292,10 +351,38 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     }
   }
 
-  const isWrite = method === "POST" || method === "PATCH" || method === "DELETE"
+  const isWrite = method === "POST" || method === "PATCH" || method === "DELETE" || method === "PUT"
   if (isWrite && path.startsWith("/api/")) {
     const xr = req.headers["x-requested-with"]
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
+  }
+
+  // Workflow API — read (dashboard:read) / write (dashboard:write). Fine-
+  // grained scope checks let read-only scoped tokens still populate the
+  // /workflows observability page when dashboard.token isn't configured.
+  if (path.startsWith("/api/workflows")) {
+    const handled = handleWorkflowsApi(req, res, {
+      store: ctx.workflowStore,
+      runs: ctx.workflowRuns,
+      layouts: ctx.workflowLayouts,
+      requireScope: (r, s, scopes) => {
+        // When ctx.token is set the legacy check above already verified
+        // write scope on any /api call, so we don't re-gate here.
+        // When it's not set (localhost default), enforce scopes ourselves
+        // only if the caller *presented* a token — otherwise allow through
+        // to preserve the loopback "safe default" UX.
+        if (ctx.token) return true
+        const presented = extractToken(r as any)
+        if (!presented) return true
+        const rec = new TokenStore().verify(presented)
+        if (!rec) { sendJson(s, 401, { error: "invalid or revoked token" }); return false }
+        for (const scope of scopes) {
+          if (!recordHasScope(rec, scope)) { sendJson(s, 403, { error: `token missing scope: ${scope}`, scopes: rec.scopes }); return false }
+        }
+        return true
+      },
+    })
+    if (handled) return
   }
 
   if (method === "GET" && path === "/api/boards") {
@@ -1035,6 +1122,20 @@ function extractJson(text: string): any {
 }
 
 // --- HTTP helpers ---
+
+/** Resolve a path relative to THIS module's directory at runtime.  After
+ *  tsup bundles dist/board-dashboard-*.js is placed in dist/, so
+ *  `../../dist/web/foo.js` is relative to wherever the bundled module
+ *  actually runs. `fileURLToPath(import.meta.url)` is the ESM equivalent
+ *  of __filename. */
+function resolveFromHere(rel: string): string {
+  const here = dirname(fileURLToPath(import.meta.url))
+  return resolve(here, rel)
+}
+
+async function readAsset(path: string): Promise<Buffer> {
+  return readFile(path)
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" })

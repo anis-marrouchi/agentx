@@ -12,6 +12,24 @@ agentx <command> --help
 
 The CLI binary is `agentx`. The npm package is `agentix-cli`.
 
+## Completion
+
+Shell autocomplete is shipped with the global install. After `npm install -g agentix-cli`:
+
+| Command | Description |
+|---|---|
+| `agentx completion [--shell zsh\|bash\|fish]` | Print the completion script to stdout |
+| `agentx completion --install [--shell zsh\|bash\|fish] [--yes]` | Write the script to the shell's default completion path and print the rc hook to add (use `--yes` to auto-patch `~/.zshrc` or `~/.bashrc`) |
+| `agentx completion --output <path> [--shell ...]` | Write the script to a custom path |
+
+Default install paths:
+
+- zsh: `~/.zsh/completions/_agentx` (add the dir to `fpath` once; OMZ/compinit pick it up)
+- bash: `~/.bash_completion.d/agentx.bash` (source from `~/.bashrc`)
+- fish: `~/.config/fish/completions/agentx.fish` (auto-loaded)
+
+The script is generated from the live commander tree, so it stays in sync with the CLI automatically when you upgrade.
+
 ## Init
 
 | Command | Description |
@@ -141,6 +159,43 @@ Per-message intent classification into a fixed-axis taxonomy. Typed paths feed L
 | Command | Description |
 |---|---|
 | `agentx graph review [--agent <id>] [--max N] [--dry-run]` | Triage pending classifications via the configured review agent. The reviewer may call `wiki query` for context before deciding approve / reject / skip. On approve, new nodes commit + the fingerprint cache populates so subsequent similar messages skip the LLM. |
+
+## Workflow (declarative state machines)
+
+Declarative state machines that bind channel events to agents — at state X, run agent Y with prompt Z; transition to state W when condition C holds. Definitions live as one JSON file per workflow under `.agentx/workflows/`; runs persist as append-only jsonl on the home node. See [reference/workflows](/reference/workflows) for the full model + authoring guide.
+
+### Read
+
+| Command | Description |
+|---|---|
+| `agentx workflow list` | List every workflow in `.agentx/workflows/` with id, title, trigger source, and state chain. |
+| `agentx workflow show <id>` | Print the full JSON for one workflow. |
+| `agentx workflow validate [file]` | Schema + lint check. With no arg, validates every file in the workflows dir. With a file path, validates that one. Exits non-zero on any failure — CI-friendly. |
+
+### Runs (read)
+
+| Command | Description |
+|---|---|
+| `agentx workflow runs [id]` | List recent runs across all workflows, or filter to a single workflow. Shows run id, current state, status, home node, last transition. |
+
+**Flags:** `--limit <n>` (default 20), `--node <id>` (override the home-node id used when reading the local run store; defaults to `$WF_NODE_ID` or `"local"`).
+
+### Runs (control)
+
+Manual lifecycle controls for runs. All three require the home-node's run store — pass `--node <id>` if the daemon's node id isn't set in `$WF_NODE_ID`.
+
+| Command | Description |
+|---|---|
+| `agentx workflow run <id> [--input <json>] [--daemon <url>]` | Manually trigger a workflow whose trigger is `source: manual`. The daemon must be running — this is a POST to `/workflows/:id/run` on `--daemon` (default `http://127.0.0.1:18800`). `--input` is merged into the trigger event payload. |
+| `agentx workflow pause <runId> [--node <id>]` | Freeze a run. No new transitions will fire until `resume`. |
+| `agentx workflow resume <runId> [--node <id>]` | Un-pause a paused run. |
+| `agentx workflow cancel <runId> [--node <id>]` | End a run. No further transitions possible — terminal. |
+
+### Tips
+
+- Put `agentx workflow validate` in your CI pipeline before any merge that touches `.agentx/workflows/` — the linter catches unreachable states, unknown transition targets, and terminal-state-with-outgoing-edges.
+- `agentx workflow runs --limit 5` is the fastest way to answer "what's the daemon doing right now with workflow X?" — pair it with `agentx daemon logs -f` to watch the corresponding agent dispatches.
+- On multi-node mesh deployments, `runs` is per-node (runs belong to their home node). Use the dashboard `/workflows` page for a cross-node view.
 
 ## Skills
 

@@ -384,6 +384,17 @@ export const daemonConfigSchema = z.object({
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
   graph: graphConfigSchema,
+  /** Workflow engine — declarative state machines that bind channel events
+   *  to agents. Off by default; existing installs see no change until
+   *  flipped. Definitions live under `dir` (default .agentx/workflows/). */
+  workflows: z.object({
+    enabled: z.boolean().default(false),
+    dir: z.string().default(".agentx/workflows"),
+    /** Controls whether the dashboard exposes the visual editor. "readonly"
+     *  serves the list + run timelines but strips write controls from the
+     *  page. "disabled" hides the tab entirely. */
+    editor: z.enum(["disabled", "readonly", "edit"]).default("edit"),
+  }).default({}),
   /** Registered inbound webhooks — an inventory the dashboard manages. Each
    *  entry binds an (agent, source) pair to an optional signing secret. The
    *  actual inbound URL is always POST /webhook/<agentId>/<source>. */

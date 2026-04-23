@@ -83,6 +83,22 @@ export class HookRegistry {
   }
 
   /**
+   * Register an in-process handler for an event. Used by modules that ship
+   * their hook behavior as plain JS functions rather than as command/script/
+   * prompt definitions loaded from disk (e.g. the workflow engine's
+   * subscribers to on:gitlab-issue / on:gitlab-pipeline / post:response).
+   * Priority follows the same rule as register(): lower runs first.
+   */
+  registerHandler(event: HookEvent, name: string, handler: HookHandler, priority: number = 100): void {
+    const definition: HookDefinition = { name, type: "script", priority, enabled: true }
+    const entry: RegisteredHook = { event, definition, handler }
+    const existing = this.hooks.get(event) || []
+    existing.push(entry)
+    existing.sort((a, b) => a.definition.priority - b.definition.priority)
+    this.hooks.set(event, existing)
+  }
+
+  /**
    * Check if any hooks are registered for an event.
    */
   has(event: HookEvent): boolean {

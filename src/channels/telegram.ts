@@ -530,6 +530,76 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   /**
+   * Push a streaming draft to a private chat (Bot API 9.5+ `sendMessageDraft`).
+   * Subsequent calls with the same `draftId` animate in place — much smoother
+   * than `editMessageText` and not subject to the same edit-rate limits.
+   *
+   * **Constraint:** private chats only (DMs). Telegram returns an error for
+   * groups/channels. Callers must check `isDirectMessage(chatId)` first.
+   *
+   * Returns `true` on success, `false` on any error (best-effort streaming —
+   * never throw or callers will lose blocks). Falls back to no-formatting on
+   * a parse-mode error so a malformed HTML chunk doesn't kill the stream.
+   */
+  async sendDraft(
+    chatId: string,
+    draftId: number,
+    text: string,
+    parseMode?: string,
+    accountId?: string,
+  ): Promise<boolean> {
+    if (!TelegramAdapter.isDirectMessage(chatId)) return false
+    const token = this.resolveToken(chatId, accountId)
+    if (!token) return false
+
+    const maxLen = 4096
+    const trimmed = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text
+    if (!trimmed) return false
+
+    const formatted = parseMode !== "html" && parseMode !== "plain"
+      ? markdownToTelegramHtml(trimmed)
+      : trimmed
+
+    const params: Record<string, unknown> = {
+      chat_id: parseInt(chatId, 10),
+      draft_id: draftId,
+      text: formatted,
+      parse_mode: "HTML",
+    }
+    if (parseMode === "plain") {
+      delete params.parse_mode
+      params.text = trimmed
+    } else if (parseMode === "html") {
+      params.text = trimmed
+    }
+
+    try {
+      await this.apiCall(token, "sendMessageDraft", params)
+      return true
+    } catch (e: any) {
+      // Retry without parse_mode if HTML parsing tripped on a partial fragment
+      // (common while streaming — half a tag mid-buffer).
+      if (params.parse_mode) {
+        delete params.parse_mode
+        params.text = trimmed
+        try {
+          await this.apiCall(token, "sendMessageDraft", params)
+          return true
+        } catch { return false }
+      }
+      return false
+    }
+  }
+
+  /** Telegram convention: positive chat_id → private chat (DM with a user),
+   *  negative → group/supergroup/channel. Used to gate features that only
+   *  work in DMs (sendMessageDraft, message_effect_id, ...). */
+  static isDirectMessage(chatId: string): boolean {
+    const n = parseInt(chatId, 10)
+    return Number.isFinite(n) && n > 0
+  }
+
+  /**
    * React to a message with an emoji.
    */
   async react(chatId: string, messageId: string, emoji: string = "👀", accountId?: string): Promise<void> {

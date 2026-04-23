@@ -45,7 +45,8 @@
     "bring-your-own-key"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsup --config tsup.web.config.ts",
+    "build:web": "tsup --config tsup.web.config.ts",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -63,6 +64,7 @@
   "dependencies": {
     "@roamhq/wrtc": "^0.10.0",
     "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "@xyflow/react": "^12.10.2",
     "chalk": "5.2.0",
     "commander": "^10.0.0",
     "cosmiconfig": "^8.1.3",
@@ -75,11 +77,15 @@
     "prompts": "^2.4.2",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "zod": "^3.20.2"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.1",
     "@types/prompts": "^2.4.2",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
     "lucide-static": "^1.8.0",
     "mermaid": "^11.14.0",
     "prettier": "^3.0.0",

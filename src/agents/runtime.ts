@@ -19,6 +19,10 @@ export interface AgentPeer {
 export interface AgentTask {
   message: string
   agentId: string
+  /** Correlator threaded by the workflow engine. When the engine dispatches
+   *  an agent as part of a state transition, this carries the run id so
+   *  post:response can re-enter the engine with an agentResult condition. */
+  workflowRunId?: string
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
   /** Cacheable text delivered to Claude via --append-system-prompt. Typically

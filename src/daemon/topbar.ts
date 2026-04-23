@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -259,6 +259,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   const tabs = [
     { id: "live", label: "Live", href: "/live", external: false },
     { id: "boards", label: "Boards", href: "/", external: false },
+    { id: "workflows", label: "Workflows", href: "/workflows", external: false },
     { id: "admin", label: "Settings", href: "/admin", external: false },
     { id: "wiki", label: "Wiki", href: wikiUrl, external: true },
     { id: "usage", label: "Usage", href: usageUrl, external: true },
