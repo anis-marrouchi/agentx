@@ -148,6 +148,16 @@ export class AgentXDaemon {
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
+      // Let the registry reach the mesh so it can forward unknown-agent
+      // tasks to a peer that advertises the requested agent. Keeps
+      // workflow authoring portable: a workflow that references
+      // `coo-agent` works on any node in the mesh as long as SOMEONE
+      // hosts that agent.
+      this.registry.setMeshFallback({
+        findPeerWithSkill: (skillId) => this.mesh!.findPeerWithSkill(skillId),
+        sendTask: (peer, text, agentId) => this.mesh!.sendTask(peer, text, agentId),
+        directory: () => this.mesh!.directory(),
+      })
     }
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)

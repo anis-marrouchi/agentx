@@ -78,6 +78,10 @@ export interface AgentResponse {
    *  trustworthy — a task that ran sonnet but was logged as opus would
    *  overstate cost by ~5×. */
   billedModel?: string
+  /** Set when the task was forwarded to a mesh peer that hosted the
+   *  requested agent (the local registry didn't have it). Name of the
+   *  peer that actually ran it. */
+  viaMesh?: string
 }
 
 /** Callback for streaming text deltas */

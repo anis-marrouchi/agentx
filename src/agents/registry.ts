@@ -202,6 +202,14 @@ export class AgentRegistry {
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
+  /** Mesh handle. When set, `execute` falls back to a peer that advertises
+   *  the requested agent before returning "Unknown agent". Duck-typed so
+   *  we don't create a circular import with src/a2a/mesh.ts. */
+  private meshFallback?: {
+    findPeerWithSkill: (skillId: string) => { peer: { url: string; token?: string } } | undefined
+    sendTask: (peerName: string, text: string, agentId?: string) => Promise<string>
+    directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
+  }
   private messageQueue: MessageQueue
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
@@ -271,6 +279,13 @@ export class AgentRegistry {
    */
   setLandscape(builder: LandscapeBuilder): void {
     this.landscape = builder
+  }
+
+  /** Wire the mesh so `execute` can fall back to a peer that hosts an
+   *  agent this node doesn't have. Called by the daemon after mesh boot.
+   *  Pass `undefined` to disable fallback (testing, mesh disabled). */
+  setMeshFallback(mesh: NonNullable<AgentRegistry["meshFallback"]>): void {
+    this.meshFallback = mesh
   }
 
   /** Hot-swap the provider map. Daemon reload calls this after agentx.json
@@ -410,6 +425,24 @@ export class AgentRegistry {
   async execute(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
     const state = this.agents.get(task.agentId)
     if (!state) {
+      // Mesh fallback: the agent isn't local but a healthy peer may host
+      // it. Look it up in the mesh directory and forward via A2A sendTask.
+      // Streaming callbacks are dropped — sendTask doesn't stream today.
+      if (this.meshFallback) {
+        const peerEntry = this.meshFallback.directory().find(
+          (p) => p.healthy && p.skills.some((s) => s.id === task.agentId),
+        )
+        if (peerEntry) {
+          this.log(`[${task.agentId}] not local — routing to mesh peer "${peerEntry.peer}"`)
+          try {
+            const content = await this.meshFallback.sendTask(peerEntry.peer, task.message, task.agentId)
+            return { content, viaMesh: peerEntry.peer } as AgentResponse
+          } catch (e: any) {
+            this.log(`[${task.agentId}] mesh fallback to "${peerEntry.peer}" failed: ${e?.message ?? e}`)
+            return { content: "", error: `mesh fallback failed: ${e?.message ?? e}` }
+          }
+        }
+      }
       return { content: "", error: `Unknown agent: ${task.agentId}` }
     }
 
