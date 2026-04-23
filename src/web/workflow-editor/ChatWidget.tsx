@@ -186,9 +186,11 @@ function MessageBubble({ m, onApply }: { m: Message; onApply: (wf: Workflow) => 
     </div>
   }
   const cls = m.role === "user" ? "ax-chat__msg ax-chat__msg--user" : "ax-chat__msg ax-chat__msg--assistant"
+  const content = stripAppliedJson(m.content, !!m.workflow)
+  const html = m.role === "assistant" ? renderMarkdown(content) : escapeHtml(content)
   return (
     <div className={cls}>
-      <div className="ax-chat__text">{renderContent(m.content, !!m.workflow)}</div>
+      <div className="ax-chat__text" dangerouslySetInnerHTML={{ __html: html }} />
       {m.workflow && (
         <div className="ax-chat__apply">
           <button className="ax-chat__applybtn" onClick={() => onApply(m.workflow!)}>
@@ -201,12 +203,91 @@ function MessageBubble({ m, onApply }: { m: Message; onApply: (wf: Workflow) => 
   )
 }
 
-/** Render the assistant message: strip the JSON block when we have a
- *  parsed workflow (the Apply button handles that), otherwise keep it
- *  so the user can copy/paste anyway. */
-function renderContent(raw: string, hasWorkflow: boolean): string {
+/** Strip the JSON block when we extracted a workflow — the Apply button
+ *  handles that payload, so showing the raw JSON is clutter. */
+function stripAppliedJson(raw: string, hasWorkflow: boolean): string {
   if (!hasWorkflow) return raw
   return raw.replace(/```(?:json)?\s*\n[\s\S]*?```/g, "").trim()
+}
+
+/** Escape HTML entities so user text renders verbatim (no injection). */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+/** Minimal, inline markdown → HTML. Covers the subset that actually
+ *  shows up in authoring-agent replies: code blocks, inline code, bold,
+ *  italic, H1–H3, unordered + ordered lists, links, paragraphs.
+ *
+ *  Everything is HTML-escaped before the inline transforms run, so user
+ *  / agent text can't inject tags. Code blocks are escaped + wrapped in
+ *  <pre><code> with no further transforms. */
+function renderMarkdown(src: string): string {
+  // Extract fenced code blocks first so inline rules don't touch them.
+  const codeBlocks: string[] = []
+  let working = src.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, body) => {
+    const safe = escapeHtml(body.replace(/\n+$/, ""))
+    const cls = lang ? ` class="lang-${escapeHtml(lang)}"` : ""
+    codeBlocks.push(`<pre><code${cls}>${safe}</code></pre>`)
+    return ` CODE${codeBlocks.length - 1} `
+  })
+
+  working = escapeHtml(working)
+
+  // Inline code (single backticks).
+  working = working.replace(/`([^`\n]+)`/g, (_m, inner) => `<code>${inner}</code>`)
+  // Links [text](url) — URL is still escaped from the HTML pass.
+  working = working.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
+    const safeHref = /^https?:\/\/|^\//.test(href) ? href : "#"
+    return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`
+  })
+  // Bold + italic (bold first so ** wins over *).
+  working = working.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+  working = working.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>")
+
+  // Block structure: headings, lists, paragraphs.
+  const lines = working.split("\n")
+  const out: string[] = []
+  let listKind: "ul" | "ol" | null = null
+  const closeList = () => { if (listKind) { out.push(`</${listKind}>`); listKind = null } }
+  let paraBuf: string[] = []
+  const flushPara = () => {
+    if (!paraBuf.length) return
+    const text = paraBuf.join(" ").trim()
+    if (text) out.push(`<p>${text}</p>`)
+    paraBuf = []
+  }
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd()
+    if (/^\s*$/.test(line)) { flushPara(); closeList(); continue }
+    const h = /^(#{1,3})\s+(.+)/.exec(line)
+    if (h) { flushPara(); closeList(); const lvl = h[1].length + 2; out.push(`<h${lvl}>${h[2]}</h${lvl}>`); continue }
+    const ul = /^\s*[-*]\s+(.+)/.exec(line)
+    if (ul) {
+      flushPara()
+      if (listKind !== "ul") { closeList(); out.push("<ul>"); listKind = "ul" }
+      out.push(`<li>${ul[1]}</li>`); continue
+    }
+    const ol = /^\s*\d+\.\s+(.+)/.exec(line)
+    if (ol) {
+      flushPara()
+      if (listKind !== "ol") { closeList(); out.push("<ol>"); listKind = "ol" }
+      out.push(`<li>${ol[1]}</li>`); continue
+    }
+    closeList()
+    paraBuf.push(line)
+  }
+  flushPara(); closeList()
+
+  let html = out.join("\n")
+  // Restore fenced code-block placeholders.
+  html = html.replace(/ CODE(\d+) /g, (_m, idx) => codeBlocks[Number(idx)] || "")
+  return html
 }
 
 function replaceLast(cur: Message[], replacement: Message): Message[] {
@@ -282,7 +363,7 @@ const CSS = `
   font-family: inherit; margin: 0;
 }
 
-.ax-chat__msg { max-width: 88%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+.ax-chat__msg { max-width: 88%; padding: 8px 12px; border-radius: 10px; word-break: break-word; }
 .ax-chat__msg--user {
   align-self: flex-end;
   background: linear-gradient(135deg, #6b5bff, #8b5cf6); color: white;
@@ -305,6 +386,45 @@ const CSS = `
 @keyframes axchatblink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
 
 .ax-chat__text { margin: 0; }
+.ax-chat__msg--user .ax-chat__text { white-space: pre-wrap; }
+
+/* Assistant markdown surface ------------------------------------------- */
+.ax-chat__msg--assistant .ax-chat__text > :first-child { margin-top: 0; }
+.ax-chat__msg--assistant .ax-chat__text > :last-child  { margin-bottom: 0; }
+.ax-chat__msg--assistant .ax-chat__text p { margin: 6px 0; }
+.ax-chat__msg--assistant .ax-chat__text h3,
+.ax-chat__msg--assistant .ax-chat__text h4,
+.ax-chat__msg--assistant .ax-chat__text h5 {
+  margin: 10px 0 4px; font-weight: 700; font-size: 13px;
+}
+.ax-chat__msg--assistant .ax-chat__text ul,
+.ax-chat__msg--assistant .ax-chat__text ol {
+  margin: 4px 0; padding-left: 20px;
+}
+.ax-chat__msg--assistant .ax-chat__text li { margin: 2px 0; }
+.ax-chat__msg--assistant .ax-chat__text a {
+  color: #6b5bff; text-decoration: underline; word-break: break-all;
+}
+.ax-chat__msg--assistant .ax-chat__text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: rgba(0,0,0,0.08);
+  padding: 1px 5px; border-radius: 4px;
+}
+.ax-chat__msg--assistant .ax-chat__text pre {
+  margin: 6px 0; padding: 8px 10px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 6px;
+  overflow-x: auto; max-width: 100%;
+}
+.ax-chat__msg--assistant .ax-chat__text pre code {
+  background: transparent; padding: 0; border-radius: 0;
+  font-size: 11px; line-height: 1.45; white-space: pre;
+}
+@media (prefers-color-scheme: dark) {
+  .ax-chat__msg--assistant .ax-chat__text code,
+  .ax-chat__msg--assistant .ax-chat__text pre { background: rgba(255,255,255,0.06); }
+}
 
 .ax-chat__apply { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .ax-chat__applybtn {
