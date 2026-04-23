@@ -19,7 +19,7 @@ import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
 import { handleWorkflowsApi } from "./workflows-api"
-import { LayoutStore, RunStore, WorkflowStore } from "@/workflows"
+import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import type { TopbarPeer } from "./topbar"
 
@@ -355,6 +355,58 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (isWrite && path.startsWith("/api/")) {
     const xr = req.headers["x-requested-with"]
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
+  }
+
+  // Read-through proxies for runs. The dashboard's local RunStore only
+  // sees runs home-noded on THIS machine, but the user typically wants
+  // the cross-fleet view: runs fired on clawd-server when GitLab events
+  // land there, runs fired on Mac when local channels fire. We merge
+  // the local list with the main-daemon's list and return the union.
+  if (method === "GET" && path === "/api/workflows/runs") {
+    try {
+      const url = new URL(req.url || "/", "http://localhost")
+      const limit = url.searchParams.get("limit") || "50"
+      const workflowId = url.searchParams.get("workflowId")
+      const local = ctx.workflowRuns.list({ limit: Math.max(1, Math.min(500, Number(limit))), workflowId: workflowId || undefined })
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const qs = `?limit=${encodeURIComponent(limit)}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}`
+      let remote: WorkflowRun[] = []
+      try {
+        const r = await fetch(`${daemonUrl}/api/workflows/runs${qs}`, { headers })
+        if (r.ok) {
+          const data = await r.json() as { runs?: WorkflowRun[] }
+          if (Array.isArray(data.runs)) remote = data.runs
+        }
+      } catch { /* remote unreachable — show local only */ }
+      // Union by id, prefer remote (it's the authoritative home-node view).
+      const byId = new Map<string, WorkflowRun>()
+      for (const r of local) byId.set(r.id, r)
+      for (const r of remote) byId.set(r.id, r)
+      const merged = Array.from(byId.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, Number(limit))
+      sendJson(res, 200, { runs: merged })
+    } catch (e: any) {
+      sendJson(res, 502, { error: "runs fetch failed", message: e.message || String(e) })
+    }
+    return
+  }
+  const runDetailMatch = method === "GET" && path.match(/^\/api\/workflows\/runs\/([^\/]+)$/)
+  if (runDetailMatch) {
+    const runId = decodeURIComponent(runDetailMatch[1])
+    const local = ctx.workflowRuns.get(runId)
+    if (local) { sendJson(res, 200, { run: local }); return }
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const r = await fetch(`${daemonUrl}/api/workflows/runs/${encodeURIComponent(runId)}`, { headers })
+      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      sendJson(res, r.status, data)
+    } catch (e: any) {
+      sendJson(res, 404, { error: "run not found (neither local nor remote reachable)", message: e.message || String(e) })
+    }
+    return
   }
 
   // Workflow-builder chat (proxies to main daemon where the dispatcher

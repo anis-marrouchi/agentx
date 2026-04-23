@@ -59,6 +59,7 @@ export class AgentXDaemon {
   private botManager?: BotManager
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
+  private workflowRuns?: WorkflowRunStore
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -1208,6 +1209,7 @@ export class AgentXDaemon {
     // HTTP handler in startHttpApi where /workflow/transition arrives.
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
+    this.workflowRuns = runs
 
     // Phase 3: wire trigger.cron timers + trigger.hook subscribers for
     // workflows that declare them. Channel-triggered workflows (gitlab-issue,
@@ -1441,6 +1443,29 @@ export class AgentXDaemon {
         const { computeKpis } = await import("@/workflows/task-store")
         this.json(res, 200, computeKpis(this.workflowDispatcher.tasks))
         return
+      }
+      // GET /api/workflows/runs[?limit=&workflowId=] + /runs/:id
+      // Runs live on the node that dispatches them (home-node). The
+      // board-dashboard on another host proxies to this endpoint so
+      // "Recent runs" on /workflows reflects what's actually happening.
+      if (req.method === "GET" && this.workflowRuns && this.workflowStore) {
+        if (path === "/api/workflows") {
+          this.json(res, 200, { workflows: this.workflowStore.list() })
+          return
+        }
+        if (path === "/api/workflows/runs") {
+          const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 50)))
+          const workflowId = url.searchParams.get("workflowId") || undefined
+          this.json(res, 200, { runs: this.workflowRuns.list({ workflowId, limit }) })
+          return
+        }
+        const runMatch = path.match(/^\/api\/workflows\/runs\/([^\/]+)$/)
+        if (runMatch) {
+          const run = this.workflowRuns.get(decodeURIComponent(runMatch[1]))
+          if (!run) { this.json(res, 404, { error: "run not found" }); return }
+          this.json(res, 200, { run })
+          return
+        }
       }
       // POST /api/workflows/editor/chat — author chat dispatched to an agent.
       //
