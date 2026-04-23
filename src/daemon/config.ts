@@ -433,6 +433,15 @@ export const daemonConfigSchema = z.object({
      *    and cross-chat are replaced by planner-selected bundles. Per-task
      *    overrides via AgentTask.contextStrategy for A/B benchmarking. */
     contextStrategy: z.enum(["layered", "planner"]).default("layered"),
+    /** Soft dispatch budget for claude-code-tier agents (shared OAuth pools
+     *  one counter across the fleet). Warms at 80% of the cap; short-circuits
+     *  cold dispatches (no warm Claude session) when exceeded. Warm sessions
+     *  are always allowed through. Defaults sized for Max 5×:
+     *   - maxClaudeCodeDispatchesPerHour: 80 (headroom under typical hourly cap)
+     *   - maxClaudeCodeDispatchesPer5h: 180 (headroom under ~225/5h tier)
+     *  Raise for Max 20×, lower if your workload stays under the cap naturally. */
+    maxClaudeCodeDispatchesPerHour: z.number().int().min(1).max(10_000).default(80),
+    maxClaudeCodeDispatchesPer5h: z.number().int().min(1).max(50_000).default(180),
   }).default({}),
 })
 

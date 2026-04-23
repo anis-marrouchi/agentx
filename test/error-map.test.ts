@@ -2,12 +2,20 @@ import { describe, it, expect } from "vitest"
 import { friendlyModelError, renderFriendlyError } from "../src/agents/error-map"
 
 describe("friendlyModelError", () => {
-  it("detects out-of-credits with the exact CLI format", () => {
+  it("classifies the Max-plan 'out of extra usage' as overage_disabled (retryable)", () => {
     const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage. Add more at claude.ai/settings/usage and keep going."},"request_id":"req_011Ca9URBqUgBLHZHw8dCdRU"}`
+    const f = friendlyModelError(raw)
+    expect(f.kind).toBe("overage_disabled")
+    expect(f.retryable).toBe(true)
+    expect(f.message).toMatch(/overage/i)
+    expect(f.fix).toMatch(/claude\.ai\/settings\/usage/)
+  })
+
+  it("still classifies generic 'out of credits' as out_of_credits (non-retryable)", () => {
+    const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"credits exhausted, top up your account"}}`
     const f = friendlyModelError(raw)
     expect(f.kind).toBe("out_of_credits")
     expect(f.retryable).toBe(false)
-    expect(f.message).toContain("out of Anthropic credits")
     expect(f.fix).toMatch(/billing|claude\.ai\/settings\/usage/)
   })
 
@@ -65,8 +73,8 @@ describe("friendlyModelError", () => {
   it("renders a single actionable line", () => {
     const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage"}}`
     const rendered = renderFriendlyError(friendlyModelError(raw))
-    expect(rendered).toMatch(/out of Anthropic credits/i)
+    expect(rendered).toMatch(/overage/i)
     expect(rendered).toMatch(/—/)
-    expect(rendered.length).toBeLessThan(300)
+    expect(rendered.length).toBeLessThan(400)
   })
 })
