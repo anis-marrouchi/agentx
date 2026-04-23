@@ -29,13 +29,23 @@ export const PALETTE: PaletteSection[] = [
     { id: "trigger.channel.gitlab",   type: "trigger.channel", label: "GitLab",   hint: "Issue / pipeline events", glyph: "g-trigger", icon: "gitlab" },
     { id: "trigger.cron",             type: "trigger.cron",    label: "Cron",     hint: "Fires on a timer", glyph: "g-trigger", icon: "clock" },
     { id: "trigger.manual",           type: "trigger.manual",  label: "Manual",   hint: "Kick off from UI / CLI", glyph: "g-trigger", icon: "play" },
+    { id: "trigger.form",             type: "trigger.form",    label: "Form",     hint: "Human fills a form to start", glyph: "g-trigger", icon: "plus" },
   ]},
   { section: "Compute", items: [
     { id: "node.agent",     type: "agent",     label: "Agent",     hint: "Run an agent with a templated prompt", glyph: "g-state", icon: "box" },
     { id: "node.transform", type: "transform", label: "Transform", hint: "Derive a bundle from upstream outputs", glyph: "g-state", icon: "variable" },
   ]},
+  { section: "People & composition", items: [
+    { id: "node.userTask",   type: "userTask",   label: "User task",    hint: "Assign a form to an actor / role; pauses the run", glyph: "g-state", icon: "box" },
+    { id: "node.subProcess", type: "subProcess", label: "Sub-process",  hint: "Call another workflow; parent resumes on child end", glyph: "g-state", icon: "box" },
+    { id: "node.signal.emit", type: "signal.emit", label: "Emit signal", hint: "Post an event to other workflows", glyph: "g-action", icon: "msg" },
+    { id: "node.signal.wait", type: "signal.wait", label: "Wait for signal", hint: "Pause until a matching signal arrives", glyph: "g-branch", icon: "flag" },
+    { id: "node.timer.boundary", type: "timer.boundary", label: "Timer", hint: "Pause then fire after a duration (PT1H, P1D…)", glyph: "g-branch", icon: "clock" },
+  ]},
   { section: "Flow control", items: [
     { id: "node.branch",     type: "branch",     label: "Branch",     hint: "Route based on a condition", glyph: "g-branch", icon: "branch" },
+    { id: "node.gateway.parallel", type: "gateway.parallel", label: "Parallel gateway", hint: "Fan out / join branches (mode: fanOut | join)", glyph: "g-branch", icon: "branch" },
+    { id: "node.rule",       type: "rule",       label: "Decision table", hint: "DMN-style N-input rules; first match wins", glyph: "g-branch", icon: "branch" },
     { id: "node.checkpoint", type: "checkpoint", label: "Checkpoint", hint: "Persist state, pause for event", glyph: "g-branch", icon: "flag" },
     { id: "node.end",        type: "end",        label: "End",        hint: "Run completes here", glyph: "g-end", icon: "stop" },
   ]},

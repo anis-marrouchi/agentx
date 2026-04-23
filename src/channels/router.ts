@@ -2,7 +2,7 @@ import type { DaemonConfig } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
-import { TelegramAdapter } from "./telegram"
+import type { TelegramAdapter } from "./telegram"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { HandoverStore, type HandoverOverride } from "./handover-store"
@@ -27,13 +27,6 @@ import { resolve, dirname } from "path"
  * get their `done` marker and are NOT retried — so we don't infinite-loop
  * on a poison-pill message.
  */
-/** Generate a non-zero positive int32 for use as a Telegram sendMessageDraft
- *  draft_id. Unique per-call so concurrent draft streams to the same chat
- *  don't collide on Telegram's side. */
-function makeDraftId(): number {
-  return Math.floor(Math.random() * 2_000_000_000) + 1
-}
-
 interface InflightStart {
   type: "start"
   id: string
@@ -555,41 +548,28 @@ export class MessageRouter {
 
     // Streaming setup with smart block streaming.
     //
-    // Two streaming modes:
-    //   • DM Telegram → push partials via `sendMessageDraft` (Bot API 9.5+).
-    //     Smoother animation than edit-in-place and not subject to the same
-    //     edit-rate limits. Final committed message goes through the regular
-    //     send path after blockStream.flush().
-    //   • Everything else (groups, other channels) → first block creates a
-    //     real message, subsequent blocks `editMessageText` it in place.
+    // Single mode for every channel: first block creates a real message,
+    // subsequent blocks `editMessageText` it in place. Stream is gated by
+    // adapter.editMessage support so adapters that can't edit just receive
+    // a single final message.
     //
-    // Stream is gated by adapter.editMessage support so adapters that can't
-    // edit just receive a single final message.
+    // Earlier versions used `sendMessageDraft` for Telegram DMs as a "smoother
+    // animation" path — but Telegram drafts are bot-side typing affordances
+    // that auto-clear when the bot stops updating them, never becoming
+    // persistent messages (sendMessageDraft returns `result: true`, not a
+    // message id). The final reply written via sendDraft therefore vanished
+    // shortly after delivery. Edit-in-place sits well under Telegram's edit
+    // rate limit at the existing 1.5s throttle and gives a uniform path
+    // across DMs, groups, and non-Telegram channels.
     const canStream = typeof adapter.editMessage === "function"
     let sentMessageId: string | undefined
     let fullStreamText = ""
-
-    // Detect Telegram DM streaming. The draft id must be a stable non-zero
-    // integer; we generate one per call so concurrent draft streams to the
-    // same chat don't stomp on each other.
-    const tgAdapter = adapter as unknown as TelegramAdapter
-    const useDraftStreaming =
-      msg.channel === "telegram" &&
-      typeof tgAdapter.sendDraft === "function" &&
-      TelegramAdapter.isDirectMessage(chatId)
-    const draftId = useDraftStreaming ? makeDraftId() : 0
 
     const blockStream = canStream
       ? new BlockStream(
           async (block: string) => {
             fullStreamText += block
-            if (useDraftStreaming) {
-              // Push the cumulative text as a draft; Telegram animates the
-              // update in place. No message is "sent" until flush.
-              try {
-                await tgAdapter.sendDraft(chatId, draftId, fullStreamText, undefined, replyAccountId)
-              } catch { /* best-effort, drop and continue */ }
-            } else if (!sentMessageId) {
+            if (!sentMessageId) {
               const preview = fullStreamText.length > 20
                 ? fullStreamText
                 : `_${agentName} is writing..._\n\n${fullStreamText}`
@@ -682,12 +662,6 @@ export class MessageRouter {
       const errorText = `Error: ${response.error}`
       if (sentMessageId) {
         await this.adapterEdit(adapter, chatId, sentMessageId, errorText, "plain", replyAccountId)
-      } else if (useDraftStreaming) {
-        // Update the in-flight draft with the error text instead of opening a
-        // second bubble via sendMessage.
-        try {
-          await tgAdapter.sendDraft(chatId, draftId, errorText, "plain", replyAccountId)
-        } catch { /* best-effort */ }
       } else {
         await this.adapterSend(adapter, {
           channel: msg.channel,
@@ -736,27 +710,15 @@ export class MessageRouter {
       responseText = `*${agentName}*\n\n${responseText}`
     }
 
-    // Final message
-    //
-    // Three paths:
-    //   1. Edit-in-place stream landed → editMessageText to replace the
-    //      streamed preview with the canonical post-hook responseText.
-    //   2. Telegram DM draft stream ran → push one final sendMessageDraft
-    //      with the canonical text so the displayed draft equals the agent's
-    //      authoritative output. We skip the regular sendMessage entirely
-    //      because Telegram has no draft-clear API and a follow-up sendMessage
-    //      would duplicate the bubble (draft + real message).
-    //   3. No stream / non-Telegram / group → plain sendMessage.
+    // Final message:
+    //   1. Stream landed → editMessageText to replace the streamed preview
+    //      with the canonical post-hook responseText.
+    //   2. No stream → plain sendMessage.
     let sentResponseId: string | undefined
     if (responseText) {
       if (sentMessageId) {
         await this.adapterEdit(adapter, chatId, sentMessageId, responseText, undefined, replyAccountId)
         sentResponseId = sentMessageId
-      } else if (useDraftStreaming) {
-        try {
-          await tgAdapter.sendDraft(chatId, draftId, responseText, undefined, replyAccountId)
-        } catch { /* best-effort; draft already shows the most recent block */ }
-        // No sentResponseId — the draft is not a regular message.
       } else {
         sentResponseId = await this.adapterSend(adapter, {
           channel: msg.channel,

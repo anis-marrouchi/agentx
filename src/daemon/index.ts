@@ -968,7 +968,7 @@ export class AgentXDaemon {
     // Workflow engine — register hook subscribers BEFORE startAll so a
     // webhook arriving immediately sees an engine ready to evaluate. Skipped
     // when `workflows.enabled` is false to keep existing installs silent.
-    this.bootWorkflowEngine()
+    await this.bootWorkflowEngine()
 
     await this.router.startAll()
   }
@@ -977,7 +977,7 @@ export class AgentXDaemon {
    *  daemon. No-op when `workflows.enabled` is false — the observability
    *  page + editor still work (they read/write disk directly via the
    *  board-dashboard routes), but no transitions fire. */
-  private bootWorkflowEngine(): void {
+  private async bootWorkflowEngine(): Promise<void> {
     const cfg = this.config.workflows
     if (!cfg?.enabled) {
       this.log("  Workflows: disabled (set workflows.enabled to turn the engine on)")
@@ -1022,6 +1022,10 @@ export class AgentXDaemon {
 
     // Mesh forwarder: when an event arrives here but the run is home'd on
     // another peer, POST directly to the peer's /workflow/event endpoint.
+    // Also handles trigger fan-out: a fresh channel event arriving locally
+    // is broadcast to every healthy peer so peer-side workflows with
+    // `mesh.allowRemote: true` can match. Each receiver runs its own dispatch
+    // with `fromRemote` set, scoping the match to opted-in workflows.
     const forwarder: WorkflowMeshForwarder | undefined = this.mesh ? {
       forwardTransition: async (peerName, payload) => {
         const peer = this.mesh!.directory().find((p) => p.peer === peerName && p.healthy)
@@ -1041,7 +1045,129 @@ export class AgentXDaemon {
           this.log(`[workflows] forward ${url} failed: ${e.message}`)
         }
       },
+      broadcastTrigger: async (payload) => {
+        const peers = this.mesh!.directory().filter((p) => p.healthy)
+        if (peers.length === 0) return
+        const localPeerName = this.config.node.id
+        // Visibility: emit one summary line per broadcast so operators can see
+        // a channel event leaving the originating node and trace the round
+        // trip (look for a matching `[workflows/mesh] received trigger ...`
+        // on the receiving peer).
+        this.log(`[workflows/mesh] broadcasting trigger source="${payload.trigger.source}" chat="${payload.trigger.chat ?? "*"}" -> ${peers.length} peer(s): ${peers.map((p) => p.peer).join(", ")}`)
+        await Promise.allSettled(peers.map(async (peer) => {
+          const url = `${peer.peerUrl}/workflow/event`
+          try {
+            const r = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              // Receiver discriminates on `kind: "trigger"` and dispatches
+              // with fromRemote.peer = the originating node id. Peers without
+              // an opted-in workflow no-op cleanly.
+              body: JSON.stringify({ kind: "trigger", fromPeer: localPeerName, payload }),
+              signal: AbortSignal.timeout(5000),
+            })
+            if (!r.ok) this.log(`[workflows/mesh] broadcastTrigger ${peer.peer} -> ${r.status}`)
+          } catch (e: any) {
+            this.log(`[workflows/mesh] broadcastTrigger ${peer.peer} failed: ${e.message}`)
+          }
+        }))
+      },
+      forwardChannelSend: async (payload) => {
+        // Find a healthy peer that hosts this channel. Channels are typically
+        // unique to a node (whatsapp on clawd-server, telegram on macbook),
+        // so we just take the first hit. If multiple peers somehow host the
+        // same channel, this picks deterministically by directory order.
+        const peers = this.mesh!.directory().filter((p) => p.healthy && p.channels?.includes(payload.channel))
+        if (peers.length === 0) {
+          throw new Error(`no healthy mesh peer hosts channel "${payload.channel}"`)
+        }
+        const target = peers[0]
+        const url = `${target.peerUrl}/channel/send`
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!r.ok) {
+          const txt = await r.text().catch(() => "")
+          throw new Error(`peer ${target.peer} /channel/send -> ${r.status} ${txt.slice(0, 200)}`)
+        }
+        const body = await r.json().catch(() => ({})) as { messageId?: string | null }
+        return { messageId: body.messageId ?? null }
+      },
     } : undefined
+
+    // Build the Telegram user-task renderer if the Telegram adapter is
+    // active. The renderer posts a notification to each assignee's
+    // preferred channel when a userTask node pauses the run.
+    const { ActorStore } = await import("@/actors/store")
+    const { TaskStore } = await import("@/workflows/task-store")
+    const actorStore = new ActorStore()
+    const taskStore = new TaskStore(cfg.dir ? { baseDir: resolve(process.cwd(), cfg.dir) } : undefined)
+    const inboxBaseUrl = process.env.AGENTX_INBOX_BASE_URL || ""
+    const taskRenderers: Array<(t: import("@/workflows/task-store").UserTaskRecord) => Promise<void>> = []
+
+    const telegramAdapter = channels["telegram"] as {
+      sendMessage?: (msg: { chatId: string; text: string; parseMode?: string; accountId?: string }) => Promise<string | undefined | void>
+      sendWithInlineButtons?: (args: { chatId: string; text: string; buttons: Array<{ label: string; url: string }>; parseMode?: "markdown" | "html" | "plain"; accountId?: string }) => Promise<string | undefined | void>
+    } | undefined
+    if (telegramAdapter?.sendMessage) {
+      const { createTelegramTaskRenderer } = await import("@/forms/renderers/telegram")
+      taskRenderers.push(createTelegramTaskRenderer({
+        actors: actorStore,
+        tasks: taskStore,
+        adapter: {
+          sendMessage: telegramAdapter.sendMessage.bind(telegramAdapter),
+          sendWithInlineButtons: telegramAdapter.sendWithInlineButtons?.bind(telegramAdapter),
+        },
+        inboxBaseUrl,
+        log: (m) => this.log(m),
+      }))
+    }
+
+    const whatsappAdapter = channels["whatsapp"] as {
+      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
+    } | undefined
+    if (whatsappAdapter?.send) {
+      const { createWhatsappTaskRenderer } = await import("@/forms/renderers/whatsapp")
+      taskRenderers.push(createWhatsappTaskRenderer({
+        actors: actorStore,
+        tasks: taskStore,
+        adapter: { send: whatsappAdapter.send.bind(whatsappAdapter) },
+        inboxBaseUrl,
+        log: (m) => this.log(m),
+      }))
+    }
+
+    const slackAdapter = channels["slack"] as {
+      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
+    } | undefined
+    if (slackAdapter?.send) {
+      const { createSlackTaskRenderer } = await import("@/forms/renderers/slack")
+      taskRenderers.push(createSlackTaskRenderer({
+        actors: actorStore,
+        tasks: taskStore,
+        adapter: { send: slackAdapter.send.bind(slackAdapter) },
+        inboxBaseUrl,
+        log: (m) => this.log(m),
+      }))
+    }
+
+    // Compose into a single callback that fans out to every registered
+    // per-channel renderer. Each renderer short-circuits when the
+    // assignee has no handle on its channel, so delivery lands on
+    // whichever channel the actor has configured without double-posting.
+    const renderUserTask: ((task: import("@/workflows/task-store").UserTaskRecord) => Promise<void>) | undefined =
+      taskRenderers.length
+        ? async (task) => { for (const r of taskRenderers) { try { await r(task) } catch { /* already logged per-renderer */ } } }
+        : undefined
+
+    const { TimerService } = await import("@/workflows/timers")
+    const timerService = new TimerService({
+      baseDir: cfg.dir ? resolve(process.cwd(), cfg.dir) : undefined,
+      log: (m) => this.log(m),
+    })
 
     const dispatcher = new WorkflowDispatcher({
       store, runs,
@@ -1049,8 +1175,17 @@ export class AgentXDaemon {
       channels,
       agents,
       forwarder,
+      actors: actorStore,
+      tasks: taskStore,
+      timers: timerService,
+      renderUserTask,
       log: (m) => this.log(m),
     })
+
+    // Start the tick loop now that the dispatcher has registered its
+    // resume-on-fire callback. Timers persisted from a prior run will be
+    // picked up on the first tick.
+    timerService.start()
 
     // Subscribe the built-in hook handlers.
     const handlers = createWorkflowHookHandlers(dispatcher)
@@ -1265,9 +1400,86 @@ export class AgentXDaemon {
         await this.handleWorkflowEvent(req, res)
         return
       }
+      if (req.method === "POST" && path === "/channel/send") {
+        await this.handleChannelSend(req, res)
+        return
+      }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
+        return
+      }
+
+      // BPM user-task API: list + submit. Lives on the main daemon
+      // because the dispatcher is the one that drives run resumes.
+      if (path.startsWith("/api/workflows/tasks") && this.workflowDispatcher) {
+        if (await this.handleTaskApi(req, res, path)) return
+      }
+      // GET /api/workflows/kpis — actor-level + total task stats.
+      if (req.method === "GET" && path === "/api/workflows/kpis" && this.workflowDispatcher) {
+        const { computeKpis } = await import("@/workflows/task-store")
+        this.json(res, 200, computeKpis(this.workflowDispatcher.tasks))
+        return
+      }
+      // POST /api/workflows/signal/:name — manual signal emission.
+      if (req.method === "POST" && path.startsWith("/api/workflows/signal/") && this.workflowDispatcher) {
+        const name = decodeURIComponent(path.replace(/^\/api\/workflows\/signal\//, ""))
+        if (!name) { this.json(res, 400, { error: "signal name required" }); return }
+        let body: any
+        try { body = await readJsonBody(req) } catch (e: any) {
+          this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+        }
+        const emission = this.workflowDispatcher.emitSignal({
+          name,
+          scope: body?.scope,
+          workflowId: body?.workflowId,
+          payload: body?.payload,
+        })
+        this.json(res, 200, { ok: true, emission })
+        return
+      }
+      // /inbox — per-actor task list page. Static HTML, fetches the task
+      // API above via same-origin.
+      if (req.method === "GET" && path === "/inbox") {
+        const { renderInboxPage } = await import("./ui/pages/inbox")
+        const qs = url.searchParams
+        const html = renderInboxPage({ actor: qs.get("actor") || undefined })
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+        res.end(html)
+        return
+      }
+      // /processes — composition-tree + SLA view of runs.
+      if (req.method === "GET" && path === "/processes") {
+        const { renderProcessesPage } = await import("./ui/pages/processes")
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+        res.end(renderProcessesPage({}))
+        return
+      }
+      // GET /t/:taskId/:action — one-click task submission from chat
+      // clients (Telegram inline-keyboard URL buttons). Submits with
+      // empty values → validator fills defaults. Only works for forms
+      // whose required fields have defaults (or none at all).
+      const oneClick = req.method === "GET" && path.match(/^\/t\/([^\/]+)\/(primary|secondary)$/)
+      if (oneClick && this.workflowDispatcher) {
+        const taskId = decodeURIComponent(oneClick[1])
+        const action = oneClick[2] as "primary" | "secondary"
+        const actor = url.searchParams.get("actor") || "anonymous"
+        const result = await this.workflowDispatcher.submitTask(taskId, { action, values: {} }, actor)
+        res.writeHead(result.ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" })
+        if (result.ok) {
+          res.end(`<!doctype html><meta charset=utf-8><title>Submitted</title>
+<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
+<h1 style="color:#27ae60">✓ Submitted</h1>
+<p>Your <strong>${action === "primary" ? "approval" : "rejection"}</strong> has been recorded. You can close this tab.</p>
+<p style="color:#888;font-size:13px">Run <code>${result.runId}</code></p>
+</body>`)
+        } else {
+          res.end(`<!doctype html><meta charset=utf-8><title>Submit failed</title>
+<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
+<h1 style="color:#c0392b">✗ ${result.error}</h1>
+${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task has required fields. Please open the <a href="/inbox?actor=${encodeURIComponent(actor)}">inbox</a> instead.</p>` : ""}
+</body>`)
+        }
         return
       }
 
@@ -1909,6 +2121,11 @@ export class AgentXDaemon {
               description: `Agent "${a.name}" (${a.tier})`,
               tags: [a.tier],
             })),
+            // Channels this node hosts. Used by mesh peers to route
+            // workflow `action.send` calls back to the originating channel
+            // when the workflow runs on a different node than the channel
+            // adapter (e.g. workflow on macbook, whatsapp on clawd-server).
+            channels: this.router.getChannelNames(),
             defaultInputModes: ["text"],
             defaultOutputModes: ["text"],
           })
@@ -2174,6 +2391,58 @@ export class AgentXDaemon {
   /** Mesh receiver for forwarded workflow events. Peers POST the same
    *  payload shape the MeshForwarder sends. Enforces that the run is
    *  actually home'd here before acting — protects against routing loops. */
+  private async handleTaskApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+    const d = this.workflowDispatcher
+    if (!d) return false
+    const { formSubmissionSchema } = await import("@/forms/types")
+
+    // GET /api/workflows/tasks[?actor=<id>]
+    if (req.method === "GET" && (path === "/api/workflows/tasks" || path.startsWith("/api/workflows/tasks?"))) {
+      const url = new URL(req.url || "/", `http://_`)
+      const actor = url.searchParams.get("actor") || undefined
+      const tasks = actor ? d.tasks.listForActor(actor) : d.tasks.listOpen()
+      this.json(res, 200, { tasks })
+      return true
+    }
+
+    // GET /api/workflows/tasks/:id
+    // POST /api/workflows/tasks/:id/submit
+    const trail = path.replace(/^\/api\/workflows\/tasks/, "")
+    const match = trail.match(/^\/([^\/?]+)(\/submit)?$/)
+    if (!match) return false
+    const taskId = decodeURIComponent(match[1])
+
+    if (match[2]) {
+      if (req.method !== "POST") { this.json(res, 405, { error: "method not allowed" }); return true }
+      let body: any
+      try { body = await readJsonBody(req) } catch (e: any) {
+        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
+      }
+      const submissionRaw = body && typeof body === "object" && "submission" in body ? (body as any).submission : body
+      const parsed = formSubmissionSchema.safeParse(submissionRaw)
+      if (!parsed.success) {
+        this.json(res, 400, {
+          error: "invalid submission",
+          issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        })
+        return true
+      }
+      const submittedBy = typeof body?.submittedBy === "string" ? body.submittedBy : "anonymous"
+      const result = await d.submitTask(taskId, parsed.data, submittedBy)
+      if (!result.ok) { this.json(res, 400, { error: result.error, fieldErrors: result.fieldErrors }); return true }
+      this.json(res, 200, { ok: true, runId: result.runId })
+      return true
+    }
+
+    if (req.method === "GET") {
+      const task = d.tasks.get(taskId)
+      if (!task) { this.json(res, 404, { error: "task not found" }); return true }
+      this.json(res, 200, { task })
+      return true
+    }
+    return false
+  }
+
   private async handleWorkflowEvent(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.workflowDispatcher) {
       this.json(res, 503, { error: "workflow engine not enabled on this node" })
@@ -2189,9 +2458,30 @@ export class AgentXDaemon {
     if (!event?.id || !entityRef?.backend || !entityRef?.id) {
       this.json(res, 400, { error: "missing event or entityRef" }); return
     }
-    // Reconstruct the trigger filter from the target workflow's trigger
-    // node so the dispatcher can match correctly.
+
+    // Two flavours arrive on this endpoint:
+    //   1. kind="trigger" — a fresh trigger broadcast from a peer that
+    //      observed the channel event. Trigger fields are carried in the
+    //      payload itself; we dispatch with fromRemote so only opted-in
+    //      workflows match.
+    //   2. (legacy / transition) — a workflow-targeted forward for an active
+    //      run home'd here. Reconstruct the trigger from the local workflow
+    //      definition just like before.
+    const kind = body?.kind
     try {
+      if (kind === "trigger" && payload.trigger) {
+        const fromPeer = typeof body?.fromPeer === "string" ? body.fromPeer : "unknown"
+        this.log(`[workflows/mesh] received trigger from "${fromPeer}" source="${payload.trigger.source}" chat="${payload.trigger.chat ?? "*"}"`)
+        const r = await this.workflowDispatcher.dispatch({
+          trigger: payload.trigger,
+          entityRef,
+          event,
+          fromRemote: { peer: fromPeer },
+        })
+        this.log(`[workflows/mesh] dispatched broadcast: matched=${r.claimed.length} ${r.claimed.length ? `(${r.claimed.map((w) => w.id).join(", ")})` : "[none — no workflow with mesh.allowRemote matched]"}`)
+        this.json(res, 202, { ok: true, mode: "trigger-broadcast", matched: r.claimed.map((w) => w.id) })
+        return
+      }
       const wf = payload.workflowId ? this.workflowStore?.get(payload.workflowId) : null
       const triggerNode = wf?.nodes.find((n) => n.type.startsWith("trigger."))
       const cfg = (triggerNode?.config ?? {}) as {
@@ -2209,6 +2499,43 @@ export class AgentXDaemon {
       this.json(res, 202, { ok: true })
     } catch (e: any) {
       this.log(`[workflows] /workflow/event failed: ${e.message}`)
+      this.json(res, 500, { error: e.message })
+    }
+  }
+
+  /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
+   *  this when the channel lives on this node (e.g. clawd-server hosts
+   *  whatsapp; macbook's workflow forwards here). Just unwraps to the local
+   *  router's outbound path so all the same per-account/per-bot resolution
+   *  applies. Authentication is currently the mesh token at the network
+   *  edge — the endpoint trusts callers that reach it. */
+  private async handleChannelSend(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: any
+    try { body = await readJsonBody(req) } catch (e: any) {
+      this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+    }
+    const channel = String(body?.channel ?? "")
+    const chatId = String(body?.chatId ?? "")
+    const text = String(body?.text ?? "")
+    if (!channel || !chatId || !text) {
+      this.json(res, 400, { error: "channel, chatId, and text are required" }); return
+    }
+    const adapter = this.router.getChannel(channel)
+    if (!adapter) {
+      this.json(res, 404, { error: `channel "${channel}" not hosted on this node` }); return
+    }
+    try {
+      const messageId = await this.router.sendOutbound({
+        channel,
+        chatId,
+        text,
+        accountId: typeof body.accountId === "string" ? body.accountId : undefined,
+        parseMode: typeof body.parseMode === "string" ? body.parseMode : undefined,
+        replyTo: typeof body.replyTo === "string" ? body.replyTo : undefined,
+      } as any)
+      this.json(res, 200, { ok: true, messageId: messageId ?? null })
+    } catch (e: any) {
+      this.log(`[mesh] /channel/send "${channel}" failed: ${e.message}`)
       this.json(res, 500, { error: e.message })
     }
   }

@@ -3,6 +3,12 @@ import { resolveHandler } from "./nodes/handlers"
 import type { AgentExecuteRequest, AgentExecuteResponse } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import type { WorkflowStore } from "./store"
+import { TaskStore } from "./task-store"
+import { TimerService, type TimerRecord } from "./timers"
+import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
+import { ActorStore } from "../actors/store"
+import { validateSubmission } from "../forms/validator"
+import type { FormSubmission } from "../forms/types"
 import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./types"
 
 // --- Dispatcher (V2) ---
@@ -22,6 +28,30 @@ import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./typ
 
 export interface MeshForwarder {
   forwardTransition(peer: string, payload: { workflowId: string; event: TriggerEvent; entityRef: EntityRef }): Promise<void>
+  /** Broadcast a fresh trigger event to all healthy mesh peers that may host
+   *  remote-allowed workflows for this trigger's source. Implementations
+   *  should be best-effort: a failing peer must not block delivery to others
+   *  or surface back to the local dispatch path. Optional — when absent,
+   *  workflows are local-only as before. */
+  broadcastTrigger?(payload: {
+    trigger: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] }
+    entityRef: EntityRef
+    event: TriggerEvent
+  }): Promise<void>
+  /** Forward an outbound channel send to whichever peer hosts the channel.
+   *  Returns the message id from the remote adapter (or null when not
+   *  available). Throws when no healthy peer hosts the channel — callers
+   *  should treat that as a hard error and surface it as the action's
+   *  failure. Optional — when absent, workflow `action.send` to a non-local
+   *  channel just errors out, preserving today's behaviour. */
+  forwardChannelSend?(payload: {
+    channel: string
+    chatId: string
+    text: string
+    accountId?: string
+    parseMode?: string
+    replyTo?: string
+  }): Promise<{ messageId: string | null }>
 }
 
 export interface TriggerEvent {
@@ -41,7 +71,37 @@ export interface DispatcherOptions {
   channels: Record<string, unknown>
   agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   log?: (msg: string) => void
+  /** Optional Actor/Role store. If omitted, constructed with defaults so
+   *  userTask handlers still work out of the box (reads from .agentx/actors/
+   *  and .agentx/roles/). */
+  actors?: ActorStore
+  /** Optional user-task store. If omitted, constructed with defaults
+   *  (.agentx/workflows/_tasks/). */
+  tasks?: TaskStore
+  /** Optional form-renderer hook for user tasks. Called after a userTask
+   *  record is persisted — the hook delivers the form to the assignee's
+   *  preferred channel(s). Best-effort; failures are logged. */
+  renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
+  /** Optional timer service. When provided, `timer.boundary` nodes
+   *  schedule against it and resume on fire. When omitted, a default is
+   *  constructed but its loop is NOT started — callers can start it via
+   *  `dispatcher.timers.start()` once (typically at daemon boot). */
+  timers?: TimerService
+  /** Optional signal bus. Workflow-scoped default if omitted. */
+  signals?: SignalBus
 }
+
+/** Subset of channel adapter API used for the auto-acknowledge lifecycle on
+ *  channel-triggered runs. Duck-typed so any adapter implementing react +
+ *  sendTyping (telegram today, future whatsapp/discord) gets the UX for free.
+ *  The accountId arg is forwarded so multi-account adapters reply on the
+ *  originating bot, not whichever bot the chat was last seen on. */
+interface AckCapableAdapter {
+  react?: (chatId: string, messageId: string, emoji?: string, accountId?: string) => Promise<void> | void
+  sendTyping?: (chatId: string, accountId?: string) => Promise<void> | void
+}
+
+const ACK_TYPING_INTERVAL_MS = 4000
 
 export class WorkflowDispatcher {
   private readonly store: WorkflowStore
@@ -51,6 +111,16 @@ export class WorkflowDispatcher {
   private readonly channels: Record<string, unknown>
   private readonly agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   private readonly log: (msg: string) => void
+  readonly actors: ActorStore
+  readonly tasks: TaskStore
+  readonly timers: TimerService
+  readonly signals: SignalBus
+  private readonly renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
+  /** Per-run typing timer. Started when a channel-triggered run is created or
+   *  resumed; stopped when the run terminates (completed / failed / canceled
+   *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
+   *  other's lifecycles. */
+  private readonly ackTypingTimers: Map<string, ReturnType<typeof setInterval>> = new Map()
 
   constructor(opts: DispatcherOptions) {
     this.store = opts.store
@@ -60,6 +130,156 @@ export class WorkflowDispatcher {
     this.channels = opts.channels
     this.agents = opts.agents
     this.log = opts.log ?? (() => {})
+    this.actors = opts.actors ?? new ActorStore()
+    this.tasks = opts.tasks ?? new TaskStore()
+    this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
+    this.signals = opts.signals ?? new SignalBus()
+    this.renderUserTask = opts.renderUserTask
+
+    // Register the timer-fire callback once. TimerService is a per-node
+    // singleton; re-registration would clobber prior instances, but the
+    // dispatcher also is, so this is safe.
+    this.timers.onFire((t) => this.resumeFromTimer(t))
+    // Resume any paused signalWait runs whose filter matches a published
+    // signal. Running a full scan of paused runs per emission is cheap in
+    // v1 (runs are fs-backed and typically numbered in the hundreds).
+    this.signals.subscribe((emission) => this.resumeFromSignal(emission))
+  }
+
+  /** Public helper for the HTTP API to emit a signal programmatically. */
+  emitSignal(args: { name: string; scope?: "workflow" | "global"; workflowId?: string; payload?: Record<string, unknown> }): SignalEmission {
+    const emission: SignalEmission = {
+      name: args.name,
+      scope: args.scope ?? "global",
+      workflowId: args.workflowId ?? "",
+      payload: args.payload ?? {},
+      emittedAt: new Date().toISOString(),
+    }
+    this.signals.emit(emission)
+    return emission
+  }
+
+  /** Callback when a signal is published. Finds paused `signalWait` runs
+   *  whose filter matches and resumes them. */
+  private async resumeFromSignal(emission: SignalEmission): Promise<void> {
+    const all = this.runs.list({ limit: 500 })
+    for (const run of all) {
+      if (run.status !== "paused" || !run.pausedAt || run.pausedAt.kind !== "signalWait") continue
+      const waiter = {
+        name: run.pausedAt.signalName,
+        scope: run.pausedAt.scope,
+        workflowId: run.workflowId,
+        match: run.pausedAt.match ?? {},
+      }
+      if (!matchesSignal(waiter, emission)) continue
+      const wf = this.store.list().find((w) => w.id === run.workflowId)
+      if (!wf) continue
+      const node = findNode(wf, run.pausedAt.nodeId)
+      const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+      const output = {
+        receivedAt: new Date().toISOString(),
+        name: emission.name,
+        payload: emission.payload,
+      }
+      const entry: NodeExecutionEntry = {
+        at: output.receivedAt,
+        nodeId: run.pausedAt.nodeId,
+        inputKeys: [],
+        status: "resumed",
+        output,
+        idempotencyKey: idempotencyKey(run.id, run.pausedAt.nodeId, `signal:${emission.name}:${emission.emittedAt}`),
+      }
+      const newContext: Record<string, Record<string, unknown>> = { ...run.context, [run.pausedAt.nodeId]: output }
+      this.runs.recordExecution({
+        runId: run.id,
+        entry,
+        nextPending: successors,
+        status: "running",
+        pausedAt: null,
+        context: newContext,
+      })
+      this.log(`[workflow:${wf.id}] run ${run.id} resumed from signal "${emission.name}"`)
+      void this.walk(wf, run.id, `signal:${emission.name}`)
+        .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-signal failed: ${e.message}`))
+    }
+  }
+
+  /** Callback from the TimerService when a scheduled timer elapses. Reads
+   *  the paused run, verifies the pause is still on this timer's node, and
+   *  resumes by seeding the timer node's output with { firedAt } and
+   *  enqueueing successors. */
+  private async resumeFromTimer(t: TimerRecord): Promise<void> {
+    const run = this.runs.get(t.runId)
+    if (!run || run.status !== "paused") return
+    if (!run.pausedAt || run.pausedAt.kind !== "timerWait" || run.pausedAt.nodeId !== t.nodeId) return
+    const wf = this.store.list().find((w) => w.id === run.workflowId)
+    if (!wf) return
+    const node = findNode(wf, t.nodeId)
+    const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+    const firedAt = new Date().toISOString()
+    const output = { firedAt, scheduledFor: t.fireAt }
+    const entry: NodeExecutionEntry = {
+      at: firedAt,
+      nodeId: t.nodeId,
+      inputKeys: [],
+      status: "resumed",
+      output,
+      idempotencyKey: idempotencyKey(run.id, t.nodeId, `timer:${t.id}`),
+    }
+    const newContext: Record<string, Record<string, unknown>> = { ...run.context, [t.nodeId]: output }
+    this.runs.recordExecution({
+      runId: run.id,
+      entry,
+      nextPending: successors,
+      status: "running",
+      pausedAt: null,
+      context: newContext,
+    })
+    this.log(`[workflow:${wf.id}] run ${run.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
+    void this.walk(wf, run.id, `timer:${t.id}`)
+      .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
+  }
+
+  /** Fire 👀 + start the typing loop for a channel-triggered run, mirroring
+   *  what MessageRouter does when it owns the conversation. Without this,
+   *  workflow-claimed messages lose the "I see you, I'm working on it" UX
+   *  that users learn to expect from the agent path.
+   *
+   *  Best-effort throughout: a failing adapter call must not break the walk.
+   *  Idempotent: repeated calls for the same runId no-op (typing loop stays). */
+  private startChannelAck(runId: string, payload: Record<string, unknown>): void {
+    const channel = String(payload.channel ?? "")
+    const chatId = String(payload.chatId ?? "")
+    if (!channel || !chatId) return
+    const adapter = this.channels[channel] as AckCapableAdapter | undefined
+    if (!adapter) return
+    const accountId = typeof payload.accountId === "string" ? payload.accountId : undefined
+    const event = payload.event as { id?: unknown } | undefined
+    const messageId = typeof event?.id === "string" ? event.id : (event?.id != null ? String(event.id) : undefined)
+
+    if (messageId && adapter.react) {
+      try { void Promise.resolve(adapter.react(chatId, messageId, "👀", accountId)).catch(() => {}) }
+      catch { /* swallow — ack is decorative */ }
+    }
+    if (this.ackTypingTimers.has(runId)) return
+    if (!adapter.sendTyping) return
+    const tick = () => {
+      try { void Promise.resolve(adapter.sendTyping!(chatId, accountId)).catch(() => {}) }
+      catch { /* swallow */ }
+    }
+    tick()
+    const timer = setInterval(tick, ACK_TYPING_INTERVAL_MS)
+    this.ackTypingTimers.set(runId, timer)
+  }
+
+  /** Stop the typing loop for a run. Called when a run leaves the running
+   *  state (terminal status OR pause — paused runs are waiting on an external
+   *  event and should not appear "still typing"). */
+  private stopChannelAck(runId: string): void {
+    const timer = this.ackTypingTimers.get(runId)
+    if (!timer) return
+    clearInterval(timer)
+    this.ackTypingTimers.delete(runId)
   }
 
   /** Main entry. The hook subscribers map channel events into this shape.
@@ -75,12 +295,18 @@ export class WorkflowDispatcher {
     trigger: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] }
     entityRef: EntityRef
     event: TriggerEvent
+    /** When true, this dispatch was initiated by a peer's broadcast (received
+     *  via /workflow/event with kind=trigger). Only workflows that have
+     *  explicitly opted in via `mesh.allowRemote: true` (and pass the
+     *  `mesh.peers` allowlist when set) match in that mode — local workflows
+     *  without the opt-in stay isolated. The flag also short-circuits the
+     *  outbound fan-out below so a remote-origin dispatch never re-broadcasts
+     *  back through the mesh (no echo loops). */
+    fromRemote?: { peer: string }
   }): Promise<{ claimed: Workflow[]; runs: WorkflowRun[] }> {
-    const matches = this.matchByTrigger(args.trigger)
-    if (!matches.length) return { claimed: [], runs: [] }
-
+    const matches = this.matchByTrigger(args.trigger, args.fromRemote)
     const willFan = matches.some((m) => m.fanOut)
-    const toRun = willFan ? matches : [matches[0]]
+    const toRun = willFan ? matches : matches.slice(0, 1)
     const claimed: Workflow[] = []
     const runs: WorkflowRun[] = []
     for (const wf of toRun) {
@@ -88,13 +314,39 @@ export class WorkflowDispatcher {
       if (r.claimed) claimed.push(wf)
       if (r.run) runs.push(r.run)
     }
+
+    // Mesh trigger fan-out. Only emit on local-origin dispatches; broadcasts
+    // from peers (`fromRemote`) are never re-broadcast or we'd echo. The
+    // forwarder decides per-peer whether to actually deliver — typically based
+    // on cached peer agent-cards advertising allowRemote workflows for this
+    // trigger source.
+    if (!args.fromRemote && this.forwarder?.broadcastTrigger) {
+      // Fire-and-forget: a slow / unhealthy peer must not delay the local
+      // hook return path that the router awaits. Failures are logged inside
+      // the forwarder.
+      void Promise.resolve(this.forwarder.broadcastTrigger({
+        trigger: args.trigger,
+        entityRef: args.entityRef,
+        event: args.event,
+      })).catch((e: any) => this.log(`[mesh-broadcast] ${e?.message ?? e}`))
+    }
+
     return { claimed, runs }
   }
 
-  private matchByTrigger(t: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] }): Workflow[] {
+  private matchByTrigger(
+    t: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] },
+    fromRemote?: { peer: string },
+  ): Workflow[] {
     const all = this.store.list()
     const out: Workflow[] = []
     for (const wf of all) {
+      // Mesh isolation: remote-origin events only see workflows that opted in.
+      if (fromRemote) {
+        if (!wf.mesh?.allowRemote) continue
+        const allowed = wf.mesh.peers
+        if (allowed && allowed.length > 0 && !allowed.includes(fromRemote.peer)) continue
+      }
       const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
       if (!trigger) continue
       const cfg = trigger.config as {
@@ -106,7 +358,7 @@ export class WorkflowDispatcher {
       if (f) {
         if (f.project && f.project !== "*" && f.project !== t.project) continue
         if (f.repo && f.repo !== "*" && f.repo !== t.repo) continue
-        if (f.chat && f.chat !== "*" && f.chat !== t.chat) continue
+        if (f.chat && f.chat !== "*" && normalizeChat(t.source, f.chat) !== normalizeChat(t.source, t.chat)) continue
         if (f.labels?.length) {
           const have = new Set(t.labels ?? [])
           const hit = f.labels.some((l) => have.has(l))
@@ -154,11 +406,20 @@ export class WorkflowDispatcher {
         initialContext: { [init.triggerId]: event.payload },
       })
       this.log(`[workflow:${workflow.id}] run ${run.id} created from trigger "${init.triggerId}" for ${entityRef.id}`)
+      // Channel-triggered: kick off the react+typing lifecycle so users see
+      // the same "I'm on it" affordances they get from the router's path.
+      if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
     } else if (run.status === "paused" && run.pausedAt) {
-      // Resume path: a matching event arrived for a paused run. Check the
-      // checkpoint's resumeMatch against the incoming event's trigger
-      // fields (source, project, repo, chat, labels). On match, unpause
-      // and seed the event as the checkpoint node's output.
+      // Resume path: a matching event arrived for a paused run. Only
+      // `checkpoint` pauses resume on channel events. userTask pauses on
+      // form submit; subProcess on child end; signalWait on signal.emit;
+      // timerWait on timer fire. Each of those has its own resume entry
+      // point elsewhere — here we just drop the channel event and decline
+      // to claim (so default routing handles it).
+      if (run.pausedAt.kind !== "checkpoint") {
+        this.log(`[workflow:${workflow.id}] run ${run.id} paused on ${run.pausedAt.kind} — channel event bypasses workflow`)
+        return { claimed: false, run: null }
+      }
       if (!matchesResume(run.pausedAt.resumeMatch, trigger, event)) {
         this.log(`[workflow:${workflow.id}] run ${run.id} paused but event doesn't match resumeMatch — dropping`)
         return { claimed: false, run: null }
@@ -179,6 +440,7 @@ export class WorkflowDispatcher {
         ...run.context,
         [run.pausedAt.nodeId]: { event: event.payload },
       }
+      const pausedCheckpointName = run.pausedAt.checkpointName
       const updated = this.runs.recordExecution({
         runId: run.id,
         entry: resumeEntry,
@@ -188,7 +450,8 @@ export class WorkflowDispatcher {
         context: newContext,
       })
       if (updated) run = updated
-      this.log(`[workflow:${workflow.id}] run ${run.id} resumed from checkpoint "${run.pausedAt?.checkpointName ?? "?"}"`)
+      this.log(`[workflow:${workflow.id}] run ${run.id} resumed from checkpoint "${pausedCheckpointName}"`)
+      if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
     } else if (run.status === "running") {
       // Concurrent message on an already-running run. v1 policy: drop —
       // but still claim the event so the router doesn't ALSO reply.
@@ -207,8 +470,17 @@ export class WorkflowDispatcher {
     return { claimed: true, run }
   }
 
-  /** Execute the pending queue until empty, paused, or failed. */
+  /** Execute the pending queue until empty, paused, or failed. Wraps the
+   *  inner walk in try/finally so the channel-ack typing loop is always
+   *  cleared on exit — regardless of which branch (failed / paused / end /
+   *  drained) returned. Without this wrapper, an early return inside the
+   *  loop would leave the typing indicator running forever. */
   private async walk(workflow: Workflow, runId: string, triggeringEventId: string): Promise<void> {
+    try { await this.walkInner(workflow, runId, triggeringEventId) }
+    finally { this.stopChannelAck(runId) }
+  }
+
+  private async walkInner(workflow: Workflow, runId: string, triggeringEventId: string): Promise<void> {
     let run = this.runs.get(runId)
     if (!run) return
 
@@ -279,6 +551,9 @@ export class WorkflowDispatcher {
           workflow, run, node,
           channels: this.channels,
           agents: this.agents,
+          actors: this.actors,
+          tasks: this.tasks,
+          forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
           log: this.log,
         })
       } catch (e: any) {
@@ -298,6 +573,31 @@ export class WorkflowDispatcher {
         return
       }
       if (result.paused && result.pausedAt) {
+        // Sub-process pause: spawn the child run (no walk yet), patch the
+        // child id into pausedAt, persist the parent's pause, THEN kick the
+        // child walk. Decoupling the walk kick from spawn avoids a race
+        // where a fast child finishes before the parent's pause is on disk.
+        let pausedAt = result.pausedAt
+        let spawnedChild: WorkflowRun | null = null
+        if (result.spawnChild && pausedAt.kind === "subProcess") {
+          spawnedChild = await this.spawnChild({
+            parent: run,
+            parentNodeId: nodeId,
+            childWorkflowId: result.spawnChild.workflowId,
+            input: result.spawnChild.input,
+          })
+          if (!spawnedChild) {
+            const entry: NodeExecutionEntry = {
+              at: now, nodeId, inputKeys,
+              status: "failed",
+              idempotencyKey: key,
+              note: `subProcess: child workflow "${result.spawnChild.workflowId}" not found`,
+            }
+            run = this.runs.recordExecution({ runId: run.id, entry, nextPending: remaining, status: "failed" }) ?? run
+            return
+          }
+          pausedAt = { ...pausedAt, childRunId: spawnedChild.id }
+        }
         const entry: NodeExecutionEntry = {
           at: now, nodeId, inputKeys,
           status: "paused",
@@ -307,8 +607,37 @@ export class WorkflowDispatcher {
           runId: run.id, entry,
           nextPending: remaining,
           status: "paused",
-          pausedAt: result.pausedAt,
+          pausedAt,
         }) ?? run
+
+        // Parent pause is now on disk — safe to kick the child walk.
+        if (spawnedChild) this.kickChildWalk(spawnedChild)
+
+        // Schedule the timer for timerWait pauses. A fast fireAt (already
+        // past) fires on the next tick.
+        if (pausedAt.kind === "timerWait") {
+          try {
+            this.timers.schedule({
+              runId: run.id,
+              workflowId: workflow.id,
+              nodeId: pausedAt.nodeId,
+              fireAt: pausedAt.fireAt,
+              cancelKey: `${run.id}:${pausedAt.nodeId}`,
+            })
+          } catch (e: any) {
+            this.log(`[workflow:${workflow.id}] timer schedule failed: ${e.message}`)
+          }
+        }
+
+        // Render userTask AFTER persisting the pause, so a failing channel
+        // renderer doesn't lose the task record (retry from inbox works).
+        if (pausedAt.kind === "userTask" && this.renderUserTask) {
+          const taskRecord = this.tasks.get(pausedAt.taskId)
+          if (taskRecord) {
+            try { await this.renderUserTask(taskRecord) }
+            catch (e: any) { this.log(`[workflow:${workflow.id}] userTask render failed: ${e.message}`) }
+          }
+        }
         return
       }
 
@@ -316,7 +645,26 @@ export class WorkflowDispatcher {
       const output: Record<string, unknown> = result.output ?? {}
       const newContext: Record<string, Record<string, unknown>> = { ...run.context, [nodeId]: output }
       const { nextPending } = nextNodes({ workflow, fromNodeId: nodeId, selectedPort: result.port })
-      const merged = [...remaining, ...nextPending]
+
+      // Join-gate filtering: for each successor that is a
+      // `gateway.parallel(mode=join)`, bump the arrival counter. Only
+      // enqueue the join once every incoming edge has delivered.
+      const readyNext: string[] = []
+      const joinCounters: Record<string, string[]> = { ...(run.joinCounters ?? {}) }
+      for (const succId of nextPending) {
+        const succ = findNode(workflow, succId)
+        const isJoin = succ?.type === "gateway.parallel" && String((succ.config as { mode?: unknown } | undefined)?.mode ?? "fanOut") === "join"
+        if (!isJoin) { readyNext.push(succId); continue }
+        const arrived = joinCounters[succId] ?? []
+        if (!arrived.includes(nodeId)) arrived.push(nodeId)
+        joinCounters[succId] = arrived
+        const expected = workflow.edges.filter((e) => e.to === succId).length
+        if (arrived.length >= expected) {
+          readyNext.push(succId)
+          delete joinCounters[succId]
+        }
+      }
+      const merged = [...remaining, ...readyNext]
       const terminal = node.type === "end"
 
       const entry: NodeExecutionEntry = {
@@ -333,11 +681,221 @@ export class WorkflowDispatcher {
         nextPending: terminal ? [] : merged,
         status: terminal ? (String(node.config.status ?? "completed") as WorkflowRun["status"]) : "running",
         context: newContext,
+        joinCounters,
       }) ?? run
 
-      if (terminal) return
+      // Side-effect: emit signals produced by `signal.emit` nodes. Runs
+      // AFTER the exec entry is persisted so listeners observing the run
+      // see the complete history before reacting.
+      if (result.emitSignal) {
+        this.emitSignal({
+          name: result.emitSignal.name,
+          scope: result.emitSignal.scope,
+          workflowId: workflow.id,
+          payload: result.emitSignal.payload,
+        })
+      }
+
+      if (terminal) {
+        // Sub-process child reached its end node → notify the parent so it
+        // can resume at its subProcess node. Fire-and-forget; any failure
+        // is logged but doesn't block the child's terminal state.
+        if (run.parentRunId && run.parentNodeId) {
+          void this.resumeParent({
+            parentRunId: run.parentRunId,
+            parentNodeId: run.parentNodeId,
+            childRun: run,
+          }).catch((e: any) => this.log(`[workflow:${workflow.id}] resumeParent failed: ${e.message}`))
+        }
+        return
+      }
     }
   }
+
+  // ---------------- Sub-process helpers ----------------
+
+  /** Create a child run for a sub-process node. Returns null if the child
+   *  workflow id doesn't exist. Depth cap is enforced at the handler layer
+   *  before we get here. */
+  private async spawnChild(args: {
+    parent: WorkflowRun
+    parentNodeId: string
+    childWorkflowId: string
+    input: Record<string, unknown>
+  }): Promise<WorkflowRun | null> {
+    const childWf = this.store.list().find((w) => w.id === args.childWorkflowId)
+    if (!childWf) return null
+
+    const init = initialPendingFromTrigger(childWf)
+    if (!init) { this.log(`[workflow:${childWf.id}] no trigger node — cannot spawn as child`); return null }
+
+    // Child gets a fresh context, seeded by the parent's inputMap. Top-level
+    // keys are child-context keys; values are bundles. Parent linkage is
+    // stamped onto the trigger node's bundle so downstream templates can
+    // read {{trigger.parentRunId}} if useful.
+    const childContext: Record<string, Record<string, unknown>> = {
+      ...(args.input as Record<string, Record<string, unknown>>),
+    }
+    childContext[init.triggerId] = {
+      ...(childContext[init.triggerId] ?? {}),
+      parentRunId: args.parent.id,
+      parentNodeId: args.parentNodeId,
+    }
+
+    const entityRef: EntityRef = {
+      backend: "agentx-internal",
+      id: `subprocess:${args.parent.id}:${args.parentNodeId}`,
+    }
+
+    const child = this.runs.create({
+      workflowId: childWf.id,
+      initialPending: init.pending,
+      entityRef,
+      initialContext: childContext,
+      parentRunId: args.parent.id,
+      parentNodeId: args.parentNodeId,
+      rootRunId: args.parent.rootRunId ?? args.parent.id,
+      depth: (args.parent.depth ?? 0) + 1,
+    })
+    this.log(`[workflow:${childWf.id}] child run ${child.id} spawned from ${args.parent.id}/${args.parentNodeId} (depth ${child.depth})`)
+    // The caller (walk loop) kicks off the child walk AFTER persisting the
+    // parent's paused state, so a fast child reaching end doesn't try to
+    // resume a parent that hasn't been saved yet.
+    return child
+  }
+
+  /** Kick a child run's walk loop — used by the walk loop after persisting
+   *  the parent's pause. Fire-and-forget. */
+  private kickChildWalk(childRun: WorkflowRun): void {
+    const childWf = this.store.list().find((w) => w.id === childRun.workflowId)
+    if (!childWf) return
+    void this.walk(childWf, childRun.id, `spawn:${childRun.parentRunId}:${childRun.parentNodeId}`)
+      .catch((e: any) => this.log(`[workflow:${childWf.id}] child walk failed: ${e.message}`))
+  }
+
+  /** Resume a parent run whose subProcess node was awaiting this child. */
+  async resumeParent(args: {
+    parentRunId: string
+    parentNodeId: string
+    childRun: WorkflowRun
+  }): Promise<void> {
+    const parent = this.runs.get(args.parentRunId)
+    if (!parent || parent.status !== "paused") return
+    if (!parent.pausedAt || parent.pausedAt.kind !== "subProcess") return
+    if (parent.pausedAt.nodeId !== args.parentNodeId) return
+    if (parent.pausedAt.childRunId !== args.childRun.id) return
+
+    const parentWf = this.store.list().find((w) => w.id === parent.workflowId)
+    if (!parentWf) return
+
+    const node = findNode(parentWf, args.parentNodeId)
+    const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+
+    // The child's output bundle is its end-node inputs — take the last
+    // non-empty node output in the child's history as a simplification.
+    const childOutput: Record<string, unknown> = {
+      childRunId: args.childRun.id,
+      status: args.childRun.status,
+      output: pickChildOutput(args.childRun),
+    }
+
+    const entry: NodeExecutionEntry = {
+      at: new Date().toISOString(),
+      nodeId: args.parentNodeId,
+      inputKeys: [],
+      status: "resumed",
+      output: childOutput,
+      idempotencyKey: idempotencyKey(parent.id, args.parentNodeId, `child:${args.childRun.id}`),
+    }
+    const newContext: Record<string, Record<string, unknown>> = {
+      ...parent.context,
+      [args.parentNodeId]: childOutput,
+    }
+    this.runs.recordExecution({
+      runId: parent.id,
+      entry,
+      nextPending: successors,
+      status: "running",
+      pausedAt: null,
+      context: newContext,
+    })
+    this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
+    void this.walk(parentWf, parent.id, `child:${args.childRun.id}`)
+  }
+
+  // ---------------- User-task submit / resume ----------------
+
+  async submitTask(taskId: string, submission: FormSubmission, submittedBy: string): Promise<
+    { ok: true; runId: string } | { ok: false; error: string; fieldErrors?: Array<{ field: string; message: string }> }
+  > {
+    const task = this.tasks.get(taskId)
+    if (!task) return { ok: false, error: `task not found: ${taskId}` }
+    if (task.status !== "open") return { ok: false, error: `task is ${task.status}` }
+
+    const validated = validateSubmission(task.form, submission)
+    if (!validated.ok) return { ok: false, error: "form validation failed", fieldErrors: validated.errors }
+
+    const parent = this.runs.get(task.runId)
+    if (!parent || parent.status !== "paused") return { ok: false, error: `run ${task.runId} is not paused` }
+    if (!parent.pausedAt || parent.pausedAt.kind !== "userTask" || parent.pausedAt.taskId !== taskId) {
+      return { ok: false, error: `run ${task.runId} is not waiting on task ${taskId}` }
+    }
+
+    const parentWf = this.store.list().find((w) => w.id === parent.workflowId)
+    if (!parentWf) return { ok: false, error: `workflow ${parent.workflowId} not found` }
+
+    const node = findNode(parentWf, task.nodeId)
+    const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+
+    const output: Record<string, unknown> = {
+      submittedBy,
+      submittedAt: new Date().toISOString(),
+      values: validated.values,
+      action: submission.action,
+    }
+    const entry: NodeExecutionEntry = {
+      at: new Date().toISOString(),
+      nodeId: task.nodeId,
+      inputKeys: [],
+      status: "resumed",
+      output,
+      idempotencyKey: idempotencyKey(parent.id, task.nodeId, `task:${taskId}:${submission.action}`),
+    }
+    const newContext = { ...parent.context, [task.nodeId]: output }
+    this.runs.recordExecution({
+      runId: parent.id,
+      entry,
+      nextPending: successors,
+      status: "running",
+      pausedAt: null,
+      context: newContext,
+    })
+    this.tasks.save({
+      ...task,
+      status: "completed",
+      submittedBy,
+      submittedAt: output.submittedAt as string,
+      submittedValues: validated.values,
+      submittedAction: submission.action,
+    })
+    this.log(`[workflow:${parentWf.id}] run ${parent.id} resumed from userTask ${taskId}`)
+    void this.walk(parentWf, parent.id, `task:${taskId}`)
+    return { ok: true, runId: parent.id }
+  }
+}
+
+/** Pick the most informative output bundle from a child run's history as
+ *  the `output` field exposed to the parent's subProcess node. We prefer
+ *  the last non-empty `ok` entry, which is typically the last meaningful
+ *  step before `end`. */
+function pickChildOutput(child: WorkflowRun): Record<string, unknown> {
+  for (let i = child.history.length - 1; i >= 0; i--) {
+    const h = child.history[i]
+    if (h.status === "ok" && h.output && Object.keys(h.output).length > 0) {
+      return h.output
+    }
+  }
+  return {}
 }
 
 /** Does the incoming event's trigger fields match the checkpoint's
@@ -355,6 +913,9 @@ function matchesResume(
       const have = new Set(trigger.labels ?? [])
       return (want as string[]).some((l) => have.has(String(l)))
     }
+    if (k === "chat") {
+      return normalizeChat(trigger.source, String(want)) === normalizeChat(trigger.source, trigger.chat)
+    }
     return trigger[k] === want
   }
   // Fields supported in v1: source, project, repo, chat, labels. Additional
@@ -368,6 +929,22 @@ function matchesResume(
   const eventIdLike = resumeMatch.eventIdLike
   if (typeof eventIdLike === "string" && eventIdLike && !event.id.includes(eventIdLike)) return false
   return true
+}
+
+/** Normalize a chat identifier for filter comparison. Channel-aware: WhatsApp
+ *  ids drift between formats (raw digits "21624309128", JID
+ *  "21624309128@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
+ *  "+216 24 309 128") depending on whether they came from the adapter's
+ *  payload, a copy-paste from the WA UI, or an editor field. We collapse all
+ *  of these to the canonical bare-id form before equality so authors can write
+ *  filters in whichever form is convenient. Other channels (Telegram, GitLab,
+ *  ...) use stable id formats from their APIs and don't need normalization. */
+function normalizeChat(source: string | undefined, value: string | undefined): string {
+  if (value == null) return ""
+  if (source === "whatsapp-message") {
+    return value.replace(/@s\.whatsapp\.net$|@g\.us$/i, "").replace(/[\s+()]/g, "")
+  }
+  return value
 }
 
 export { idempotencyKey } from "./run-store"

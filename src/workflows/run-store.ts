@@ -37,7 +37,14 @@ export interface RunStoreOptions {
 
 type RunEventLine =
   | { v: 2; kind: "snapshot"; run: WorkflowRun }
-  | { v: 2; kind: "exec"; runId: string; entry: NodeExecutionEntry; pending: string[]; status?: RunStatus; pausedAt?: PausedAt | null; context?: Record<string, Record<string, unknown>> }
+  | {
+      v: 2; kind: "exec"; runId: string; entry: NodeExecutionEntry;
+      pending: string[];
+      status?: RunStatus;
+      pausedAt?: PausedAt | null;
+      context?: Record<string, Record<string, unknown>>;
+      joinCounters?: Record<string, string[]>;
+    }
 
 function sanitize(s: string): string {
   // Keep the set narrow so the result is always a safe single filename
@@ -83,10 +90,16 @@ export class RunStore {
     initialPending: string[]
     entityRef: EntityRef
     initialContext?: Record<string, Record<string, unknown>>
+    /** Optional parent-run linkage for sub-process children. */
+    parentRunId?: string | null
+    parentNodeId?: string | null
+    rootRunId?: string | null
+    depth?: number
   }): WorkflowRun {
     const now = new Date().toISOString()
+    const id = randomUUID()
     const run: WorkflowRun = {
-      id: randomUUID(),
+      id,
       workflowId: args.workflowId,
       workflowVersion: 2,
       homeNode: this.nodeId,
@@ -96,6 +109,11 @@ export class RunStore {
       pending: args.initialPending,
       entityRef: args.entityRef,
       history: [],
+      parentRunId: args.parentRunId ?? null,
+      parentNodeId: args.parentNodeId ?? null,
+      rootRunId: args.rootRunId ?? id,
+      depth: args.depth ?? 0,
+      joinCounters: {},
       createdAt: now,
       updatedAt: now,
     }
@@ -125,6 +143,7 @@ export class RunStore {
           status: evt.status ?? current.status,
           pausedAt: evt.pausedAt === null ? undefined : (evt.pausedAt ?? current.pausedAt),
           context: evt.context ?? current.context,
+          joinCounters: evt.joinCounters ?? current.joinCounters,
           updatedAt: evt.entry.at,
         }
       }
@@ -170,6 +189,8 @@ export class RunStore {
      *  context wholesale (used when a node's output bundle lands).  When
      *  omitted, context is carried forward unchanged. */
     context?: Record<string, Record<string, unknown>>
+    /** Optional updated join-counter map. Undefined = carry forward. */
+    joinCounters?: Record<string, string[]>
   }): WorkflowRun | null {
     const run = this.get(args.runId)
     if (!run) return null
@@ -184,6 +205,7 @@ export class RunStore {
       status: args.status,
       pausedAt: args.pausedAt === null ? null : args.pausedAt,
       context: args.context,
+      joinCounters: args.joinCounters,
     }
     appendFileSync(this.runPath(args.runId), JSON.stringify(line) + "\n")
 

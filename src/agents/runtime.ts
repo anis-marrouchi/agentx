@@ -493,9 +493,22 @@ export async function executeClaudeCodeStreaming(
 
     if (result.exitCode !== 0 && !fullText) {
       const stderr = typeof result.stderr === "string" ? result.stderr : ""
+      // execa sets exitCode=undefined when the child is killed by signal —
+      // surface that as a recognizable timeout message instead of leaking
+      // "exited with code undefined" into the user's chat. Mirrors the
+      // non-streaming path's exit-143 handling.
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean }
+      let errMsg: string
+      if (r.timedOut) {
+        errMsg = `Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else if (r.signal) {
+        errMsg = stderr.trim() || `Claude Code killed by signal ${r.signal}`
+      } else {
+        errMsg = stderr.trim() || `Claude Code exited with code ${r.exitCode ?? "unknown"}`
+      }
       return {
         content: "",
-        error: renderFriendlyError(friendlyModelError(stderr || `Claude Code exited with code ${result.exitCode}`)),
+        error: renderFriendlyError(friendlyModelError(errMsg)),
         duration: Date.now() - start,
       }
     }

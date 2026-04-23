@@ -1,0 +1,177 @@
+{
+  "id": "grant-application",
+  "version": 2,
+  "title": "Grant application — full BPM demo",
+  "description": "Exercises all four party types: applicant submits a form (human), an agent pre-screens eligibility, a reviewer scores the application (human), an external finance system signals disbursement (external), and a nested closure sub-workflow runs to send the final letter (child workflow).",
+  "priority": 10,
+  "maxChildDepth": 5,
+  "envAllow": [],
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "trigger.form",
+      "config": {
+        "form": {
+          "title": "Grant application",
+          "description": "Tell us about your project and the funding you need.",
+          "fields": [
+            { "key": "applicantName", "label": "Your name", "type": "text", "required": true },
+            { "key": "email", "label": "Email", "type": "text", "required": true, "validate": { "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" } },
+            { "key": "projectTitle", "label": "Project title", "type": "text", "required": true },
+            { "key": "description", "label": "Project description", "type": "long-text", "required": true },
+            { "key": "amount", "label": "Funding requested (USD)", "type": "number", "required": true, "validate": { "min": 100, "max": 50000 } }
+          ],
+          "submitLabel": "Submit application"
+        }
+      },
+      "position": { "x": 120, "y": 160 }
+    },
+    {
+      "id": "prescreen",
+      "type": "agent",
+      "config": {
+        "agentId": "grant-eligibility-screener",
+        "prompt": "Applicant {{trigger.values.applicantName}} submitted \"{{trigger.values.projectTitle}}\" requesting ${{trigger.values.amount}}.\n\nDescription:\n---\n{{trigger.values.description}}\n---\n\nEvaluate eligibility. Reply on one line: RESULT: eligible | ineligible | needs-clarification",
+        "resultParser": "noqta-result-token",
+        "timeoutMinutes": 2
+      },
+      "position": { "x": 360, "y": 160 }
+    },
+    {
+      "id": "route",
+      "type": "branch",
+      "config": {
+        "cases": [
+          { "when": { "kind": "equals", "params": { "path": "prescreen.result", "value": "eligible" } }, "to": "review" },
+          { "when": { "kind": "equals", "params": { "path": "prescreen.result", "value": "ineligible" } }, "to": "reject" }
+        ],
+        "default": "clarify"
+      },
+      "position": { "x": 600, "y": 160 }
+    },
+    {
+      "id": "review",
+      "type": "userTask",
+      "config": {
+        "assignTo": "role:grant-reviewers",
+        "title": "Review grant application: {{trigger.values.projectTitle}}",
+        "description": "Applicant {{trigger.values.applicantName}} ({{trigger.values.email}}) requests ${{trigger.values.amount}}.",
+        "dueIn": "P2D",
+        "form": {
+          "title": "Reviewer scorecard",
+          "fields": [
+            { "key": "score", "label": "Overall score (1-10)", "type": "number", "required": true, "validate": { "min": 1, "max": 10 } },
+            { "key": "rationale", "label": "Rationale", "type": "long-text", "required": true }
+          ],
+          "submitLabel": "Approve for disbursement",
+          "secondaryAction": { "key": "reject", "label": "Reject" }
+        }
+      },
+      "position": { "x": 840, "y": 80 }
+    },
+    {
+      "id": "decision",
+      "type": "branch",
+      "config": {
+        "cases": [
+          { "when": { "kind": "equals", "params": { "path": "review.action", "value": "primary" } }, "to": "wait_disbursement" }
+        ],
+        "default": "reject"
+      },
+      "position": { "x": 1080, "y": 80 }
+    },
+    {
+      "id": "wait_disbursement",
+      "type": "signal.wait",
+      "config": {
+        "name": "grant.disbursed",
+        "match": { "grantId": "{{trigger.values.email}}" }
+      },
+      "position": { "x": 1320, "y": 80 }
+    },
+    {
+      "id": "closure",
+      "type": "subProcess",
+      "config": {
+        "workflowId": "grant-closure-letter",
+        "inputMap": {
+          "trigger": {
+            "grantee": "{{trigger.values.applicantName}}",
+            "email": "{{trigger.values.email}}",
+            "project": "{{trigger.values.projectTitle}}",
+            "amount": "{{trigger.values.amount}}"
+          }
+        },
+        "awaitCompletion": true
+      },
+      "position": { "x": 1560, "y": 80 }
+    },
+    {
+      "id": "notify_applicant",
+      "type": "action.callHTTP",
+      "config": {
+        "method": "POST",
+        "url": "https://hooks.example.com/notify",
+        "body": {
+          "to": "{{trigger.values.email}}",
+          "subject": "Your grant is approved",
+          "text": "Letter: {{closure.output.letterUrl}}"
+        }
+      },
+      "position": { "x": 1800, "y": 80 }
+    },
+    {
+      "id": "clarify",
+      "type": "userTask",
+      "config": {
+        "assignTo": "role:grant-reviewers",
+        "title": "Clarification needed on application: {{trigger.values.projectTitle}}",
+        "description": "Screener flagged for manual review. Applicant: {{trigger.values.applicantName}}",
+        "form": {
+          "title": "Clarify and re-screen",
+          "fields": [
+            { "key": "reviewerNote", "label": "Notes for applicant", "type": "long-text", "required": true }
+          ],
+          "submitLabel": "Request clarification"
+        }
+      },
+      "position": { "x": 840, "y": 260 }
+    },
+    {
+      "id": "reject",
+      "type": "action.callHTTP",
+      "config": {
+        "method": "POST",
+        "url": "https://hooks.example.com/notify",
+        "body": {
+          "to": "{{trigger.values.email}}",
+          "subject": "Application update",
+          "text": "Thank you for your application; unfortunately we cannot proceed at this time."
+        }
+      },
+      "position": { "x": 1080, "y": 260 }
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "config": { "status": "completed" },
+      "position": { "x": 2040, "y": 160 }
+    }
+  ],
+  "edges": [
+    { "from": "trigger", "to": "prescreen" },
+    { "from": "prescreen", "to": "route" },
+    { "from": "route", "fromPort": "review", "to": "review" },
+    { "from": "route", "fromPort": "reject", "to": "reject" },
+    { "from": "route", "fromPort": "clarify", "to": "clarify" },
+    { "from": "review", "to": "decision" },
+    { "from": "decision", "fromPort": "wait_disbursement", "to": "wait_disbursement" },
+    { "from": "decision", "fromPort": "reject", "to": "reject" },
+    { "from": "wait_disbursement", "to": "closure" },
+    { "from": "closure", "to": "notify_applicant" },
+    { "from": "notify_applicant", "to": "done" },
+    { "from": "clarify", "to": "done" },
+    { "from": "reject", "to": "done" }
+  ],
+  "retention": { "maxRuns": 500, "maxDays": 90 }
+}

@@ -1,4 +1,6 @@
-import type { Workflow, WorkflowNode, WorkflowRun } from "../types"
+import type { ActorStore } from "../../actors/store"
+import type { TaskStore } from "../task-store"
+import type { PausedAt, Workflow, WorkflowNode, WorkflowRun } from "../types"
 
 // --- Node handler interface ---
 //
@@ -36,6 +38,22 @@ export interface NodeContext {
   channels: Record<string, unknown>
   /** Thin agent-execute shim around AgentRegistry.execute(). */
   agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
+  /** Actor + role resolver. Required for userTask handlers; optional for
+   *  legacy handlers so tests don't need to stub it. */
+  actors?: ActorStore
+  /** Open user-task store — written to by userTask handler on pause. */
+  tasks?: TaskStore
+  /** Outbound mesh forwarder — used by `action.send` to deliver to a channel
+   *  hosted on a peer node (e.g. workflow on macbook, whatsapp on
+   *  clawd-server). Optional; absent in single-node setups and tests. */
+  forwardChannelSend?: (payload: {
+    channel: string
+    chatId: string
+    text: string
+    accountId?: string
+    parseMode?: string
+    replyTo?: string
+  }) => Promise<{ messageId: string | null }>
   /** Structured log sink. */
   log: (msg: string) => void
 }
@@ -46,10 +64,19 @@ export interface NodeResult {
   /** For branch nodes: which outgoing port fired (case's `to` field or
    *  `default` port). Undefined for non-branch nodes. */
   port?: string
-  /** True when the node paused the run (checkpoint). Dispatcher stops the
-   *  walk and parks the run until a matching event arrives. */
+  /** True when the node paused the run (checkpoint, userTask, subProcess,
+   *  signalWait, timerWait). Dispatcher stops the walk and parks the run
+   *  until a matching event arrives. */
   paused?: boolean
-  pausedAt?: { nodeId: string; checkpointName: string; resumeMatch: Record<string, unknown> }
+  pausedAt?: PausedAt
+  /** Optional actor ids who should see this task right now (userTask only). */
+  assignedTo?: string[]
+  /** Child workflow id + run id (subProcess only). The dispatcher spawns
+   *  the child before parking the parent. */
+  spawnChild?: { workflowId: string; input: Record<string, unknown> }
+  /** Signal emission produced by a signal.emit node, posted to the bus
+   *  before walk continues. */
+  emitSignal?: { name: string; scope: "workflow" | "global"; payload: Record<string, unknown> }
   /** On failure, a short message. Dispatcher logs it + marks the run failed. */
   error?: string
 }

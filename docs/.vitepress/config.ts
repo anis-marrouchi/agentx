@@ -52,6 +52,7 @@ export default withMermaid(defineConfig({
             { text: "9. Deterministic services · planned", link: "/journey/09-deterministic-services" },
             { text: "10. MCP server · planned", link: "/journey/10-mcp-server" },
             { text: "11. Production hardening · planned", link: "/journey/11-production-hardening" },
+            { text: "12. BPM — grant application", link: "/journey/12-bpm-grant-application" },
           ],
         },
         {

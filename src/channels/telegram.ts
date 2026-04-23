@@ -484,6 +484,55 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   /**
+   * Send a message with an inline keyboard. Used by the workflow user-task
+   * renderer so approve/reject-style tasks get one-tap URL buttons in
+   * Telegram pointing at the daemon's one-click submit endpoint.
+   *
+   * Each button is a URL button (not callback_data) so the user's client
+   * opens the link in a browser — this avoids wiring callback_query
+   * plumbing through the adapter's polling loop for Phase 3 MVP.
+   */
+  async sendWithInlineButtons(args: {
+    chatId: string
+    text: string
+    buttons: Array<{ label: string; url: string }>
+    accountId?: string
+    parseMode?: "markdown" | "html" | "plain"
+  }): Promise<string> {
+    const token = this.resolveToken(args.chatId, args.accountId)
+    if (!token) { this.log("No telegram token found for sending"); return "" }
+
+    const maxLen = 4096
+    const text = args.text.length > maxLen ? args.text.slice(0, maxLen - 3) + "..." : args.text
+    const formatted = args.parseMode === "markdown" || args.parseMode === undefined
+      ? markdownToTelegramHtml(text)
+      : text
+
+    const params: Record<string, unknown> = {
+      chat_id: args.chatId,
+      text: formatted,
+      parse_mode: args.parseMode === "plain" ? undefined : "HTML",
+      reply_markup: JSON.stringify({
+        inline_keyboard: args.buttons.map((b) => [{ text: b.label, url: b.url }]),
+      }),
+    }
+    if (params.parse_mode === undefined) delete params.parse_mode
+
+    try {
+      const result = await this.apiCall(token, "sendMessage", params)
+      return String(result.result?.message_id || "")
+    } catch (e: any) {
+      if (params.parse_mode) {
+        delete params.parse_mode
+        params.text = text
+        const result = await this.apiCall(token, "sendMessage", params)
+        return String(result.result?.message_id || "")
+      }
+      throw e
+    }
+  }
+
+  /**
    * Edit an existing message (for streaming updates).
    */
   async editMessage(chatId: string, messageId: string, text: string, parseMode?: string, accountId?: string): Promise<boolean> {

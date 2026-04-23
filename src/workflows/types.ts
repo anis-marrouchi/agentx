@@ -26,11 +26,14 @@ export const nodeTypeSchema = z.enum([
   "trigger.manual",
   "trigger.cron",
   "trigger.hook",
+  "trigger.form",
   // Compute
   "agent",
   "transform",
   // Control flow
   "branch",
+  "gateway.parallel",
+  "rule",
   // Side-effect sinks (per channel verb). Each action.* maps 1:1 to an
   // existing channel-adapter method. New verbs arrive as new entries.
   "action.send",
@@ -41,6 +44,12 @@ export const nodeTypeSchema = z.enum([
   "action.editMessage",
   "action.logTime",
   "action.callHTTP",
+  // BPM: human tasks + composition + signals + intermediate timer
+  "userTask",
+  "subProcess",
+  "signal.emit",
+  "signal.wait",
+  "timer.boundary",
   // Persistence / pause
   "checkpoint",
   // Terminal
@@ -118,6 +127,26 @@ export const workflowSchema = z.object({
     maxRuns: z.number().int().positive().default(500),
     maxDays: z.number().int().positive().default(90),
   }).default({ maxRuns: 500, maxDays: 90 }),
+  /** Safety rail on sub-process nesting depth. A parent at depth N may
+   *  spawn children up to depth maxChildDepth - 1. Default 5. Override per
+   *  workflow if a deeper composition is genuinely needed. */
+  maxChildDepth: z.number().int().positive().default(5),
+  /** Mesh integration. By default workflows are local — only triggers
+   *  observed on the same node can fire them. Set `mesh.allowRemote: true`
+   *  to opt the workflow into cross-mesh trigger fan-out: when a peer
+   *  receives a channel event, it broadcasts it to mesh peers and any
+   *  matching workflow with allowRemote runs on the peer that owns its
+   *  definition. The opt-in is required because remote events carry
+   *  reduced trust (sender provenance is mesh-token only) and can
+   *  surprise authors who expected isolation. */
+  mesh: z.object({
+    allowRemote: z.boolean().default(false),
+    /** Optional peer-name allowlist. When present, only triggers
+     *  broadcast from these named peers are honored. Empty/unset = any
+     *  authenticated peer. Useful for production workflows that should
+     *  only accept events from a specific upstream node. */
+    peers: z.array(z.string()).optional(),
+  }).default({ allowRemote: false }),
   created: z.string().optional(),
   updated: z.string().optional(),
 })
@@ -169,23 +198,28 @@ export function lintWorkflow(wf: Workflow): string[] {
     for (const n of wf.nodes) {
       if (!seen.has(n.id)) issues.push(`node "${n.id}" is unreachable from trigger "${trigger.id}"`)
     }
-    if (!wf.nodes.some((n) => seen.has(n.id) && (n.type === "end" || n.type === "checkpoint"))) {
-      issues.push("no reachable `end` or `checkpoint` node — the run cannot terminate or pause")
+    if (!wf.nodes.some((n) => seen.has(n.id) && isTerminalOrPauseNode(n.type))) {
+      issues.push("no reachable `end`, `checkpoint`, `userTask`, `subProcess`, `signal.wait`, or `timer.boundary` node — the run cannot terminate or pause")
     }
   }
 
-  // 4. branch ports
+  // 4. branch ports (also applies to DMN-style `rule` nodes whose rows
+  //    carry the same `{ to }` shape and a shared `default`).
   for (const n of wf.nodes) {
-    if (n.type !== "branch") continue
-    const cases = (n.config.cases as Array<{ to: string }> | undefined) ?? []
-    const defaultPort = n.config.default as string | undefined
+    if (n.type !== "branch" && n.type !== "rule") continue
+    const cases = n.type === "branch"
+      ? ((n.config.cases as Array<{ to: string }> | undefined) ?? [])
+      : ((n.config.rules as Array<{ to?: string }> | undefined) ?? []).filter((r): r is { to: string } => typeof r.to === "string")
+    const defaultPort = n.type === "branch"
+      ? (n.config.default as string | undefined)
+      : ((n.config.default as { to?: string } | undefined)?.to)
     const declared = new Set<string>(cases.map((c) => c.to))
     if (defaultPort) declared.add(defaultPort)
     const outgoing = wf.edges.filter((e) => e.from === n.id)
     for (const edge of outgoing) {
       const port = edge.fromPort ?? ""
       if (!declared.has(port)) {
-        issues.push(`branch "${n.id}" has outgoing edge with port "${port}" not declared in cases or default`)
+        issues.push(`${n.type} "${n.id}" has outgoing edge with port "${port}" not declared in cases or default`)
       }
     }
   }
@@ -198,6 +232,28 @@ export function lintWorkflow(wf: Workflow): string[] {
   }
 
   return issues
+}
+
+function isTerminalOrPauseNode(type: NodeType): boolean {
+  return type === "end"
+      || type === "checkpoint"
+      || type === "userTask"
+      || type === "subProcess"
+      || type === "signal.wait"
+      || type === "timer.boundary"
+}
+
+function isPauseCapableNode(type: NodeType): boolean {
+  // Nodes that either pause the run (checkpoint, userTask, subProcess,
+  // signal.wait, timer.boundary) or consume an external event (agent).
+  // A cycle is safe if it crosses at least one such node — otherwise the
+  // walker would spin forever.
+  return type === "agent"
+      || type === "checkpoint"
+      || type === "userTask"
+      || type === "subProcess"
+      || type === "signal.wait"
+      || type === "timer.boundary"
 }
 
 function detectCyclesWithoutPauseNodes(wf: Workflow): string[][] {
@@ -218,7 +274,7 @@ function detectCyclesWithoutPauseNodes(wf: Workflow): string[][] {
         const cycle = stack.slice(i).concat(id)
         const hasPause = cycle.some((nid) => {
           const t = byId.get(nid)?.type
-          return t === "agent" || t === "checkpoint"
+          return t ? isPauseCapableNode(t) : false
         })
         if (!hasPause) results.push(cycle)
       }
@@ -281,13 +337,49 @@ export const entityRefSchema = z.object({
 })
 export type EntityRef = z.infer<typeof entityRefSchema>
 
-export const pausedAtSchema = z.object({
-  nodeId: z.string(),
-  checkpointName: z.string(),
-  /** Filter applied to incoming events for resume. Same shape as the
-   *  matching trigger.channel filter. */
-  resumeMatch: z.record(z.unknown()).default({}),
-})
+// Discriminated `pausedAt` — each kind has its own resume path in the
+// dispatcher. The original checkpoint shape is the `checkpoint` variant;
+// new BPM nodes add userTask / subProcess / signalWait / timerWait.
+export const pausedAtSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("checkpoint"),
+    nodeId: z.string(),
+    checkpointName: z.string(),
+    /** Filter applied to incoming events for resume. Same shape as the
+     *  matching trigger.channel filter. */
+    resumeMatch: z.record(z.unknown()).default({}),
+  }),
+  z.object({
+    kind: z.literal("userTask"),
+    nodeId: z.string(),
+    /** Task identifier — matches the record under _tasks/<taskId>.json. */
+    taskId: z.string(),
+    /** Assignee ref encoded as "actor:<id>" or "role:<id>". */
+    assignee: z.string(),
+    /** Concrete actors who currently see the task (resolved via role strategy). */
+    assignedTo: z.array(z.string()).default([]),
+  }),
+  z.object({
+    kind: z.literal("subProcess"),
+    nodeId: z.string(),
+    childRunId: z.string(),
+    childWorkflowId: z.string(),
+  }),
+  z.object({
+    kind: z.literal("signalWait"),
+    nodeId: z.string(),
+    signalName: z.string(),
+    /** Optional field-match filter against the emitted signal payload. */
+    match: z.record(z.unknown()).default({}),
+    scope: z.enum(["workflow", "global"]).default("workflow"),
+  }),
+  z.object({
+    kind: z.literal("timerWait"),
+    nodeId: z.string(),
+    /** ISO-8601 instant when the timer should fire. */
+    fireAt: z.string(),
+  }),
+])
 export type PausedAt = z.infer<typeof pausedAtSchema>
 
 export const workflowRunSchema = z.object({
@@ -303,8 +395,25 @@ export const workflowRunSchema = z.object({
   /** Node ids queued for execution next. The walk driver pops from this
    *  until it's empty or a checkpoint pauses the run. */
   pending: z.array(z.string()).default([]),
+  /** Per-`gateway.parallel(mode=join)` arrival tracker. Keys are join node
+   *  ids; values are the upstream node ids that have already delivered.
+   *  The join fires once when arrived.length === #incoming edges. Entries
+   *  are deleted from the map on fire so repeated passes (rare, but
+   *  possible via crash + retry) stay idempotent. */
+  joinCounters: z.record(z.array(z.string())).default({}),
   entityRef: entityRefSchema,
   history: z.array(nodeExecutionEntrySchema).default([]),
+  /** Parent run id if this run is a sub-process child. Root runs have no
+   *  parent. */
+  parentRunId: z.string().nullable().default(null),
+  /** The parent node in the parent run that spawned this child. Null on
+   *  root runs. */
+  parentNodeId: z.string().nullable().default(null),
+  /** Root ancestor. Self-referential on root runs. Lets queries fetch the
+   *  entire composition tree in one shot. */
+  rootRunId: z.string().nullable().default(null),
+  /** Depth from root. 0 on root runs, N on Nth-level descendants. */
+  depth: z.number().int().min(0).default(0),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

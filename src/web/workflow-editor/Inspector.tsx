@@ -4,6 +4,9 @@ import { EXPR_VARS, type AgentInfo } from "./data"
 import type { WorkflowNode } from "./types"
 import type { GraphEdge, GraphNode } from "./graph"
 import type { Selection, RunState } from "./Canvas"
+// Pure-data schemas of every node type's output shape — shared with the
+// server so the Context panel never drifts from what handlers actually emit.
+import { NODE_OUTPUTS, outputFieldsFor, type OutputField } from "../../workflows/nodes/schemas"
 
 // --- V2 Inspector: per-kind typed forms ---
 //
@@ -306,6 +309,10 @@ type FormProps = {
   patch: (patch: Partial<WorkflowNode>) => void
   patchData: (data: Record<string, unknown>) => void
   agents: AgentInfo[]
+  /** Sibling nodes — lets a form derive realistic template placeholders
+   *  (e.g. ActionSendForm needs the trigger node's id, since it's auto-
+   *  generated like "n-fcjwrx" rather than the literal "trigger"). */
+  nodes: WorkflowNode[]
 }
 
 // --- Triggers ---
@@ -313,11 +320,15 @@ type FormProps = {
 const CHANNEL_SOURCES_WIRED = new Set(["whatsapp-message", "telegram-message", "gitlab-issue", "gitlab-pipeline"])
 
 function TriggerChannelForm({ node, patchData }: FormProps) {
-  const cfg = node.config as { source?: string; filter?: Record<string, unknown> }
+  const cfg = node.config as { source?: string; filter?: Record<string, unknown>; passthrough?: boolean }
   const filter = (cfg.filter ?? {}) as Record<string, unknown>
   const patchFilter = (p: Record<string, unknown>) => patchData({ filter: { ...filter, ...p } })
   const src = String(cfg.source ?? "whatsapp-message")
   const wired = CHANNEL_SOURCES_WIRED.has(src)
+  const isChannelMsg = src === "whatsapp-message" || src === "telegram-message" || src === "discord-message" || src === "slack-message"
+  const isGitLab = src === "gitlab-issue" || src === "gitlab-pipeline"
+  const isGitHub = src === "github-issue" || src === "github-pr"
+  const supportsLabelFilter = isGitLab || isGitHub
 
   return (
     <>
@@ -338,25 +349,44 @@ function TriggerChannelForm({ node, patchData }: FormProps) {
             ]}
           />
         </Field>
-        {(src === "gitlab-issue" || src === "gitlab-pipeline") && (
+        {isGitLab && (
           <Field label="Project" hint={`GitLab path (e.g. "noqta/web") or "*" for any`}>
             <Input mono value={String(filter.project ?? "")} onChange={(v) => patchFilter({ project: v })} placeholder="noqta/web" />
           </Field>
         )}
-        {(src === "github-issue" || src === "github-pr") && (
+        {isGitHub && (
           <Field label="Repo" hint={`"owner/repo" or "*" for any`}>
             <Input mono value={String(filter.repo ?? "")} onChange={(v) => patchFilter({ repo: v })} placeholder="owner/repo" />
           </Field>
         )}
-        {(src === "whatsapp-message" || src === "telegram-message" || src === "discord-message" || src === "slack-message") && (
-          <Field label="Chat" hint={`chat id or substring; "*" matches any`}>
+        {isChannelMsg && (
+          <Field
+            label="Chat"
+            hint={src === "whatsapp-message"
+              ? `Contact number or JID (formats like "+216 24 309 128", "21624309128", "...@s.whatsapp.net" all match). "*" for any.`
+              : src === "telegram-message"
+                ? `Telegram chat id (e.g. "1816212449" for a DM, "-1003861455814" for a group). "*" for any.`
+                : `Exact chat id. "*" matches any.`}
+          >
             <Input mono value={String(filter.chat ?? "")} onChange={(v) => patchFilter({ chat: v })} placeholder="*" />
           </Field>
         )}
-        <Field label="Label filter (any of)" hint="Fires only when at least one of these labels is present">
-          <ListInput mono value={Array.isArray(filter.labels) ? (filter.labels as string[]) : []} onChange={(v) => patchFilter({ labels: v })} placeholder="bug, needs-review" />
-        </Field>
+        {supportsLabelFilter && (
+          <Field label="Label filter (any of)" hint="Fires only when at least one of these labels is present on the issue/MR">
+            <ListInput mono value={Array.isArray(filter.labels) ? (filter.labels as string[]) : []} onChange={(v) => patchFilter({ labels: v })} placeholder="bug, needs-review" />
+          </Field>
+        )}
       </Section>
+      {isChannelMsg && (
+        <Section title="Routing" defaultOpen={false}>
+          <Field
+            label="Passthrough"
+            hint="When on, the default agent router ALSO replies alongside this workflow. Use for observability-only workflows (tag, log, forward) that shouldn't own the conversation."
+          >
+            <Check checked={!!cfg.passthrough} onChange={(v) => patchData({ passthrough: v })} label="Let the default agent also reply" />
+          </Field>
+        </Section>
+      )}
     </>
   )
 }
@@ -630,24 +660,52 @@ function EndForm({ node, patchData }: FormProps) {
 
 const CHANNEL_OPTIONS = ["gitlab", "github", "whatsapp", "telegram", "discord", "slack"]
 
-function ActionSendForm({ node, patchData }: FormProps) {
-  const cfg = node.config as { channel?: string; chatId?: string; text?: string; parseMode?: string }
+function ActionSendForm({ node, patchData, nodes }: FormProps) {
+  const cfg = node.config as { channel?: string; chatId?: string; text?: string; parseMode?: string; accountId?: string; replyTo?: string }
+  // Find this workflow's actual trigger node id so the placeholder template
+  // reflects reality. Hard-coded "trigger" was a footgun: the editor names new
+  // trigger nodes like "n-fcjwrx", and `{{trigger.chatId}}` resolves to "" —
+  // which then trips the "needs channel + chatId" guard.
+  const triggerId = nodes.find((n) => n.type.startsWith("trigger."))?.id ?? "trigger"
+  const tmpl = (path: string) => `{{${triggerId}.${path}}}`
   return (
     <Section title="Send message">
       <Field label="Channel">
         <Select value={String(cfg.channel ?? "whatsapp")} onChange={(v) => patchData({ channel: v })} options={CHANNEL_OPTIONS} />
       </Field>
-      <Field label="Chat id" hint="Often {{trigger.chatId}} to reply to the original sender">
-        <Input mono value={String(cfg.chatId ?? "")} onChange={(v) => patchData({ chatId: v })} placeholder="{{trigger.chatId}}" />
+      <Field
+        label="Chat id"
+        hint={`Use ${tmpl("chatId")} to reply on the same chat the trigger fired on. For a different destination, paste the channel-specific id.`}
+      >
+        <Input mono value={String(cfg.chatId ?? "")} onChange={(v) => patchData({ chatId: v })} placeholder={tmpl("chatId")} />
       </Field>
-      <Field label="Text" hint="Supports {{nodeId.path}} templates">
-        <ExprField value={String(cfg.text ?? "")} onChange={(v) => patchData({ text: v })} rows={4} placeholder="Thanks {{trigger.sender.name}} — working on it." />
+      <Field label="Text" hint="Supports {{nodeId.path}} templates from any upstream node">
+        <ExprField value={String(cfg.text ?? "")} onChange={(v) => patchData({ text: v })} rows={4} placeholder={`Thanks ${tmpl("sender.name")} — working on it.`} />
       </Field>
-      <Field label="Parse mode" hint="Platform-specific formatting hint">
+      <Field
+        label="Account id"
+        hint="Telegram only: which bot account sends. Leave empty to inherit from the trigger's account (recommended)."
+      >
+        <Input mono value={String(cfg.accountId ?? "")} onChange={(v) => patchData({ accountId: v })} placeholder={`(inherit from ${tmpl("accountId")})`} />
+      </Field>
+      <Field
+        label="Reply to message id"
+        hint="Optional. When set, the platform threads this reply under the referenced message."
+      >
+        <Input mono value={String(cfg.replyTo ?? "")} onChange={(v) => patchData({ replyTo: v })} placeholder={tmpl("event.id")} />
+      </Field>
+      <Field
+        label="Parse mode"
+        hint={
+          cfg.channel === "telegram"
+            ? `Telegram default is "markdown" (Telegram-flavoured HTML conversion). Use "plain" to send raw text without escaping.`
+            : `Platform-specific. WhatsApp ignores; Telegram supports markdown/html.`
+        }
+      >
         <Select
-          value={String(cfg.parseMode ?? "plain")}
+          value={String(cfg.parseMode ?? "markdown")}
           onChange={(v) => patchData({ parseMode: v })}
-          options={["plain", "markdown", "html"]}
+          options={["markdown", "plain", "html"]}
         />
       </Field>
     </Section>
@@ -811,6 +869,284 @@ function ActionCallHTTPForm({ node, patchData }: FormProps) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// BPM node inspectors
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface FormField {
+  key: string
+  label: string
+  type: string
+  required?: boolean
+  options?: string[]
+  hint?: string
+  defaultValue?: unknown
+  validate?: { min?: number; max?: number; pattern?: string }
+}
+interface FormSchema {
+  id?: string
+  title: string
+  description?: string
+  fields?: FormField[]
+  submitLabel?: string
+  secondaryAction?: { key: string; label: string }
+}
+
+const FIELD_TYPES = ["text", "long-text", "number", "boolean", "date", "select", "multi-select", "file"] as const
+
+/** Reusable form-schema editor. Edits a FormSchema in-place via the
+ *  supplied patch fn. Used by userTask + trigger.form nodes. */
+function FormBuilder({ form, patch }: { form: FormSchema; patch: (f: FormSchema) => void }) {
+  const fields = form.fields ?? []
+  const patchField = (idx: number, partial: Partial<FormField>) => {
+    const next = [...fields]
+    next[idx] = { ...next[idx], ...partial }
+    patch({ ...form, fields: next })
+  }
+  const patchValidate = (idx: number, partial: Partial<NonNullable<FormField["validate"]>>) => {
+    const next = [...fields]
+    next[idx] = { ...next[idx], validate: { ...(next[idx].validate ?? {}), ...partial } }
+    patch({ ...form, fields: next })
+  }
+  const remove = (idx: number) => patch({ ...form, fields: fields.filter((_, i) => i !== idx) })
+  const move = (idx: number, delta: number) => {
+    const j = idx + delta
+    if (j < 0 || j >= fields.length) return
+    const next = [...fields]
+    ;[next[idx], next[j]] = [next[j], next[idx]]
+    patch({ ...form, fields: next })
+  }
+  const add = () => patch({ ...form, fields: [...fields, { key: `field_${fields.length + 1}`, label: "New field", type: "text" }] })
+
+  return (
+    <>
+      <Section title="Form">
+        <Field label="Title" hint="Header shown to the assignee above the form">
+          <Input value={form.title ?? ""} onChange={(v) => patch({ ...form, title: v })} placeholder="Review application" />
+        </Field>
+        <Field label="Description" hint="Optional one-line context shown under the title">
+          <Input value={form.description ?? ""} onChange={(v) => patch({ ...form, description: v })} placeholder="" />
+        </Field>
+        <Field label="Primary button" hint="Label on the submit button; default: Submit">
+          <Input value={form.submitLabel ?? "Submit"} onChange={(v) => patch({ ...form, submitLabel: v })} />
+        </Field>
+        <Field label="Secondary action" hint="Optional reject/hold button. Submissions carry action='secondary'.">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <Input value={form.secondaryAction?.key ?? ""} onChange={(v) => patch({ ...form, secondaryAction: v ? { key: v, label: form.secondaryAction?.label ?? v } : undefined })} placeholder="key (e.g. reject)" mono />
+            <Input value={form.secondaryAction?.label ?? ""} onChange={(v) => patch({ ...form, secondaryAction: { key: form.secondaryAction?.key ?? "secondary", label: v } })} placeholder="label (e.g. Reject)" />
+          </div>
+        </Field>
+      </Section>
+      <Section title={`Fields (${fields.length})`}>
+        {fields.length === 0 && <div className="hint" style={{ fontSize: 12, color: "var(--ax-muted)" }}>No fields — approve/reject form with no input.</div>}
+        {fields.map((f, idx) => (
+          <div key={idx} className="fld__field-row" style={{ border: "1px solid var(--ax-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "end" }}>
+              <Field label="Key" hint="Stored under values.<key>">
+                <Input mono value={f.key} onChange={(v) => patchField(idx, { key: v })} />
+              </Field>
+              <Field label="Label">
+                <Input value={f.label} onChange={(v) => patchField(idx, { label: v })} />
+              </Field>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button className="fld__btn" type="button" onClick={() => move(idx, -1)} title="Move up">↑</button>
+                <button className="fld__btn" type="button" onClick={() => move(idx, 1)} title="Move down">↓</button>
+                <button className="fld__btn" type="button" onClick={() => remove(idx)} title="Remove">✕</button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+              <Field label="Type">
+                <Select value={f.type} onChange={(v) => patchField(idx, { type: v })} options={FIELD_TYPES.slice()} />
+              </Field>
+              <Field label="">
+                <Check checked={!!f.required} onChange={(v) => patchField(idx, { required: v })} label="Required" />
+              </Field>
+            </div>
+            {(f.type === "select" || f.type === "multi-select") && (
+              <Field label="Options" hint="Comma-separated list of allowed values">
+                <ListInput value={f.options ?? []} onChange={(v) => patchField(idx, { options: v })} placeholder="low, medium, high" />
+              </Field>
+            )}
+            <Field label="Hint" hint="Helper text shown under the input">
+              <Input value={f.hint ?? ""} onChange={(v) => patchField(idx, { hint: v })} />
+            </Field>
+            {(f.type === "text" || f.type === "long-text" || f.type === "number") && (
+              <div style={{ display: "grid", gridTemplateColumns: f.type === "number" ? "1fr 1fr" : "1fr 1fr 1fr", gap: 6 }}>
+                <Field label="Min"><NumInput value={f.validate?.min} onChange={(v) => patchValidate(idx, { min: v })} /></Field>
+                <Field label="Max"><NumInput value={f.validate?.max} onChange={(v) => patchValidate(idx, { max: v })} /></Field>
+                {f.type !== "number" && (
+                  <Field label="Pattern" hint="Regex — optional"><Input mono value={f.validate?.pattern ?? ""} onChange={(v) => patchValidate(idx, { pattern: v })} /></Field>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        <button className="fld__btn" type="button" onClick={add} style={{ marginTop: 4 }}>+ Add field</button>
+      </Section>
+    </>
+  )
+}
+
+function UserTaskForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { assignTo?: string; title?: string; description?: string; dueIn?: string; form?: FormSchema }
+  const form = cfg.form ?? { title: "", fields: [], submitLabel: "Submit" }
+  return (
+    <>
+      <Section title="Assignment">
+        <Field label="Assignee" hint="actor:<id> or role:<id> — managed via `agentx actor` / `agentx role`">
+          <Input mono value={String(cfg.assignTo ?? "")} onChange={(v) => patchData({ assignTo: v })} placeholder="role:reviewers" />
+        </Field>
+        <Field label="Title" hint="Shown in the inbox + notification">
+          <Input value={String(cfg.title ?? "")} onChange={(v) => patchData({ title: v })} />
+        </Field>
+        <Field label="Description">
+          <Area value={String(cfg.description ?? "")} onChange={(v) => patchData({ description: v })} rows={2} />
+        </Field>
+        <Field label="Due in" hint="ISO-8601 duration (PT2H, P1D) or number of minutes">
+          <Input mono value={String(cfg.dueIn ?? "")} onChange={(v) => patchData({ dueIn: v })} placeholder="P2D" />
+        </Field>
+      </Section>
+      <FormBuilder form={form} patch={(f) => patchData({ form: f })} />
+    </>
+  )
+}
+
+function TriggerFormForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { startableBy?: string; form?: FormSchema }
+  const form = cfg.form ?? { title: "", fields: [], submitLabel: "Submit" }
+  return (
+    <>
+      <Section title="Start conditions">
+        <Field label="Startable by" hint="actor:<id> or role:<id> — who is allowed to initiate a new run">
+          <Input mono value={String(cfg.startableBy ?? "")} onChange={(v) => patchData({ startableBy: v })} placeholder="role:public" />
+        </Field>
+      </Section>
+      <FormBuilder form={form} patch={(f) => patchData({ form: f })} />
+    </>
+  )
+}
+
+function SubProcessForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { workflowId?: string; inputMap?: unknown; awaitCompletion?: boolean }
+  return (
+    <Section title="Sub-process">
+      <Field label="Workflow id" hint="id of another workflow definition — it runs to completion, then parent resumes">
+        <Input mono value={String(cfg.workflowId ?? "")} onChange={(v) => patchData({ workflowId: v })} placeholder="child-workflow-id" />
+      </Field>
+      <Field label="Input map (JSON)" hint={`Object mapping child-context keys to templated values; "*" for full inheritance`}>
+        <Area mono rows={4} value={JSON.stringify(cfg.inputMap ?? {}, null, 2)} onChange={(v) => { try { patchData({ inputMap: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      </Field>
+    </Section>
+  )
+}
+
+function SignalEmitForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { name?: string; scope?: string; payload?: unknown }
+  return (
+    <Section title="Emit signal">
+      <Field label="Name" hint="Signal identifier; other workflows' signal.wait nodes subscribe by this">
+        <Input mono value={String(cfg.name ?? "")} onChange={(v) => patchData({ name: v })} placeholder="approved" />
+      </Field>
+      <Field label="Scope" hint="workflow = only same-workflow waiters; global = every waiter">
+        <Select value={String(cfg.scope ?? "workflow")} onChange={(v) => patchData({ scope: v })} options={["workflow", "global"]} />
+      </Field>
+      <Field label="Payload (JSON)" hint="Templated object delivered with the signal">
+        <Area mono rows={4} value={JSON.stringify(cfg.payload ?? {}, null, 2)} onChange={(v) => { try { patchData({ payload: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      </Field>
+    </Section>
+  )
+}
+
+function SignalWaitForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { name?: string; scope?: string; match?: unknown }
+  return (
+    <Section title="Wait for signal">
+      <Field label="Name">
+        <Input mono value={String(cfg.name ?? "")} onChange={(v) => patchData({ name: v })} placeholder="approved" />
+      </Field>
+      <Field label="Scope">
+        <Select value={String(cfg.scope ?? "workflow")} onChange={(v) => patchData({ scope: v })} options={["workflow", "global"]} />
+      </Field>
+      <Field label="Match filter (JSON)" hint="Only resume when the emitted payload matches every key here">
+        <Area mono rows={3} value={JSON.stringify(cfg.match ?? {}, null, 2)} onChange={(v) => { try { patchData({ match: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      </Field>
+    </Section>
+  )
+}
+
+function TimerBoundaryForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { after?: string }
+  return (
+    <Section title="Timer">
+      <Field label="After" hint="ISO-8601 duration (PT30M, PT2H, P1D) or minutes as a number">
+        <Input mono value={String(cfg.after ?? "")} onChange={(v) => patchData({ after: v })} placeholder="PT1H" />
+      </Field>
+    </Section>
+  )
+}
+
+function GatewayParallelForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { mode?: string }
+  return (
+    <Section title="Parallel gateway">
+      <Field label="Mode" hint="fanOut = send to all outgoing edges; join = wait for every incoming edge">
+        <Select value={String(cfg.mode ?? "fanOut")} onChange={(v) => patchData({ mode: v })} options={["fanOut", "join"]} />
+      </Field>
+    </Section>
+  )
+}
+
+function RuleForm({ node, patchData }: FormProps) {
+  const cfg = node.config as {
+    inputs?: string[]
+    rules?: Array<{ when?: unknown[]; to?: string; output?: Record<string, unknown> }>
+    default?: { to?: string; output?: Record<string, unknown> }
+  }
+  const inputs = Array.isArray(cfg.inputs) ? cfg.inputs.map(String) : []
+  const rules = Array.isArray(cfg.rules) ? cfg.rules : []
+  const patchInputs = (v: string[]) => patchData({ inputs: v, rules: rules.map((r) => ({ ...r, when: (Array.isArray(r.when) ? r.when.slice(0, v.length) : []).concat(Array(Math.max(0, v.length - (r.when?.length ?? 0))).fill("*")) })) })
+  const patchRule = (idx: number, p: Partial<{ when: unknown[]; to: string; output: Record<string, unknown> }>) => {
+    const next = [...rules]
+    next[idx] = { ...next[idx], ...p }
+    patchData({ rules: next })
+  }
+  const addRule = () => patchData({ rules: [...rules, { when: inputs.map(() => "*"), to: "port", output: {} }] })
+  const removeRule = (idx: number) => patchData({ rules: rules.filter((_, i) => i !== idx) })
+  return (
+    <>
+      <Section title="Inputs">
+        <Field label="Input expressions" hint="Comma-separated; each is a template evaluated per-run against the run context">
+          <ListInput mono value={inputs} onChange={patchInputs} placeholder="{{classify.result}}, {{trigger.values.amount}}" />
+        </Field>
+      </Section>
+      <Section title={`Rules (${rules.length})`}>
+        {rules.map((r, idx) => (
+          <div key={idx} style={{ border: "1px solid var(--ax-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "end" }}>
+              <Field label="Port (to)" hint="Outgoing edge port taken when this row matches">
+                <Input mono value={String(r.to ?? "")} onChange={(v) => patchRule(idx, { to: v })} />
+              </Field>
+              <button className="fld__btn" type="button" onClick={() => removeRule(idx)}>✕</button>
+            </div>
+            <Field label="When (per-input cells)" hint={`One per input. "*" wildcard, "x" equals, ">10" numeric, "!=x", "/regex/"`}>
+              <ListInput mono value={(Array.isArray(r.when) ? r.when : []).map(String)} onChange={(v) => patchRule(idx, { when: v })} placeholder="gold, >100" />
+            </Field>
+            <Field label="Output (JSON)">
+              <Area mono rows={2} value={JSON.stringify(r.output ?? {}, null, 2)} onChange={(v) => { try { patchRule(idx, { output: JSON.parse(v) }) } catch { /* ignore */ } }} />
+            </Field>
+          </div>
+        ))}
+        <button className="fld__btn" type="button" onClick={addRule}>+ Add rule</button>
+      </Section>
+      <Section title="Default">
+        <Field label="Port (to)">
+          <Input mono value={String(cfg.default?.to ?? "fallback")} onChange={(v) => patchData({ default: { ...(cfg.default ?? {}), to: v } })} />
+        </Field>
+      </Section>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -819,10 +1155,18 @@ const FORM_FOR_TYPE: Record<string, (p: FormProps) => ReactNode> = {
   "trigger.cron":       (p) => <TriggerCronForm {...p} />,
   "trigger.hook":       (p) => <TriggerHookForm {...p} />,
   "trigger.manual":     (p) => <TriggerManualForm {...p} />,
+  "trigger.form":       (p) => <TriggerFormForm {...p} />,
   "agent":              (p) => <AgentForm {...p} />,
   "transform":          (p) => <TransformForm {...p} />,
   "branch":             (p) => <BranchForm {...p} />,
+  "gateway.parallel":   (p) => <GatewayParallelForm {...p} />,
+  "rule":               (p) => <RuleForm {...p} />,
   "checkpoint":         (p) => <CheckpointForm {...p} />,
+  "userTask":           (p) => <UserTaskForm {...p} />,
+  "subProcess":         (p) => <SubProcessForm {...p} />,
+  "signal.emit":        (p) => <SignalEmitForm {...p} />,
+  "signal.wait":        (p) => <SignalWaitForm {...p} />,
+  "timer.boundary":     (p) => <TimerBoundaryForm {...p} />,
   "end":                (p) => <EndForm {...p} />,
   "action.send":        (p) => <ActionSendForm {...p} />,
   "action.createIssue": (p) => <ActionCreateIssueForm {...p} />,
@@ -881,6 +1225,8 @@ export function Inspector(props: InspectorProps) {
   return (
     <NodePane
       node={node}
+      nodes={nodes}
+      edges={edges}
       patch={patch as (p: Partial<WorkflowNode>) => void}
       patchData={patchData}
       onDelete={() => onDelete(selection)}
@@ -892,8 +1238,10 @@ export function Inspector(props: InspectorProps) {
   )
 }
 
-function NodePane({ node, patch, patchData, onDelete, onDuplicate, validation, runOutput, agents }: {
+function NodePane({ node, nodes, edges, patch, patchData, onDelete, onDuplicate, validation, runOutput, agents }: {
   node: WorkflowNode
+  nodes: WorkflowNode[]
+  edges: GraphEdge[]
   patch: (p: Partial<WorkflowNode>) => void
   patchData: (p: Record<string, unknown>) => void
   onDelete: () => void
@@ -923,15 +1271,18 @@ function NodePane({ node, patch, patchData, onDelete, onDuplicate, validation, r
       </div>
       <div className="insp__body">
         {tab === "config" && (
-          Form
-            ? Form({ node, patch, patchData, agents })
-            : (
-              <Section title="Config">
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-                  No typed form yet for <span className="mono">{node.type}</span>. Use the Advanced tab to edit raw JSON.
-                </div>
-              </Section>
-            )
+          <>
+            {Form
+              ? Form({ node, nodes, patch, patchData, agents })
+              : (
+                <Section title="Config">
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                    No typed form yet for <span className="mono">{node.type}</span>. Use the Advanced tab to edit raw JSON.
+                  </div>
+                </Section>
+              )}
+            <ContextPanel node={node} nodes={nodes} edges={edges} />
+          </>
         )}
         {tab === "advanced" && (
           <AdvancedJson node={node} patchData={patchData} />
@@ -956,6 +1307,139 @@ function NodePane({ node, patch, patchData, onDelete, onDuplicate, validation, r
         )}
       </div>
     </aside>
+  )
+}
+
+// --- Context panel (template-path discoverability) ---
+//
+// For the selected node, walks the DAG backward via incoming edges and lists
+// every upstream node with its declared output fields (from
+// `src/workflows/nodes/schemas.ts`). Each field is a button that copies
+// `{{<nodeId>.<path>}}` to the clipboard so authors can drop it into a Text
+// or Chat-id input without guessing.
+//
+// Why "upstream"? Templates can only reference data that's been computed
+// before this node runs. Showing siblings or downstream nodes would be
+// misleading — their context entries don't exist when this node renders.
+//
+// The trigger is always treated as upstream of every other node, even when
+// not directly connected (which is the common case for action.send templates
+// like {{trigger.chatId}}).
+
+function collectUpstream(nodeId: string, nodes: WorkflowNode[], edges: GraphEdge[]): WorkflowNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const))
+  const visited = new Set<string>()
+  const order: WorkflowNode[] = []
+  const visit = (id: string) => {
+    if (visited.has(id)) return
+    visited.add(id)
+    for (const e of edges) {
+      if (e.to === id) visit(e.from)
+    }
+    if (id !== nodeId) {
+      const n = byId.get(id)
+      if (n) order.push(n)
+    }
+  }
+  visit(nodeId)
+
+  // Always surface the trigger node even if not transitively connected, so a
+  // detached `action.send` (still being wired up) can still see what the
+  // trigger will provide.
+  for (const n of nodes) {
+    if (n.type.startsWith("trigger.") && !visited.has(n.id) && n.id !== nodeId) {
+      order.push(n)
+    }
+  }
+  return order
+}
+
+function ContextPanel({ node, nodes, edges }: { node: WorkflowNode; nodes: WorkflowNode[]; edges: GraphEdge[] }) {
+  const upstream = useMemo(() => collectUpstream(node.id, nodes, edges), [node.id, nodes, edges])
+  if (upstream.length === 0) {
+    return (
+      <Section title="Available inputs" defaultOpen={false}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          No upstream nodes yet — connect a trigger or upstream node to make its outputs available as <span className="mono">{`{{nodeId.path}}`}</span> templates here.
+        </div>
+      </Section>
+    )
+  }
+  return (
+    <Section
+      title={`Available inputs (${upstream.length})`}
+      defaultOpen={false}
+      right={<span className="card__kind" style={{ color: "var(--muted)" }}>click to copy</span>}
+    >
+      <div style={{ display: "grid", gap: 10 }}>
+        {upstream.map((u) => <UpstreamCard key={u.id} node={u} />)}
+      </div>
+    </Section>
+  )
+}
+
+function UpstreamCard({ node }: { node: WorkflowNode }) {
+  const schema = NODE_OUTPUTS[node.type as keyof typeof NODE_OUTPUTS]
+  const fields: OutputField[] = schema ? outputFieldsFor(node.type as any, node.config) : []
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: 8, background: "var(--bg)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>{node.id}</span>
+        <span className="insp__type-pill" style={{ fontSize: 10 }}>{node.type}</span>
+      </div>
+      {schema?.summary && (
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>{schema.summary}</div>
+      )}
+      {fields.length === 0 ? (
+        <div style={{ fontSize: 11, color: "var(--muted)" }}>No declared outputs.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 2 }}>
+          {fields.map((f) => <OutputFieldRow key={f.path} nodeId={node.id} field={f} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OutputFieldRow({ nodeId, field }: { nodeId: string; field: OutputField }) {
+  const [copied, setCopied] = useState(false)
+  const expr = field.path ? `{{${nodeId}.${field.path}}}` : `{{${nodeId}}}`
+  const onClick = async () => {
+    try {
+      await navigator.clipboard.writeText(expr)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 900)
+    } catch {
+      /* clipboard refused (browser perms) — best-effort */
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={field.description}
+      style={{
+        textAlign: "left",
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 6,
+        padding: "4px 6px",
+        background: copied ? "var(--ok-soft, rgba(0, 200, 100, 0.12))" : "transparent",
+        border: "1px solid transparent",
+        borderRadius: 4,
+        cursor: "pointer",
+        color: "var(--ink-1)",
+        fontSize: 11,
+        lineHeight: 1.35,
+      }}
+    >
+      <span className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {expr}
+      </span>
+      <span style={{ color: copied ? "var(--ok, #2ea043)" : "var(--muted)", fontSize: 10 }}>
+        {copied ? "copied" : field.type}
+      </span>
+    </button>
   )
 }
 

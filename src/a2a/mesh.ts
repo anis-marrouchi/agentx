@@ -282,12 +282,18 @@ export class A2AMesh {
 
   /**
    * Get the combined agent directory across all healthy peers.
+   *
+   * `channels` lists the channel adapter names each peer hosts (telegram,
+   * whatsapp, gitlab, ...) — sourced from the peer's agent-card. Used by
+   * workflow `action.send` to forward outbound messages back to the peer
+   * that owns the channel when the workflow runs on a different node.
    */
   directory(): Array<{
     peer: string
     peerUrl: string
     healthy: boolean
     skills: AgentSkill[]
+    channels: string[]
     lastCheck?: Date
   }> {
     return Array.from(this.peers.entries()).map(([name, state]) => ({
@@ -295,6 +301,9 @@ export class A2AMesh {
       peerUrl: state.peer.url,
       healthy: state.healthy,
       skills: state.agents,
+      channels: Array.isArray((state.agentCard as any)?.channels)
+        ? ((state.agentCard as any).channels as unknown[]).map((c) => String(c))
+        : [],
       lastCheck: state.lastCheck,
     }))
   }

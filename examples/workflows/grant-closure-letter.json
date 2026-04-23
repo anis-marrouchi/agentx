@@ -1,0 +1,57 @@
+{
+  "id": "grant-closure-letter",
+  "version": 2,
+  "title": "Grant closure letter — sub-workflow",
+  "description": "Drafts and sends a closure letter for an approved grant. Spawned as a sub-process from grant-application on disbursement.",
+  "priority": 0,
+  "envAllow": [],
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "trigger.manual",
+      "config": {},
+      "position": { "x": 120, "y": 120 }
+    },
+    {
+      "id": "draft",
+      "type": "agent",
+      "config": {
+        "agentId": "grant-closure-writer",
+        "prompt": "Draft a short closure letter for grantee {{trigger.grantee}} (email: {{trigger.email}}), project \"{{trigger.project}}\", amount ${{trigger.amount}}. Keep it under 200 words, warm and formal. Reply with the letter text only, then on a new final line: RESULT: drafted",
+        "resultParser": "noqta-result-token",
+        "timeoutMinutes": 2
+      },
+      "position": { "x": 360, "y": 120 }
+    },
+    {
+      "id": "approve",
+      "type": "userTask",
+      "config": {
+        "assignTo": "role:grant-managers",
+        "title": "Approve closure letter for {{trigger.grantee}}",
+        "description": "Draft:\n\n{{draft.reply}}",
+        "form": {
+          "title": "Approve letter",
+          "fields": [
+            { "key": "letterUrl", "label": "Uploaded letter URL (or leave blank to use draft)", "type": "text" }
+          ],
+          "submitLabel": "Approve and send",
+          "secondaryAction": { "key": "reject", "label": "Request revision" }
+        }
+      },
+      "position": { "x": 600, "y": 120 }
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "config": { "status": "completed" },
+      "position": { "x": 840, "y": 120 }
+    }
+  ],
+  "edges": [
+    { "from": "trigger", "to": "draft" },
+    { "from": "draft", "to": "approve" },
+    { "from": "approve", "to": "done" }
+  ],
+  "retention": { "maxRuns": 500, "maxDays": 90 }
+}

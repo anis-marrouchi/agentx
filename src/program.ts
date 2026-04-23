@@ -13,6 +13,7 @@ import { wiki } from "@/commands/wiki"
 import { graph } from "@/commands/graph"
 import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
+import { actor, role } from "@/commands/actor"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
@@ -57,6 +58,8 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(graph)
     .addCommand(procedure)
     .addCommand(workflow)
+    .addCommand(actor)
+    .addCommand(role)
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)

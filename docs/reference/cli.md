@@ -197,6 +197,24 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 - `agentx workflow runs --limit 5` is the fastest way to answer "what's the daemon doing right now with workflow X?" — pair it with `agentx daemon logs -f` to watch the corresponding agent dispatches.
 - On multi-node mesh deployments, `runs` is per-node (runs belong to their home node). Use the dashboard `/workflows` page for a cross-node view.
 
+## Actors & roles (BPM)
+
+Actors are humans who can be assigned to `userTask` nodes; roles are groups of actors with an assignment strategy.
+
+| Command | Description |
+|---|---|
+| `agentx actor add <id> --name "Alice" --telegram <uid> --email <addr> --prefer <channel>` | Register an actor with one or more channel handles. Use `--prefer` to mark which channel receives task notifications. |
+| `agentx actor list` | List all actors with their channel handles. |
+| `agentx actor show <id>` | Dump the actor record as JSON. |
+| `agentx actor remove <id>` | Delete an actor (does not clean role memberships). |
+| `agentx role create <id> --name "Reviewers" --strategy <s>` | Create a role. Strategy: `first-available`, `round-robin`, `all`, `manager-of`. |
+| `agentx role grant <roleId> <actor:id \| role:id>` | Add an actor or nested role to a role's members. |
+| `agentx role revoke <roleId> <member>` | Remove a member. |
+| `agentx role list` | List roles with member counts. |
+| `agentx role show <id>` | JSON dump including resolved actor ids (walks nested roles). |
+
+`userTask` nodes set `assignTo: "actor:alice"` or `assignTo: "role:reviewers"`. Forms render in the assignee's preferred channel (Telegram/WhatsApp/Slack one-click URLs, or the `/inbox` web UI).
+
 ## Skills
 
 | Command | Description |

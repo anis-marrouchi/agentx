@@ -4,352 +4,185 @@ title: "Workflows"
 
 # Workflows
 
-Declarative state machines that bind channel events to agents. A workflow says *"at state X, run agent Y with prompt Z; transition to state W when condition C holds."* The engine sits on top of the existing hook + channel + agent-registry primitives — it subscribes to hooks that already fire (`on:gitlab-issue`, `on:gitlab-pipeline`, `post:response`) and dispatches agents through the same registry your channels already use.
+AgentX workflows model **business activities as directed dataflow graphs**. A workflow is a set of nodes connected by edges; a run executes the graph by walking from a trigger, accumulating each node's output into a shared context, and pausing whenever a party (human, agent, external system, or child workflow) needs to act.
 
-Think of it as the layer between *"a webhook fired"* and *"a specific agent got a specific prompt, and the result moved the issue forward."*
+The same engine powers two ends of the spectrum:
 
-## Concepts in plain English
+- **Bot automations** — "incoming Telegram message → classify → reply" — short, stateless, request/response.
+- **Business processes** — "applicant submits form → AI pre-screens → reviewer scores (human) → external disbursement webhook → child closure workflow → email" — long-lived, state-based, composable.
 
-A workflow has five moving parts. You'll meet them in the visual editor's right panel.
+There's no separate engine for the two shapes. Authors pick the node types that match their problem.
 
-### Trigger — what starts this workflow
+## Mental model
 
-When something happens (a GitLab issue is updated, a pipeline finishes, someone runs a CLI command), the daemon checks all your workflows and starts any whose trigger matches.
+A workflow **reflects a complete activity from start to end**. Each node is a step; each edge is a state transition. Transitions fire because a party *did something*, not because time passed — timers exist (SLAs, intermediate waits) but aren't the primary driver.
 
-### State — a step in the lifecycle
+Four party kinds advance a run:
 
-Think of a state like a lane in a kanban board (`Triage`, `Doing`, `Review`, `Done`). When a run enters a state, the assigned agent gets a prompt and does its job. The run stays in that state until something triggers a transition to another.
-
-**You define the names and how many you want.** `Triage → Done` is a common 5-state lifecycle, but you might only need `New → Approved`.
-
-### Transition — a line from one state to another, with a condition
-
-A transition says *"when condition C holds, move from state A to state B."* Conditions are typed — label was added, pipeline passed, agent replied with `approved`, etc.
-
-### Guards (requires) — gates before entering a state
-
-A state can say *"I won't accept a run until this is true"* — e.g. `To Do` requires an assignee. If a transition points to `To Do` but no one's assigned, the run stays put and waits.
-
-### Actions (onEnter / onExit) — side effects
-
-Once a run enters or leaves a state, a list of small actions can fire: post a comment, log time spent, add a label, notify another channel, call an HTTP endpoint. These are fire-and-forget — they don't change the run's direction.
-
----
-
-## What's actually working?
-
-Schema is broader than the runtime. Here's the honest map:
-
-| Trigger source | What fires it | Status |
+| Party | Node that waits for it | How it advances state |
 |---|---|---|
-| `gitlab-issue` | GitLab issue webhook (open / update / close) | ✅ Wired |
-| `gitlab-pipeline` | GitLab MR pipeline webhook | ✅ Wired |
-| `manual` | `agentx workflow run <id>` / `POST /workflows/:id/run` | ✅ Wired |
-| `github-issue`, `github-pr` | GitHub webhooks | ⚠️ Schema-only, no subscriber yet |
-| `telegram-message`, `whatsapp-message` | Channel messages | ⚠️ Schema-only |
-| `cron` | Scheduled | ⚠️ Schema-only |
-| `hook` | Custom `on:*` hook script | ⚠️ Schema-only |
+| Human | `userTask` | Submits a form in chat or web inbox |
+| Agent (LLM) | `agent` | Returns a `RESULT:` token |
+| External system | `signal.wait`, `checkpoint`, `trigger.hook` | Posts a webhook or emits a signal |
+| Child workflow | `subProcess` | Reaches its own `end` node |
 
-| State backend | Tracks the current state in… | Status |
+## Node catalog
+
+### Triggers
+
+| Node | Purpose | Output bundle |
 |---|---|---|
-| `gitlab-label` | A GitLab issue/MR label | ✅ Wired |
-| `agentx-internal` | A local file | ⚠️ Schema-only |
-| `github-label` | A GitHub issue/PR label | ⚠️ Schema-only |
-| `script` | User-provided script | ⚠️ Schema-only |
+| `trigger.channel` | Entry point for a channel adapter message (WhatsApp, Telegram, Slack, Discord, GitLab) | `{ event, text, chatId, channel, fromJid, sender, group?, media? }` |
+| `trigger.cron` | Scheduled fire | `{ firedAt }` |
+| `trigger.hook` | Arbitrary hook event subscription | payload-specific |
+| `trigger.manual` | CLI-initiated runs (`agentx workflow run <id>`) | payload-specific |
+| `trigger.form` | Human fills a form to start a new run | `{ submittedBy, values }` |
 
-Fields marked **schema-only** save fine in the editor and appear in the CLI, but no event handler emits them yet — the workflow won't fire on its own. Adding a subscriber for any of them is ~15 lines in `src/workflows/hooks.ts`.
+### Compute
 
-## Where do I watch executed runs?
+| Node | Purpose | Output |
+|---|---|---|
+| `agent` | Invoke a registered agent with a templated prompt | `{ reply, result, json?, taskId, durationMs }` |
+| `transform` | Pick or reshape values from upstream context | arbitrary |
 
-Go to **`/workflows`** in the dashboard. Each workflow card shows a live count of running executions and the last run's status. Click a card to expand the detail pane — under "Recent runs" you get a table (run id · entity · status · timestamp). Click any run for an SSE-streamed timeline showing exactly which transitions fired, which agent ran, and what came back.
+### Control flow
 
-From inside the editor, the toolbar's **"History"** button jumps you straight to that workflow's detail on the runs page.
+| Node | Purpose | Output |
+|---|---|---|
+| `branch` | N-way switch on `equals`/`contains`/`matches`/`exists` | passes through; selects outgoing port |
+| `gateway.parallel` | `mode: fanOut` splits to N branches; `mode: join` waits for every incoming edge | merged context |
+| `rule` | DMN-style decision table — first matching row wins | `{ ...row.output, matchedPort }` |
+| `checkpoint` | Pause for an arbitrary resume event | `{ event }` on resume |
+| `end` | Terminates the run with a status | — |
 
-## Advanced settings demystified
+### Actions
 
-Three settings appear under "Advanced" in the editor. Most users never touch them.
+`action.send`, `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.react`, `action.editMessage`, `action.logTime`, `action.callHTTP`. Each verb is a thin wrapper over the matching channel adapter method.
 
-### Priority and Fan out — what happens when two workflows match the same event
+### BPM
 
-Say you have a general `noqta/*` lifecycle and a project-specific `noqta/web` lifecycle, and both match a GitLab issue change. Two ways to resolve:
+| Node | Purpose | Output |
+|---|---|---|
+| `userTask` | Assign a form to an actor or role; pauses until submission | `{ submittedAt, submittedBy, values, action }` |
+| `subProcess` | Spawn a child workflow; parent pauses until child reaches `end` | `{ childRunId, status, output }` |
+| `signal.emit` | Publish a named event | `{ emittedAt, name, scope, payload }` |
+| `signal.wait` | Pause until a matching signal arrives | `{ receivedAt, name, payload }` |
+| `timer.boundary` | Pause until a duration elapses (ISO-8601 or minutes) | `{ firedAt, scheduledFor }` |
 
-- **Priority** — each workflow has a number. Highest priority wins; others skip for this event. Default 0, ties broken alphabetically by id.
-- **Fan out** — if any matching workflow has `fanOut: true`, then **every** match runs, each with its own independent run. Useful if both lifecycles have different jobs (e.g. a security scanner and a triage flow should both fire). Default: off.
+## Identities
 
-Leave both alone until you actually have overlapping workflows.
+Workflows reference humans via the **Actor** and **Role** primitives, stored under `.agentx/actors/` and `.agentx/roles/`.
 
-### Retention — how long run history is kept
+```bash
+# create an actor with one or more channel handles
+agentx actor add alice --name "Alice Ahmed" --telegram 1234567890 --email a@co.test --prefer telegram
 
-- `maxRuns: 500` — keep at most 500 finished (completed/failed/canceled) runs per workflow. Oldest pruned first.
-- `maxDays: 90` — runs older than 90 days are pruned on daemon start and daily.
-
-Running/paused runs are **never** pruned. Defaults are fine for most teams.
-
-<div v-pre>
-
-### Env allowlist — only if your prompt uses `{{env.X}}`
-
-The templating engine lets prompts reference environment variables like `{{env.GITLAB_HOST}}`. For safety, only names you explicitly list here are readable — any other `{{env.FOO}}` renders as empty string. This prevents a typo like `{{env.DATABASE_PASSWORD}}` from leaking a secret into agent prompts.
-
-**Most workflows don't use `{{env.*}}` at all** — the event context (`{{issue.title}}`, `{{pipeline.status}}`, etc.) is enough. Leave the allowlist empty unless you're deliberately templating from env.
-
-</div>
-
-## When to use this (and when not)
-
-Use workflows when you have a repeatable lifecycle that spans multiple states and multiple agents — e.g. GitLab issues driven through `Triage → To Do → Doing → Review → Done`, release pipelines, incident response, onboarding flows on Telegram/WhatsApp.
-
-Don't use workflows for:
-
-- One-shot event handlers. A single `on:gitlab-issue` script hook is simpler.
-- Agent-to-agent dispatch with no persistent state. Use the handover store.
-- General-purpose automation (n8n-style). AgentX is an agent orchestrator; workflows orchestrate agents, not arbitrary HTTP steps.
-
-## The shape
-
-```
-workflow
-  ├── trigger        (source + filter — which events kick this workflow off)
-  ├── stateBackend   (where the current state lives — GitLab label, internal, …)
-  ├── states         (per-state agent + prompt + onEnter/onExit actions + guards)
-  └── transitions    (from → to edges, each with a condition)
+# group actors via a role
+agentx role create reviewers --name "Grant Reviewers" --strategy first-available
+agentx role grant reviewers actor:alice
+agentx role grant reviewers actor:bob
 ```
 
-Defined on disk as one JSON file per workflow under `.agentx/workflows/`:
+Assignment strategies: `first-available` (default, first member), `round-robin` (rotates), `all` (fans out), `manager-of` (future). Nested roles are resolved recursively.
 
-```
-.agentx/workflows/
-  gitlab-issue-lifecycle.json     — the workflow itself
-  _runs/<runId>.jsonl             — append-only run events (home-node only)
-  _index/<backend>__<entity>.json — entity → active runId (so webhooks find it)
-```
+A `userTask` node's `assignTo` takes either an actor ref (`actor:alice`) or a role ref (`role:reviewers`). The configured channel renderer (Telegram, WhatsApp, Slack, web inbox) delivers the form to each resolved actor's preferred channel.
 
-State of truth for *what state an entity is in* is the `stateBackend` (typically a GitLab label). State of truth for *the run itself* (id, history, ownership) is the jsonl log on the run's home node.
+## Templates
 
-## The lifecycle
+Every node's config and every prompt can interpolate `{{nodeId.path}}` against the run context. Examples:
 
-```mermaid
-flowchart LR
-  W[Webhook arrives] --> H[Channel adapter fires on:* hook]
-  H --> D[Workflow dispatcher]
-  D -->|no run yet| C[Create run on this node<br/>anchor state from backend]
-  D -->|run exists, owned here| E[Evaluate transitions]
-  D -->|run exists, owned elsewhere| F[Forward via mesh<br/>to home node]
-  C --> E
-  E -->|condition matches,<br/>guards pass| T[Transition:<br/>onExit → write backend →<br/>dispatch agent → onEnter →<br/>record history]
-  E -->|no match| X[No-op]
-  T --> R[Run log appended]
-```
+- `{{trigger.values.amount}}` — value of a field submitted at the trigger form
+- `{{classify.result}}` — the agent node's parsed `RESULT:` token
+- `{{review.values.score}}` — a submitted user-task form field
+- `{{env.GITLAB_TOKEN}}` — env var (must be in the workflow's `envAllow`)
 
-Three invariants that make the engine safe to rely on:
+Template rendering respects the allowlist on `workflow.envAllow` for any `{{env.*}}` lookups, so secrets never leak through unreviewed templates.
 
-- **Idempotency keys.** Every transition carries `hash(runId, from, to, eventId)`. A webhook delivered twice collapses into a single recorded transition. Non-negotiable — GitLab and GitHub both replay.
-- **Home-node per run.** The node that handled the triggering webhook owns the run. All subsequent state mutations route through that node. Cross-node deployments are safe by construction; no distributed state problem.
-- **Actions are side-effects, not guards.** If `onExit`'s `postComment` fails, the transition still records. Guards belong in `requires` and `transitions[].when`.
+## Sub-process composition
 
-## Authoring a workflow
-
-Minimal example — a GitLab issue lifecycle for one project:
+A workflow can embed another workflow via `subProcess`:
 
 ```json
 {
-  "id": "gitlab-issue-lifecycle",
-  "version": 1,
-  "title": "GitLab Issue Lifecycle",
-  "priority": 10,
-  "trigger": {
-    "source": "gitlab-issue",
-    "filter": { "project": "noqta/web" }
-  },
-  "stateBackend": {
-    "kind": "gitlab-label",
-    "config": {
-      "host": "https://gitlab.noqta.tn",
-      "token": "${GITLAB_TOKEN}",
-      "kind": "issue"
-    }
-  },
-  "states": {
-    "Triage":  { "agent": "triage-agent", "prompt": "Assess #{{issue.iid}} — {{issue.title}}" },
-    "To Do":   { "agent": "planner",      "prompt": "Plan {{issue.title}}",
-                 "requires": [{ "kind": "assigneePresent" }] },
-    "Doing":   { "agent": "dev-agent",    "prompt": "Implement {{issue.title}}",
-                 "onExit": [{ "kind": "logTime" }] },
-    "Review":  { "agent": "code-reviewer","prompt": "Review MR for #{{issue.iid}}",
-                 "requires": [{ "kind": "pipelineStatus", "value": "success" }] },
-    "Done":    { "terminal": true }
-  },
-  "transitions": [
-    { "from": "Triage",  "to": "To Do",  "when": { "kind": "labelPresent", "value": "To Do" } },
-    { "from": "To Do",   "to": "Doing",  "when": { "kind": "labelPresent", "value": "Doing" } },
-    { "from": "Doing",   "to": "Review", "when": { "kind": "pipelineStatus", "value": "success" } },
-    { "from": "Review",  "to": "Done",   "when": { "kind": "agentResult", "value": "approved" } }
-  ]
+  "id": "closure",
+  "type": "subProcess",
+  "config": {
+    "workflowId": "grant-closure-letter",
+    "inputMap": { "trigger": { "grantee": "{{trigger.values.applicantName}}" } },
+    "awaitCompletion": true
+  }
 }
 ```
 
-A complete version with retries, `onEnter` comments, and a `changes-requested` loop-back is committed at [`examples/workflows/gitlab-issue-lifecycle.json`](https://github.com/anis-marrouchi/agentx/blob/master/examples/workflows/gitlab-issue-lifecycle.json).
+Semantics:
 
-## Conditions
+- Parent **pauses** at the subProcess node; child runs to its own `end`; parent **resumes** with the child's output.
+- Child gets a **fresh context**, seeded only by `inputMap`. Set `inputMap: "*"` for full inheritance (opt-in).
+- Nesting is bounded by `workflow.maxChildDepth` (default 5). Exceeding the cap fails the parent run with a clear error.
+- Runs carry `parentRunId`, `rootRunId`, and `depth` — the composition tree is traversable and rendered on `/processes`.
 
-| Kind                 | Matches when… | Params |
-|----------------------|-----|-----|
-| `labelPresent`       | the event payload includes a specific label | `{ label }` or `{ value }` |
-| `assigneePresent`    | at least one assignee is set | — |
-| `pipelineStatus`     | the event's CI status equals the expected value | `{ value: "success" \| "failed" \| "canceled" }` |
-| `agentResult`        | the last agent's reply contained the expected tag | `{ value: "approved" \| "..." }` |
-| `timeInState`        | the run has been in the current state within [min,max] minutes | `{ minMinutes?, maxMinutes? }` |
-| `expr`               | reserved — not evaluated in v1 | — |
+## Running it
 
-Guards use the same kinds. Put them in `states.<name>.requires` to block *entering* a state until the guard passes.
+Workflows live at `.agentx/workflows/<id>.json`. When `workflows.enabled: true` in daemon config, the engine:
 
-## Actions
+1. Watches channel events, cron fires, and hook subscriptions.
+2. Matches trigger filters.
+3. Routes to the home node (local or mesh-forwarded).
+4. Walks the DAG — executing each pending node's handler, folding output into context, pausing at `userTask`/`subProcess`/`signal.wait`/`checkpoint`/`timer.boundary`, and resuming via the appropriate callback (form submit, child end, signal emission, timer fire).
 
-Actions run as side-effects on `onEnter` / `onExit`. They never block a transition — a failed action logs and the run still progresses.
+Runs are append-only JSONL at `.agentx/workflows/_runs/<runId>.jsonl`. Tasks live at `.agentx/workflows/_tasks/<taskId>.json` while open, archived under `_tasks/_completed/` on submit. Timers at `.agentx/workflows/_timers/`.
 
-| Kind            | What it does | Params |
-|-----------------|-----|-----|
-| `postComment`   | post a comment to the entity's thread | `{ body, channel? }` |
-| `logTime`       | log time spent in the state (GitLab `add_spent_time`) | `{ channel? }` |
-| `setLabel`      | add/remove labels outside the state machine (e.g. `reviewed-by-bot`) | `{ add?: string[], remove?: string[], channel? }` |
-| `notify`        | send a message on a different channel | `{ channel, chatId, text }` |
-| `callHTTP`      | fire a request at an external URL | `{ url, method?, body?, headers? }` |
-| `dispatchAgent` | reserved — side-effect agent runs; use `state.agent` for primary dispatch | — |
-| `script`        | reserved — disabled in v1 for security | — |
+## HTTP surface
 
-All string parameters are rendered through the template engine described below.
-
-## Templating
-
-Named-helper substitution only in v1 — no arbitrary expressions. Dotted paths resolve against a typed context:
-
-```
-{{issue.title}}      {{issue.iid}}      {{issue.url}}
-{{labels}}           {{assignees}}      {{pipeline.status}}
-{{run.id}}           {{run.state}}      {{run.workflow}}
-{{state.previous}}   {{state.next}}
-{{env.FOO}}          (only if FOO is in workflow.envAllow)
-```
-
-<div v-pre>
-
-Unknown paths render as empty string, never literal `{{...}}` — so a typo in a prompt produces a gap in the rendered text instead of leaking template syntax to agents.
-
-`env.*` is allowlisted. Only names listed in `workflow.envAllow` are readable. This is deliberate — a workflow author writing `{{env.DATABASE_PASSWORD}}` by mistake should get nothing, not a leak.
-
-</div>
-
-## State backends
-
-| Kind             | Source of truth | Phase |
-|------------------|----|----|
-| `gitlab-label`   | A GitLab issue/MR label from a fixed set | v1 |
-| `github-label`   | A GitHub issue/PR label | Phase 3 |
-| `agentx-internal`| A local file under `.agentx/workflows/_state/` | Phase 3 |
-| `script`         | Custom read/write via a user-provided script | Phase 3 |
-
-Backends are pluggable — adding a new one means one file implementing the `StateBackend` interface and one line in `BackendRegistry.create()`. There is no engine-level change.
-
-## Visual editor
-
-The dashboard ships a node-canvas editor at `/workflows/editor?id=<id>` (or `/workflows/editor?new=1` for a fresh workflow). It reads and writes the same JSON files under `.agentx/workflows/` — the editor is a view over disk, not a parallel representation — and stores node coordinates in a sibling `_layouts/<id>.json` so the Workflow schema stays pure behavior.
-
-### What the editor does
-
-- **States** appear as rectangles; drag them freely (snap-to-8px grid). The initial state is marked with an accent dot on its top-left corner; terminal states have a dashed outline.
-- **Transitions** are Bezier edges with an arrow and a condition label (`labelPresent = "To Do"`, `pipelineStatus = "success"`, etc.).
-- **Create a transition** by hovering a state — a small handle appears on its right edge — then dragging onto another state.
-- **Property inspector** on the right panel covers every field: agent, prompt, requires/onEnter/onExit (as JSON), terminal flag, timeoutMinutes, retries, and for transitions: from / to / when. Workflow-level fields (id, title, priority, trigger, state backend) surface when nothing is selected.
-- **Raw JSON view** (⌘⇧J) toggles a full-text editable view of the workflow. Apply round-trips the parsed JSON back to the canvas.
-- **Auto-layout** (⌘⇧L) arranges states in topological columns — useful after importing a workflow or editing the JSON directly.
-- **Save** (⌘S) first validates the workflow server-side; any schema or lint errors highlight the offending node/edge in red and list the issues in the lower-left panel.
-
-### Keyboard shortcuts
-
-| Key | Action |
-|-----|--------|
-| `n` | Add a new state at the viewport center |
-| right-click on empty canvas | Add a new state at the cursor |
-| `Delete` / `Backspace` | Delete the selected state or transition |
-| `Escape` | Deselect, or cancel an in-progress transition drag |
-| `⌘S` / `Ctrl+S` | Save (with validation) |
-| `⌘Z` / `Ctrl+Z` | Undo |
-| `⌘⇧Z` / `Ctrl+Shift+Z` | Redo |
-| `⌘⇧L` / `Ctrl+Shift+L` | Auto-layout |
-| `⌘⇧J` / `Ctrl+Shift+J` | Toggle raw JSON view |
-| `Space + drag`, `Shift + drag`, middle-click drag | Pan the canvas |
-| mouse wheel | Zoom (0.25× to 2.5×) |
-
-### Persistence model
-
-- `/.agentx/workflows/<id>.json` — the workflow definition itself. Source of truth for behavior.
-- `/.agentx/workflows/_layouts/<id>.json` — node coordinates. Safe to delete; the editor will auto-layout on next open.
-- Saves pass through the same Zod schema + linter the CLI uses (`agentx workflow validate`). You cannot persist a broken workflow through the editor.
-
-### When to use the editor vs. the CLI
-
-The editor is the fastest way to explore an unfamiliar workflow's graph or to prototype a new lifecycle by sketching nodes before filling in prompts. The CLI (`agentx workflow validate`) is what you run in CI, and plain YAML/JSON in git is what diffs cleanly on pull requests. They round-trip cleanly — use whichever fits the moment.
+- `GET /workflows` — editor and workflow list UI
+- `GET /inbox?actor=<id>` — per-actor task list + form renderer
+- `GET /processes` — run overview with SLA indicators + composition tree
+- `POST /api/workflows/tasks/:id/submit` — submit a user-task form (body: `{ submittedBy, submission: { action, values } }`)
+- `GET /t/:taskId/:action?actor=<id>` — one-click approve/reject (emitted as URL buttons in Telegram)
+- `POST /api/workflows/signal/:name` — manually emit a signal (debugging, external webhooks)
+- `GET /api/workflows/kpis` — actor-level + total KPIs
 
 ## CLI
 
-```
-agentx workflow list                    # all workflows with their trigger + state count
-agentx workflow show <id>               # full JSON for one workflow
-agentx workflow validate [file]         # schema + lint check (CI-friendly)
-agentx workflow runs [id]               # recent runs, with state + agent history
-agentx workflow run <id> --input <json> # manually fire a `trigger: manual` workflow
-agentx workflow pause <runId>           # freeze a run (no transitions fire)
-agentx workflow resume <runId>          # un-pause
-agentx workflow cancel <runId>          # end it; no further transitions
-```
+```bash
+# inspect definitions
+agentx workflow list
+agentx workflow show <id>
+agentx workflow validate <id>
 
-`validate` exits non-zero on any failure, so put it in CI to prevent broken workflows from being committed.
+# run a manual workflow
+agentx workflow run <id> --input '{"key":"value"}'
 
-## Multi-match and priority
+# inspect runs
+agentx workflow runs --workflow <id> --limit 20
+agentx workflow run show <runId>
 
-If two workflows match the same event — e.g. a generic `noqta/*` workflow and a project-specific `noqta/web` workflow — the engine decides what to do based on the `priority` and `fanOut` fields:
-
-- `fanOut: false` (default) + different priorities → highest-priority workflow runs, others skip for this event.
-- `fanOut: false` + same priority → first by `id` (alphabetical) wins; others skip.
-- `fanOut: true` on any matching workflow → **every** match runs in parallel with its own run.
-
-Lint the graph with `agentx workflow validate` before deploying — the linter flags overlapping triggers so you don't discover multi-match semantics in production.
-
-## Mesh federation
-
-Workflows are mesh-aware. When a webhook arrives at node B for an entity owned by node A:
-
-1. Node B consults `_index/<backend>__<entity>.json`, finds home is `A`.
-2. Node B forwards the event to A via the mesh RPC (`workflow.transition`).
-3. Node A re-evaluates locally and dispatches agents as if the webhook had landed there.
-
-This keeps run-state single-owner (no distributed-state problem) while still letting any node receive webhooks. The home node is sticky until the run completes — it does not rebalance mid-run.
-
-## Retention
-
-Each workflow declares a `retention` policy:
-
-```json
-"retention": { "maxRuns": 500, "maxDays": 90 }
+# identity management
+agentx actor add / list / show / remove
+agentx role  create / grant / revoke / list / show
 ```
 
-Running and paused runs are never pruned. Completed/failed/canceled runs get pruned oldest-first once they exceed `maxRuns` or `maxDays`. Prune runs on daemon start + daily.
+## Example: grant application
 
-## Troubleshooting
+The repository ships `examples/workflows/grant-application.json` + `examples/workflows/grant-closure-letter.json` as a proof of life exercising all four party kinds and one nested sub-workflow:
 
-| Symptom | Likely cause |
-|---------|--------------|
-| Workflow exists on disk but nothing fires | Trigger filter mismatch. Run `agentx workflow show <id>` and cross-check `trigger.filter.project/repo/chat` against the webhook payload. |
-| Run created, agent never runs | State has no `agent` or the agent id doesn't exist in `agentx.json`. `agentx agent list` to confirm. |
-| `blocked by requires: assigneePresent` in logs | The destination state has a guard that isn't satisfied. Either the guard is wrong or the event lacks the expected data (e.g. GitLab issue has no assignee). |
-| Transitions fire twice | You're running two daemons against the same `.agentx/` directory. The engine's idempotency key is per-run-store, not global — point each daemon at its own state dir. |
-| "run … is home'd on 'xxx' but no mesh forwarder configured" | Workflows is enabled on this node but `mesh` is not. Enable mesh or stop the duplicate daemon. |
-| Templating renders curly braces literally | Pattern is outside the supported grammar — only bareword dotted paths resolve (spaces, quotes, or operators inside the braces are ignored). |
-| Workflow runs but label doesn't change | Backend token lacks write scope on the project, or the label isn't in `workflow.states`. Backend validation requires the write target to be in the declared state set. |
+```
+trigger.form (human)
+    ↓
+agent (pre-screen eligibility)
+    ↓
+branch (on agent.result)
+    ├─ "eligible" → userTask (human: reviewer score)
+    │                   ↓
+    │                 branch (on review.action)
+    │                   ├─ "primary" → signal.wait (external: finance webhook)
+    │                   │                   ↓
+    │                   │                 subProcess (child: closure letter workflow)
+    │                   │                   ↓
+    │                   │                 action.callHTTP (notify applicant)
+    │                   └─ "reject"
+    ├─ "ineligible" → action.callHTTP (rejection email)
+    └─ "needs-clarification" → userTask (human: clarification request)
+```
 
-## Related
-
-- [CLI reference — `agentx workflow`](/reference/cli#workflow-declarative-state-machines)
-- [Config schema — `workflows` section](/reference/config-schema)
-- [Example workflow](https://github.com/anis-marrouchi/agentx/blob/master/examples/workflows/gitlab-issue-lifecycle.json)
-- Source: [`src/workflows/`](https://github.com/anis-marrouchi/agentx/tree/master/src/workflows), [`src/commands/workflow.ts`](https://github.com/anis-marrouchi/agentx/blob/master/src/commands/workflow.ts)
+Copy both files into `.agentx/workflows/`, register a Telegram/WhatsApp actor for your reviewer role, and drive the first transition by POSTing a form submission to `/api/workflows/tasks/<taskId>/submit`.

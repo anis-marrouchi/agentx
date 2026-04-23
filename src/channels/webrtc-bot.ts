@@ -1,4 +1,3 @@
-import wrtcPkg from "@roamhq/wrtc"
 import type { WebRtcSignalBroker, WebRtcSignal } from "./webrtc-signal"
 
 // --- Server-side WebRTC bot peer ---
@@ -14,9 +13,38 @@ import type { WebRtcSignalBroker, WebRtcSignal } from "./webrtc-signal"
 // v1 scope: receive-only audio. The bot does not produce media — it adds an
 // audio receiver via setLocalDescription/createOffer with offerToReceiveAudio,
 // and consumes inbound audio frames through RTCAudioSink (PCM Int16Array).
+//
+// `@roamhq/wrtc` is loaded lazily on first bot start so daemons that don't
+// run WebRTC (e.g. headless production servers without the native binary
+// installed) can boot cleanly. The module-level static import would crash
+// the whole daemon at startup with ERR_MODULE_NOT_FOUND, blocking unrelated
+// channels — see clawd-server 2026-04-23 incident.
 
-const { RTCPeerConnection, nonstandard } = wrtcPkg as any
-const { RTCAudioSink } = nonstandard as { RTCAudioSink: any }
+let wrtcModule: any | null = null
+
+async function loadWrtc(): Promise<{ RTCPeerConnection: any; RTCAudioSink: any }> {
+  if (wrtcModule) return wrtcModule
+  let mod: any
+  try {
+    // Dynamic specifier so the bundler can't statically resolve and chunk it
+    // alongside always-loaded code.
+    mod = await import(/* @vite-ignore */ "@roamhq/wrtc" as string)
+  } catch (e: any) {
+    throw new Error(
+      `WebRTC bot requires "@roamhq/wrtc" — install it on this node ` +
+      `(\`pnpm add @roamhq/wrtc\`) or set channels.webrtc.bot.enabled=false. ` +
+      `Original: ${e?.message ?? e}`,
+    )
+  }
+  const pkg = mod.default ?? mod
+  const RTCPeerConnection = pkg.RTCPeerConnection
+  const RTCAudioSink = pkg.nonstandard?.RTCAudioSink
+  if (!RTCPeerConnection || !RTCAudioSink) {
+    throw new Error(`@roamhq/wrtc loaded but missing expected exports (RTCPeerConnection / nonstandard.RTCAudioSink)`)
+  }
+  wrtcModule = { RTCPeerConnection, RTCAudioSink }
+  return wrtcModule
+}
 
 export interface AudioFrame {
   /** Interleaved (or mono) signed 16-bit PCM samples. */
@@ -65,6 +93,7 @@ export class WebRtcBot {
     if (this.pc) throw new Error("WebRtcBot already started")
     const { broker, callId, botName, target, iceServers, log } = this.opts
 
+    const { RTCPeerConnection } = await loadWrtc()
     this.pc = new RTCPeerConnection({ iceServers })
 
     this.pc.ontrack = (ev: any) => {
@@ -154,8 +183,12 @@ export class WebRtcBot {
     }
   }
 
-  /** Wire RTCAudioSink to the inbound track and forward PCM frames upstream. */
+  /** Wire RTCAudioSink to the inbound track and forward PCM frames upstream.
+   *  Synchronous-by-design — by the time we hit `ontrack`, `start()` has
+   *  already awaited `loadWrtc()`, so wrtcModule is populated. */
   private tapAudio(track: any): void {
+    if (!wrtcModule) throw new Error("WebRtcBot.tapAudio called before loadWrtc — bug")
+    const { RTCAudioSink } = wrtcModule
     const sink = new RTCAudioSink(track)
     sink.ondata = (data: { samples: Int16Array; sampleRate: number; channelCount: number }) => {
       if (this.closed) return

@@ -28,6 +28,11 @@ export interface GraphModel {
     fanOut: boolean
     envAllow: string[]
     retention: Workflow["retention"]
+    /** Mesh integration. Carried through round-trip so the visual editor
+     *  preserves what's on disk even without UI controls — otherwise a
+     *  user save flips `mesh.allowRemote` back to its schema default and
+     *  silently breaks any cross-mesh trigger fan-out. */
+    mesh?: Workflow["mesh"]
   }
   nodes: WorkflowNode[]
   /** `id` is derived by workflowToGraph and optional on incoming models so
@@ -55,6 +60,7 @@ export function workflowToGraph(wf: Workflow, layout?: WorkflowLayout | null): G
       fanOut: wf.fanOut,
       envAllow: wf.envAllow,
       retention: wf.retention,
+      mesh: wf.mesh,
     },
     nodes,
     edges,
@@ -81,6 +87,9 @@ export function graphToWorkflow(g: GraphModel): { workflow: Workflow; layout: Wo
     }),
     envAllow: g.meta.envAllow,
     retention: g.meta.retention,
+    // Default mirrors the Zod schema default — kept explicit so a bare
+    // GraphModel from `blankGraph` still produces a valid Workflow.
+    mesh: g.meta.mesh ?? { allowRemote: false },
   }
   const layout: WorkflowLayout = {
     version: 1,
@@ -101,6 +110,7 @@ export function blankGraph(id: string): GraphModel {
       fanOut: false,
       envAllow: [],
       retention: { maxRuns: 500, maxDays: 90 },
+      mesh: { allowRemote: false },
     },
     nodes: [
       { id: "trigger", type: "trigger.manual", config: {}, position: { x: 40, y: 80 } },

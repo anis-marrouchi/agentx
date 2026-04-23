@@ -136,10 +136,26 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
     case "trigger.cron":   return { spec: "0 * * * *" }
     case "trigger.manual": return {}
     case "trigger.hook":   return { event: "on:hook" }
+    case "trigger.form":   return { form: { title: "New request", fields: [], submitLabel: "Submit" } }
     case "agent":          return { agentId: "", prompt: "", resultParser: "noqta-result-token" }
     case "transform":      return { expr: "" }
     case "branch":         return { cases: [{ when: { kind: "equals", params: { path: "", value: "" } }, to: "case1" }], default: "fallback" }
+    case "gateway.parallel": return { mode: "fanOut" }
+    case "rule":             return {
+      inputs: [""],
+      rules: [{ when: ["*"], to: "match", output: {} }],
+      default: { to: "fallback", output: {} },
+    }
     case "checkpoint":     return { name: "wait", waitFor: { source: "manual" }, resumeMatch: {} }
+    case "userTask":       return {
+      assignTo: "role:reviewers",
+      title: "",
+      form: { title: "Review", fields: [], submitLabel: "Approve", secondaryAction: { key: "reject", label: "Reject" } },
+    }
+    case "subProcess":     return { workflowId: "", inputMap: {}, awaitCompletion: true }
+    case "signal.emit":    return { name: "", scope: "workflow", payload: {} }
+    case "signal.wait":    return { name: "", scope: "workflow", match: {} }
+    case "timer.boundary": return { after: "PT1H" }
     case "action.send":    return { channel: "gitlab", chatId: "", text: "" }
     case "action.createIssue": return { channel: "gitlab", project: "", title: "", description: "", labels: [] }
     case "action.setLabel":    return { channel: "gitlab", add: [], remove: [] }
