@@ -60,9 +60,14 @@ export function startWorkflowTriggers(args: {
       }
       args.hooks.registerHandler(cfg.event as HookEvent, `workflows:${wf.id}`, async (ctx) => {
         try {
-          await args.dispatcher.dispatch({
-            trigger: { source: "hook" },
-            entityRef: { backend: "hook", id: `${cfg.event}:${Date.now().toString(36)}` },
+          // Go direct: this hook subscriber is registered per-workflow,
+          // so we already know which workflow to fire. Going through
+          // dispatch() + matchByTrigger() would drop the event unless the
+          // workflow's trigger.hook node had a matching `source` field —
+          // which users don't set (the event IS the filter).
+          await args.dispatcher.dispatchWorkflow({
+            workflowId: wf.id,
+            entityRef: { backend: "hook", id: `${wf.id}:${cfg.event}` },
             event: {
               id: `hook:${cfg.event}:${Date.now().toString(36)}`,
               payload: { hookEvent: cfg.event, ...ctx },
@@ -95,7 +100,8 @@ function scheduleCron(
       void (async () => {
         const eventId = `cron:${opts.workflowId}:${next.toISOString()}`
         try {
-          await dispatcher.dispatch({
+          await dispatcher.dispatchWorkflow({
+            workflowId: opts.workflowId,
             trigger: { source: "cron" },
             // Each scheduled fire gets a distinct entity so multiple runs
             // can coexist. If authors want a single "rolling" entity keyed

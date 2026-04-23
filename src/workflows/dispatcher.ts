@@ -240,6 +240,32 @@ export class WorkflowDispatcher {
       .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
   }
 
+  /** Fire a specific workflow by id, bypassing matchByTrigger. Used by
+   *  `trigger.hook` and `trigger.cron` subscribers — they already KNOW
+   *  which workflow they're firing, and the workflow's trigger config
+   *  may not carry a `source` field to match against the caller's event.
+   *  `trigger` is synthesized so the reused dispatchOne path still has
+   *  something to feed matchesResume/paused-run resume logic. */
+  async dispatchWorkflow(args: {
+    workflowId: string
+    entityRef: EntityRef
+    event: TriggerEvent
+    trigger?: { source?: string; project?: string; repo?: string; chat?: string; labels?: string[] }
+  }): Promise<{ claimed: boolean; run: WorkflowRun | null }> {
+    const wf = this.store.list().find((w) => w.id === args.workflowId)
+    if (!wf) { this.log(`[workflows] dispatchWorkflow: workflow "${args.workflowId}" not found`); return { claimed: false, run: null } }
+    const triggerNode = wf.nodes.find((n) => n.type.startsWith("trigger."))
+    const cfg = (triggerNode?.config ?? {}) as { source?: string; filter?: Record<string, unknown> }
+    const effective = {
+      source: args.trigger?.source ?? cfg.source ?? "hook",
+      project: args.trigger?.project,
+      repo: args.trigger?.repo,
+      chat: args.trigger?.chat,
+      labels: args.trigger?.labels,
+    }
+    return this.dispatchOne(wf, args.entityRef, args.event, effective)
+  }
+
   /** Fire 👀 + start the typing loop for a channel-triggered run, mirroring
    *  what MessageRouter does when it owns the conversation. Without this,
    *  workflow-claimed messages lose the "I see you, I'm working on it" UX
