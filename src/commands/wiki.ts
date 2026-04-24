@@ -1885,7 +1885,7 @@ wiki
 
       try {
         // Fetch entries from peer
-        const res = await fetch(`${peerUrl}/wiki/entries`, { signal: AbortSignal.timeout(10000) })
+        const res = await fetch(`${peerUrl}/wiki/entries`, { signal: AbortSignal.timeout(120000) })
         if (!res.ok) {
           console.log(chalk.red(`    HTTP ${res.status}`))
           continue
