@@ -15,6 +15,7 @@ import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
+import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -60,6 +61,11 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
+  /** Unified observability bus. Publishers (workflow engine, mesh,
+   *  channels, signals) emit here; subscribers (SSE, CLI, board
+   *  dashboard) filter by kind / workflow / actor. Created eagerly so
+   *  early boot events don't fall through. */
+  readonly events: EventBus = new EventBus()
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -149,6 +155,17 @@ export class AgentXDaemon {
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
+      // Bridge mesh peer-state transitions into the event bus so
+      // operators watching /events see recoveries + losses in real time.
+      this.mesh.onPeerChange((e) => {
+        this.events.publish({
+          kind: "mesh",
+          peer: e.peer,
+          healthy: e.healthy,
+          skills: e.skills,
+          delta: e.delta,
+        })
+      })
       // Let the registry reach the mesh so it can forward unknown-agent
       // tasks to a peer that advertises the requested agent. Keeps
       // workflow authoring portable: a workflow that references
@@ -1195,6 +1212,7 @@ export class AgentXDaemon {
       actors: actorStore,
       tasks: taskStore,
       timers: timerService,
+      events: this.events,
       renderUserTask,
       log: (m) => this.log(m),
     })
@@ -1287,7 +1305,22 @@ export class AgentXDaemon {
       "Access-Control-Allow-Origin": "*",
     })
 
-    // Send current status as first event
+    // Parse filter query-string. ?type=run,task filters which event
+    // kinds are forwarded; ?workflow=, ?actor=, ?run=, ?channel=
+    // narrow further. Empty query = unfiltered (all kinds forward).
+    const url = new URL(req.url || "/", `http://${req.headers.host || "_"}`)
+    const kinds = parseKindsParam(url.searchParams.get("type"))
+    const filter = {
+      kinds,
+      workflowId: url.searchParams.get("workflow") || undefined,
+      actor: url.searchParams.get("actor") || undefined,
+      runId: url.searchParams.get("run") || undefined,
+      channel: url.searchParams.get("channel") || undefined,
+    }
+
+    // Initial "status" snapshot — matches legacy /events shape so existing
+    // consumers (dashboard status widget) keep working even after this
+    // upgrade.
     const agents = this.registry.list()
     const active = agents.filter(a => a.active > 0)
     res.write(`event: status\ndata: ${JSON.stringify({
@@ -1298,7 +1331,18 @@ export class AgentXDaemon {
     })}\n\n`)
 
     this.sseClients.add(res)
-    req.on("close", () => this.sseClients.delete(res))
+
+    // Bridge EventBus → this SSE client. Events that don't match the
+    // filter are dropped before serialisation.
+    const unsubscribe = this.events.subscribe(filter, (e) => {
+      try { res.write(`event: ${e.kind}\ndata: ${JSON.stringify(e)}\n\n`) }
+      catch { /* client disconnected — unsubscribe below fires on close */ }
+    })
+
+    req.on("close", () => {
+      unsubscribe()
+      this.sseClients.delete(res)
+    })
   }
 
   /**
