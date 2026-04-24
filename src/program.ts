@@ -22,6 +22,7 @@ import { notifications } from "@/commands/notifications"
 import { retention } from "@/commands/retention"
 import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
+import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
@@ -78,6 +79,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(actor)
     .addCommand(role)
     .addCommand(watch)
+    .addCommand(memoryCmd)
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)
