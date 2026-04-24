@@ -832,50 +832,54 @@ export class AgentRegistry {
     // it to Claude CLI's --append-system-prompt arg.
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
 
-    // Pre-flight gates (claude-code tier only). Two separate heuristics that
-    // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
-    // subprocess to reproduce the same failure:
-    //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
-    //       at the org level. A cold dispatch's fresh cache-create spills
-    //       past the regular allotment and gets rejected.
-    //   (2) Quota gate — when our own dispatch-budget counters say the
-    //       fleet has burned through the hourly or 5-hour cap. Warm
-    //       sessions still pass; cold dispatches are deferred.
-    // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
-    // replay keeps them inside the regular allotment.
-    if (state.def.tier === "claude-code") {
-      const hasWarmSession = Boolean(resumeSessionId)
-      const gates = [
-        preflightOverageGate(hasWarmSession),
-        preflightQuotaGate(hasWarmSession),
-      ]
-      const abort = gates.find((g) => g && g.abort)
-      if (abort) {
-        state.errors++
-        this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
-        const preflightResponse: AgentResponse = {
-          content: "",
-          error: abort.message,
-          duration: 0,
-        }
-        if (!onDelta) {
-          output.buffer = `[error] ${abort.message}`
-          for (const sub of output.subscribers) {
-            try { sub(output.buffer) } catch { /* */ }
-          }
-        }
-        return preflightResponse
-      }
-      // Past the gates — commit the dispatch to the rolling budget and log
-      // a warning if we've crossed warnRatio so the operator sees pressure
-      // building before it turns into rejections.
-      recordClaudeCodeDispatch()
-      const warning = warnIfNearingCap()
-      if (warning) this.log(`[${task.agentId}] ${warning}`)
-    }
-
     let finalResponse: AgentResponse | undefined
     try {
+      // Pre-flight gates (claude-code tier only). Two separate heuristics that
+      // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
+      // subprocess to reproduce the same failure:
+      //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
+      //       at the org level. A cold dispatch's fresh cache-create spills
+      //       past the regular allotment and gets rejected.
+      //   (2) Quota gate — when our own dispatch-budget counters say the
+      //       fleet has burned through the hourly or 5-hour cap. Warm
+      //       sessions still pass; cold dispatches are deferred.
+      // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
+      // replay keeps them inside the regular allotment.
+      //
+      // Kept inside the try so the `finally` below still runs — otherwise a
+      // short-circuit return leaks runningTask bookkeeping.
+      if (state.def.tier === "claude-code") {
+        const hasWarmSession = Boolean(resumeSessionId)
+        const gates = [
+          preflightOverageGate(hasWarmSession),
+          preflightQuotaGate(hasWarmSession),
+        ]
+        const abort = gates.find((g) => g && g.abort)
+        if (abort) {
+          state.errors++
+          this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
+          const preflightResponse: AgentResponse = {
+            content: "",
+            error: abort.message,
+            duration: 0,
+          }
+          if (!onDelta) {
+            output.buffer = `[error] ${abort.message}`
+            for (const sub of output.subscribers) {
+              try { sub(output.buffer) } catch { /* */ }
+            }
+          }
+          finalResponse = preflightResponse
+          return preflightResponse
+        }
+        // Past the gates — commit the dispatch to the rolling budget and log
+        // a warning if we've crossed warnRatio so the operator sees pressure
+        // building before it turns into rejections.
+        recordClaudeCodeDispatch()
+        const warning = warnIfNearingCap()
+        if (warning) this.log(`[${task.agentId}] ${warning}`)
+      }
+
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
       finalResponse = response
 
