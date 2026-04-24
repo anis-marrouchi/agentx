@@ -15,6 +15,7 @@ import { PatternStore, extractPatterns } from "./patterns"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
@@ -824,8 +825,18 @@ export class AgentRegistry {
       (historyContext?.length ?? 0) +
       (systemPromptAppend?.length ?? 0) +
       (task.message?.length ?? 0)
+    const sizeParts = {
+      history: historyContext?.length ?? 0,
+      sysPrompt: systemPromptAppend?.length ?? 0,
+      message: task.message?.length ?? 0,
+    }
+    // Record every dispatch for drift detection, warn when growing.
+    const sizeKey = promptSizeKey(task.agentId, channel, chatId)
+    recordPromptSize(sizeKey, agentxContextBytes, sizeParts)
+    const driftWarning = warnIfPromptGrowing(sizeKey)
+    if (driftWarning) this.log(`[${task.agentId}] ${driftWarning}`)
     if (agentxContextBytes > 16_000) {
-      this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${historyContext?.length ?? 0}, sysPrompt=${systemPromptAppend?.length ?? 0}, message=${task.message?.length ?? 0})`)
+      this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${sizeParts.history}, sysPrompt=${sizeParts.sysPrompt}, message=${sizeParts.message})`)
     }
 
     // Attach the cacheable preamble onto the task so runtime.ts can forward
