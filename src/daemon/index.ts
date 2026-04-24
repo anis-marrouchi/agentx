@@ -29,6 +29,7 @@ import {
 } from "@/workflows"
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
+import { AgentMemory } from "@/agents/agent-memory"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { ServiceMatcher } from "@/services/matcher"
@@ -60,6 +61,12 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
+  /** Structured per-agent memory (Claude-Code-style user / feedback /
+   *  project / reference). Deliberately owned by the daemon (not the
+   *  registry) so HTTP callers — including an agent curling from its
+   *  own Claude Code session — can write without going through the
+   *  dispatcher. Inlined into agent system prompts happens elsewhere. */
+  private readonly agentMemory: AgentMemory = new AgentMemory()
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -1439,6 +1446,16 @@ export class AgentXDaemon {
         return
       }
 
+      // Agent-memory API — lets running Claude Code sessions save their
+      // own experiential memory from inside a Bash tool call.
+      //   GET  /api/memory?agent=<id>            → list records + MEMORY.md
+      //   GET  /api/memory/<id>?agent=<id>       → one record
+      //   POST /api/memory  body: {agentId, type, name, description, body, append?}
+      //   DELETE /api/memory/<name>?agent=<id>   → remove
+      if (path.startsWith("/api/memory")) {
+        if (await this.handleMemoryApi(req, res, path, url)) return
+      }
+
       // BPM user-task API: list + submit. Lives on the main daemon
       // because the dispatcher is the one that drives run resumes.
       if (path.startsWith("/api/workflows/tasks") && this.workflowDispatcher) {
@@ -2491,6 +2508,74 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
   private json(res: ServerResponse, status: number, data: unknown): void {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
+  }
+
+  /** Agent-memory HTTP surface. Agents call this from inside a Claude
+   *  Code session via `Bash` + `curl` — see the `remember` skill. The
+   *  heavy lifting is in `AgentRegistry.agentMemory` (AgentMemory); this
+   *  is a thin JSON wrapper that validates + delegates. */
+  private async handleMemoryApi(
+    req: IncomingMessage, res: ServerResponse, path: string, url: URL,
+  ): Promise<boolean> {
+    const mem = this.agentMemory
+
+    // GET /api/memory?agent=<id>
+    if (req.method === "GET" && path === "/api/memory") {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      this.json(res, 200, { agent, memories: mem.list(agent), index: mem.indexMarkdown(agent) })
+      return true
+    }
+    // GET /api/memory/:name?agent=<id>
+    const oneMatch = req.method === "GET" && path.match(/^\/api\/memory\/([^\/?]+)$/)
+    if (oneMatch) {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      const rec = mem.get(agent, decodeURIComponent(oneMatch[1]))
+      if (!rec) { this.json(res, 404, { error: "no such memory" }); return true }
+      this.json(res, 200, { memory: rec })
+      return true
+    }
+    // POST /api/memory — write a memory
+    if (req.method === "POST" && path === "/api/memory") {
+      let body: any
+      try { body = await readJsonBody(req) } catch (e: any) {
+        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
+      }
+      const agentId = typeof body?.agentId === "string" ? body.agentId : ""
+      const type    = typeof body?.type === "string" ? body.type : ""
+      const name    = typeof body?.name === "string" ? body.name : ""
+      const description = typeof body?.description === "string" ? body.description : ""
+      const newBody = typeof body?.body === "string" ? body.body : ""
+      const append  = body?.append === true
+      if (!agentId || !type || !name || !description || !newBody) {
+        this.json(res, 400, { error: "required fields: agentId, type, name, description, body" })
+        return true
+      }
+      try {
+        let finalBody = newBody
+        if (append) {
+          const existing = mem.get(agentId, name)
+          if (existing) finalBody = `${existing.body.trimEnd()}\n\n${newBody.trim()}`
+        }
+        const rec = mem.save({ agentId, type: type as any, name, description, body: finalBody })
+        this.json(res, 200, { ok: true, memory: rec })
+      } catch (e: any) {
+        this.json(res, 400, { error: e?.message || "save failed" })
+      }
+      return true
+    }
+    // DELETE /api/memory/:name?agent=<id>
+    const delMatch = req.method === "DELETE" && path.match(/^\/api\/memory\/([^\/?]+)$/)
+    if (delMatch) {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      const ok = mem.remove(agent, decodeURIComponent(delMatch[1]))
+      if (!ok) { this.json(res, 404, { error: "no such memory" }); return true }
+      this.json(res, 200, { ok: true })
+      return true
+    }
+    return false
   }
 
   /** Mesh receiver for forwarded workflow events. Peers POST the same
