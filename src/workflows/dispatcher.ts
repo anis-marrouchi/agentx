@@ -6,6 +6,7 @@ import type { WorkflowStore } from "./store"
 import { TaskStore } from "./task-store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
+import type { EventBus } from "../daemon/event-bus"
 import { ActorStore } from "../actors/store"
 import { validateSubmission } from "../forms/validator"
 import type { FormSubmission } from "../forms/types"
@@ -92,6 +93,11 @@ export interface DispatcherOptions {
   timers?: TimerService
   /** Optional signal bus. Workflow-scoped default if omitted. */
   signals?: SignalBus
+  /** Optional observability bus. When present, the dispatcher emits
+   *  run-phase events (created / ok / failed / paused / resumed /
+   *  completed) so operators can watch live via SSE or CLI. No-op when
+   *  absent — the dispatcher runs exactly as before. */
+  events?: EventBus
 }
 
 /** Subset of channel adapter API used for the auto-acknowledge lifecycle on
@@ -124,6 +130,7 @@ export class WorkflowDispatcher {
   readonly tasks: TaskStore
   readonly timers: TimerService
   readonly signals: SignalBus
+  readonly events?: EventBus
   private readonly renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
@@ -152,6 +159,7 @@ export class WorkflowDispatcher {
     this.tasks = opts.tasks ?? new TaskStore()
     this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
     this.signals = opts.signals ?? new SignalBus()
+    this.events = opts.events
     this.renderUserTask = opts.renderUserTask
 
     // Register the timer-fire callback once. TimerService is a per-node
@@ -162,6 +170,23 @@ export class WorkflowDispatcher {
     // signal. Running a full scan of paused runs per emission is cheap in
     // v1 (runs are fs-backed and typically numbered in the hundreds).
     this.signals.subscribe((emission) => this.resumeFromSignal(emission))
+  }
+
+  /** Publish a run-phase event if an EventBus is configured. No-op
+   *  otherwise. Used by the walk loop + resume paths so operators can
+   *  Monitor runs live. */
+  private emitRunEvent(args: {
+    runId: string; workflowId: string; nodeId?: string; phase: string; status?: string; note?: string; homeNode?: string
+  }): void {
+    if (!this.events) return
+    try {
+      this.events.publish({
+        kind: "run",
+        runId: args.runId, workflowId: args.workflowId,
+        nodeId: args.nodeId, phase: args.phase,
+        status: args.status, note: args.note, homeNode: args.homeNode,
+      })
+    } catch { /* defensive — a bus failure never breaks the engine */ }
   }
 
   /** Serialise a state-mutating operation against all other commits for
@@ -187,6 +212,17 @@ export class WorkflowDispatcher {
       emittedAt: new Date().toISOString(),
     }
     this.signals.emit(emission)
+    if (this.events) {
+      try {
+        this.events.publish({
+          kind: "signal",
+          name: emission.name,
+          scope: emission.scope,
+          workflowId: emission.workflowId || undefined,
+          payload: emission.payload,
+        })
+      } catch { /* ignore */ }
+    }
     return emission
   }
 
@@ -235,6 +271,7 @@ export class WorkflowDispatcher {
           context: { ...fresh.context, [fresh.pausedAt.nodeId]: output },
         })
         this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from signal "${emission.name}"`)
+        this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: fresh.pausedAt.nodeId, phase: "resumed", status: "running", note: `signal:${emission.name}` })
       })
       void this.walk(wf, run.id, `signal:${emission.name}`)
         .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-signal failed: ${e.message}`))
@@ -268,6 +305,7 @@ export class WorkflowDispatcher {
         context: { ...fresh.context, [t.nodeId]: output },
       })
       this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
+      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: t.nodeId, phase: "resumed", status: "running", note: `timer:${t.id}` })
     })
     void this.walk(wf, t.runId, `timer:${t.id}`)
       .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
@@ -509,6 +547,7 @@ export class WorkflowDispatcher {
         initialContext: { [init.triggerId]: event.payload },
       })
       this.log(`[workflow:${workflow.id}] run ${run.id} created from trigger "${init.triggerId}" for ${entityRef.id}`)
+      this.emitRunEvent({ runId: run.id, workflowId: workflow.id, phase: "created", status: run.status, homeNode: run.homeNode })
       // Channel-triggered: kick off the react+typing lifecycle so users see
       // the same "I'm on it" affordances they get from the router's path.
       if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
@@ -700,6 +739,7 @@ export class WorkflowDispatcher {
           nextPending: remainingFromPending,
           status: statusUpdate,
         })
+        this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "failed", status: statusUpdate ?? fresh.status, note: result.error.slice(0, 200) })
         return
       }
       if (result.paused && result.pausedAt) {
@@ -732,6 +772,7 @@ export class WorkflowDispatcher {
           status: "paused",
           pausedAt,
         })
+        this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "paused", status: "paused", note: pausedAt.kind })
         if (spawnedChild) this.kickChildWalk(spawnedChild)
         if (pausedAt.kind === "timerWait") {
           try {
@@ -744,9 +785,17 @@ export class WorkflowDispatcher {
             this.log(`[workflow:${workflow.id}] timer schedule failed: ${e.message}`)
           }
         }
-        if (pausedAt.kind === "userTask" && this.renderUserTask) {
+        if (pausedAt.kind === "userTask") {
           const taskRecord = this.tasks.get(pausedAt.taskId)
-          if (taskRecord) {
+          if (taskRecord && this.events) {
+            try {
+              this.events.publish({
+                kind: "task", taskId: taskRecord.id, workflowId: workflow.id, runId,
+                phase: "created", title: taskRecord.title, assignedTo: taskRecord.assignedTo,
+              })
+            } catch { /* ignore */ }
+          }
+          if (taskRecord && this.renderUserTask) {
             try { await this.renderUserTask(taskRecord) }
             catch (e: any) { this.log(`[workflow:${workflow.id}] userTask render failed: ${e.message}`) }
           }
@@ -791,6 +840,12 @@ export class WorkflowDispatcher {
         status: statusUpdate,
         context: newContext,
         joinCounters,
+      })
+
+      this.emitRunEvent({
+        runId, workflowId: workflow.id, nodeId,
+        phase: terminal ? "completed" : "ok",
+        status: updated?.status ?? fresh.status,
       })
 
       if (result.emitSignal) {
@@ -914,6 +969,7 @@ export class WorkflowDispatcher {
         context: { ...parent.context, [args.parentNodeId]: childOutput },
       })
       this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
+      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: args.parentNodeId, phase: "resumed", status: "running", note: `child:${args.childRun.id}` })
     })
     void this.walk(parentWf, args.parentRunId, `child:${args.childRun.id}`)
   }
@@ -975,6 +1031,17 @@ export class WorkflowDispatcher {
         submittedAction: submission.action,
       })
       this.log(`[workflow:${parentWf.id}] run ${parent.id} resumed from userTask ${taskId}`)
+      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: task.nodeId, phase: "resumed", status: "running", note: `task:${taskId}` })
+      if (this.events) {
+        try {
+          this.events.publish({
+            kind: "task",
+            taskId, workflowId: parentWf.id, runId: parent.id,
+            phase: "submitted", submittedBy,
+            title: task.title, assignedTo: task.assignedTo,
+          })
+        } catch { /* ignore */ }
+      }
       return { ok: true, runId: parent.id }
     })
     if (!commitResult.ok) return commitResult

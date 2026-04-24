@@ -15,6 +15,7 @@ import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
+import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
@@ -73,26 +74,11 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
-  // SQLite handle from openDb(). Null when the native binding failed; the
-  // /health endpoint and any read-path consumer falls back to JSON when so.
   private db: import("better-sqlite3").Database | null = null
-  // Move B — loaded JS/TS plugins. Populated in start() (async), iterated
-  // in startChannels() to fold plugin-registered channels into the router,
-  // and torn down in stop() via each plugin's dispose() — which removes
-  // bus subscribers AND calls the plugin's optional teardown().
   private loadedPlugins: LoadedPlugin[] = []
-  /** Structured per-agent memory (Claude-Code-style user / feedback /
-   *  project / reference). Deliberately owned by the daemon (not the
-   *  registry) so HTTP callers — including an agent curling from its
-   *  own Claude Code session — can write without going through the
-   *  dispatcher. Inlined into agent system prompts happens elsewhere. */
   private readonly agentMemory: AgentMemory = new AgentMemory()
-  /** Operator-curated contact directory backing /send/contact and the
-   *  agentx_send_contact MCP tool. Loaded from .agentx/contacts.json on
-   *  startup and on /reload. Initialized in the constructor body (after
-   *  `this.log` is assigned) since the directory's reload errors must
-   *  surface through the daemon logger. */
   private contacts!: ContactDirectory
+  readonly events: EventBus = new EventBus()
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -186,6 +172,17 @@ export class AgentXDaemon {
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
+      // Bridge mesh peer-state transitions into the event bus so
+      // operators watching /events see recoveries + losses in real time.
+      this.mesh.onPeerChange((e) => {
+        this.events.publish({
+          kind: "mesh",
+          peer: e.peer,
+          healthy: e.healthy,
+          skills: e.skills,
+          delta: e.delta,
+        })
+      })
       // Let the registry reach the mesh so it can forward unknown-agent
       // tasks to a peer that advertises the requested agent. Keeps
       // workflow authoring portable: a workflow that references
@@ -1471,6 +1468,7 @@ export class AgentXDaemon {
       actors: actorStore,
       tasks: taskStore,
       timers: timerService,
+      events: this.events,
       renderUserTask,
       log: (m) => this.log(m),
     })
@@ -1586,7 +1584,22 @@ export class AgentXDaemon {
       "Access-Control-Allow-Origin": "*",
     })
 
-    // Send current status as first event
+    // Parse filter query-string. ?type=run,task filters which event
+    // kinds are forwarded; ?workflow=, ?actor=, ?run=, ?channel=
+    // narrow further. Empty query = unfiltered (all kinds forward).
+    const url = new URL(req.url || "/", `http://${req.headers.host || "_"}`)
+    const kinds = parseKindsParam(url.searchParams.get("type"))
+    const filter = {
+      kinds,
+      workflowId: url.searchParams.get("workflow") || undefined,
+      actor: url.searchParams.get("actor") || undefined,
+      runId: url.searchParams.get("run") || undefined,
+      channel: url.searchParams.get("channel") || undefined,
+    }
+
+    // Initial "status" snapshot — matches legacy /events shape so existing
+    // consumers (dashboard status widget) keep working even after this
+    // upgrade.
     const agents = this.registry.list()
     const active = agents.filter(a => a.active > 0)
     res.write(`event: status\ndata: ${JSON.stringify({
@@ -1597,7 +1610,18 @@ export class AgentXDaemon {
     })}\n\n`)
 
     this.sseClients.add(res)
-    req.on("close", () => this.sseClients.delete(res))
+
+    // Bridge EventBus → this SSE client. Events that don't match the
+    // filter are dropped before serialisation.
+    const unsubscribe = this.events.subscribe(filter, (e) => {
+      try { res.write(`event: ${e.kind}\ndata: ${JSON.stringify(e)}\n\n`) }
+      catch { /* client disconnected — unsubscribe below fires on close */ }
+    })
+
+    req.on("close", () => {
+      unsubscribe()
+      this.sseClients.delete(res)
+    })
   }
 
   /**

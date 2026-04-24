@@ -42,6 +42,19 @@ export class A2AMesh {
   private healthTimer?: ReturnType<typeof setInterval>
   private config: DaemonConfig
   private log: (...args: unknown[]) => void
+  /** Optional callback fired on peer state transitions (recovered /
+   *  lost / skills changed). Daemon wires this to the event bus for
+   *  live operator visibility. */
+  private peerChangeCallback?: (event: {
+    peer: string; healthy: boolean; skills: string[]; delta: "recovered" | "lost" | "skills-changed"
+  }) => void
+
+  /** Register a listener for peer state transitions. Only one listener
+   *  is kept — repeat calls overwrite. Used by the daemon to bridge
+   *  into the EventBus without introducing a circular dependency. */
+  onPeerChange(cb: typeof A2AMesh.prototype.peerChangeCallback): void {
+    this.peerChangeCallback = cb
+  }
 
   constructor(
     config: DaemonConfig,
@@ -202,20 +215,24 @@ export class A2AMesh {
 
       // Success — clear failure counter, flip healthy on if it was off.
       const wasDown = !state.healthy
+      const prevSkills = new Set(state.agents.map((a) => a.id))
       state.healthy = true
       state.lastCheck = new Date()
       state.agentCard = card
       state.agents = card.skills || []
       state.consecutiveFailures = 0
       state.lastError = undefined
+      const nextSkills = new Set(state.agents.map((a) => a.id))
+      const skillsChanged = prevSkills.size !== nextSkills.size || [...nextSkills].some((s) => !prevSkills.has(s))
 
-      // Only log on state transition (healthy→healthy is spammy when the
-      // health check interval is 60s). Still log "recovered" transitions
-      // so operators see a peer coming back.
       if (wasDown) {
         this.log(`Peer "${name}" recovered: ${card.name} (${state.agents.length} skills)`)
+        this.peerChangeCallback?.({ peer: name, healthy: true, skills: [...nextSkills], delta: "recovered" })
       } else {
         this.log(`Peer "${name}" healthy: ${card.name} (${state.agents.length} skills)`)
+        if (skillsChanged) {
+          this.peerChangeCallback?.({ peer: name, healthy: true, skills: [...nextSkills], delta: "skills-changed" })
+        }
       }
     } catch (e: any) {
       state.lastCheck = new Date()
@@ -227,6 +244,7 @@ export class A2AMesh {
       if (state.consecutiveFailures >= UNHEALTHY_AFTER && state.healthy) {
         state.healthy = false
         this.log(`Peer "${name}" unreachable (${state.consecutiveFailures} consecutive failures): ${e.message}`)
+        this.peerChangeCallback?.({ peer: name, healthy: false, skills: state.agents.map((a) => a.id), delta: "lost" })
       } else if (state.consecutiveFailures < UNHEALTHY_AFTER) {
         this.log(`Peer "${name}" probe failed (${state.consecutiveFailures}/${UNHEALTHY_AFTER}): ${e.message}`)
       }
