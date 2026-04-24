@@ -30,6 +30,7 @@ import {
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
+import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { ServiceMatcher } from "@/services/matcher"
@@ -249,6 +250,12 @@ export class AgentXDaemon {
     for (const agent of this.registry.list()) {
       this.log(`    ${agent.id} (${agent.tier}) → ${agent.workspace}`)
     }
+
+    // Install the `remember` skill + sync existing memory into each
+    // agent's workspace. Write-if-absent for the skill (respect any
+    // customizations); replace-in-place for the CLAUDE.md sentinel
+    // block and the explicit .agentx-memory.md file.
+    this.installAgentMemorySurface()
 
     // Print cron summary
     const cronJobs = this.cron.list()
@@ -2510,6 +2517,40 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
     res.end(JSON.stringify(data, null, 2))
   }
 
+  /** Boot-time: install the `remember` skill into every agent workspace
+   *  that doesn't already have it, and sync each agent's existing memory
+   *  into <workspace>/CLAUDE.md + .agentx-memory.md. Idempotent — safe to
+   *  run on every daemon start. Write-if-absent for the skill, sentinel-
+   *  replace for CLAUDE.md, so operator edits survive. */
+  private installAgentMemorySurface(): void {
+    for (const agent of this.registry.list()) {
+      const ws = agent.workspace
+      if (!ws || !existsSync(ws)) continue
+      try {
+        const skillsDir = resolve(ws, ".claude", "skills")
+        mkdirSync(skillsDir, { recursive: true })
+        const skillPath = resolve(skillsDir, REMEMBER_SKILL_FILENAME)
+        if (!existsSync(skillPath)) {
+          writeFileSync(skillPath, REMEMBER_SKILL_BODY)
+          this.log(`  memory-skill: installed remember.md → ${agent.id}`)
+        }
+        // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
+        // sentinel block from whatever is currently on disk.
+        this.agentMemory.syncToWorkspace(agent.id, ws)
+      } catch (e: any) {
+        this.log(`  memory-skill: ${agent.id} install failed — ${e?.message ?? e}`)
+      }
+    }
+  }
+
+  /** Look up an agent's workspace from the live registry. Returns null
+   *  for agents the daemon doesn't know about (e.g., a stale memory
+   *  entry for a since-removed agent). */
+  private workspaceFor(agentId: string): string | null {
+    for (const a of this.registry.list()) if (a.id === agentId) return a.workspace
+    return null
+  }
+
   /** Agent-memory HTTP surface. Agents call this from inside a Claude
    *  Code session via `Bash` + `curl` — see the `remember` skill. The
    *  heavy lifting is in `AgentRegistry.agentMemory` (AgentMemory); this
@@ -2559,7 +2600,9 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           if (existing) finalBody = `${existing.body.trimEnd()}\n\n${newBody.trim()}`
         }
         const rec = mem.save({ agentId, type: type as any, name, description, body: finalBody })
-        this.json(res, 200, { ok: true, memory: rec })
+        const ws = this.workspaceFor(agentId)
+        if (ws) { try { mem.syncToWorkspace(agentId, ws) } catch { /* best effort */ } }
+        this.json(res, 200, { ok: true, memory: rec, syncedToWorkspace: !!ws })
       } catch (e: any) {
         this.json(res, 400, { error: e?.message || "save failed" })
       }
@@ -2572,6 +2615,8 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
       const ok = mem.remove(agent, decodeURIComponent(delMatch[1]))
       if (!ok) { this.json(res, 404, { error: "no such memory" }); return true }
+      const ws = this.workspaceFor(agent)
+      if (ws) { try { mem.syncToWorkspace(agent, ws) } catch { /* best effort */ } }
       this.json(res, 200, { ok: true })
       return true
     }

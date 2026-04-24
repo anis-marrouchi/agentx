@@ -149,6 +149,64 @@ export class AgentMemory {
     return safeRead(path) ?? ""
   }
 
+  /** Push the agent's memory into its workspace so Claude Code sessions
+   *  pick it up automatically. Does two things:
+   *
+   *  1. Writes `<workspace>/.agentx-memory.md` — full MEMORY.md content,
+   *     explicit file the skill can `Read` at session start.
+   *  2. Merges that same content into `<workspace>/CLAUDE.md` between
+   *     sentinel comments so Claude Code auto-loads it into the cached
+   *     system context on every session. Idempotent: subsequent syncs
+   *     replace the sentinel block.
+   *
+   *  Never touches content outside the sentinel block — if the file
+   *  doesn't exist, creates it with just the sentinels. Safe to call
+   *  on any save / delete. */
+  syncToWorkspace(agentId: string, workspacePath: string): void {
+    if (!workspacePath) return
+    const memory = this.indexMarkdown(agentId).trim()
+
+    // 1. Explicit file for the `remember` skill to Read if it wants to.
+    const explicitPath = resolve(workspacePath, ".agentx-memory.md")
+    if (memory) {
+      writeFileSync(explicitPath, memory + "\n")
+    } else if (existsSync(explicitPath)) {
+      unlinkSync(explicitPath)
+    }
+
+    // 2. Sentinel-merged into CLAUDE.md for auto-inject.
+    const claudePath = resolve(workspacePath, "CLAUDE.md")
+    const start = "<!-- AGENTX-MEMORY-START — auto-managed by agentx; edit via `agentx memory` -->"
+    const end   = "<!-- AGENTX-MEMORY-END -->"
+    const block = memory
+      ? `${start}\n${memory}\n${end}`
+      : ""
+
+    const existing = safeRead(claudePath) ?? ""
+    const startIdx = existing.indexOf(start)
+    const endIdx   = existing.indexOf(end)
+
+    let next: string
+    if (startIdx >= 0 && endIdx > startIdx) {
+      // Replace existing sentinel block (or remove it if memory is empty).
+      const before = existing.slice(0, startIdx).replace(/\n+$/, "")
+      const after  = existing.slice(endIdx + end.length).replace(/^\n+/, "")
+      next = block
+        ? [before, block, after].filter(Boolean).join("\n\n") + "\n"
+        : [before, after].filter(Boolean).join("\n\n") + (before || after ? "\n" : "")
+    } else if (block) {
+      // No prior block — append to the end of CLAUDE.md (creates the file
+      // if needed). Keeps any existing content untouched.
+      next = existing
+        ? existing.replace(/\n+$/, "") + "\n\n" + block + "\n"
+        : block + "\n"
+    } else {
+      // Empty memory + no prior block → nothing to do.
+      return
+    }
+    writeFileSync(claudePath, next)
+  }
+
   /** Regenerate MEMORY.md from the on-disk files. Called automatically
    *  after every save / remove; safe to call manually. */
   rewriteIndex(agentId: string): void {

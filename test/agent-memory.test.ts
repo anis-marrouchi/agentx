@@ -114,3 +114,85 @@ describe("AgentMemory", () => {
     expect(s.get("a", "deep_go_expertise")?.name).toBe("deep_go_expertise")
   })
 })
+
+describe("AgentMemory.syncToWorkspace", () => {
+  let ws: string
+  beforeEach(() => {
+    rmSync(ROOT, { recursive: true, force: true })
+    mkdirSync(ROOT, { recursive: true })
+    ws = resolve(ROOT, "workspace-a")
+    mkdirSync(ws, { recursive: true })
+  })
+  afterEach(() => rmSync(ROOT, { recursive: true, force: true }))
+
+  const store = () => new AgentMemory({ baseDir: ROOT })
+
+  it("writes .agentx-memory.md with the full index when memories exist", () => {
+    const { readFileSync } = require("fs") as typeof import("fs")
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "role", description: "founder", body: "tl;dr" })
+    s.syncToWorkspace("a", ws)
+    const content = readFileSync(resolve(ws, ".agentx-memory.md"), "utf-8")
+    expect(content).toContain("# Memory — a")
+    expect(content).toContain("**role**")
+  })
+
+  it("creates CLAUDE.md with a sentinel block when none exists", () => {
+    const { readFileSync } = require("fs") as typeof import("fs")
+    const s = store()
+    s.save({ agentId: "a", type: "feedback", name: "x", description: "d", body: "b" })
+    s.syncToWorkspace("a", ws)
+    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
+    expect(claude).toContain("<!-- AGENTX-MEMORY-START")
+    expect(claude).toContain("<!-- AGENTX-MEMORY-END -->")
+    expect(claude).toContain("**x**")
+  })
+
+  it("preserves existing CLAUDE.md content and appends the sentinel block", () => {
+    const { readFileSync, writeFileSync } = require("fs") as typeof import("fs")
+    writeFileSync(resolve(ws, "CLAUDE.md"), "# Agent briefing\n\nI am an atlas agent.")
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "pref", description: "terse", body: "always short" })
+    s.syncToWorkspace("a", ws)
+    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
+    expect(claude).toContain("# Agent briefing")
+    expect(claude).toContain("I am an atlas agent.")
+    expect(claude).toContain("<!-- AGENTX-MEMORY-START")
+    expect(claude).toContain("**pref**")
+  })
+
+  it("replaces only the sentinel block on re-sync (idempotent)", () => {
+    const { readFileSync, writeFileSync } = require("fs") as typeof import("fs")
+    writeFileSync(resolve(ws, "CLAUDE.md"), "# Briefing\n\nUser content.")
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "p1", description: "d1", body: "b1" })
+    s.syncToWorkspace("a", ws)
+    s.save({ agentId: "a", type: "user", name: "p2", description: "d2", body: "b2" })
+    s.syncToWorkspace("a", ws)
+    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
+    // User content still there exactly once
+    expect(claude.match(/Briefing/g)?.length).toBe(1)
+    expect(claude.match(/User content/g)?.length).toBe(1)
+    // Both memories present, only one sentinel pair
+    expect(claude).toContain("**p1**")
+    expect(claude).toContain("**p2**")
+    expect(claude.match(/AGENTX-MEMORY-START/g)?.length).toBe(1)
+    expect(claude.match(/AGENTX-MEMORY-END/g)?.length).toBe(1)
+  })
+
+  it("removes the sentinel block + .agentx-memory.md when all memories are deleted", () => {
+    const { existsSync, readFileSync, writeFileSync } = require("fs") as typeof import("fs")
+    writeFileSync(resolve(ws, "CLAUDE.md"), "# Briefing\n\nUser content.")
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "x", description: "d", body: "b" })
+    s.syncToWorkspace("a", ws)
+    expect(existsSync(resolve(ws, ".agentx-memory.md"))).toBe(true)
+    s.remove("a", "x")
+    s.syncToWorkspace("a", ws)
+    expect(existsSync(resolve(ws, ".agentx-memory.md"))).toBe(false)
+    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
+    expect(claude).not.toContain("AGENTX-MEMORY-START")
+    expect(claude).toContain("Briefing")
+    expect(claude).toContain("User content")
+  })
+})
