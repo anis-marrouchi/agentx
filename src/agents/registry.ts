@@ -8,6 +8,7 @@ import { buildAgentContext, type ContextInput } from "./context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
 import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
+import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
@@ -207,6 +208,12 @@ export class AgentRegistry {
   private sessions: SessionStore
   private wikiHub: WikiHub
   private memoryStore: MemoryStore
+  /** Structured per-agent memory (Claude-Code-style: user / feedback /
+   *  project / reference). Separate from the BM25 fact store above —
+   *  that's for short-lived facts extracted from conversations; this is
+   *  for long-lived behavioural memory that inlines into the system
+   *  prompt on every task. */
+  readonly agentMemory: AgentMemory = new AgentMemory()
   private patternStore: PatternStore
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
@@ -1063,9 +1070,16 @@ export class AgentRegistry {
     // bootstrap files follow. Soul-switching mid-session produces a new
     // append-text and a new Claude cache key; that's by design — the rare
     // switch is worth a one-time cache-create cost.
+    // AgentMemory — structured per-agent memory (user / feedback /
+    // project / reference). Inlined into the cacheable system prompt so
+    // it survives --resume and shows up on every turn. Empty when the
+    // agent has no memories yet — no prompt bloat for fresh agents.
+    const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId)
+
     const systemPromptAppend = [
       state.def.systemPrompt || "",
       bootstrapContextText || "",
+      agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
 
     const contextInput: ContextInput = {

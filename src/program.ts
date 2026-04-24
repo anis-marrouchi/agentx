@@ -18,6 +18,7 @@ import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
 import { task } from "@/commands/task"
 import { actor, role } from "@/commands/actor"
+import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
@@ -70,6 +71,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(task)
     .addCommand(actor)
     .addCommand(role)
+    .addCommand(memoryCmd)
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)
