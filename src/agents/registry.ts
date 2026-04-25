@@ -469,28 +469,50 @@ export class AgentRegistry {
     const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
 
     if (state.activeTasks >= state.def.maxConcurrent) {
-      // Agent is busy — try to queue the message instead of rejecting
-      const mode = (state.def.queueMode as QueueMode) || "collect"
-      const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
-        text: task.message,
-        sender: task.context?.sender || "User",
-        timestamp: Date.now(),
-        channel: qChannel,
-        chatId: qChatId,
-        originalContext: task.context as Record<string, unknown>,
-      })
+      // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
+      // a queued result — the queue's flush callback re-routes via channels,
+      // not back to the awaiting HTTP caller. Returning `error: __queued__`
+      // surfaces as HTTP 500 on the /task endpoint and triggers an "Error
+      // from peer" comment on whatever channel the upstream is bridged to.
+      // For these callers, BLOCK and wait for a slot (up to 25 min — slightly
+      // under mesh.sendTask's 30 min default cap) instead of queueing.
+      if (qChannel === "api") {
+        const start = Date.now()
+        const maxWaitMs = 25 * 60_000
+        const pollIntervalMs = 500
+        while (state.activeTasks >= state.def.maxConcurrent) {
+          if (Date.now() - start > maxWaitMs) {
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+          }
+          await new Promise((r) => setTimeout(r, pollIntervalMs))
+        }
+        // Slot freed — fall through to normal execution path below.
+      } else {
+        // Channel callers (telegram/gitlab/whatsapp/...) already ack'd the
+        // user's message, so queueing is the right behavior — the flush
+        // callback will reply via the original channel when the slot frees.
+        const mode = (state.def.queueMode as QueueMode) || "collect"
+        const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
+          text: task.message,
+          sender: task.context?.sender || "User",
+          timestamp: Date.now(),
+          channel: qChannel,
+          chatId: qChatId,
+          originalContext: task.context as Record<string, unknown>,
+        })
 
-      if (queued === "drop") {
-        this.log(`[${task.agentId}] busy, message dropped (mode: drop)`)
-        return { content: "", error: `Agent "${task.agentId}" is busy — message dropped` }
-      }
+        if (queued === "drop") {
+          this.log(`[${task.agentId}] busy, message dropped (mode: drop)`)
+          return { content: "", error: `Agent "${task.agentId}" is busy — message dropped` }
+        }
 
-      if (queued) {
-        const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
-        this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
-        return {
-          content: "",
-          error: `__queued__:${queued}:${pending}`,
+        if (queued) {
+          const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+          this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
+          return {
+            content: "",
+            error: `__queued__:${queued}:${pending}`,
+          }
         }
       }
     }

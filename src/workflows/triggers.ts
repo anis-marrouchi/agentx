@@ -65,9 +65,10 @@ export function startWorkflowTriggers(args: {
           // dispatch() + matchByTrigger() would drop the event unless the
           // workflow's trigger.hook node had a matching `source` field —
           // which users don't set (the event IS the filter).
+          const entityId = entityKeyFromHookContext(wf.id, cfg.event!, ctx)
           await args.dispatcher.dispatchWorkflow({
             workflowId: wf.id,
-            entityRef: { backend: "hook", id: `${wf.id}:${cfg.event}` },
+            entityRef: { backend: "hook", id: entityId },
             event: {
               id: `hook:${cfg.event}:${Date.now().toString(36)}`,
               payload: { hookEvent: cfg.event, ...ctx },
@@ -83,6 +84,26 @@ export function startWorkflowTriggers(args: {
   }
 
   return { cronTimers, hookSubscribers }
+}
+
+/** Derive a per-event entity id for a hook fire. Two unrelated issues
+ *  (or MRs, or messages) MUST resolve to different entities — otherwise
+ *  the second one collides with the first's paused/running run and
+ *  either gets dropped or hijacks the paused state. Falls back to a
+ *  per-fire unique id so unknown hook shapes never silently collide. */
+function entityKeyFromHookContext(workflowId: string, event: string, ctx: Record<string, unknown>): string {
+  const project = typeof ctx.project === "string" ? ctx.project : ""
+  const iid = ctx.iid != null ? String(ctx.iid) : ""
+  if (event === "on:gitlab-issue" && project && iid) return `${workflowId}:${event}:${project}#${iid}`
+  if (event === "on:gitlab-mr" && project && iid)    return `${workflowId}:${event}:${project}!${iid}`
+  if (event === "on:gitlab-pipeline" && project) {
+    const pid = ctx.pipelineId != null ? String(ctx.pipelineId) : ""
+    if (pid) return `${workflowId}:${event}:${project}@pipeline:${pid}`
+  }
+  // Unknown / shapeless hook payloads: per-fire entity so each fire spawns
+  // its own run rather than colliding on a single shared key. Authors who
+  // want stickiness can move to a custom matcher later.
+  return `${workflowId}:${event}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function scheduleCron(

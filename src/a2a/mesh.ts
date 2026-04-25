@@ -1,8 +1,18 @@
 import type { MeshPeer, DaemonConfig } from "@/daemon/config"
 import type { AgentCard, AgentSkill } from "./types"
 import { A2AClient } from "./client"
+import { Agent as UndiciAgent, fetch as undiciFetch } from "undici"
 
 // --- A2A Mesh: peer discovery, health checks, agent directory ---
+
+/** Custom undici dispatcher used by sendTask: peer agent calls can
+ *  block writing response headers for the full duration of the agent
+ *  run (often 5–30 min), so the default 300s headersTimeout has to be
+ *  disabled. AbortController on the call site enforces our actual cap. */
+const longTaskDispatcher = new UndiciAgent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+})
 
 export interface PeerState {
   peer: MeshPeer
@@ -209,21 +219,30 @@ export class A2AMesh {
     }
 
     // Agent tasks frequently run for minutes (Claude Code sessions in
-    // particular). Node's default undici fetch aborts at 300s, which
-    // surfaces as an opaque "fetch failed" — exactly what tripped the
-    // gitlab-sdlc-loop implement-code step. Default to 30 minutes and
-    // let callers pass their workflow's agent-node timeoutMinutes when
-    // they know a tighter bound.
+    // particular). Two timeout layers to defeat:
+    //
+    //   1. AbortController on our side — explicit request timeout. Default 30 min.
+    //   2. undici dispatcher's `headersTimeout` (300s default) — fires
+    //      independently of AbortController while the peer is still
+    //      synchronously processing the agent task before writing
+    //      response headers. This is what surfaces as the opaque
+    //      "fetch failed" exactly 5 minutes in. Per-call dispatcher
+    //      with disabled headersTimeout/bodyTimeout fixes it.
     const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
-    let res: Response
+    // Use undici's own fetch — the Node global `fetch` ignores the
+    // `dispatcher` option (its undici instance is internal and separate
+    // from this package's). Without our custom dispatcher, headersTimeout
+    // would still default to 300s and abort before the agent finishes.
+    let res: Awaited<ReturnType<typeof undiciFetch>>
     try {
-      res = await fetch(url, {
+      res = await undiciFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ agent, message: text }),
         signal: controller.signal,
+        dispatcher: longTaskDispatcher,
       })
     } catch (e: any) {
       clearTimeout(timer)
