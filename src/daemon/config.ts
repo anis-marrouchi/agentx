@@ -33,6 +33,12 @@ const providerConfigSchema = z.object({
   baseUrl: z.string().optional(),
 })
 
+const mcpServerSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()).default([]),
+  env: z.record(z.string(), z.string()).optional(),
+})
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -41,6 +47,10 @@ const agentConfigSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   mentions: z.array(z.string()).default([]),
+  /** MCP servers this agent's Claude Code session should load. Synced
+   *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
+   *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
+  mcp: z.record(z.string(), mcpServerSchema).optional(),
   maxConcurrent: z.number().default(1),
   /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder

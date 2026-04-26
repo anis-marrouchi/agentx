@@ -30,6 +30,7 @@ import {
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
+import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
@@ -256,6 +257,11 @@ export class AgentXDaemon {
     // customizations); replace-in-place for the CLAUDE.md sentinel
     // block and the explicit .agentx-memory.md file.
     this.installAgentMemorySurface()
+
+    // Sync each agent's MCP server config to <workspace>/.mcp.json.
+    // Operator-owned files (no agentx marker) are skipped; only files
+    // we wrote ourselves are rewritten or removed.
+    this.installAgentMcpConfig()
 
     // Print cron summary
     const cronJobs = this.cron.list()
@@ -2539,6 +2545,42 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         this.agentMemory.syncToWorkspace(agent.id, ws)
       } catch (e: any) {
         this.log(`  memory-skill: ${agent.id} install failed — ${e?.message ?? e}`)
+      }
+    }
+  }
+
+  /** Boot-time: sync each agent's `mcp` config block to
+   *  <workspace>/.mcp.json. Mirrors installAgentMemorySurface — same
+   *  ownership semantics, marker-based to preserve operator edits. */
+  private installAgentMcpConfig(): void {
+    for (const [agentId, def] of Object.entries(this.config.agents)) {
+      const ws = def.workspace
+      if (!ws || !existsSync(ws)) continue
+      const mcp = ((def as any).mcp ?? {}) as McpServerMap
+      try {
+        const result = syncMcpToWorkspace(ws, mcp)
+        switch (result) {
+          case "installed":
+            this.log(`  mcp: installed ${Object.keys(mcp).length} server(s) → ${agentId}`)
+            break
+          case "updated":
+            this.log(`  mcp: updated .mcp.json (${Object.keys(mcp).length} server(s)) → ${agentId}`)
+            break
+          case "removed":
+            this.log(`  mcp: removed managed .mcp.json (config now empty) → ${agentId}`)
+            break
+          case "skipped-operator-owned":
+            // Only worth surfacing when there's a config the operator
+            // is silently overriding. Otherwise stay quiet.
+            if (Object.keys(mcp).length > 0) {
+              this.log(`  mcp: ${agentId} has operator-owned .mcp.json — skipping (delete file or marker to let agentx manage)`)
+            }
+            break
+          case "noop":
+            break
+        }
+      } catch (e: any) {
+        this.log(`  mcp: ${agentId} install failed — ${e?.message ?? e}`)
       }
     }
   }
