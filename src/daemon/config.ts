@@ -51,6 +51,11 @@ const agentConfigSchema = z.object({
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
   mcp: z.record(z.string(), mcpServerSchema).optional(),
+  /** Per-agent override for the global `session.contextStrategy`. Lets
+   *  one agent run `planner` (smaller upfront context, more tool-driven
+   *  exploration) while siblings stay on `layered`. Used for agents that
+   *  consistently bloat their cache via large workspace reads. */
+  contextStrategy: z.enum(["layered", "planner"]).optional(),
   maxConcurrent: z.number().default(1),
   /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder

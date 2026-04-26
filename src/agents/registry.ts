@@ -721,8 +721,10 @@ export class AgentRegistry {
     // Per-task override (for benchmarks) wins over config default.
     // Fail-open: if the planner errors or times out, we fall through with
     // the layered values already computed above.
+    // Resolution order: per-task override (benchmarks) → per-agent
+    // override (def.contextStrategy) → global config default.
     const strategy: "layered" | "planner" =
-      task.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
+      task.contextStrategy ?? state.def.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
     if (strategy === "planner") {
