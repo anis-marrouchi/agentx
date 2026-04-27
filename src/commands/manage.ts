@@ -890,8 +890,9 @@ references
 
 references
   .command("discover <namespace>")
-  .description("scan installed skills (and optionally agentx.json) and write detected facts to .agentx/references/<namespace>/")
+  .description("scan installed skills and write detected facts to .agentx/references/<namespace>/")
   .option("--cwd <cwd>", "where to scan for skills", process.cwd())
+  .option("--references-cwd <cwd>", "where to WRITE the YAML files (defaults to --cwd; useful when skills live under ~/.claude and references live in the agentx repo)")
   .option("--from <skills>", "comma-separated skill name/tag substrings to filter by (default: namespace itself)")
   .option("--gitlab-host <url>", "validate project URLs against this host (e.g. https://gitlab.noqta.tn)")
   .option("--write", "write the YAML files (default: dry-run preview)")
@@ -931,7 +932,8 @@ references
     console.log(`  Discovered:  ssh=${counts.ssh}  gitlab=${counts.gitlab}  paths=${counts.path}  contacts=${counts.contact}`)
 
     const files = renderDiscovery(result, namespace)
-    const targetDir = resolve(cwd, ".agentx/references", namespace)
+    const writeRoot = resolve(opts.referencesCwd || opts.cwd)
+    const targetDir = resolve(writeRoot, ".agentx/references", namespace)
 
     if (!opts.write) {
       console.log()

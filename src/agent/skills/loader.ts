@@ -21,6 +21,7 @@ export async function loadLocalSkills(cwd: string): Promise<Skill[]> {
     const skillFiles = await fg.glob(`**/${SKILL_FILE}`, {
       cwd: skillDir,
       deep: 3,
+      caseSensitiveMatch: false,
     })
 
     for (const file of skillFiles) {

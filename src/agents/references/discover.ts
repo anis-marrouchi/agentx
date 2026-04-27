@@ -56,6 +56,8 @@ export function discoverFromSkills(skills: Skill[], opts: DiscoveryOptions): Dis
         fm.description,
         ...(fm.tags ?? []),
         (fm as any).category ?? "",
+        skill.path ?? "",
+        body.slice(0, 500), // first ~125 tokens of body, enough for a "MTGL Odoo Server" header
       ].join(" ").toLowerCase()
       const hit = opts.filter.some(f => hay.includes(f.toLowerCase()))
       if (!hit) continue
