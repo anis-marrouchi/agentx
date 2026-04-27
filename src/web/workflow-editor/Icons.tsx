@@ -67,6 +67,8 @@ export const Icon = {
   flag:    () => <Svg><path d="M3 13V3h7l-1 2.5L10 8H3"/></Svg>,
   dup:     () => <Svg><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 9V3h6"/></Svg>,
   layout:  () => <Svg><path d="M2.5 3.5h11v9h-11z"/><path d="M2.5 7h11M7 7v5.5"/></Svg>,
+  panelLeft:  () => <Svg><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/><rect x="2.5" y="3.5" width="3.5" height="9" fill="currentColor" fillOpacity={0.18} stroke="none"/></Svg>,
+  panelRight: () => <Svg><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/><rect x="10" y="3.5" width="3.5" height="9" fill="currentColor" fillOpacity={0.18} stroke="none"/></Svg>,
 }
 
 export type IconName = keyof typeof Icon

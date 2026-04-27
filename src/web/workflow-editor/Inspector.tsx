@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { Icon } from "./Icons"
 import { EXPR_VARS, type AgentInfo } from "./data"
 import type { WorkflowNode } from "./types"
-import type { GraphEdge, GraphNode } from "./graph"
+import type { GraphEdge, GraphNode, GraphModel } from "./graph"
 import type { Selection, RunState } from "./Canvas"
 // Pure-data schemas of every node type's output shape — shared with the
 // server so the Context panel never drifts from what handlers actually emit.
@@ -1260,25 +1260,17 @@ export interface InspectorProps {
   validation?: Array<{ message: string }>
   runState: RunState | null
   agents: AgentInfo[]
+  meta: GraphModel["meta"]
+  patchMeta: (patch: Partial<GraphModel["meta"]>) => void
+  onDeleteWorkflow?: () => void
+  isNew: boolean
 }
 
 export function Inspector(props: InspectorProps) {
-  const { selection, nodes, edges, patch, patchData, onDelete, onDuplicate, validation, runState, agents } = props
+  const { selection, nodes, edges, patch, patchData, onDelete, onDuplicate, validation, runState, agents, meta, patchMeta, onDeleteWorkflow, isNew } = props
 
   if (!selection) {
-    return (
-      <aside className="insp">
-        <div className="insp__empty">
-          <Icon.slide />
-          <h3>Nothing selected</h3>
-          <p>Pick a node or edge on the canvas, or drag one in from the palette.</p>
-          <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 16 }}>
-            V2 workflows are dataflow DAGs. Each node's output becomes available as{" "}
-            <span className="mono">{`{{nodeId.path}}`}</span> to downstream nodes.
-          </p>
-        </div>
-      </aside>
-    )
+    return <WorkflowPane meta={meta} patchMeta={patchMeta} onDeleteWorkflow={onDeleteWorkflow} isNew={isNew} />
   }
 
   if (selection.kind === "edge") {
@@ -1534,6 +1526,80 @@ function AdvancedJson({ node, patchData }: { node: WorkflowNode; patchData: (p: 
       </div>
       {err && <div className="fld__err" style={{ color: "var(--err)", fontSize: 11, marginTop: 4 }}><Icon.err /> {err}</div>}
     </Section>
+  )
+}
+
+// WorkflowPane — shown when nothing is selected. Exposes workflow-level meta
+// fields (id, title, description, priority, fanOut, envAllow, retention) so
+// authors don't have to dig through Advanced JSON or close panels just to
+// rename a flow. Mutations dispatch through patchMeta and ride the same
+// undo + save pipeline as node/edge edits.
+function WorkflowPane({ meta, patchMeta, onDeleteWorkflow, isNew }: {
+  meta: GraphModel["meta"]
+  patchMeta: (p: Partial<GraphModel["meta"]>) => void
+  onDeleteWorkflow?: () => void
+  isNew: boolean
+}) {
+  const retention = meta.retention ?? { maxRuns: 500, maxDays: 90 }
+  return (
+    <aside className="insp">
+      <div className="insp__head">
+        <div className="insp__top">
+          <span className="insp__type-pill">workflow</span>
+          <input className="insp__name" value={meta.title}
+                 placeholder="Untitled workflow"
+                 onChange={(e) => patchMeta({ title: e.target.value })} />
+        </div>
+      </div>
+      <div className="insp__body">
+        <Section title="Identity">
+          <Field label="ID" hint={isNew ? "URL slug — set once on first save" : "URL slug — read-only after creation"}>
+            <Input mono value={meta.id} onChange={(v) => isNew && patchMeta({ id: v })} />
+          </Field>
+          <Field label="Title">
+            <Input value={meta.title} onChange={(v) => patchMeta({ title: v })} />
+          </Field>
+          <Field label="Description" hint="Optional one-liner shown on the workflows index">
+            <Area rows={2} value={(meta as { description?: string }).description ?? ""}
+                  onChange={(v) => patchMeta({ description: v } as Partial<GraphModel["meta"]>)} />
+          </Field>
+        </Section>
+        <Section title="Execution">
+          <Field label="Priority" hint="Higher numbers run before lower ones when multiple workflows match the same trigger">
+            <NumInput value={meta.priority} onChange={(v) => patchMeta({ priority: v ?? 0 })} placeholder="0" />
+          </Field>
+          <Field label="">
+            <Check checked={!!meta.fanOut}
+                   onChange={(v) => patchMeta({ fanOut: v })}
+                   label="Fan out — let multiple workflows match the same trigger event" />
+          </Field>
+          <Field label="Allowed env vars" hint="Comma-separated. Only these env names are exposed to actions/agents in this flow.">
+            <ListInput mono value={meta.envAllow ?? []} onChange={(v) => patchMeta({ envAllow: v })} placeholder="GITLAB_TOKEN, SLACK_WEBHOOK" />
+          </Field>
+        </Section>
+        <Section title="Retention" defaultOpen={false}>
+          <Field label="Max runs to keep">
+            <NumInput value={retention.maxRuns} onChange={(v) => patchMeta({ retention: { ...retention, maxRuns: v ?? 0 } })} placeholder="500" />
+          </Field>
+          <Field label="Max age (days)">
+            <NumInput value={retention.maxDays} onChange={(v) => patchMeta({ retention: { ...retention, maxDays: v ?? 0 } })} placeholder="90" />
+          </Field>
+        </Section>
+        <div style={{ fontSize: 11, color: "var(--muted)", padding: "4px 16px 14px", borderTop: "1px solid var(--line-soft)", marginTop: 4 }}>
+          Tip: pick a node or edge on the canvas to edit its config. Each node's output becomes available as{" "}
+          <span className="mono">{`{{nodeId.path}}`}</span> to downstream nodes.
+        </div>
+        {onDeleteWorkflow && !isNew && (
+          <div className="insp__danger">
+            <button className="btn btn--ghost-icon insp__delete-wf"
+                    onClick={onDeleteWorkflow}
+                    title="Delete this workflow permanently">
+              <Icon.trash /> Delete workflow
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
   )
 }
 

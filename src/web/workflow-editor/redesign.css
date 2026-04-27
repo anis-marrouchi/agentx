@@ -118,6 +118,9 @@ code, .mono {
 .app[data-density="compact"] { --density: 0.88; }
 .app[data-density="cozy"]    { --density: 1; }
 .app[data-density="roomy"]   { --density: 1.12; }
+.app[data-palette="closed"]                              { grid-template-columns: 0      1fr 380px; }
+.app[data-inspector="closed"]                            { grid-template-columns: 288px  1fr 0; }
+.app[data-palette="closed"][data-inspector="closed"]     { grid-template-columns: 0      1fr 0; }
 
 /* ============================================================
    TOOLBAR
@@ -1108,6 +1111,26 @@ code, .mono {
 .insp__empty-shortcuts div:last-child { border: 0; }
 .insp__empty-shortcuts div > span:first-child { flex: 1; min-width: 0; text-align: left; white-space: nowrap; color: var(--ink-2); }
 .insp__empty-shortcuts div > *:not(:first-child) { flex-shrink: 0; display: inline-flex; gap: 4px; }
+
+/* ---------- Delete-workflow zone (in WorkflowPane) ---------- */
+.insp__danger {
+  display: flex;
+  justify-content: center;
+  padding: 18px 16px 24px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.insp__delete-wf {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  color: var(--err);
+  border-color: color-mix(in oklch, var(--err) 35%, var(--line));
+}
+.insp__delete-wf:hover {
+  background: color-mix(in oklch, var(--err) 10%, transparent);
+  border-color: color-mix(in oklch, var(--err) 55%, var(--line));
+}
 
 /* ============================================================
    Tweaks panel
