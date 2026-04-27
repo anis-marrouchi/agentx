@@ -41,6 +41,7 @@ export const doctor = new Command()
     if (cfg) runReferenceChecks(checks, cfg)
     if (cfg) runWorkspaceChecks(checks, cfg)
     if (cfg) runWorkspaceSettingsChecks(checks, cfg)
+    if (cfg) runRoutingChecks(checks, cfg)
     if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
 
     if (opts.json) {
@@ -299,6 +300,189 @@ function runWorkspaceSettingsChecks(checks: Check[], cfg: any): void {
       fix: f.severity === "fail" ? "Edit .claude/settings.json — replace ${VAR} with the literal value or omit the key to inherit." : "Either remove the empty allow list or populate it.",
     })
   }
+}
+
+// Surface routing / dispatch fragilities the recurring-patches plan
+// cataloged: webhook entries that route many event-types to a single
+// handler (github, gitlab), trigger maps pointing at workflow ids that
+// don't exist, mesh `node` fields naming peers that aren't configured,
+// gitlab agentMappings referencing unknown agents, and the very common
+// "I edited agentx.json but didn't reload" pitfall.
+function runRoutingChecks(checks: Check[], cfg: any): void {
+  const webhooks = (cfg.webhooks ?? []) as Array<{
+    id: string
+    source: string
+    agentId: string
+    enabled: boolean
+    node?: string
+    secretEnv?: string
+    triggers?: Record<string, string>
+    defaultWorkflow?: string
+  }>
+  const findings: Array<{ severity: Severity; title: string; fix?: string }> = []
+
+  // Build the set of known workflow ids. Workflows live as JSON files under
+  // `workflows.dir` (default .agentx/workflows/). The id is the filename
+  // sans extension; we don't need to parse the contents for this check.
+  const workflowDir = resolve(process.cwd(), cfg.workflows?.dir || ".agentx/workflows")
+  const knownWorkflows = new Set<string>()
+  try {
+    const { readdirSync } = require("fs") as typeof import("fs")
+    if (existsSync(workflowDir)) {
+      for (const f of readdirSync(workflowDir)) {
+        if (f.endsWith(".json") && !f.startsWith("_") && !f.endsWith(".disabled.json")) {
+          knownWorkflows.add(f.replace(/\.json$/, ""))
+        }
+      }
+    }
+  } catch { /* directory not yet populated; checks below tolerate empty set */ }
+
+  // 1. Multi-event-type sources (github, gitlab) without a triggers map.
+  //    Without it, every inbound event hits the same agent and the
+  //    duplicate-firing class of bug returns. Surface as REVIEW (warn) —
+  //    operators may genuinely want a single-handler setup, but they
+  //    should opt in by setting `defaultWorkflow` explicitly.
+  const multiEventSources = new Set(["github", "gitlab"])
+  for (const w of webhooks) {
+    if (!w.enabled) continue
+    if (!multiEventSources.has(w.source)) continue
+    const hasTriggers = w.triggers && Object.keys(w.triggers).length > 0
+    if (!hasTriggers && !w.defaultWorkflow) {
+      findings.push({
+        severity: "warn",
+        title: `webhook "${w.id}" (${w.source} -> ${w.agentId}) has no triggers map; every event-type collapses to the bound agent`,
+        fix: `Add a triggers map: { "issues.opened": "wf-id", "pull_request.synchronize": "wf-id" } — or set defaultWorkflow.`,
+      })
+    }
+  }
+
+  // 2. Trigger map references workflow ids that don't exist on disk.
+  //    Hard-fails the dispatch at runtime (and silently — dispatcher just
+  //    logs "workflow not found" and bails). Surface here as FAIL.
+  for (const w of webhooks) {
+    if (!w.enabled || !w.triggers) continue
+    for (const [eventType, workflowId] of Object.entries(w.triggers)) {
+      if (knownWorkflows.size > 0 && !knownWorkflows.has(workflowId)) {
+        findings.push({
+          severity: "fail",
+          title: `webhook "${w.id}".triggers["${eventType}"] -> "${workflowId}" — no such workflow under ${cfg.workflows?.dir || ".agentx/workflows"}`,
+          fix: `Create the workflow file or fix the id in agentx.json`,
+        })
+      }
+    }
+    if (w.defaultWorkflow && knownWorkflows.size > 0 && !knownWorkflows.has(w.defaultWorkflow)) {
+      findings.push({
+        severity: "fail",
+        title: `webhook "${w.id}".defaultWorkflow -> "${w.defaultWorkflow}" — no such workflow`,
+        fix: `Create the workflow file or fix the id in agentx.json`,
+      })
+    }
+  }
+
+  // 3. Mesh-routed webhooks naming peers that don't exist.
+  const peers = new Set<string>(((cfg.mesh?.peers ?? []) as Array<{ name: string }>).map(p => p.name))
+  for (const w of webhooks) {
+    if (!w.enabled || !w.node) continue
+    if (!peers.has(w.node)) {
+      findings.push({
+        severity: "fail",
+        title: `webhook "${w.id}" routes to mesh peer "${w.node}" which is not in mesh.peers`,
+        fix: `Add the peer to mesh.peers or remove the node field on the webhook.`,
+      })
+    }
+  }
+
+  // 4. Two enabled webhook entries collide on (source, agentId): the
+  //    Phase 3 dispatcher takes the first match, the second is silently
+  //    ignored — operators rarely realize.
+  const seen = new Map<string, string>()
+  for (const w of webhooks) {
+    if (!w.enabled) continue
+    const key = `${w.source}:${w.agentId}`
+    const prior = seen.get(key)
+    if (prior) {
+      findings.push({
+        severity: "warn",
+        title: `webhook entries "${prior}" and "${w.id}" both enabled for ${w.source} -> ${w.agentId}; only the first is dispatched`,
+        fix: `Disable one entry, or merge their triggers maps into a single entry.`,
+      })
+    } else {
+      seen.set(key, w.id)
+    }
+  }
+
+  // 5. GitLab agentMappings referencing agent ids that aren't in agents.
+  const agentIds = new Set(Object.keys(cfg.agents ?? {}))
+  for (const m of (cfg.channels?.gitlab?.agentMappings ?? [])) {
+    if (m?.agentId && !agentIds.has(m.agentId)) {
+      findings.push({
+        severity: "warn",
+        title: `gitlab.agentMappings entry agentId="${m.agentId}" — no such agent in agents.*`,
+        fix: `Add the agent to agents.*, or remove the mapping if the agent has been retired.`,
+      })
+    }
+  }
+
+  // 6. Telegram accounts without an agentBinding silently drop every DM.
+  for (const [acctId, acct] of Object.entries((cfg.channels?.telegram?.accounts ?? {}) as Record<string, { agentBinding?: string }>)) {
+    if (!acct.agentBinding) {
+      findings.push({
+        severity: "fail",
+        title: `telegram account "${acctId}" has no agentBinding; every DM to this bot will drop`,
+        fix: `Set agentBinding to a valid agent id.`,
+      })
+    } else if (!agentIds.has(acct.agentBinding)) {
+      findings.push({
+        severity: "fail",
+        title: `telegram account "${acctId}".agentBinding -> "${acct.agentBinding}" — no such agent in agents.*`,
+        fix: `Fix the agentBinding or define the agent in agents.*.`,
+      })
+    }
+  }
+
+  // 7. Config newer than running daemon — operator edited agentx.json
+  //    but didn't reload. Phase 4 widened reload coverage; warn so they
+  //    don't go on chasing ghosts.
+  try {
+    const cfgPath = resolve(process.cwd(), "agentx.json")
+    const pidPath = resolve(process.cwd(), ".agentx/daemon.pid")
+    if (existsSync(cfgPath) && existsSync(pidPath)) {
+      const cfgMtime = statSync(cfgPath).mtimeMs
+      const pidMtime = statSync(pidPath).mtimeMs
+      if (cfgMtime > pidMtime + 1000) {
+        // The pid file is rewritten on each daemon start; if config is
+        // newer, the daemon hasn't picked up the edit (no reload + no
+        // restart). The +1s pad swallows clock skew between the two
+        // writes happening within the same boot.
+        findings.push({
+          severity: "warn",
+          title: `agentx.json was modified ${formatRelative(cfgMtime - pidMtime)} after the daemon last started`,
+          fix: `Run \`agentx config reload\` to apply hot-reloadable changes (telegram accounts, webhooks, mesh peers, hooks, etc.) or restart for the rest.`,
+        })
+      }
+    }
+  } catch { /* best-effort */ }
+
+  if (findings.length === 0) {
+    checks.push({
+      severity: "ok",
+      group: "Routing",
+      title: `${webhooks.length} webhook(s), ${Object.keys(cfg.channels?.telegram?.accounts ?? {}).length} telegram account(s) — all routing references resolve`,
+    })
+    return
+  }
+  for (const f of findings) {
+    checks.push({ severity: f.severity, group: "Routing", title: f.title, fix: f.fix })
+  }
+}
+
+function formatRelative(ms: number): string {
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.round(m / 60)
+  return `${h}h`
 }
 
 async function runRuntimeChecks(checks: Check[], cfg: any): Promise<void> {
