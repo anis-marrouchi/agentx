@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { dirname, resolve } from "path"
 
 // --- Generic per-channel cursor store ---
@@ -73,7 +73,7 @@ export class FileCursorStore implements CursorStore {
     // On Linux fsync is implicit before rename for ext4/journaled FS in
     // practice; macOS APFS guarantees atomicity. No explicit fsync needed
     // for the tiny payloads we write here.
-    require("fs").renameSync(tmp, this.filePath)
+    renameSync(tmp, this.filePath)
   }
 }
 
