@@ -16,6 +16,8 @@ import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
+import { openDb } from "@/storage/sqlite"
+import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -174,12 +176,10 @@ export class AgentXDaemon {
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks)
 
     // Move 2: open SQLite + attach bus subscribers. Best-effort — if the
-    // native binding isn't available (operator hasn't run pnpm rebuild),
+    // native binding isn't available (operator hasn't run pnpm install),
     // openDb returns null and subscribers are skipped. Existing JSON
     // writes continue regardless. SQLite is observability-grade for now.
     try {
-      const { openDb } = require("@/storage/sqlite") as typeof import("@/storage/sqlite")
-      const { attachSqliteSubscribers } = require("@/storage/subscribers") as typeof import("@/storage/subscribers")
       const db = openDb()
       if (db) {
         attachSqliteSubscribers(db)

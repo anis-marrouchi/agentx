@@ -57,11 +57,10 @@ export function openDb(opts: OpenOptions = {}): Database.Database | null {
     _db = db
     return _db
   } catch (e: any) {
-    // Native binding missing, file unwritable, etc. Log and return null
-    // so subscribers no-op.
-    if (process.env.AGENTX_DEBUG) {
-      console.error(`[storage/sqlite] openDb failed: ${e.message}`)
-    }
+    // Native binding missing, file unwritable, etc. Surface always — the
+    // alternative was a silent no-op, which makes the "SQLite not opened"
+    // message in the daemon log impossible to debug.
+    console.error(`[storage/sqlite] openDb failed at ${path}: ${e.message}`)
     return null
   }
 }
