@@ -141,6 +141,41 @@ export class A2AMesh {
     return { added, removed, updated }
   }
 
+  /** Number of peers currently registered (regardless of health). */
+  peerCount(): number {
+    return this.peers.size
+  }
+
+  /**
+   * Re-probe a single peer immediately. Use case: an operator just added
+   * an agent on the remote daemon and doesn't want to wait up to a full
+   * health-check interval (default 60s) before mentioning the new agent
+   * resolves. The probe pulls a fresh agent card and updates `state.agents`
+   * so `directory()` reflects the new roster on the very next route lookup.
+   *
+   * Returns true on success, false when the peer is unknown or the probe
+   * failed. Does NOT throw — callers can blindly fan-out across peers.
+   */
+  async refreshPeer(name: string): Promise<boolean> {
+    const state = this.peers.get(name)
+    if (!state) return false
+    await this.discoverPeer(name, state)
+    return state.healthy
+  }
+
+  /**
+   * Re-probe every peer in parallel. Cheap when peers are healthy
+   * (single GET /a2a/agent-card per peer). Used by `agentx mesh refresh`
+   * and after agent-roster changes to invalidate the cached directory.
+   */
+  async refreshAll(): Promise<{ name: string; healthy: boolean }[]> {
+    const probes = Array.from(this.peers.entries()).map(async ([name, state]) => {
+      await this.discoverPeer(name, state)
+      return { name, healthy: state.healthy }
+    })
+    return Promise.all(probes)
+  }
+
   /**
    * Discover agent cards from all peers.
    */

@@ -598,6 +598,20 @@ export class AgentXDaemon {
       } catch (e: any) {
         this.log(`[reload] landscape rebuild failed: ${e.message}`)
       }
+      // Phase 4: when agents change locally, kick mesh peers to re-probe
+      // us — and equally re-probe THEM so their roster changes are pulled
+      // into our directory without waiting up to a full health-check tick.
+      // Closes the "newly-added remote agent silently unreachable for up
+      // to 60s" symptom the operator reported.
+      if (this.mesh && this.mesh.peerCount() > 0) {
+        try {
+          const refreshed = await this.mesh.refreshAll()
+          const healthy = refreshed.filter(r => r.healthy).length
+          applied.push(`mesh.refresh(${healthy}/${refreshed.length})`)
+        } catch (e: any) {
+          this.log(`[reload] mesh refresh failed: ${e.message}`)
+        }
+      }
     }
 
     // 8. Sections that still require a full restart — narrowed down to:
@@ -636,6 +650,18 @@ export class AgentXDaemon {
       restartRequired.push("channels")
     } else if (tgChanged && !tgHandled) {
       restartRequired.push("channels.telegram")
+    }
+
+    // 8b. Webhook entries — hot-reload triggers / secretEnv / mesh routes
+    //     without a daemon bounce. Phase 4 closes the recurring complaint
+    //     that adding a webhook route to agentx.json required a restart.
+    if (JSON.stringify(this.config.webhooks) !== JSON.stringify(next.webhooks)) {
+      try {
+        this.webhooks.setWebhookEntries(next.webhooks)
+        applied.push(`webhooks(${next.webhooks.length})`)
+      } catch (e: any) {
+        this.log(`[reload] webhooks hot-reload failed: ${e.message}`)
+      }
     }
 
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
@@ -1236,6 +1262,10 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // Phase 3: webhook handler can now dispatch workflows per event-type
+    // (webhooks[].triggers map). When `triggers` is unset, behavior is
+    // unchanged from prior versions.
+    this.webhooks.setWorkflowDispatcher(dispatcher)
 
     // Phase 3: wire trigger.cron timers + trigger.hook subscribers for
     // workflows that declare them. Channel-triggered workflows (gitlab-issue,

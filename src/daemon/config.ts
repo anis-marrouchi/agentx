@@ -428,6 +428,23 @@ export const daemonConfigSchema = z.object({
     enabled: z.boolean().default(true),
     /** Route to a mesh peer instead of local execution. */
     node: z.string().optional(),
+    /** Per-event-type workflow routing. Keys are platform event-type
+     *  strings — the format the platform's HTTP header uses, optionally
+     *  joined with the action. Examples:
+     *    GitHub: "issues.opened", "pull_request.synchronize",
+     *            "push" (action-less events use the bare type)
+     *    GitLab: "Note Hook", "Merge Request Hook"
+     *  Values are workflow ids registered via `agentx workflow create`.
+     *  When the inbound event-type matches a key, the named workflow is
+     *  dispatched; if no key matches, the webhook falls through to
+     *  `defaultWorkflow` (or the agent itself). Closes the recurring
+     *  GitHub problem of multiple event types collapsing to a single
+     *  workflow. */
+    triggers: z.record(z.string(), z.string()).optional(),
+    /** Workflow id used when no `triggers` entry matches the event-type.
+     *  Backward-compatible: pre-existing webhooks without `triggers`
+     *  always hit this path. */
+    defaultWorkflow: z.string().optional(),
   })).default([]),
   /** Session cache-reuse policy. Controls when we drop a Claude `--resume`
    *  session and rebuild the prompt from scratch.

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
+import type { WorkflowDispatcher } from "@/workflows"
 
 // --- Webhook handler ---
 // Routes incoming webhooks from GitLab, GitHub, Stripe, Sentry, etc.
@@ -26,6 +27,7 @@ export class WebhookHandler {
   private mesh?: A2AMesh
   private webhookEntries: DaemonConfig["webhooks"]
   private log: (...args: unknown[]) => void
+  private workflowDispatcher?: WorkflowDispatcher
 
   constructor(
     registry: AgentRegistry,
@@ -39,6 +41,22 @@ export class WebhookHandler {
     this.log = log
     this.mesh = mesh
     this.webhookEntries = webhookEntries
+  }
+
+  /** Wired by the daemon after the workflow subsystem boots. When set,
+   *  webhook entries with a `triggers` map can dispatch a workflow per
+   *  inbound event-type instead of running the bound agent directly. */
+  setWorkflowDispatcher(d: WorkflowDispatcher): void {
+    this.workflowDispatcher = d
+  }
+
+  /** Hot-reload the webhook entry table. Called by the daemon's reload
+   *  handler when `webhooks[]` changes in agentx.json — adding a route,
+   *  rotating a secretEnv, flipping an entry from local to mesh-routed,
+   *  or editing a triggers map. Phase 4: closes the recurring complaint
+   *  that route changes require a full daemon restart. */
+  setWebhookEntries(entries: DaemonConfig["webhooks"]): void {
+    this.webhookEntries = entries
   }
 
   /**
@@ -79,6 +97,45 @@ export class WebhookHandler {
     const summary = this.buildSummary(source, parsed, req.headers)
 
     this.log(`Webhook [${source}] -> ${agentId}: ${summary.slice(0, 100)}`)
+
+    // Phase 3: per-event-type workflow routing. Each registered webhook
+    // entry can map specific event-types to workflow ids; on match we
+    // dispatch the workflow instead of running the bound agent directly.
+    // Falls through to the existing agent path if nothing matches and no
+    // defaultWorkflow is set — backward-compatible.
+    const eventType = this.extractEventType(source, parsed, req.headers)
+    const triggerEntry = this.webhookEntries.find(
+      w => w.enabled && w.agentId === agentId && w.source === source,
+    )
+    const workflowId =
+      (eventType && triggerEntry?.triggers?.[eventType]) ||
+      triggerEntry?.defaultWorkflow ||
+      null
+    if (workflowId && this.workflowDispatcher) {
+      try {
+        const result = await this.workflowDispatcher.dispatchWorkflow({
+          workflowId,
+          entityRef: { kind: "webhook", id: `${source}:${agentId}:${eventType ?? "—"}:${Date.now()}` } as any,
+          event: { kind: "webhook", source, eventType, payload: parsed } as any,
+          trigger: { source },
+        })
+        this.log(
+          `Webhook [${source}/${eventType ?? "—"}] -> workflow=${workflowId} (claimed=${result.claimed})`,
+        )
+        this.sendJson(res, 202, {
+          ok: true,
+          agent: agentId,
+          source,
+          eventType,
+          workflow: workflowId,
+          claimed: result.claimed,
+        })
+        return
+      } catch (e: any) {
+        this.log(`Workflow dispatch failed [${source}/${eventType}/${workflowId}]: ${e.message}`)
+        // Fall through to agent path on error so we don't drop the event entirely.
+      }
+    }
 
     // Check if there's a webhook entry with mesh routing
     const meshEntry = this.webhookEntries.find(
@@ -124,6 +181,45 @@ export class WebhookHandler {
     } catch (e: any) {
       this.sendJson(res, 500, { error: e.message })
     }
+  }
+
+  /**
+   * Extract a canonical event-type string from inbound headers + body.
+   * Used by the per-event-type trigger map. Format conventions:
+   *   - GitHub: `<X-GitHub-Event>.<body.action>` when action exists,
+   *             else just `<X-GitHub-Event>` (e.g. "push", "ping").
+   *   - GitLab: `<X-Gitlab-Event>` (already includes a "Hook" suffix —
+   *             "Push Hook", "Note Hook", "Merge Request Hook").
+   *   - Stripe: `<body.type>` (e.g. "invoice.paid").
+   *   - Sentry: `<Sentry-Hook-Resource>` (e.g. "issue", "event_alert").
+   *   - Anything else: returns null and the dispatcher falls back to
+   *     `defaultWorkflow`.
+   */
+  private extractEventType(
+    source: string,
+    body: Record<string, unknown>,
+    headers: Record<string, string | string[] | undefined>,
+  ): string | undefined {
+    const header = (k: string): string | undefined => {
+      const v = headers[k.toLowerCase()]
+      return Array.isArray(v) ? v[0] : v
+    }
+    if (source === "github") {
+      const evt = header("x-github-event")
+      if (!evt) return undefined
+      const action = typeof body.action === "string" ? body.action : undefined
+      return action ? `${evt}.${action}` : evt
+    }
+    if (source === "gitlab") {
+      return header("x-gitlab-event") || (typeof body.object_kind === "string" ? body.object_kind : undefined)
+    }
+    if (source === "stripe") {
+      return typeof body.type === "string" ? body.type : undefined
+    }
+    if (source === "sentry") {
+      return header("sentry-hook-resource")
+    }
+    return undefined
   }
 
   /**
