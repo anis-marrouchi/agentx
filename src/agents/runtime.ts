@@ -478,9 +478,15 @@ export async function executeClaudeCodeStreaming(
             // System-init event (first thing the CLI emits) carries the model
             // it's about to invoke — capture early so we have it even if the
             // run errors before the terminal result.
+            //
+            // Do NOT capture session_id from init: when --resume <X> is
+            // passed, init's session_id echoes X back (the resumed-from ID),
+            // not the new ID Claude rolls into for THIS turn. Persisting X
+            // means the next turn re-resumes from before this turn's progress
+            // — exactly the "wrong-message resume" symptom. Only `result`
+            // carries the authoritative new session_id (line above).
             if (event.type === "system" && event.subtype === "init") {
               if (typeof event.model === "string") streamBilledModel = event.model
-              if (typeof event.session_id === "string") streamSessionId = event.session_id
             }
           } catch {
             // Not JSON — could be raw text output, append it

@@ -444,7 +444,7 @@ export const daemonConfigSchema = z.object({
   session: z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(45),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(15),
-    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
+    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(195_000),
     /** Context assembly strategy:
      *  - "layered" (default): the classic stacked layers — session history,
      *    memory, cross-chat, wiki hint all appended every turn.

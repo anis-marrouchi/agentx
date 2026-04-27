@@ -40,6 +40,7 @@ export const doctor = new Command()
     const cfg = runConfigChecks(checks)
     if (cfg) runReferenceChecks(checks, cfg)
     if (cfg) runWorkspaceChecks(checks, cfg)
+    if (cfg) runWorkspaceSettingsChecks(checks, cfg)
     if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
 
     if (opts.json) {
@@ -221,6 +222,81 @@ function runWorkspaceChecks(checks: Check[], cfg: any): void {
       title: `${missing.length} agent workspace(s) missing`,
       detail: missing.join("\n    "),
       fix: "The daemon will create missing folders on first task, but you won't see CLAUDE.md / skills until you populate them.",
+    })
+  }
+}
+
+// Audit each agent's .claude/settings.json for known traps:
+//   - unexpanded ${VAR} literals in env values (Claude Code does NOT expand them)
+//   - env.PATH missing /usr/bin or /bin (basic utils unreachable)
+//   - JSON syntax errors
+//   - permissions.allow: [] explicitly empty alongside non-empty deny
+// Each finding is FAIL severity for the ${VAR} / PATH cases (these break the
+// agent's Bash tool entirely), WARN for the lockdown case.
+function runWorkspaceSettingsChecks(checks: Check[], cfg: any): void {
+  const VAR_RE = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/g
+  const findings: Array<{ severity: Severity; agent: string; msg: string }> = []
+
+  for (const [agentId, a] of Object.entries(cfg.agents || {}) as [string, any][]) {
+    if (!a.workspace) continue
+    const wsAbs = a.workspace.startsWith("/") ? a.workspace : resolve(process.cwd(), a.workspace)
+    for (const fname of ["settings.json", "settings.local.json"]) {
+      const p = resolve(wsAbs, ".claude", fname)
+      if (!existsSync(p)) continue
+      let data: any
+      try {
+        data = JSON.parse(readFileSync(p, "utf-8"))
+      } catch (e: any) {
+        findings.push({ severity: "fail", agent: agentId, msg: `${fname}: JSON parse error — ${e.message}` })
+        continue
+      }
+      const env = (data.env || {}) as Record<string, unknown>
+      for (const [k, v] of Object.entries(env)) {
+        if (typeof v !== "string") continue
+        const unexpanded = v.match(VAR_RE)
+        if (unexpanded) {
+          findings.push({
+            severity: "fail",
+            agent: agentId,
+            msg: `${fname} env.${k} contains unexpanded ${[...new Set(unexpanded)].join(",")} — Claude Code does NOT expand \${VAR} in settings.json (use a fully-literal value)`,
+          })
+        }
+      }
+      const pathVal = env.PATH
+      if (typeof pathVal === "string") {
+        const parts = pathVal.split(":").filter(Boolean)
+        if (!parts.includes("/usr/bin")) {
+          findings.push({ severity: "fail", agent: agentId, msg: `${fname} env.PATH missing /usr/bin — cat/head/sh/which will fail` })
+        }
+        if (!parts.includes("/bin")) {
+          findings.push({ severity: "fail", agent: agentId, msg: `${fname} env.PATH missing /bin — ls/cp/mv will fail` })
+        }
+      }
+      const perms = data.permissions
+      if (perms && typeof perms === "object" && "allow" in perms) {
+        const allow = perms.allow
+        const deny = perms.deny
+        if (Array.isArray(allow) && allow.length === 0 && Array.isArray(deny) && deny.length > 0) {
+          findings.push({
+            severity: "warn",
+            agent: agentId,
+            msg: `${fname} permissions.allow is explicitly [] with ${deny.length} deny rules — agent may be locked out (omit the key to use defaults instead)`,
+          })
+        }
+      }
+    }
+  }
+
+  if (findings.length === 0) {
+    checks.push({ severity: "ok", group: "Workspace settings", title: `All ${Object.keys(cfg.agents || {}).length} agent .claude/settings.json files clean` })
+    return
+  }
+  for (const f of findings) {
+    checks.push({
+      severity: f.severity,
+      group: "Workspace settings",
+      title: `${f.agent}: ${f.msg}`,
+      fix: f.severity === "fail" ? "Edit .claude/settings.json — replace ${VAR} with the literal value or omit the key to inherit." : "Either remove the empty allow list or populate it.",
     })
   }
 }
