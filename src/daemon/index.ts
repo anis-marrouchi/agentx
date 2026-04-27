@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
-import { writeFileSync, existsSync, unlinkSync, mkdirSync, watch, type FSWatcher } from "fs"
+import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
@@ -2011,11 +2011,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           const mapping = mappings.find((m: any) => m.agentId === agentId)
           let token: string | undefined
           if (mapping?.tokenFile) {
-            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || mapping?.token
           if (!token && ghConfig?.tokenFile) {
-            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || ghConfig?.token
           if (!token) {
@@ -2050,11 +2050,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           const mapping = mappings.find((m: any) => m.agentId === agentId)
           let token: string | undefined
           if (mapping?.tokenFile) {
-            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || mapping?.token
           if (!token && ghConfig?.tokenFile) {
-            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || ghConfig?.token
           if (!token) {

@@ -316,23 +316,28 @@ export class GitHubAdapter implements ChannelAdapter {
     const agentHeader = usingApp ? "" : `> 🤖 **${agentLabel}** (via AgentX)\n\n`
     const commentBody = markBody(`${agentHeader}${msg.text}`, agentLabel)
 
-    // Forward to mesh peer if the agent lives remotely (same pattern as GitLab).
-    if (!agentToken && mapping?.node && this.sendCommentForwarder) {
+    // Resolve token: per-agent PAT > App installation token > global PAT.
+    // Prefer the App token over forwarding to a peer — the App posts as the
+    // bot identity (e.g. "noqta-agentx[bot]"), whereas a peer's PAT posts as
+    // its owner. Forwarding is only useful when this node has no way to post
+    // for the target repo (no App, no PAT).
+    const token = agentToken || await this.getTokenForRepo(repo)
+
+    // Fall back to forwarding to a peer (e.g. macbook's PAT) only when this
+    // node cannot post for the repo at all.
+    if (!token && mapping?.node && this.sendCommentForwarder) {
       try {
         const commentId = await this.sendCommentForwarder(mapping.node, repo, issueNumber, agentLabel, commentBody)
         if (commentId) {
           this.sentCommentIds.add(commentId)
           return commentId
         }
-        // Empty commentId means peer doesn't support this endpoint — fall through to local posting
-        this.log(`GitHub send forward to "${mapping.node}" returned empty — falling back to local token`)
+        this.log(`GitHub send forward to "${mapping.node}" returned empty — no local token available either`)
       } catch (e: any) {
-        this.log(`GitHub send forward to "${mapping.node}" failed: ${e.message} — falling back`)
+        this.log(`GitHub send forward to "${mapping.node}" failed: ${e.message}`)
       }
     }
 
-    // Resolve token: per-agent PAT > App installation token > global PAT
-    const token = agentToken || await this.getTokenForRepo(repo)
     if (!token) {
       this.log(`No GitHub token available for posting comment (agent: ${msg.agentId})`)
       return ""
@@ -422,7 +427,14 @@ export class GitHubAdapter implements ChannelAdapter {
   // --- Event handlers ---
 
   private async handleIssueComment(event: GitHubIssueCommentEvent): Promise<void> {
-    if (!this.handler || event.action !== "created") return
+    if (!this.handler) {
+      this.log(`[github] issue_comment dropped: no handler attached`)
+      return
+    }
+    if (event.action !== "created") {
+      this.log(`[github] issue_comment skipped: action="${event.action}" (only "created" routes)`)
+      return
+    }
 
     const comment = event.comment
     const repo = event.repository.full_name
@@ -443,6 +455,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     const commentId = String(comment.id)
     if (this.sentCommentIds.has(commentId)) {
+      this.log(`[github] echo skip: comment ${commentId} matched our own post`)
       this.sentCommentIds.delete(commentId)
       return
     }
