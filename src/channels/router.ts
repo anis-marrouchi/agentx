@@ -156,6 +156,14 @@ export class MessageRouter {
   /** Crash-safe inflight log (see InflightLog class above). */
   private inflight: InflightLog
 
+  /** In-flight mesh forwards (this node is awaiting a peer's response).
+   *  Counted so the daemon's shutdown drain can wait for these in addition
+   *  to local agent tasks — otherwise a clawd restart mid-forward kills the
+   *  awaiter, the peer's response lands on a dead connection, and the
+   *  inflight-replay re-runs the task on the peer. */
+  private activeMeshForwards = 0
+  getActiveMeshForwardCount(): number { return this.activeMeshForwards }
+
   constructor(
     registry: AgentRegistry,
     config: DaemonConfig,
@@ -1188,6 +1196,7 @@ export class MessageRouter {
     const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
     const start = Date.now()
+    this.activeMeshForwards++
     try {
       const response = await this.mesh.sendTask(peerName, msg.text, agentId)
       const duration = Date.now() - start
@@ -1227,6 +1236,8 @@ export class MessageRouter {
         accountId: replyAccountId,
       })
       return true
+    } finally {
+      this.activeMeshForwards--
     }
   }
 

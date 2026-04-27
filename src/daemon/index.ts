@@ -361,6 +361,37 @@ export class AgentXDaemon {
       this.log(`  Channel stop error: ${e.message}`)
     }
 
+    // Drain active agent tasks before exit. Channels are already stopped, so
+    // the active count can only shrink. This is what lets `systemctl restart`
+    // survive long-running agent turns (e.g. a 3-minute coder reply) without
+    // killing them mid-flight. The inflight log handles messages that hadn't
+    // started yet — drain handles ones already executing.
+    //
+    // Drain ceiling: AGENTX_DRAIN_TIMEOUT_MS (default 300_000 = 5 min). Keep
+    // systemd's TimeoutStopSec ≥ this + ~30s margin or systemd will SIGKILL
+    // mid-drain.
+    try {
+      const drainTimeoutMs = parseInt(process.env.AGENTX_DRAIN_TIMEOUT_MS || "300000", 10)
+      const drainStart = Date.now()
+      const inflightCount = () => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
+      let active = inflightCount()
+      if (active > 0) {
+        this.log(`  Draining ${active} in-flight task(s) — local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()} (max ${Math.round(drainTimeoutMs / 1000)}s)...`)
+        while (active > 0 && Date.now() - drainStart < drainTimeoutMs) {
+          await new Promise(r => setTimeout(r, 500))
+          active = inflightCount()
+        }
+        const elapsedMs = Date.now() - drainStart
+        if (active === 0) {
+          this.log(`  Drain complete (${elapsedMs}ms)`)
+        } else {
+          this.log(`  Drain timeout after ${elapsedMs}ms — ${active} task(s) still in flight (local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()}), exiting anyway`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Drain error: ${e.message}`)
+    }
+
     try {
       // Persist router dedup + any debounced per-channel state before exit so
       // a clean stop doesn't drop the last in-memory window of processed ids.

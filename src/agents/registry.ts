@@ -1211,6 +1211,14 @@ export class AgentRegistry {
   /**
    * List all agents and their status.
    */
+  /** Total active task count across all agents — used by the daemon's
+   *  graceful shutdown to drain in-flight runs before exit. */
+  getActiveTaskCount(): number {
+    let total = 0
+    for (const s of this.agents.values()) total += s.activeTasks
+    return total
+  }
+
   list(): Array<{
     id: string
     name: string
