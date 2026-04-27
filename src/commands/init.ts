@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs"
+import { hostname } from "os"
 import { resolve, join } from "path"
 
 // --- agentx init: interactive setup for new installations ---
@@ -44,8 +45,8 @@ export const init = new Command()
       // Generate minimal config
       example = JSON.stringify({
         node: {
-          id: require("os").hostname().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-          name: require("os").hostname(),
+          id: hostname().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+          name: hostname(),
           bind: "127.0.0.1:18800",
         },
         providers: {

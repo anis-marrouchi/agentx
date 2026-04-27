@@ -2,6 +2,7 @@ import { Command } from "commander"
 import { AgentXDaemon } from "@/daemon"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
+import { existsSync, readFileSync } from "fs"
 
 // --- agentx daemon: start/stop/status/logs ---
 
@@ -76,7 +77,6 @@ daemon
  *  process.env take precedence so a systemd override always wins. */
 function loadDotenv(path: string): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { existsSync, readFileSync } = require("fs") as typeof import("fs")
   if (!existsSync(path)) return
   const text = readFileSync(path, "utf-8")
   for (const raw of text.split("\n")) {

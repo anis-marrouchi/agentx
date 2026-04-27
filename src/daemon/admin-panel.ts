@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, rmSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync } from "fs"
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
@@ -318,7 +318,7 @@ function addAgent(body: any) {
   const claudeMd = resolve(workspace, "CLAUDE.md")
   if (!existsSync(claudeMd)) {
     try {
-      require("fs").mkdirSync(workspace, { recursive: true })
+      mkdirSync(workspace, { recursive: true })
       writeFileSync(claudeMd, `# ${name}\n\n${personality || "You are " + name + "."}\n`)
     } catch { /* best-effort */ }
   }
@@ -795,12 +795,11 @@ function replaceConfigRaw(body: any): { summary: string; backupPath?: string } {
   const file = resolve(process.cwd(), "agentx.json")
   const backupPath = `${file}.bak.${Date.now()}`
   if (existsSync(file)) {
-    try { require("fs").copyFileSync(file, backupPath) } catch { /* best-effort */ }
+    try { copyFileSync(file, backupPath) } catch { /* best-effort */ }
   }
   writeFileSync(file, JSON.stringify(parsed, null, 2) + "\n", "utf-8")
   // Best-effort /reload; caller can also restart the daemon.
   try {
-    const { loadDaemonConfig } = require("./config")
     const cfg = loadDaemonConfig()
     const url = cfg.dashboard.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
     fetch(`${url}/reload`, { method: "POST" }).catch(() => null)

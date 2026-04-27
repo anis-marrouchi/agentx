@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
-import { existsSync, readFileSync, statSync } from "fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 
@@ -327,7 +327,6 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
   const workflowDir = resolve(process.cwd(), cfg.workflows?.dir || ".agentx/workflows")
   const knownWorkflows = new Set<string>()
   try {
-    const { readdirSync } = require("fs") as typeof import("fs")
     if (existsSync(workflowDir)) {
       for (const f of readdirSync(workflowDir)) {
         if (f.endsWith(".json") && !f.startsWith("_") && !f.endsWith(".disabled.json")) {

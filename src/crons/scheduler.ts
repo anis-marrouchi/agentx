@@ -2,7 +2,7 @@ import type { DaemonConfig, CronJobDef } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
 import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
-import { writeFileSync, mkdirSync, existsSync } from "fs"
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 
@@ -500,7 +500,6 @@ export class CronScheduler {
   private loadLastRuns(): Record<string, string> | null {
     try {
       if (!existsSync(this.lastRunFile)) return null
-      const { readFileSync } = require("fs")
       return JSON.parse(readFileSync(this.lastRunFile, "utf-8"))
     } catch {
       return null

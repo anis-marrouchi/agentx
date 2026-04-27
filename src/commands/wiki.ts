@@ -722,7 +722,7 @@ wiki
       writeFileSync(editPath, draft)
       try {
         execSync(`${editor} '${editPath}'`, { stdio: "inherit" })
-        const edited = require("fs").readFileSync(editPath, "utf-8")
+        const edited = readFileSync(editPath, "utf-8")
         const m = edited.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
         if (m) {
           const ef: Record<string, string> = {}
