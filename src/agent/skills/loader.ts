@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from "fs"
 import path from "path"
 import fg from "fast-glob"
+import yaml from "js-yaml"
 import { logger } from "@/utils/logger"
 import type { Skill, SkillFrontmatter, SkillMatch } from "./types"
 import { skillFrontmatterSchema } from "./types"
@@ -86,52 +87,30 @@ export function parseSkillContent(content: string): Skill | null {
 }
 
 function parseYamlFrontmatter(raw: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  const lines = raw.split("\n")
-
-  let currentKey = ""
-  let inArray = false
-  let arrayValues: string[] = []
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    // Array item
-    if (trimmed.startsWith("- ") && inArray) {
-      arrayValues.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""))
-      continue
-    }
-
-    // Save previous array if we were in one
-    if (inArray && currentKey) {
-      result[currentKey] = arrayValues
-      inArray = false
-      arrayValues = []
-    }
-
-    // Key-value pair
-    const kvMatch = trimmed.match(/^(\w+)\s*:\s*(.*)$/)
-    if (kvMatch) {
-      const [, key, value] = kvMatch
-      currentKey = key
-
-      if (value.trim() === "") {
-        // Could be start of an array or nested object
-        inArray = true
-        arrayValues = []
-      } else {
-        // Simple value
-        result[key] = value.trim().replace(/^["']|["']$/g, "")
+  // Real YAML — handles arrays (block + flow), nested objects (e.g. `metadata:`
+  // sub-block used by some skills), quoted strings, and comma-separated tag
+  // strings. The previous primitive parser silently dropped nested keys, which
+  // caused valid skills (ksi-pm, hotmail, ksi-v1-coder) to fail Zod validation
+  // and load as null.
+  const parsed = yaml.load(raw)
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {}
+  }
+  const result = parsed as Record<string, unknown>
+  // Some skills nest tags under `metadata.tags` as a comma-separated string.
+  // Lift it to the top-level shape Zod expects (array of strings) so the
+  // schema accepts the skill.
+  const meta = result.metadata as Record<string, unknown> | undefined
+  if (meta && typeof meta === "object") {
+    if (!result.tags && meta.tags) {
+      if (typeof meta.tags === "string") {
+        result.tags = meta.tags.split(",").map(t => t.trim()).filter(Boolean)
+      } else if (Array.isArray(meta.tags)) {
+        result.tags = meta.tags
       }
     }
+    if (!result.version && meta.version) result.version = meta.version
   }
-
-  // Save last array if any
-  if (inArray && currentKey) {
-    result[currentKey] = arrayValues
-  }
-
   return result
 }
 

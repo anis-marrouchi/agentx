@@ -1,0 +1,20 @@
+namespace: example.contacts
+cards:
+  - id: primary
+    kind: contact
+    summary: Primary client contact — replace with real data
+    fields:
+      email: primary@example.com
+      mobile: "+1 555 0100"
+      role: "Project Lead"
+    tags: [example, primary]
+    lastVerified: "1970-01-01"
+
+  - id: escalation
+    kind: contact
+    summary: Escalation contact
+    fields:
+      email: escalation@example.com
+      role: "Director"
+    tags: [example, escalation]
+    lastVerified: "1970-01-01"

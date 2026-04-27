@@ -56,6 +56,12 @@ const agentConfigSchema = z.object({
    *  exploration) while siblings stay on `layered`. Used for agents that
    *  consistently bloat their cache via large workspace reads. */
   contextStrategy: z.enum(["layered", "planner"]).optional(),
+  /** When true, the registry resolves references-recipes for this agent's
+   *  workspace and renders a deterministic [Verified References] block at
+   *  priority 4.7. Off by default — flip on per agent (pm-ksi, devops-agent,
+   *  etc.) once a `references/` registry exists in the agent's workspace
+   *  or repo root. See src/agents/references/. */
+  contextReferences: z.boolean().default(false),
   maxConcurrent: z.number().default(1),
   /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder

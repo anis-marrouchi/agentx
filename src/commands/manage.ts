@@ -732,6 +732,193 @@ skillCmd
     console.log()
   })
 
+// --- skill audit ---
+// Lint every skill against the references registry: unresolved IDs, missing
+// delegate skills, raw infrastructure facts that should be cited from
+// references. Exits non-zero on any FAILING — wire it into CI.
+skillCmd
+  .command("audit")
+  .description("lint installed skills against the references registry; exits non-zero on FAILING")
+  .option("--cwd <cwd>", "where to load skills from", process.cwd())
+  .option(
+    "--references-cwd <cwd>",
+    "where to load references and recipes from (defaults to --cwd; useful when references live in the agentx repo and skills live under ~/.claude)",
+  )
+  .option("--json", "emit JSON instead of a human report")
+  .option("--workspace <id>", "audit a single agent workspace by id (skills + references; overrides --cwd)")
+  .option(
+    "--all-workspaces",
+    "audit every agent workspace in agentx.json; references default to the current cwd",
+  )
+  .action(async (opts) => {
+    const { loadLocalSkills } = await import("@/agent/skills/loader")
+    const { auditAll } = await import("@/agent/skills/audit")
+    const { loadReferences } = await import("@/agents/references/loader")
+    const { loadRecipes } = await import("@/agents/references/recipes")
+
+    const skillsRoots: string[] = []
+    if (opts.workspace) {
+      const config = loadConfig()
+      const agent = config.agents?.[opts.workspace]
+      if (!agent) {
+        console.log(chalk.red(`  Agent "${opts.workspace}" not found in agentx.json`))
+        process.exit(1)
+      }
+      skillsRoots.push(resolve(agent.workspace))
+    } else if (opts.allWorkspaces) {
+      const config = loadConfig()
+      for (const agent of Object.values(config.agents || {}) as any[]) {
+        if (agent?.workspace) skillsRoots.push(resolve(agent.workspace))
+      }
+    } else {
+      skillsRoots.push(resolve(opts.cwd))
+    }
+    const refsRoot = resolve(opts.referencesCwd || opts.cwd)
+
+    const skillBatches = await Promise.all(skillsRoots.map(r => loadLocalSkills(r)))
+    const skills = skillBatches.flat()
+    const [references, recipes] = await Promise.all([
+      loadReferences(refsRoot),
+      loadRecipes(refsRoot),
+    ])
+    const results = auditAll({ skills, references, recipes })
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          results.map(r => ({
+            name: r.name,
+            verdict: r.verdict,
+            reasons: r.reasons,
+            path: r.skill?.path,
+          })),
+          null,
+          2,
+        ),
+      )
+    } else {
+      const summary = { PASS: 0, REVIEW: 0, FAILING: 0 }
+      for (const r of results) summary[r.verdict]++
+      console.log()
+      for (const r of results) {
+        const tag =
+          r.verdict === "PASS"
+            ? chalk.green("PASS   ")
+            : r.verdict === "REVIEW"
+              ? chalk.yellow("REVIEW ")
+              : chalk.red("FAILING")
+        console.log(`  ${tag} ${chalk.bold(r.name)}${r.skill?.path ? chalk.dim(` (${r.skill.path})`) : ""}`)
+        for (const reason of r.reasons) console.log(`           ${chalk.dim("·")} ${reason}`)
+      }
+      console.log()
+      console.log(
+        `  ${chalk.green(`${summary.PASS} PASS`)}  ${chalk.yellow(`${summary.REVIEW} REVIEW`)}  ${chalk.red(`${summary.FAILING} FAILING`)}`,
+      )
+      console.log()
+    }
+
+    process.exit(results.some(r => r.verdict === "FAILING") ? 1 : 0)
+  })
+
+// ==================== agentx references ====================
+//
+// Operator-private fact registry. Generic to any project — Noqta runs KSI in
+// .agentx/references/ksi/, the next operator runs their own clients the same
+// way. The engine ships only the schema + a generic example template.
+
+export const references = new Command()
+  .name("references")
+  .alias("refs")
+  .description("manage the deterministic references registry — facts cited by skills and resolved into agent context")
+
+references
+  .command("init <namespace>")
+  .description("scaffold .agentx/references/<namespace>/ from the example template (operator-private)")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--force", "overwrite existing files")
+  .action((namespace: string, opts) => {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(namespace)) {
+      console.log(chalk.red(`  Invalid namespace "${namespace}". Use lowercase letters, digits, and hyphens.`))
+      process.exit(1)
+    }
+    const cwd = resolve(opts.cwd)
+    const exampleRoot = resolve(cwd, "references/example")
+    const exampleRecipe = resolve(cwd, "references/recipes/example.yaml")
+    if (!existsSync(exampleRoot)) {
+      console.log(chalk.red(`  Example template not found at ${exampleRoot}. Are you running this from the agentx repo root?`))
+      process.exit(1)
+    }
+    const targetRoot = resolve(cwd, ".agentx/references", namespace)
+    const targetRecipes = resolve(cwd, ".agentx/references/recipes")
+    mkdirSync(targetRoot, { recursive: true })
+    mkdirSync(targetRecipes, { recursive: true })
+
+    const exampleFiles = readdirSync(exampleRoot).filter(f => f.endsWith(".yaml") || f.endsWith(".yml"))
+    let copied = 0
+    let skipped = 0
+    for (const file of exampleFiles) {
+      const dest = join(targetRoot, file)
+      if (existsSync(dest) && !opts.force) {
+        console.log(chalk.dim(`  skip   ${dest} (exists; --force to overwrite)`))
+        skipped++
+        continue
+      }
+      // Re-namespace: replace `namespace: example.<x>` with `namespace: <ns>.<x>`
+      const src = readFileSync(join(exampleRoot, file), "utf-8")
+      const rewritten = src.replace(/^namespace:\s*example\./m, `namespace: ${namespace}.`)
+      writeFileSync(dest, rewritten)
+      console.log(chalk.green(`  +      ${dest}`))
+      copied++
+    }
+    const recipeDest = join(targetRecipes, `${namespace}.yaml`)
+    if (existsSync(recipeDest) && !opts.force) {
+      console.log(chalk.dim(`  skip   ${recipeDest} (exists; --force to overwrite)`))
+      skipped++
+    } else if (existsSync(exampleRecipe)) {
+      const src = readFileSync(exampleRecipe, "utf-8").replaceAll("example.", `${namespace}.`)
+      writeFileSync(recipeDest, src)
+      console.log(chalk.green(`  +      ${recipeDest}`))
+      copied++
+    }
+    console.log()
+    console.log(chalk.dim(`  ${copied} written, ${skipped} skipped. Edit the placeholders, then:`))
+    console.log(chalk.dim(`    1. set contextReferences: true on the relevant agents in agentx.json`))
+    console.log(chalk.dim(`    2. agentx skill audit  # verify references resolve`))
+    console.log(chalk.dim(`    3. systemctl restart agentx  # pick up the new registry`))
+    console.log()
+  })
+
+references
+  .command("list")
+  .alias("ls")
+  .description("list every loaded reference (debug)")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--json", "emit JSON")
+  .action(async (opts) => {
+    const { loadReferences } = await import("@/agents/references/loader")
+    const idx = await loadReferences(resolve(opts.cwd))
+    const cards = [...idx.byId.values()].sort((a, b) => a.id.localeCompare(b.id))
+    if (opts.json) {
+      console.log(JSON.stringify(cards, null, 2))
+      return
+    }
+    console.log()
+    if (cards.length === 0) {
+      console.log(chalk.dim("  (no references loaded — try `agentx references init <namespace>`)"))
+      console.log()
+      return
+    }
+    for (const card of cards) {
+      const src = idx.sourceById.get(card.id)
+      console.log(`  ${chalk.cyan(card.id)} ${chalk.dim(`(${card.kind})`)}`)
+      console.log(`    ${card.summary}`)
+      if (src) console.log(chalk.dim(`    ${src}`))
+    }
+    console.log()
+    console.log(chalk.dim(`  ${cards.length} reference(s) loaded.`))
+    console.log()
+  })
+
 // ==================== agentx hook ====================
 
 export const hook = new Command()

@@ -40,6 +40,7 @@ const DEFAULT_CONFIG: ContextConfig = {
     landscape: 800,
     identity: 200,
     bootstrap: 500,
+    references: 500,
     intent: 200,
     artifacts: 500,
     memory: 600,
@@ -59,6 +60,9 @@ export interface ContextInput {
 
   // Bootstrap identity files (from workspace)
   bootstrapContext?: string          // from buildBootstrapContext()
+
+  // Verified deterministic references (from references registry + recipes)
+  references?: string                // from renderReferences()
 
   // Behavioral patterns (self-improving loop)
   patternContext?: string            // from PatternStore.buildContext()
@@ -217,6 +221,19 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("bootstrap", 500),
       content: input.bootstrapContext,
       tags: ["bootstrap", "identity", "personality"],
+    })
+  }
+
+  // 4.7 Verified references — deterministic facts (SSH hosts, project IDs,
+  //     paths, contacts) resolved from the references registry + recipes.
+  //     Sits before Intent so the agent reads facts before interpretation.
+  if (input.references) {
+    layers.push({
+      name: "references",
+      priority: 4.7,
+      maxTokens: budget("references", 500),
+      content: input.references,
+      tags: ["references", "verified", "deterministic"],
     })
   }
 

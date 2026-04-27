@@ -12,6 +12,9 @@ import { extractMemories } from "./memory-extract"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
+import { loadReferences, renderReferences } from "./references/loader"
+import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
+import type { ReferenceIndex } from "./references/types"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
@@ -227,6 +230,11 @@ export class AgentRegistry {
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
   private sparklineCache: Map<string, { hourly: number[]; at: number }> = new Map()
+  /** Per-workspace references registry cache. Loaded lazily on first turn for
+   *  agents with `contextReferences: true`; reused for the daemon's lifetime
+   *  (operator-edited registries take effect on next daemon restart — same
+   *  policy as agentx.json). */
+  private referencesCache: Map<string, { refs: ReferenceIndex; recipes: RecipeIndex }> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -639,6 +647,53 @@ export class AgentRegistry {
       // Skill loading is optional
     }
 
+    // Verified deterministic references — opt-in per agent via
+    // `contextReferences: true`. Loads the per-workspace YAML registry once
+    // and caches it for the daemon's lifetime. Operator edits take effect on
+    // restart, same policy as agentx.json.
+    let referencesBlock: string | undefined
+    if (state.def.contextReferences) {
+      try {
+        const cacheKey = state.def.workspace
+        let cached = this.referencesCache.get(cacheKey)
+        if (!cached) {
+          const [refs, recipes] = await Promise.all([
+            loadReferences(state.def.workspace),
+            loadRecipes(state.def.workspace),
+          ])
+          // Fall back to the repo root if the workspace has no registry
+          // (common when references are shared org-wide).
+          if (refs.byId.size === 0 && recipes.recipes.length === 0) {
+            const [rootRefs, rootRecipes] = await Promise.all([
+              loadReferences(process.cwd()),
+              loadRecipes(process.cwd()),
+            ])
+            cached = { refs: rootRefs, recipes: rootRecipes }
+          } else {
+            cached = { refs, recipes }
+          }
+          this.referencesCache.set(cacheKey, cached)
+        }
+        const resolved = resolveRecipes(
+          {
+            agentId: task.agentId,
+            intentTags: intent?.path,
+            message: task.message,
+          },
+          cached.recipes,
+          cached.refs,
+        )
+        if (resolved.cards.length > 0) {
+          referencesBlock = renderReferences(resolved.cards, 500 * 4)
+        }
+        if (resolved.unresolvedIds.length > 0) {
+          this.log(`[${task.agentId}] references: unresolved ids: ${resolved.unresolvedIds.join(", ")}`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] references resolver failed (non-fatal): ${e?.message || e}`)
+      }
+    }
+
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
@@ -813,6 +868,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: patternContext || undefined,
+      references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       // Planner override takes precedence when set — falls back to the

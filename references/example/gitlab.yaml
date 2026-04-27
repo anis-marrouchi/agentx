@@ -1,0 +1,23 @@
+namespace: example.gitlab
+cards:
+  - id: group
+    kind: gitlab
+    summary: Example GitLab group on a self-hosted instance
+    fields:
+      groupId: 0
+      url: https://gitlab.example.com/groups/your-group
+      tokenEnv: EXAMPLE_GITLAB_TOKEN
+    tags: [example]
+    lastVerified: "1970-01-01"
+
+  - id: project.app
+    kind: gitlab
+    summary: Example app repo
+    fields:
+      projectId: 0
+      path: your-group/your-app
+      url: https://gitlab.example.com/your-group/your-app
+      defaultBranch: main
+      stack: replace-with-your-stack
+    tags: [example, deploy]
+    lastVerified: "1970-01-01"

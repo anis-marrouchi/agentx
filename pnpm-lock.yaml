@@ -11,6 +11,9 @@ importers:
       '@roamhq/wrtc':
         specifier: ^0.10.0
         version: 0.10.0
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(sharp@0.34.5)
@@ -38,6 +41,9 @@ importers:
       fs-extra:
         specifier: ^11.2.0
         version: 11.3.3
+      js-yaml:
+        specifier: ^4.1.1
+        version: 4.1.1
       node-fetch:
         specifier: ^3.3.0
         version: 3.3.2
@@ -1093,6 +1099,9 @@ packages:
 
   '@types/hast@3.0.4':
     resolution: {integrity: sha512-WPs+bbQw5aCj+x6laNGWLH3wviHtoCv/P3+otBhbOhJgG8qtpdAMlTCxLtsTWA7LH1Oh/bFCHsBn0TPS5m30EQ==}
+
+  '@types/js-yaml@4.0.9':
+    resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
 
   '@types/jsonfile@6.1.4':
     resolution: {integrity: sha512-D5qGUYwjvnNNextdU59/+fI+spnwtTFmyQP0h+PfIOSkNfpU6AOICUOkm4i0OnSk+NyjdPJrxCDro0sJsWlRpQ==}
@@ -3761,6 +3770,8 @@ snapshots:
   '@types/hast@3.0.4':
     dependencies:
       '@types/unist': 3.0.3
+
+  '@types/js-yaml@4.0.9': {}
 
   '@types/jsonfile@6.1.4':
     dependencies:
