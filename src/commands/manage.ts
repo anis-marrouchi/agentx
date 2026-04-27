@@ -889,6 +889,85 @@ references
   })
 
 references
+  .command("discover <namespace>")
+  .description("scan installed skills (and optionally agentx.json) and write detected facts to .agentx/references/<namespace>/")
+  .option("--cwd <cwd>", "where to scan for skills", process.cwd())
+  .option("--from <skills>", "comma-separated skill name/tag substrings to filter by (default: namespace itself)")
+  .option("--gitlab-host <url>", "validate project URLs against this host (e.g. https://gitlab.noqta.tn)")
+  .option("--write", "write the YAML files (default: dry-run preview)")
+  .option("--force", "overwrite existing files when --write is set")
+  .action(async (namespace: string, opts) => {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(namespace)) {
+      console.log(chalk.red(`  Invalid namespace "${namespace}". Use lowercase letters, digits, and hyphens.`))
+      process.exit(1)
+    }
+    const { loadLocalSkills } = await import("@/agent/skills/loader")
+    const { discoverFromSkills, renderDiscovery } = await import("@/agents/references/discover")
+    const cwd = resolve(opts.cwd)
+    const filter = (opts.from
+      ? String(opts.from)
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [namespace])
+    const skills = await loadLocalSkills(cwd)
+    const result = discoverFromSkills(skills, {
+      namespace,
+      filter,
+      gitlabHost: opts.gitlabHost,
+    })
+
+    console.log()
+    if (result.scannedSkills.length === 0) {
+      console.log(chalk.yellow(`  No skills matched filter [${filter.join(", ")}] under ${cwd}`))
+      console.log(chalk.dim("  Tip: pass --from <skill-name>,<other> to widen the filter."))
+      console.log()
+      return
+    }
+    console.log(chalk.dim(`  Scanned skills: ${result.scannedSkills.join(", ")}`))
+    const counts = Object.fromEntries(
+      Object.entries(result.byKind).map(([k, v]) => [k, v.length]),
+    )
+    console.log(`  Discovered:  ssh=${counts.ssh}  gitlab=${counts.gitlab}  paths=${counts.path}  contacts=${counts.contact}`)
+
+    const files = renderDiscovery(result, namespace)
+    const targetDir = resolve(cwd, ".agentx/references", namespace)
+
+    if (!opts.write) {
+      console.log()
+      console.log(chalk.dim(`  Dry-run — would write to ${targetDir}/`))
+      for (const [name, content] of Object.entries(files)) {
+        console.log(chalk.cyan(`\n  --- ${name} ---`))
+        console.log(content.split("\n").slice(0, 30).map(l => `    ${l}`).join("\n"))
+        if (content.split("\n").length > 30) console.log(chalk.dim(`    … (${content.split("\n").length - 30} more lines truncated in preview)`))
+      }
+      console.log()
+      console.log(chalk.dim(`  Re-run with --write to commit these to ${targetDir}/`))
+      console.log()
+      return
+    }
+
+    mkdirSync(targetDir, { recursive: true })
+    let written = 0
+    let skipped = 0
+    for (const [name, content] of Object.entries(files)) {
+      const dest = join(targetDir, name)
+      if (existsSync(dest) && !opts.force) {
+        console.log(chalk.dim(`  skip   ${dest} (exists; --force to overwrite)`))
+        skipped++
+        continue
+      }
+      writeFileSync(dest, content)
+      console.log(chalk.green(`  +      ${dest}`))
+      written++
+    }
+    console.log()
+    console.log(chalk.dim(`  ${written} written, ${skipped} skipped. Review every card — flagged ones (tags include "needs-review") are best-effort guesses.`))
+    console.log(chalk.dim(`  Then: agentx skill audit  →  set contextReferences: true on the relevant agents  →  systemctl restart agentx`))
+    console.log()
+  })
+
+references
   .command("list")
   .alias("ls")
   .description("list every loaded reference (debug)")
