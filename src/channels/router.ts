@@ -12,6 +12,9 @@ import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs"
 import { resolve, dirname } from "path"
+import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
+import { runPipeline, type PipelineResult } from "./inbound/pipeline"
+import { defaultPipeline } from "./inbound/stages"
 
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
@@ -462,11 +465,14 @@ export class MessageRouter {
       }
     }
 
-    // Resolve agent — check local first, then mesh peers
-    const agentId = this.resolveAgent(msg)
+    // Resolve agent via the routing pipeline (Phase 2). Each stage produces
+    // a named decision; we trace the deciding stage so "why didn't agent X
+    // get this message?" is one log-line away.
+    const result = this.runRoutingPipeline(msg)
+    const agentId = result.agentId
 
     if (!agentId) {
-      this.traceRoute(msg, "drop", "unrouted")
+      this.traceRoute(msg, "drop", `${result.decidingStage}: ${result.reason}`)
       return
     }
 
@@ -480,7 +486,7 @@ export class MessageRouter {
       }
     }
 
-    this.traceRoute(msg, "match", `agent=${agentId}`)
+    this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`)
 
     const chatId = msg.group?.id || msg.sender.id
 
@@ -971,16 +977,30 @@ export class MessageRouter {
   // --- Routing observability ---
   //
   // Every inbound message produces exactly one [route] log line, with the
-  // routing decision (match | drop) + reason. Goes to the daemon stderr
-  // log so the existing ~/.agentx/logs/ audit captures it. Phase 2 will
-  // emit one trace per pipeline stage for granular debugging; Phase 1's
-  // single-line trace is the minimum viable observability that lets us
-  // answer "why didn't agent X get the message?" without grep + intuition.
+  // routing decision (match | drop), the deciding stage, and a reason.
+  // Goes to the daemon stderr log so the existing ~/.agentx/logs/ audit
+  // captures it.
   private traceRoute(msg: IncomingMessage, kind: "match" | "drop", reason: string): void {
     const chat = msg.group?.id || msg.sender?.id || "?"
     this.log(
       `[route] ${msg.channel}:${chat} msgId=${msg.id} acct=${msg.accountId ?? "—"} kind=${kind} ${reason}`,
     )
+  }
+
+  // --- Routing pipeline ---
+  //
+  // Phase 2: replaces the legacy resolveAgent() switch. The pipeline runs
+  // a fixed-order list of named stages (see src/channels/inbound/stages/);
+  // the first non-`pass` decision wins. resolveAgent() is kept as a thin
+  // delegate for callers that only need the agentId and don't care about
+  // the trace.
+  private runRoutingPipeline(msg: IncomingMessage): PipelineResult {
+    const env: InboundEnvelope = fromIncoming(msg)
+    return runPipeline(env, defaultPipeline, {
+      config: this.config,
+      registry: this.registry,
+      handoverStore: this.handoverStore,
+    })
   }
 
   // --- Agent resolution ---
@@ -1195,77 +1215,11 @@ export class MessageRouter {
     return undefined
   }
 
+  /** @deprecated Phase 2 — resolveAgent now delegates to the pipeline.
+   *  Kept as a thin wrapper for callers that only need the agentId; new
+   *  code should call runRoutingPipeline() to get the full PipelineResult
+   *  (deciding stage, drop reason, per-stage trace). */
   private resolveAgent(msg: IncomingMessage): string | undefined {
-    // For GitLab: the adapter resolves agents deterministically via agentMappings
-    // (GitLab @username -> agentId). Don't use registry.findByMention() here
-    // because that matches Telegram handles, not GitLab usernames.
-    if (msg.channel === "gitlab") {
-      if (msg.resolvedAgent) {
-        this.log(`GitLab agent resolved by adapter: ${msg.resolvedAgent}`)
-        return msg.resolvedAgent
-      }
-      return undefined
-    }
-
-    // Runtime override takes precedence over every config-driven route.
-    // This is how operator-initiated handovers redirect traffic without a
-    // daemon restart.
-    const chatId = msg.group?.id ?? msg.sender.id
-    const override = this.handoverStore.get(msg.channel, chatId, msg.accountId)
-    if (override) {
-      this.log(
-        `[handover] ${msg.channel}:${chatId}${msg.accountId ? `:${msg.accountId}` : ""} -> ${override.toAgent} (handover)`,
-      )
-      return override.toAgent
-    }
-
-    // Pre-resolved by channel adapter (WhatsApp route-based, etc.)
-    if (msg.resolvedAgent) {
-      return msg.resolvedAgent
-    }
-
-    // DM: route to the account's bound agent
-    if (!msg.group) {
-      if (msg.channel === "telegram") {
-        const account = this.config.channels.telegram.accounts[msg.accountId]
-        return account?.agentBinding
-      }
-      if (msg.channel === "whatsapp") {
-        return this.config.channels.whatsapp.defaultAgent
-      }
-      return undefined
-    }
-
-    // Messages from another bot (cross-daemon Telegram cascades, e.g. one bot
-    // quoting another bot's handle in a prose reply) must only route on an
-    // explicit `@`-prefixed handle of a local agent. Bare-word matches like
-    // "nadia" in text or "devops-mtgl" mentioned in a reply would otherwise
-    // trigger spurious activations across daemons.
-    const atMentionsOnly = msg.sender.isBot === true
-
-    // Group: check policy
-    if (msg.channel === "telegram") {
-      const policy = this.config.channels.telegram.policy
-      if (policy.group === "mention-required") {
-        const agentId = this.registry.findByMention(msg.text, { atMentionsOnly })
-        if (!agentId) return undefined
-        return agentId
-      }
-    }
-
-    // Default: mention matching, then account binding
-    const mentionAgent = this.registry.findByMention(msg.text, { atMentionsOnly })
-    if (mentionAgent) return mentionAgent
-    // If this is a bot-origin message with no explicit @ match, drop it —
-    // don't fall through to account-binding which would route every bot reply
-    // in the group to the bound agent.
-    if (atMentionsOnly) return undefined
-
-    if (msg.channel === "telegram") {
-      const account = this.config.channels.telegram.accounts[msg.accountId]
-      return account?.agentBinding
-    }
-
-    return this.config.channels.whatsapp.defaultAgent
+    return this.runRoutingPipeline(msg).agentId
   }
 }
