@@ -412,13 +412,30 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
   }
 
   // 5. GitLab agentMappings referencing agent ids that aren't in agents.
+  //    A mapping with `node:` set is a cross-mesh route — the agent lives
+  //    on a remote peer, not locally — so missing-from-agents is correct
+  //    and not a finding. We still warn when `node` names a peer that
+  //    isn't configured (caught by check #3 above for webhooks; same
+  //    invariant should hold for agentMappings).
   const agentIds = new Set(Object.keys(cfg.agents ?? {}))
   for (const m of (cfg.channels?.gitlab?.agentMappings ?? [])) {
-    if (m?.agentId && !agentIds.has(m.agentId)) {
+    if (!m?.agentId) continue
+    if (m.node) {
+      // Cross-mesh route — verify the named peer exists.
+      if (!peers.has(m.node)) {
+        findings.push({
+          severity: "fail",
+          title: `gitlab.agentMappings entry agentId="${m.agentId}" routes to mesh peer "${m.node}" which is not in mesh.peers`,
+          fix: `Add the peer to mesh.peers or drop the node field on the mapping.`,
+        })
+      }
+      continue
+    }
+    if (!agentIds.has(m.agentId)) {
       findings.push({
         severity: "warn",
-        title: `gitlab.agentMappings entry agentId="${m.agentId}" — no such agent in agents.*`,
-        fix: `Add the agent to agents.*, or remove the mapping if the agent has been retired.`,
+        title: `gitlab.agentMappings entry agentId="${m.agentId}" — no such agent in agents.* (and no node field, so it's not a cross-mesh route)`,
+        fix: `Add the agent to agents.*, set node:"<peer>" if the agent lives remotely, or remove the mapping.`,
       })
     }
   }
@@ -440,28 +457,11 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
     }
   }
 
-  // 7. Config newer than running daemon — operator edited agentx.json
-  //    but didn't reload. Phase 4 widened reload coverage; warn so they
-  //    don't go on chasing ghosts.
-  try {
-    const cfgPath = resolve(process.cwd(), "agentx.json")
-    const pidPath = resolve(process.cwd(), ".agentx/daemon.pid")
-    if (existsSync(cfgPath) && existsSync(pidPath)) {
-      const cfgMtime = statSync(cfgPath).mtimeMs
-      const pidMtime = statSync(pidPath).mtimeMs
-      if (cfgMtime > pidMtime + 1000) {
-        // The pid file is rewritten on each daemon start; if config is
-        // newer, the daemon hasn't picked up the edit (no reload + no
-        // restart). The +1s pad swallows clock skew between the two
-        // writes happening within the same boot.
-        findings.push({
-          severity: "warn",
-          title: `agentx.json was modified ${formatRelative(cfgMtime - pidMtime)} after the daemon last started`,
-          fix: `Run \`agentx config reload\` to apply hot-reloadable changes (telegram accounts, webhooks, mesh peers, hooks, etc.) or restart for the rest.`,
-        })
-      }
-    }
-  } catch { /* best-effort */ }
+  // (Removed: the "agentx.json newer than daemon pid" check produced
+  //  false positives because the pid file is only rewritten on start,
+  //  not on hot-reload. The signal-to-noise was too low. A future check
+  //  can query /reload's `lastReload` timestamp via the daemon API
+  //  instead of using filesystem mtimes.)
 
   if (findings.length === 0) {
     checks.push({
@@ -474,15 +474,6 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
   for (const f of findings) {
     checks.push({ severity: f.severity, group: "Routing", title: f.title, fix: f.fix })
   }
-}
-
-function formatRelative(ms: number): string {
-  const s = Math.round(ms / 1000)
-  if (s < 60) return `${s}s`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m`
-  const h = Math.round(m / 60)
-  return `${h}h`
 }
 
 async function runRuntimeChecks(checks: Check[], cfg: any): Promise<void> {
