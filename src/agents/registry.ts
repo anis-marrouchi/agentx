@@ -15,6 +15,7 @@ import { PatternStore, extractPatterns } from "./patterns"
 import { loadReferences, renderReferences } from "./references/loader"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
+import { getEventBus } from "@/events/bus"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
@@ -599,6 +600,15 @@ export class AgentRegistry {
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
+    const taskStartedAt = Date.now()
+    getEventBus().emit("task:started", {
+      agentId: task.agentId,
+      channel,
+      chatId,
+      messagePreview: (task.message || "").slice(0, 200),
+      at: new Date(taskStartedAt).toISOString(),
+    })
+
     // Classify the message through the intent graph when enabled. Skip for
     // a2a traffic — the classifier itself dispatches through /task, and
     // re-classifying its own prompts would recurse forever. Any classifier
@@ -656,6 +666,11 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "stale",
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -667,6 +682,12 @@ export class AgentRegistry {
       const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "tier-2",
+        lastTurnInputTokens: lastTokens,
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -678,6 +699,11 @@ export class AgentRegistry {
       const turns = this.sessions.getTurnCount(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] max-turns rotation for ${channel}:${chatId} (${turns} turns ≥ ${this.sessions.getMaxTurnsPerSession()})`)
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "max-turns",
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -978,6 +1004,19 @@ export class AgentRegistry {
 
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
       finalResponse = response
+
+      getEventBus().emit("task:completed", {
+        agentId: task.agentId,
+        channel,
+        chatId,
+        durationMs: Date.now() - taskStartedAt,
+        error: response.error || undefined,
+        inputTokens: response.usage?.inputTokens,
+        outputTokens: response.usage?.outputTokens,
+        cacheReadTokens: response.usage?.cacheReadTokens,
+        cacheCreateTokens: response.usage?.cacheCreateTokens,
+        at: new Date().toISOString(),
+      })
 
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal

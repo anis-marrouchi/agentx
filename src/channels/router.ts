@@ -15,6 +15,7 @@ import { resolve, dirname } from "path"
 import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
 import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
+import { getEventBus } from "@/events/bus"
 
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
@@ -472,7 +473,7 @@ export class MessageRouter {
     const agentId = result.agentId
 
     if (!agentId) {
-      this.traceRoute(msg, "drop", `${result.decidingStage}: ${result.reason}`)
+      this.traceRoute(msg, "drop", result.reason, result.decidingStage)
       return
     }
 
@@ -481,12 +482,12 @@ export class MessageRouter {
     if (msg.group && msg.channel === "telegram") {
       const boundAccount = this.getAccountForAgent(agentId)
       if (boundAccount && boundAccount !== msg.accountId) {
-        this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`)
+        this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`, "multi-account-dedup")
         return
       }
     }
 
-    this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`)
+    this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`, result.decidingStage, agentId)
 
     const chatId = msg.group?.id || msg.sender.id
 
@@ -979,12 +980,35 @@ export class MessageRouter {
   // Every inbound message produces exactly one [route] log line, with the
   // routing decision (match | drop), the deciding stage, and a reason.
   // Goes to the daemon stderr log so the existing ~/.agentx/logs/ audit
-  // captures it.
-  private traceRoute(msg: IncomingMessage, kind: "match" | "drop", reason: string): void {
+  // captures it. Also publishes on the event bus so SQLite writers,
+  // dashboards, and plugins can subscribe without touching this code.
+  private traceRoute(msg: IncomingMessage, kind: "match" | "drop", reason: string, decidingStage = "unknown", agentId?: string): void {
     const chat = msg.group?.id || msg.sender?.id || "?"
     this.log(
       `[route] ${msg.channel}:${chat} msgId=${msg.id} acct=${msg.accountId ?? "—"} kind=${kind} ${reason}`,
     )
+    const at = new Date().toISOString()
+    if (kind === "match" && agentId) {
+      getEventBus().emit("message:matched", {
+        channel: msg.channel,
+        chatId: String(chat),
+        msgId: msg.id,
+        accountId: msg.accountId,
+        agentId,
+        decidingStage,
+        at,
+      })
+    } else if (kind === "drop") {
+      getEventBus().emit("message:dropped", {
+        channel: msg.channel,
+        chatId: String(chat),
+        msgId: msg.id,
+        accountId: msg.accountId,
+        decidingStage,
+        reason,
+        at,
+      })
+    }
   }
 
   // --- Routing pipeline ---
