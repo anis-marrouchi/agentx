@@ -173,6 +173,24 @@ export class AgentXDaemon {
     // Initialize webhook handler (after mesh so mesh-forwarding works)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks)
 
+    // Move 2: open SQLite + attach bus subscribers. Best-effort — if the
+    // native binding isn't available (operator hasn't run pnpm rebuild),
+    // openDb returns null and subscribers are skipped. Existing JSON
+    // writes continue regardless. SQLite is observability-grade for now.
+    try {
+      const { openDb } = require("@/storage/sqlite") as typeof import("@/storage/sqlite")
+      const { attachSqliteSubscribers } = require("@/storage/subscribers") as typeof import("@/storage/subscribers")
+      const db = openDb()
+      if (db) {
+        attachSqliteSubscribers(db)
+        this.log(`  SQLite: ${db.name}`)
+      } else {
+        this.log(`  SQLite: not opened (native binding unavailable or path unwritable)`)
+      }
+    } catch (e: any) {
+      this.log(`  SQLite: skipped (${e.message})`)
+    }
+
     // Initialize business layer (if enabled)
     if (this.config.business?.enabled) {
       try {
