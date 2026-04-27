@@ -647,53 +647,6 @@ export class AgentRegistry {
       // Skill loading is optional
     }
 
-    // Verified deterministic references — opt-in per agent via
-    // `contextReferences: true`. Loads the per-workspace YAML registry once
-    // and caches it for the daemon's lifetime. Operator edits take effect on
-    // restart, same policy as agentx.json.
-    let referencesBlock: string | undefined
-    if (state.def.contextReferences) {
-      try {
-        const cacheKey = state.def.workspace
-        let cached = this.referencesCache.get(cacheKey)
-        if (!cached) {
-          const [refs, recipes] = await Promise.all([
-            loadReferences(state.def.workspace),
-            loadRecipes(state.def.workspace),
-          ])
-          // Fall back to the repo root if the workspace has no registry
-          // (common when references are shared org-wide).
-          if (refs.byId.size === 0 && recipes.recipes.length === 0) {
-            const [rootRefs, rootRecipes] = await Promise.all([
-              loadReferences(process.cwd()),
-              loadRecipes(process.cwd()),
-            ])
-            cached = { refs: rootRefs, recipes: rootRecipes }
-          } else {
-            cached = { refs, recipes }
-          }
-          this.referencesCache.set(cacheKey, cached)
-        }
-        const resolved = resolveRecipes(
-          {
-            agentId: task.agentId,
-            intentTags: intent?.path,
-            message: task.message,
-          },
-          cached.recipes,
-          cached.refs,
-        )
-        if (resolved.cards.length > 0) {
-          referencesBlock = renderReferences(resolved.cards, 500 * 4)
-        }
-        if (resolved.unresolvedIds.length > 0) {
-          this.log(`[${task.agentId}] references: unresolved ids: ${resolved.unresolvedIds.join(", ")}`)
-        }
-      } catch (e: any) {
-        this.log(`[${task.agentId}] references resolver failed (non-fatal): ${e?.message || e}`)
-      }
-    }
-
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
@@ -761,6 +714,58 @@ export class AgentRegistry {
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
+
+    // Verified deterministic references — opt-in per agent via
+    // `contextReferences: true`. Only injected when starting a FRESH Claude
+    // session: once a session is in progress, the agent already has any
+    // facts it learned in earlier turns, and re-rendering them on every
+    // resumed turn just bloats the per-turn user-message context. That
+    // bloat compounded with --resume's full-history replay was hitting the
+    // 180k tier-2 threshold in 5–10 turns and forcing constant rotation,
+    // which discarded the conversation Claude session — causing exactly
+    // the "I don't have prior context" symptom users observed.
+    // The resolver itself runs cheaply in-memory; we just gate the rendered
+    // block on `!resumeSessionId`.
+    let referencesBlock: string | undefined
+    if (state.def.contextReferences && !resumeSessionId) {
+      try {
+        const cacheKey = state.def.workspace
+        let cached = this.referencesCache.get(cacheKey)
+        if (!cached) {
+          const [refs, recipes] = await Promise.all([
+            loadReferences(state.def.workspace),
+            loadRecipes(state.def.workspace),
+          ])
+          if (refs.byId.size === 0 && recipes.recipes.length === 0) {
+            const [rootRefs, rootRecipes] = await Promise.all([
+              loadReferences(process.cwd()),
+              loadRecipes(process.cwd()),
+            ])
+            cached = { refs: rootRefs, recipes: rootRecipes }
+          } else {
+            cached = { refs, recipes }
+          }
+          this.referencesCache.set(cacheKey, cached)
+        }
+        const resolved = resolveRecipes(
+          {
+            agentId: task.agentId,
+            intentTags: intent?.path,
+            message: task.message,
+          },
+          cached.recipes,
+          cached.refs,
+        )
+        if (resolved.cards.length > 0) {
+          referencesBlock = renderReferences(resolved.cards, 500 * 4)
+        }
+        if (resolved.unresolvedIds.length > 0) {
+          this.log(`[${task.agentId}] references: unresolved ids: ${resolved.unresolvedIds.join(", ")}`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] references resolver failed (non-fatal): ${e?.message || e}`)
+      }
+    }
 
     // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group).
     // Gated on the current message — we only ship the hint when the user
