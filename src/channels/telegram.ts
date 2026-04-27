@@ -2,6 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { markdownToTelegramHtml } from "./telegram-format"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
+import { getCursorStore, type CursorStore } from "./cursor-store"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
@@ -134,6 +135,11 @@ class TelegramGroupStore {
 }
 
 /**
+ * @deprecated Replaced by FileCursorStore in src/channels/cursor-store.ts.
+ * Kept temporarily for callers we haven't migrated yet; do not introduce
+ * new uses. The ad-hoc 500ms debounce here was the root cause of the
+ * 2026-04-27 message-replay incident.
+ *
  * Persist long-poll `offset` per account to disk so a daemon restart doesn't
  * re-fetch updates Telegram still holds in its 24h retention window. Without
  * this, a crash loop (e.g. restart-counter cascade) causes the same message
@@ -188,7 +194,7 @@ class TelegramOffsetStore {
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram"
   private accounts: Map<string, TelegramAccountConfig>
-  private offsetStore: TelegramOffsetStore
+  private cursors: CursorStore
   private handler?: (msg: IncomingMessage) => Promise<void>
   private polling = false
   /** Per-account polling gate — flipped to false when an account is removed
@@ -210,7 +216,7 @@ export class TelegramAdapter implements ChannelAdapter {
     this.globalAllowFrom = opts.policy?.allowFrom
     this.log = log
     this.groupStore = new TelegramGroupStore(process.cwd())
-    this.offsetStore = new TelegramOffsetStore(process.cwd())
+    this.cursors = getCursorStore(process.cwd())
   }
 
   /** Effective sender allowlist for an account. Returns undefined when the
@@ -335,9 +341,9 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     this.polling = false
-    // Flush any debounced offset writes BEFORE we release the Telegram session
-    // — otherwise a clean stop could drop the last in-memory offset update.
-    this.offsetStore.flush()
+    // Cursors commit synchronously per-update now (FileCursorStore), so
+    // there's nothing to flush here — every offset advance has already
+    // landed on disk before the next getUpdates ack.
     const aborts = Array.from(this.accounts.keys()).map((id) => this.stopAccount(id))
     await Promise.allSettled(aborts)
   }
@@ -699,7 +705,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
     while (this.polling && this.accountPolling.get(accountId) !== false) {
       try {
-        const offset = this.offsetStore.get(accountId) || 0
+        const stored = this.cursors.read("telegram", accountId)
+        const offset = typeof stored === "number" ? stored : 0
         const data = await this.apiCall(config.token, "getUpdates", {
           offset: offset || undefined,
           timeout: 30,
@@ -709,7 +716,14 @@ export class TelegramAdapter implements ChannelAdapter {
         const updates: TelegramUpdate[] = data.result || []
 
         for (const update of updates) {
-          this.offsetStore.set(accountId, update.update_id + 1)
+          // Synchronous commit BEFORE we hand the message to the router. The
+          // next getUpdates with this offset is what acks the upstream — if
+          // we crash between this line and the next poll, restart resumes
+          // from the same offset and Telegram redelivers the unprocessed
+          // updates. (Pre-2026-04-27 the old TelegramOffsetStore debounced
+          // 500ms, which left a window where Telegram had already deleted
+          // the message but the disk still pointed at the old offset.)
+          this.cursors.commit("telegram", accountId, update.update_id + 1)
 
           if (update.message && this.handler) {
             const msg = update.message

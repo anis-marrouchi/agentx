@@ -2,6 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
+import { markBody, detectAgentxMarker } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -313,7 +314,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const agentLabel = msg.agentId || "unknown"
     const usingApp = !!this.appPrivateKey
     const agentHeader = usingApp ? "" : `> 🤖 **${agentLabel}** (via AgentX)\n\n`
-    const commentBody = `${agentHeader}${msg.text}\n\n<!-- agentx:${agentLabel} -->`
+    const commentBody = markBody(`${agentHeader}${msg.text}`, agentLabel)
 
     // Forward to mesh peer if the agent lives remotely (same pattern as GitLab).
     if (!agentToken && mapping?.node && this.sendCommentForwarder) {
@@ -428,9 +429,9 @@ export class GitHubAdapter implements ChannelAdapter {
     const user = comment.user
 
     // Cascade prevention: check for AgentX signature
-    const signatureMatch = comment.body.match(/<!-- agentx:(\S+) -->/)
-    if (signatureMatch) {
-      this.log(`AgentX comment from ${signatureMatch[1]}, skipping (comment ${comment.id})`)
+    const sourceAgent = detectAgentxMarker(comment.body)
+    if (sourceAgent) {
+      this.log(`AgentX comment from ${sourceAgent}, skipping (comment ${comment.id})`)
       return
     }
 
@@ -497,7 +498,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const channelMeta = await this.getChannelMeta(chatId)
 
     const incoming: IncomingMessage = {
-      id: `pr-${pr.number}-${event.action}`,
+      id: `pr-${repo}-${pr.number}`,
       channel: "github",
       accountId: "default",
       sender: {
@@ -559,7 +560,7 @@ export class GitHubAdapter implements ChannelAdapter {
     if (this.isBotUser(comment.user.login)) return
 
     // Skip AgentX-signed comments
-    if (comment.body.includes("<!-- agentx:")) return
+    if (detectAgentxMarker(comment.body)) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
@@ -600,7 +601,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const incoming: IncomingMessage = {
-      id: `issue-${issue.number}-${event.action}`,
+      id: `issue-${repo}-${issue.number}`,
       channel: "github",
       accountId: "default",
       sender: {

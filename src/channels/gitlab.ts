@@ -2,6 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
+import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -333,7 +334,7 @@ export class GitLabAdapter implements ChannelAdapter {
     const agentToken = this.getAgentToken(msg.agentId)
     if (!agentToken && mapping?.node && this.sendNoteForwarder) {
       try {
-        const body = `${msg.text}\n\n<!-- agentx:${msg.agentId || "unknown"} -->`
+        const body = markBody(msg.text, msg.agentId || "unknown")
         const noteId = await this.sendNoteForwarder(mapping.node, project, noteableType, iid, msg.agentId || "", body)
         if (noteId) this.sentNoteIds.add(noteId)
         return noteId
@@ -354,7 +355,7 @@ export class GitLabAdapter implements ChannelAdapter {
           "PRIVATE-TOKEN": token,
         },
         // Append hidden signature so we can detect our own comments on webhook
-        body: JSON.stringify({ body: `${msg.text}\n\n<!-- agentx:${msg.agentId || "unknown"} -->` }),
+        body: JSON.stringify({ body: markBody(msg.text, msg.agentId || "unknown") }),
       })
 
       if (!res.ok) {
@@ -429,9 +430,8 @@ export class GitLabAdapter implements ChannelAdapter {
     // Every comment posted by AgentX has <!-- agentx:AGENT_ID --> appended.
     // This is the most reliable check — immune to race conditions and
     // username misconfiguration.
-    const signatureMatch = note.match(/<!-- agentx:(\S+) -->/)
-    if (signatureMatch) {
-      const sourceAgent = signatureMatch[1]
+    const sourceAgent = detectAgentxMarker(note)
+    if (sourceAgent) {
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
       const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
       const mentionsDifferentAgent = mentions.some(m => {
@@ -459,7 +459,7 @@ export class GitLabAdapter implements ChannelAdapter {
       res.writeHead(200); res.end("ok"); return
     }
 
-    if (this.isBotUser(user.username) && !signatureMatch) {
+    if (this.isBotUser(user.username) && !sourceAgent) {
       this.log(`Bot comment from ${user.username} without signature, skipping (note ${noteId})`)
       res.writeHead(200); res.end("ok"); return
     }
@@ -503,7 +503,7 @@ export class GitLabAdapter implements ChannelAdapter {
     const channelMeta = await this.getChannelMeta(chatId)
 
     // Download any images attached in the comment
-    const noteClean = note.replace(/\n*<!-- agentx:\S+ -->/g, "")
+    const noteClean = stripAgentxMarkers(note)
     const imageAttachment = await this.downloadNoteImages(noteClean, project, agentToken || this.config.token)
 
     const incoming: IncomingMessage = {

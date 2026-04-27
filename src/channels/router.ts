@@ -466,6 +466,7 @@ export class MessageRouter {
     const agentId = this.resolveAgent(msg)
 
     if (!agentId) {
+      this.traceRoute(msg, "drop", "unrouted")
       return
     }
 
@@ -474,9 +475,12 @@ export class MessageRouter {
     if (msg.group && msg.channel === "telegram") {
       const boundAccount = this.getAccountForAgent(agentId)
       if (boundAccount && boundAccount !== msg.accountId) {
+        this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`)
         return
       }
     }
+
+    this.traceRoute(msg, "match", `agent=${agentId}`)
 
     const chatId = msg.group?.id || msg.sender.id
 
@@ -962,6 +966,21 @@ export class MessageRouter {
 
     sendTyping()
     return setInterval(sendTyping, TYPING_INTERVAL_MS)
+  }
+
+  // --- Routing observability ---
+  //
+  // Every inbound message produces exactly one [route] log line, with the
+  // routing decision (match | drop) + reason. Goes to the daemon stderr
+  // log so the existing ~/.agentx/logs/ audit captures it. Phase 2 will
+  // emit one trace per pipeline stage for granular debugging; Phase 1's
+  // single-line trace is the minimum viable observability that lets us
+  // answer "why didn't agent X get the message?" without grep + intuition.
+  private traceRoute(msg: IncomingMessage, kind: "match" | "drop", reason: string): void {
+    const chat = msg.group?.id || msg.sender?.id || "?"
+    this.log(
+      `[route] ${msg.channel}:${chat} msgId=${msg.id} acct=${msg.accountId ?? "—"} kind=${kind} ${reason}`,
+    )
   }
 
   // --- Agent resolution ---
