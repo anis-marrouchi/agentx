@@ -2134,6 +2134,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               chatId: body.chatId ? String(body.chatId) : undefined,
               before: body.before ? String(body.before) : undefined,
               after: body.after ? String(body.after) : undefined,
+              lookbackDays: typeof body.lookbackDays === "number" ? body.lookbackDays : undefined,
               limit: typeof body.limit === "number" ? body.limit : undefined,
               query: body.query ? String(body.query) : undefined,
               participants: Array.isArray(body.participants)
