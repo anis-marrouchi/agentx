@@ -813,6 +813,7 @@ export class AgentRegistry {
       task.contextStrategy ?? state.def.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
+    let plannerSucceeded = false
     if (strategy === "planner") {
       try {
         const { planContext } = await import("./context-planner")
@@ -825,22 +826,28 @@ export class AgentRegistry {
           memoryStore: this.memoryStore,
         })
         if (plan) {
+          plannerSucceeded = true
           sessionHistoryOverride = plan.sessionHistory
           memoryContext = plan.memoryContext
           crossChatContext = plan.crossChatContext
           planDebug = plan.debug as unknown as Record<string, unknown>
           this.log(`[${task.agentId}] planner: turns=${plan.debug.recentTurns}, mem=${plan.debug.memoryIncluded ? "yes" : "no"}, xchat=${plan.debug.crossChatIncluded ? "yes" : "no"} (${plan.debug.planLatencyMs}ms) — ${plan.debug.reasoning ?? ""}`)
         } else {
-          this.log(`[${task.agentId}] planner returned null — falling back to layered`)
+          this.log(`[${task.agentId}] planner returned null — falling back to layered (keeping --resume for continuity)`)
         }
       } catch (e: any) {
-        this.log(`[${task.agentId}] planner failed (non-fatal): ${e.message} — falling back to layered`)
+        this.log(`[${task.agentId}] planner failed (non-fatal): ${e.message} — falling back to layered (keeping --resume for continuity)`)
       }
-      // Planner mode: force a fresh Claude session. --resume replay is what
-      // causes the bloat we're trying to avoid; the planner's whole point
-      // is a curated small prompt, which is incompatible with replaying
-      // the prior tool-result stream from --resume.
-      if (resumeSessionId) {
+      // Force a fresh Claude session ONLY when the planner produced a curated
+      // prompt — that's when --resume replay would conflict with the small
+      // curated context. If the planner failed, keep the existing session so
+      // claude's own --resume continues to provide conversation continuity.
+      // Without this guard, every failed planner call dropped the session AND
+      // skipped the layered sessionHistory rebuild (which was const-bound on
+      // the pre-rotation resumeSessionId state above), leaving the agent
+      // context-blind on every turn — the canonical "I don't have prior
+      // context" symptom on planner-strategy agents.
+      if (plannerSucceeded && resumeSessionId) {
         this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
         resumeSessionId = undefined
       }
