@@ -83,6 +83,40 @@ export function referencesOtherChat(message: string): boolean {
   return CROSS_CHAT_HINT_PATTERNS.some((re) => re.test(message))
 }
 
+/** Long-memory cues — phrases that imply the user is referencing something
+ *  beyond the current claude session window. Used by the registry to
+ *  pre-fetch a wider /recall window before the agent runs, so it doesn't
+ *  have to ask "when?" or guess. Returns the inferred lookback in days, or
+ *  0 when no long-memory cue is present (default short-memory regime). */
+const LONG_MEMORY_PATTERNS: Array<{ re: RegExp; days: number }> = [
+  // Days-scale (~1 day)
+  { re: /\byesterday\b/i, days: 2 },
+  { re: /\bأمس\b/, days: 2 },
+  // Days-scale (~3 days)
+  { re: /\bcouple (?:of )?days\b/i, days: 4 },
+  { re: /\bfew days\b/i, days: 4 },
+  // Week-scale (~7 days)
+  { re: /\blast week\b/i, days: 8 },
+  { re: /\bالأسبوع الماضي\b/, days: 8 },
+  { re: /\bweek ago\b/i, days: 8 },
+  // Generic "remember/previously/we discussed" — moderate look-back
+  { re: /\bremember\b/i, days: 3 },
+  { re: /\bpreviously\b/i, days: 3 },
+  { re: /\bwe (?:discussed|talked|agreed|decided)\b/i, days: 3 },
+  { re: /\bas (?:i|we) (?:said|told|mentioned)\b/i, days: 3 },
+  { re: /\bcontinue from\b/i, days: 3 },
+  { re: /\bتذكر\b/, days: 3 },
+]
+
+export function detectLongMemoryHint(message: string): { lookbackDays: number } | null {
+  if (!message) return null
+  let max = 0
+  for (const p of LONG_MEMORY_PATTERNS) {
+    if (p.re.test(message)) max = Math.max(max, p.days)
+  }
+  return max > 0 ? { lookbackDays: max } : null
+}
+
 /** True when appending `(role, name, content)` would duplicate the last
  *  message in `messages`. Used to collapse retries and double-sends at
  *  insert time, so dedup is stable across reload (duplicates never reach
@@ -307,6 +341,8 @@ export class SessionStore {
     chatId?: string
     before?: string
     after?: string
+    /** Convenience override for `after`: number of days back from now. */
+    lookbackDays?: number
     limit?: number
     query?: string
     participants?: string[]
@@ -325,10 +361,19 @@ export class SessionStore {
     hasMore: boolean
     totalScanned: number
   } {
-    const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100)
-    // Default window: 7 days back from now. Bounds the directory scan and
-    // the per-file parse cost for an agent with months of history.
-    const after = opts.after ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const limit = Math.min(Math.max(opts.limit ?? 10, 1), 100)
+    // Default window: TODAY (UTC). Per the short-vs-long-memory split, most
+    // recall calls are about "what did we just say" — capping the window to
+    // today keeps the result tight and noise-free. Caller widens explicitly
+    // when the user message signals long memory ("yesterday", "last week",
+    // "remember when…") via `lookbackDays` or an explicit `after`.
+    const todayStart = new Date()
+    todayStart.setUTCHours(0, 0, 0, 0)
+    const defaultAfter =
+      typeof opts.lookbackDays === "number" && opts.lookbackDays > 0
+        ? new Date(Date.now() - opts.lookbackDays * 24 * 60 * 60 * 1000).toISOString()
+        : todayStart.toISOString()
+    const after = opts.after ?? defaultAfter
     const before = opts.before ?? new Date(Date.now() + 1000).toISOString()
 
     const safeAgentId = opts.agentId.replace(/[^a-zA-Z0-9_:-]/g, "_")

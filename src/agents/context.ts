@@ -57,6 +57,11 @@ export interface ContextInput {
   // Channel layer
   channel: string                    // "telegram", "whatsapp", "gitlab", "discord"
   channelScope?: "group" | "personal" | "project"
+  /** Canonical chat id used by routing — telegram user/group id, github
+   *  "owner/repo:issue:N", whatsapp jid, etc. Surfaced verbatim in the
+   *  prompt so the agent can pass it back to /recall and /send without
+   *  guessing. */
+  chatId?: string
 
   // Bootstrap identity files (from workspace)
   bootstrapContext?: string          // from buildBootstrapContext()
@@ -110,6 +115,12 @@ export interface ContextInput {
   groupHistory?: string              // from GroupLog.buildContext()
   sessionHistory?: string            // from SessionStore.buildHistoryContext()
   crossChatContext?: string           // from SessionStore.getCrossSessionSummary()
+  /** Long-memory recall pre-fetched by the registry when the user message
+   *  contains an explicit long-memory cue ("yesterday", "last week",
+   *  "remember when…"). Saves the agent a /recall round-trip in obvious
+   *  cases and prevents context-loss from being papered over with
+   *  fabricated facts via unrelated tools. */
+  longMemoryRecall?: string
 
   // Wiki
   wikiContext?: string               // from WikiStore.buildContext()
@@ -353,6 +364,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
     })
   }
 
+  // 7c. Long-memory recall (cue-triggered: "yesterday", "remember", etc.)
+  if (input.longMemoryRecall) {
+    layers.push({
+      name: "long-memory",
+      priority: 7,
+      maxTokens: budget("long-memory", 1500),
+      content: input.longMemoryRecall,
+      tags: ["history", "long-memory"],
+    })
+  }
+
   // 7c. Handover note — one-shot briefing when this agent is taking over
   //      a conversation from another agent. Rendered just before wiki.
   if (input.handoverNote) {
@@ -391,6 +413,7 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
  */
 function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer {
   const lines: string[] = [`Channel: ${input.channel}`]
+  if (input.chatId) lines.push(`Chat ID: ${input.chatId}  (use this verbatim in /recall, /send)`)
   const rules: string[] = []
   const tags = [input.channel]
 

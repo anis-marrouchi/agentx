@@ -1,6 +1,6 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
-import { SessionStore } from "./sessions"
+import { SessionStore, detectLongMemoryHint } from "./sessions"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker } from "@/daemon/token-tracker"
@@ -804,6 +804,47 @@ export class AgentRegistry {
       task.agentId, channel, chatId, task.message,
     )
 
+    // Long-memory recall pre-fetch — when the current message has an
+    // explicit long-memory cue ("yesterday", "last week", "remember when…",
+    // "we discussed", Arabic equivalents), pull a wider window from the
+    // session store and inject as a context block so the agent doesn't have
+    // to call /recall itself in obvious cases. Without this, on a fresh
+    // claude session the agent would either fabricate context (the
+    // observed "Tarek Ksibi" gmail-search failure) or pester the user.
+    let longMemoryRecall: string | undefined
+    const lmHint = detectLongMemoryHint(task.message)
+    if (lmHint) {
+      try {
+        const recall = this.sessions.recallTurns({
+          agentId: task.agentId,
+          channel,
+          chatId,
+          lookbackDays: lmHint.lookbackDays,
+          limit: 12,
+        })
+        if (recall.turns.length > 0) {
+          const lines: string[] = [
+            `[Long-memory recall — last ${lmHint.lookbackDays}d on this chat (cue-triggered)]`,
+          ]
+          // Render oldest-first for natural reading flow
+          const ordered = [...recall.turns].sort((a, b) => a.ts.localeCompare(b.ts))
+          for (const t of ordered) {
+            const stamp = t.ts.slice(11, 16) + " " + t.day
+            const who = t.role === "user" ? (t.senderName || "User") : (t.senderName || "Agent")
+            lines.push(`${stamp} ${who}: ${t.content}`)
+          }
+          if (recall.hasMore) {
+            lines.push(`[…${recall.totalScanned - recall.turns.length}+ older turns available — call /recall with before=${recall.oldestTs} to walk further back]`)
+          }
+          lines.push("[End of long-memory recall — respond to the latest message above]")
+          longMemoryRecall = lines.join("\n")
+          this.log(`[${task.agentId}] long-memory recall fired: lookback=${lmHint.lookbackDays}d, turns=${recall.turns.length}, scanned=${recall.totalScanned}`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] long-memory recall failed (non-fatal): ${e.message}`)
+      }
+    }
+
     // Context strategy: "layered" (above) or "planner". Planner is a Haiku
     // pre-call that curates just the bits of history/memory/cross-chat the
     // current message needs, replacing the full-blob layered approach.
@@ -893,6 +934,7 @@ export class AgentRegistry {
 
     const contextInput: ContextInput = {
       channel,
+      chatId,
       channelScope: task.context?.group ? "group" : (channel === "gitlab" ? "project" : "personal"),
       groupName: task.context?.group,
       agentId: task.agentId,
@@ -918,6 +960,7 @@ export class AgentRegistry {
       sessionHistory: sessionHistoryOverride ?? sessionHistory,
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
+      longMemoryRecall: longMemoryRecall || undefined,
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       intent: intent

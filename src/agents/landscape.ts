@@ -145,15 +145,27 @@ export class LandscapeBuilder {
     lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
     lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
 
-    // Conversation recall — when prior context is needed but not in the
-    // current claude session (rotation, fresh DM, anaphoric references).
+    // Conversation recall — short vs long memory model. Short memory
+    // (today, current chat) is the default and what 90% of recall calls
+    // need. Long memory (older windows, broader scope) is opt-in via
+    // explicit cues from the user message.
     lines.push("")
-    lines.push("[Conversation Recall]")
-    lines.push("If a message references prior context you don't have (anaphora like \"that\", \"it\", \"the issue we discussed\", phrases like \"as discussed\", \"correct me if I'm wrong\", \"continue from\"), recall the actual prior turns BEFORE replying — don't guess and don't ask the user to repeat themselves:")
-    lines.push(`  curl -s -X POST http://localhost:${port}/recall -H "Content-Type: application/json" -d '{"agent":"<your-agent-id>","channel":"<channel>","chatId":"<chat>","limit":20}'`)
-    lines.push("Optional fields: before (ISO ts — paginate further back using oldestTs from the previous response), after (ISO ts — default 7 days ago), query (substring filter), participants (filter by sender username).")
-    lines.push("Returned shape: { turns: [{ ts, role, senderName, content, channel, chatId }, ...], oldestTs, hasMore }. Turns are newest-first; pass oldestTs as the next call's `before` to walk backward in time.")
-    lines.push("Scoping: omit chatId to recall across all of YOUR conversations on a channel. Omit channel to recall across all channels. The store is per-agent — you cannot read another agent's chats.")
+    lines.push("[Conversation Recall — short/long memory]")
+    lines.push("If a message references prior context you don't have (\"that\", \"it\", \"yes please\", \"continue\", \"correct me if I'm wrong\", \"as discussed\"), recall the actual prior turns BEFORE replying — do not guess, do not invent context from other tools, and do not ask the user to repeat themselves.")
+    lines.push("")
+    lines.push("ALWAYS pass `channel` and `chatId` from the [Current Conversation] block above so you scope to the right thread:")
+    lines.push(`  curl -s -X POST http://localhost:${port}/recall -H "Content-Type: application/json" -d '{"agent":"<your-agent-id>","channel":"<from prompt>","chatId":"<from prompt>","limit":10}'`)
+    lines.push("")
+    lines.push("Short memory (default — today only): omit `lookbackDays`. Returns last ~10 turns of THIS chat from today UTC.")
+    lines.push("Long memory (opt-in): set `lookbackDays` only when the user message has a clear long-memory cue:")
+    lines.push("  - \"yesterday\" / \"أمس\"           → lookbackDays: 2")
+    lines.push("  - \"few days ago\" / \"couple of days\"  → lookbackDays: 4")
+    lines.push("  - \"last week\" / \"week ago\"      → lookbackDays: 8")
+    lines.push("  - \"remember when …\" / \"we discussed …\" → lookbackDays: 3")
+    lines.push("If unsure, start short and paginate backward using `oldestTs` from the previous response as the next call's `before`.")
+    lines.push("")
+    lines.push("Other optional fields: `query` (substring filter, e.g. an issue number or name), `participants` (filter by sender username), `after`/`before` (ISO ts overrides). Response shape: { turns: [{ ts, role, senderName, content, channel, chatId }], oldestTs, hasMore, totalScanned }.")
+    lines.push("Scope rule: omit chatId to span all of YOUR chats on the channel; omit channel to span all channels. Store is per-agent — you cannot read another agent's chats.")
 
     // Background monitoring capability
     lines.push("")
