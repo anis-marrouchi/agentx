@@ -2118,6 +2118,35 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           break
         }
 
+        case "POST /recall": {
+          // Conversation recall — reads stored sessions for a given agent
+          // (optionally narrowed to a channel/chatId) and returns turns
+          // newest-first with a cursor for pagination. Read-only.
+          const body = await readBody(req)
+          if (!body.agent) {
+            this.json(res, 400, { error: "Required: agent (id of the agent whose sessions to recall)" })
+            break
+          }
+          try {
+            const result = this.registry.getSessionStore().recallTurns({
+              agentId: String(body.agent),
+              channel: body.channel ? String(body.channel) : undefined,
+              chatId: body.chatId ? String(body.chatId) : undefined,
+              before: body.before ? String(body.before) : undefined,
+              after: body.after ? String(body.after) : undefined,
+              limit: typeof body.limit === "number" ? body.limit : undefined,
+              query: body.query ? String(body.query) : undefined,
+              participants: Array.isArray(body.participants)
+                ? body.participants.map((p: unknown) => String(p))
+                : undefined,
+            })
+            this.json(res, 200, result)
+          } catch (e: any) {
+            this.json(res, 500, { error: e?.message || String(e) })
+          }
+          break
+        }
+
         case "POST /send": {
           const body = await readBody(req)
           if (!body.channel || !body.chatId || !body.text) {

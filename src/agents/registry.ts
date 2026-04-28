@@ -406,6 +406,9 @@ export class AgentRegistry {
   /** Wiki hub accessor. */
   getWikiHub(): WikiHub { return this.wikiHub }
   getGraphStore(): GraphStore | undefined { return this.graphStore }
+  /** Session-store accessor — used by the /recall HTTP endpoint to expose
+   *  conversation history to agents that need to rebuild context. */
+  getSessionStore(): SessionStore { return this.sessions }
 
   /**
    * Build peer list for context engine.

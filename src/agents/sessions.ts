@@ -286,6 +286,127 @@ export class SessionStore {
   }
 
   /**
+   * Recall conversation turns across multiple stored sessions for an agent.
+   *
+   * Used by the `/recall` HTTP endpoint and the [Conversation Recall] skill —
+   * when an agent receives a message that references prior context (anaphora,
+   * "as discussed", "correct me if I'm wrong"), it can call this to fetch
+   * the actual prior turns rather than guessing or running cold-start tool
+   * calls. Read-only; no side effects.
+   *
+   * Pagination: cursor by timestamp, descending (newest first). Pass the
+   * previous response's `oldestTs` as `before` to walk further back.
+   *
+   * Scoping: required `agentId`. `channel`/`chatId` narrow to a specific
+   * thread; omit them to recall across all of this agent's conversations.
+   * The store is per-agent on disk so we never leak another agent's chats.
+   */
+  recallTurns(opts: {
+    agentId: string
+    channel?: string
+    chatId?: string
+    before?: string
+    after?: string
+    limit?: number
+    query?: string
+    participants?: string[]
+  }): {
+    turns: Array<{
+      ts: string
+      role: "user" | "agent"
+      senderName: string
+      content: string
+      channel: string
+      chatId: string
+      day: string
+      sessionFile: string
+    }>
+    oldestTs: string | null
+    hasMore: boolean
+    totalScanned: number
+  } {
+    const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100)
+    // Default window: 7 days back from now. Bounds the directory scan and
+    // the per-file parse cost for an agent with months of history.
+    const after = opts.after ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const before = opts.before ?? new Date(Date.now() + 1000).toISOString()
+
+    const safeAgentId = opts.agentId.replace(/[^a-zA-Z0-9_:-]/g, "_")
+    let allFiles: string[]
+    try {
+      allFiles = readdirSync(this.sessionsDir).filter(f =>
+        f.startsWith(`${safeAgentId}:`) && f.endsWith(".json"),
+      )
+    } catch {
+      return { turns: [], oldestTs: null, hasMore: false, totalScanned: 0 }
+    }
+
+    // Day-level prefilter via the trailing `:YYYY-MM-DD.json` segment so we
+    // don't open/parse files outside the requested window.
+    const afterDay = after.slice(0, 10)
+    const beforeDay = before.slice(0, 10)
+    const dayRe = /:(\d{4}-\d{2}-\d{2})\.json$/
+    const candidateFiles = allFiles.filter(f => {
+      const m = f.match(dayRe)
+      if (!m) return false
+      const day = m[1]
+      return day >= afterDay && day <= beforeDay
+    })
+
+    type CollectedTurn = {
+      ts: string
+      role: "user" | "agent"
+      senderName: string
+      content: string
+      channel: string
+      chatId: string
+      day: string
+      sessionFile: string
+    }
+    const collected: CollectedTurn[] = []
+    let totalScanned = 0
+    const queryLower = opts.query?.toLowerCase()
+    const participantSet = opts.participants?.length ? new Set(opts.participants) : undefined
+
+    for (const file of candidateFiles) {
+      let data: Session
+      try {
+        data = JSON.parse(readFileSync(resolve(this.sessionsDir, file), "utf-8")) as Session
+      } catch {
+        continue
+      }
+      if (data.agentId !== opts.agentId) continue
+      if (opts.channel && data.channel !== opts.channel) continue
+      if (opts.chatId && data.chatId !== opts.chatId) continue
+
+      for (const msg of data.messages) {
+        totalScanned++
+        if (!msg.timestamp || msg.timestamp < after || msg.timestamp >= before) continue
+        if (participantSet && msg.role === "user" && !participantSet.has(msg.name ?? "")) continue
+        if (queryLower && !msg.content.toLowerCase().includes(queryLower)) continue
+        collected.push({
+          ts: msg.timestamp,
+          role: msg.role,
+          senderName: msg.name ?? "",
+          content: msg.content,
+          channel: data.channel,
+          chatId: data.chatId,
+          day: data.day,
+          sessionFile: file,
+        })
+      }
+    }
+
+    collected.sort((a, b) => b.ts.localeCompare(a.ts))
+
+    const page = collected.slice(0, limit)
+    const oldestTs = page.length > 0 ? page[page.length - 1].ts : null
+    const hasMore = collected.length > limit
+
+    return { turns: page, oldestTs, hasMore, totalScanned }
+  }
+
+  /**
    * Check if a Claude session is stale (idle too long for --resume to be useful).
    * When stale, the resumed context will be too far behind — better to start fresh.
    */
