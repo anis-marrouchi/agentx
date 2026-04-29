@@ -10,6 +10,9 @@ import { ActorStore } from "../actors/store"
 import { validateSubmission } from "../forms/validator"
 import type { FormSubmission } from "../forms/types"
 import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./types"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordWorkflowDispatch } from "@/intent/sources/workflow"
 
 // --- Dispatcher (V2) ---
 //
@@ -401,7 +404,46 @@ export class WorkflowDispatcher {
     return out.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
   }
 
+  /**
+   * Phase 1 commit 6.c — thin wrapper around the legacy dispatch. Calls
+   * `dispatchOneLegacy` then, when `getLedgerMode("workflow") !== "off"`,
+   * records the dispatch to the intent ledger and reports any divergence
+   * between ledger and legacy. Wrapped in try/catch so a ledger failure
+   * never breaks workflow dispatch — legacy stays authoritative until
+   * the 1c per-source promotion lands.
+   */
   private async dispatchOne(
+    workflow: Workflow,
+    entityRef: EntityRef,
+    event: TriggerEvent,
+    trigger: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] },
+  ): Promise<{ claimed: boolean; run: WorkflowRun | null }> {
+    const result = await this.dispatchOneLegacy(workflow, entityRef, event, trigger)
+    if (getLedgerMode("workflow") !== "off") {
+      try {
+        recordWorkflowDispatch(
+          getDefaultLedger(),
+          {
+            workflowId: workflow.id,
+            eventId: event.id,
+            triggerSource: trigger.source,
+            project: trigger.project ?? null,
+            entityRef,
+          },
+          JSON.stringify({ event, trigger, entityRef }),
+          {
+            claimed: result.claimed,
+            runId: result.run?.id ?? null,
+          },
+        )
+      } catch (e: any) {
+        this.log(`[ledger] workflow ${workflow.id} run ${result.run?.id ?? "?"} record failed: ${e?.message ?? e}`)
+      }
+    }
+    return result
+  }
+
+  private async dispatchOneLegacy(
     workflow: Workflow,
     entityRef: EntityRef,
     event: TriggerEvent,
