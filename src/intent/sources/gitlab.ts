@@ -104,3 +104,74 @@ export function recordGitLabTargetDispatch(
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
 }
+
+// ---------------------------------------------------------------------------
+// Note (comment) dispatch
+// ---------------------------------------------------------------------------
+//
+// Notes are 1:1 (one comment → one resolved agent from the @mention).
+// Different shape from issue/MR per-target dispatch: the trigger is
+// always "@mention" and the agent comes from `resolveAgentFromMention`,
+// not from a target-set producer. handleNote in src/channels/gitlab.ts
+// has many cascade-prevention early-return paths (sourceAgent loops,
+// sentNoteIds dedup, no-mention, bot users without signature). Those
+// are operational guards rather than dispatch decisions — they do NOT
+// reach the ledger. Only the two real decision points are instrumented:
+//
+//   match              → dispatched / resolved agent
+//   mention-no-resolve → halted (the @mentioned name doesn't map to an agent)
+
+export interface GitLabNoteProjection {
+  /** GitLab's stable note id — unique across the whole instance. */
+  noteId: string
+  project: string
+  /** "issue" or "merge_request" — the noteable the comment was on. */
+  noteableType: string
+  noteableIid: string
+  /** The @mentions parsed out of the note body, deduped + lowercased.
+   *  Carried for forensic value in `intent` / `rawJson`; not load-
+   *  bearing for the dispatch decision (the resolved agent already
+   *  encodes the choice). */
+  mentions: string[]
+}
+
+export function buildNoteEventInput(
+  proj: GitLabNoteProjection,
+  rawJson: string,
+  now: () => number = Date.now,
+): IntentEventInput {
+  return {
+    ts: now(),
+    source: "gitlab",
+    sourceEventId: `note:${proj.noteId}`,
+    project: proj.project,
+    subject: `${proj.noteableType}:${proj.noteableIid}:note:${proj.noteId}`,
+    intent: `note.${proj.noteableType}`,
+    rawJson,
+  }
+}
+
+export function buildNoteDispatchPolicy(legacyAgentId: string | null): DispatchPolicy {
+  return {
+    decidedBy: "gitlab:note:mention",
+    decide: () => ({
+      agentId: legacyAgentId,
+      outcome: legacyAgentId ? "dispatched" : "halted",
+      reason: legacyAgentId ? null : "no @mention resolved to an agent",
+    }),
+  }
+}
+
+/** Record + report for one note dispatch decision. */
+export function recordGitLabNoteDispatch(
+  ledger: IntentLedger,
+  proj: GitLabNoteProjection,
+  rawJson: string,
+  legacyOutcome: LegacyOutcome,
+  now: () => number = Date.now,
+): void {
+  const eventInput = buildNoteEventInput(proj, rawJson, now)
+  const policy = buildNoteDispatchPolicy(legacyOutcome.agentId)
+  const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
+  reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
+}

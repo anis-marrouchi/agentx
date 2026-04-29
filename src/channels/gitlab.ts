@@ -5,7 +5,7 @@ import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
-import { recordGitLabTargetDispatch } from "@/intent/sources/gitlab"
+import { recordGitLabTargetDispatch, recordGitLabNoteDispatch } from "@/intent/sources/gitlab"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -513,6 +513,25 @@ export class GitLabAdapter implements ChannelAdapter {
 
     if (!resolvedAgentId) {
       this.log(`[handleNote] @mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
+      // Phase 1 commit 6.a-extended (note path): record the halt — this
+      // is a real dispatch decision (@mention names that don't resolve),
+      // distinct from the cascade-prevention early returns above.
+      if (getLedgerMode("gitlab") !== "off") {
+        try {
+          recordGitLabNoteDispatch(
+            getDefaultLedger(),
+            {
+              noteId, project,
+              noteableType, noteableIid,
+              mentions: mentions.map((m) => m.toLowerCase()),
+            },
+            JSON.stringify(event),
+            { agentId: null, outcome: "halted", reason: `unresolved-mentions: ${mentions.join(",")}` },
+          )
+        } catch (e: any) {
+          this.log(`[ledger] gitlab note ${noteId} (no-resolve) record failed: ${e?.message ?? e}`)
+        }
+      }
       res.writeHead(200); res.end("ok"); return
     }
 
@@ -554,6 +573,24 @@ export class GitLabAdapter implements ChannelAdapter {
     this.handler(incoming).catch((e) => {
       this.log(`Error handling note: ${e.message}`)
     })
+
+    // Phase 1 commit 6.a-extended (note path): record the dispatch.
+    if (getLedgerMode("gitlab") !== "off") {
+      try {
+        recordGitLabNoteDispatch(
+          getDefaultLedger(),
+          {
+            noteId, project,
+            noteableType, noteableIid,
+            mentions: mentions.map((m) => m.toLowerCase()),
+          },
+          JSON.stringify(event),
+          { agentId: targetAgentId, outcome: "dispatched", reason: `mention:${mentions[0]}` },
+        )
+      } catch (e: any) {
+        this.log(`[ledger] gitlab note ${noteId} record failed: ${e?.message ?? e}`)
+      }
+    }
 
     res.writeHead(200)
     res.end("ok")

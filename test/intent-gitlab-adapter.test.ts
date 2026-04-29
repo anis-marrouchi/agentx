@@ -6,8 +6,12 @@ import { IntentLedger } from "../src/intent/ledger"
 import {
   buildGitLabDispatchPolicy,
   buildGitLabTargetEventInput,
+  buildNoteDispatchPolicy,
+  buildNoteEventInput,
+  recordGitLabNoteDispatch,
   recordGitLabTargetDispatch,
   type GitLabEventProjection,
+  type GitLabNoteProjection,
   type GitLabTarget,
 } from "../src/intent/sources/gitlab"
 import { decodeTime } from "../src/intent/ulid"
@@ -226,5 +230,112 @@ describe("recordGitLabTargetDispatch", () => {
       (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_decisions").get() as { n: number }).n,
     ).toBe(3)
     expect(ledger.getDivergences()).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Note (comment) adapter
+// ---------------------------------------------------------------------------
+
+const sampleNote: GitLabNoteProjection = {
+  noteId: "12345",
+  project: "mtgl/mtgl-system-v2",
+  noteableType: "issue",
+  noteableIid: "709",
+  mentions: ["mtgl_v2_bot"],
+}
+
+describe("buildNoteEventInput", () => {
+  it("normalizes per-noteId sourceEventId; subject scopes per (noteable, note)", () => {
+    const input = buildNoteEventInput(sampleNote, "{}", () => 1714400000000)
+    expect(input).toEqual({
+      ts: 1714400000000,
+      source: "gitlab",
+      sourceEventId: "note:12345",
+      project: "mtgl/mtgl-system-v2",
+      subject: "issue:709:note:12345",
+      intent: "note.issue",
+      rawJson: "{}",
+    })
+  })
+
+  it("merge_request notes: intent flips to note.merge_request", () => {
+    const mrNote = { ...sampleNote, noteableType: "merge_request", noteableIid: "225" }
+    const input = buildNoteEventInput(mrNote, "{}", () => 1)
+    expect(input.intent).toBe("note.merge_request")
+    expect(input.subject).toBe("merge_request:225:note:12345")
+  })
+
+  it("two notes on the same issue → distinct sourceEventIds + subjects", () => {
+    const a = buildNoteEventInput({ ...sampleNote, noteId: "100" }, "{}", () => 1)
+    const b = buildNoteEventInput({ ...sampleNote, noteId: "101" }, "{}", () => 1)
+    expect(a.sourceEventId).not.toBe(b.sourceEventId)
+    expect(a.subject).not.toBe(b.subject)
+  })
+})
+
+describe("buildNoteDispatchPolicy", () => {
+  it("decidedBy is the stable string 'gitlab:note:mention'", () => {
+    expect(buildNoteDispatchPolicy("agent-x").decidedBy).toBe("gitlab:note:mention")
+  })
+
+  it("agentId resolved → dispatched", () => {
+    expect(buildNoteDispatchPolicy("mtgl-v2").decide({} as any)).toEqual({
+      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+    })
+  })
+
+  it("agentId null → halted with explicit reason (the @mentions didn't resolve)", () => {
+    expect(buildNoteDispatchPolicy(null).decide({} as any)).toEqual({
+      agentId: null, outcome: "halted", reason: "no @mention resolved to an agent",
+    })
+  })
+})
+
+describe("recordGitLabNoteDispatch", () => {
+  it("agreement: dispatch/X = dispatch/X → no divergence", () => {
+    recordGitLabNoteDispatch(
+      ledger, sampleNote, "{}",
+      { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention:mtgl_v2_bot" },
+      () => 1,
+    )
+    expect(ledger.getDivergences()).toHaveLength(0)
+    expect((ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n).toBe(1)
+  })
+
+  it("re-delivery of the same note collapses to one event/decision", () => {
+    for (let i = 0; i < 4; i++) {
+      recordGitLabNoteDispatch(
+        ledger, sampleNote, "{}",
+        { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+        () => 1 + i,
+      )
+    }
+    expect((ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n).toBe(1)
+    expect((ledger.db.prepare("SELECT COUNT(*) as n FROM intent_decisions").get() as { n: number }).n).toBe(1)
+  })
+
+  it("legacy halted (no mention resolved) → policy halted → no divergence", () => {
+    recordGitLabNoteDispatch(
+      ledger, sampleNote, "{}",
+      { agentId: null, outcome: "halted", reason: "unresolved-mentions: random_user" },
+      () => 1,
+    )
+    expect(ledger.getDivergences()).toHaveLength(0) // both ledger and legacy halted
+  })
+
+  it("two notes on same issue → both dispatch independently (note id is the active-task slot, not issue)", () => {
+    recordGitLabNoteDispatch(
+      ledger, { ...sampleNote, noteId: "1" }, "{}",
+      { agentId: "x", outcome: "dispatched" },
+      () => 1,
+    )
+    recordGitLabNoteDispatch(
+      ledger, { ...sampleNote, noteId: "2" }, "{}",
+      { agentId: "x", outcome: "dispatched" },
+      () => 2,
+    )
+    expect(ledger.getDivergences()).toHaveLength(0)
+    expect((ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n).toBe(2)
   })
 })
