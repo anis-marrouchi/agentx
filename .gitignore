@@ -20,7 +20,7 @@ agentx.json.*
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
-
+docs/architecture
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd

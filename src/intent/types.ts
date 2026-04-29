@@ -15,6 +15,11 @@
 //   - No agent metadata here. The ledger records intent + dispatch +
 //     resolution. Per-agent state lives in the agent registry and sessions.
 
+/** Shape callers pass to `IntentLedger.recordEvent`. The ledger fills in
+ *  the id (a fresh ULID derived from `ts`) when omitted; tests may supply
+ *  one for deterministic assertions. */
+export type IntentEventInput = Omit<IntentEvent, "id"> & { id?: string }
+
 /** A normalized record of one external event entering the system. */
 export interface IntentEvent {
   /** ULID, monotonically increasing across all events. */
