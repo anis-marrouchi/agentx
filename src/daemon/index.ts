@@ -1145,11 +1145,24 @@ export class AgentXDaemon {
       execute: async (req: AgentExecuteRequest): Promise<AgentExecuteResponse> => {
         const start = Date.now()
         try {
+          // Scope each workflow run to its own session bucket so concurrent
+          // runs of the same workflow (or even different workflows hitting
+          // the same agent) don't collide in api:default. Without this,
+          // every workflow turn for `coder-agent` ends up in
+          // `coder-agent:api:default:<day>.json` regardless of which run
+          // produced it — bleeding context across runs and breaking the
+          // single-conversation guarantee per workflow run.
+          const wfChatId = req.workflowRunId ? `workflow:${req.workflowRunId}` : "workflow:adhoc"
           const resp = await this.registry.execute({
             agentId: req.agentId,
             message: req.message,
             workflowRunId: req.workflowRunId,
             timeoutMinutes: req.timeoutMinutes,
+            context: {
+              channel: "workflow",
+              chatId: wfChatId,
+              sender: "workflow",
+            },
           })
           return {
             content: resp.content ?? "",
