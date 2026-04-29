@@ -481,6 +481,10 @@ export class MessageRouter {
 
       if (hookResult.blocked) {
         this.log(`Message blocked by hook: ${hookResult.message}`)
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `pre-hook blocked: ${hookResult.message ?? ""}`.trim(),
+        })
         return
       }
 
@@ -501,6 +505,14 @@ export class MessageRouter {
       const matched = this.serviceMatcher.match(msg.text, msg.sender.id, msg.channel)
       if (matched) {
         this.log(`Service matched: "${matched.service.name}" for ${msg.sender.name} (trigger: ${matched.trigger})`)
+        // Phase 1 commit 6.b-extended: service-matcher claims the message
+        // before agent routing. From the agent-router's POV no agent was
+        // dispatched — a service handler ran instead. Recorded as halted
+        // with the service name in the reason for forensics.
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `service-match: ${matched.service.name} (trigger: ${matched.trigger})`,
+        })
         const replyAccountId = msg.accountId
         this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
         const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
