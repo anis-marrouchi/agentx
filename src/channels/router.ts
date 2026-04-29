@@ -15,6 +15,7 @@ import { resolve, dirname } from "path"
 import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
 import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
+import { pickAccountForAgent } from "./account-resolution"
 import { getEventBus } from "@/events/bus"
 
 /**
@@ -1246,22 +1247,13 @@ export class MessageRouter {
   }
 
   private getAccountForAgent(agentId: string, groupId?: string): string | undefined {
-    const candidates: string[] = []
-    for (const [accountId, account] of Object.entries(this.config.channels.telegram.accounts)) {
-      if (account.agentBinding === agentId) candidates.push(accountId)
-    }
-    if (candidates.length === 0) return undefined
-    if (candidates.length === 1 || !groupId) return candidates[0]
-
-    // Multiple accounts bound to the same agent (e.g. pm-ksi → both
-    // @noqta_ksi_bot and @noqta_pm_ksi_bot). Prefer one that's actually a
-    // member of this group; otherwise multi-account-dedup would pick the
-    // first config-order account and silently drop messages received via
-    // the other bot when the "canonical" one isn't in the chat.
     const adapter = this.channels.get("telegram") as TelegramAdapter | undefined
-    const inGroup = adapter?.getGroupBotAccounts?.(groupId) ?? []
-    const memberCandidates = candidates.filter((id) => inGroup.includes(id))
-    return memberCandidates[0] || candidates[0]
+    return pickAccountForAgent(
+      this.config.channels.telegram.accounts,
+      agentId,
+      groupId,
+      adapter?.getGroupBotAccounts?.bind(adapter),
+    )
   }
 
   /** @deprecated Phase 2 — resolveAgent now delegates to the pipeline.
