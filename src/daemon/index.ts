@@ -18,6 +18,9 @@ import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
 import { openDb } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordMeshDispatch } from "@/intent/sources/mesh"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -2427,6 +2430,32 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             body.contextStrategy === "layered" || body.contextStrategy === "planner"
               ? body.contextStrategy
               : undefined
+          // Phase 1 commit 6.d — record the inbound mesh dispatch decision
+          // in the ledger. The mesh protocol has no stable request id, so
+          // each call records as its own event row (no per-event idempotency).
+          // Wrapped in try/catch so a ledger failure cannot break /task —
+          // legacy stays authoritative until 1c per-source promotion lands.
+          if (getLedgerMode("mesh") !== "off") {
+            try {
+              recordMeshDispatch(
+                getDefaultLedger(),
+                {
+                  agentId,
+                  senderAgentId,
+                  context: body.context as any,
+                },
+                JSON.stringify({ agentId, senderAgentId, context: body.context, message: typeof body.message === "string" ? body.message.slice(0, 200) : "" }),
+                {
+                  agentId,
+                  outcome: "dispatched",
+                  reason: senderAgentId ? `from ${senderAgentId}` : null,
+                },
+              )
+            } catch (e: any) {
+              this.log(`[ledger] mesh /task agent="${agentId}" record failed: ${e?.message ?? e}`)
+            }
+          }
+
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
           // awaits the final response — they don't see deltas, just the result.

@@ -5,6 +5,9 @@ import type { CronJobState, CronRunResult } from "./types"
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordCronDispatch } from "@/intent/sources/cron"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -243,11 +246,41 @@ export class CronScheduler {
     this.timers.set(jobId, timer)
   }
 
+  /**
+   * Phase 1 commit 6.d — record one cron-fire decision in the ledger
+   * when the source is enabled. Wrapped in try/catch so a ledger
+   * failure can never break cron dispatch — legacy stays authoritative
+   * until the 1c per-source promotion lands.
+   */
+  private recordCronDecisionInLedger(
+    jobId: string,
+    agentId: string,
+    firedAt: Date,
+    legacy: import("@/intent/divergence").LegacyOutcome,
+  ): void {
+    if (getLedgerMode("cron") === "off") return
+    try {
+      recordCronDispatch(
+        getDefaultLedger(),
+        { jobId, agentId, firedAt },
+        JSON.stringify({ jobId, agentId, firedAt: firedAt.toISOString() }),
+        legacy,
+      )
+    } catch (e: any) {
+      this.log(`[ledger] cron "${jobId}" record failed: ${e?.message ?? e}`)
+    }
+  }
+
   private async executeJob(jobId: string, retryAttempt: number = 0): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job || !this.running) return
 
     const isRetry = retryAttempt > 0
+    // firedAt is captured here (rather than below at the original
+    // `startedAt` declaration) so the ledger event has a stable
+    // sourceEventId regardless of whether we record at the hook-block
+    // path or the dispatch path.
+    const firedAt = new Date()
 
     // Pre-hook
     if (this.hooks?.has("pre:cron-run" as any)) {
@@ -259,15 +292,27 @@ export class CronScheduler {
       })
       if (hookResult.blocked) {
         this.log(`Job "${jobId}" blocked by hook: ${hookResult.message}`)
+        this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+          agentId: null, outcome: "halted",
+          reason: `pre-hook blocked: ${hookResult.message ?? ""}`.trim(),
+        })
         this.scheduleNext(jobId)
         return
       }
     }
 
     this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`)
-    const startedAt = new Date()
+    const startedAt = firedAt
     job.lastRun = startedAt
     job.totalRuns++
+
+    // Phase 1 commit 6.d — record the dispatch decision before the
+    // (potentially long-running) registry.execute call. The ledger
+    // captures intent; resolution lands in intent_resolutions in a
+    // later commit when we wire that pipe.
+    this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+      agentId: job.agent, outcome: "dispatched", reason: isRetry ? `retry ${retryAttempt}` : null,
+    })
 
     try {
       const response = await this.registry.execute({
