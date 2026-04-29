@@ -8,7 +8,7 @@ import type { IntentSource } from "../src/intent/types"
 // hand-crafted env object rather than mutating process.env. Keeps the
 // test deterministic and avoids accidental cross-test bleed.
 
-const ALL_SOURCES: IntentSource[] = ["telegram", "gitlab", "github", "workflow", "cron", "mesh"]
+const ALL_SOURCES: IntentSource[] = ["telegram", "slack", "whatsapp", "discord", "gitlab", "github", "workflow", "cron", "mesh"]
 
 describe("parseLedgerMode", () => {
   it("accepts the three documented values", () => {
@@ -72,6 +72,9 @@ describe("getLedgerMode resolution order", () => {
   it("each source has its own env var — no shared naming collision", () => {
     const env = {
       INTENT_LEDGER_MODE_TELEGRAM: "off",
+      INTENT_LEDGER_MODE_SLACK: "shadow",
+      INTENT_LEDGER_MODE_WHATSAPP: "off",
+      INTENT_LEDGER_MODE_DISCORD: "shadow",
       INTENT_LEDGER_MODE_GITLAB: "shadow",
       INTENT_LEDGER_MODE_GITHUB: "shadow",
       INTENT_LEDGER_MODE_WORKFLOW: "authoritative",
@@ -79,6 +82,9 @@ describe("getLedgerMode resolution order", () => {
       INTENT_LEDGER_MODE_MESH: "shadow",
     }
     expect(getLedgerMode("telegram", env)).toBe("off")
+    expect(getLedgerMode("slack", env)).toBe("shadow")
+    expect(getLedgerMode("whatsapp", env)).toBe("off")
+    expect(getLedgerMode("discord", env)).toBe("shadow")
     expect(getLedgerMode("gitlab", env)).toBe("shadow")
     expect(getLedgerMode("github", env)).toBe("shadow")
     expect(getLedgerMode("workflow", env)).toBe("authoritative")

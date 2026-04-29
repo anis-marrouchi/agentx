@@ -47,7 +47,16 @@ export interface IntentEvent {
   rawJson: string
 }
 
-export type IntentSource = "telegram" | "gitlab" | "workflow" | "cron" | "mesh" | "github"
+export type IntentSource =
+  | "telegram"
+  | "slack"
+  | "whatsapp"
+  | "discord"
+  | "gitlab"
+  | "github"
+  | "workflow"
+  | "cron"
+  | "mesh"
 
 /** A dispatch decision made by some component (channel router, workflow
  *  dispatcher, PM gate, etc.) about an event. One event can yield multiple

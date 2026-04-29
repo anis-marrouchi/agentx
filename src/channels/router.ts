@@ -19,7 +19,7 @@ import { pickAccountForAgent } from "./account-resolution"
 import { getEventBus } from "@/events/bus"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
-import { recordRouterDispatch } from "@/intent/sources/router"
+import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
 import type { LegacyOutcome } from "@/intent/divergence"
 
 /**
@@ -428,16 +428,19 @@ export class MessageRouter {
 
   /**
    * Phase 1 commit 6.b — record one router decision in the intent ledger
-   * when the source is enabled (mode != "off"). Telegram-only; other
-   * channels short-circuit until they're added to IntentSource. Wrapped
-   * in try/catch so a ledger failure can never break message routing —
-   * legacy is still authoritative until the 1c per-source promotion.
+   * when the source is enabled (mode != "off"). Covers all router
+   * channels (telegram, slack, whatsapp, discord). Each channel has its
+   * own per-source mode flag so they can be promoted independently in 1c.
+   * Wrapped in try/catch so a ledger failure can never break message
+   * routing — legacy is still authoritative until the 1c per-source
+   * promotion.
    */
   private recordRouterDecisionInLedger(msg: IncomingMessage, legacy: LegacyOutcome): void {
-    if (msg.channel !== "telegram") return
-    if (getLedgerMode("telegram") === "off") return
+    const source = routerChannelToSource(msg.channel)
+    if (!source) return // channel not router-supported (e.g., gitlab routes itself)
+    if (getLedgerMode(source) === "off") return
     try {
-      recordRouterDispatch(getDefaultLedger(), msg, JSON.stringify(msg), legacy)
+      recordRouterDispatch(getDefaultLedger(), msg, source, JSON.stringify(msg), legacy)
     } catch (e: any) {
       this.log(`[ledger] router ${msg.channel}/${msg.id} record failed: ${e?.message ?? e}`)
     }

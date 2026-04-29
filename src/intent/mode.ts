@@ -30,6 +30,9 @@ const VALID_MODES = ["off", "shadow", "authoritative"] as const satisfies readon
  *  by table rather than guessing the naming convention. */
 const PER_SOURCE_ENV_VAR: Record<IntentSource, string> = {
   telegram: "INTENT_LEDGER_MODE_TELEGRAM",
+  slack: "INTENT_LEDGER_MODE_SLACK",
+  whatsapp: "INTENT_LEDGER_MODE_WHATSAPP",
+  discord: "INTENT_LEDGER_MODE_DISCORD",
   gitlab: "INTENT_LEDGER_MODE_GITLAB",
   github: "INTENT_LEDGER_MODE_GITHUB",
   workflow: "INTENT_LEDGER_MODE_WORKFLOW",

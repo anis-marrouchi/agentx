@@ -46,7 +46,7 @@ function populateLedger(): void {
   recordRouterDispatch(
     ledger,
     { id: "msg-1", channel: "telegram", accountId: "default", sender: { id: "user-1" } },
-    "{}",
+    "telegram", "{}",
     { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
     () => 1714400000000,
   )
@@ -54,7 +54,7 @@ function populateLedger(): void {
   recordRouterDispatch(
     ledger,
     { id: "msg-2", channel: "telegram", accountId: "default", sender: { id: "user-2" } },
-    "{}",
+    "telegram", "{}",
     { agentId: null, outcome: "deduped", reason: "isDuplicateMessage" },
     () => 1714400001000,
   )
