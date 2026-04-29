@@ -17,6 +17,10 @@ import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
 import { pickAccountForAgent } from "./account-resolution"
 import { getEventBus } from "@/events/bus"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordRouterDispatch } from "@/intent/sources/router"
+import type { LegacyOutcome } from "@/intent/divergence"
 
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
@@ -422,6 +426,23 @@ export class MessageRouter {
     return false
   }
 
+  /**
+   * Phase 1 commit 6.b — record one router decision in the intent ledger
+   * when the source is enabled (mode != "off"). Telegram-only; other
+   * channels short-circuit until they're added to IntentSource. Wrapped
+   * in try/catch so a ledger failure can never break message routing —
+   * legacy is still authoritative until the 1c per-source promotion.
+   */
+  private recordRouterDecisionInLedger(msg: IncomingMessage, legacy: LegacyOutcome): void {
+    if (msg.channel !== "telegram") return
+    if (getLedgerMode("telegram") === "off") return
+    try {
+      recordRouterDispatch(getDefaultLedger(), msg, JSON.stringify(msg), legacy)
+    } catch (e: any) {
+      this.log(`[ledger] router ${msg.channel}/${msg.id} record failed: ${e?.message ?? e}`)
+    }
+  }
+
   private async handleMessage(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
@@ -438,6 +459,9 @@ export class MessageRouter {
     // still hasn't received their answer.
     if (!opts.replay && this.isDuplicateMessage(msg)) {
       this.log(`Duplicate ${msg.channel} message dropped: ${msg.accountId || "default"}/${msg.id}`)
+      this.recordRouterDecisionInLedger(msg, {
+        agentId: null, outcome: "deduped", reason: "isDuplicateMessage",
+      })
       return
     }
 
@@ -504,6 +528,9 @@ export class MessageRouter {
 
     if (!agentId) {
       this.traceRoute(msg, "drop", result.reason, result.decidingStage)
+      this.recordRouterDecisionInLedger(msg, {
+        agentId: null, outcome: "halted", reason: `routing:${result.reason}`,
+      })
       return
     }
 
@@ -516,11 +543,18 @@ export class MessageRouter {
       const boundAccount = this.getAccountForAgent(agentId, msg.group.id)
       if (boundAccount && boundAccount !== msg.accountId) {
         this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`, "multi-account-dedup")
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`,
+        })
         return
       }
     }
 
     this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`, result.decidingStage, agentId)
+    this.recordRouterDecisionInLedger(msg, {
+      agentId, outcome: "dispatched", reason: result.decidingStage,
+    })
 
     const chatId = msg.group?.id || msg.sender.id
 
