@@ -13,8 +13,11 @@ export interface WorkItem {
   estimatedSeconds?: number
   url?: string
   priority?: number               // lower = higher priority
-  /** Board stage derived from labels (kanban column id). */
-  stage?: "triage" | "todo" | "doing" | "onhold" | "review" | "done"
+  /** Board stage / kanban column id. Was a closed enum back when boards
+   *  had a fixed schema; widened to `string` because per-project boards
+   *  can declare arbitrary column ids. The well-known names below remain
+   *  the standard set most boards use. */
+  stage?: string  // typically: "triage" | "todo" | "doing" | "onhold" | "review" | "done"
   /** Raw labels from the source (GitLab). Empty array if source doesn't support labels. */
   labels?: string[]
   /** Label name+color when the source returns colored labels (GitLab with_labels_details). */

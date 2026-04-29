@@ -84,6 +84,9 @@ importers:
       '@types/prompts':
         specifier: ^2.4.2
         version: 2.4.9
+      '@types/qrcode-terminal':
+        specifier: ^0.12.2
+        version: 0.12.2
       '@types/react':
         specifier: ^18.3.28
         version: 18.3.28
@@ -1141,6 +1144,9 @@ packages:
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
+
+  '@types/qrcode-terminal@0.12.2':
+    resolution: {integrity: sha512-v+RcIEJ+Uhd6ygSQ0u5YYY7ZM+la7GgPbs0V/7l/kFs2uO4S8BcIUEMoP7za4DNIqNnUD5npf0A/7kBhrCKG5Q==}
 
   '@types/react-dom@18.3.7':
     resolution: {integrity: sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==}
@@ -3916,6 +3922,8 @@ snapshots:
       kleur: 3.0.3
 
   '@types/prop-types@15.7.15': {}
+
+  '@types/qrcode-terminal@0.12.2': {}
 
   '@types/react-dom@18.3.7(@types/react@18.3.28)':
     dependencies:

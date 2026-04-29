@@ -190,7 +190,7 @@ wiki
         }
 
         // Parse response — could be { articles: [...], gaps: [...] } or bare [...]
-        let articles: Array<{ path: string; title: string; tags: string[]; content: string; sources: string[] }>
+        let articles: Array<{ path: string; title: string; tags: string[]; content: string; sources: string[]; type?: string; related?: string[] }>
         let gaps: string[] = []
 
         // Find outermost JSON object or array. New prompt emits { articles, gaps };
