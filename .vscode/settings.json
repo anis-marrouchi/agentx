@@ -1,0 +1,12 @@
+{
+    "sqltools.useNodeRuntime": false,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "agentx",
+            "group": "agentx",
+            "database": "${workspaceFolder:agentx}/.agentx/db.sqlite"
+        }
+    ]
+}
