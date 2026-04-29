@@ -83,3 +83,27 @@ export interface IntentResolution {
 }
 
 export type IntentResolutionStatus = "completed" | "failed" | "timed-out" | "canceled"
+
+/** A recorded mismatch between a ledger decision and the legacy dispatch
+ *  path's outcome, captured during shadow-mode operation (1b in the staged
+ *  rollout). The soak's success criterion is "zero divergences for ≥7
+ *  days" before promoting any source to authoritative — this is the
+ *  queryable surface that criterion is measured against. */
+export interface IntentDivergence {
+  /** Standalone ULID for the divergence record. Distinct from the event id. */
+  id: string
+  /** ms since epoch — when the divergence was observed. */
+  ts: number
+  source: IntentSource
+  /** The event whose dispatch produced both decisions. */
+  eventId: string
+  /** The decider whose ledger decision diverged. Composite FK with eventId
+   *  references the corresponding intent_decisions row. */
+  decidedBy: string
+  ledgerAgentId: string | null
+  ledgerOutcome: IntentOutcomeKind
+  ledgerReason: string | null
+  legacyAgentId: string | null
+  legacyOutcome: IntentOutcomeKind
+  legacyReason: string | null
+}

@@ -29,9 +29,12 @@ describe("IntentLedger schema", () => {
     ledger.close()
   })
 
-  it("reports schema version 1 after first open", () => {
+  it("reports the current schema version after first open", () => {
     const ledger = open()
-    expect(ledger.schemaVersion()).toBe(1)
+    // Bumped to 2 in commit 5 with the intent_divergences table. Any new
+    // migration appends to runMigrations and bumps this number — never
+    // mutate an existing migration body.
+    expect(ledger.schemaVersion()).toBe(2)
     ledger.close()
   })
 
@@ -41,21 +44,22 @@ describe("IntentLedger schema", () => {
     const a = open()
     a.close()
     const b = open()
-    expect(b.schemaVersion()).toBe(1)
+    expect(b.schemaVersion()).toBe(2)
     b.close()
   })
 
-  it("creates the three core tables", () => {
+  it("creates the four core tables", () => {
     const ledger = open()
     const tables = (ledger.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as Array<{ name: string }>)
       .map((r) => r.name)
-    // schema_version is bookkeeping, the three ledger tables are the
+    // schema_version is bookkeeping; the four ledger tables are the
     // append-only records this phase commits to.
     expect(tables).toContain("intent_events")
     expect(tables).toContain("intent_decisions")
     expect(tables).toContain("intent_resolutions")
+    expect(tables).toContain("intent_divergences")
     expect(tables).toContain("schema_version")
     ledger.close()
   })
@@ -107,6 +111,36 @@ describe("IntentLedger schema", () => {
       ledger.db.prepare(
         "INSERT INTO intent_decisions (event_id, decided_at, decided_by, agent_id, outcome, reason) VALUES (?, ?, ?, ?, ?, ?)",
       ).run("ghost-event", 1, "tester", null, "halted", "no parent"),
+    ).toThrow(/FOREIGN KEY/)
+    ledger.close()
+  })
+
+  it("intent_divergences has the documented columns and composite FK", () => {
+    const ledger = open()
+    const cols = (ledger.db
+      .prepare("PRAGMA table_info(intent_divergences)")
+      .all() as Array<{ name: string; pk: number; notnull: number }>)
+    const byName = Object.fromEntries(cols.map((c) => [c.name, c]))
+    expect(Object.keys(byName).sort()).toEqual([
+      "decided_by", "event_id", "id", "ledger_agent_id", "ledger_outcome",
+      "ledger_reason", "legacy_agent_id", "legacy_outcome", "legacy_reason",
+      "source", "ts",
+    ])
+    expect(byName.id.pk).toBe(1)
+    expect(byName.ts.notnull).toBe(1)
+    expect(byName.source.notnull).toBe(1)
+    expect(byName.ledger_outcome.notnull).toBe(1)
+    expect(byName.legacy_outcome.notnull).toBe(1)
+
+    // Composite FK to intent_decisions(event_id, decided_by) — divergence
+    // cannot exist without its ledger-side decision.
+    expect(() =>
+      ledger.db.prepare(
+        `INSERT INTO intent_divergences (id, ts, source, event_id, decided_by,
+           ledger_agent_id, ledger_outcome, ledger_reason,
+           legacy_agent_id, legacy_outcome, legacy_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run("div-1", 1, "gitlab", "ghost-event", "no-such-decider", null, "halted", null, null, "halted", null),
     ).toThrow(/FOREIGN KEY/)
     ledger.close()
   })

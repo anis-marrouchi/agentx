@@ -4,6 +4,7 @@ import { dirname, resolve } from "path"
 import { newEventId } from "./ulid"
 import type {
   IntentDecision,
+  IntentDivergence,
   IntentEvent,
   IntentEventInput,
   IntentResolution,
@@ -236,6 +237,80 @@ export class IntentLedger {
       .get(eventId, decidedBy) as ResolutionRow | undefined
     return row ? rowToResolution(row) : null
   }
+
+  // -------------------------------------------------------------------------
+  // Divergences (shadow-mode soak surface)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Append a divergence record. Throws on duplicate `id`. The composite FK
+   * to `intent_decisions` (`event_id`, `decided_by`) enforces that a
+   * divergence cannot exist without its ledger-side decision — so callers
+   * must record the decision before reporting the divergence.
+   */
+  recordDivergence(divergence: IntentDivergence): void {
+    this.db
+      .prepare(
+        `INSERT INTO intent_divergences (
+           id, ts, source, event_id, decided_by,
+           ledger_agent_id, ledger_outcome, ledger_reason,
+           legacy_agent_id, legacy_outcome, legacy_reason
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        divergence.id,
+        divergence.ts,
+        divergence.source,
+        divergence.eventId,
+        divergence.decidedBy,
+        divergence.ledgerAgentId,
+        divergence.ledgerOutcome,
+        divergence.ledgerReason,
+        divergence.legacyAgentId,
+        divergence.legacyOutcome,
+        divergence.legacyReason,
+      )
+  }
+
+  /**
+   * Recent divergences, newest first. Filters compose: `source` narrows to
+   * one dispatch source, `since` to a recency window, `limit` to top-N.
+   * The intended consumer is the soak dashboard (commit 8) and `agentx
+   * audit --divergence` queries; per-record introspection is rare so we
+   * don't expose a single-id getter.
+   */
+  getDivergences(opts: {
+    source?: IntentSource
+    since?: number
+    limit?: number
+  } = {}): IntentDivergence[] {
+    const wheres: string[] = []
+    const params: Array<string | number> = []
+    if (opts.source !== undefined) {
+      wheres.push("source = ?")
+      params.push(opts.source)
+    }
+    if (opts.since !== undefined) {
+      wheres.push("ts >= ?")
+      params.push(opts.since)
+    }
+    const whereSql = wheres.length ? `WHERE ${wheres.join(" AND ")}` : ""
+    const limitSql = opts.limit !== undefined ? "LIMIT ?" : ""
+    if (opts.limit !== undefined) params.push(opts.limit)
+
+    const rows = this.db
+      .prepare(
+        `SELECT id, ts, source, event_id, decided_by,
+                ledger_agent_id, ledger_outcome, ledger_reason,
+                legacy_agent_id, legacy_outcome, legacy_reason
+         FROM intent_divergences
+         ${whereSql}
+         ORDER BY ts DESC
+         ${limitSql}`,
+      )
+      .all(...params) as DivergenceRow[]
+    return rows.map(rowToDivergence)
+  }
 }
 
 // --- Row → typed-object adapters --------------------------------------------
@@ -273,6 +348,20 @@ interface ResolutionRow {
   result_summary: string | null
 }
 
+interface DivergenceRow {
+  id: string
+  ts: number
+  source: string
+  event_id: string
+  decided_by: string
+  ledger_agent_id: string | null
+  ledger_outcome: string
+  ledger_reason: string | null
+  legacy_agent_id: string | null
+  legacy_outcome: string
+  legacy_reason: string | null
+}
+
 function rowToEvent(row: EventRow): IntentEvent {
   return {
     id: row.id,
@@ -308,6 +397,22 @@ function rowToResolution(row: ResolutionRow): IntentResolution {
   }
 }
 
+function rowToDivergence(row: DivergenceRow): IntentDivergence {
+  return {
+    id: row.id,
+    ts: row.ts,
+    source: row.source as IntentSource,
+    eventId: row.event_id,
+    decidedBy: row.decided_by,
+    ledgerAgentId: row.ledger_agent_id,
+    ledgerOutcome: row.ledger_outcome as IntentDivergence["ledgerOutcome"],
+    ledgerReason: row.ledger_reason,
+    legacyAgentId: row.legacy_agent_id,
+    legacyOutcome: row.legacy_outcome as IntentDivergence["legacyOutcome"],
+    legacyReason: row.legacy_reason,
+  }
+}
+
 /**
  * Per-version schema steps. New tables / columns go in a new migration
  * function — never mutate an old one. Each step is idempotent so re-running
@@ -324,6 +429,7 @@ function runMigrations(db: Database.Database): void {
     .get() as { v: number | null }).v ?? 0
 
   if (current < 1) migrationV1(db)
+  if (current < 2) migrationV2(db)
 }
 
 function migrationV1(db: Database.Database): void {
@@ -380,6 +486,39 @@ function migrationV1(db: Database.Database): void {
       ON intent_resolutions (status, resolved_at);
   `)
   db.prepare("INSERT INTO schema_version (v) VALUES (1)").run()
+}
+
+function migrationV2(db: Database.Database): void {
+  // Phase 1 commit 5 — divergence reporter surface. Each row records one
+  // observed mismatch between the ledger's decision and the legacy path's
+  // outcome during shadow-mode operation. The composite FK to
+  // intent_decisions ensures a divergence cannot exist without its
+  // ledger-side decision row.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS intent_divergences (
+      id                TEXT NOT NULL PRIMARY KEY,
+      ts                INTEGER NOT NULL,
+      source            TEXT NOT NULL,
+      event_id          TEXT NOT NULL,
+      decided_by        TEXT NOT NULL,
+      ledger_agent_id   TEXT,
+      ledger_outcome    TEXT NOT NULL,
+      ledger_reason     TEXT,
+      legacy_agent_id   TEXT,
+      legacy_outcome    TEXT NOT NULL,
+      legacy_reason     TEXT,
+      FOREIGN KEY (event_id, decided_by)
+        REFERENCES intent_decisions(event_id, decided_by)
+    );
+
+    -- "show me recent divergences from gitlab" — the soak's primary query
+    CREATE INDEX IF NOT EXISTS idx_intent_divergences_source_ts
+      ON intent_divergences (source, ts);
+    -- "are any deciders consistently wrong" — per-decider analysis
+    CREATE INDEX IF NOT EXISTS idx_intent_divergences_decided_by
+      ON intent_divergences (decided_by, ts);
+  `)
+  db.prepare("INSERT INTO schema_version (v) VALUES (2)").run()
 }
 
 // existsSync is imported for symmetry with src/storage/sqlite.ts; the
