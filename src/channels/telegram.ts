@@ -446,6 +446,15 @@ export class TelegramAdapter implements ChannelAdapter {
   // Persistent group membership store
   private groupStore: TelegramGroupStore
 
+  /** Account IDs of bots currently active (member/administrator) in a group.
+   *  Used by the router to pick the correct bot when an agent has multiple
+   *  Telegram accounts bound to it (e.g. pm-ksi → both @noqta_ksi_bot and
+   *  @noqta_pm_ksi_bot) — the in-group account should win, otherwise messages
+   *  to the absent bot get silently dropped by multi-account-dedup. */
+  getGroupBotAccounts(groupId: string): string[] {
+    return this.groupStore.getGroupBots(groupId).map((b) => b.accountId)
+  }
+
   /**
    * Send a message. Returns the sent message ID.
    * Pass accountId to send from a specific bot account.

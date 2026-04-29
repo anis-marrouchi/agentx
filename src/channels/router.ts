@@ -486,9 +486,12 @@ export class MessageRouter {
     }
 
     // Dedup: in groups, multiple bot accounts receive the same message.
-    // Only the account BOUND to this agent should handle it.
+    // Only the account BOUND to this agent should handle it. When multiple
+    // accounts share the same agentBinding, getAccountForAgent prefers one
+    // that's in the group — without this, dropping by the absent canonical
+    // bot would silently swallow messages received via the in-group bot.
     if (msg.group && msg.channel === "telegram") {
-      const boundAccount = this.getAccountForAgent(agentId)
+      const boundAccount = this.getAccountForAgent(agentId, msg.group.id)
       if (boundAccount && boundAccount !== msg.accountId) {
         this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`, "multi-account-dedup")
         return
@@ -552,8 +555,9 @@ export class MessageRouter {
 
     const agentName = agentDef.name || agentId
 
-    // Determine which bot account should send the response
-    const replyAccountId = this.getAccountForAgent(agentId) || msg.accountId
+    // Determine which bot account should send the response. In groups, prefer
+    // the account whose bot is actually present (matters for multi-bound agents).
+    const replyAccountId = this.getAccountForAgent(agentId, msg.group?.id) || msg.accountId
 
     this.log(
       `Routing [${msg.channel}/${msg.sender.name}] -> "${agentName}": ${msg.text.slice(0, 80)}`,
@@ -1241,13 +1245,23 @@ export class MessageRouter {
     }
   }
 
-  private getAccountForAgent(agentId: string): string | undefined {
+  private getAccountForAgent(agentId: string, groupId?: string): string | undefined {
+    const candidates: string[] = []
     for (const [accountId, account] of Object.entries(this.config.channels.telegram.accounts)) {
-      if (account.agentBinding === agentId) {
-        return accountId
-      }
+      if (account.agentBinding === agentId) candidates.push(accountId)
     }
-    return undefined
+    if (candidates.length === 0) return undefined
+    if (candidates.length === 1 || !groupId) return candidates[0]
+
+    // Multiple accounts bound to the same agent (e.g. pm-ksi → both
+    // @noqta_ksi_bot and @noqta_pm_ksi_bot). Prefer one that's actually a
+    // member of this group; otherwise multi-account-dedup would pick the
+    // first config-order account and silently drop messages received via
+    // the other bot when the "canonical" one isn't in the chat.
+    const adapter = this.channels.get("telegram") as TelegramAdapter | undefined
+    const inGroup = adapter?.getGroupBotAccounts?.(groupId) ?? []
+    const memberCandidates = candidates.filter((id) => inGroup.includes(id))
+    return memberCandidates[0] || candidates[0]
   }
 
   /** @deprecated Phase 2 — resolveAgent now delegates to the pipeline.
