@@ -175,3 +175,49 @@ export function recordGitLabNoteDispatch(
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
 }
+
+// ---------------------------------------------------------------------------
+// Issue/MR level (no-target) decisions
+// ---------------------------------------------------------------------------
+//
+// Some dispatch decisions don't correspond to a specific target — the
+// `on:gitlab-issue` hook can return `blocked: true` to suppress all
+// default dispatch, for example. The decision is "we considered this
+// event and chose to dispatch nothing", which is still a real dispatch
+// decision the ledger should track.
+
+/** Record + report for an issue/MR-level decision (no specific target).
+ *  `marker` distinguishes the decision sub-type ("hook-blocked",
+ *  "no-targets", etc.) and is part of the sourceEventId + subject so
+ *  multiple issue-level decisions on the same event can coexist. */
+export function recordGitLabIssueLevelDecision(
+  ledger: IntentLedger,
+  event: GitLabEventProjection,
+  marker: string,
+  decidedBy: string,
+  rawJson: string,
+  legacyOutcome: LegacyOutcome,
+  now: () => number = Date.now,
+): void {
+  const eventInput: IntentEventInput = {
+    ts: now(),
+    source: "gitlab",
+    sourceEventId: `${event.entityKind}:${event.iid}:${event.action}:${marker}`,
+    project: event.project,
+    subject: `${event.entityKind}:${event.iid}:${marker}`,
+    intent: `${event.entityKind}.${event.action}`,
+    rawJson,
+  }
+  const policy: DispatchPolicy = {
+    decidedBy,
+    decide: () => ({
+      agentId: legacyOutcome.agentId,
+      outcome: legacyOutcome.outcome === "deduped" ? "halted" : legacyOutcome.outcome,
+      reason: legacyOutcome.outcome === "deduped"
+        ? `legacy-dedup: ${legacyOutcome.reason ?? ""}`.trim()
+        : legacyOutcome.reason ?? null,
+    }),
+  }
+  const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
+  reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
+}

@@ -8,6 +8,7 @@ import {
   buildGitLabTargetEventInput,
   buildNoteDispatchPolicy,
   buildNoteEventInput,
+  recordGitLabIssueLevelDecision,
   recordGitLabNoteDispatch,
   recordGitLabTargetDispatch,
   type GitLabEventProjection,
@@ -337,5 +338,74 @@ describe("recordGitLabNoteDispatch", () => {
     )
     expect(ledger.getDivergences()).toHaveLength(0)
     expect((ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue-level (no-target) decisions — hook-blocked etc.
+// ---------------------------------------------------------------------------
+
+describe("recordGitLabIssueLevelDecision", () => {
+  it("hook-blocked: records halted with marker in subject, no target agent", () => {
+    recordGitLabIssueLevelDecision(
+      ledger, sampleIssue, "hook-blocked", "gitlab:issue:hook", "{}",
+      { agentId: null, outcome: "halted", reason: "hook suppressed dispatch" },
+      () => 1714400000000,
+    )
+    const row = ledger.db
+      .prepare("SELECT * FROM intent_events ORDER BY ts DESC LIMIT 1")
+      .get() as any
+    expect(row.subject).toBe("issue:709:hook-blocked")
+    expect(row.source_event_id).toBe("issue:709:open:hook-blocked")
+    const decisions = ledger.db.prepare("SELECT * FROM intent_decisions").all() as any[]
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0].outcome).toBe("halted")
+    expect(decisions[0].agent_id).toBeNull()
+    expect(decisions[0].decided_by).toBe("gitlab:issue:hook")
+    expect(ledger.getDivergences()).toHaveLength(0)
+  })
+
+  it("re-delivery of the same hook-blocked event collapses to one row (per-marker idempotency)", () => {
+    for (let i = 0; i < 3; i++) {
+      recordGitLabIssueLevelDecision(
+        ledger, sampleIssue, "hook-blocked", "gitlab:issue:hook", "{}",
+        { agentId: null, outcome: "halted", reason: "hook" },
+        () => 1 + i,
+      )
+    }
+    expect(
+      (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n,
+    ).toBe(1)
+  })
+
+  it("issue-level decisions coexist with per-target decisions for the same issue (different sourceEventIds)", () => {
+    // hook-blocked on the same issue as a regular target dispatch — should
+    // NOT collide because the marker is part of the sourceEventId.
+    recordGitLabTargetDispatch(
+      ledger, sampleIssue, issueTarget, "{}",
+      { agentId: "mtgl-v2", outcome: "dispatched" },
+      () => 1,
+    )
+    recordGitLabIssueLevelDecision(
+      ledger, sampleIssue, "hook-blocked", "gitlab:issue:hook", "{}",
+      { agentId: null, outcome: "halted", reason: "hook" },
+      () => 2,
+    )
+    expect(
+      (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n,
+    ).toBe(2)
+  })
+
+  it("legacy 'deduped' maps to halted in policy (PolicyDecision can't say deduped)", () => {
+    recordGitLabIssueLevelDecision(
+      ledger, sampleIssue, "no-targets", "gitlab:issue:default", "{}",
+      { agentId: null, outcome: "deduped", reason: "TTL" },
+      () => 1,
+    )
+    // Ledger decided halted; legacy says deduped → divergence.
+    const div = ledger.getDivergences()
+    expect(div).toHaveLength(1)
+    expect(div[0].ledgerOutcome).toBe("halted")
+    expect(div[0].legacyOutcome).toBe("deduped")
   })
 })

@@ -5,7 +5,7 @@ import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
-import { recordGitLabTargetDispatch, recordGitLabNoteDispatch } from "@/intent/sources/gitlab"
+import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -658,6 +658,20 @@ export class GitLabAdapter implements ChannelAdapter {
 
     // Hook-driven dispatch: route one IncomingMessage per dispatch entry.
     if (dispatch && dispatch.length > 0) {
+      const ledgerEnabled = getLedgerMode("gitlab") !== "off"
+      const issueProjectionForHook = ledgerEnabled
+        ? {
+            entityKind: "issue" as const,
+            project,
+            iid: attrs.iid,
+            action: attrs.action,
+            title: attrs.title,
+            description: attrs.description,
+            url: attrs.url,
+          }
+        : null
+      const eventJsonForHook = ledgerEnabled ? JSON.stringify(event) : ""
+
       for (const d of dispatch) {
         const mapping = this.config.agentMappings?.find((m) => m.agentId === d.agentId)
         const chatId = `${project}:issue:${attrs.iid}`
@@ -684,12 +698,54 @@ export class GitLabAdapter implements ChannelAdapter {
         }
         this.log(`Issue #${attrs.iid} hook dispatch -> agent "${d.agentId}"${d.preferNode || mapping?.node ? ` (remote: ${d.preferNode || mapping?.node})` : ""}`)
         this.handler(incoming).catch((e) => this.log(`Error handling hook dispatch: ${e.message}`))
+
+        // Phase 1 commit 6.a-extended (hook path): record per-target dispatch
+        // with trigger="hook-dispatch" so chain readouts distinguish from
+        // computeIssueTargets paths.
+        if (issueProjectionForHook) {
+          try {
+            recordGitLabTargetDispatch(
+              getDefaultLedger(),
+              issueProjectionForHook,
+              { agentId: d.agentId, trigger: "hook-dispatch" },
+              eventJsonForHook,
+              { agentId: d.agentId, outcome: "dispatched", reason: d.preferNode ? `hook (node:${d.preferNode})` : "hook" },
+            )
+          } catch (e: any) {
+            this.log(`[ledger] gitlab issue #${attrs.iid} hook-dispatch ${d.agentId} record failed: ${e?.message ?? e}`)
+          }
+        }
       }
       res.writeHead(200); res.end("ok"); return
     }
 
     if (hookBlocked) {
       this.log(`Issue #${attrs.iid}: on:gitlab-issue hook suppressed default dispatch`)
+      // Phase 1 commit 6.a-extended (hook path): record the hook-blocked
+      // halt as an issue-level decision (no specific target). Distinct
+      // from per-target halts because no agent was even considered.
+      if (getLedgerMode("gitlab") !== "off") {
+        try {
+          recordGitLabIssueLevelDecision(
+            getDefaultLedger(),
+            {
+              entityKind: "issue",
+              project,
+              iid: attrs.iid,
+              action: attrs.action,
+              title: attrs.title,
+              description: attrs.description,
+              url: attrs.url,
+            },
+            "hook-blocked",
+            "gitlab:issue:hook",
+            JSON.stringify(event),
+            { agentId: null, outcome: "halted", reason: "on:gitlab-issue hook returned blocked:true" },
+          )
+        } catch (e: any) {
+          this.log(`[ledger] gitlab issue #${attrs.iid} hook-blocked record failed: ${e?.message ?? e}`)
+        }
+      }
       res.writeHead(200); res.end("ok"); return
     }
 
