@@ -3,6 +3,9 @@ import { createServer, type IncomingMessage as HttpRequest, type ServerResponse 
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordIssueTargetDispatch } from "@/intent/sources/gitlab"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -669,47 +672,88 @@ export class GitLabAdapter implements ChannelAdapter {
       res.writeHead(200); res.end("ok"); return
     }
 
+    // Phase 1 commit 6.a: shadow-mode ledger observes the loop. We
+    // compute `wasDuplicate` up front (rather than `continue`-ing on
+    // legacy dedup hits) so the ledger sees BOTH branches — fresh
+    // dispatches AND legacy-deduped ones — and the divergence reporter
+    // surfaces gaps between the legacy TTL dedup and the ledger's
+    // active-task model. Both views live side-by-side until the 1c→1d
+    // promotions retire legacy dedup.
+    const ledgerEnabled = getLedgerMode("gitlab") !== "off"
+    const issueProjection = ledgerEnabled
+      ? {
+          project,
+          iid: attrs.iid,
+          action: attrs.action,
+          title: attrs.title,
+          description: attrs.description,
+          url: attrs.url,
+        }
+      : null
+    const eventJson = ledgerEnabled ? JSON.stringify(event) : ""
+
     for (const t of targets) {
       const dedupKey = `${project}:issue:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
-      if (this.isDispatchedRecently(dedupKey)) {
+      const wasDuplicate = this.isDispatchedRecently(dedupKey)
+
+      if (wasDuplicate) {
         this.log(`Issue #${attrs.iid}: skip duplicate dispatch ${dedupKey}`)
-        continue
+      } else {
+        this.markDispatched(dedupKey)
+
+        const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
+        const chatId = `${project}:issue:${attrs.iid}`
+        const channelMeta = await this.getChannelMeta(chatId)
+
+        // Assignment-trigger gets a "start working" prompt; mention/default
+        // get the standard issue summary. Both end with the issue URL so the
+        // agent can navigate to it.
+        const text = t.trigger === "assignee-added"
+          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${attrs.title}]\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
+          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+
+        const incoming: IncomingMessage = {
+          id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
+          channel: "gitlab",
+          accountId: "default",
+          sender: {
+            id: chatId,
+            name: event.user.name,
+            username: event.user.username,
+          },
+          text,
+          timestamp: new Date(),
+          raw: event,
+          resolvedAgent: t.agentId,
+          preferNode: mapping?.node,
+          channelMeta: channelMeta ? {
+            ...channelMeta,
+            issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
+          } : undefined,
+        }
+
+        this.log(`Issue #${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
+        this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))
       }
-      this.markDispatched(dedupKey)
 
-      const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
-      const chatId = `${project}:issue:${attrs.iid}`
-      const channelMeta = await this.getChannelMeta(chatId)
-
-      // Assignment-trigger gets a "start working" prompt; mention/default
-      // get the standard issue summary. Both end with the issue URL so the
-      // agent can navigate to it.
-      const text = t.trigger === "assignee-added"
-        ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${attrs.title}]\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
-        : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
-
-      const incoming: IncomingMessage = {
-        id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
-        channel: "gitlab",
-        accountId: "default",
-        sender: {
-          id: chatId,
-          name: event.user.name,
-          username: event.user.username,
-        },
-        text,
-        timestamp: new Date(),
-        raw: event,
-        resolvedAgent: t.agentId,
-        preferNode: mapping?.node,
-        channelMeta: channelMeta ? {
-          ...channelMeta,
-          issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
-        } : undefined,
+      // Ledger observes regardless of legacy outcome. Wrapped in try/catch
+      // because a ledger failure must never break the gitlab dispatch path —
+      // legacy is still authoritative until the 1c per-source promotion lands.
+      if (issueProjection) {
+        try {
+          recordIssueTargetDispatch(
+            getDefaultLedger(),
+            issueProjection,
+            t,
+            eventJson,
+            wasDuplicate
+              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
+              : { agentId: t.agentId, outcome: "dispatched" },
+          )
+        } catch (e: any) {
+          this.log(`[ledger] gitlab issue #${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
+        }
       }
-
-      this.log(`Issue #${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
-      this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))
     }
 
     res.writeHead(200)
