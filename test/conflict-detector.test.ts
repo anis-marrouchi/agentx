@@ -49,6 +49,28 @@ function workflow(opts: { id: string; project?: string; state?: "active" | "disa
   } as Workflow
 }
 
+function hookWorkflow(opts: { id: string; event: string }): Workflow {
+  return {
+    id: opts.id,
+    version: 2,
+    title: opts.id,
+    state: "active",
+    priority: 0,
+    fanOut: false,
+    nodes: [{
+      id: "t1",
+      type: "trigger.hook" as any,
+      position: { x: 0, y: 0 },
+      config: { event: opts.event },
+    } as any],
+    edges: [],
+    envAllow: [],
+    retention: { maxRuns: 500, maxDays: 90 },
+    maxChildDepth: 5,
+    mesh: { allowRemote: false },
+  } as Workflow
+}
+
 describe("detectConflicts — workflow vs gitlab agentMapping", () => {
   it("no conflict when gitlab is disabled", () => {
     const wf = workflow({ id: "wf-a", project: "noqta/repo" })
@@ -103,5 +125,36 @@ describe("detectConflicts — workflow vs gitlab agentMapping", () => {
       agentMappings: [{ agentId: "a", gitlabUsernames: [], keywords: [] }],
     })
     expect(detectConflicts([wf], cfg)).toEqual([])
+  })
+
+  it("flags trigger.hook(on:gitlab-issue) overlapping with any agentMapping", () => {
+    // The actual production case behind today's #709 incident:
+    // gitlab-sdlc-loop uses trigger.hook event=on:gitlab-issue (not
+    // trigger.channel), so the hook fires for every project. v0 must catch
+    // this — the trigger.channel-only check missed it on the first deploy.
+    const wf = hookWorkflow({ id: "gitlab-sdlc-loop", event: "on:gitlab-issue" })
+    const cfg = gitlabConfig({
+      agentMappings: [
+        { agentId: "mtgl-v2", gitlabUsernames: ["coding-mtgl-v2"], keywords: [] },
+        { agentId: "pm-mtgl", gitlabUsernames: ["pm-mtgl"], keywords: [] },
+      ],
+    })
+    const conflicts = detectConflicts([wf], cfg)
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0].workflowId).toBe("gitlab-sdlc-loop")
+    expect(conflicts[0].details.triggerType).toBe("trigger.hook")
+    expect(conflicts[0].details.overlappingAgents).toEqual(["mtgl-v2", "pm-mtgl"])
+  })
+
+  it("flags trigger.hook for on:gitlab-mr and on:gitlab-note too", () => {
+    const cfg = gitlabConfig({ agentMappings: [{ agentId: "a", gitlabUsernames: [], keywords: [] }] })
+    expect(detectConflicts([hookWorkflow({ id: "wf-mr", event: "on:gitlab-mr" })], cfg)).toHaveLength(1)
+    expect(detectConflicts([hookWorkflow({ id: "wf-note", event: "on:gitlab-note" })], cfg)).toHaveLength(1)
+  })
+
+  it("does not flag trigger.hook for unrelated events", () => {
+    // on:telegram-message etc. don't race with gitlab.agentMappings.
+    const cfg = gitlabConfig({ agentMappings: [{ agentId: "a", gitlabUsernames: [], keywords: [] }] })
+    expect(detectConflicts([hookWorkflow({ id: "wf-tg", event: "on:telegram-message" })], cfg)).toEqual([])
   })
 })

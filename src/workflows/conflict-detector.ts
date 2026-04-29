@@ -69,13 +69,32 @@ function detectGitlabAgentMappingOverlap(wf: Workflow, config: DaemonConfig): Co
   const gitlab = config.channels.gitlab
   if (!gitlab?.enabled || !gitlab.agentMappings?.length) return out
 
+  // Hook events whose source is the gitlab channel router. trigger.hook
+  // workflows on these events race against gitlab.agentMappings dispatched
+  // from the same webhook (gitlab.ts handleIssue/handleMR/handleNote).
+  const GITLAB_HOOK_EVENTS = new Set(["on:gitlab-issue", "on:gitlab-mr", "on:gitlab-note"])
+
   for (const node of wf.nodes) {
-    if (node.type !== "trigger.channel") continue
-    const cfg = node.config as { source?: string; filter?: { project?: string } } | undefined
-    if (cfg?.source !== "gitlab-issue") continue
-    const project = cfg.filter?.project
-    // No project filter → would race for ALL projects with any mapping.
-    // Project filter set to a specific value → race only for that project.
+    let triggerLabel: string | undefined
+    let project: string | undefined
+
+    if (node.type === "trigger.channel") {
+      const cfg = node.config as { source?: string; filter?: { project?: string } } | undefined
+      if (cfg?.source !== "gitlab-issue") continue
+      project = cfg.filter?.project
+      triggerLabel = `trigger.channel(gitlab-issue, project=${project ?? "*"})`
+    } else if (node.type === "trigger.hook") {
+      // trigger.hook fires on a HookRegistry event; project filter is not
+      // part of the hook config (the event IS the filter), so any matching
+      // hook races for every project the gitlab adapter dispatches to.
+      const cfg = node.config as { event?: string } | undefined
+      if (!cfg?.event || !GITLAB_HOOK_EVENTS.has(cfg.event)) continue
+      project = undefined // hook fires for all projects
+      triggerLabel = `trigger.hook(${cfg.event})`
+    } else {
+      continue
+    }
+
     const overlaps = gitlab.agentMappings.filter((m) => {
       if (!project || project === "*") return true
       // The mapping itself doesn't carry a project field — gitlab routing is
@@ -85,17 +104,19 @@ function detectGitlabAgentMappingOverlap(wf: Workflow, config: DaemonConfig): Co
       return projectRoute?.agent === m.agentId
     })
     if (overlaps.length === 0) continue
+
     out.push({
       kind: "workflow-vs-gitlab-agentmapping",
       severity: "warn",
       workflowId: wf.id,
-      summary: `workflow "${wf.id}" trigger.channel(gitlab-issue, project=${project ?? "*"}) overlaps with gitlab agentMapping(s) ${overlaps.map((m) => m.agentId).join(", ")}`,
+      summary: `workflow "${wf.id}" ${triggerLabel} overlaps with gitlab agentMapping(s) ${overlaps.map((m) => m.agentId).join(", ")}`,
       details: {
         triggerNodeId: node.id,
+        triggerType: node.type,
         project: project ?? "*",
         overlappingAgents: overlaps.map((m) => m.agentId),
       },
-      suggestion: "set `hookBlocked: true` on the gitlab-issue trigger so the channel router's default-target dispatch defers to the workflow",
+      suggestion: "set `hookBlocked: true` on the gitlab trigger so the channel router's default-target dispatch defers to the workflow",
       autoFix: true,
     })
   }
