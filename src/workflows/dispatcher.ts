@@ -367,6 +367,11 @@ export class WorkflowDispatcher {
     const all = this.store.list()
     const out: Workflow[] = []
     for (const wf of all) {
+      // Lifecycle gate: only `active` workflows match new triggers.
+      // disabled (operator kill switch) and quarantined (set by the
+      // conflict detector) both opt out of fresh dispatches; in-flight
+      // runs created while active continue to advance.
+      if (wf.state && wf.state !== "active") continue
       // Mesh isolation: remote-origin events only see workflows that opted in.
       if (fromRemote) {
         if (!wf.mesh?.allowRemote) continue

@@ -1370,6 +1370,25 @@ export class AgentXDaemon {
 
     const count = store.list().length
     this.log(`  Workflows: enabled (${count} definition${count === 1 ? "" : "s"} loaded from ${cfg.dir}, editor=${cfg.editor}, cron=${cronTimers}, hook=${hookSubscribers})`)
+
+    // Static dispatch-graph analysis. v0 only logs — auto-quarantine + admin
+    // surface land in follow-up turns. Surfacing the conflicts at boot already
+    // tells operators which workflows are racing against existing dispatch
+    // paths (e.g. gitlab agentMappings) so they can flip state to `disabled`
+    // by hand until the auto-fix layer ships.
+    try {
+      const { detectConflicts } = await import("@/workflows/conflict-detector")
+      const conflicts = detectConflicts(store.list(), this.config)
+      if (conflicts.length > 0) {
+        this.log(`  Workflows: ${conflicts.length} dispatch conflict(s) detected`)
+        for (const c of conflicts) {
+          this.log(`    [${c.severity}] ${c.workflowId}: ${c.summary}`)
+          this.log(`      → ${c.suggestion}`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Workflows: conflict-detector failed: ${e.message}`)
+    }
   }
 
   private async startHttpApi(): Promise<void> {

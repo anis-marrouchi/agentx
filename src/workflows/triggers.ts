@@ -39,6 +39,14 @@ export function startWorkflowTriggers(args: {
   let hookSubscribers = 0
 
   for (const wf of workflows) {
+    // Lifecycle gate: don't register triggers for non-active workflows. A
+    // disabled or quarantined workflow's cron must not fire and its
+    // trigger.hook subscribers must not run. State changes that flip a
+    // workflow back to `active` re-run this registrar.
+    if (wf.state && wf.state !== "active") {
+      args.log(`[workflows] ${wf.id} state=${wf.state} — skipping trigger registration`)
+      continue
+    }
     const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
     if (!trigger) continue
 
