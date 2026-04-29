@@ -16,6 +16,14 @@ import type { IntentDecision, IntentEventInput, IntentEvent } from "./types"
 // TLA+ spec can reference them by string. Tests in test/intent-decide.test.ts
 // cite these names in their assertion comments.
 //
+// **Phase 2 status**: three of the four invariants are formally verified
+// by TLC against `docs/architecture/DispatchSpec.tla` (410K distinct
+// states, depth 7, 0 violations as of 2026-04-29). The fourth
+// (Inv-Determinism) is a meta-property over traces, checked by code
+// review + the test in `intent-decide.test.ts`. See
+// `docs/architecture/dispatch-properties.md` for the full mapping
+// between code paths, invariants, and TLC results.
+//
 //   Inv-Idempotence       calling decideAndCommit twice with the same
 //                         (source, sourceEventId) and the same policy
 //                         produces one event row + one decision row;
