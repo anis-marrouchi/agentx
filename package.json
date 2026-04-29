@@ -1,6 +1,6 @@
 {
   "name": "agentix-cli",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "AI operations layer for small & medium businesses. Routes Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.",
   "license": "MIT",
   "author": {
