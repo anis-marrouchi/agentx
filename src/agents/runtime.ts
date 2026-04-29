@@ -1,6 +1,7 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
+import { buildAgentEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 
 // --- Agent execution runtime ---
@@ -298,11 +299,12 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+      const childEnv = buildAgentEnv(agent.workspace)
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
         timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "user") },
+        env: { ...childEnv, HOME: childEnv.HOME || "/home/" + (childEnv.USER || "user") },
       }, (error, stdout, stderr) => {
         // Always resolve — we handle errors ourselves based on stdout/stderr
         resolve({
@@ -401,7 +403,7 @@ export async function executeClaudeCodeStreaming(
       cwd: agent.workspace,
       timeout: streamTimeoutMs,
       reject: false,
-      env: process.env,
+      env: buildAgentEnv(agent.workspace),
       // Don't buffer — we'll read stdout line by line
       buffer: false,
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
