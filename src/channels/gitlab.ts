@@ -5,7 +5,7 @@ import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
-import { recordIssueTargetDispatch } from "@/intent/sources/gitlab"
+import { recordGitLabTargetDispatch } from "@/intent/sources/gitlab"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -682,6 +682,7 @@ export class GitLabAdapter implements ChannelAdapter {
     const ledgerEnabled = getLedgerMode("gitlab") !== "off"
     const issueProjection = ledgerEnabled
       ? {
+          entityKind: "issue" as const,
           project,
           iid: attrs.iid,
           action: attrs.action,
@@ -741,7 +742,7 @@ export class GitLabAdapter implements ChannelAdapter {
       // legacy is still authoritative until the 1c per-source promotion lands.
       if (issueProjection) {
         try {
-          recordIssueTargetDispatch(
+          recordGitLabTargetDispatch(
             getDefaultLedger(),
             issueProjection,
             t,
@@ -858,42 +859,78 @@ export class GitLabAdapter implements ChannelAdapter {
       res.writeHead(200); res.end("ok"); return
     }
 
+    // Same shadow-mode wiring as handleIssue (Phase 1 commit 6.a). Computed
+    // once outside the loop; per-target ledger record happens after the
+    // legacy dispatch path so the ledger sees both fresh and deduped branches.
+    const ledgerEnabled = getLedgerMode("gitlab") !== "off"
+    const mrProjection = ledgerEnabled
+      ? {
+          entityKind: "merge_request" as const,
+          project,
+          iid: attrs.iid,
+          action: attrs.action,
+          title: attrs.title,
+          description: attrs.description,
+          url: attrs.url,
+        }
+      : null
+    const eventJson = ledgerEnabled ? JSON.stringify(event) : ""
+
     for (const t of targets) {
       const dedupKey = `${project}:merge_request:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
-      if (this.isDispatchedRecently(dedupKey)) continue
-      this.markDispatched(dedupKey)
+      const wasDuplicate = this.isDispatchedRecently(dedupKey)
 
-      const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
-      const chatId = `${project}:merge_request:${attrs.iid}`
-      const channelMeta = await this.getChannelMeta(chatId)
+      if (!wasDuplicate) {
+        this.markDispatched(dedupKey)
 
-      const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
-      const text = isAssignmentTrigger
-        ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${attrs.title}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
-        : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+        const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
+        const chatId = `${project}:merge_request:${attrs.iid}`
+        const channelMeta = await this.getChannelMeta(chatId)
 
-      const incoming: IncomingMessage = {
-        id: `mr-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
-        channel: "gitlab",
-        accountId: "default",
-        sender: {
-          id: chatId,
-          name: event.user.name,
-          username: event.user.username,
-        },
-        text,
-        timestamp: new Date(),
-        raw: event,
-        resolvedAgent: t.agentId,
-        preferNode: mapping?.node,
-        channelMeta: channelMeta ? {
-          ...channelMeta,
-          issue: { type: "merge_request", iid: String(attrs.iid), title: attrs.title },
-        } : undefined,
+        const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
+        const text = isAssignmentTrigger
+          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${attrs.title}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
+          : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+
+        const incoming: IncomingMessage = {
+          id: `mr-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
+          channel: "gitlab",
+          accountId: "default",
+          sender: {
+            id: chatId,
+            name: event.user.name,
+            username: event.user.username,
+          },
+          text,
+          timestamp: new Date(),
+          raw: event,
+          resolvedAgent: t.agentId,
+          preferNode: mapping?.node,
+          channelMeta: channelMeta ? {
+            ...channelMeta,
+            issue: { type: "merge_request", iid: String(attrs.iid), title: attrs.title },
+          } : undefined,
+        }
+
+        this.log(`MR !${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
+        this.handler(incoming).catch((e) => this.log(`Error handling MR: ${e.message}`))
       }
 
-      this.log(`MR !${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
-      this.handler(incoming).catch((e) => this.log(`Error handling MR: ${e.message}`))
+      if (mrProjection) {
+        try {
+          recordGitLabTargetDispatch(
+            getDefaultLedger(),
+            mrProjection,
+            t,
+            eventJson,
+            wasDuplicate
+              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
+              : { agentId: t.agentId, outcome: "dispatched" },
+          )
+        } catch (e: any) {
+          this.log(`[ledger] gitlab MR !${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
+        }
+      }
     }
 
     res.writeHead(200)

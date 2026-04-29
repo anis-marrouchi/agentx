@@ -3,29 +3,28 @@ import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
 import type { IntentEventInput } from "../types"
 
-// Source adapter — gitlab issue dispatch path. Phase 1 commit 6.a.
+// Source adapter — gitlab issue + merge_request dispatch paths. Phase 1
+// commits 6.a (handleIssue) and 6.a-extended (handleMR).
 //
-// One webhook event can produce N target dispatches (mentions, newly-added
-// assignees, current assignees, project default route) — see
-// `computeIssueTargets` in src/channels/gitlab.ts. The ledger's natural
-// unit is "one dispatch consideration", not "one webhook arrival", so each
-// target becomes its own ledger event. The synthetic sourceEventId
-// `iid:action:agentId:trigger` mirrors the legacy dedup key (minus the
-// project namespace which the ledger stores separately) so re-deliveries
-// of the same webhook + target combination collapse to one row.
+// One webhook event can produce N target dispatches (mentions, assignees,
+// reviewers, project default route). The ledger's natural unit is "one
+// dispatch consideration", not "one webhook arrival", so each target
+// becomes its own ledger event. The synthetic sourceEventId
+// `${entityKind}:${iid}:${action}:${agentId}:${trigger}` mirrors the
+// legacy dedup key, with the entity-kind prefix preventing collision
+// between an issue #5 and an MR !5 in the same project.
 //
-// This commit covers the post-`computeIssueTargets` per-target loop only.
-// The hook-driven dispatch path (when an `on:gitlab-issue` hook returns
-// `modified.dispatch`) is structurally similar but has its own quirks
-// (custom prompts, hook-supplied preferNode) and lands in a follow-up.
-// `handleMR` and `handleNote` follow the same pattern and will reuse
-// these helpers via parallel adapters.
+// `handleNote` (comments) is a different shape — its targets come from
+// @mention parsing of the note body — and lands in its own commit.
 
-/** Subset of the gitlab issue webhook payload the ledger needs. The
- *  helpers do not consult anything outside this projection — keeps tests
- *  free of full-payload fixtures and decouples the adapter from
+export type GitLabEntityKind = "issue" | "merge_request"
+
+/** Subset of the gitlab webhook payload the ledger needs. The helpers
+ *  do not consult anything outside this projection — keeps tests free
+ *  of full-payload fixtures and decouples the adapter from
  *  `src/channels/gitlab.ts` evolving its private types. */
-export interface IssueEventProjection {
+export interface GitLabEventProjection {
+  entityKind: GitLabEntityKind
   project: string
   iid: number
   action: string
@@ -34,40 +33,47 @@ export interface IssueEventProjection {
   url: string
 }
 
-/** Per-target shape produced by `computeIssueTargets`. Mirrored here so
- *  this file does not import from `src/channels/gitlab.ts` (preventing a
- *  cycle once the channel imports back from us). */
-export interface IssueTarget {
+/** Per-target shape produced by `computeIssueTargets` /
+ *  `computeMRTargets`. The trigger is free-form `string` so MR-specific
+ *  triggers (`reviewer-added`, `reviewer-current`) flow through without
+ *  needing a discriminated union. The trigger is part of the per-target
+ *  dedup key — it's the dispatch reason and it's expected to be a
+ *  small fixed set per entity kind. */
+export interface GitLabTarget {
   agentId: string
-  trigger: "mention" | "assignee-added" | "assignee-current" | "default-route"
+  trigger: string
 }
 
-/** Build the IntentEventInput for one (issue, target) combination. The
- *  sourceEventId is per-target so each target has its own idempotency
- *  scope. Subject encodes the per-target slot for active-task safety. */
-export function buildIssueEventInput(
-  event: IssueEventProjection,
-  target: IssueTarget,
+/** Build the IntentEventInput for one (gitlab event, target) combination.
+ *  Per-target sourceEventId for idempotency scope; per-target subject so
+ *  Inv-ActiveTaskSafety scopes per (issue|MR, agent, trigger). */
+export function buildGitLabTargetEventInput(
+  event: GitLabEventProjection,
+  target: GitLabTarget,
   rawJson: string,
   now: () => number = Date.now,
 ): IntentEventInput {
   return {
     ts: now(),
     source: "gitlab",
-    sourceEventId: `${event.iid}:${event.action}:${target.agentId}:${target.trigger}`,
+    sourceEventId: `${event.entityKind}:${event.iid}:${event.action}:${target.agentId}:${target.trigger}`,
     project: event.project,
-    subject: `issue:${event.iid}:agent:${target.agentId}:trigger:${target.trigger}`,
-    intent: `issue.${event.action}`,
+    subject: `${event.entityKind}:${event.iid}:agent:${target.agentId}:trigger:${target.trigger}`,
+    intent: `${event.entityKind}.${event.action}`,
     rawJson,
   }
 }
 
-/** Build the per-target DispatchPolicy. The policy is "I would dispatch
- *  to this target" — `computeIssueTargets` already decided the agentId,
- *  so the ledger's policy is a thin wrapper that records that fact. */
-export function buildIssueDispatchPolicy(target: IssueTarget): DispatchPolicy {
+/** Build the per-target DispatchPolicy. `computeIssueTargets` /
+ *  `computeMRTargets` already chose the agentId; the ledger's policy is
+ *  a thin wrapper that records that fact. The decidedBy preserves the
+ *  entity-kind + trigger so chain readouts identify the source path. */
+export function buildGitLabDispatchPolicy(
+  entityKind: GitLabEntityKind,
+  target: GitLabTarget,
+): DispatchPolicy {
   return {
-    decidedBy: `gitlab:issue:target-${target.trigger}`,
+    decidedBy: `gitlab:${entityKind}:target-${target.trigger}`,
     decide: () => ({
       agentId: target.agentId,
       outcome: "dispatched",
@@ -85,16 +91,16 @@ export function buildIssueDispatchPolicy(target: IssueTarget): DispatchPolicy {
  * The caller is responsible for catching exceptions — the gitlab handler
  * must continue dispatching legacy-style even if the ledger errors.
  */
-export function recordIssueTargetDispatch(
+export function recordGitLabTargetDispatch(
   ledger: IntentLedger,
-  event: IssueEventProjection,
-  target: IssueTarget,
+  event: GitLabEventProjection,
+  target: GitLabTarget,
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
 ): void {
-  const eventInput = buildIssueEventInput(event, target, rawJson, now)
-  const policy = buildIssueDispatchPolicy(target)
+  const eventInput = buildGitLabTargetEventInput(event, target, rawJson, now)
+  const policy = buildGitLabDispatchPolicy(event.entityKind, target)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
 }

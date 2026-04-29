@@ -4,21 +4,16 @@ import { tmpdir } from "os"
 import path from "path"
 import { IntentLedger } from "../src/intent/ledger"
 import {
-  buildIssueDispatchPolicy,
-  buildIssueEventInput,
-  recordIssueTargetDispatch,
-  type IssueEventProjection,
-  type IssueTarget,
+  buildGitLabDispatchPolicy,
+  buildGitLabTargetEventInput,
+  recordGitLabTargetDispatch,
+  type GitLabEventProjection,
+  type GitLabTarget,
 } from "../src/intent/sources/gitlab"
 import { decodeTime } from "../src/intent/ulid"
 
-// Tests for Phase 1 commit 6.a — gitlab issue-dispatch adapter helpers.
-//
-// Adapter functions are pure (or pure-ish — recordIssueTargetDispatch
-// writes to the ledger) and exercised here without spinning up the full
-// GitLabAdapter / channel-router / daemon stack. The integration test
-// in test/intent-gitlab-handle-issue.test.ts drives the real handler
-// end-to-end with a mocked event.
+// Tests for Phase 1 commit 6.a (handleIssue) and 6.a-extended (handleMR).
+// The adapter helpers cover both entity kinds; tests below exercise both.
 
 let tmp: string
 let ledger: IntentLedger
@@ -34,7 +29,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const sampleIssue: IssueEventProjection = {
+const sampleIssue: GitLabEventProjection = {
+  entityKind: "issue",
   project: "mtgl/mtgl-system-v2",
   iid: 709,
   action: "open",
@@ -43,15 +39,26 @@ const sampleIssue: IssueEventProjection = {
   url: "https://gitlab.example/issues/709",
 }
 
-const sampleTarget: IssueTarget = { agentId: "mtgl-v2", trigger: "assignee-added" }
+const sampleMR: GitLabEventProjection = {
+  entityKind: "merge_request",
+  project: "mtgl/mtgl-system-v2",
+  iid: 225,
+  action: "open",
+  title: "Test MR",
+  description: "Adds a thing",
+  url: "https://gitlab.example/mrs/225",
+}
 
-describe("buildIssueEventInput", () => {
-  it("normalizes the webhook into an IntentEventInput with per-target sourceEventId + subject", () => {
-    const input = buildIssueEventInput(sampleIssue, sampleTarget, "{}", () => 1714400000000)
+const issueTarget: GitLabTarget = { agentId: "mtgl-v2", trigger: "assignee-added" }
+const mrTarget: GitLabTarget = { agentId: "mtgl-v2", trigger: "reviewer-added" }
+
+describe("buildGitLabTargetEventInput", () => {
+  it("issue: entity-kind-prefixed sourceEventId + subject", () => {
+    const input = buildGitLabTargetEventInput(sampleIssue, issueTarget, "{}", () => 1714400000000)
     expect(input).toEqual({
       ts: 1714400000000,
       source: "gitlab",
-      sourceEventId: "709:open:mtgl-v2:assignee-added",
+      sourceEventId: "issue:709:open:mtgl-v2:assignee-added",
       project: "mtgl/mtgl-system-v2",
       subject: "issue:709:agent:mtgl-v2:trigger:assignee-added",
       intent: "issue.open",
@@ -59,37 +66,61 @@ describe("buildIssueEventInput", () => {
     })
   })
 
+  it("merge_request: entity-kind-prefixed sourceEventId + subject", () => {
+    const input = buildGitLabTargetEventInput(sampleMR, mrTarget, "{}", () => 1714400000000)
+    expect(input).toEqual({
+      ts: 1714400000000,
+      source: "gitlab",
+      sourceEventId: "merge_request:225:open:mtgl-v2:reviewer-added",
+      project: "mtgl/mtgl-system-v2",
+      subject: "merge_request:225:agent:mtgl-v2:trigger:reviewer-added",
+      intent: "merge_request.open",
+      rawJson: "{}",
+    })
+  })
+
+  it("issue #5 and MR !5 in the same project produce DIFFERENT sourceEventIds — entity-kind prefix prevents collision", () => {
+    const issue5 = { ...sampleIssue, iid: 5 }
+    const mr5 = { ...sampleMR, iid: 5 }
+    const sameTarget: GitLabTarget = { agentId: "x", trigger: "mention" }
+    const a = buildGitLabTargetEventInput(issue5, sameTarget, "{}", () => 1)
+    const b = buildGitLabTargetEventInput(mr5, sameTarget, "{}", () => 1)
+    expect(a.sourceEventId).not.toBe(b.sourceEventId)
+    expect(a.subject).not.toBe(b.subject)
+  })
+
   it("each (target.agentId × target.trigger) combo gets its own sourceEventId", () => {
-    const a = buildIssueEventInput(sampleIssue, { agentId: "agent-a", trigger: "mention" }, "{}", () => 1)
-    const b = buildIssueEventInput(sampleIssue, { agentId: "agent-b", trigger: "mention" }, "{}", () => 1)
-    const c = buildIssueEventInput(sampleIssue, { agentId: "agent-a", trigger: "default-route" }, "{}", () => 1)
+    const a = buildGitLabTargetEventInput(sampleIssue, { agentId: "agent-a", trigger: "mention" }, "{}", () => 1)
+    const b = buildGitLabTargetEventInput(sampleIssue, { agentId: "agent-b", trigger: "mention" }, "{}", () => 1)
+    const c = buildGitLabTargetEventInput(sampleIssue, { agentId: "agent-a", trigger: "default-route" }, "{}", () => 1)
     expect(a.sourceEventId).not.toBe(b.sourceEventId)
     expect(a.sourceEventId).not.toBe(c.sourceEventId)
     expect(b.sourceEventId).not.toBe(c.sourceEventId)
   })
 
-  it("subject scopes active-task safety to the per-target slot", () => {
-    // Two targets on the same issue produce different subjects, so
-    // dispatching to both does NOT trip the at-most-one-in-flight
-    // invariant in the ledger.
-    const a = buildIssueEventInput(sampleIssue, { agentId: "agent-a", trigger: "mention" }, "{}", () => 1)
-    const b = buildIssueEventInput(sampleIssue, { agentId: "agent-b", trigger: "mention" }, "{}", () => 1)
+  it("subject scopes active-task safety to the per-target slot — different agents on same issue don't block each other", () => {
+    const a = buildGitLabTargetEventInput(sampleIssue, { agentId: "agent-a", trigger: "mention" }, "{}", () => 1)
+    const b = buildGitLabTargetEventInput(sampleIssue, { agentId: "agent-b", trigger: "mention" }, "{}", () => 1)
     expect(a.subject).not.toBe(b.subject)
   })
 })
 
-describe("buildIssueDispatchPolicy", () => {
-  it("decidedBy includes the trigger so chain readouts identify the source path", () => {
-    expect(buildIssueDispatchPolicy({ agentId: "x", trigger: "mention" }).decidedBy)
+describe("buildGitLabDispatchPolicy", () => {
+  it("issue: decidedBy includes entity kind + trigger", () => {
+    expect(buildGitLabDispatchPolicy("issue", { agentId: "x", trigger: "mention" }).decidedBy)
       .toBe("gitlab:issue:target-mention")
-    expect(buildIssueDispatchPolicy({ agentId: "x", trigger: "default-route" }).decidedBy)
+    expect(buildGitLabDispatchPolicy("issue", { agentId: "x", trigger: "default-route" }).decidedBy)
       .toBe("gitlab:issue:target-default-route")
   })
 
-  it("decide() returns dispatched/agentId — the policy is a thin wrapper around computeIssueTargets' choice", () => {
-    const policy = buildIssueDispatchPolicy(sampleTarget)
-    const decision = policy.decide({} as any)
-    expect(decision).toEqual({
+  it("merge_request: decidedBy reflects entity kind", () => {
+    expect(buildGitLabDispatchPolicy("merge_request", { agentId: "x", trigger: "reviewer-added" }).decidedBy)
+      .toBe("gitlab:merge_request:target-reviewer-added")
+  })
+
+  it("decide() returns dispatched/agentId — the policy is a thin wrapper around the legacy target choice", () => {
+    const policy = buildGitLabDispatchPolicy("issue", issueTarget)
+    expect(policy.decide({} as any)).toEqual({
       agentId: "mtgl-v2",
       outcome: "dispatched",
       reason: null,
@@ -97,13 +128,10 @@ describe("buildIssueDispatchPolicy", () => {
   })
 })
 
-describe("recordIssueTargetDispatch", () => {
-  it("writes event + decision; ULID time-encodes the supplied clock", () => {
-    recordIssueTargetDispatch(
-      ledger,
-      sampleIssue,
-      sampleTarget,
-      "{}",
+describe("recordGitLabTargetDispatch", () => {
+  it("issue: writes event + decision; ULID time-encodes the supplied clock", () => {
+    recordGitLabTargetDispatch(
+      ledger, sampleIssue, issueTarget, "{}",
       { agentId: "mtgl-v2", outcome: "dispatched" },
       () => 1714400000000,
     )
@@ -115,12 +143,32 @@ describe("recordIssueTargetDispatch", () => {
     expect(decisions).toHaveLength(1)
   })
 
-  it("agreement: ledger=dispatched/mtgl-v2 and legacy=dispatched/mtgl-v2 → no divergence", () => {
-    recordIssueTargetDispatch(
+  it("merge_request: writes event + decision separately from issue (no collision)", () => {
+    // Same iid/agent/trigger across issue + MR → would collide under
+    // prefix-less sourceEventId; with the entity-kind prefix they're
+    // independent rows.
+    recordGitLabTargetDispatch(
       ledger,
-      sampleIssue,
-      sampleTarget,
-      "{}",
+      { ...sampleIssue, iid: 100 },
+      { agentId: "x", trigger: "mention" }, "{}",
+      { agentId: "x", outcome: "dispatched" },
+      () => 1,
+    )
+    recordGitLabTargetDispatch(
+      ledger,
+      { ...sampleMR, iid: 100 },
+      { agentId: "x", trigger: "mention" }, "{}",
+      { agentId: "x", outcome: "dispatched" },
+      () => 2,
+    )
+    expect(
+      (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n,
+    ).toBe(2)
+  })
+
+  it("agreement: ledger=dispatched/mtgl-v2 and legacy=dispatched/mtgl-v2 → no divergence", () => {
+    recordGitLabTargetDispatch(
+      ledger, sampleIssue, issueTarget, "{}",
       { agentId: "mtgl-v2", outcome: "dispatched" },
       () => 1,
     )
@@ -129,11 +177,8 @@ describe("recordIssueTargetDispatch", () => {
 
   it("disagreement: ledger=dispatched, legacy=deduped → divergence row + log", () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
-    recordIssueTargetDispatch(
-      ledger,
-      sampleIssue,
-      sampleTarget,
-      "{}",
+    recordGitLabTargetDispatch(
+      ledger, sampleIssue, issueTarget, "{}",
       { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" },
       () => 1,
     )
@@ -145,35 +190,31 @@ describe("recordIssueTargetDispatch", () => {
     expect(divergences[0].legacyReason).toBe("isDispatchedRecently")
   })
 
-  it("re-delivery of the same target re-applies idempotently — one event, one decision", () => {
+  it("re-delivery of the same target (same kind, iid, agent, trigger) collapses to one event/decision", () => {
     for (let i = 0; i < 3; i++) {
-      recordIssueTargetDispatch(
-        ledger,
-        sampleIssue,
-        sampleTarget,
-        "{}",
+      recordGitLabTargetDispatch(
+        ledger, sampleIssue, issueTarget, "{}",
         { agentId: "mtgl-v2", outcome: "dispatched" },
         () => 1 + i,
       )
     }
-    const events = (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n
-    const decisions = (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_decisions").get() as { n: number }).n
-    expect(events).toBe(1)
-    expect(decisions).toBe(1)
+    expect(
+      (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }).n,
+    ).toBe(1)
+    expect(
+      (ledger.db.prepare("SELECT COUNT(*) as n FROM intent_decisions").get() as { n: number }).n,
+    ).toBe(1)
   })
 
-  it("multiple targets on the same issue → each gets its own event row + decision", () => {
-    const targets: IssueTarget[] = [
-      { agentId: "agent-a", trigger: "mention" },
-      { agentId: "agent-b", trigger: "assignee-added" },
+  it("multiple targets on the same MR (assignee + reviewer) → each gets its own event row + decision", () => {
+    const targets: GitLabTarget[] = [
+      { agentId: "agent-a", trigger: "assignee-added" },
+      { agentId: "agent-b", trigger: "reviewer-added" },
       { agentId: "agent-c", trigger: "default-route" },
     ]
     for (const t of targets) {
-      recordIssueTargetDispatch(
-        ledger,
-        sampleIssue,
-        t,
-        "{}",
+      recordGitLabTargetDispatch(
+        ledger, sampleMR, t, "{}",
         { agentId: t.agentId, outcome: "dispatched" },
         () => 1,
       )
