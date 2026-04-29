@@ -89,4 +89,28 @@ export interface ChannelAdapter {
 
   /** Get verified context for a chat (optional — channels implement what they can) */
   getChannelMeta?(chatId: string): Promise<ChannelMeta | undefined>
+
+  /** Fetch the most recent messages from the live channel for cold-start
+   *  session seeding. Called once per (agent, channel, chatId, day) when a
+   *  fresh session is created — never on warm cache hits. Bounded by
+   *  maxMessages and maxChars (enforced by the caller). Channels return their
+   *  own externalId so SessionStore can dedup against re-seeds. */
+  seedHistory?(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<Array<SeededMessage>>
+}
+
+/** A message returned by seedHistory — flat, channel-agnostic. */
+export interface SeededMessage {
+  role: "user" | "agent"
+  name: string
+  content: string
+  timestamp: string
+  externalId?: string
+  /** Optional channel-side account/bot identity that handled this message
+   *  (e.g., Telegram accountId "noqta_cx_bot"). Captured by adapters that
+   *  shadow-log outbound, so seeded history preserves the audit trail of
+   *  which bot identity actually sent each line. Renderers may ignore it. */
+  accountId?: string
 }

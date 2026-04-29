@@ -305,11 +305,32 @@ export class MessageRouter {
 
     this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
 
+    let messageId: string | void
     if (adapter.name === "telegram" && accountId) {
-      return this.adapterSend(adapter, { ...msg, accountId })
+      messageId = await this.adapterSend(adapter, { ...msg, accountId })
+    } else {
+      messageId = await adapter.send(msg)
     }
 
-    return adapter.send(msg)
+    // Record outbound into the recipient agent's channel session so cron/api/
+    // a2a sends become visible to the next inbound turn on the same chatId.
+    // This closes the cron-vs-telegram split: when marketing-agent's daily
+    // cron sends "trend brief" to Anis at 06:17, the next telegram message
+    // from Anis at 08:36 sees the brief in session history instead of treating
+    // the conversation as fresh.
+    //
+    // Only fires when an agentId is set — manual /send tests without an agent
+    // identity stay out of session JSON to avoid polluting an agent's
+    // conversation with anonymous bot traffic.
+    if (msg.agentId) {
+      try {
+        this.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text)
+      } catch (e: any) {
+        this.log(`Failed to record outbound in recipient session: ${e.message}`)
+      }
+    }
+
+    return messageId
   }
 
   /** List registered channel names. */
@@ -890,6 +911,14 @@ export class MessageRouter {
             channel: originalMsg.channel,
             sender: `agent:${sourceAgentId}`,
             group: originalMsg.group?.name,
+            // Bot-to-bot recursion must keep the SAME chatId as the
+            // original message so the recursive reply lands in the same
+            // session as the conversation it's continuing. Previously
+            // chatId was derived from `group` (a name), which keyed the
+            // session by group NAME instead of group ID — leaking the
+            // recursive turn into a separate "default"/name-based bucket.
+            chatId: originalMsg.group?.id || originalMsg.sender.id,
+            channelMeta: originalMsg.channelMeta,
           },
         })
 
@@ -1037,6 +1066,11 @@ export class MessageRouter {
       config: this.config,
       registry: this.registry,
       handoverStore: this.handoverStore,
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      hasMeshAgent: (id) => {
+        if (!this.mesh) return false
+        return this.mesh.directory().some((p) => p.healthy && p.skills.some((s) => s.id === id))
+      },
     })
   }
 
@@ -1046,6 +1080,29 @@ export class MessageRouter {
    * Handle a message by routing to a mesh peer's agent.
    * Searches peer agent cards for mention matches.
    */
+  /** Build the context payload that mesh.sendTask forwards to the receiving
+   *  daemon's /task handler. Without this, the receiver runs registry.execute
+   *  with default channel="api"/chatId="default" — losing the channel,
+   *  project, issue id, sender, and channelMeta the original adapter built
+   *  from the inbound webhook. Shape matches what processResolvedMessage
+   *  already passes to registry.execute on the local path, so a mesh-routed
+   *  task and a locally-routed task produce the same session keying and
+   *  the same prompt context. */
+  private buildMeshContext(msg: IncomingMessage, chatId: string): Record<string, unknown> {
+    return {
+      channel: msg.channel,
+      sender: msg.sender.name,
+      senderId: msg.sender.id,
+      senderUsername: msg.sender.username,
+      group: msg.group?.name,
+      chatId,
+      mediaPath: msg.media?.path,
+      mediaType: msg.media?.type,
+      replyToText: msg.replyToText,
+      channelMeta: msg.channelMeta,
+    }
+  }
+
   private async handleViaMesh(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
@@ -1074,7 +1131,9 @@ export class MessageRouter {
           const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
           try {
-            const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id)
+            const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id, {
+              context: this.buildMeshContext(msg, chatId),
+            })
 
             clearInterval(typingTimer)
 
@@ -1140,7 +1199,9 @@ export class MessageRouter {
       const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
       try {
-        const response = await this.mesh.sendTask(peer.peer, msg.text, agentId)
+        const response = await this.mesh.sendTask(peer.peer, msg.text, agentId, {
+          context: this.buildMeshContext(msg, chatId),
+        })
         clearInterval(typingTimer)
 
         if (response) {
@@ -1203,7 +1264,9 @@ export class MessageRouter {
     const start = Date.now()
     this.activeMeshForwards++
     try {
-      const response = await this.mesh.sendTask(peerName, msg.text, agentId)
+      const response = await this.mesh.sendTask(peerName, msg.text, agentId, {
+        context: this.buildMeshContext(msg, chatId),
+      })
       const duration = Date.now() - start
       clearInterval(typingTimer)
 

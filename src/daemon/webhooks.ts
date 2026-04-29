@@ -152,7 +152,16 @@ export class WebhookHandler {
         node: meshEntry.node,
         status: "accepted",
       })
-      this.mesh.sendTask(meshEntry.node, summary, agentId).then(
+      // Forward the same context shape the local execution path would use,
+      // so the receiving daemon's registry.execute keys the session by
+      // `webhook:${source}` instead of falling back to api/default and
+      // losing the source attribution.
+      this.mesh.sendTask(meshEntry.node, summary, agentId, {
+        context: {
+          channel: `webhook:${source}`,
+          sender: `webhook:${source}`,
+        },
+      }).then(
         (response) => this.log(`Mesh-forwarded webhook [${source}] -> ${meshEntry.node}/${agentId}: ${response?.slice(0, 100) || "ok"}`),
         (e: any) => this.log(`Mesh forward failed [${source}] -> ${meshEntry.node}/${agentId}: ${e.message}`),
       )

@@ -16,6 +16,7 @@ import { loadReferences, renderReferences } from "./references/loader"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
+import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
@@ -600,6 +601,13 @@ export class AgentRegistry {
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
 
+    // Mirror the live channel before recording the new user message — on a
+    // cold-create (fresh chatId, new day after rotation), this calls the
+    // adapter's seedHistory and back-fills recent messages so the agent
+    // doesn't start blind. No-op for warm sessions, non-channel callers
+    // (cron/api/a2a), or channels without a seedHistory implementation.
+    await this.sessions.seedIfEmpty(task.agentId, channel, chatId)
+
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
@@ -743,6 +751,35 @@ export class AgentRegistry {
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
+
+    // Context-rebuild diagnostic. Fires under `--debug context` (or `all`).
+    // The amnesia-vs-misreasoning question — "did the agent see X in its
+    // prompt?" — was unanswerable from session JSONs alone (the rendered
+    // prompt prefix is never persisted). This log captures it per-turn:
+    //   - resume vs fresh (after rotation, this is "fresh")
+    //   - sessionHistory length when rendered (chars + line count)
+    //   - session.messages snapshot: count, first ts, last ts, first/last
+    //     name+content preview so we can tell what's actually in the file.
+    // Off by default — zero overhead unless the operator opted in.
+    if (debug && (debug as any).cat) {
+      try {
+        const sess = this.sessions.getSession(task.agentId, channel, chatId)
+        const msgs = sess.messages
+        const first = msgs[0]
+        const last = msgs[msgs.length - 1]
+        const fingerprint = sessionHistory === undefined
+          ? `resume=${resumeSessionId ? resumeSessionId.slice(0, 8) : "?"} (no rebuild)`
+          : `fresh history=${sessionHistory.length}c/${sessionHistory.split("\n").length}L`
+        const summary = `[${task.agentId}] ${channel}:${chatId} ${fingerprint} | session.messages=${msgs.length}` +
+          (msgs.length > 0
+            ? ` first=${first.timestamp.slice(11, 19)}(${first.role}:${(first.content || "").slice(0, 40).replace(/\n/g, " ")}) last=${last.timestamp.slice(11, 19)}(${last.role}:${(last.content || "").slice(0, 40).replace(/\n/g, " ")})`
+            : "")
+        debug.cat("context", summary)
+      } catch (e: any) {
+        // Diagnostic logging must never throw into the hot path.
+        debug.cat("context", `[${task.agentId}] context-diag error: ${e?.message ?? e}`)
+      }
+    }
 
     // Verified deterministic references — opt-in per agent via
     // `contextReferences: true`. Only injected when starting a FRESH Claude

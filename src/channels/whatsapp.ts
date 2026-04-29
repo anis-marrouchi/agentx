@@ -619,6 +619,37 @@ export class WhatsAppAdapter implements ChannelAdapter {
     }
   }
 
+  /** ChannelAdapter.seedHistory: thin wrapper over getHistory() that maps
+   *  Baileys' HistoryMessage shape to the channel-agnostic SeededMessage
+   *  shape consumed by SessionStore on cold session create. Bounded by the
+   *  caller's maxMessages/maxChars; fromMe → role:agent. The chatId is the
+   *  Baileys jid (e.g., "21694xxx@s.whatsapp.net" for DMs). */
+  async seedHistory(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<import("./types").SeededMessage[]> {
+    const sinceMs = opts.sinceISO ? new Date(opts.sinceISO).getTime() : 0
+    const history = await this.getHistory(chatId, { limit: opts.maxMessages })
+    const out: import("./types").SeededMessage[] = []
+    let chars = 0
+    for (const m of history) {
+      if (sinceMs && (m.timestamp ?? 0) * 1000 < sinceMs) continue
+      if (!m.text) continue
+      const ts = m.timestamp ? new Date(m.timestamp * 1000).toISOString() : new Date().toISOString()
+      out.push({
+        role: m.fromMe ? "agent" : "user",
+        name: m.fromMe ? "agent" : (m.fromJid || "user"),
+        content: m.text,
+        timestamp: ts,
+        externalId: m.id,
+      })
+      chars += m.text.length
+      if (out.length >= opts.maxMessages) break
+      if (chars >= opts.maxChars) break
+    }
+    return out
+  }
+
   /** Token-bucket gate for live Baileys reads. Enforces
    *  `throttleMinMs` between calls and caps the per-minute call count.
    *  Returns a promise that resolves once it's safe to fire. */

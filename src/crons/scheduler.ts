@@ -274,7 +274,11 @@ export class CronScheduler {
         message: withOutputCap(job.prompt, job.maxOutputTokens),
         agentId: job.agent,
         model: job.model,
-        context: { channel: "cron" },
+        // chatId per-job so different cron jobs for the same agent don't
+        // collide in one "default" session. Without this, the marketing
+        // daily-brief and the marketing weekly-report cron share history,
+        // and one job's prompt context bleeds into the other.
+        context: { channel: "cron", chatId: `cron:${jobId}` },
       })
 
       const result: CronRunResult = {
@@ -415,7 +419,7 @@ export class CronScheduler {
             job.maxOutputTokens,
           ),
           agentId: job.agent,
-          context: { channel: "cron" },
+          context: { channel: "cron", chatId: `cron:${jobId}` },
         })
 
         const result: CronRunResult = {

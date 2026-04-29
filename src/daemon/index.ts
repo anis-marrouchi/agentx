@@ -32,6 +32,7 @@ import {
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
+import { ContactDirectory } from "@/agents/contacts"
 import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
@@ -71,6 +72,12 @@ export class AgentXDaemon {
    *  own Claude Code session — can write without going through the
    *  dispatcher. Inlined into agent system prompts happens elsewhere. */
   private readonly agentMemory: AgentMemory = new AgentMemory()
+  /** Operator-curated contact directory backing /send/contact and the
+   *  agentx_send_contact MCP tool. Loaded from .agentx/contacts.json on
+   *  startup and on /reload. Initialized in the constructor body (after
+   *  `this.log` is assigned) since the directory's reload errors must
+   *  surface through the daemon logger. */
+  private contacts!: ContactDirectory
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -92,6 +99,10 @@ export class AgentXDaemon {
     this.log("Loading configuration...")
     this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
+
+    // Initialize the contact directory now that `this.log` is available.
+    // Empty file (or missing file) is fine — operators populate it later.
+    this.contacts = new ContactDirectory(process.cwd(), this.log)
 
     // Validate
     const warnings = validateWorkspaces(this.config)
@@ -701,6 +712,20 @@ export class AgentXDaemon {
       restartRequired.push("channels.telegram")
     }
 
+    // 8a. Contact directory — re-read .agentx/contacts.json. The contacts
+    //     file is independent of agentx.json (operator-managed, sibling of
+    //     .agentx/sessions); reloading it here lets `agentx_send_contact`
+    //     pick up edits without a daemon restart.
+    {
+      const before = this.contacts.size()
+      const result = this.contacts.reload()
+      if (result.error) {
+        this.log(`[reload] contacts.json invalid: ${result.error}`)
+      } else if (result.count !== before) {
+        applied.push(`contacts(${result.count})`)
+      }
+    }
+
     // 8b. Webhook entries — hot-reload triggers / secretEnv / mesh routes
     //     without a daemon bounce. Phase 4 closes the recurring complaint
     //     that adding a webhook route to agentx.json required a restart.
@@ -1080,6 +1105,12 @@ export class AgentXDaemon {
     // webhook arriving immediately sees an engine ready to evaluate. Skipped
     // when `workflows.enabled` is false to keep existing installs silent.
     await this.bootWorkflowEngine()
+
+    // Wire SessionStore to the channel adapters so cold-create sessions can
+    // call adapter.seedHistory() and mirror the live channel before the
+    // first turn renders. Installed AFTER all addChannel calls (above) so
+    // the resolver sees the full channel set.
+    this.registry.getSessionStore().setAdapterResolver((channel) => this.router.getChannel(channel))
 
     await this.router.startAll()
   }
@@ -2148,6 +2179,165 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           break
         }
 
+        case "POST /chat/recent": {
+          // Cross-agent view of a chat. Returns the most recent messages
+          // across EVERY agent's session for the given (channel, chatId)
+          // — sorted oldest-first so the caller reads it like a transcript.
+          // Use cases:
+          //   - Agent introspection ("what was just said in this chat?")
+          //   - Multi-agent groups where one agent needs to see what another
+          //     replied without going through A2A indirection (today's
+          //     cx→devops→marketing speculation thread is the failure mode
+          //     this fixes).
+          // Bounded by sinceISO (default: last 24h) and limit (default: 30,
+          // max 200) so a long-running group can't blow up an agent's prompt.
+          const body = await readBody(req)
+          if (!body.channel || !body.chatId) {
+            this.json(res, 400, { error: "Required: channel, chatId" })
+            break
+          }
+          try {
+            const messages = this.registry.getSessionStore().recentByChatId({
+              channel: String(body.channel),
+              chatId: String(body.chatId),
+              sinceISO: typeof body.sinceISO === "string" ? body.sinceISO : undefined,
+              limit: typeof body.limit === "number" ? body.limit : undefined,
+            })
+            this.json(res, 200, { messages, count: messages.length })
+          } catch (e: any) {
+            this.json(res, 500, { error: e?.message || String(e) })
+          }
+          break
+        }
+
+        case "POST /send/agent": {
+          // Explicit A2A send: route to another agent via mesh (or local
+          // dispatch when the target lives on this daemon). This is the
+          // deterministic path for "agent A asks agent B to do X" — no
+          // contact-directory fallback, no name fuzzy-matching. Caller
+          // must pass an exact agentId. Returns the resulting task id /
+          // remote message id when the mesh accepts the task.
+          const body = await readBody(req)
+          if (!body.agentId || !body.text) {
+            this.json(res, 400, { error: "Required: agentId, text" })
+            break
+          }
+          const targetAgent = String(body.agentId)
+          const text = String(body.text)
+          // Local agent? Dispatch directly through the registry.
+          const localDef = this.registry.getAgent(targetAgent)
+          if (localDef) {
+            try {
+              const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+              const response = await this.registry.execute({
+                agentId: targetAgent,
+                message: text,
+                context: { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" },
+              })
+              this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
+            } catch (e: any) {
+              this.json(res, 500, { error: e.message })
+            }
+            break
+          }
+          // Remote agent? Find the mesh peer that advertises this agent.
+          if (!this.mesh) {
+            this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
+            break
+          }
+          const directory = this.mesh.directory()
+          const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
+          if (!peer) {
+            const known = [
+              ...Object.keys(this.config.agents),
+              ...directory.flatMap((p) => p.skills.map((s) => s.id)),
+            ]
+            this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
+            break
+          }
+          try {
+            const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+            const messageId = await this.mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+            this.json(res, 200, { ok: true, messageId, peer: peer.peer })
+          } catch (e: any) {
+            this.json(res, 500, { error: e.message, peer: peer.peer })
+          }
+          break
+        }
+
+        case "POST /send/contact": {
+          // Resolve a free-form contact name through the contact directory,
+          // pick a channel address, then dispatch via the regular
+          // sendOutbound path. Refuses on miss/ambiguous/fuzzy(no-confirm)
+          // so the caller can ask the user to disambiguate. Distinct from
+          // /send (which requires a chatId) and /send/agent (which uses
+          // mesh), so route_traces records why each path was taken.
+          const body = await readBody(req)
+          if (!body.contactName || !body.text) {
+            this.json(res, 400, { error: "Required: contactName, text" })
+            break
+          }
+          const name = String(body.contactName)
+          const text = String(body.text)
+          const preferredChannel = body.channel ? String(body.channel) : undefined
+          const confirmed = body.confirmed === true
+          const result = this.contacts.resolve(name)
+
+          if (result.kind === "miss") {
+            this.json(res, 404, { error: `No contact matches "${name}"`, hint: "Add the contact to .agentx/contacts.json and POST /reload." })
+            break
+          }
+          if (result.kind === "ambiguous") {
+            this.json(res, 409, { error: "ambiguous", candidates: result.candidates.map((c) => ({ id: c.id, name: c.name, channels: Object.keys(c.channels) })) })
+            break
+          }
+          if (result.kind === "fuzzy" && !confirmed) {
+            // Refuse silent fuzzy match — caller (the LLM) must confirm.
+            // Returns the candidate so the agent can ask the user "did you mean X?".
+            this.json(res, 409, {
+              error: "fuzzy-match-needs-confirmation",
+              candidate: { id: result.contact.id, name: result.contact.name, channels: Object.keys(result.contact.channels) },
+              confidence: result.confidence,
+              hint: "Re-call with confirmed:true once the user has confirmed this is the intended recipient.",
+            })
+            break
+          }
+          // Cross-channel collision check: if the name also resolves to a
+          // registered local agent, surface ambiguity rather than silently
+          // pick the contact. Mesh peers handled the same way.
+          const collidesWithLocalAgent = !!this.registry.getAgent(name)
+          const collidesWithMeshAgent = this.mesh?.directory()?.some((p) => p.skills.some((s) => s.id.toLowerCase() === name.toLowerCase()))
+          if (collidesWithLocalAgent || collidesWithMeshAgent) {
+            this.json(res, 409, {
+              error: "ambiguous",
+              hint: `"${name}" resolves to BOTH a contact (id=${result.contact.id}) and an agent. Use /send/agent for the agent, or pass contactId="${result.contact.id}" to /send/contact for the contact.`,
+            })
+            break
+          }
+          const picked = this.contacts.pickChannel(result.contact, preferredChannel)
+          if (!picked) {
+            this.json(res, 400, { error: `Contact "${result.contact.id}" has no channels configured` })
+            break
+          }
+          if (preferredChannel && picked.channel !== preferredChannel) {
+            this.json(res, 400, { error: `Contact "${result.contact.id}" has no "${preferredChannel}" channel`, available: Object.keys(result.contact.channels) })
+            break
+          }
+          try {
+            const messageId = await this.router.sendOutbound({
+              channel: picked.channel,
+              chatId: picked.address,
+              text,
+              agentId: body.agentId as string | undefined,
+              accountId: body.accountId as string | undefined,
+            })
+            this.json(res, 200, { ok: true, messageId: messageId || null, contactId: result.contact.id, channel: picked.channel })
+          } catch (e: any) {
+            this.json(res, 400, { error: e.message })
+          }
+          break
+        }
+
         case "POST /send": {
           const body = await readBody(req)
           if (!body.channel || !body.chatId || !body.text) {
@@ -2185,6 +2375,17 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           if (!agentId || !body.message) {
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
             return
+          }
+          // A2A sender identity — when present, must resolve to an agent on
+          // the calling peer. Log-warn (not enforce) for one release so
+          // older mesh peers can roll out the field before we reject. The
+          // shape "no body.context" is what classic A2A calls look like;
+          // human-facing /task callers (CLI, dashboard) always set
+          // context.channel, so the warning targets only mesh traffic.
+          const senderAgentId = typeof body.senderAgentId === "string" ? body.senderAgentId : undefined
+          const looksLikeA2A = !body.context
+          if (looksLikeA2A && !senderAgentId) {
+            this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
           }
           // Per-task context strategy override. When absent, registry falls
           // back to config.session.contextStrategy. Used by the bench

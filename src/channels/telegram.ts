@@ -1,4 +1,4 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
 import { markdownToTelegramHtml } from "./telegram-format"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
@@ -494,16 +494,50 @@ export class TelegramAdapter implements ChannelAdapter {
 
     try {
       const result = await this.apiCall(token, "sendMessage", params)
-      return String(result.result?.message_id || "")
+      const messageId = String(result.result?.message_id || "")
+      this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
+      return messageId
     } catch (e: any) {
       // Retry without formatting if MarkdownV2 fails
       if (params.parse_mode) {
         delete params.parse_mode
         params.text = text
         const result = await this.apiCall(token, "sendMessage", params)
-        return String(result.result?.message_id || "")
+        const messageId = String(result.result?.message_id || "")
+        this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
+        return messageId
       }
       throw e
+    }
+  }
+
+  /** Best-effort outbound shadow log. Captures every successful send into
+   *  the same per-chat shadow file the inbound writer uses, so seedHistory
+   *  + agent introspection see a complete picture (which bot identity sent
+   *  what, at which time). Failures are swallowed — the message already
+   *  went out on the wire; logging is observability, not correctness. */
+  private recordOutboundShadow(
+    chatId: string,
+    messageId: string,
+    content: string,
+    agentId?: string,
+    accountId?: string,
+  ): void {
+    if (!messageId) return // Telegram returned no id (formatted retry path leaves us nothing to dedup on)
+    try {
+      this.appendShadowLog(chatId, {
+        externalId: messageId,
+        role: "agent",
+        // Prefer agentId for the rendered "Agent: ..." line; fall back to
+        // accountId so even un-attributed sends (e.g., manual /send tests)
+        // surface a name in seeded history.
+        name: agentId || accountId || "agent",
+        content,
+        timestamp: new Date().toISOString(),
+        accountId,
+      })
+    } catch (e: any) {
+      this.log(`outbound shadow-log write failed: ${e.message}`)
     }
   }
 
@@ -858,6 +892,25 @@ export class TelegramAdapter implements ChannelAdapter {
             // Track chat→account mapping for DM replies
             this.chatAccountMap.set(String(msg.chat.id), accountId)
 
+            // Shadow log every allowed inbound message — used by seedHistory
+            // on cold session create. Keyed by chat id (DM uses sender.id ==
+            // chat.id; group uses chat.id), matching how the router computes
+            // the SessionStore key (msg.group?.id || msg.sender.id). Off the
+            // hot path: best-effort, never blocks dispatch. accountId records
+            // WHICH of our bots received the message — the audit trail
+            // counterpart to the outbound write.
+            try {
+              this.appendShadowLog(String(msg.chat.id), {
+                externalId: String(msg.message_id),
+                role: "user",
+                name: incoming.sender.name,
+                content: text,
+                timestamp: incoming.timestamp.toISOString(),
+                accountId,
+              })
+            } catch (e: any) {
+              this.log(`shadow-log write failed: ${e.message}`)
+            }
 
             this.handler(incoming).catch((e) => {
               this.log(`Error handling message: ${e.message}`)
@@ -973,6 +1026,109 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     this.log(`Seeded: ${this.groupStore.getGroupBots(groupId).length} bot(s) in "${groupTitle || groupId}"`)
+  }
+
+  /** Append one entry to the shadow log for `chatId`. The shadow log is a
+   *  daily file at `.agentx/sessions/_telegram_raw:{chatId}:{day}.json` that
+   *  captures every allowed inbound (and adapter-side outbound) message
+   *  regardless of how the router resolved it — including periods when no
+   *  agent was bound or the daemon was offline (the next inbound triggers
+   *  a write). seedHistory reads it back on cold session create so a fresh
+   *  session mirrors the live chat instead of starting blank. */
+  private appendShadowLog(
+    chatId: string,
+    entry: {
+      externalId: string
+      role: "user" | "agent"
+      name: string
+      content: string
+      timestamp: string
+      /** Telegram bot account id used to send/receive (e.g., "noqta_cx_bot").
+       *  Recorded on outbound only — provides the audit trail for "which bot
+       *  actually sent this message" so debugging cross-account confusion
+       *  (the Nadia/CX bug) doesn't require API forensics. */
+      accountId?: string
+    },
+  ): void {
+    const day = entry.timestamp.slice(0, 10) // YYYY-MM-DD
+    const file = this.shadowLogPath(chatId, day)
+    let existing: { messages: typeof entry[] } = { messages: [] }
+    if (existsSync(file)) {
+      try {
+        existing = JSON.parse(readFileSync(file, "utf-8")) as { messages: typeof entry[] }
+        if (!Array.isArray(existing.messages)) existing.messages = []
+      } catch {
+        existing = { messages: [] }
+      }
+    }
+    // Dedup: skip if this externalId is already recorded for the day. Note
+    // that inbound and outbound externalIds CAN collide (Telegram numbers
+    // them per-chat, not per-direction), so we additionally key on role to
+    // avoid the rare case where an inbound `message_id=42` and an outbound
+    // `message_id=42` race on the same day.
+    if (existing.messages.some((m) => m.externalId === entry.externalId && m.role === entry.role)) return
+    existing.messages.push(entry)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify(existing, null, 2))
+  }
+
+  private shadowLogPath(chatId: string, day: string): string {
+    const safeChatId = chatId.replace(/[^a-zA-Z0-9_-]/g, "_")
+    return resolve(process.cwd(), ".agentx/sessions", `_telegram_raw:${safeChatId}:${day}.json`)
+  }
+
+  /** ChannelAdapter.seedHistory: returns the most recent shadow-logged
+   *  messages for `chatId`, walking back day-by-day until we hit
+   *  `maxMessages` or `maxChars`. Telegram's Bot API has no "fetch chat
+   *  history" endpoint, so the shadow log is our only source — meaning the
+   *  first deployment sees an empty seed for any pre-existing chat, and
+   *  context grows as the bot observes new traffic. */
+  async seedHistory(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<SeededMessage[]> {
+    const out: SeededMessage[] = []
+    let chars = 0
+    const today = new Date()
+    // Look back up to 14 days — enough to bridge weekend gaps without
+    // unbounded scanning. The maxMessages/maxChars caps stop us long before
+    // hitting day 14 in any normal chat.
+    const minDate = opts.sinceISO ? new Date(opts.sinceISO) : new Date(today.getTime() - 14 * 86400000)
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(today.getTime() - i * 86400000)
+      if (d.getTime() < minDate.getTime() - 86400000) break
+      const day = d.toISOString().slice(0, 10)
+      const file = this.shadowLogPath(chatId, day)
+      if (!existsSync(file)) continue
+      try {
+        const data = JSON.parse(readFileSync(file, "utf-8")) as {
+          messages?: Array<{ externalId: string; role: "user" | "agent"; name: string; content: string; timestamp: string; accountId?: string }>
+        }
+        const msgs = (data.messages ?? []).slice() // newest within the file
+        // Files are append-only in chronological order, so reverse to walk
+        // newest-first per day (matches our outer newest-first loop).
+        for (let j = msgs.length - 1; j >= 0; j--) {
+          const m = msgs[j]
+          if (opts.sinceISO && m.timestamp < opts.sinceISO) continue
+          out.push({
+            role: m.role,
+            name: m.name,
+            content: m.content,
+            timestamp: m.timestamp,
+            externalId: m.externalId,
+            accountId: m.accountId,
+          })
+          chars += m.content.length
+          if (out.length >= opts.maxMessages) break
+          if (chars >= opts.maxChars) break
+        }
+      } catch {
+        // Skip corrupt shadow files silently — they self-heal on next write.
+      }
+      if (out.length >= opts.maxMessages || chars >= opts.maxChars) break
+    }
+    // Caller wants oldest-first for buildHistoryContext rendering.
+    return out.reverse()
   }
 
   private async apiCall(

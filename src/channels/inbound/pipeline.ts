@@ -35,6 +35,14 @@ export interface StageContext {
   config: DaemonConfig
   registry: AgentRegistry
   handoverStore: HandoverStore
+  /** True when `agentId` exists in the local registry. Closure (not a Set)
+   *  so /reload-driven agent additions take effect without rebuilding the
+   *  context. Optional for tests / older callers — when undefined, the
+   *  pipeline skips the existence check (legacy behavior). */
+  hasAgent?: (agentId: string) => boolean
+  /** True when `agentId` is advertised by a healthy mesh peer. Same lazy-
+   *  evaluation rationale as `hasAgent`. Optional. */
+  hasMeshAgent?: (agentId: string) => boolean
   /** Set by `bot-policy` and read by `mention` — sender is a bot, so only
    *  explicit `@`-prefixed mentions count. Mutable across stages. */
   atMentionsOnly: boolean
@@ -71,6 +79,30 @@ export function runPipeline(
     const decision = stage.run(env, ctx)
     ctx.trace.push({ stage: stage.name, decision })
     if (decision.kind === "match") {
+      // Validate the resolved agent exists locally OR is reachable via the
+      // mesh. Without this guard, a stale config or a typo silently dropped
+      // the message in the dispatcher; now it's recorded in route_traces
+      // with reason="unknown_agent:<id>" so the operator can see it.
+      // Skipped when neither hasAgent nor hasMeshAgent is provided
+      // (back-compat for tests + legacy callers).
+      const someoneCanCheck = !!(ctx.hasAgent || ctx.hasMeshAgent)
+      const knownLocally = !!ctx.hasAgent?.(decision.agentId)
+      const knownInMesh = !!ctx.hasMeshAgent?.(decision.agentId)
+      if (someoneCanCheck && !knownLocally && !knownInMesh) {
+        const dropDecision: StageDecision = {
+          kind: "drop",
+          reason: `unknown_agent:${decision.agentId}`,
+        }
+        // Replace the last trace entry so the trace's deciding stage shows
+        // the drop, not the match that led to the unknown agent.
+        ctx.trace[ctx.trace.length - 1] = { stage: stage.name, decision: dropDecision }
+        return {
+          decidingStage: stage.name,
+          kind: "drop",
+          reason: dropDecision.reason,
+          trace: ctx.trace,
+        }
+      }
       return {
         agentId: decision.agentId,
         decidingStage: stage.name,

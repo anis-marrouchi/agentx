@@ -1,4 +1,4 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
@@ -83,6 +83,16 @@ interface GitLabIssueEvent {
     url: string
     assignee_ids?: number[]
   }
+  /** Top-level current assignees (GitLab webhook payload). Each carries
+   *  username + name + id. Present on create, update, and reopen. Optional
+   *  in the type because some older payloads only carry assignee_ids. */
+  assignees?: Array<{ id: number; name?: string; username: string }>
+  /** Diff payload — present on `update` actions. We use changes.assignees
+   *  to detect assignment-add events (a username appears in current but
+   *  not previous). */
+  changes?: {
+    assignees?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
+  }
 }
 
 interface GitLabMREvent {
@@ -98,6 +108,14 @@ interface GitLabMREvent {
     source_branch: string
     target_branch: string
     url: string
+    assignee_ids?: number[]
+    reviewer_ids?: number[]
+  }
+  assignees?: Array<{ id: number; name?: string; username: string }>
+  reviewers?: Array<{ id: number; name?: string; username: string }>
+  changes?: {
+    assignees?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
+    reviewers?: { previous?: Array<{ id: number; username: string }>; current?: Array<{ id: number; username: string }> }
   }
 }
 
@@ -127,6 +145,12 @@ export class GitLabAdapter implements ChannelAdapter {
   private usernameToAgent: Map<string, string> = new Map()
   /** Maps agentId -> actual GitLab username (resolved from tokens at startup) */
   private agentToUsername: Map<string, string> = new Map()
+  /** Per-event dedup window for handleIssue/handleMR. Key:
+   *  `{project}:{kind}:{iid}:{agentId}:{action}:{trigger}`. Value:
+   *  expiresAtMs. Pruned lazily on each access. 5-min TTL covers GitLab's
+   *  webhook-retry window without keeping stale entries forever. */
+  private dispatchedTargets: Map<string, number> = new Map()
+  private readonly DISPATCH_TTL_MS = 5 * 60 * 1000
   private log: (...args: unknown[]) => void
   private hooks?: HookRegistry
   private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
@@ -515,7 +539,7 @@ export class GitLabAdapter implements ChannelAdapter {
         name: user.name,
         username: user.username,
       },
-      text: `[GitLab ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${noteClean}`,
+      text: `[GitLab ${project} ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${noteClean}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: targetAgentId,
@@ -608,7 +632,7 @@ export class GitLabAdapter implements ChannelAdapter {
             name: event.user.name,
             username: event.user.username,
           },
-          text: d.prompt || `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
+          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
           timestamp: new Date(),
           raw: event,
           resolvedAgent: d.agentId,
@@ -633,26 +657,139 @@ export class GitLabAdapter implements ChannelAdapter {
     // agent dispatch to prevent cascade loops.
     if (authoredByBot) { res.writeHead(200); res.end("ok"); return }
 
-    // Default: route generic issue event to the project's configured agent.
-    const incoming: IncomingMessage = {
-      id: `issue-${attrs.iid}-${attrs.action}`,
-      channel: "gitlab",
-      accountId: "default",
-      sender: {
-        id: `${project}:issue:${attrs.iid}`,
-        name: event.user.name,
-        username: event.user.username,
-      },
-      // No group — sender.id has project:type:iid for reply routing
-      text: `[GitLab Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
-      timestamp: new Date(),
-      raw: event,
-      resolvedAgent: defaultAgentId,
+    // Build a deterministic target set: mentions in description ∪ current
+    // assignees mapped to agents ∪ project default route. Each unique agent
+    // gets exactly one IncomingMessage. Replaces the prior "default route only"
+    // behavior so an issue assigned to an agent always gets that agent
+    // engaged — matching how comments resolve via @mention. The
+    // `on:gitlab-issue` hook above can still fully override or block.
+    const targets = this.computeIssueTargets(event, defaultAgentId)
+    if (targets.length === 0) {
+      this.log(`Issue #${attrs.iid}: no agent target (no mention, no agent assignee, no default route)`)
+      res.writeHead(200); res.end("ok"); return
     }
 
-    this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))
+    for (const t of targets) {
+      const dedupKey = `${project}:issue:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
+      if (this.isDispatchedRecently(dedupKey)) {
+        this.log(`Issue #${attrs.iid}: skip duplicate dispatch ${dedupKey}`)
+        continue
+      }
+      this.markDispatched(dedupKey)
+
+      const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
+      const chatId = `${project}:issue:${attrs.iid}`
+      const channelMeta = await this.getChannelMeta(chatId)
+
+      // Assignment-trigger gets a "start working" prompt; mention/default
+      // get the standard issue summary. Both end with the issue URL so the
+      // agent can navigate to it.
+      const text = t.trigger === "assignee-added"
+        ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${attrs.title}]\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
+        : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+
+      const incoming: IncomingMessage = {
+        id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
+        channel: "gitlab",
+        accountId: "default",
+        sender: {
+          id: chatId,
+          name: event.user.name,
+          username: event.user.username,
+        },
+        text,
+        timestamp: new Date(),
+        raw: event,
+        resolvedAgent: t.agentId,
+        preferNode: mapping?.node,
+        channelMeta: channelMeta ? {
+          ...channelMeta,
+          issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
+        } : undefined,
+      }
+
+      this.log(`Issue #${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
+      this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))
+    }
+
     res.writeHead(200)
     res.end("ok")
+  }
+
+  /** Compute the deterministic target set for an issue event. Order:
+   *    1. agent usernames @mentioned in the description (open events)
+   *    2. agent usernames newly added as assignees (changes.assignees diff)
+   *    3. agent usernames in the current full assignee list (catches
+   *       create-with-assignee where there are no `changes`)
+   *    4. project default route (fallback only when 1-3 produced nothing)
+   *  Each agent appears at most once; the first trigger that found them
+   *  wins for the dedup key. */
+  private computeIssueTargets(
+    event: GitLabIssueEvent,
+    defaultAgentId: string | undefined,
+  ): Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "default-route" }> {
+    const out: Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "default-route" }> = []
+    const seen = new Set<string>()
+    const add = (agentId: string | undefined, trigger: "mention" | "assignee-added" | "assignee-current" | "default-route") => {
+      if (!agentId || seen.has(agentId)) return
+      seen.add(agentId)
+      out.push({ agentId, trigger })
+    }
+
+    // 1. Mentions in description
+    const desc = event.object_attributes.description || ""
+    const mentions = desc.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
+    for (const u of mentions) {
+      add(this.usernameToAgent.get(u), "mention")
+    }
+
+    // 2. Newly added assignees (assignment trigger — the "start working" path)
+    const previous = new Set((event.changes?.assignees?.previous ?? []).map(a => a.username.toLowerCase()))
+    const current = (event.changes?.assignees?.current ?? []).map(a => a.username.toLowerCase())
+    for (const u of current) {
+      if (previous.has(u)) continue // unchanged assignment, not a fresh add
+      add(this.usernameToAgent.get(u), "assignee-added")
+    }
+
+    // 3. Current full assignee list (covers create-with-assignee where
+    //    `changes` is absent). Skipped when (2) already produced an agent
+    //    for this event to avoid the same assignee firing twice.
+    if (out.length === 0) {
+      const allAssignees = (event.assignees ?? []).map(a => a.username.toLowerCase())
+      for (const u of allAssignees) {
+        add(this.usernameToAgent.get(u), "assignee-current")
+      }
+    }
+
+    // 4. Project default route — only when nothing above resolved
+    if (out.length === 0) {
+      add(defaultAgentId, "default-route")
+    }
+
+    return out
+  }
+
+  /** Was this dispatch key fired within the dedup TTL window? */
+  private isDispatchedRecently(key: string): boolean {
+    const expires = this.dispatchedTargets.get(key)
+    if (!expires) return false
+    if (expires < Date.now()) {
+      this.dispatchedTargets.delete(key)
+      return false
+    }
+    return true
+  }
+
+  /** Record that we dispatched `key` and prune stale entries. */
+  private markDispatched(key: string): void {
+    const now = Date.now()
+    this.dispatchedTargets.set(key, now + this.DISPATCH_TTL_MS)
+    // Lazy prune: drop expired entries while we're touching the map.
+    if (this.dispatchedTargets.size > 200) {
+      for (const [k, exp] of this.dispatchedTargets) {
+        if (exp < now) this.dispatchedTargets.delete(k)
+      }
+    }
   }
 
   /**
@@ -661,34 +798,106 @@ export class GitLabAdapter implements ChannelAdapter {
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
-    // Skip bot-triggered MR updates
+    // Skip bot-triggered MR updates (cascade prevention)
     if (this.isBotUser(event.user.username)) {
       res.writeHead(200); res.end("ok"); return
     }
 
     const attrs = event.object_attributes
     const project = event.project.path_with_namespace
-    const agentId = this.resolveAgent(project)
+    const defaultAgentId = this.resolveAgent(project)
 
-    const incoming: IncomingMessage = {
-      id: `mr-${attrs.iid}-${attrs.action}`,
-      channel: "gitlab",
-      accountId: "default",
-      sender: {
-        id: `${project}:merge_request:${attrs.iid}`,
-        name: event.user.name,
-        username: event.user.username,
-      },
-      // No group — sender.id has project:type:iid for reply routing
-      text: `[GitLab MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
-      timestamp: new Date(),
-      raw: event,
-      resolvedAgent: agentId,
+    // Same target-resolution model as handleIssue: mentions ∪ assignees ∪
+    // reviewers ∪ default route, deduped per-agent.
+    const targets = this.computeMRTargets(event, defaultAgentId)
+    if (targets.length === 0) {
+      res.writeHead(200); res.end("ok"); return
     }
 
-    this.handler(incoming).catch((e) => this.log(`Error handling MR: ${e.message}`))
+    for (const t of targets) {
+      const dedupKey = `${project}:merge_request:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
+      if (this.isDispatchedRecently(dedupKey)) continue
+      this.markDispatched(dedupKey)
+
+      const mapping = this.config.agentMappings?.find((m) => m.agentId === t.agentId)
+      const chatId = `${project}:merge_request:${attrs.iid}`
+      const channelMeta = await this.getChannelMeta(chatId)
+
+      const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
+      const text = isAssignmentTrigger
+        ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${attrs.title}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
+        : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+
+      const incoming: IncomingMessage = {
+        id: `mr-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
+        channel: "gitlab",
+        accountId: "default",
+        sender: {
+          id: chatId,
+          name: event.user.name,
+          username: event.user.username,
+        },
+        text,
+        timestamp: new Date(),
+        raw: event,
+        resolvedAgent: t.agentId,
+        preferNode: mapping?.node,
+        channelMeta: channelMeta ? {
+          ...channelMeta,
+          issue: { type: "merge_request", iid: String(attrs.iid), title: attrs.title },
+        } : undefined,
+      }
+
+      this.log(`MR !${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
+      this.handler(incoming).catch((e) => this.log(`Error handling MR: ${e.message}`))
+    }
+
     res.writeHead(200)
     res.end("ok")
+  }
+
+  /** Compute MR targets — mirrors computeIssueTargets, with reviewer
+   *  changes added as a separate trigger so an agent added as reviewer
+   *  gets the "review this MR" prompt instead of "start working on it". */
+  private computeMRTargets(
+    event: GitLabMREvent,
+    defaultAgentId: string | undefined,
+  ): Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "reviewer-added" | "reviewer-current" | "default-route" }> {
+    const out: Array<{ agentId: string; trigger: "mention" | "assignee-added" | "assignee-current" | "reviewer-added" | "reviewer-current" | "default-route" }> = []
+    const seen = new Set<string>()
+    const add = (
+      agentId: string | undefined,
+      trigger: "mention" | "assignee-added" | "assignee-current" | "reviewer-added" | "reviewer-current" | "default-route",
+    ) => {
+      if (!agentId || seen.has(agentId)) return
+      seen.add(agentId)
+      out.push({ agentId, trigger })
+    }
+
+    const desc = event.object_attributes.description || ""
+    const mentions = desc.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
+    for (const u of mentions) add(this.usernameToAgent.get(u), "mention")
+
+    const prevA = new Set((event.changes?.assignees?.previous ?? []).map(a => a.username.toLowerCase()))
+    for (const a of event.changes?.assignees?.current ?? []) {
+      const u = a.username.toLowerCase()
+      if (prevA.has(u)) continue
+      add(this.usernameToAgent.get(u), "assignee-added")
+    }
+    const prevR = new Set((event.changes?.reviewers?.previous ?? []).map(a => a.username.toLowerCase()))
+    for (const r of event.changes?.reviewers?.current ?? []) {
+      const u = r.username.toLowerCase()
+      if (prevR.has(u)) continue
+      add(this.usernameToAgent.get(u), "reviewer-added")
+    }
+
+    if (out.length === 0) {
+      for (const a of event.assignees ?? []) add(this.usernameToAgent.get(a.username.toLowerCase()), "assignee-current")
+      for (const r of event.reviewers ?? []) add(this.usernameToAgent.get(r.username.toLowerCase()), "reviewer-current")
+    }
+
+    if (out.length === 0) add(defaultAgentId, "default-route")
+    return out
   }
 
   /**
@@ -821,6 +1030,78 @@ export class GitLabAdapter implements ChannelAdapter {
    */
   private isBotUser(username: string): boolean {
     return this.botUsernames.has(username)
+  }
+
+  /** ChannelAdapter.seedHistory: fetch the issue/MR's existing notes from
+   *  the GitLab API and return them oldest-first so a fresh agent session
+   *  starts mirroring the live thread. chatId is the canonical
+   *  "project:type:iid" the rest of the adapter already uses (see send()).
+   *  Filters out agentx-signed notes from the calling agent (those are this
+   *  agent's own past replies — already represented in the model's prior
+   *  turns). Best-effort: API errors return [] rather than throwing. */
+  async seedHistory(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<SeededMessage[]> {
+    const parts = chatId.split(":")
+    if (parts.length < 3) return []
+    const iid = parts.pop()!
+    const noteableType = parts.pop()!
+    const project = parts.join(":")
+
+    const encodedProject = encodeURIComponent(project)
+    let endpoint: string
+    if (noteableType === "issue") {
+      endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/issues/${iid}/notes?sort=asc&per_page=${Math.max(20, Math.min(100, opts.maxMessages))}`
+    } else if (noteableType === "merge_request") {
+      endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/merge_requests/${iid}/notes?sort=asc&per_page=${Math.max(20, Math.min(100, opts.maxMessages))}`
+    } else {
+      return []
+    }
+
+    // Use global token for the read — seedHistory is a context-rebuild
+    // operation, not an identity-bound action, and the global token is
+    // guaranteed to have read access across the configured projects.
+    const token = this.config.token
+    if (!token) return []
+
+    let notes: Array<{
+      id: number
+      body: string
+      author?: { username?: string; name?: string }
+      created_at: string
+      system?: boolean
+    }>
+    try {
+      const res = await fetch(endpoint, {
+        headers: { "PRIVATE-TOKEN": token },
+      })
+      if (!res.ok) return []
+      notes = (await res.json()) as typeof notes
+    } catch {
+      return []
+    }
+
+    const out: SeededMessage[] = []
+    let chars = 0
+    const sinceMs = opts.sinceISO ? new Date(opts.sinceISO).getTime() : 0
+    for (const n of notes) {
+      if (n.system) continue // skip GitLab-generated "assigned to / closed" lines
+      if (sinceMs && new Date(n.created_at).getTime() < sinceMs) continue
+      const sourceAgent = detectAgentxMarker(n.body)
+      const cleanBody = stripAgentxMarkers(n.body)
+      out.push({
+        role: sourceAgent ? "agent" : "user",
+        name: n.author?.name || n.author?.username || (sourceAgent ?? "user"),
+        content: cleanBody,
+        timestamp: n.created_at,
+        externalId: String(n.id),
+      })
+      chars += cleanBody.length
+      if (out.length >= opts.maxMessages) break
+      if (chars >= opts.maxChars) break
+    }
+    return out
   }
 
   /**

@@ -8,6 +8,7 @@ node_modules/
 agentx.json
 agentx.json.*
 .env
+.env.*
 
 # Claude Code (project-local, not committed)
 .claude/

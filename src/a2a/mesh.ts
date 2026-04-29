@@ -238,7 +238,29 @@ export class A2AMesh {
    * Uses the peer's /task HTTP endpoint (agentx daemon API).
    * If no agent specified, uses the first available agent on the peer.
    */
-  async sendTask(peerName: string, text: string, agentId?: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+  async sendTask(
+    peerName: string,
+    text: string,
+    agentId?: string,
+    opts: {
+      timeoutMs?: number
+      /** Identity of the agent on whose behalf this call is made. Forwarded
+       *  in the request body so the receiving daemon can record it in
+       *  route_traces and (in a future protocol revision) validate that the
+       *  caller is allowed to act for this agent. Optional during the
+       *  log-warn rollout; missing values produce a server-side warning. */
+      senderAgentId?: string
+      /** Origin context — channel, chatId, sender, channelMeta, etc. Forwarded
+       *  to the receiving daemon's /task handler verbatim so the receiver's
+       *  registry.execute() keys the session by the SAME (channel, chatId)
+       *  the sender used, instead of falling back to api/default. Without
+       *  this, a GitLab webhook routed across the mesh lands in the
+       *  recipient's api:default bucket with no project, no issue id, no
+       *  channelMeta — i.e., the mtgl/hasanah confusion incident on
+       *  2026-04-29 issue #709. Shape matches AgentTask.context. */
+      context?: Record<string, unknown>
+    } = {},
+  ): Promise<string> {
     const state = this.peers.get(peerName)
     if (!state) throw new Error(`Unknown peer: ${peerName}`)
     if (!state.healthy) throw new Error(`Peer "${peerName}" is not healthy`)
@@ -275,7 +297,19 @@ export class A2AMesh {
       res = await undiciFetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ agent, message: text }),
+        body: JSON.stringify({
+          agent,
+          message: text,
+          // A2A protocol field — receiving daemon validates and records.
+          // Omitted from the body (rather than sent as undefined) so the
+          // server's "missing senderAgentId" log-warn fires only when the
+          // caller genuinely didn't pass one.
+          ...(opts.senderAgentId ? { senderAgentId: opts.senderAgentId } : {}),
+          // Origin context (channel, chatId, channelMeta, sender, ...).
+          // Optional for back-compat — older callers continue to work, with
+          // the receiver defaulting channel/chatId as before.
+          ...(opts.context ? { context: opts.context } : {}),
+        }),
         signal: controller.signal,
         dispatcher: longTaskDispatcher,
       })
