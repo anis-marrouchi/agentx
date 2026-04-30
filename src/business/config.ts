@@ -52,6 +52,20 @@ const workSourceSchema = z.discriminatedUnion("type", [
   }),
 ])
 
+/** Per-project metadata. Phase 3 of the architectural rescue —
+ *  `pm` is the agentId responsible for gating dispatches on this
+ *  project. Optional; when null, dispatches don't go through a PM
+ *  gate. The wiring lives in `decideAndCommit` (gated by a flag,
+ *  separate commit). */
+const projectSchema = z.object({
+  /** Project identifier. For GitLab/GitHub: "owner/repo". For
+   *  noqta-internal projects: a stable string. */
+  id: z.string(),
+  /** AgentId of the PM for this project. Looked up by
+   *  `Organization.pmFor(project)` at dispatch time. */
+  pm: z.string().optional(),
+})
+
 export const businessConfigSchema = z.object({
   enabled: z.boolean().default(false),
   timezone: z.string().default("UTC"),
@@ -59,6 +73,9 @@ export const businessConfigSchema = z.object({
   workSource: workSourceSchema,
   roles: z.record(z.string(), roleSchema).default({}),
   orgChart: z.record(z.string(), orgEntrySchema).default({}),
+  /** Per-project metadata. Phase 3 — defaults to empty array, so
+   *  existing agentx.json files validate without modification. */
+  projects: z.array(projectSchema).default([]),
   /** Work-tick cadence in minutes during business hours. Default 15. */
   workTickMinutes: z.number().int().min(1).max(60).default(15),
   /** Max queue depth for an idle agent before skipping the work tick (avoids piling up). */
@@ -71,3 +88,4 @@ export type BusinessOrgEntry = z.infer<typeof orgEntrySchema>
 export type BusinessSchedule = z.infer<typeof scheduleSchema>
 export type BusinessWorkSource = z.infer<typeof workSourceSchema>
 export type BusinessChannelRef = z.infer<typeof channelRefSchema>
+export type BusinessProject = z.infer<typeof projectSchema>
