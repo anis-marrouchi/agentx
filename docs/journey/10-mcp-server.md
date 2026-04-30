@@ -132,4 +132,4 @@ MCP supports **elicitation** — the server can ask the user for input mid-tool-
 
 - [`agentx serve` reference](/reference/cli#serve-mcp-server): flags + transport details.
 - [Communication matrix](/reference/communication-matrix): the same actions over raw HTTP, useful when MCP isn't available.
-- [Plugin authoring](/architecture/plugins) (when surfaced): write your own MCP tool by registering it from a plugin.
+- [Plugin authoring](/playbooks/plugin-authoring): write a plugin that registers a custom channel adapter or bus subscriber.

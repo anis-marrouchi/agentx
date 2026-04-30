@@ -172,4 +172,4 @@ Restart the daemon. Logs should show `[agentx-plugin-mattermost] hello, world` i
 
 - [Plugin types reference](https://github.com/anis-marrouchi/agentx/blob/master/src/plugins/types.ts) — the full `AgentXPluginContext` interface
 - [`agentx plugin` CLI reference](/reference/cli#plugins)
-- [Architecture: plugins design](/architecture/plugins) (when surfaced) — boundaries the contract deliberately doesn't cross
+- [Architecture: plugins design](/architecture/plugins) — boundaries the contract deliberately doesn't cross

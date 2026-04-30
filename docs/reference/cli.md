@@ -166,7 +166,7 @@ Operational SQLite store at `.agentx/db.sqlite` (the daemon's bus subscribers pe
 
 ## Ledger
 
-Read-only triage CLI for the intent ledger at `.agentx/intent/ledger.sqlite` — the canonical record of every dispatch decision (Phase 1 of the [architectural rescue](/architecture/research-rescue-plan)). Use `--path` to point at an alternate ledger (e.g. one rsync'd from a remote node).
+Read-only triage CLI for the intent ledger at `.agentx/intent/ledger.sqlite` — the canonical record of every dispatch decision (Phase 1 of the architectural rescue). Use `--path` to point at an alternate ledger (e.g. one rsync'd from a remote node).
 
 | Command | Description |
 |---|---|

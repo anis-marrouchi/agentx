@@ -106,8 +106,6 @@ export default withMermaid(defineConfig({
           items: [
             { text: "Plugins", link: "/architecture/plugins" },
             { text: "Workflows YAML", link: "/architecture/workflows-yaml" },
-            { text: "Dispatch properties", link: "/architecture/dispatch-properties" },
-            { text: "Scheduled agents", link: "/architecture/scheduled-agents" },
           ],
         },
         {
