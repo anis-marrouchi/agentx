@@ -280,6 +280,142 @@ ledger
   })
 
 // ---------------------------------------------------------------------------
+// agentx ledger lineage
+// ---------------------------------------------------------------------------
+//
+// Walk the (project, subject) correlation for an event and print every
+// decision + resolution that landed on the same subject in chronological
+// order. Answers "what's the dispatch lineage of this event?" without
+// the operator having to write SQL. Foundation for a future in-product
+// diff viewer (deferred); the CLI version is the 80/20.
+
+ledger
+  .command("lineage <eventOrSubject>")
+  .description("walk the dispatch chain on the same (project, subject) and print every decision + resolution")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--path <path>", "ledger path relative to cwd", ".agentx/intent/ledger.sqlite")
+  .option("--by-subject", "treat the argument as `<project>:<subject>` instead of an event id")
+  .option("--json", "emit JSON")
+  .action((eventOrSubject: string, opts) => {
+    const db = openReadOnly(opts)
+
+    let project: string | null = null
+    let subject: string | null = null
+
+    if (opts.bySubject) {
+      const idx = eventOrSubject.indexOf(":")
+      if (idx < 0) {
+        console.log(chalk.red(`  --by-subject expects "<project>:<subject>"`))
+        process.exit(1)
+      }
+      project = eventOrSubject.slice(0, idx)
+      subject = eventOrSubject.slice(idx + 1)
+    } else {
+      const row = db
+        .prepare(`SELECT project, subject FROM intent_events WHERE id = ?`)
+        .get(eventOrSubject) as { project: string | null; subject: string | null } | undefined
+      if (!row) {
+        console.log(chalk.red(`  no event with id ${eventOrSubject}`))
+        process.exit(1)
+      }
+      project = row.project
+      subject = row.subject
+      if (project === null || subject === null) {
+        console.log(chalk.yellow(`  event ${eventOrSubject} has no (project, subject) — lineage requires both`))
+        if (project) console.log(chalk.dim(`    project: ${project}`))
+        if (subject) console.log(chalk.dim(`    subject: ${subject}`))
+        process.exit(1)
+      }
+    }
+
+    // All events sharing this (project, subject), ordered by ts.
+    const events = db
+      .prepare(
+        `SELECT id, ts, source, COALESCE(intent, '-') AS intent, COALESCE(source_event_id, '-') AS source_event_id
+         FROM intent_events WHERE project = ? AND subject = ? ORDER BY ts ASC`,
+      )
+      .all(project, subject) as Array<{
+        id: string; ts: number; source: string; intent: string; source_event_id: string
+      }>
+
+    if (events.length === 0) {
+      console.log(chalk.dim(`  (no events for ${project}:${subject})`))
+      return
+    }
+
+    // All decisions + resolutions for those events, grouped by event_id.
+    const eventIds = events.map((e) => e.id)
+    const placeholders = eventIds.map((_, i) => `@id${i}`).join(", ")
+    const params = Object.fromEntries(eventIds.map((id, i) => [`id${i}`, id]))
+
+    const decisions = db
+      .prepare(`
+        SELECT d.event_id, d.decided_at, d.decided_by, d.agent_id, d.outcome, d.reason,
+               r.resolved_at, r.status AS resolution_status, r.duration_ms, r.result_summary
+        FROM intent_decisions d
+        LEFT JOIN intent_resolutions r
+          ON r.decision_event_id = d.event_id AND r.decision_decided_by = d.decided_by
+        WHERE d.event_id IN (${placeholders})
+        ORDER BY d.decided_at ASC
+      `)
+      .all(params) as Array<{
+        event_id: string; decided_at: number; decided_by: string; agent_id: string | null;
+        outcome: string; reason: string | null;
+        resolved_at: number | null; resolution_status: string | null;
+        duration_ms: number | null; result_summary: string | null;
+      }>
+
+    if (opts.json) {
+      const grouped = events.map((e) => ({
+        event: e,
+        decisions: decisions.filter((d) => d.event_id === e.id),
+      }))
+      console.log(JSON.stringify({ project, subject, lineage: grouped }, null, 2))
+      return
+    }
+
+    const distinctAgents = new Set<string>()
+    for (const d of decisions) {
+      if (d.outcome === "dispatched" && d.agent_id) distinctAgents.add(d.agent_id)
+    }
+
+    console.log()
+    console.log(chalk.bold(`  Lineage for ${chalk.cyan(project + ":" + subject)}`))
+    console.log(chalk.dim(`  ${events.length} event(s), ${decisions.length} decision(s), ${distinctAgents.size} distinct agent(s) dispatched`))
+    console.log()
+
+    for (const e of events) {
+      const dt = new Date(e.ts).toISOString().slice(0, 19).replace("T", " ")
+      console.log(`  ${chalk.dim(dt)} ${chalk.bold(e.id)} ${chalk.dim(`(${e.source}/${e.intent})`)}`)
+      const evDecisions = decisions.filter((d) => d.event_id === e.id)
+      if (evDecisions.length === 0) {
+        console.log(chalk.dim(`           (no decisions yet)`))
+        continue
+      }
+      for (const d of evDecisions) {
+        const outcome = d.outcome === "dispatched"
+          ? chalk.green(d.outcome)
+          : d.outcome === "dropped"
+            ? chalk.dim(d.outcome)
+            : chalk.yellow(d.outcome)
+        const agent = d.agent_id ? chalk.cyan(d.agent_id) : chalk.dim("-")
+        const reason = d.reason ? chalk.dim(` — ${d.reason.slice(0, 60)}`) : ""
+        console.log(`           ${chalk.dim(d.decided_by)} → ${outcome} ${agent}${reason}`)
+        if (d.resolution_status) {
+          const status = d.resolution_status === "ok"
+            ? chalk.green(d.resolution_status)
+            : chalk.red(d.resolution_status)
+          const dur = d.duration_ms ? `${(d.duration_ms / 1000).toFixed(1)}s` : "-"
+          console.log(`             ${chalk.dim("resolved")} ${status} ${chalk.dim(dur)}`)
+        } else if (d.outcome === "dispatched") {
+          console.log(`             ${chalk.yellow("(in-flight, no resolution)")}`)
+        }
+      }
+    }
+    console.log()
+  })
+
+// ---------------------------------------------------------------------------
 // agentx ledger replay
 // ---------------------------------------------------------------------------
 //
