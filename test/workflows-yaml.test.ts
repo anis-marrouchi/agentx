@@ -427,6 +427,48 @@ describe("CLI: agentx workflow show --format yaml", () => {
   })
 })
 
+describe("examples/workflows/whatsapp-client-support — JSON ≡ YAML", () => {
+  it("the YAML example validates and lints clean", () => {
+    const yamlText = readFileSync(
+      path.resolve(process.cwd(), "examples/workflows/whatsapp-client-support.yaml"),
+      "utf-8",
+    )
+    const raw = parseYamlWorkflow(yamlText, { filePath: "whatsapp-client-support.yaml" })
+    const parsed = workflowSchema.safeParse(raw)
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    const lintIssues = lintWorkflowFromTest(parsed.data)
+    expect(lintIssues).toEqual([])
+  })
+
+  it("desugars to the same workflow as the JSON example", () => {
+    const yamlText = readFileSync(
+      path.resolve(process.cwd(), "examples/workflows/whatsapp-client-support.yaml"),
+      "utf-8",
+    )
+    const jsonText = readFileSync(
+      path.resolve(process.cwd(), "examples/workflows/whatsapp-client-support.json"),
+      "utf-8",
+    )
+    const yamlWf = workflowSchema.parse(parseYamlWorkflow(yamlText))
+    const jsonWf = workflowSchema.parse(JSON.parse(jsonText))
+    // Compare by id, version, title, node ids, and edge tuples — the
+    // post-desugar canonical shape. Field-by-field deep-equal is too
+    // strict (description string handling and YAML block scalars can
+    // differ trivially in whitespace).
+    expect(yamlWf.id).toBe(jsonWf.id)
+    expect(yamlWf.version).toBe(jsonWf.version)
+    expect(yamlWf.title).toBe(jsonWf.title)
+    expect(yamlWf.nodes.map(n => n.id).sort()).toEqual(jsonWf.nodes.map(n => n.id).sort())
+    expect(yamlWf.nodes.map(n => n.type).sort()).toEqual(jsonWf.nodes.map(n => n.type).sort())
+    const edgeKey = (e: { from: string; fromPort?: string; to: string }) =>
+      `${e.from}|${e.fromPort ?? ""}|${e.to}`
+    expect(yamlWf.edges.map(edgeKey).sort()).toEqual(jsonWf.edges.map(edgeKey).sort())
+  })
+})
+
+import { readFileSync } from "fs"
+
 describe("end-to-end: YAML → desugar → workflowSchema", () => {
   it("flow-shorthand YAML validates against the canonical schema", () => {
     const text = `
