@@ -13,6 +13,7 @@ import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queu
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
 import { loadReferences, renderReferences } from "./references/loader"
+import { getDefaultLedger } from "@/intent/instance"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
@@ -464,7 +465,6 @@ export class AgentRegistry {
     }
     if (task.intentRef) {
       try {
-        const { getDefaultLedger } = await import("@/intent/instance")
         const status = response.error
           ? (/timed out|timeout/i.test(response.error) ? "timed-out" : "failed")
           : "completed"
