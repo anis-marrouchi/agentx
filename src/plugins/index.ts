@@ -5,4 +5,5 @@ export type {
   LoadedPlugin,
 } from "./types"
 export { agentXPluginManifestSchema } from "./types"
-export { loadPlugins } from "./loader"
+export { loadPlugins, type LoadPluginsArgs } from "./loader"
+export { buildPluginContext, type BuildContextArgs, type PluginContextHandle } from "./context"
