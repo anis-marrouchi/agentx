@@ -22,6 +22,7 @@ import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
 import { setDefaultGovernance } from "@/intent/governance"
+import { agentCanHandleIntent } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -226,11 +227,20 @@ export class AgentXDaemon {
         // without a daemon restart.
         if (process.env.INTENT_PM_GATE_ENABLED === "true" || process.env.INTENT_PM_GATE_ENABLED === "1") {
           const org = this.business.org
+          const agents = this.config.agents
           setDefaultGovernance({
             pmFor: (project) => org.pmFor(project),
-            canHandle: (agentId, project, intent) => org.canHandle(agentId, project, intent),
+            // canHandle layers two checks:
+            //   1. Org-chart membership (Phase 3) — agent is registered.
+            //   2. Phase 5 typed-capability check — agent's `intents`
+            //      list (when non-empty) must include the dispatched
+            //      intent. When the list is empty (default), handles all.
+            canHandle: (agentId, project, intent) => {
+              if (!org.canHandle(agentId, project, intent)) return false
+              return agentCanHandleIntent(agents[agentId], intent)
+            },
           })
-          this.log("  Ledger governance: PM gate ENABLED via org chart")
+          this.log("  Ledger governance: PM gate + capability check ENABLED")
         }
       } catch (e: any) {
         this.log(`[business] initialization failed: ${e.message}`)

@@ -47,6 +47,16 @@ const agentConfigSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   mentions: z.array(z.string()).default([]),
+  /** Phase 5 — typed capabilities (drop-condition fallback). Free-form
+   *  list of intent strings this agent is allowed to handle. When set,
+   *  the org-chart `canHandle(agentId, project, intent)` check rejects
+   *  dispatches with intents not in this list. When empty/unset
+   *  (the default), the agent is permissive — handles any intent.
+   *  Intent matching is exact-string for now; a glob/prefix layer can
+   *  come later if it produces real rejections.
+   *  Example: ["issue.opened", "issue.commented", "merge_request.opened"]
+   *  Example: ["cron.fired", "message.received"]              */
+  intents: z.array(z.string()).default([]),
   /** MCP servers this agent's Claude Code session should load. Synced
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
