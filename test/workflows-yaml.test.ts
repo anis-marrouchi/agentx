@@ -196,6 +196,139 @@ describe("desugarFlow", () => {
   })
 })
 
+// ---------------------------------------------------------------------
+// Move C — WorkflowStore integration (commit 2 of 5)
+// ---------------------------------------------------------------------
+
+import { mkdtempSync, writeFileSync, readdirSync } from "fs"
+import { tmpdir } from "os"
+import path from "path"
+import { WorkflowStore } from "../src/workflows/store"
+
+const VALID_FLOW_YAML = `id: foo
+version: 2
+title: Foo (yaml)
+nodes:
+  - { id: start, type: trigger.manual, config: {} }
+  - { id: act,   type: agent,          config: { agentId: a, prompt: "x" } }
+  - { id: done,  type: end,            config: {} }
+flow: [start, act, done]
+`
+const VALID_FLOW_JSON = JSON.stringify({
+  id: "foo",
+  version: 2,
+  title: "Foo (json)",
+  nodes: [
+    { id: "start", type: "trigger.manual", config: {} },
+    { id: "done",  type: "end",            config: {} },
+  ],
+  edges: [{ from: "start", to: "done" }],
+})
+
+describe("WorkflowStore — YAML loading", () => {
+  function freshStore() {
+    const tmp = mkdtempSync(path.join(tmpdir(), "agentx-wf-store-"))
+    return { store: new WorkflowStore({ baseDir: tmp }), dir: tmp }
+  }
+
+  it("list() loads a YAML workflow file", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    const all = store.list()
+    expect(all.map(w => w.id)).toEqual(["foo"])
+    expect(all[0].title).toBe("Foo (yaml)")
+  })
+
+  it("list() loads .yml as well as .yaml", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yml"), VALID_FLOW_YAML)
+    expect(store.list().map(w => w.id)).toEqual(["foo"])
+  })
+
+  it("get() returns the YAML-defined workflow when only YAML exists", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    const wf = store.get("foo")
+    expect(wf?.title).toBe("Foo (yaml)")
+  })
+
+  it("ignores files that don't end in .json/.yaml/.yml", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    writeFileSync(path.join(dir, "notes.txt"), "ignored")
+    writeFileSync(path.join(dir, "_runs.json"), "{}")
+    expect(store.list().map(w => w.id)).toEqual(["foo"])
+  })
+
+  it("list() skips ambiguous coexisting <id>.json + <id>.yaml entries", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.json"), VALID_FLOW_JSON)
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    expect(store.list()).toEqual([])
+  })
+
+  it("validateAll() reports duplicate-id errors on both sides of a coexistence", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.json"), VALID_FLOW_JSON)
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    const results = store.validateAll().filter(r => !r.isValid) as any[]
+    expect(results).toHaveLength(2)
+    for (const r of results) {
+      expect(r.id).toBe("foo")
+      expect(r.issues[0]).toMatch(/duplicate workflow id/)
+    }
+  })
+
+  it("get() refuses to pick a winner when both files exist", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.json"), VALID_FLOW_JSON)
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    expect(store.get("foo")).toBeNull()
+  })
+
+  it("save() refuses when a YAML sibling exists for the id", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    expect(() =>
+      store.save({
+        id: "foo",
+        version: 2,
+        title: "from editor",
+        nodes: [
+          { id: "start", type: "trigger.manual", config: {} },
+          { id: "done",  type: "end",            config: {} },
+        ],
+        edges: [{ from: "start", to: "done" }],
+      } as any),
+    ).toThrow(/yaml-authored workflow "foo"/)
+  })
+
+  it("validateAll() surfaces YAML structural errors with file path", () => {
+    const { store, dir } = freshStore()
+    // flow references unknown node — desugarFlow rejects
+    writeFileSync(
+      path.join(dir, "broken.yaml"),
+      `id: broken
+version: 2
+title: Broken
+nodes:
+  - { id: a, type: trigger.manual, config: {} }
+flow: [a, ghost]
+`,
+    )
+    const r = store.validateAll().find(x => !x.isValid) as any
+    expect(r).toBeDefined()
+    expect(r.issues[0]).toMatch(/flow references unknown node "ghost"/)
+  })
+
+  it("delete() removes whichever extension exists", () => {
+    const { store, dir } = freshStore()
+    writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
+    expect(store.delete("foo")).toBe(true)
+    expect(readdirSync(dir).filter(n => n.startsWith("foo"))).toEqual([])
+  })
+})
+
 describe("end-to-end: YAML → desugar → workflowSchema", () => {
   it("flow-shorthand YAML validates against the canonical schema", () => {
     const text = `
