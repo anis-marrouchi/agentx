@@ -1,8 +1,13 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { resolve } from "path"
+import { mkdtempSync } from "fs"
+import { tmpdir } from "os"
+import { resolve, join } from "path"
 import { existsSync } from "fs"
 import Database from "better-sqlite3"
+import { IntentLedger } from "@/intent/ledger"
+import { replay } from "@/intent/replay"
+import type { IntentDecision, IntentEvent, IntentResolution } from "@/intent/types"
 
 // --- agentx ledger ---
 //
@@ -272,4 +277,123 @@ ledger
       `)
       .all(params)
     emit(rows, !!opts.json)
+  })
+
+// ---------------------------------------------------------------------------
+// agentx ledger replay
+// ---------------------------------------------------------------------------
+//
+// Reads (events, decisions, resolutions) from the source ledger and
+// replays them onto a fresh tmp ledger via src/intent/replay.ts.
+// Reports any divergences. The Phase 7 regression test in CLI form.
+//
+// Usage:
+//   agentx ledger replay                              # all rows
+//   agentx ledger replay --since 24h                  # last 24h only
+//   agentx ledger replay --source gitlab              # one source only
+//   agentx ledger replay --path /tmp/clawd-ledger/ledger.sqlite
+
+ledger
+  .command("replay")
+  .description("replay the source ledger onto a fresh tmp ledger; report divergences")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--path <path>", "ledger path relative to cwd", ".agentx/intent/ledger.sqlite")
+  .option("--since <duration>", "limit to events newer than (e.g. 1h, 24h, 7d)")
+  .option("-s, --source <name>", "filter to one source")
+  .option("-n, --limit <n>", "max events to replay (defaults to all)")
+  .option("--json", "emit JSON")
+  .action((opts) => {
+    const sourceDb = openReadOnly(opts)
+    const since = parseSince(opts.since)
+
+    // Pull events from the source ledger as IntentEvent[].
+    const eventWhere: string[] = []
+    const eventParams: Record<string, any> = {}
+    if (opts.source) { eventWhere.push("source = @source"); eventParams.source = opts.source }
+    if (since !== undefined) { eventWhere.push("ts >= @since"); eventParams.since = since }
+    const eventLimit = opts.limit ? `LIMIT ${Number(opts.limit)}` : ""
+    const events: IntentEvent[] = (sourceDb
+      .prepare(`
+        SELECT id, ts, source, source_event_id, project, subject, intent, raw_json
+        FROM intent_events
+        ${eventWhere.length ? "WHERE " + eventWhere.join(" AND ") : ""}
+        ORDER BY ts ASC
+        ${eventLimit}
+      `)
+      .all(eventParams) as Array<any>)
+      .map((r) => ({
+        id: r.id, ts: r.ts, source: r.source,
+        sourceEventId: r.source_event_id, project: r.project, subject: r.subject,
+        intent: r.intent, rawJson: r.raw_json,
+      }))
+
+    // Pull decisions + resolutions for those events. Joining by event id
+    // keeps the snapshot internally consistent — no orphan rows.
+    if (events.length === 0) {
+      console.log(chalk.dim("  (no events match filter)"))
+      return
+    }
+    const eventIds = new Set(events.map((e) => e.id))
+    const placeholders = events.map((_, i) => `@id${i}`).join(", ")
+    const eventIdParams: Record<string, any> = Object.fromEntries(
+      events.map((e, i) => [`id${i}`, e.id]),
+    )
+
+    const decisions: IntentDecision[] = (sourceDb
+      .prepare(`
+        SELECT event_id, decided_at, decided_by, agent_id, outcome, reason
+        FROM intent_decisions
+        WHERE event_id IN (${placeholders})
+      `)
+      .all(eventIdParams) as Array<any>)
+      .map((r) => ({
+        eventId: r.event_id, decidedAt: r.decided_at, decidedBy: r.decided_by,
+        agentId: r.agent_id, outcome: r.outcome, reason: r.reason,
+      }))
+
+    const resolutions: IntentResolution[] = (sourceDb
+      .prepare(`
+        SELECT decision_event_id, decision_decided_by, resolved_at, status, duration_ms, result_summary
+        FROM intent_resolutions
+        WHERE decision_event_id IN (${placeholders})
+      `)
+      .all(eventIdParams) as Array<any>)
+      .map((r) => ({
+        decisionEventId: r.decision_event_id, decisionDecidedBy: r.decision_decided_by,
+        resolvedAt: r.resolved_at, status: r.status,
+        durationMs: r.duration_ms, resultSummary: r.result_summary,
+      }))
+
+    void eventIds // for clarity; not used directly
+
+    // Open a fresh tmp ledger and run the replay.
+    const tmpDir = mkdtempSync(join(tmpdir(), "agentx-ledger-replay-"))
+    const target = new IntentLedger({ path: join(tmpDir, "target.sqlite") })
+    try {
+      const result = replay(target, events, decisions, resolutions)
+
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+
+      console.log(chalk.bold(`Replayed ${result.eventsCount} events, ${result.decisionsCount} decisions, ${resolutions.length} resolutions`))
+      if (result.divergences.length === 0) {
+        console.log(chalk.green(`  ✓ 0 divergences — ledger mechanics are deterministic on this snapshot`))
+      } else {
+        console.log(chalk.red(`  ✗ ${result.divergences.length} divergences`))
+        emit(
+          result.divergences.map((d) => ({
+            event_id: d.eventId,
+            decided_by: d.decidedBy,
+            recorded: `${d.expected.outcome}/${d.expected.agentId ?? "-"}`,
+            replayed: `${d.actual.outcome}/${d.actual.agentId ?? "-"}`,
+            reason: d.reason.slice(0, 80),
+          })),
+          false,
+        )
+      }
+    } finally {
+      target.close()
+    }
   })

@@ -135,4 +135,22 @@ describe("agentx ledger CLI", () => {
     const old = JSON.parse(run("events --since 1h"))
     expect(old.length).toBe(0)
   })
+
+  it("replay reports 0 divergences for a clean populated ledger", () => {
+    if (!cliExists) return
+    populateLedger()
+    const out = JSON.parse(run("replay"))
+    expect(out.eventsCount).toBe(3)
+    expect(out.decisionsCount).toBe(3)
+    expect(out.divergences).toEqual([])
+  })
+
+  it("replay --source filters the events that get replayed", () => {
+    if (!cliExists) return
+    populateLedger()
+    const tg = JSON.parse(run("replay --source telegram"))
+    expect(tg.eventsCount).toBe(2)
+    expect(tg.decisionsCount).toBe(2)
+    expect(tg.divergences).toEqual([])
+  })
 })
