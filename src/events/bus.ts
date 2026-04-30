@@ -68,7 +68,13 @@ export interface AgentXEvents {
   }
 
   /** Task finished — success or failure. Includes usage so subscribers
-   *  can write to billing, sqlite, or analytics without re-querying. */
+   *  can write to billing, sqlite, or analytics without re-querying.
+   *
+   *  Tier-2 fields hold the portion of THIS task's tokens that fell into
+   *  the "above-threshold" pricing tier (decided at record time by
+   *  TokenTracker; see usage_daily v5 in src/storage/sqlite.ts). They are
+   *  optional and additive — emitters that don't compute the split simply
+   *  omit them and subscribers treat the missing values as 0. */
   "task:completed": {
     agentId: string
     channel: string
@@ -79,6 +85,10 @@ export interface AgentXEvents {
     outputTokens?: number
     cacheReadTokens?: number
     cacheCreateTokens?: number
+    tier2InputTokens?: number
+    tier2OutputTokens?: number
+    tier2CacheReadTokens?: number
+    tier2CacheCreateTokens?: number
     at: string
   }
 

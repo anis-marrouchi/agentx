@@ -3,7 +3,7 @@ import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, t
 import { SessionStore, detectLongMemoryHint } from "./sessions"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
-import { TokenTracker } from "@/daemon/token-tracker"
+import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
 import { HandoverStore } from "@/channels/handover-store"
@@ -1142,16 +1142,25 @@ export class AgentRegistry {
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
       finalResponse = response
 
+      // Split this request's tokens into tier1/tier2 buckets so subscribers
+      // (sqlite usage_daily, audit, dashboard) record both lanes. The same
+      // threshold that TokenTracker.record() applies — extracted as a
+      // helper so the two sites can never drift.
+      const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
       getEventBus().emit("task:completed", {
         agentId: task.agentId,
         channel,
         chatId,
         durationMs: Date.now() - taskStartedAt,
         error: response.error || undefined,
-        inputTokens: response.usage?.inputTokens,
-        outputTokens: response.usage?.outputTokens,
-        cacheReadTokens: response.usage?.cacheReadTokens,
-        cacheCreateTokens: response.usage?.cacheCreateTokens,
+        inputTokens: split?.inputTokens,
+        outputTokens: split?.outputTokens,
+        cacheReadTokens: split?.cacheReadTokens,
+        cacheCreateTokens: split?.cacheCreateTokens,
+        tier2InputTokens: split?.tier2InputTokens,
+        tier2OutputTokens: split?.tier2OutputTokens,
+        tier2CacheReadTokens: split?.tier2CacheReadTokens,
+        tier2CacheCreateTokens: split?.tier2CacheCreateTokens,
         at: new Date().toISOString(),
       })
 
