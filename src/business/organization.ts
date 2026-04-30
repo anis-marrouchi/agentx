@@ -124,17 +124,25 @@ export class Organization {
   }
 
   /**
-   * Phase 3 — capability check (scaffold). Returns true when the
-   * agent is registered in the org chart at all. Per-project /
-   * per-intent restrictions need typed capabilities (Phase 5);
-   * until then this is a permissive default that matches the legacy
-   * any-registered-agent-can-handle-anything behavior.
+   * Phase 3 — capability check (scaffold). Returns true when:
+   *   - The org chart is empty (`employees.size === 0`) — this is the
+   *     permissive default for partially-configured `business` blocks
+   *     that populate `projects[].pm` for the PM gate but haven't
+   *     filled in `orgChart`. Without this fallback, enabling business
+   *     with an empty orgChart would block every dispatch.
+   *   - OR the agent is registered in the org chart.
+   *
+   * Per-project / per-intent restrictions need typed capabilities
+   * (Phase 5); until then this is a permissive-when-unconfigured
+   * default that matches the legacy any-registered-agent-can-handle-
+   * anything behavior.
    *
    * The `decideAndCommit` PM gate will call this *after* the PM
    * approves — the PM provides the project-scoped check, this
    * provides the agent-existence check.
    */
   canHandle(agentId: string, _project: string | null | undefined, _intent: string | null | undefined): boolean {
+    if (this.employees.size === 0) return true
     return this.employees.has(agentId)
   }
 }

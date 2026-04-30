@@ -96,6 +96,24 @@ describe("Organization.canHandle", () => {
     const org = new Organization(makeConfig())
     expect(org.canHandle("mtgl-v2", null, null)).toBe(true)
   })
+
+  it("returns true for ANY agent when orgChart is empty (permissive-when-unconfigured)", () => {
+    // Real-world case: operator enables business + populates
+    // projects[].pm to use the PM gate, but hasn't filled orgChart.
+    // Without this fallback, every dispatch would halt with
+    // "agent X cannot handle" since employees.has() returns false
+    // for every agent. Empty-chart = permissive sidesteps that.
+    const cfg = businessConfigSchema.parse({
+      enabled: true, timezone: "UTC",
+      mainChannel: { channel: "telegram", chatId: "1" },
+      workSource: { type: "backlog", path: ".agentx/backlog.md" },
+      // roles + orgChart left as defaults (empty)
+      projects: [{ id: "p1", pm: "pm-x" }], // still allowed even though pm-x isn't in orgChart? No — let's drop it; the constructor validates pm presence
+    })
+    const org = new Organization({ ...cfg, projects: [] })
+    expect(org.canHandle("any-agent", "any/project", "any.intent")).toBe(true)
+    expect(org.canHandle("ghost", null, null)).toBe(true)
+  })
 })
 
 describe("Organization — backwards compatibility", () => {
