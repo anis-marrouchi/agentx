@@ -500,6 +500,14 @@ export const daemonConfigSchema = z.object({
     maxClaudeCodeDispatchesPerHour: z.number().int().min(1).max(10_000).default(80),
     maxClaudeCodeDispatchesPer5h: z.number().int().min(1).max(50_000).default(180),
   }).default({}),
+  /** Move B — JS/TS plugins. Each entry is an installed npm package name
+   *  (e.g. `agentx-plugin-mattermost` or `@noqta/plugin-mattermost`); the
+   *  loader does a dynamic `import(name)` at boot, validates the manifest,
+   *  and calls plugin.setup(ctx). Plugins can register channel adapters
+   *  via ctx.addChannel() and subscribe to bus events via ctx.on(). Empty
+   *  default — installs that don't list plugins are unaffected. Plugin
+   *  authoring guide: docs/architecture/plugins.md. */
+  plugins: z.array(z.string()).default([]),
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>
