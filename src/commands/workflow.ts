@@ -2,7 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { resolve } from "path"
 import { existsSync, readFileSync } from "fs"
-import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflow, WorkflowYamlError } from "@/workflows"
+import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflow, renderWorkflowYaml, WorkflowYamlError } from "@/workflows"
 
 // --- agentx workflow — declarative state machines for channel events ---
 //
@@ -40,14 +40,27 @@ workflow
 workflow
   .command("show <id>")
   .description("show a single workflow's full definition")
-  .action((id: string) => {
+  .option("--format <fmt>", "output format: json (default) or yaml", "json")
+  .action((id: string, opts: { format: string }) => {
     const store = new WorkflowStore()
     const wf = store.get(id)
     if (!wf) {
       console.log(chalk.yellow(`  no workflow matches "${id}". Try: agentx workflow list`))
       process.exit(1)
     }
-    console.log(JSON.stringify(wf, null, 2))
+    const fmt = opts.format.toLowerCase()
+    if (fmt === "yaml" || fmt === "yml") {
+      // Render the canonical (post-desugar) shape, not the original
+      // YAML source — `flow:` sugar is a one-way authoring affordance,
+      // not a round-trip format. The output validates clean when
+      // copied back to a new file.
+      console.log(renderWorkflowYaml(wf))
+    } else if (fmt === "json") {
+      console.log(JSON.stringify(wf, null, 2))
+    } else {
+      console.log(chalk.red(`  unknown format "${opts.format}" — use json or yaml`))
+      process.exit(1)
+    }
   })
 
 workflow

@@ -378,6 +378,54 @@ title: Missing required nodes
 })
 
 import { lintWorkflow as lintWorkflowFromTest } from "../src/workflows/types"
+import { renderWorkflowYaml } from "../src/workflows/yaml"
+
+describe("CLI: agentx workflow show --format yaml", () => {
+  it("rendered YAML round-trips back to identical normalized JSON", () => {
+    // Start from a canonical JSON-shaped workflow.
+    const canonical = workflowSchema.parse({
+      id: "rt",
+      version: 2,
+      title: "Round trip",
+      nodes: [
+        { id: "start", type: "trigger.manual", config: {} },
+        { id: "act",   type: "agent",          config: { agentId: "a", prompt: "x" } },
+        { id: "done",  type: "end",            config: {} },
+      ],
+      edges: [
+        { from: "start", to: "act" },
+        { from: "act",   to: "done" },
+      ],
+    })
+    const yamlText = renderWorkflowYaml(canonical)
+    expect(yamlText).toMatch(/id: rt/)
+    expect(yamlText).toMatch(/title: Round trip/)
+    // Parse it back and run through the schema again.
+    const reparsedRaw = parseYamlWorkflow(yamlText)
+    const reparsed = workflowSchema.parse(reparsedRaw)
+    expect(reparsed).toEqual(canonical)
+  })
+
+  it("rendered YAML includes edges with all fields", () => {
+    const wf = workflowSchema.parse({
+      id: "ports",
+      version: 2,
+      title: "Ports",
+      nodes: [
+        { id: "start", type: "trigger.manual", config: {} },
+        { id: "route", type: "branch", config: { cases: [], default: "done" } },
+        { id: "done",  type: "end", config: {} },
+      ],
+      edges: [
+        { from: "start", to: "route" },
+        { from: "route", to: "done", fromPort: "default", label: "fallback" },
+      ],
+    })
+    const yamlText = renderWorkflowYaml(wf)
+    expect(yamlText).toMatch(/fromPort: default/)
+    expect(yamlText).toMatch(/label: fallback/)
+  })
+})
 
 describe("end-to-end: YAML → desugar → workflowSchema", () => {
   it("flow-shorthand YAML validates against the canonical schema", () => {
