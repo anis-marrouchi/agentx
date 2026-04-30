@@ -227,6 +227,46 @@ export class IntentLedger {
       )
   }
 
+  /**
+   * Close every dispatched-and-unresolved decision by writing a
+   * resolution with status "canceled" and the given reason. Used at
+   * daemon startup to clean up dispatches whose agent execution died
+   * with the previous process — without this, those decisions sit
+   * in-flight forever and Inv-ActiveTaskSafety blocks legitimate
+   * re-dispatches on the same slot.
+   *
+   * Returns the count of resolutions written. Idempotent — repeated
+   * calls write 0 the second time because nothing remains in-flight.
+   */
+  cleanupOrphanedDispatches(reason: string = "daemon-restart", now: () => number = Date.now): number {
+    const rows = this.db
+      .prepare(`
+        SELECT d.event_id, d.decided_by FROM intent_decisions d
+        LEFT JOIN intent_resolutions r
+          ON r.decision_event_id = d.event_id AND r.decision_decided_by = d.decided_by
+        WHERE d.outcome = 'dispatched' AND r.decision_event_id IS NULL
+      `)
+      .all() as Array<{ event_id: string; decided_by: string }>
+    const ts = now()
+    let count = 0
+    for (const row of rows) {
+      try {
+        this.recordResolution({
+          decisionEventId: row.event_id,
+          decisionDecidedBy: row.decided_by,
+          resolvedAt: ts,
+          status: "canceled",
+          durationMs: null,
+          resultSummary: reason,
+        })
+        count++
+      } catch {
+        // Skip — resolution already exists (race with normal completion).
+      }
+    }
+    return count
+  }
+
   /** Returns the resolution for a decision, or null if still in-flight. */
   getResolution(eventId: string, decidedBy: string): IntentResolution | null {
     const row = this.db

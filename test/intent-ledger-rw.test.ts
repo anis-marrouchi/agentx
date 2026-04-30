@@ -232,6 +232,46 @@ describe("IntentLedger.recordResolution", () => {
     expect(() => ledger.recordResolution({ ...res, status: "failed" })).toThrow(/UNIQUE|PRIMARY/i)
   })
 
+  it("cleanupOrphanedDispatches closes every dispatched-and-unresolved decision with status='canceled'", () => {
+    const e1 = ledger.recordEvent(eventInput({ sourceEventId: "e1", subject: "s1" }))
+    const e2 = ledger.recordEvent(eventInput({ sourceEventId: "e2", subject: "s2" }))
+    const e3 = ledger.recordEvent(eventInput({ sourceEventId: "e3", subject: "s3" }))
+    ledger.recordDecision({
+      eventId: e1.id, decidedAt: 1, decidedBy: "router",
+      agentId: "x", outcome: "dispatched", reason: null,
+    })
+    ledger.recordDecision({
+      eventId: e2.id, decidedAt: 2, decidedBy: "router",
+      agentId: "y", outcome: "dispatched", reason: null,
+    })
+    // e3 is halted — should NOT be touched by cleanup (only dispatched
+    // unresolved decisions get closed).
+    ledger.recordDecision({
+      eventId: e3.id, decidedAt: 3, decidedBy: "router",
+      agentId: null, outcome: "halted", reason: "no match",
+    })
+    // e2 already has a resolution — also untouched.
+    ledger.recordResolution({
+      decisionEventId: e2.id, decisionDecidedBy: "router",
+      resolvedAt: 100, status: "completed", durationMs: 50, resultSummary: "ok",
+    })
+
+    const closed = ledger.cleanupOrphanedDispatches("daemon-restart", () => 999)
+    expect(closed).toBe(1) // only e1's dispatch was orphaned
+
+    // Verify the resolution looks right.
+    const r = ledger.getResolution(e1.id, "router")
+    expect(r?.status).toBe("canceled")
+    expect(r?.resultSummary).toBe("daemon-restart")
+    expect(r?.resolvedAt).toBe(999)
+
+    // Idempotent — a second call writes 0.
+    expect(ledger.cleanupOrphanedDispatches()).toBe(0)
+
+    // After cleanup, getActiveDecisionForSubject for e1's slot returns null.
+    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "s1")).toBeNull()
+  })
+
   it("getResolution returns null while in-flight and the row once resolved", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({

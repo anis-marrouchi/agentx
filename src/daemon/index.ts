@@ -232,6 +232,28 @@ export class AgentXDaemon {
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
 
+    // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
+    //    the previous process. Their agents died with the previous
+    //    daemon; without writing a "canceled" resolution they'd block
+    //    Inv-ActiveTaskSafety on the same (project, subject) forever.
+    //    Only fires when the ledger is reachable (some source has
+    //    mode != "off"); the IntentLedger singleton is lazy and
+    //    construction would otherwise be skipped entirely under
+    //    deploy-default mode=off.
+    try {
+      const anySourceActive = (
+        ["telegram", "slack", "whatsapp", "discord", "gitlab", "github", "workflow", "cron", "mesh"] as const
+      ).some((s) => getLedgerMode(s) !== "off")
+      if (anySourceActive) {
+        const closed = getDefaultLedger().cleanupOrphanedDispatches("daemon-restart")
+        if (closed > 0) {
+          this.log(`  Ledger: cleaned up ${closed} orphaned in-flight dispatch(es) from previous process`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Ledger orphan-cleanup failed: ${e?.message ?? e}`)
+    }
+
     // 1. Start channels
     await this.startChannels()
 
