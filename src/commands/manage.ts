@@ -1376,3 +1376,77 @@ configCmd
       }
     }
   })
+
+// --- agentx config governance ---
+//
+// Read-only view of the governance flags that admit dispatches into the
+// ledger pipeline. v1 is read-only because every flag is read once at
+// daemon startup; flipping in place would require restart anyway. The
+// view answers the question operators ask first when something doesn't
+// dispatch: "is governance even enabled, and at what level?"
+
+configCmd
+  .command("governance")
+  .description("show resolved governance flags (read-only; flags read once at startup)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .option("--json", "emit JSON")
+  .action((opts) => {
+    let businessEnabled = false
+    let projectsCount = 0
+    let configError: string | undefined
+    try {
+      const cfg = loadDaemonConfig(opts.config)
+      businessEnabled = !!(cfg as any).business?.enabled
+      projectsCount = ((cfg as any).business?.projects ?? []).length
+    } catch (e: any) {
+      configError = e?.message ?? String(e)
+    }
+
+    const ledgerMode = (process.env.INTENT_LEDGER_MODE || "off").toLowerCase()
+    const pmGateRaw = (process.env.INTENT_PM_GATE_ENABLED || "").toLowerCase()
+    const pmGate = pmGateRaw === "true" || pmGateRaw === "1" || pmGateRaw === "yes"
+    const pmGateActive = pmGate && businessEnabled
+    const ledgerValid = ["off", "shadow", "authoritative"].includes(ledgerMode)
+
+    if (opts.json) {
+      console.log(JSON.stringify({
+        ledger: { mode: ledgerMode, valid: ledgerValid },
+        pmGate: {
+          envSet: pmGate,
+          businessEnabled,
+          active: pmGateActive,
+          projects: projectsCount,
+        },
+        configError,
+      }, null, 2))
+      return
+    }
+
+    console.log()
+    console.log(chalk.bold("  Governance flags"))
+    console.log()
+    if (configError) {
+      console.log(chalk.yellow(`  Note: agentx.json couldn't be loaded — ${configError}`))
+      console.log()
+    }
+
+    const modeColor = ledgerMode === "authoritative" ? chalk.green
+      : ledgerMode === "shadow" ? chalk.cyan
+      : ledgerMode === "off" ? chalk.dim
+      : chalk.red
+    console.log(`  INTENT_LEDGER_MODE        ${modeColor(ledgerMode)}${ledgerValid ? "" : chalk.red(" (invalid — must be off|shadow|authoritative)")}`)
+
+    const pmStatus = pmGateActive
+      ? chalk.green("active")
+      : pmGate
+        ? chalk.yellow("env=true but business.enabled=false → inactive")
+        : chalk.dim("disabled")
+    console.log(`  INTENT_PM_GATE_ENABLED    ${pmStatus}`)
+    console.log(chalk.dim(`    business.enabled        ${businessEnabled ? chalk.green("true") : chalk.dim("false")}`))
+    console.log(chalk.dim(`    business.projects[]     ${projectsCount}`))
+
+    console.log()
+    console.log(chalk.dim("  These flags are read once at daemon startup. Flipping requires a restart."))
+    console.log(chalk.dim("  See: https://github.com/anis-marrouchi/agentx/blob/master/docs/architecture/research-rescue-plan.md"))
+    console.log()
+  })
