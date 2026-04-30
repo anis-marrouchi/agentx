@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "
 import { resolve, join } from "path"
 import type { BusinessConfig, BusinessWorkSource } from "./config"
 import type { DaemonConfig } from "@/daemon/config"
+import { BacklogStore } from "./backlog-store"
+import { syncBacklogItemToSource, resolveAssigneesForSource, type BacklogPatch } from "./backlog-sync"
 
 // --- Work pool: pluggable source of tasks for the business layer ---
 
@@ -149,23 +151,44 @@ function parseDuration(s: string): number {
 export class BacklogWorkSource implements WorkSource {
   type = "backlog"
   capabilities: WorkSourceCapabilities = {
-    listAll: false, create: false, transition: false, labels: false, search: false,
+    listAll: true, create: false, transition: false, labels: true, search: false,
   }
-  constructor(private path: string) {}
+  private store: BacklogStore
 
-  private read(): string[] {
+  constructor(
+    private path: string,
+    private daemon?: DaemonConfig,
+    private log: (...args: unknown[]) => void = () => {},
+  ) {
+    this.store = new BacklogStore(this.path)
+  }
+
+  /** Expose the store so the CLI and sync-back can share state. */
+  getStore(): BacklogStore {
+    return this.store
+  }
+
+  private readMd(): string[] {
     const full = resolve(process.cwd(), this.path)
     if (!existsSync(full)) return []
     return readFileSync(full, "utf-8").split("\n")
   }
 
-  private write(lines: string[]): void {
+  private writeMd(lines: string[]): void {
     const full = resolve(process.cwd(), this.path)
     writeFileSync(full, lines.join("\n"))
   }
 
   async listOpen(agentId: string): Promise<WorkItem[]> {
-    const lines = this.read()
+    if (this.store.exists()) {
+      const items = this.store.list().filter((it) =>
+        it.status !== "done" &&
+        (!it.assignee || it.assignee.toLowerCase() === agentId.toLowerCase()),
+      )
+      return items.map((it) => this.toWorkItem(it))
+    }
+    // Legacy markdown-checklist fallback (unchanged behavior).
+    const lines = this.readMd()
     const items: WorkItem[] = []
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(CHECK_RE)
@@ -188,14 +211,65 @@ export class BacklogWorkSource implements WorkSource {
     return items
   }
 
-  async claim(_agentId: string, _itemId: string): Promise<void> {
-    // No-op: backlog file has no "claimed" state distinct from "assigned".
+  async listAll(_opts: ListAllOpts = {}): Promise<WorkItem[]> {
+    if (!this.store.exists()) return []
+    return this.store.list().map((it) => this.toWorkItem(it))
+  }
+
+  async claim(agentId: string, itemId: string): Promise<void> {
+    if (!this.store.exists()) return
+    const item = this.store.findById(itemId)
+    if (!item) return
+    const updated = this.store.update(itemId, {
+      assignee: item.assignee || agentId,
+      status: "doing",
+    })
+    if (updated.source && this.daemon) {
+      const usernames = resolveAssigneesForSource([updated.assignee || agentId], updated.source, this.daemon)
+      void syncBacklogItemToSource(updated, {
+        assigneeUsernames: usernames,
+        addLabels: ["Doing"],
+        removeLabels: ["To Do"],
+      }, this.daemon, this.log).catch((e) =>
+        this.log(`[backlog-sync] claim failed for ${itemId}: ${e?.message ?? e}`),
+      )
+    }
   }
 
   async report(itemId: string, update: WorkReport): Promise<void> {
+    // Structured store path.
+    if (this.store.exists() && this.store.findById(itemId)) {
+      const patch: Partial<import("./backlog-store").BacklogItem> = {}
+      if (update.status === "done") patch.status = "done"
+      else if (update.status === "blocked") {
+        patch.status = "blocked"
+        patch.blocker = update.blocker || update.note || undefined
+      } else if (update.status === "in-progress") patch.status = "doing"
+      if (update.timeSeconds) patch.estimatedSeconds = update.timeSeconds
+      const item = this.store.update(itemId, patch)
+
+      if (item.source && this.daemon) {
+        const sourcePatch: BacklogPatch = {}
+        if (update.status === "done") {
+          sourcePatch.addLabels = ["Done"]
+          sourcePatch.removeLabels = ["Doing"]
+        } else if (update.status === "blocked") {
+          sourcePatch.addLabels = ["Blocked"]
+        }
+        if (update.note) sourcePatch.note = update.note
+        if (Object.keys(sourcePatch).length) {
+          void syncBacklogItemToSource(item, sourcePatch, this.daemon, this.log).catch((e) =>
+            this.log(`[backlog-sync] report failed for ${itemId}: ${e?.message ?? e}`),
+          )
+        }
+      }
+      return
+    }
+
+    // Legacy markdown path (line-number ids).
     if (!itemId.startsWith("backlog:")) throw new Error(`not a backlog id: ${itemId}`)
     const lineNo = parseInt(itemId.slice("backlog:".length), 10)
-    const lines = this.read()
+    const lines = this.readMd()
     const line = lines[lineNo]
     if (!line) throw new Error(`backlog line ${lineNo} missing`)
     const m = line.match(CHECK_RE)
@@ -212,7 +286,25 @@ export class BacklogWorkSource implements WorkSource {
     } else if (update.note) {
       lines.splice(lineNo + 1, 0, `    <!-- ${update.note.replace(/-->/g, "— >")} -->`)
     }
-    this.write(lines)
+    this.writeMd(lines)
+  }
+
+  private toWorkItem(it: import("./backlog-store").BacklogItem): WorkItem {
+    const stage = ({ todo: "todo", doing: "doing", blocked: "onhold", done: "done" } as const)[it.status]
+    return {
+      id: it.id,
+      title: it.title,
+      description: it.description,
+      assignee: it.assignee,
+      estimatedSeconds: it.estimatedSeconds,
+      priority: it.priority,
+      labels: it.labels,
+      stage,
+      milestone: it.milestone,
+      url: it.source?.url,
+      updatedAt: it.updatedAt,
+      state: it.status === "done" ? "closed" : "opened",
+    }
   }
 }
 
@@ -734,7 +826,7 @@ export function createWorkSource(
   const ws: BusinessWorkSource = business.workSource
   switch (ws.type) {
     case "backlog":
-      return new BacklogWorkSource(ws.path)
+      return new BacklogWorkSource(ws.path, daemon, log)
 
     case "wiki":
       return new WikiWorkSource(ws.path, ws.glob)
