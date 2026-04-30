@@ -23,7 +23,17 @@ describe("openDb + migrations", () => {
   it("creates the file and migrates to the latest schema", () => {
     const db = openTmp()
     expect(db).not.toBeNull()
-    expect(getSchemaVersion(db!)).toBeGreaterThanOrEqual(4)
+    expect(getSchemaVersion(db!)).toBeGreaterThanOrEqual(5)
+  })
+
+  it("has tier-2 columns on usage_daily after v5", () => {
+    const db = openTmp()!
+    const cols = (db.prepare("PRAGMA table_info(usage_daily)").all() as { name: string }[])
+      .map(r => r.name)
+    expect(cols).toContain("tier2_input_tokens")
+    expect(cols).toContain("tier2_output_tokens")
+    expect(cols).toContain("tier2_cache_read_tokens")
+    expect(cols).toContain("tier2_cache_create_tokens")
   })
 
   it("is idempotent — second open returns the same instance", () => {

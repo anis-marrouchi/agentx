@@ -167,6 +167,20 @@ function runMigrations(db: Database.Database): void {
           ON route_traces(channel, at);
       `,
     },
+    {
+      // Move A — tier-2 token buckets on usage_daily. The per-request tier
+      // split is decided at record time by TokenTracker (it's a function of
+      // the live cumulative input, not the row totals), so we cannot
+      // reconstruct it on read. Adding columns is additive and idempotent;
+      // existing rows default to 0.
+      v: 5,
+      sql: `
+        ALTER TABLE usage_daily ADD COLUMN tier2_input_tokens        INTEGER DEFAULT 0;
+        ALTER TABLE usage_daily ADD COLUMN tier2_output_tokens       INTEGER DEFAULT 0;
+        ALTER TABLE usage_daily ADD COLUMN tier2_cache_read_tokens   INTEGER DEFAULT 0;
+        ALTER TABLE usage_daily ADD COLUMN tier2_cache_create_tokens INTEGER DEFAULT 0;
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {
