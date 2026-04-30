@@ -19,6 +19,7 @@ import { actor, role } from "@/commands/actor"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
+import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { getPackageInfo } from "@/utils/get-package-info"
 
@@ -70,6 +71,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(serve)
     .addCommand(bench)
     .addCommand(whatsapp)
+    .addCommand(pluginCmd)
     .addCommand(completion)
 
   return program
