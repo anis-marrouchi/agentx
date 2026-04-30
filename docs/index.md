@@ -86,6 +86,33 @@ features:
     details: Expose specific agents over HTTP with scoped, revocable bearer tokens. Read-only, write, per-agent, or mesh-peer scopes — no RBAC needed for a small team.
     link: /reference/tokens
     linkText: Tokens & public access
+  - icon:
+      src: /icons/list-checks.svg
+      alt: Backlog and workflows
+      width: 32
+      height: 32
+    title: Backlog import + workflow YAML
+    details: Pull GitLab/GitHub issues into a structured backlog with two-way sync, or compose declarative state machines in YAML. Both feed the same work-pool and ledger.
+    link: /playbooks/backlog-import-sync
+    linkText: Import + sync upstream
+  - icon:
+      src: /icons/git-branch.svg
+      alt: Plugins
+      width: 32
+      height: 32
+    title: Extend with plugins
+    details: Drop-in npm packages register custom channel adapters and bus subscribers. Mattermost, X, your internal tools — write a plugin once, ship it to every operator.
+    link: /playbooks/plugin-authoring
+    linkText: Author a plugin
+  - icon:
+      src: /icons/scale.svg
+      alt: Org-chart governance
+      width: 32
+      height: 32
+    title: Audit every dispatch
+    details: Append-only ledger captures every routing decision; replay reproduces them deterministically. PM-gating, typed capabilities, and delegation-depth caps make admission control auditable.
+    link: /playbooks/pm-gating
+    linkText: Enable governance
 ---
 
 ## Three ways to start
@@ -97,6 +124,10 @@ features:
 **I want a scheduled job that pings me when it fails.** → [Journey 2 — Scheduled reports](/journey/02-scheduled-reports)
 
 **I'm running a services team and want AI agents with KPIs.** → [Journey 7 — Business layer](/journey/07-business-layer)
+
+**I want to drive AgentX from Cursor / Claude Code.** → [Journey 10 — MCP server](/journey/10-mcp-server)
+
+**I'm putting agents into production.** → [Journey 11 — Production hardening](/journey/11-production-hardening)
 
 </div>
 
