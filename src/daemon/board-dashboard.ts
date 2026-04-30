@@ -18,6 +18,8 @@ import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
+import { renderInboxPage } from "./ui/pages/inbox"
+import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
@@ -152,6 +154,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/workflows/editor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/inbox") {
+    const actor = url.searchParams.get("actor") || undefined
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderInboxPage({ actor }))
+    return
+  }
+  if (method === "GET" && path === "/processes") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderProcessesPage({}))
+    return
+  }
+  // /graph is the canonical doc path; the page itself lives at /admin/graph.
+  if (method === "GET" && path === "/graph") {
+    res.writeHead(302, { Location: "/admin/graph" })
+    res.end()
     return
   }
 
