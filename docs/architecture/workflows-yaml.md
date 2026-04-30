@@ -86,9 +86,9 @@ no array can imply. Use explicit `nodes` + `edges` for them.
   comments help reviewers, and `flow:` cuts the edge bookkeeping for
   linear paths.
 
-You can switch a workflow from JSON to YAML by `agentx workflow show
-<id> --format yaml > .agentx/workflows/<id>.yaml` and then deleting
-the JSON. The reverse works too.
+You can switch a workflow from JSON to YAML by running
+`agentx workflow show <id> --format yaml > .agentx/workflows/<id>.yaml`
+and then deleting the JSON. The reverse works too.
 
 ## What happens when both `<id>.json` and `<id>.yaml` exist?
 
@@ -121,6 +121,8 @@ Pick one authoring loop per workflow.
 
 ## Templating
 
+<div v-pre>
+
 YAML inherits the same `{{nodeId.path}}` templating that JSON uses
 (`src/workflows/template.ts`). There is no JSONata, no expressions,
 no function calls — by design. Template rules:
@@ -131,6 +133,8 @@ no function calls — by design. Template rules:
 - Missing paths render as empty strings (no literal `{{...}}` left
   in output)
 - Objects render as `JSON.stringify`, scalars as `String(value)`
+
+</div>
 
 ## Gotchas
 
@@ -145,8 +149,8 @@ no function calls — by design. Template rules:
   documents cause a parse error in v1. One workflow per file.
 - **Tabs vs spaces.** YAML rejects tabs in indentation. Stick to
   spaces (most editors do this automatically).
-- **`flow:` is a one-way authoring affordance.** `agentx workflow
-  show <id> --format yaml` always renders the canonical
+- **`flow:` is a one-way authoring affordance.**
+  `agentx workflow show <id> --format yaml` always renders the canonical
   `nodes` + `edges` form, never the original `flow:`. Round-tripping
   is JSON-equivalent, not YAML-equivalent.
 

@@ -89,6 +89,8 @@ A `userTask` node's `assignTo` takes either an actor ref (`actor:alice`) or a ro
 
 ## Templates
 
+<div v-pre>
+
 Every node's config and every prompt can interpolate `{{nodeId.path}}` against the run context. Examples:
 
 - `{{trigger.values.amount}}` — value of a field submitted at the trigger form
@@ -97,6 +99,8 @@ Every node's config and every prompt can interpolate `{{nodeId.path}}` against t
 - `{{env.GITLAB_TOKEN}}` — env var (must be in the workflow's `envAllow`)
 
 Template rendering respects the allowlist on `workflow.envAllow` for any `{{env.*}}` lookups, so secrets never leak through unreviewed templates.
+
+</div>
 
 ## Sub-process composition
 

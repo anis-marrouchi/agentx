@@ -12,6 +12,8 @@ agentx <command> --help
 
 The CLI binary is `agentx`. The npm package is `agentix-cli`.
 
+Sections below follow the order commands are registered in `src/program.ts`, so future audits diff cleanly against the source.
+
 ## Completion
 
 Shell autocomplete is shipped with the global install. After `npm install -g agentix-cli`:
@@ -29,6 +31,16 @@ Default install paths:
 - fish: `~/.config/fish/completions/agentx.fish` (auto-loaded)
 
 The script is generated from the live commander tree, so it stays in sync with the CLI automatically when you upgrade.
+
+## Setup
+
+Boots the dashboard (if it's not already running) and opens the web setup wizard in the browser. Safe on a fresh machine — fabricates a minimal config so the wizard can guide you to a real one.
+
+| Command | Description |
+|---|---|
+| `agentx setup [--port <n>] [--no-open]` | Open the wizard at `http://127.0.0.1:<port>/setup`. Reads `dashboard.port` from `agentx.json` if present, else 4202. |
+
+If `agentx.json` is missing, the wizard creates one. If it exists, the wizard extends it (channels, agents, tokens — no destructive writes).
 
 ## Init
 
@@ -61,7 +73,7 @@ The script is generated from the live commander tree, so it stays in sync with t
 | Command | Description |
 |---|---|
 | `agentx channel list` (alias `ls`) | List channels + agent bindings |
-| `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) — legacy path |
+| `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) — legacy path; prefer `connect` |
 
 ## Connect (pairing flows, recommended)
 
@@ -74,6 +86,19 @@ Browser-cooperating pairing flows that replace manual token + chatId + `.env` ed
 | `agentx connect mesh join <link>` | Accept a mesh invite. Writes shared `MESH_TOKEN` + adds peer. Health-checks the peer's agent card |
 
 WhatsApp / Discord / GitLab flows are on the roadmap.
+
+## Crons (low-level, raw syntax)
+
+The escape hatch for ops who want to write cron syntax directly. Same underlying storage as `schedule`.
+
+| Command | Description |
+|---|---|
+| `agentx cron list` (alias `ls`) | List cron jobs (schedule, agent, status) |
+| `agentx cron add` | Add a cron interactively (raw cron syntax) |
+| `agentx cron enable <id>` | Enable a cron job |
+| `agentx cron disable <id>` | Disable a cron job |
+
+Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["disable"]`, or any combination. See [Journey 2](/journey/02-scheduled-reports).
 
 ## Schedule (natural-language cron)
 
@@ -96,19 +121,6 @@ Recommended for most users — takes English phrases and generates the cron entr
 
 Every change validates against the Zod schema and signals `POST /reload` to the running daemon — crons hot-swap without restart.
 
-## Crons (low-level, raw syntax)
-
-The escape hatch for ops who want to write cron syntax directly. Same underlying storage as `schedule`.
-
-| Command | Description |
-|---|---|
-| `agentx cron list` (alias `ls`) | List cron jobs (schedule, agent, status) |
-| `agentx cron add` | Add a cron interactively (raw cron syntax) |
-| `agentx cron enable <id>` | Enable a cron job |
-| `agentx cron disable <id>` | Disable a cron job |
-
-Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["disable"]`, or any combination. See [Journey 2](/journey/02-scheduled-reports).
-
 ## Mesh (A2A)
 
 | Command | Description |
@@ -116,6 +128,126 @@ Notes on `onError`: either a string or an array — `["log"]`, `["notify"]`, `["
 | `agentx mesh list` (alias `ls`) | List peers + health status |
 | `agentx mesh add` | Add a peer interactively (name, URL, token) |
 | `agentx mesh remove <name>` (alias `rm`) | Remove a peer |
+
+## Skills
+
+| Command | Description |
+|---|---|
+| `agentx skill list` (alias `ls`) | List skills per agent |
+| `agentx skill add <skillPath> [--agent <id>] [--all]` | Add a skill to one or all agents |
+| `agentx skill sync <name> [--agent <id>] [--all-workspaces] [--dry-run]` | Redeploy a skill's `SKILL.md` from source to agent workspaces. Default: only workspaces that already have the skill; `--all-workspaces` to also seed missing. Prevents stale skill copies when the source is updated. |
+| `agentx skill audit [--cwd <c>] [--references-cwd <c>] [--workspace <id> \| --all-workspaces] [--json]` | Lint installed skills against the references registry. Flags unresolved reference IDs, missing delegate skills, raw infrastructure facts that should cite a reference. Exits non-zero on any FAILING — wire into CI. |
+
+## References
+
+The deterministic references registry — operator-private facts (SSH targets, GitLab projects, paths, contacts) that skills cite by `id`. The loader resolves these into a `[Verified References]` block injected into agent context when `contextReferences: true`.
+
+| Command | Description |
+|---|---|
+| `agentx references init <namespace> [--cwd <c>] [--force]` | Scaffold `.agentx/references/<namespace>/` from the example template. Creates one YAML per kind (ssh, gitlab, paths, contacts) plus a recipes entry |
+| `agentx references discover <namespace> [--cwd <c>] [--references-cwd <c>] [--from <skills>] [--gitlab-host <url>] [--write] [--force]` | Scan installed skills and propose YAML for SSH targets, GitLab projects, paths, contacts. Dry-run by default — pass `--write` to commit. Best-effort guesses are tagged `needs-review` |
+| `agentx references list [--cwd <c>] [--json]` (alias `ls`) | List every loaded reference (debug) |
+
+After editing the YAML, set `contextReferences: true` on the relevant agents in `agentx.json` and run `agentx skill audit` to verify resolution.
+
+## Database (read-only)
+
+Operational SQLite store at `.agentx/db.sqlite` (the daemon's bus subscribers persist here). Named queries plus a raw-SQL escape hatch.
+
+| Command | Description |
+|---|---|
+| `agentx db tasks [--cwd <c>] [-a <agent>] [-d <YYYY-MM-DD>] [-s ok\|error] [-n <limit>] [--json]` | Recent task_history rows |
+| `agentx db rotations [--cwd <c>] [-a <agent>] [-r stale\|tier-2\|max-turns] [-n <limit>] [--summary] [--json]` | Session rotation events; `--summary` groups by agent + reason |
+| `agentx db usage [--cwd <c>] [-d <YYYY-MM-DD>] [-a <agent>] [-n <limit>] [--json]` | Daily token usage rollup per agent |
+| `agentx db routes [--cwd <c>] [-n <limit>] [--json]` | Inbound message routing decisions |
+| `agentx db errors [--cwd <c>] [-a <agent>] [-n <limit>] [--json]` | Recent task errors with truncated stack |
+| `agentx db tables` | List all tables in the store |
+| `agentx db query <sql> [--cwd <c>] [--json]` | Run an arbitrary SELECT — read-only escape hatch |
+
+## Ledger
+
+Read-only triage CLI for the intent ledger at `.agentx/intent/ledger.sqlite` — the canonical record of every dispatch decision (Phase 1 of the [architectural rescue](/architecture/research-rescue-plan)). Use `--path` to point at an alternate ledger (e.g. one rsync'd from a remote node).
+
+| Command | Description |
+|---|---|
+| `agentx ledger stats [--cwd <c>] [--path <p>] [--since <duration>] [--json]` | Overview: events by source, decisions by outcome, divergences, in-flight count |
+| `agentx ledger divergences [-s <source>] [--since <d>] [-n <limit>] [--json]` | Recent divergence rows (newest first) — where the legacy router and the ledger disagreed |
+| `agentx ledger active [-s <source>] [-n <limit>] [--json]` | Currently in-flight dispatched decisions (no resolution recorded yet) |
+| `agentx ledger events [-s <source>] [-p <project>] [--since <d>] [-n <limit>] [--json]` | Recent intent events (newest first) |
+| `agentx ledger replay [--since <d>] [-s <source>] [-n <limit>] [--json]` | Replay events onto a fresh tmp ledger and report any divergences. Phase 7 regression check in CLI form |
+
+`--since` accepts durations like `1h`, `30m`, `7d`, or an absolute ms epoch. Mode is controlled by `INTENT_LEDGER_MODE` (`off`, `shadow`, `authoritative`) — default `shadow` once the daemon is running with the feature on.
+
+## Backlog
+
+Manage the structured backlog at `.agentx/backlog.json` used when `business.workSource.type=backlog`. Items can be imported from GitLab/GitHub with a stable source link; mutations push back upstream automatically.
+
+| Command | Description |
+|---|---|
+| `agentx backlog list [--status <s>] [--assignee <agent>] [--source <gitlab\|github\|manual>] [-c <config>]` | List backlog items |
+| `agentx backlog claim <id> <agent>` | Assign an item to an agent + set status=doing. If the item has a source, pushes assignee + Doing/-To Do labels upstream |
+| `agentx backlog done <id> [--note <text>] [--close]` | Mark done. If linked, adds Done/removes Doing upstream; `--close` also closes the source issue |
+| `agentx backlog remove <id>` | Remove from the local backlog (does NOT touch upstream) |
+| `agentx backlog import [--source <gitlab\|github>] [--project <p>] [--assignee <agent>]` | Interactive importer: pick source → project → autocomplete-multiselect open issues → write items linked to upstream |
+
+Item IDs follow `gitlab:<group/project>:<iid>`, `github:<owner/repo>:<n>`, or `manual:<uuid>`. The store regenerates `.agentx/backlog.md` on every save for human-readable diffing.
+
+## Hooks
+
+| Command | Description |
+|---|---|
+| `agentx hook add <agent>` | Add a hook interactively to the agent's workspace `.claude/settings.json` (event, type, matcher regex) |
+
+Supported events: `PreToolUse`, `PostToolUse`, `SessionStart`, `Notification`, `Stop`. Types: `command` (shell), `http` (POST). See [Journey 5](/journey/05-hooks-webhooks).
+
+## Migration
+
+| Command | Description |
+|---|---|
+| `agentx migrate openclaw [<configPath>] [--dry-run]` | Import agents, channels, crons, Telegram accounts from an OpenClaw config. With no path, looks for `~/.openclaw/config.yaml` |
+
+See [Migrate from OpenClaw](/migration/from-openclaw).
+
+## Config
+
+| Command | Description |
+|---|---|
+| `agentx config check` | Validate `agentx.json` + workspaces |
+| `agentx config show` | Print the resolved configuration (env expanded) |
+| `agentx config get <path> [--raw] [--json]` | Read a value by dot-path (e.g. `agents.devops.model`). `--raw` preserves `${VAR}` tokens; `--json` emits machine-readable output |
+| `agentx config set <path> <value> [--string] [--dry-run]` | Write a value by dot-path. Parses as JSON first (numbers, booleans, arrays, objects), falls back to string. `"a,b,c"` shorthand produces an array. `--string` forces literal string. Validates against the Zod schema and hot-reloads the daemon |
+| `agentx config unset <path> [--dry-run]` | Remove a value by dot-path (no-op on missing paths). Hot-reloads on success |
+
+**Examples:**
+
+```bash
+agentx config get crons.wiki-absorb-midnight.onError --json
+agentx config set crons.wiki-absorb-midnight.timeout 900
+agentx config set crons.wiki-absorb-midnight.onError "notify,disable"
+agentx config set agents.devops.model claude-sonnet-4-6
+agentx config unset crons.test-cron
+```
+
+## Usage & tokens
+
+| Command | Description |
+|---|---|
+| `agentx usage today` | Token usage summary — last 7 days, per agent |
+| `agentx usage serve [--port <n>]` | Web dashboard |
+| `agentx usage report [--days <n>]` | Full session analysis across Claude Code JSONL |
+
+## Board
+
+The Kanban dashboard. Visualizes work across configured `boards[]` (GitLab projects + label filters) and renders the live activity feed when no boards are configured.
+
+| Command | Description |
+|---|---|
+| `agentx board serve [--port <n>] [--bind <host>]` | Start the dashboard server (default port 4202). Live view always available; boards only when `boards[]` is configured. Falls back to setup-only mode if `agentx.json` is missing |
+| `agentx board list` | List configured boards (id, source projects, primary label, time-range window) |
+| `agentx board add <id> --name <n> --projects <a,b> [--label <L>] [--days <n>] [--closed-days <n>]` | Append a GitLab board to `agentx.json`. Validates + auto-reloads the dashboard |
+| `agentx board remove <id>` (alias `rm`) | Drop a board by id |
+
+See [Boards & Kanban](/reference/boards) for the column model and label conventions.
 
 ## Wiki
 
@@ -158,18 +290,31 @@ Per-message intent classification into a fixed-axis taxonomy. Typed paths feed L
 
 | Command | Description |
 |---|---|
-| `agentx graph review [--agent <id>] [--max N] [--dry-run]` | Triage pending classifications via the configured review agent. The reviewer may call `wiki query` for context before deciding approve / reject / skip. On approve, new nodes commit + the fingerprint cache populates so subsequent similar messages skip the LLM. |
+| `agentx graph review [--agent <id>] [--max N] [--dry-run] [--daemon-url <url>]` | Triage pending classifications via the configured review agent. The reviewer may call `wiki query` for context before deciding approve / reject / skip. On approve, new nodes commit + the fingerprint cache populates so subsequent similar messages skip the LLM. |
+| `agentx graph pull --from <peer-url> [--token <t>] [--limit <n>] [--dry-run]` | Cross-mesh sync: pull schema + nodes + approved classifications from a peer's graph. Conflicts skip silently; local always wins. Schema divergence is reported, not reconciled |
+
+## Procedure (SOPs)
+
+Procedures are versioned standard-operating-procedures stored as markdown with frontmatter. They give agents a stable place to reference "how we do X here" without hardcoding it into prompts. v1 ships list/add/show; delta extraction (per-run one-liner deltas against the SOP) is on the roadmap.
+
+| Command | Description |
+|---|---|
+| `agentx procedure list` | List procedures with their trigger line |
+| `agentx procedure add --id <id> --title <t> --trigger <t> [--input <i>...] [--expected <t>] [--kpi <k>...] [--owner <id>] [--tag <t>...] [--related <r>...] [--steps <md>]` | Add a new procedure (non-interactive; pass all fields as flags) |
+| `agentx procedure show <id>` | Print one procedure (frontmatter + body) |
+
+Files land at `.agentx/procedures/<id>.md`. See [Journey 9](/journey/09-deterministic-services) for the calling pattern.
 
 ## Workflow (declarative state machines)
 
-Declarative state machines that bind channel events to agents — at state X, run agent Y with prompt Z; transition to state W when condition C holds. Definitions live as one JSON file per workflow under `.agentx/workflows/`; runs persist as append-only jsonl on the home node. See [reference/workflows](/reference/workflows) for the full model + authoring guide.
+Declarative state machines that bind channel events to agents — at state X, run agent Y with prompt Z; transition to state W when condition C holds. Definitions live as one JSON or YAML file per workflow under `.agentx/workflows/`; runs persist as append-only jsonl on the home node. See [reference/workflows](/reference/workflows) for the full model + authoring guide.
 
 ### Read
 
 | Command | Description |
 |---|---|
 | `agentx workflow list` | List every workflow in `.agentx/workflows/` with id, title, trigger source, and state chain. |
-| `agentx workflow show <id>` | Print the full JSON for one workflow. |
+| `agentx workflow show <id> [--format yaml\|json]` | Print the full definition for one workflow. |
 | `agentx workflow validate [file]` | Schema + lint check. With no arg, validates every file in the workflows dir. With a file path, validates that one. Exits non-zero on any failure — CI-friendly. |
 
 ### Runs (read)
@@ -215,46 +360,52 @@ Actors are humans who can be assigned to `userTask` nodes; roles are groups of a
 
 `userTask` nodes set `assignTo: "actor:alice"` or `assignTo: "role:reviewers"`. Forms render in the assignee's preferred channel (Telegram/WhatsApp/Slack one-click URLs, or the `/inbox` web UI).
 
-## Skills
+## Tokens
+
+Scoped API tokens for external access (mesh peers, integrations, dashboards). The full secret is shown only once at creation — the store keeps a hashed prefix for identification.
 
 | Command | Description |
 |---|---|
-| `agentx skill list` (alias `ls`) | List skills per agent |
-| `agentx skill add <skillPath> [--agent <id>] [--all]` | Add a skill to one or all agents |
-| `agentx skill sync <name> [--agent <id>] [--all-workspaces] [--dry-run]` | Redeploy a skill's `SKILL.md` from source to agent workspaces. Default: only workspaces that already have the skill; `--all-workspaces` to also seed missing. Prevents stale skill copies when the source is updated. |
+| `agentx token create --name <n> [--scope <s,s,s>] [--expires <days>]` | Mint a new token. Default scope `dashboard:read`. Prints the secret once |
+| `agentx token list` (alias `ls`) | List all issued tokens with status (active / revoked / expired) |
+| `agentx token revoke <id>` | Immediately invalidate a token by id |
 
-## Hooks
+Use the secret via `Authorization: Bearer <secret>`. Common scopes: `dashboard:read`, `dashboard:admin`, `mesh:peer`, `task:write`.
 
-| Command | Description |
-|---|---|
-| `agentx hook add <agent>` | Add a hook interactively (event, type, matcher regex) |
-
-Supported events (PreToolUse, PostToolUse, SessionStart, Notification, Stop); types: `command`, `http`.
-
-## Usage & tokens
+## Doctor
 
 | Command | Description |
 |---|---|
-| `agentx usage today` | Token usage summary — last 7 days, per agent |
-| `agentx usage serve [--port <n>]` | Web dashboard |
-| `agentx usage report [--days <n>]` | Full session analysis across Claude Code JSONL |
+| `agentx doctor [-c <config>]` | Run health checks: config validates, workspaces exist, channel tokens resolve, providers reachable, mesh peers respond. See [Doctor](/reference/doctor) |
 
-## WhatsApp
+## Serve (MCP server)
 
-Ingest WhatsApp contact/group data into the wiki as a data source. See [WhatsApp as a data source](/reference/whatsapp-ingest) for the architecture + walkthrough.
+Run agentx as an MCP server so AI editors (Claude Code, Cursor, Windsurf) can call agentx as a set of tools.
 
 | Command | Description |
 |---|---|
-| `agentx whatsapp list-chats [--format json] [--group] [--dm]` | List cached chats (no live fetch) |
-| `agentx whatsapp list-contacts [--format json]` | List cached contacts |
-| `agentx whatsapp ingest-all [--dry-run] [--agent <id>] [--force]` | Run a sweep against the configured allowlist |
-| `agentx whatsapp ingest-contact <jid> [--dry-run] [--agent <id>]` | Ingest one contact (bypasses allowlist) |
-| `agentx whatsapp ingest-chat <jid> [--dry-run] [--messages] [--agent <id>]` | Ingest one DM or group (bypasses allowlist). `--messages` forces a message-window pull for this pass |
-| `agentx whatsapp status` | Connection + cache counts |
+| `agentx serve [--stdio] [-c/--cwd <path>]` | Run on stdio (default — JSON-RPC on stdin/stdout, logs go to stderr) |
 
-::: warning
-`ingest-*` commands issue real reads against the Baileys session on the running daemon. They use a central throttle, but aggressive runs on a personal account still risk a ban — start with `--dry-run` and one allowlisted contact.
-:::
+**Wire into Claude Code:**
+
+```bash
+claude mcp add agentx -- npx agentx serve --stdio
+```
+
+**Wire into Cursor / generic MCP config:**
+
+```json
+{
+  "mcpServers": {
+    "agentx": {
+      "command": "npx",
+      "args": ["agentx", "serve", "--stdio"]
+    }
+  }
+}
+```
+
+See [Journey 10](/journey/10-mcp-server) for the full setup including auth and tool surface.
 
 ## Bench
 
@@ -279,41 +430,50 @@ agentx bench context \
 `bench context` issues real agent tasks. Agents with `permissionMode: "bypassPermissions"` (e.g. `devops-agent`, `coder-agent`) will execute command-shaped messages for real — e.g. "restart daemond" will actually restart the daemon. Use observation-only phrasing for bench scenarios.
 :::
 
-## Config
+## WhatsApp
+
+Ingest WhatsApp contact/group data into the wiki as a data source. See [WhatsApp as a data source](/reference/whatsapp-ingest) for the architecture + walkthrough.
 
 | Command | Description |
 |---|---|
-| `agentx config check` | Validate `agentx.json` + workspaces |
-| `agentx config show` | Print the resolved configuration (env expanded) |
-| `agentx config get <path> [--raw] [--json]` | Read a value by dot-path (e.g. `agents.devops.model`). `--raw` preserves `${VAR}` tokens; `--json` emits machine-readable output |
-| `agentx config set <path> <value> [--string] [--dry-run]` | Write a value by dot-path. Parses as JSON first (numbers, booleans, arrays, objects), falls back to string. `"a,b,c"` shorthand produces an array. `--string` forces literal string. Validates against the Zod schema and hot-reloads the daemon |
-| `agentx config unset <path> [--dry-run]` | Remove a value by dot-path (no-op on missing paths). Hot-reloads on success |
+| `agentx whatsapp list-chats [--format json] [--group] [--dm]` | List cached chats (no live fetch) |
+| `agentx whatsapp list-contacts [--format json]` | List cached contacts |
+| `agentx whatsapp ingest-all [--dry-run] [--agent <id>] [--force]` | Run a sweep against the configured allowlist |
+| `agentx whatsapp ingest-contact <jid> [--dry-run] [--agent <id>]` | Ingest one contact (bypasses allowlist) |
+| `agentx whatsapp ingest-chat <jid> [--dry-run] [--messages] [--agent <id>]` | Ingest one DM or group (bypasses allowlist). `--messages` forces a message-window pull for this pass |
+| `agentx whatsapp status` | Connection + cache counts |
 
-**Examples:**
+::: warning
+`ingest-*` commands issue real reads against the Baileys session on the running daemon. They use a central throttle, but aggressive runs on a personal account still risk a ban — start with `--dry-run` and one allowlisted contact.
+:::
 
-```bash
-agentx config get crons.wiki-absorb-midnight.onError --json
-agentx config set crons.wiki-absorb-midnight.timeout 900
-agentx config set crons.wiki-absorb-midnight.onError "notify,disable"
-agentx config set agents.devops.model claude-sonnet-4-6
-agentx config unset crons.test-cron
-```
+## Plugins
 
-## Migration
+Plugins are npm packages exporting a default `AgentXPlugin` (`{manifest, setup}`). The daemon loads them on startup; this CLI lets you list and validate them without booting.
 
 | Command | Description |
 |---|---|
-| `agentx migrate openclaw [<configPath>] [--dry-run]` | Import agents, channels, crons, Telegram accounts from an OpenClaw config |
+| `agentx plugin list` (default) | List packages configured in `agentx.json` `plugins: []` |
+| `agentx plugin doctor` | Dynamic-import each configured plugin and report manifest validation status. Exits non-zero on any failure — wire into CI |
 
-See [Migrate from OpenClaw](/migration/from-openclaw).
+A plugin is an npm package with a default export `{manifest, setup}`; the `setup` callback registers channel adapters, hooks, or other extension points with the daemon.
 
 ## Environment variables
 
 | Variable | Purpose |
 |---|---|
 | `AGENTX_DEBUG` | Comma-separated categories: `webhook`, `agent`, `channel`, `cron`, `mesh`, `context`, `memory`, `config`, `all` |
+| `AGENTX_AUTO_RELOAD` | Set to `false` to disable the `fs.watch` on `agentx.json` that auto-fires `POST /reload` |
+| `AGENTX_DAEMON_URL` | Override the daemon URL CLI subcommands hit (default `http://127.0.0.1:18800`). Useful for cross-host control |
+| `AGENTX_USAGE_URL`, `AGENTX_WIKI_URL`, `AGENTX_INBOX_BASE_URL` | Override service URLs surfaced in agent-rendered links |
+| `AGENTX_PLANNER_DEBUG` | Verbose logging for the context-strategy planner. See [Context strategies](/reference/context-strategies) |
+| `INTENT_LEDGER_MODE` | Ledger write mode: `off`, `shadow`, `authoritative`. Default `off` |
+| `INTENT_PM_GATE_ENABLED` | When `true` and `business.enabled=true`, dispatches go through the org-chart PM gate before reaching agents |
+| `WF_NODE_ID` | Override the node id used for workflow run-store reads/writes (defaults to `"local"`) |
 | `MESH_TOKEN` | Shared secret between mesh peers |
 | `TG_*_BOT_TOKEN` | Convention for Telegram bot tokens (`${TG_FOO_BOT_TOKEN}` in `agentx.json`) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Provider credentials referenced from `${ANTHROPIC_API_KEY}` etc. in `agentx.json`'s `providers.*.apiKey` |
+| `ANTHROPIC_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code subscription auth (used by tier `claude-code` agents); resolved via `agentx token create` flow or imported from your local Claude Code session |
 
 ## HTTP endpoints
 
