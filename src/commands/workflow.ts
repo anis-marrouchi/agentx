@@ -2,7 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { resolve } from "path"
 import { existsSync, readFileSync } from "fs"
-import { RunStore, WorkflowStore, lintWorkflow, workflowSchema } from "@/workflows"
+import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflow, WorkflowYamlError } from "@/workflows"
 
 // --- agentx workflow — declarative state machines for channel events ---
 //
@@ -61,14 +61,17 @@ workflow
         process.exit(1)
       }
       try {
-        const raw = JSON.parse(readFileSync(path, "utf-8"))
+        const text = readFileSync(path, "utf-8")
+        const isYaml = /\.(ya?ml)$/i.test(file)
+        // YAML files run through the desugar pass before Zod sees them.
+        // JSON keeps its existing JSON.parse path.
+        const raw = isYaml ? parseYamlWorkflow(text, { filePath: file }) : JSON.parse(text)
         const parsed = workflowSchema.safeParse(raw)
         if (!parsed.success) {
           console.log(chalk.red(`  ✗ ${path}`))
           for (const i of parsed.error.issues) console.log(`    ${i.path.join(".") || "<root>"}: ${i.message}`)
           process.exit(1)
         }
-        // Lint-level checks
         const lintIssues = lintWorkflow(parsed.data)
         if (lintIssues.length) {
           console.log(chalk.yellow(`  ! ${path} (lint)`))
@@ -77,7 +80,10 @@ workflow
         }
         console.log(chalk.green(`  ✓ ${parsed.data.id} — valid`))
       } catch (e: any) {
-        console.log(chalk.red(`  parse error: ${e.message}`))
+        // WorkflowYamlError already carries a friendly message with the
+        // file path + line/col when js-yaml provided it; print as-is.
+        const msg = e instanceof WorkflowYamlError ? e.message : `parse error: ${e?.message ?? e}`
+        console.log(chalk.red(`  ${msg}`))
         process.exit(1)
       }
       return

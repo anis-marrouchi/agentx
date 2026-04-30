@@ -329,6 +329,56 @@ flow: [a, ghost]
   })
 })
 
+// ---------------------------------------------------------------------
+// Move C — CLI YAML validate (commit 3 of 5)
+// ---------------------------------------------------------------------
+
+describe("CLI: agentx workflow validate <file.yaml>", () => {
+  // The CLI's validate-single-file path is a thin wrapper around
+  // parseYamlWorkflow + workflowSchema.safeParse + lintWorkflow. We
+  // exercise the same composition directly here — testing the
+  // process-level behaviour requires spawning a child and the wiring
+  // change is straight pass-through.
+
+  it("a valid YAML file produces a successful parse + lint", () => {
+    const text = VALID_FLOW_YAML
+    const raw = parseYamlWorkflow(text, { filePath: "ok.yaml" })
+    const parsed = workflowSchema.safeParse(raw)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      const issues = lintWorkflowFromTest(parsed.data)
+      expect(issues).toEqual([])
+    }
+  })
+
+  it("a YAML file with malformed flow surfaces a parser error before Zod runs", () => {
+    const broken = `id: x
+version: 2
+title: Broken
+nodes:
+  - { id: a, type: trigger.manual, config: {} }
+flow: [a, ghost]
+`
+    expect(() => parseYamlWorkflow(broken, { filePath: "broken.yaml" })).toThrow(/flow references unknown node "ghost"/)
+  })
+
+  it("a YAML file failing schema validation produces structured Zod issues", () => {
+    const bad = `id: foo
+version: 2
+title: Missing required nodes
+`
+    const raw = parseYamlWorkflow(bad, { filePath: "bad.yaml" })
+    const parsed = workflowSchema.safeParse(raw)
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      // expected: nodes is required (non-empty)
+      expect(parsed.error.issues.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+import { lintWorkflow as lintWorkflowFromTest } from "../src/workflows/types"
+
 describe("end-to-end: YAML → desugar → workflowSchema", () => {
   it("flow-shorthand YAML validates against the canonical schema", () => {
     const text = `
