@@ -1,7 +1,7 @@
 import type { IntentLedger } from "../ledger"
 import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
-import type { IntentEventInput } from "../types"
+import type { IntentDecision, IntentEventInput } from "../types"
 
 // Source adapter — workflow dispatcher. Phase 1 commit 6.c.
 //
@@ -110,10 +110,11 @@ export function recordWorkflowDispatch(
   rawJson: string,
   result: WorkflowLegacyResult,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildWorkflowEventInput(proj, rawJson, now)
   const legacyOutcome = workflowResultToLegacyOutcome(result)
   const policy = buildWorkflowPolicyFromLegacy(legacyOutcome)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "workflow", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }

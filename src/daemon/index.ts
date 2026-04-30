@@ -2435,9 +2435,10 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // each call records as its own event row (no per-event idempotency).
           // Wrapped in try/catch so a ledger failure cannot break /task —
           // legacy stays authoritative until 1c per-source promotion lands.
+          let intentRef: { eventId: string; decidedBy: string } | undefined
           if (getLedgerMode("mesh") !== "off") {
             try {
-              recordMeshDispatch(
+              const decision = recordMeshDispatch(
                 getDefaultLedger(),
                 {
                   agentId,
@@ -2451,6 +2452,9 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
                   reason: senderAgentId ? `from ${senderAgentId}` : null,
                 },
               )
+              if (decision.outcome === "dispatched") {
+                intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+              }
             } catch (e: any) {
               this.log(`[ledger] mesh /task agent="${agentId}" record failed: ${e?.message ?? e}`)
             }
@@ -2465,6 +2469,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               message: body.message as string,
               context: body.context as any,
               contextStrategy,
+              intentRef,
             },
             () => {},
           )

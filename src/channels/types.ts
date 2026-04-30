@@ -52,6 +52,19 @@ export interface IncomingMessage {
    *  can re-enter the engine with `kind: agentResult` transitions. Opaque
    *  everywhere outside src/workflows/. */
   workflowRunId?: string
+  /** Phase 1 / 6 — when set, identifies the intent-ledger decision row
+   *  this message corresponds to. The agent registry calls
+   *  `ledger.recordResolution(...)` when the dispatched task completes,
+   *  so Inv-ActiveTaskSafety's "decision in flight" check can clear.
+   *  Set by the channel adapter (gitlab, router) right after
+   *  recordGitLabTargetDispatch / recordRouterDispatch returns the
+   *  decision row. Undefined when the dispatch was deduped/halted by
+   *  the ledger (no resolution to write) or when the source is in
+   *  mode=off. */
+  intentRef?: {
+    eventId: string
+    decidedBy: string
+  }
 }
 
 export interface OutgoingMessage {

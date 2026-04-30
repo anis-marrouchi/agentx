@@ -1,7 +1,7 @@
 import type { IntentLedger } from "../ledger"
 import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
-import type { IntentEventInput } from "../types"
+import type { IntentDecision, IntentEventInput } from "../types"
 
 // Source adapter — gitlab issue + merge_request dispatch paths. Phase 1
 // commits 6.a (handleIssue) and 6.a-extended (handleMR).
@@ -98,11 +98,12 @@ export function recordGitLabTargetDispatch(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildGitLabTargetEventInput(event, target, rawJson, now)
   const policy = buildGitLabDispatchPolicy(event.entityKind, target)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +170,12 @@ export function recordGitLabNoteDispatch(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildNoteEventInput(proj, rawJson, now)
   const policy = buildNoteDispatchPolicy(legacyOutcome.agentId)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +200,7 @@ export function recordGitLabIssueLevelDecision(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput: IntentEventInput = {
     ts: now(),
     source: "gitlab",
@@ -220,4 +222,5 @@ export function recordGitLabIssueLevelDecision(
   }
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "gitlab", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }

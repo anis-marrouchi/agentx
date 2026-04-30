@@ -552,6 +552,29 @@ export class GitLabAdapter implements ChannelAdapter {
     const noteClean = stripAgentxMarkers(note)
     const imageAttachment = await this.downloadNoteImages(noteClean, project, agentToken || this.config.token)
 
+    // Phase 1 / 6 — record the note dispatch first so we can tag the
+    // IncomingMessage with intentRef for resolution writes.
+    let intentRef: { eventId: string; decidedBy: string } | undefined
+    if (getLedgerMode("gitlab") !== "off") {
+      try {
+        const decision = recordGitLabNoteDispatch(
+          getDefaultLedger(),
+          {
+            noteId, project,
+            noteableType, noteableIid,
+            mentions: mentions.map((m) => m.toLowerCase()),
+          },
+          JSON.stringify(event),
+          { agentId: targetAgentId, outcome: "dispatched", reason: `mention:${mentions[0]}` },
+        )
+        if (decision.outcome === "dispatched") {
+          intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+        }
+      } catch (e: any) {
+        this.log(`[ledger] gitlab note ${noteId} record failed: ${e?.message ?? e}`)
+      }
+    }
+
     const incoming: IncomingMessage = {
       id: String(event.object_attributes.id),
       channel: "gitlab",
@@ -568,29 +591,12 @@ export class GitLabAdapter implements ChannelAdapter {
       preferNode: agentMapping?.node,
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
       media: imageAttachment,
+      intentRef,
     }
 
     this.handler(incoming).catch((e) => {
       this.log(`Error handling note: ${e.message}`)
     })
-
-    // Phase 1 commit 6.a-extended (note path): record the dispatch.
-    if (getLedgerMode("gitlab") !== "off") {
-      try {
-        recordGitLabNoteDispatch(
-          getDefaultLedger(),
-          {
-            noteId, project,
-            noteableType, noteableIid,
-            mentions: mentions.map((m) => m.toLowerCase()),
-          },
-          JSON.stringify(event),
-          { agentId: targetAgentId, outcome: "dispatched", reason: `mention:${mentions[0]}` },
-        )
-      } catch (e: any) {
-        this.log(`[ledger] gitlab note ${noteId} record failed: ${e?.message ?? e}`)
-      }
-    }
 
     res.writeHead(200)
     res.end("ok")
@@ -677,6 +683,28 @@ export class GitLabAdapter implements ChannelAdapter {
         const chatId = `${project}:issue:${attrs.iid}`
         const channelMeta = await this.getChannelMeta(chatId)
         const id = `issue-hook-${attrs.iid}-${d.agentId}${d.assignee ? `-${d.assignee}` : ""}-${attrs.action}`
+
+        // Phase 1 / 6 — record per-target hook dispatch first so we can
+        // tag the IncomingMessage with intentRef for resolution writes
+        // when the agent task completes.
+        let intentRef: { eventId: string; decidedBy: string } | undefined
+        if (issueProjectionForHook) {
+          try {
+            const decision = recordGitLabTargetDispatch(
+              getDefaultLedger(),
+              issueProjectionForHook,
+              { agentId: d.agentId, trigger: "hook-dispatch" },
+              eventJsonForHook,
+              { agentId: d.agentId, outcome: "dispatched", reason: d.preferNode ? `hook (node:${d.preferNode})` : "hook" },
+            )
+            if (decision.outcome === "dispatched") {
+              intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+            }
+          } catch (e: any) {
+            this.log(`[ledger] gitlab issue #${attrs.iid} hook-dispatch ${d.agentId} record failed: ${e?.message ?? e}`)
+          }
+        }
+
         const incoming: IncomingMessage = {
           id,
           channel: "gitlab",
@@ -695,26 +723,10 @@ export class GitLabAdapter implements ChannelAdapter {
             ...channelMeta,
             issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
+          intentRef,
         }
         this.log(`Issue #${attrs.iid} hook dispatch -> agent "${d.agentId}"${d.preferNode || mapping?.node ? ` (remote: ${d.preferNode || mapping?.node})` : ""}`)
         this.handler(incoming).catch((e) => this.log(`Error handling hook dispatch: ${e.message}`))
-
-        // Phase 1 commit 6.a-extended (hook path): record per-target dispatch
-        // with trigger="hook-dispatch" so chain readouts distinguish from
-        // computeIssueTargets paths.
-        if (issueProjectionForHook) {
-          try {
-            recordGitLabTargetDispatch(
-              getDefaultLedger(),
-              issueProjectionForHook,
-              { agentId: d.agentId, trigger: "hook-dispatch" },
-              eventJsonForHook,
-              { agentId: d.agentId, outcome: "dispatched", reason: d.preferNode ? `hook (node:${d.preferNode})` : "hook" },
-            )
-          } catch (e: any) {
-            this.log(`[ledger] gitlab issue #${attrs.iid} hook-dispatch ${d.agentId} record failed: ${e?.message ?? e}`)
-          }
-        }
       }
       res.writeHead(200); res.end("ok"); return
     }
@@ -790,6 +802,33 @@ export class GitLabAdapter implements ChannelAdapter {
       const dedupKey = `${project}:issue:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
       const wasDuplicate = this.isDispatchedRecently(dedupKey)
 
+      // Phase 1 / 6 — record ledger first so we have the decision row
+      // for the IncomingMessage's intentRef. Wrapped in try/catch because
+      // a ledger failure must never break dispatch — legacy stays
+      // authoritative until 1c.
+      let intentRef: { eventId: string; decidedBy: string } | undefined
+      if (issueProjection) {
+        try {
+          const decision = recordGitLabTargetDispatch(
+            getDefaultLedger(),
+            issueProjection,
+            t,
+            eventJson,
+            wasDuplicate
+              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
+              : { agentId: t.agentId, outcome: "dispatched" },
+          )
+          // Tag the IncomingMessage only when ledger ALSO decided
+          // "dispatched" (active-task safety could still force "deduped").
+          // Resolution writes only make sense for dispatched decisions.
+          if (decision.outcome === "dispatched") {
+            intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+          }
+        } catch (e: any) {
+          this.log(`[ledger] gitlab issue #${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
+        }
+      }
+
       if (wasDuplicate) {
         this.log(`Issue #${attrs.iid}: skip duplicate dispatch ${dedupKey}`)
       } else {
@@ -824,29 +863,11 @@ export class GitLabAdapter implements ChannelAdapter {
             ...channelMeta,
             issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
+          intentRef,
         }
 
         this.log(`Issue #${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
         this.handler(incoming).catch((e) => this.log(`Error handling issue: ${e.message}`))
-      }
-
-      // Ledger observes regardless of legacy outcome. Wrapped in try/catch
-      // because a ledger failure must never break the gitlab dispatch path —
-      // legacy is still authoritative until the 1c per-source promotion lands.
-      if (issueProjection) {
-        try {
-          recordGitLabTargetDispatch(
-            getDefaultLedger(),
-            issueProjection,
-            t,
-            eventJson,
-            wasDuplicate
-              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
-              : { agentId: t.agentId, outcome: "dispatched" },
-          )
-        } catch (e: any) {
-          this.log(`[ledger] gitlab issue #${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
-        }
       }
     }
 
@@ -973,6 +994,26 @@ export class GitLabAdapter implements ChannelAdapter {
       const dedupKey = `${project}:merge_request:${attrs.iid}:${t.agentId}:${attrs.action}:${t.trigger}`
       const wasDuplicate = this.isDispatchedRecently(dedupKey)
 
+      let intentRef: { eventId: string; decidedBy: string } | undefined
+      if (mrProjection) {
+        try {
+          const decision = recordGitLabTargetDispatch(
+            getDefaultLedger(),
+            mrProjection,
+            t,
+            eventJson,
+            wasDuplicate
+              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
+              : { agentId: t.agentId, outcome: "dispatched" },
+          )
+          if (decision.outcome === "dispatched") {
+            intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+          }
+        } catch (e: any) {
+          this.log(`[ledger] gitlab MR !${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
+        }
+      }
+
       if (!wasDuplicate) {
         this.markDispatched(dedupKey)
 
@@ -1003,26 +1044,11 @@ export class GitLabAdapter implements ChannelAdapter {
             ...channelMeta,
             issue: { type: "merge_request", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
+          intentRef,
         }
 
         this.log(`MR !${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
         this.handler(incoming).catch((e) => this.log(`Error handling MR: ${e.message}`))
-      }
-
-      if (mrProjection) {
-        try {
-          recordGitLabTargetDispatch(
-            getDefaultLedger(),
-            mrProjection,
-            t,
-            eventJson,
-            wasDuplicate
-              ? { agentId: null, outcome: "deduped", reason: "isDispatchedRecently" }
-              : { agentId: t.agentId, outcome: "dispatched" },
-          )
-        } catch (e: any) {
-          this.log(`[ledger] gitlab MR !${attrs.iid} target ${t.agentId} record failed: ${e?.message ?? e}`)
-        }
       }
     }
 

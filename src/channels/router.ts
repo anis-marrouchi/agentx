@@ -434,15 +434,30 @@ export class MessageRouter {
    * Wrapped in try/catch so a ledger failure can never break message
    * routing — legacy is still authoritative until the 1c per-source
    * promotion.
+   *
+   * Returns the recorded decision when ledger fired (and outcome was
+   * "dispatched"), so the caller can tag the IncomingMessage with
+   * `intentRef` for resolution-on-completion. Returns undefined when
+   * the source is off, the channel isn't supported, ledger threw, or
+   * the ledger's own decision was non-dispatched (deduped/halted —
+   * no resolution to write).
    */
-  private recordRouterDecisionInLedger(msg: IncomingMessage, legacy: LegacyOutcome): void {
+  private recordRouterDecisionInLedger(
+    msg: IncomingMessage,
+    legacy: LegacyOutcome,
+  ): { eventId: string; decidedBy: string } | undefined {
     const source = routerChannelToSource(msg.channel)
-    if (!source) return // channel not router-supported (e.g., gitlab routes itself)
-    if (getLedgerMode(source) === "off") return
+    if (!source) return undefined // channel not router-supported (e.g., gitlab routes itself)
+    if (getLedgerMode(source) === "off") return undefined
     try {
-      recordRouterDispatch(getDefaultLedger(), msg, source, JSON.stringify(msg), legacy)
+      const decision = recordRouterDispatch(getDefaultLedger(), msg, source, JSON.stringify(msg), legacy)
+      if (decision.outcome === "dispatched") {
+        return { eventId: decision.eventId, decidedBy: decision.decidedBy }
+      }
+      return undefined
     } catch (e: any) {
       this.log(`[ledger] router ${msg.channel}/${msg.id} record failed: ${e?.message ?? e}`)
+      return undefined
     }
   }
 
@@ -567,9 +582,16 @@ export class MessageRouter {
     }
 
     this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`, result.decidingStage, agentId)
-    this.recordRouterDecisionInLedger(msg, {
+    const intentRef = this.recordRouterDecisionInLedger(msg, {
       agentId, outcome: "dispatched", reason: result.decidingStage,
     })
+    // Phase 1 / 6 — tag the IncomingMessage so registry.execute records
+    // a ledger resolution when the agent task completes. Only set when
+    // the ledger's own decision was "dispatched" (recordRouterDecision...
+    // already filtered the deduped/halted cases).
+    if (intentRef) {
+      msg = { ...msg, intentRef }
+    }
 
     const chatId = msg.group?.id || msg.sender.id
 
@@ -717,6 +739,10 @@ export class MessageRouter {
       {
         message: messageWithContext,
         agentId,
+        // Phase 1 / 6 — propagate the intent-ledger reference so the
+        // registry can record a resolution on completion. Set by
+        // gitlab/router shadow-mode wiring; absent under mode=off.
+        intentRef: msg.intentRef,
         context: {
           channel: msg.channel,
           sender: msg.sender.name,

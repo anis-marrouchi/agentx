@@ -41,6 +41,19 @@ export interface AgentTask {
    *  supports it. Workflow `agent` nodes pass this through from their
    *  config.timeoutMinutes. */
   timeoutMinutes?: number
+  /** Phase 1 / 6 — when set, identifies the intent-ledger decision row
+   *  this task corresponds to. The registry records a resolution row
+   *  on this decision when the task completes (success / error / mesh-
+   *  fallback). Active-task safety in `decideAndCommit` reads
+   *  intent_resolutions to clear in-flight slots; without resolution
+   *  writes, every dispatched decision sits in-flight forever and
+   *  Inv-ActiveTaskSafety becomes vacuously over-aggressive. Channel
+   *  adapters (gitlab, router) set this when their record*Dispatch
+   *  helper returns a dispatched decision. */
+  intentRef?: {
+    eventId: string
+    decidedBy: string
+  }
   context?: {
     channel?: string
     sender?: string

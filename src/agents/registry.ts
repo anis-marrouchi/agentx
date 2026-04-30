@@ -445,8 +445,55 @@ export class AgentRegistry {
 
   /**
    * Execute a task on an agent. Respects maxConcurrent limit.
+   *
+   * Wraps `executeInternal` to record an intent-ledger resolution
+   * after completion when `task.intentRef` is set. The resolution
+   * write clears the dispatched-but-unresolved slot in
+   * `intent_decisions` so Inv-ActiveTaskSafety lookups stop blocking
+   * subsequent dispatches to the same (project, subject). Without
+   * this, every dispatched decision sits in-flight forever and the
+   * active-task check becomes vacuously over-aggressive.
    */
   async execute(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
+    const startedAt = Date.now()
+    let response: AgentResponse
+    try {
+      response = await this.executeInternal(task, onDelta)
+    } catch (e: any) {
+      response = { content: "", error: e?.message ?? String(e) }
+    }
+    if (task.intentRef) {
+      try {
+        const { getDefaultLedger } = await import("@/intent/instance")
+        const status = response.error
+          ? (/timed out|timeout/i.test(response.error) ? "timed-out" : "failed")
+          : "completed"
+        getDefaultLedger().recordResolution({
+          decisionEventId: task.intentRef.eventId,
+          decisionDecidedBy: task.intentRef.decidedBy,
+          resolvedAt: Date.now(),
+          status: status as "completed" | "failed" | "timed-out",
+          durationMs: Date.now() - startedAt,
+          resultSummary: response.error
+            ? response.error.slice(0, 200)
+            : (response.content?.slice(0, 200) ?? null),
+        })
+      } catch (e: any) {
+        // Non-fatal — the ledger may have a unique-constraint hit (the
+        // resolution was already recorded by a prior call), or the
+        // ledger may have failed entirely. Either way, agent dispatch
+        // must succeed regardless.
+        this.log(`[ledger] resolution write failed for ${task.intentRef.eventId}/${task.intentRef.decidedBy}: ${e?.message ?? e}`)
+      }
+    }
+    return response
+  }
+
+  /**
+   * Internal dispatcher — the real body. See `execute` for the public
+   * wrapper that adds intent-ledger resolution recording.
+   */
+  private async executeInternal(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
     const state = this.agents.get(task.agentId)
     if (!state) {
       // Mesh fallback: the agent isn't local but a healthy peer may host

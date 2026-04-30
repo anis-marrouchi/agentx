@@ -1,7 +1,7 @@
 import type { IntentLedger } from "../ledger"
 import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
-import type { IntentEventInput, IntentSource } from "../types"
+import type { IntentDecision, IntentEventInput, IntentSource } from "../types"
 
 // Source adapter — channel-router. Phase 1 commit 6.b (telegram) +
 // 6.b-extended (slack, whatsapp, discord).
@@ -118,9 +118,10 @@ export function recordRouterDispatch(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildRouterEventInput(msg, source, rawJson, now)
   const policy = buildRouterPolicyFromLegacy(legacyOutcome)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, source, ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }

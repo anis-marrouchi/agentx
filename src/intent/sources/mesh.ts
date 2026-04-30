@@ -1,7 +1,7 @@
 import type { IntentLedger } from "../ledger"
 import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
-import type { IntentEventInput } from "../types"
+import type { IntentDecision, IntentEventInput } from "../types"
 
 // Source adapter — A2A mesh inbound /task receiver. Phase 1 commit 6.d.
 //
@@ -73,9 +73,10 @@ export function recordMeshDispatch(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildMeshEventInput(proj, rawJson, now)
   const policy = buildMeshPolicyFromLegacy(legacyOutcome)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "mesh", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }

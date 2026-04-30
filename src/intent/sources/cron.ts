@@ -1,7 +1,7 @@
 import type { IntentLedger } from "../ledger"
 import { decideAndCommit, type DispatchPolicy } from "../decide"
 import { reportDivergence, type LegacyOutcome } from "../divergence"
-import type { IntentEventInput } from "../types"
+import type { IntentDecision, IntentEventInput } from "../types"
 
 // Source adapter — cron scheduler. Phase 1 commit 6.d.
 //
@@ -60,9 +60,10 @@ export function recordCronDispatch(
   rawJson: string,
   legacyOutcome: LegacyOutcome,
   now: () => number = Date.now,
-): void {
+): IntentDecision {
   const eventInput = buildCronEventInput(proj, rawJson, now)
   const policy = buildCronPolicyFromLegacy(legacyOutcome)
   const ledgerDecision = decideAndCommit(ledger, eventInput, policy, now)
   reportDivergence(ledger, "cron", ledgerDecision, legacyOutcome, now)
+  return ledgerDecision
 }

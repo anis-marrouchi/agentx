@@ -257,17 +257,22 @@ export class CronScheduler {
     agentId: string,
     firedAt: Date,
     legacy: import("@/intent/divergence").LegacyOutcome,
-  ): void {
-    if (getLedgerMode("cron") === "off") return
+  ): { eventId: string; decidedBy: string } | undefined {
+    if (getLedgerMode("cron") === "off") return undefined
     try {
-      recordCronDispatch(
+      const decision = recordCronDispatch(
         getDefaultLedger(),
         { jobId, agentId, firedAt },
         JSON.stringify({ jobId, agentId, firedAt: firedAt.toISOString() }),
         legacy,
       )
+      if (decision.outcome === "dispatched") {
+        return { eventId: decision.eventId, decidedBy: decision.decidedBy }
+      }
+      return undefined
     } catch (e: any) {
       this.log(`[ledger] cron "${jobId}" record failed: ${e?.message ?? e}`)
+      return undefined
     }
   }
 
@@ -307,10 +312,10 @@ export class CronScheduler {
     job.totalRuns++
 
     // Phase 1 commit 6.d — record the dispatch decision before the
-    // (potentially long-running) registry.execute call. The ledger
-    // captures intent; resolution lands in intent_resolutions in a
-    // later commit when we wire that pipe.
-    this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+    // (potentially long-running) registry.execute call. The returned
+    // intentRef threads through to registry.execute so it records a
+    // resolution on completion.
+    const intentRef = this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
       agentId: job.agent, outcome: "dispatched", reason: isRetry ? `retry ${retryAttempt}` : null,
     })
 
@@ -319,6 +324,7 @@ export class CronScheduler {
         message: withOutputCap(job.prompt, job.maxOutputTokens),
         agentId: job.agent,
         model: job.model,
+        intentRef,
         // chatId per-job so different cron jobs for the same agent don't
         // collide in one "default" session. Without this, the marketing
         // daily-brief and the marketing weekly-report cron share history,
