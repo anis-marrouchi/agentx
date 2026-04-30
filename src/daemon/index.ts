@@ -18,6 +18,7 @@ import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
 import { openDb } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
+import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
@@ -71,6 +72,9 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
+  // SQLite handle from openDb(). Null when the native binding failed; the
+  // /health endpoint and any read-path consumer falls back to JSON when so.
+  private db: import("better-sqlite3").Database | null = null
   /** Structured per-agent memory (Claude-Code-style user / feedback /
    *  project / reference). Deliberately owned by the daemon (not the
    *  registry) so HTTP callers — including an agent curling from its
@@ -197,6 +201,7 @@ export class AgentXDaemon {
     // writes continue regardless. SQLite is observability-grade for now.
     try {
       const db = openDb()
+      this.db = db
       if (db) {
         attachSqliteSubscribers(db)
         this.log(`  SQLite: ${db.name}`)
@@ -1906,7 +1911,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
-            usage: this.registry.getTodayUsage(),
+            usage: this.resolveTodayUsage(),
           })
           break
 
@@ -2950,6 +2955,23 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
   private json(res: ServerResponse, status: number, data: unknown): void {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
+  }
+
+  /** Pick today's usage rollup according to AGENTX_USAGE_READ:
+   *    - "sqlite": SQLite only (empty if db null / no rows)
+   *    - "json":   JSON only (legacy behaviour)
+   *    - "sqlite-then-json" (default): try SQLite, fall back to JSON when
+   *      the rollup is empty (no agents seen today). Transparent for
+   *      operators on first deploy where SQLite is empty until the first
+   *      task completes. */
+  private resolveTodayUsage(): ReturnType<AgentRegistry["getTodayUsage"]> {
+    const mode = getUsageReadMode()
+    if (mode === "json") return this.registry.getTodayUsage()
+    const rollup = loadTodayRollup(this.db)
+    if (mode === "sqlite") return rollup
+    // sqlite-then-json
+    if (Object.keys(rollup.agents).length > 0) return rollup
+    return this.registry.getTodayUsage()
   }
 
   /** Boot-time: install the `remember` skill into every agent workspace

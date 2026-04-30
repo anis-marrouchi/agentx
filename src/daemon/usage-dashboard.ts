@@ -1,11 +1,23 @@
 import { createServer } from "http"
 import { readdirSync } from "fs"
 import { TokenTracker, type DailyUsage, type AgentUsage, type DailyReport } from "./token-tracker"
+import { openDb } from "@/storage/sqlite"
+import {
+  loadUsageRange as loadUsageRangeFromSqlite,
+  getUsageReadMode,
+} from "@/storage/usage-query"
 
 // --- Usage Dashboard: zero-dep web UI for token cost tracking ---
 
 export function startUsageDashboard(port: number = 4201): void {
   const tracker = new TokenTracker()
+  // Open the same SQLite database the daemon writes to. WAL mode makes
+  // concurrent reads safe even when the daemon process is the writer.
+  // openDb() returns null if the native binding fails — we fall back to
+  // the existing TokenTracker JSON path.
+  const db = (() => {
+    try { return openDb() } catch { return null }
+  })()
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://localhost:${port}`)
@@ -16,7 +28,7 @@ export function startUsageDashboard(port: number = 4201): void {
     if (path === "/api/usage") {
       const from = url.searchParams.get("from") || ""
       const to = url.searchParams.get("to") || ""
-      const data = loadUsageRange(tracker, from, to)
+      const data = loadUsageRangeResolved(tracker, db, from, to)
       res.writeHead(200, { "Content-Type": "application/json" })
       res.end(JSON.stringify(data))
       return
@@ -25,7 +37,7 @@ export function startUsageDashboard(port: number = 4201): void {
     if (path === "/api/usage.csv") {
       const from = url.searchParams.get("from") || ""
       const to = url.searchParams.get("to") || ""
-      const rows = loadUsageRange(tracker, from, to)
+      const rows = loadUsageRangeResolved(tracker, db, from, to)
       const header = "date,tasks,input,output,cache_read,cache_create,cost_usd,top_agent"
       const body = rows.map((d) => {
         const top = Object.entries(d.agents).sort(([, a], [, b]) => b.cost - a.cost)[0]
@@ -59,6 +71,28 @@ interface UsageDay {
   cacheCreate: number
   cost: number
   agents: Record<string, { tasks: number; cost: number; input: number; output: number; cacheRead: number; cacheCreate: number; model?: string }>
+}
+
+/** Pick the source for the date-range loader against AGENTX_USAGE_READ.
+ *  - "sqlite":            SQLite only (empty when db null / no rows)
+ *  - "json":              JSON only (legacy)
+ *  - "sqlite-then-json":  default; SQLite first, fall back to JSON when
+ *                         SQLite is empty so first-deploy operators see
+ *                         their existing JSON data until subscribers
+ *                         have populated the table. */
+function loadUsageRangeResolved(
+  tracker: TokenTracker,
+  db: import("better-sqlite3").Database | null,
+  from: string,
+  to: string,
+): UsageDay[] {
+  const mode = getUsageReadMode()
+  if (mode === "json") return loadUsageRange(tracker, from, to)
+  const sqliteRows = loadUsageRangeFromSqlite(db, from, to)
+  if (mode === "sqlite") return sqliteRows
+  // sqlite-then-json
+  if (sqliteRows.length > 0) return sqliteRows
+  return loadUsageRange(tracker, from, to)
 }
 
 function loadUsageRange(tracker: TokenTracker, from: string, to: string): UsageDay[] {

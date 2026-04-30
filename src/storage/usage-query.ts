@@ -189,3 +189,16 @@ export function loadTodayRollup(db: Database.Database | null, today?: string): D
   const daily = loadDailyUsage(db, date)
   return daily ?? { date, agents: {} }
 }
+
+export type UsageReadMode = "sqlite" | "json" | "sqlite-then-json"
+
+/** Resolve the dashboard / health read path against the AGENTX_USAGE_READ
+ *  env var. Default `sqlite-then-json` is the migration-safe choice — try
+ *  SQLite first, fall back to JSON when the handle is null or the SQLite
+ *  rollup is empty. Operators can pin "sqlite" once they've confirmed
+ *  rollups are populated, or pin "json" to keep legacy behaviour. */
+export function getUsageReadMode(env: NodeJS.ProcessEnv = process.env): UsageReadMode {
+  const v = (env.AGENTX_USAGE_READ ?? "").toLowerCase().trim()
+  if (v === "sqlite" || v === "json" || v === "sqlite-then-json") return v
+  return "sqlite-then-json"
+}

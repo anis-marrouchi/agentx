@@ -9,6 +9,7 @@ import {
   loadDailyUsage,
   loadTodayRollup,
   loadUsageRange,
+  getUsageReadMode,
 } from "../src/storage/usage-query"
 import { TokenTracker, CONTEXT_TIER_THRESHOLD } from "../src/daemon/token-tracker"
 
@@ -247,5 +248,22 @@ describe("loadTodayRollup", () => {
     expect(r.agents.a).toBeDefined()
     expect(r.agents.a.tasks).toBe(1)
     expect(r.agents.a.inputTokens).toBe(100)
+  })
+})
+
+describe("getUsageReadMode", () => {
+  it("defaults to sqlite-then-json when env var is unset", () => {
+    expect(getUsageReadMode({})).toBe("sqlite-then-json")
+  })
+
+  it("accepts sqlite, json, sqlite-then-json case-insensitively", () => {
+    expect(getUsageReadMode({ AGENTX_USAGE_READ: "sqlite" })).toBe("sqlite")
+    expect(getUsageReadMode({ AGENTX_USAGE_READ: "JSON" })).toBe("json")
+    expect(getUsageReadMode({ AGENTX_USAGE_READ: "  Sqlite-Then-Json  " })).toBe("sqlite-then-json")
+  })
+
+  it("falls back to default when env value is invalid", () => {
+    expect(getUsageReadMode({ AGENTX_USAGE_READ: "garbage" })).toBe("sqlite-then-json")
+    expect(getUsageReadMode({ AGENTX_USAGE_READ: "" })).toBe("sqlite-then-json")
   })
 })
