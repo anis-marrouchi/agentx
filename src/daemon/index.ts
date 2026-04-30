@@ -19,6 +19,7 @@ import { WebhookHandler } from "./webhooks"
 import { openDb } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
+import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
@@ -75,6 +76,11 @@ export class AgentXDaemon {
   // SQLite handle from openDb(). Null when the native binding failed; the
   // /health endpoint and any read-path consumer falls back to JSON when so.
   private db: import("better-sqlite3").Database | null = null
+  // Move B — loaded JS/TS plugins. Populated in start() (async), iterated
+  // in startChannels() to fold plugin-registered channels into the router,
+  // and torn down in stop() via each plugin's dispose() — which removes
+  // bus subscribers AND calls the plugin's optional teardown().
+  private loadedPlugins: LoadedPlugin[] = []
   /** Structured per-agent memory (Claude-Code-style user / feedback /
    *  project / reference). Deliberately owned by the daemon (not the
    *  registry) so HTTP callers — including an agent curling from its
@@ -290,8 +296,51 @@ export class AgentXDaemon {
       this.log(`  Ledger orphan-cleanup failed: ${e?.message ?? e}`)
     }
 
+    // 0.5. Move B — load JS/TS plugins. Each plugin's setup() runs here so
+    //      it can register channel adapters BEFORE startChannels() and
+    //      attach bus subscribers BEFORE any event fires. setup() is
+    //      raced against a 15s timeout per plugin; failures log and
+    //      continue. Plugin-registered channels are folded into the
+    //      router right after startChannels() so they participate in
+    //      routing alongside built-in adapters.
+    try {
+      const builtInChannelNames = new Set([
+        "telegram", "whatsapp", "discord", "slack", "gitlab", "github",
+      ])
+      this.loadedPlugins = await loadPlugins({
+        config: this.config,
+        agents: new Map(Object.entries(this.config.agents)),
+        log: this.log,
+        isChannelNameTaken: (n) => builtInChannelNames.has(n),
+        daemonVersion: process.env.npm_package_version,
+      })
+      if (this.loadedPlugins.length > 0) {
+        this.log(`  Plugins: ${this.loadedPlugins.length} loaded — ${this.loadedPlugins.map(p => p.manifest.name).join(", ")}`)
+      }
+    } catch (e: any) {
+      // loadPlugins() is supposed to never throw, but defend anyway —
+      // a plugin failure must not abort daemon boot.
+      this.log(`  Plugins: loader threw (${e?.message ?? e}) — continuing without plugins`)
+      this.loadedPlugins = []
+    }
+
     // 1. Start channels
     await this.startChannels()
+    // After startChannels, fold plugin-registered channels into the router
+    // and call their start(). Done here (not inside startChannels itself)
+    // so the lifecycle ordering is explicit: built-in channels first,
+    // plugin channels second.
+    for (const p of this.loadedPlugins) {
+      for (const ch of p.channels) {
+        try {
+          this.router.addChannel(ch)
+          await ch.start()
+          this.log(`  Plugin channel: ${ch.name} (from ${p.manifest.name})`)
+        } catch (e: any) {
+          this.log(`  Plugin channel "${ch.name}" failed to start: ${e?.message ?? e}`)
+        }
+      }
+    }
 
     // 2. Start cron scheduler
     await this.cron.start()
@@ -507,6 +556,18 @@ export class AgentXDaemon {
         this.webrtc.shutdown()
       }
     } catch {}
+
+    // Move B — dispose plugins. Each dispose() runs the plugin's optional
+    // teardown() AND removes every bus subscription it attached via
+    // ctx.on(). Run sequentially so a slow teardown doesn't race with
+    // the daemon's own shutdown logging.
+    for (const p of this.loadedPlugins) {
+      try {
+        await p.dispose()
+      } catch (e: any) {
+        this.log(`  Plugin dispose error (${p.manifest.name}): ${e?.message ?? e}`)
+      }
+    }
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
 
