@@ -22,7 +22,7 @@ import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
 import { setDefaultGovernance } from "@/intent/governance"
-import { agentCanHandleIntent } from "@/agents/capabilities"
+import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -239,8 +239,13 @@ export class AgentXDaemon {
               if (!org.canHandle(agentId, project, intent)) return false
               return agentCanHandleIntent(agents[agentId], intent)
             },
+            // Phase 8 — delegation-depth check. Walks the ledger's
+            // prior decisions on (project, subject) and refuses
+            // dispatches past the target agent's maxDelegationDepth.
+            withinDelegationBudget: (agentId, project, subject) =>
+              withinDelegationBudget(getDefaultLedger(), agents[agentId], agentId, project, subject),
           })
-          this.log("  Ledger governance: PM gate + capability check ENABLED")
+          this.log("  Ledger governance: PM gate + capability + delegation-depth ENABLED")
         }
       } catch (e: any) {
         this.log(`[business] initialization failed: ${e.message}`)

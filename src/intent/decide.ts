@@ -116,6 +116,11 @@ export interface PolicyDecision {
 export interface DispatchGovernance {
   canHandle?(agentId: string, project: string | null, intent: string | null): boolean
   pmFor?(project: string | null): string | undefined
+  /** Phase 8 — capability-bounded security. Returns false when
+   *  dispatching `agentId` on `(project, subject)` would exceed the
+   *  agent's delegation-depth budget. Blocks cascade loops by
+   *  walking the ledger's prior decisions on the same slot. */
+  withinDelegationBudget?(agentId: string, project: string | null, subject: string | null): boolean
 }
 
 /**
@@ -199,6 +204,20 @@ export function decideAndCommit(
         agentId = null
         outcome = "halted"
         reason = `org-chart: agent "${blocked}" cannot handle (${event.project ?? "no-project"}/${event.intent ?? "no-intent"})`
+      }
+    }
+
+    // Step 5b — Phase 8 delegation-depth check. Walks the ledger's
+    // prior decisions on (project, subject) and refuses dispatches
+    // that would push the chain past the agent's
+    // `maxDelegationDepth`. Prevents cascade loops where A → B → A → ...
+    // blows past sane chain depth.
+    if (gov?.withinDelegationBudget && outcome === "dispatched" && agentId) {
+      if (!gov.withinDelegationBudget(agentId, event.project, event.subject)) {
+        const blocked = agentId
+        agentId = null
+        outcome = "halted"
+        reason = `delegation-budget: agent "${blocked}" depth-limit exceeded on ${event.project ?? "?"}/${event.subject ?? "?"}`
       }
     }
 

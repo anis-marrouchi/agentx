@@ -57,6 +57,15 @@ const agentConfigSchema = z.object({
    *  Example: ["issue.opened", "issue.commented", "merge_request.opened"]
    *  Example: ["cron.fired", "message.received"]              */
   intents: z.array(z.string()).default([]),
+  /** Phase 8 — capability-bounded security. Max distinct upstream
+   *  agents in the delegation chain on the same (project, subject)
+   *  before a dispatch to THIS agent is refused. The ledger itself
+   *  provides the chain — `decideAndCommit` walks recent decisions on
+   *  the subject and counts distinct agents. Default 5; set to 0 to
+   *  disable for an agent that's always called as the bottom of a
+   *  chain. The check prevents cascade loops where A → B → A → B → ...
+   *  blows past sane chain depth. */
+  maxDelegationDepth: z.number().int().min(0).max(50).default(5),
   /** MCP servers this agent's Claude Code session should load. Synced
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
