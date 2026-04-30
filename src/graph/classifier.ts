@@ -89,9 +89,24 @@ export class Classifier {
       sender: input.sender,
     })
 
-    // 1. Cache hit — instant return, zero LLM.
+    // 1. Cache hit — instant return, zero LLM. Logged to classifications.jsonl
+    //    so the cache-hit rate is measurable from the persisted record alone
+    //    (otherwise hits leave no trace and ROI of the classifier is invisible).
     const cached = this.store.getFingerprint(fp)
     if (cached) {
+      this.store.appendClassification({
+        ts: new Date().toISOString(),
+        msgHash: fp,
+        agentId: input.agentId,
+        channel: input.channel,
+        sender: input.sender,
+        path: cached.path,
+        proposedAxes: {},
+        leaf: cached.leaf,
+        source: "cache",
+        status: "approved",
+        preview: input.text.slice(0, 200),
+      })
       return {
         path: cached.path,
         pathId: hashPath(cached.path),

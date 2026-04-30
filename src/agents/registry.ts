@@ -1220,6 +1220,14 @@ export class AgentRegistry {
               source: channel,
               sourceContext: task.context?.group || task.context?.sender,
               content: `User: ${task.message}\n\nAgent: ${response.content}`,
+              // Stamp the classifier's path on the entry so `wiki absorb` can
+              // propagate it to the article's `graphPath` without
+              // reconstructing fingerprints from transformed content. Without
+              // this, articles never carry graphPath and the wiki retrieval
+              // scorer multiplies the graph weight (default 0.6) by 0.
+              meta: intent?.path?.length
+                ? { intentPath: intent.path, intentPathLabel: intent.pathLabel }
+                : undefined,
             })
           } catch {
             // Wiki export is best-effort

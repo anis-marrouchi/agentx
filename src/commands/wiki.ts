@@ -4,6 +4,7 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
+import { GraphStore } from "@/graph"
 import { resolve, relative, dirname } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
@@ -122,7 +123,66 @@ wiki
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     const maxEntries = parseInt(opts.max)
 
+    // Build a lookup so each absorbed article can carry the intent path
+    // its source entries were classified into. Without this, graphPath stays
+    // empty and the wiki retrieval scorer multiplies the graph weight by 0.
+    // Best-effort: graph may be disabled, store may be empty — we just fall
+    // through to legacy behaviour (graphPath undefined) in those cases.
+    const graphStore = (() => {
+      try {
+        const baseDir = resolve(process.cwd(), ".agentx/graph")
+        if (!existsSync(baseDir)) return null
+        return new GraphStore({ baseDir })
+      } catch { return null }
+    })()
+    const fpToPath = new Map<string, string[]>()
+    if (graphStore) {
+      try {
+        const idx = graphStore.loadIndex()
+        for (const [fp, e] of Object.entries(idx.entries)) {
+          fpToPath.set(fp, (e as any).path)
+        }
+      } catch { /* leave map empty */ }
+    }
+    const lookupPath = (entry: { content: string; source?: string; meta?: Record<string, unknown> }): string[] | undefined => {
+      // Preferred: entry was stamped with the classifier's path at creation
+      // time (registry.ts addEntry call). Free, exact, no fingerprint dance.
+      const stamped = (entry.meta as any)?.intentPath
+      if (Array.isArray(stamped) && stamped.every((s: unknown) => typeof s === "string") && stamped.length > 0) {
+        return stamped
+      }
+      // Fallback for legacy entries: try the fingerprint cache. Often misses
+      // because entry.content has a "User: " prefix and entry.source can
+      // include @<node>; surfaced here for completeness, not as a guarantee.
+      if (!graphStore || fpToPath.size === 0) return undefined
+      const sender = String((entry.meta as any)?.sender ?? "")
+      const fp = graphStore.fingerprint({
+        text: entry.content,
+        channel: entry.source,
+        sender,
+      })
+      return fpToPath.get(fp)
+    }
+    const pickGraphPath = (sources: string[], entries: Array<{ id: string; content: string; source: string; meta?: Record<string, unknown> }>): string[] | undefined => {
+      const counts = new Map<string, { path: string[]; n: number }>()
+      for (const sid of sources) {
+        const entry = entries.find((e) => e.id === sid)
+        if (!entry) continue
+        const path = lookupPath(entry)
+        if (!path?.length) continue
+        const key = path.join("/")
+        const cur = counts.get(key)
+        if (cur) cur.n++
+        else counts.set(key, { path, n: 1 })
+      }
+      if (counts.size === 0) return undefined
+      let best: { path: string[]; n: number } | undefined
+      for (const v of counts.values()) if (!best || v.n > best.n) best = v
+      return best?.path
+    }
+
     let totalAbsorbed = 0
+    let totalWithPath = 0
 
     for (const agentId of agents) {
       const unabsorbed = hub.getUnabsorbedEntries(agentId).slice(0, maxEntries)
@@ -233,6 +293,7 @@ wiki
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
+          const graphPath = pickGraphPath(article.sources || [], unabsorbed)
           agentWiki.writeArticle(article.path, {
             title: article.title,
             type: article.type as any,
@@ -243,6 +304,7 @@ wiki
             created: now,
             lastUpdated: now,
             sources: article.sources || [],
+            graphPath,
           }, article.content, agentId)
 
           const typeTag = article.type ? chalk.magenta(`[${article.type}]`) + " " : ""
@@ -252,6 +314,10 @@ wiki
           console.log(`    ${chalk.green("+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
           const tagStr = (article.tags || []).slice(0, 4).join(", ")
           if (tagStr) console.log(chalk.dim(`       tags: ${tagStr}`))
+          if (graphPath?.length) {
+            console.log(chalk.dim(`       graphPath: ${graphPath.join(" › ")}`))
+            totalWithPath++
+          }
           totalAbsorbed++
         }
 
@@ -277,6 +343,10 @@ wiki
       console.log(chalk.dim("  Dry run — no changes made"))
     } else if (totalAbsorbed > 0) {
       console.log(chalk.green(`  ${totalAbsorbed} articles compiled across ${agents.length} agent(s)`))
+      if (graphStore) {
+        const pct = totalAbsorbed > 0 ? Math.round((totalWithPath / totalAbsorbed) * 100) : 0
+        console.log(chalk.dim(`  ${totalWithPath}/${totalAbsorbed} carry graphPath (${pct}%) — wiki retrieval graph weight is now non-zero for those`))
+      }
     }
     console.log()
   })
@@ -1837,6 +1907,109 @@ wiki
     }
 
     if (found === 0) console.log(chalk.dim("  No matching articles"))
+    console.log()
+  })
+
+// agentx wiki backfill-graphpath — populate graphPath on existing articles
+//
+// Reads each article's `sources[]`, looks the source entries up by id, computes
+// the graph fingerprint from each entry's (content, channel, sender), and if
+// the cache hits, picks the most-common path among the article's sources and
+// writes it as `graph_path:` in frontmatter. Without this, the wiki retrieval
+// score function multiplies the graph weight (0.6 by default) by 0 for every
+// pre-existing article — the graph half of the hybrid score is dead weight.
+wiki
+  .command("backfill-graphpath")
+  .description("populate graphPath on existing articles by looking up source-entry classifications")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "backfill only this agent")
+  .option("--dry-run", "preview without writing", false)
+  .action((opts) => {
+    const hub = getHub(opts.dir)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+
+    const baseDir = resolve(process.cwd(), ".agentx/graph")
+    if (!existsSync(baseDir)) {
+      console.log(chalk.red(`  No graph store at ${baseDir} — nothing to backfill against.`))
+      return
+    }
+    const graphStore = new GraphStore({ baseDir })
+    const idx = graphStore.loadIndex()
+    const fpToPath = new Map<string, string[]>()
+    for (const [fp, e] of Object.entries(idx.entries)) {
+      fpToPath.set(fp, (e as any).path)
+    }
+    if (fpToPath.size === 0) {
+      console.log(chalk.yellow(`  Graph index is empty — nothing to look up.`))
+      return
+    }
+    console.log(chalk.dim(`  Loaded ${fpToPath.size} fingerprint -> path entries from .agentx/graph/index.json`))
+
+    let totalArticles = 0
+    let totalEligible = 0   // articles with empty graphPath that COULD be looked up
+    let totalMatched = 0    // articles where at least one source matched
+    let totalWritten = 0
+
+    for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      const articles = store.listArticles(agentId)
+      const sharedEntries = hub.getSharedStore().listEntries()
+      const entriesById = new Map(sharedEntries.map((e) => [e.id, e]))
+
+      let agentEligible = 0
+      let agentMatched = 0
+      let agentWritten = 0
+
+      for (const article of articles) {
+        totalArticles++
+        if (article.meta.graphPath?.length) continue
+        if (!article.meta.sources?.length) continue
+        agentEligible++
+        totalEligible++
+
+        const counts = new Map<string, { path: string[]; n: number }>()
+        for (const sid of article.meta.sources) {
+          const entry = entriesById.get(sid)
+          if (!entry) continue
+          const sender = String((entry.meta as any)?.sender ?? "")
+          const fp = graphStore.fingerprint({
+            text: entry.content,
+            channel: entry.source,
+            sender,
+          })
+          const path = fpToPath.get(fp)
+          if (!path?.length) continue
+          const key = path.join("/")
+          const cur = counts.get(key)
+          if (cur) cur.n++
+          else counts.set(key, { path, n: 1 })
+        }
+        if (counts.size === 0) continue
+        agentMatched++
+        totalMatched++
+
+        let best: { path: string[]; n: number } | undefined
+        for (const v of counts.values()) if (!best || v.n > best.n) best = v
+        if (!best) continue
+
+        if (opts.dryRun) {
+          continue
+        }
+        // Write through writeArticle so frontmatter renders consistently.
+        store.writeArticle(article.path, {
+          ...article.meta,
+          graphPath: best.path,
+        }, article.content, agentId)
+        agentWritten++
+        totalWritten++
+      }
+
+      console.log(`  ${chalk.cyan(agentId)}: ${chalk.bold(articles.length)} articles · ${agentEligible} eligible · ${agentMatched} matched · ${chalk.green(agentWritten)} written`)
+    }
+
+    console.log()
+    console.log(chalk.bold(`  Total: ${totalArticles} articles, ${totalEligible} missing graphPath, ${totalMatched} matched (${Math.round((totalMatched / Math.max(1, totalEligible)) * 100)}%), ${totalWritten} written`))
+    if (opts.dryRun) console.log(chalk.dim(`  Dry-run — re-run without --dry-run to commit.`))
     console.log()
   })
 
