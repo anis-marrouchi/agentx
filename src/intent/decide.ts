@@ -1,5 +1,6 @@
 import type { IntentLedger } from "./ledger"
 import type { IntentDecision, IntentEventInput, IntentEvent } from "./types"
+import { getDefaultGovernance } from "./governance"
 
 // decideAndCommit — Phase 1 of the architectural rescue.
 //
@@ -87,6 +88,37 @@ export interface PolicyDecision {
 }
 
 /**
+ * Phase 3 — Org-chart governance hooks. Optional. When supplied,
+ * decideAndCommit consults them AFTER the policy decides:
+ *
+ *   canHandle(agentId, project, intent)  returns false → halt the
+ *     dispatch with reason "org-chart: agent cannot handle". Use to
+ *     enforce per-agent capability constraints (Phase 5 will add
+ *     typed capabilities; the v0 here is permissive).
+ *
+ *   pmFor(project)                       returns the agentId of the
+ *     PM for `project`, or undefined when no PM is configured. When
+ *     defined AND the policy decided "dispatched", the decision's
+ *     `decidedBy` is rewritten to `pm:<pmId>` so the audit trail
+ *     attributes the dispatch to the PM gate. Per the kickoff:
+ *     "a dispatch decision for (project, ...) where business.projects[].pm
+ *     is set never resolves to an agent without going through the PM
+ *     first (PM may rubber-stamp, but the decision row records
+ *     decided_by='pm:pm-mtgl')".
+ *
+ * The full async-PM gate (synchronously dispatch to the PM agent,
+ * wait up to 60s for approval, fall back to escalation on timeout)
+ * is a future-phase refactor. The v0 here is the paper-trail gate:
+ * the decision row is attributed to the PM, but no real call-out
+ * happens. This satisfies the kickoff's property and unblocks the
+ * 1c per-source promotions.
+ */
+export interface DispatchGovernance {
+  canHandle?(agentId: string, project: string | null, intent: string | null): boolean
+  pmFor?(project: string | null): string | undefined
+}
+
+/**
  * Append-only dispatch primitive. Returns the canonical decision row —
  * either freshly written or recovered from a prior call (Inv-Idempotence).
  *
@@ -103,18 +135,33 @@ export function decideAndCommit(
   input: IntentEventInput,
   policy: DispatchPolicy,
   now: () => number = Date.now,
+  governance?: DispatchGovernance,
 ): IntentDecision {
   const tx = ledger.db.transaction((decidedAt: number): IntentDecision => {
     // Step 1 — record the event. recordEvent is itself idempotent on
     // (source, sourceEventId), so this is safe under re-delivery.
     const event = ledger.recordEvent(input)
 
+    // Phase 3 governance: compute the EFFECTIVE decidedBy upfront so
+    // it threads through idempotency + recording. When a PM is
+    // configured for the project, the decision is attributed to the
+    // PM (pm:<id>) regardless of outcome — the PM is the gate, even
+    // for halts and queues. canHandle is a veto applied later (forces
+    // outcome=halted) but doesn't change decidedBy.
+    //
+    // Falls back to the daemon-level singleton (`getDefaultGovernance`)
+    // when the caller doesn't pass an explicit governance — this is
+    // the production path. Tests pass governance directly.
+    const gov = governance ?? getDefaultGovernance()
+    const pm = gov?.pmFor?.(event.project)
+    const effectiveDecidedBy = pm ? `pm:${pm}` : policy.decidedBy
+
     // Step 2 — Inv-Idempotence. If this policy has already decided on this
     // event, return that decision unchanged. Two callers who race the same
     // event-policy pair are reduced to a single decision row.
     const prior = ledger
       .getDecisionsForEvent(event.id)
-      .find((d) => d.decidedBy === policy.decidedBy)
+      .find((d) => d.decidedBy === effectiveDecidedBy)
     if (prior) return prior
 
     // Step 3 — Inv-ActiveTaskSafety. If a dispatched-and-unresolved
@@ -126,7 +173,7 @@ export function decideAndCommit(
       const decision: IntentDecision = {
         eventId: event.id,
         decidedAt,
-        decidedBy: policy.decidedBy,
+        decidedBy: effectiveDecidedBy,
         agentId: null,
         outcome: "deduped",
         reason: `active dispatch in flight: ${active.decidedBy} → ${active.agentId ?? "?"}`,
@@ -139,23 +186,38 @@ export function decideAndCommit(
     // reason rather than a silent drop (Inv-NoSilentDrops). A halted /
     // queued / dispatched policy decision flows through unchanged.
     const policyResult = policy.decide(event)
-    const decision: IntentDecision = policyResult
-      ? {
-          eventId: event.id,
-          decidedAt,
-          decidedBy: policy.decidedBy,
-          agentId: policyResult.agentId,
-          outcome: policyResult.outcome,
-          reason: policyResult.reason,
-        }
-      : {
-          eventId: event.id,
-          decidedAt,
-          decidedBy: policy.decidedBy,
-          agentId: null,
-          outcome: "halted",
-          reason: "no policy match",
-        }
+    let agentId: string | null = policyResult ? policyResult.agentId : null
+    let outcome: "dispatched" | "halted" | "queued" = policyResult ? policyResult.outcome : "halted"
+    let reason: string | null = policyResult ? policyResult.reason : "no policy match"
+
+    // Step 5 — canHandle veto. Dispatches to agents the org chart says
+    // can't handle the event get forced to halted.
+    if (gov?.canHandle && outcome === "dispatched" && agentId) {
+      const allowed = gov.canHandle(agentId, event.project, event.intent)
+      if (!allowed) {
+        const blocked = agentId
+        agentId = null
+        outcome = "halted"
+        reason = `org-chart: agent "${blocked}" cannot handle (${event.project ?? "no-project"}/${event.intent ?? "no-intent"})`
+      }
+    }
+
+    // Annotate the reason when PM-gate took effect, so the audit trail
+    // distinguishes pm-gated dispatches from regular ones.
+    if (pm && outcome === "dispatched" && agentId) {
+      reason = reason
+        ? `${reason} (pm-gate: rubber-stamped by ${pm})`
+        : `pm-gate: rubber-stamped by ${pm}`
+    }
+
+    const decision: IntentDecision = {
+      eventId: event.id,
+      decidedAt,
+      decidedBy: effectiveDecidedBy,
+      agentId,
+      outcome,
+      reason,
+    }
     ledger.recordDecision(decision)
     return decision
   })

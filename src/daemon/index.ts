@@ -21,6 +21,7 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
+import { setDefaultGovernance } from "@/intent/governance"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -216,6 +217,21 @@ export class AgentXDaemon {
           this.log,
         )
         this.router.setBusiness(this.business)
+
+        // Phase 3 — wire org-chart governance into decideAndCommit when
+        // INTENT_PM_GATE_ENABLED is set. Default off so the live shadow
+        // soak isn't disturbed; flip on per-deployment after soak
+        // findings settle. The DispatchGovernance hooks read from
+        // BusinessLayer.org so PM/canHandle changes apply on next event
+        // without a daemon restart.
+        if (process.env.INTENT_PM_GATE_ENABLED === "true" || process.env.INTENT_PM_GATE_ENABLED === "1") {
+          const org = this.business.org
+          setDefaultGovernance({
+            pmFor: (project) => org.pmFor(project),
+            canHandle: (agentId, project, intent) => org.canHandle(agentId, project, intent),
+          })
+          this.log("  Ledger governance: PM gate ENABLED via org chart")
+        }
       } catch (e: any) {
         this.log(`[business] initialization failed: ${e.message}`)
       }
