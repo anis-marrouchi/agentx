@@ -133,6 +133,61 @@ describe("subscribers — task lifecycle", () => {
     expect(row.tasks).toBe(3)
     expect(row.day).toBe("2026-04-27")
   })
+
+  it("upserts tier-2 buckets when task:completed carries them", () => {
+    const db = openTmp()!
+    attachSqliteSubscribers(db)
+    const bus = getEventBus()
+    const at = "2026-04-30T10:00:00.000Z"
+    bus.emit("task:started", { agentId: "a", channel: "api", chatId: "c", messagePreview: "", at })
+    bus.emit("task:completed", {
+      agentId: "a", channel: "api", chatId: "c", durationMs: 1,
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+      tier2InputTokens: 5_000,
+      tier2OutputTokens: 800,
+      tier2CacheReadTokens: 250_000,
+      tier2CacheCreateTokens: 500,
+      at,
+    })
+    const row = db.prepare("SELECT * FROM usage_daily WHERE agent_id='a'").get() as any
+    expect(row.tier2_input_tokens).toBe(5_000)
+    expect(row.tier2_output_tokens).toBe(800)
+    expect(row.tier2_cache_read_tokens).toBe(250_000)
+    expect(row.tier2_cache_create_tokens).toBe(500)
+    // tier1 buckets stay zero
+    expect(row.input_tokens).toBe(0)
+    expect(row.cache_read_tokens).toBe(0)
+    expect(row.tasks).toBe(1)
+  })
+
+  it("accumulates mixed tier-1 + tier-2 across turns into one row", () => {
+    const db = openTmp()!
+    attachSqliteSubscribers(db)
+    const bus = getEventBus()
+    const at = "2026-04-30T11:00:00.000Z"
+    // Turn 1: tier-1 only
+    bus.emit("task:started", { agentId: "a", channel: "api", chatId: "c", messagePreview: "", at })
+    bus.emit("task:completed", {
+      agentId: "a", channel: "api", chatId: "c", durationMs: 1,
+      inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0,
+      at,
+    })
+    // Turn 2: tier-2 only
+    bus.emit("task:started", { agentId: "a", channel: "api", chatId: "c", messagePreview: "", at })
+    bus.emit("task:completed", {
+      agentId: "a", channel: "api", chatId: "c", durationMs: 1,
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+      tier2InputTokens: 5_000, tier2OutputTokens: 800,
+      tier2CacheReadTokens: 200_000, tier2CacheCreateTokens: 0,
+      at,
+    })
+    const row = db.prepare("SELECT * FROM usage_daily WHERE agent_id='a'").get() as any
+    expect(row.input_tokens).toBe(100)
+    expect(row.output_tokens).toBe(50)
+    expect(row.tier2_input_tokens).toBe(5_000)
+    expect(row.tier2_cache_read_tokens).toBe(200_000)
+    expect(row.tasks).toBe(2)
+  })
 })
 
 describe("subscribers — session rotation", () => {

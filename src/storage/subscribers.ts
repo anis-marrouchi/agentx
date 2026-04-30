@@ -36,16 +36,26 @@ function prepare(db: Database.Database): Stmts {
     upsertUsageDaily: db.prepare(`
       INSERT INTO usage_daily (
         agent_id, model, day,
-        input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tasks
+        input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
+        tier2_input_tokens, tier2_output_tokens,
+        tier2_cache_read_tokens, tier2_cache_create_tokens,
+        tasks
       ) VALUES (
         @agent_id, @model, @day,
-        @input_tokens, @output_tokens, @cache_read_tokens, @cache_create_tokens, 1
+        @input_tokens, @output_tokens, @cache_read_tokens, @cache_create_tokens,
+        @tier2_input_tokens, @tier2_output_tokens,
+        @tier2_cache_read_tokens, @tier2_cache_create_tokens,
+        1
       )
       ON CONFLICT(agent_id, model, day) DO UPDATE SET
         input_tokens = input_tokens + excluded.input_tokens,
         output_tokens = output_tokens + excluded.output_tokens,
         cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
         cache_create_tokens = cache_create_tokens + excluded.cache_create_tokens,
+        tier2_input_tokens = tier2_input_tokens + excluded.tier2_input_tokens,
+        tier2_output_tokens = tier2_output_tokens + excluded.tier2_output_tokens,
+        tier2_cache_read_tokens = tier2_cache_read_tokens + excluded.tier2_cache_read_tokens,
+        tier2_cache_create_tokens = tier2_cache_create_tokens + excluded.tier2_cache_create_tokens,
         tasks = tasks + 1
     `),
     insertRotation: db.prepare(`
@@ -118,7 +128,14 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
       })
     } catch { /* best-effort observability */ }
 
-    if (!p.error && (p.inputTokens || p.outputTokens)) {
+    // Upsert into usage_daily when ANY token bucket — tier1 or tier2 —
+    // saw activity. A tier2-only request still counts as a billable task,
+    // and the previous "(p.inputTokens || p.outputTokens)" gate would
+    // silently drop it.
+    const hasUsage =
+      p.inputTokens || p.outputTokens || p.cacheReadTokens || p.cacheCreateTokens ||
+      p.tier2InputTokens || p.tier2OutputTokens || p.tier2CacheReadTokens || p.tier2CacheCreateTokens
+    if (!p.error && hasUsage) {
       const day = p.at.slice(0, 10)
       try {
         stmts.upsertUsageDaily.run({
@@ -129,6 +146,10 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           output_tokens: p.outputTokens ?? 0,
           cache_read_tokens: p.cacheReadTokens ?? 0,
           cache_create_tokens: p.cacheCreateTokens ?? 0,
+          tier2_input_tokens: p.tier2InputTokens ?? 0,
+          tier2_output_tokens: p.tier2OutputTokens ?? 0,
+          tier2_cache_read_tokens: p.tier2CacheReadTokens ?? 0,
+          tier2_cache_create_tokens: p.tier2CacheCreateTokens ?? 0,
         })
       } catch { /* */ }
     }
