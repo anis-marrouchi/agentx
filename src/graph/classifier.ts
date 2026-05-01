@@ -5,6 +5,7 @@ import {
   type GraphNode,
   type Classification,
 } from "./types"
+import { createProvider, type ProviderName, type AgentProvider } from "@/agent/providers"
 
 // --- Intent Knowledge Graph classifier ---
 //
@@ -60,8 +61,14 @@ export interface ClassifierOptions {
   /** Minimum confidence (0..1) to commit without human approval. 1.0 = never.
    *  OR'd with the structural policy. */
   autoApproveConfidence?: number
-  /** Anthropic model id for the direct classifier call. Default haiku —
-   *  this is metadata, not work, so we use the cheapest fast model. */
+  /** Provider used for the in-process classifier call. Defaults to
+   *  "claude-code", which auto-detects auth via `loadAuthConfig()` —
+   *  Claude Max OAuth (CLI subprocess), API key, etc. NEVER opens a
+   *  paid path beyond what the operator has already configured. */
+  classifierProvider?: ProviderName
+  /** Model id passed to the provider. For claude-code OAuth this is
+   *  mapped through `CLI_MODEL_ALIASES` (sonnet/opus/haiku). Cheap
+   *  default — classification is metadata, not work. */
   classifierModel?: string
   log?: (...args: unknown[]) => void
 }
@@ -74,6 +81,8 @@ export class Classifier {
   private autoApprove: number
   private autoApproveStructure: ApprovalStructurePolicy
   private classifierModel: string
+  private classifierProviderName: ProviderName
+  private providerInstance?: AgentProvider
   private log: (...args: unknown[]) => void
 
   constructor(opts: ClassifierOptions) {
@@ -84,7 +93,19 @@ export class Classifier {
     this.autoApprove = opts.autoApproveConfidence ?? 1.0
     this.autoApproveStructure = opts.autoApproveStructure ?? "extend-leaves"
     this.classifierModel = opts.classifierModel ?? "claude-haiku-4-5-20251001"
+    this.classifierProviderName = opts.classifierProvider ?? "claude-code"
     this.log = opts.log ?? console.error.bind(console, "[classifier]")
+  }
+
+  /** Lazily build the provider instance. Lazy because constructing
+   *  ClaudeCodeProvider hits auth-store; deferring it keeps the
+   *  classifier importable in tests / dry-run paths that never call
+   *  classify(). */
+  private getProvider(): AgentProvider {
+    if (!this.providerInstance) {
+      this.providerInstance = createProvider(this.classifierProviderName)
+    }
+    return this.providerInstance
   }
 
   async classify(input: ClassifyInput): Promise<ClassifyResult | null> {
@@ -293,17 +314,15 @@ export class Classifier {
       `confidence in [0,1]. Prefer low confidence over guessing.`,
     ].join("\n")
 
-    // Phase 2 of classifier-retire: direct Anthropic Messages API call.
-    // Replaces the previous /task → graph-agent → mesh dispatch path
-    // (which created a sibling ledger event per classification — typically
-    // 60-70% of all dispatches in the activity graph). Single Haiku call,
-    // ~200ms cold, no dispatch wrapper, no extra ledger row.
-    //
-    // The daemon's `graph.classifierModel` config knob picks the model
-    // (default haiku); falls back to draftAgent's tier model if the
-    // operator wired a draftAgent for back-compat.
-    const data: any = await this.callAnthropicDirect(userPrompt)
-    const text = extractTextContent(data)
+    // Phase 2 of classifier-retire: in-process provider call.
+    // Replaces the `/task → graph-agent → mesh` dispatch path that
+    // generated a sibling ledger event per classification (60–70% of
+    // dispatches in the activity graph). Reuses whatever auth the
+    // operator already configured (Claude Max OAuth via CLI subprocess,
+    // Anthropic API key, etc.) — never opens a paid path the operator
+    // didn't already opt into. The provider returns a plain JSON-text
+    // GenerationResult, so we parse the same way as before.
+    const text = await this.callProvider(userPrompt)
     const parsed = extractJson(text)
     if (!parsed || !Array.isArray(parsed.path)) return null
 
@@ -370,73 +389,33 @@ export class Classifier {
     this.store.commitNodesAlongPath(path, proposedAxes, schema, createdBy)
   }
 
-  /** Resolve the Anthropic API key for direct classifier calls. Order:
-   *    1. ANTHROPIC_API_KEY env var (most explicit)
-   *    2. ${apiKey} resolved from daemon config providers.claude.apiKey
-   *       (which is what other tier-orchestrator agents already use)
-   *    3. resolveToken() from auth-store (Claude Code subscription, etc.)
-   *  Throws when none is available — operator should set
-   *  ANTHROPIC_API_KEY or providers.claude.apiKey for the classifier
-   *  to function (it costs Haiku-class tokens per inbound event). */
-  private async resolveApiKey(): Promise<string> {
-    if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
-    // Lazy-import to avoid pulling auth-store into every consumer.
-    try {
-      const { resolveToken } = await import("@/utils/auth-store")
-      const t = resolveToken()
-      if (t?.token) return t.token
-    } catch { /* fall through */ }
-    throw new Error("Classifier: no ANTHROPIC_API_KEY available (set the env var or providers.claude.apiKey)")
-  }
-
-  /** Direct call to Anthropic Messages API. Replaces the legacy
-   *  fetch(/task) → mesh → graph-agent path so the classifier no longer
-   *  generates a sibling ledger event. Cheap model on purpose: this is
-   *  metadata, not work. 30s timeout — Haiku usually returns in <1s. */
-  private async callAnthropicDirect(userPrompt: string): Promise<unknown> {
-    const apiKey = await this.resolveApiKey()
+  /** Run the prompt through whichever AgentProvider the operator already
+   *  configured (Claude Max subscription via CLI, Anthropic API key, …).
+   *  Hard rule: NEVER open a paid path the operator didn't opt into —
+   *  this is just a thin wrapper that reuses existing auth. 30s timeout
+   *  is enough for Haiku/CLI cold-start; any longer and the classifier
+   *  is stalling the caller. */
+  private async callProvider(userPrompt: string): Promise<string> {
+    const provider = this.getProvider()
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), 30_000)
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: this.classifierModel,
-          max_tokens: 800,
-          system:
-            "You are a taxonomy classifier. Respond with a single JSON object on one line. No prose, no code fences.",
-          messages: [{ role: "user", content: userPrompt }],
-        }),
-        signal: ac.signal,
-      })
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "")
-        throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 200)}`)
-      }
-      return await res.json()
+      const res = await provider.generate(
+        [
+          {
+            role: "system",
+            content:
+              "You are a taxonomy classifier. Respond with a single JSON object on one line. No prose, no code fences.",
+          },
+          { role: "user", content: userPrompt },
+        ],
+        { model: this.classifierModel, maxTokens: 800 },
+      )
+      return res.content || ""
     } finally {
       clearTimeout(timer)
     }
   }
-}
-
-/** Pull the first text content block out of an Anthropic Messages API
- *  response. Matches the shape src/agent/providers/claude.ts uses; kept
- *  inline so the classifier doesn't depend on the agent provider stack
- *  (which has heavier tool-use plumbing the classifier doesn't need). */
-function extractTextContent(response: any): string {
-  if (!response || typeof response !== "object") return ""
-  const content = response.content
-  if (!Array.isArray(content)) return ""
-  for (const block of content) {
-    if (block?.type === "text" && typeof block.text === "string") return block.text
-  }
-  return ""
 }
 
 /** Normalize an LLM-proposed node label to a valid node id. Matches the

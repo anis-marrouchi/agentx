@@ -125,6 +125,42 @@ graph
     console.log()
   })
 
+// --- graph migrate (Phase 2 of classifier-retire) ---
+// Bulk remap classifications.jsonl + index.json from v1 (scope/location/...)
+// to v2 (category/verb) via keyword heuristics. Idempotent. No LLM calls.
+
+graph
+  .command("migrate")
+  .description("remap past classifications from v1 (scope/location/org/unit/activity) to v2 (category/verb) via keyword heuristics. No LLM calls. Idempotent.")
+  .option("--dry-run", "report what would change, don't write")
+  .action(async (opts) => {
+    const config = loadDaemonConfig()
+    if (!config.graph) {
+      console.log(chalk.yellow("  graph block missing from agentx.json — nothing to migrate"))
+      return
+    }
+    const baseDir = resolve(process.cwd(), config.graph.baseDir)
+    if (!existsSync(baseDir)) {
+      console.log(chalk.yellow(`  ${baseDir} does not exist — nothing to migrate`))
+      return
+    }
+    const { migrateV2 } = await import("@/graph/migrate-v2")
+    const store = new GraphStore({ baseDir, log: () => undefined })
+    const result = migrateV2(store, { dryRun: !!opts.dryRun, log: (...a) => console.log(chalk.dim("  "), ...a) })
+    console.log()
+    console.log(chalk.bold("  Pattern hits:"))
+    const hits = Object.entries(result.patternHits).sort((a, b) => b[1] - a[1])
+    if (hits.length === 0) console.log(chalk.dim("    (none)"))
+    for (const [verb, count] of hits) console.log(`    ${verb.padEnd(28)} ${count}`)
+    console.log()
+    if (opts.dryRun) {
+      console.log(chalk.dim(`  Dry-run — omit --dry-run to apply.`))
+    } else {
+      console.log(chalk.green(`  Done. Backups: ${result.backups.length} file(s).`))
+    }
+    console.log()
+  })
+
 // --- graph pull (cross-mesh sync) ---
 // v1: leader-follower — pull schema + nodes + approved classifications from
 // a peer's daemon. Conflicts skip silently; local always wins. Only approved
