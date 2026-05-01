@@ -79,9 +79,11 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
     }
   }
 
-  // /api/workflows/runs[...]                (list / one / stream)
-  if (url.startsWith("/api/workflows/runs") && method === "GET") {
-    if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+  // /api/workflows/runs[...]                (list / one / stream / status-mutation)
+  // Reads (GET) and the new POST /:id/status both flow into handleRuns; the
+  // sub-route enforces its own method and scope checks.
+  if (url.startsWith("/api/workflows/runs")) {
+    if (method === "GET" && !deps.requireScope(req, res, ["dashboard:read"])) return true
     return handleRuns(req, res, deps, url)
   }
 
@@ -286,6 +288,23 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
     const limit = Math.max(1, Math.min(500, Number(q.get("limit") || 50)))
     const workflowId = q.get("workflowId") || undefined
     return sendJson(res, 200, { runs: deps.runs.list({ workflowId, limit }) })
+  }
+  // POST /api/workflows/runs/<id>/status  body: { status: "paused"|"running"|"canceled" }
+  // Mirrors `agentx workflow pause/resume/cancel <runId>`.
+  const statusMatch = trail.match(/^\/([^\/?]+)\/status$/)
+  if (statusMatch) {
+    if ((req.method || "GET").toUpperCase() !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+    const runId = decodeURIComponent(statusMatch[1])
+    return withBody(req, res, (body) => {
+      const status = (body as any)?.status
+      if (status !== "paused" && status !== "running" && status !== "canceled") {
+        return sendJson(res, 400, { error: "status must be paused|running|canceled" })
+      }
+      const updated = deps.runs.setStatus(runId, status)
+      if (!updated) return sendJson(res, 404, { error: "run not found" })
+      return sendJson(res, 200, { ok: true, runId, status })
+    })
   }
   const runMatch = trail.match(/^\/([^\/?]+)(\/stream)?$/)
   if (runMatch) {
