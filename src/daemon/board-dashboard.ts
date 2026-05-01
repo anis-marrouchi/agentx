@@ -215,6 +215,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleObservabilityGet(req, res, buildTopbarPeers(ctx.config))
     return
   }
+  // ── Cross-mesh API proxy (must precede every /api/admin/* handler) ──
+  // When the topbar peer selector is set to a non-primary peer, the
+  // client-side fetch wrapper attaches X-Agentx-Peer / ?peer=<url> to the
+  // request. Forward the whole call to that peer's dashboard before any
+  // local handler picks it up, so the activity-graph + observability +
+  // every other admin surface follow the selector.
+  if (path.startsWith("/api/admin/")) {
+    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    if (peerId && peerId !== "primary") {
+      const peer = findPeer(peerId, ctx.config)
+      if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
+      // Strip ?peer= so the destination doesn't re-proxy.
+      const stripped = (url.search || "").replace(/[?&]peer=[^&]*/g, (m) => m.startsWith("?") ? "?" : "")
+      const cleanQuery = stripped === "?" ? "" : stripped
+      await proxyAdminToPeer(req, res, peer, path + cleanQuery)
+      return
+    }
+  }
+
   if (method === "GET" && path.startsWith("/api/admin/observability/")) {
     if (await handleObservabilityApi(req, res, path)) return
   }
@@ -260,18 +279,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleAgentPageGet(req, res, agentPageMatch[1], buildTopbarPeers(ctx.config), ctx.token)
     return
   }
-  // Cross-mesh admin proxy: when a non-primary peer is selected (header
-  // X-Agentx-Peer or ?peer=), forward the whole request to the peer's
-  // dashboard with its own token. The peer's board-server handles it as
-  // a normal admin call against its own agentx.json.
+  // (Cross-mesh proxy is now handled at the top of /api/admin/*. The
+  // local-token enforcement below still runs for any admin call that
+  // didn't match a specific handler above.)
   if (path.startsWith("/api/admin/")) {
-    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
-    if (peerId && peerId !== "primary") {
-      const peer = findPeer(peerId, ctx.config)
-      if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
-      await proxyAdminToPeer(req, res, peer, path + (url.search || ""))
-      return
-    }
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.

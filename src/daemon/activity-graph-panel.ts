@@ -307,23 +307,37 @@ function matchContact(
 function initiatorFrom(source: string, intent: string, raw: any): { id: string; name: string; avatar: string; kind: InitiatorKind } | null {
   if (!raw || typeof raw !== "object") return null
 
-  // ---- mesh-routed events: dig into raw.context.* ----
-  // These look like {agentId, context:{channel, sender, senderUsername, senderId}, message}
-  // and currently fall through every check below — that's why so many show
-  // up as "Schedule". Treat the embedded context as the initiator.
+  // ---- mesh-routed events: dig into raw.context.* + raw.senderAgentId ----
+  // Three caller variants seen in the wild:
+  //   1. modern A2A protocol (mesh + MCP):  raw.senderAgentId = "atlas"
+  //   2. /task with channel context:        raw.context.{channel,sender,senderUsername}
+  //   3. legacy A2A executor:               raw.context.sender = "agent:atlas"
+  //   4. bare A2A from old callers:         {agentId, message}  — no caller info
+  //                                         we still bucket these as "A2A" (not Schedule)
+  // so the operator sees "this is internal mesh traffic" rather than a fake
+  // cron entry.
   if (source === "mesh") {
+    // 1. Direct senderAgentId — most informative, future-proof.
+    if (typeof raw.senderAgentId === "string" && raw.senderAgentId.trim()) {
+      const aid = raw.senderAgentId.trim()
+      return { id: aid, name: aid, avatar: initialsFor(aid), kind: "a2a" }
+    }
     const ctx = raw.context && typeof raw.context === "object" ? raw.context : null
     if (ctx) {
       const senderUsername = typeof ctx.senderUsername === "string" ? ctx.senderUsername : null
       const senderName = typeof ctx.sender === "string" ? ctx.sender : null
       const senderId = typeof ctx.senderId === "string" ? ctx.senderId : null
-      // graph-classifier and similar pseudo-senders are system traffic; let
-      // the caller mark the row as "system" so the show-system toggle hides
-      // them rather than emitting a confusing entry under "Schedule".
+      // 3. legacy A2A — context.sender comes through as "agent:<name>".
+      if (senderName && senderName.startsWith("agent:")) {
+        const aid = senderName.slice("agent:".length)
+        if (aid && !isSystemSender(aid)) {
+          return { id: aid, name: aid, avatar: initialsFor(aid), kind: "a2a" }
+        }
+      }
+      // 2. Channel-context A2A (telegram/gitlab/github routed through mesh).
       const display = senderName || senderUsername || senderId
       if (display && !isSystemSender(senderUsername || senderName || "")) {
         const id = senderUsername || senderName || senderId!
-        // Channel-aware kind so the UI can render "Anis (GitLab MR)" etc.
         const kind: InitiatorKind =
           intent === "mesh.github" ? "github"
           : intent === "mesh.gitlab" ? "gitlab"
@@ -332,7 +346,11 @@ function initiatorFrom(source: string, intent: string, raw: any): { id: string; 
         return { id, name: senderName || senderUsername || id, avatar: initialsFor(display), kind }
       }
     }
-    // mesh.task without a recognizable sender → caller-dispatched a2a flow
+    // 4. Bare A2A — no sender info but it IS an internal mesh dispatch.
+    // Single bucket keeps the operator from confusing it with cron/system.
+    if (intent === "mesh.task" || intent === "mesh.a2a") {
+      return { id: "__a2a", name: "Internal (A2A)", avatar: "↻", kind: "a2a" }
+    }
     return null
   }
 

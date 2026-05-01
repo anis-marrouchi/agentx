@@ -195,7 +195,52 @@ export const TOPBAR_SCRIPT = `<script>
       });
     } catch (e) {}
   }
-  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); }
+  /**
+   * Make the topbar peer selector actually drive page content. When the
+   * operator picks a non-primary peer, every /api/admin/* request gets an
+   * X-Agentx-Peer header (and every EventSource on that path gets a ?peer=
+   * query, since EventSource can't set headers). The dashboard's existing
+   * proxy handler picks it up and forwards to the chosen peer.
+   *
+   * Without this hook, the activity-graph (and other admin pages) silently
+   * keep showing only the local node's data even after the operator picks
+   * a different peer in the topbar.
+   */
+  function wirePeerProxy(){
+    if (window.__axPeerWired) return; window.__axPeerWired = true;
+    var origFetch = window.fetch.bind(window);
+    window.fetch = function(input, init){
+      try {
+        var peer = currentPeer();
+        if (peer && peer !== 'primary') {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+          if (url.indexOf('/api/admin/') === 0 || url.indexOf('/api/admin/') > 0) {
+            init = init || {};
+            init.headers = new Headers(init.headers || {});
+            init.headers.set('X-Agentx-Peer', peer);
+          }
+        }
+      } catch (e) {}
+      return origFetch(input, init);
+    };
+    var OrigES = window.EventSource;
+    if (OrigES) {
+      window.EventSource = function(url, cfg){
+        try {
+          var peer = currentPeer();
+          if (peer && peer !== 'primary' && typeof url === 'string' && url.indexOf('/api/admin/') >= 0) {
+            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'peer=' + encodeURIComponent(peer);
+          }
+        } catch (e) {}
+        return new OrigES(url, cfg);
+      };
+      window.EventSource.prototype = OrigES.prototype;
+      window.EventSource.CONNECTING = OrigES.CONNECTING;
+      window.EventSource.OPEN = OrigES.OPEN;
+      window.EventSource.CLOSED = OrigES.CLOSED;
+    }
+  }
+  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); wirePeerProxy(); }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', wire);
   } else { wire(); }
