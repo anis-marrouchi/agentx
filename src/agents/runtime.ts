@@ -1,5 +1,6 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
+import { StringDecoder } from "string_decoder"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { buildAgentEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
@@ -423,12 +424,20 @@ export async function executeClaudeCodeStreaming(
       stdin: "ignore",
     })
 
-    // Parse stream-json output line by line
+    // Parse stream-json output line by line.
+    // StringDecoder buffers partial UTF-8 sequences across chunk
+    // boundaries; plain Buffer.toString() does not, so a chunk that
+    // ends mid-character (Arabic = 2 bytes, common emoji = 4 bytes)
+    // produced replacement chars or dropped letters in the agent's
+    // outbound text. The user reported "letters missing from words"
+    // on WhatsApp specifically — Arabic + emoji-heavy traffic is
+    // exactly the workload that exposes this. Hoisted out of the if
+    // block so the post-`await proc` flush can call decoder.end().
+    let lineBuffer = ""
+    const decoder = new StringDecoder("utf8")
     if (proc.stdout) {
-      let lineBuffer = ""
-
       proc.stdout.on("data", (chunk: Buffer) => {
-        lineBuffer += chunk.toString()
+        lineBuffer += decoder.write(chunk as Buffer)
         const lines = lineBuffer.split("\n")
         lineBuffer = lines.pop() || ""
 
@@ -515,6 +524,13 @@ export async function executeClaudeCodeStreaming(
     }
 
     const result = await proc
+
+    // Flush any partial UTF-8 sequence still buffered in the decoder.
+    // The stream-json output normally ends with a newline so this is a
+    // no-op, but it keeps the channel honest if the producer ever
+    // exits mid-character.
+    const tail = decoder.end()
+    if (tail) lineBuffer += tail
 
     // If we got no streaming content, fall back to stdout
     if (!fullText && result.stdout) {
