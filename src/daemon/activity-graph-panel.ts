@@ -113,23 +113,43 @@ const CHANNEL_DEF: Record<string, { label: string; color: string }> = {
 
 /** Collapse the storage `source` to the channel the operator thinks
  *  they're looking at. Examples:
- *    source=mesh, intent=mesh.github → "github"
- *    source=mesh, intent=mesh.gitlab → "gitlab"
- *    source=mesh, intent=mesh.a2a    → "a2a" (separate from generic mesh)
- *    source=mesh, intent=mesh.task   → "mesh"
+ *    source=mesh,     intent=mesh.github            → "github"
+ *    source=mesh,     intent=mesh.gitlab            → "gitlab"
+ *    source=mesh,     intent=mesh.a2a               → "a2a"
+ *    source=mesh,     intent=mesh.task              → "mesh"
+ *    source=workflow, intent=workflow.whatsapp-msg  → "whatsapp"
+ *    source=workflow, intent=workflow.hook          → "gitlab"|"github" (per payload)
  *  Everything else passes through unchanged. */
 function upstreamChannel(source: string, intent: string, raw: any): string {
-  if (source !== "mesh") return source
-  // raw.context.channel is canonical when present.
-  const ctxChan = raw?.context?.channel
-  if (typeof ctxChan === "string" && ctxChan in CHANNEL_DEF) return ctxChan
-  // Fall back to the intent suffix.
-  if (intent.startsWith("mesh.")) {
-    const suffix = intent.slice(5)
-    if (suffix === "a2a") return "a2a"
-    if (suffix in CHANNEL_DEF) return suffix
+  if (source === "mesh") {
+    const ctxChan = raw?.context?.channel
+    if (typeof ctxChan === "string" && ctxChan in CHANNEL_DEF) return ctxChan
+    if (intent.startsWith("mesh.")) {
+      const suffix = intent.slice(5)
+      if (suffix === "a2a") return "a2a"
+      if (suffix in CHANNEL_DEF) return suffix
+    }
+    return "mesh"
   }
-  return "mesh"
+  if (source === "workflow") {
+    // Trigger payload tells us the upstream channel for chat-style triggers.
+    const payload = raw?.event?.payload
+    const chan = typeof payload?.channel === "string" ? payload.channel : ""
+    if (chan && chan in CHANNEL_DEF) return chan
+    // Hook triggers — peek at the issueEvent shape to disambiguate.
+    const issueEvent = payload?.issueEvent || payload?.webhookEvent
+    if (issueEvent) {
+      if (issueEvent.user?.username || issueEvent.project?.path_with_namespace) return "gitlab"
+      if (issueEvent.sender?.login) return "github"
+    }
+    // Intent suffix as a final hint (e.g. `workflow.whatsapp-message`).
+    if (intent.startsWith("workflow.")) {
+      const suffix = intent.slice("workflow.".length).split("-")[0]
+      if (suffix in CHANNEL_DEF) return suffix
+    }
+    return "workflow"
+  }
+  return source
 }
 
 // Stable client color from id hash — semantically muted but distinct.
@@ -324,12 +344,49 @@ function initiatorFrom(source: string, intent: string, raw: any): { id: string; 
     }
   }
 
-  // ---- workflow: name the run/workflow, not "Schedule" ----
+  // ---- workflow: dig into the wrapped trigger payload first ----
+  // Workflow events envelope the original event under raw.event.payload.
+  // Two shapes seen in the wild:
+  //   - chat trigger:      raw.event.payload.{channel,sender,fromJid}
+  //   - hook trigger:      raw.event.payload.issueEvent.{user,project} (gitlab)
+  //                        raw.event.payload.issueEvent.{sender,...}   (github)
+  // Without this, workflow events fall through to "Schedule" — exactly what
+  // the user reported for an inbound WhatsApp message.
   if (source === "workflow") {
+    const payload = raw.event?.payload
+    if (payload && typeof payload === "object") {
+      // Chat trigger (WhatsApp/Telegram/Slack/Discord wrapped by a workflow).
+      if (payload.sender && typeof payload.sender === "object") {
+        const s = payload.sender
+        const username = typeof s.username === "string" ? s.username : null
+        const name = typeof s.name === "string" ? s.name : null
+        const id = username || (s.id != null ? String(s.id) : null) || name
+        if (id && !isSystemSender(username || name || "")) {
+          const chan = typeof payload.channel === "string" ? payload.channel : ""
+          const kind = chatKindFor(chan)
+          return { id, name: name || username || id, avatar: initialsFor(name || username || id), kind }
+        }
+      }
+      // GitLab webhook nested in a workflow hook trigger.
+      const issueEvent = payload.issueEvent || payload.webhookEvent
+      if (issueEvent && typeof issueEvent === "object") {
+        const u = issueEvent.user
+        if (u && typeof u === "object" && (u.username || u.name)) {
+          const id = u.username || u.name
+          const name = u.name || u.username
+          return { id, name, avatar: initialsFor(name), kind: "gitlab" }
+        }
+        // GitHub-shaped hook (sender.login)
+        const ghs = issueEvent.sender
+        if (ghs?.login) return { id: ghs.login, name: ghs.login, avatar: initialsFor(ghs.login), kind: "github" }
+      }
+    }
+    // No upstream sender we can attribute → name the workflow itself.
     const wid =
       (typeof raw.workflowId === "string" && raw.workflowId) ||
       (typeof raw.runId === "string" && raw.runId) ||
-      (typeof raw.workflow === "string" && raw.workflow)
+      (typeof raw.workflow === "string" && raw.workflow) ||
+      (typeof raw.event?.id === "string" && raw.event.id.split(":")[0])
     if (wid) return { id: `workflow:${wid}`, name: `Workflow: ${wid}`, avatar: "▶", kind: "workflow" }
   }
 
