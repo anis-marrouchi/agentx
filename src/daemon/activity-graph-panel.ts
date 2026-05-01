@@ -107,8 +107,12 @@ function colorForClient(id: string): string {
     noqta: "#10b981",
     hasanah: "#bc8cff",
     "hasanah-lab": "#bc8cff",
+    hexastack: "#06b6d4",
     hackathonat: "#ec775c",
     internal: "#6b7280",
+    // "unmapped" is rendered amber so it's visually obvious that the
+    // operator needs to add a contactMap or business.projects entry.
+    unmapped: "#d29922",
   }
   if (known[id]) return known[id]
   const palette = ["#e07a3a", "#3a7bd5", "#10b981", "#bc8cff", "#ec775c", "#bf8700", "#5865f2", "#cf222e"]
@@ -117,36 +121,108 @@ function colorForClient(id: string): string {
   return palette[Math.abs(h) % palette.length]
 }
 
-function clientFromProject(project: string | null | undefined): string {
-  if (!project) return "internal"
+function clientFromProject(project: string | null | undefined, projectsConfig?: Array<{ id: string; client?: string }>): string {
+  if (!project) return "unmapped"
+  // Explicit client mapping in business.projects[] wins.
+  if (projectsConfig) {
+    const hit = projectsConfig.find((p) => p.id === project)
+    if (hit?.client) return hit.client
+  }
   const slash = project.indexOf("/")
   return slash > 0 ? project.slice(0, slash) : project
 }
 
-// Best-effort initiator extraction per source.
+interface ContactMapEntry {
+  channel?: string
+  chatId?: string
+  username?: string
+  senderId?: string
+  client: string
+  project?: string
+  displayName?: string
+}
+
+/** Find a contact-map entry that matches the (source, sender, chatId)
+ *  tuple. Match priority: chatId > username > senderId > channel-default.
+ *  Returns undefined when no rule matches; the caller falls back to the
+ *  default "unmapped" / project-derived client. */
+function matchContact(
+  source: string,
+  raw: any,
+  contactMap: ContactMapEntry[],
+): ContactMapEntry | undefined {
+  if (!contactMap.length) return undefined
+  const chatId = String(raw?.chatId ?? raw?.message?.chat?.id ?? "")
+  const username = String(raw?.sender?.username ?? raw?.message?.from?.username ?? "")
+  const senderId = String(raw?.sender?.id ?? raw?.message?.from?.id ?? "")
+
+  const candidates = contactMap.filter((m) => !m.channel || m.channel === source)
+  // Specific match orders: by chatId, then username, then senderId, then channel-only fallback.
+  for (const m of candidates) {
+    if (m.chatId && chatId && m.chatId === chatId) return m
+  }
+  for (const m of candidates) {
+    if (m.username && username && m.username === username) return m
+  }
+  for (const m of candidates) {
+    if (m.senderId && senderId && m.senderId === senderId) return m
+  }
+  for (const m of candidates) {
+    if (!m.chatId && !m.username && !m.senderId && m.channel === source) return m
+  }
+  return undefined
+}
+
+// Best-effort initiator extraction per source. The raw_json shape differs:
+//   - chat-style channels (telegram/whatsapp/slack/discord): the IncomingMessage
+//     is what's stored, with sender.{id,username,name} at the top level.
+//   - gitlab webhook: the raw GitLab payload is stored as-is, with user.* at
+//     the top level (no IncomingMessage wrapper).
+//   - github webhook: raw GitHub payload, sender.login at top level.
 function initiatorFrom(source: string, raw: any): { id: string; name: string; avatar: string } | null {
   if (!raw || typeof raw !== "object") return null
+
+  // Chat-style: IncomingMessage shape with sender.{id,username,name}.
+  if (raw.sender && typeof raw.sender === "object") {
+    const s = raw.sender
+    const username = typeof s.username === "string" ? s.username : null
+    const name = typeof s.name === "string" ? s.name : null
+    const id = username || (s.id != null ? String(s.id) : null) || name
+    if (id) {
+      const display = name || username || id
+      return { id, name: display, avatar: initialsFor(display) }
+    }
+  }
+
+  // GitLab webhook payload as-is.
   if (source === "gitlab") {
-    const u = raw.payload?.user || raw.user
-    if (u?.username || u?.name) {
+    const u = raw.user || raw.payload?.user
+    if (u && typeof u === "object" && (u.username || u.name)) {
       const id = u.username || u.name
       const name = u.name || u.username
       return { id, name, avatar: initialsFor(name) }
     }
   }
+
+  // GitHub webhook payload — sender.login at top level.
   if (source === "github") {
-    const u = raw.payload?.sender || raw.sender || raw.payload?.user
-    if (u?.login) return { id: u.login, name: u.login, avatar: initialsFor(u.login) }
+    const s = raw.sender || raw.payload?.sender
+    if (s?.login) return { id: s.login, name: s.login, avatar: initialsFor(s.login) }
   }
+
+  // Last-ditch fallbacks for chat-style raw payloads we didn't catch above.
   if (source === "telegram") {
-    const f = raw.from || raw.payload?.from
-    if (f?.username) return { id: f.username, name: f.first_name || f.username, avatar: initialsFor(f.first_name || f.username) }
-    if (f?.id) return { id: String(f.id), name: f.first_name || `tg:${f.id}`, avatar: (f.first_name || "TG").slice(0, 2).toUpperCase() }
+    const f = raw.message?.from || raw.from
+    if (f?.username) {
+      const display = f.first_name || f.username
+      return { id: f.username, name: display, avatar: initialsFor(display) }
+    }
+    if (f?.id) return { id: String(f.id), name: f.first_name || `tg:${f.id}`, avatar: initialsFor(f.first_name || `tg${f.id}`) }
   }
   if (source === "whatsapp") {
-    const j = raw.from || raw.payload?.from
-    if (j) {
-      const id = String(j)
+    const f = raw.from || raw.payload?.from
+    if (f) {
+      const id = String(f)
       const name = id.replace(/@.*$/, "")
       return { id, name, avatar: initialsFor(name) }
     }
@@ -223,12 +299,30 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
   const initiatorMap = new Map<string, FleetInitiator>()
   const dispatches: FleetDispatch[] = []
 
+  // Pull config knobs once per snapshot.
+  const businessProjects = (daemonConfig as any)?.business?.projects ?? []
+  const contactMap: ContactMapEntry[] = (daemonConfig as any)?.business?.contactMap ?? []
+
   for (const ev of events) {
     let raw: any = null
     try { raw = JSON.parse(ev.raw_json) } catch { /* ignore */ }
 
-    const clientId = clientFromProject(ev.project)
-    const projectId = ev.project || `${clientId}/_${ev.source}`
+    // Resolve client + project, applying contact-map overrides for
+    // free-text channels (telegram, whatsapp, ...) where the event
+    // itself has no project metadata.
+    let clientId: string
+    let projectId: string
+    const contact = matchContact(ev.source, raw, contactMap)
+    if (contact) {
+      clientId = contact.client
+      projectId = contact.project || `${contact.client}/_chat`
+    } else if (ev.project) {
+      clientId = clientFromProject(ev.project, businessProjects)
+      projectId = ev.project
+    } else {
+      clientId = "unmapped"
+      projectId = `unmapped/_${ev.source}`
+    }
 
     if (!clientMap.has(clientId)) {
       clientMap.set(clientId, { id: clientId, name: clientId, color: colorForClient(clientId), projects: [] })
@@ -243,7 +337,11 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     const init = initiatorFrom(ev.source, raw)
     if (init) {
       initiatorId = init.id
-      if (!initiatorMap.has(init.id)) initiatorMap.set(init.id, init)
+      // Contact-map can override the display name (e.g. map "marrouchi" → "Anis")
+      const display = contact?.displayName || init.name
+      if (!initiatorMap.has(init.id) || contact?.displayName) {
+        initiatorMap.set(init.id, { ...init, name: display, avatar: initialsFor(display) })
+      }
     } else if (!initiatorMap.has("__system")) {
       initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱" })
     }

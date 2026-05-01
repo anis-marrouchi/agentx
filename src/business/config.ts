@@ -64,6 +64,38 @@ const projectSchema = z.object({
   /** AgentId of the PM for this project. Looked up by
    *  `Organization.pmFor(project)` at dispatch time. */
   pm: z.string().optional(),
+  /** Optional client this project belongs to. Used by the activity
+   *  graph to attribute non-projected events (Telegram chats, free-
+   *  text WhatsApp, cron jobs) to the right client. Falls back to
+   *  the leading segment of `id` (split on "/") when unset. */
+  client: z.string().optional(),
+})
+
+/** Maps a chat or sender to a client/project so free-text channels
+ *  (telegram/whatsapp/slack/discord/email) get attributed correctly
+ *  in the activity graph. Without this, every chat lands in the
+ *  fallback "internal" bucket — the operator can't tell which client
+ *  the agent was helping.
+ *
+ *  Match priority: chatId > username > channel-default. First match
+ *  wins. All fields except `client` are optional; `project` falls
+ *  back to `${client}/_chat` when unset. */
+const contactMapSchema = z.object({
+  /** Channel kind, e.g. "telegram", "whatsapp", "slack", "discord". */
+  channel: z.string().optional(),
+  /** Native chat id ("-100..." for tg groups, JID for WhatsApp). */
+  chatId: z.string().optional(),
+  /** Sender username/handle as exposed by the channel adapter. */
+  username: z.string().optional(),
+  /** Numeric sender id when username is unstable. */
+  senderId: z.string().optional(),
+  /** Client this contact belongs to. Required. */
+  client: z.string(),
+  /** Project this contact's traffic should attribute to. Defaults to
+   *  `${client}/_chat`. */
+  project: z.string().optional(),
+  /** Display name override for the initiator pill. */
+  displayName: z.string().optional(),
 })
 
 export const businessConfigSchema = z.object({
@@ -76,6 +108,10 @@ export const businessConfigSchema = z.object({
   /** Per-project metadata. Phase 3 — defaults to empty array, so
    *  existing agentx.json files validate without modification. */
   projects: z.array(projectSchema).default([]),
+  /** Maps free-text chat senders to a client/project so the activity
+   *  graph can attribute Telegram/WhatsApp/etc. to the right client
+   *  instead of the catch-all "internal" bucket. */
+  contactMap: z.array(contactMapSchema).default([]),
   /** Work-tick cadence in minutes during business hours. Default 15. */
   workTickMinutes: z.number().int().min(1).max(60).default(15),
   /** Max queue depth for an idle agent before skipping the work tick (avoids piling up). */
