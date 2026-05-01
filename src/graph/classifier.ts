@@ -237,14 +237,23 @@ export class Classifier {
       axes: n.axes,
     }))
     const userPrompt = [
-      `You are the intent classifier for AgentX's knowledge graph.`,
+      `You are the intent classifier for AgentX. You answer ONE question:`,
+      `"what kind of work does this message describe?" — verb-level only.`,
       ``,
-      `SCHEMA (fixed axes per level, root → leaf):`,
+      `IMPORTANT — what NOT to encode in the path:`,
+      `- Client / company / project / team names. Those are already on the event`,
+      `  metadata (project, channel, agentId). Embedding them in the path causes`,
+      `  duplicate nodes (one per client) for the same verb.`,
+      `- The specific subject (issue number, file name, person name). Same reason.`,
+      `- The agent's name or role. Pick the verb the *requester* intended.`,
+      ``,
+      `SCHEMA (fixed levels — pick one node per level):`,
       "```json",
       JSON.stringify(schema, null, 2),
       "```",
       ``,
-      `EXISTING NODES (choose ids from here when the message matches; propose NEW nodes only when nothing fits):`,
+      `EXISTING NODES (prefer reusing these; only invent a new node when no`,
+      `existing one fits):`,
       "```json",
       JSON.stringify(nodesForPrompt, null, 2),
       "```",
@@ -256,17 +265,26 @@ export class Classifier {
       `channel: ${input.channel ?? "?"}`,
       `sender: ${input.sender ?? "?"}`,
       ``,
-      `TASK: classify this message into one path through the schema — one node per level from root toward leaf. Shorter paths are OK if you are not confident past a certain depth. For any node id you invent, include its axes in proposedAxes.`,
+      `TASK:`,
+      `1. Classify into 'category' (closed enum): code, ops, support, admin,`,
+      `   knowledge, social, system. Pick the closest fit.`,
+      `2. Pick or propose a 'verb' node. Verb ids are dot-namespaced lower-kebab,`,
+      `   e.g. "review.merge-request", "deploy.staging", "investigate.error",`,
+      `   "chat.greeting", "fix.bug". Reuse an existing verb when the message is`,
+      `   the same kind of work as something already classified, even when the`,
+      `   client / project / subject differs.`,
+      ``,
+      `Examples (right vs wrong):`,
+      `- "Please review MR #957 on mtgl/system" → ["code", "review.merge-request"]`,
+      `   NOT ["business", "noqta", "mtgl-v2", "review-mr-957-system"]`,
+      `- "Deploy ksi-v2 to staging please" → ["ops", "deploy.staging"]`,
+      `   NOT ["business", "noqta", "ksi-v2", "deploy-ksi-v2-to-staging"]`,
+      `- "Hello Atlas" → ["support", "chat.greeting"]`,
       ``,
       `NODE ID RULES (strict — invalid ids get dropped):`,
-      `- lowercase-kebab only: [a-z0-9][a-z0-9_-]*`,
-      `- no spaces, no uppercase, no punctuation, no Arabic/other non-Latin`,
-      `- if the human-readable label is "Sales Manager", the id is "sales-manager"`,
-      `- if the label contains non-Latin script, use a short Latin-slug + put the original in axes.name`,
-      `- good: "business", "noqta", "sales-manager", "activity-review-mr"`,
-      `- bad:  "Business", "sales manager", "Scope: Business", "تليجرام"`,
-      ``,
-      `If a node needs a display name, put the human-readable form in axes.name — never in the node id.`,
+      `- lowercase-kebab + dots only: [a-z0-9][a-z0-9._-]*`,
+      `- no spaces, no uppercase, no Arabic/other non-Latin`,
+      `- verb ids should use a "category.specific" or "verb.modifier" shape`,
       ``,
       `Return ONE JSON object on one line, no prose, no fences:`,
       `  { "path": string[], "proposedAxes": { [nodeId]: { [axisName]: string } }, "leaf": { "input"?: string, "output"?: string }, "confidence": number }`,
@@ -317,7 +335,7 @@ export class Classifier {
     // We also drop any element that can't be slugified into a valid id (e.g.
     // a path entry of pure Arabic script) — better to classify with a shorter
     // path than to have the store reject the whole classification.
-    const NODE_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
+    const NODE_ID_RE = /^[a-z0-9][a-z0-9._-]*$/
     const slugMap = new Map<string, string>()
     const path: string[] = parsed.path
       .filter((s: unknown): s is string => typeof s === "string" && s.length > 0)
@@ -376,12 +394,13 @@ export class Classifier {
 }
 
 /** Normalize an LLM-proposed node label to a valid node id. Matches the
- *  schema's `^[a-z0-9][a-z0-9_-]*$` — lowercase, alnum/_/-, leading alnum. */
+ *  schema's `^[a-z0-9][a-z0-9._-]*$` — lowercase, alnum/./-/_, leading alnum.
+ *  Dots are preserved for verb ids like "review.merge-request". */
 function slugifyNodeId(raw: string): string {
   const s = raw
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "")
     .replace(/-{2,}/g, "-")
   if (!s) return ""

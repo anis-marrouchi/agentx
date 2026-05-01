@@ -49,7 +49,10 @@ export const graphSchemaSchema = z.object({
 })
 export type GraphSchema = z.infer<typeof graphSchemaSchema>
 
-export const nodeIdSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "node id must be lowercase slug")
+// Allow dots so verb-level node ids like "review.merge-request" or
+// "deploy.staging" parse cleanly (Phase 1 of the classifier-retire plan).
+// Dots are dot-namespaced verbs only — never the leading char.
+export const nodeIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, "node id must be lowercase slug (alnum, '.', '_', '-')")
 
 export const graphNodeSchema = z.object({
   id: nodeIdSchema,
