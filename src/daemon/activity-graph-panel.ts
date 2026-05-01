@@ -146,6 +146,55 @@ interface ContactMapEntry {
   displayName?: string
 }
 
+/** Build a map of agent id -> default client by walking the orgChart.
+ *  Sources:
+ *    1. business.projects[] declares { id, pm } — the pm gets that
+ *       project's client (via the leading-segment heuristic, or
+ *       project.client when set).
+ *    2. business.orgChart[] declares reportsTo edges — every direct
+ *       or transitive report of an agent inherits their client.
+ *
+ *  Why this matters: a mesh dispatch to `mtgl-v2` carries no project
+ *  metadata. Without this map, we'd attribute it to "unmapped".
+ *  With it, we look up mtgl-v2 -> reportsTo pm-mtgl -> default client
+ *  mtgl, and the dispatch lands in the right bucket.
+ */
+function buildAgentToClientMap(daemonConfig: DaemonConfig | null): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!daemonConfig) return out
+  const business: any = (daemonConfig as any).business
+  if (!business) return out
+
+  const projectsCfg: Array<{ id: string; pm?: string; client?: string }> = business.projects ?? []
+  const orgChart: Record<string, { reportsTo?: string }> = business.orgChart ?? {}
+
+  // Step 1: PMs declared on projects get their project's client.
+  for (const p of projectsCfg) {
+    if (!p.pm) continue
+    const c = p.client || (p.id.includes("/") ? p.id.slice(0, p.id.indexOf("/")) : p.id)
+    // First win — if a PM is on multiple projects of different clients
+    // we take the first; multi-client PMs are an explicit-config case
+    // for contactMap or business.projects[].client to disambiguate.
+    if (!out.has(p.pm)) out.set(p.pm, c)
+  }
+
+  // Step 2: Walk orgChart — for every agent, climb reportsTo until we
+  // hit one that has a client mapping. Cache as we go.
+  function clientFor(agentId: string, seen: Set<string> = new Set()): string | undefined {
+    if (out.has(agentId)) return out.get(agentId)
+    if (seen.has(agentId)) return undefined
+    seen.add(agentId)
+    const entry = orgChart[agentId]
+    if (!entry?.reportsTo) return undefined
+    const c = clientFor(entry.reportsTo, seen)
+    if (c) out.set(agentId, c)
+    return c
+  }
+  for (const agentId of Object.keys(orgChart)) clientFor(agentId)
+
+  return out
+}
+
 /** Find a contact-map entry that matches the (source, sender, chatId)
  *  tuple. Match priority: chatId > username > senderId > channel-default.
  *  Returns undefined when no rule matches; the caller falls back to the
@@ -345,33 +394,31 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
   // Pull config knobs once per snapshot.
   const businessProjects = (daemonConfig as any)?.business?.projects ?? []
   const contactMap: ContactMapEntry[] = (daemonConfig as any)?.business?.contactMap ?? []
+  const agentToClient = buildAgentToClientMap(daemonConfig)
 
   for (const ev of events) {
     let raw: any = null
     try { raw = JSON.parse(ev.raw_json) } catch { /* ignore */ }
 
-    // Resolve client + project, applying contact-map overrides for
-    // free-text channels (telegram, whatsapp, ...) where the event
-    // itself has no project metadata.
-    let clientId: string
-    let projectId: string
+    // Resolve client + project. Attribution precedence:
+    //   1. contactMap match (operator-explicit)
+    //   2. ev.project namespace prefix (with projects[].client override)
+    //   3. agent's default client via orgChart (agent reportsTo PM whose
+    //      project has a known client — covers mesh dispatches with no
+    //      project metadata, like a2a calls to mtgl-v2)
+    //   4. "unmapped" fallback
+    //
+    // Step 3 is computed per-decision below since it's agent-dependent.
     const contact = matchContact(ev.source, raw, contactMap)
+    let baseClientId: string | null = null
+    let baseProjectId: string | null = null
     if (contact) {
-      clientId = contact.client
-      projectId = contact.project || `${contact.client}/_chat`
+      baseClientId = contact.client
+      baseProjectId = contact.project || `${contact.client}/_chat`
     } else if (ev.project) {
-      clientId = clientFromProject(ev.project, businessProjects)
-      projectId = ev.project
-    } else {
-      clientId = "unmapped"
-      projectId = `unmapped/_${ev.source}`
+      baseClientId = clientFromProject(ev.project, businessProjects)
+      baseProjectId = ev.project
     }
-
-    if (!clientMap.has(clientId)) {
-      clientMap.set(clientId, { id: clientId, name: clientId, color: colorForClient(clientId), projects: [] })
-    }
-    if (!projectsByClient.has(clientId)) projectsByClient.set(clientId, new Set())
-    projectsByClient.get(clientId)!.add(projectId)
 
     const chanDef = CHANNEL_DEF[ev.source] || { label: ev.source, color: "#6b7280" }
     if (!channelMap.has(ev.source)) channelMap.set(ev.source, { id: ev.source, label: chanDef.label, color: chanDef.color })
@@ -391,7 +438,9 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
 
     const inputPreview = inputPreviewFrom(ev.source, raw)
 
-    // For each dispatched decision on this event, emit a dispatch row
+    // For each dispatched decision on this event, emit a dispatch row.
+    // Client/project resolves per-decision because the orgChart fallback
+    // depends on which agent received the dispatch.
     for (const d of decisionsByEvent.get(ev.id) ?? []) {
       if (d.outcome !== "dispatched" || !d.agent_id) continue
       const resKey = `${ev.id}|${d.decided_by}`
@@ -403,6 +452,29 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
       const outcome: FleetDispatch["outcome"] = active
         ? "active"
         : (res?.status === "error" || res?.status === "fail" ? "error" : "completed")
+
+      // Resolved client/project: contactMap > project > orgChart > unmapped
+      let clientId: string
+      let projectId: string
+      if (baseClientId) {
+        clientId = baseClientId
+        projectId = baseProjectId!
+      } else {
+        const orgClient = agentToClient.get(d.agent_id)
+        if (orgClient) {
+          clientId = orgClient
+          projectId = `${orgClient}/_${ev.source}`
+        } else {
+          clientId = "unmapped"
+          projectId = `unmapped/_${ev.source}`
+        }
+      }
+
+      if (!clientMap.has(clientId)) {
+        clientMap.set(clientId, { id: clientId, name: clientId, color: colorForClient(clientId), projects: [] })
+      }
+      if (!projectsByClient.has(clientId)) projectsByClient.set(clientId, new Set())
+      projectsByClient.get(clientId)!.add(projectId)
 
       dispatches.push({
         id: `${ev.id}|${d.decided_by}`,
@@ -662,6 +734,37 @@ export async function handleActivityGraphDetail(req: IncomingMessage, res: Serve
       }
     }
 
+    // Re-derive the attribution chain so the drawer can explain why a
+    // particular client was assigned. Same precedence the snapshot uses;
+    // we just record which step won.
+    const businessProjects = (_daemonConfigRef as any)?.business?.projects ?? []
+    const contactMap: ContactMapEntry[] = (_daemonConfigRef as any)?.business?.contactMap ?? []
+    const agentToClient = buildAgentToClientMap(_daemonConfigRef)
+    let attribution: { client: string; project: string; via: string } = { client: "unmapped", project: `unmapped/_${ev.source}`, via: "fallback" }
+    const contact = matchContact(ev.source, raw, contactMap)
+    if (contact) {
+      attribution = {
+        client: contact.client,
+        project: contact.project || `${contact.client}/_chat`,
+        via: `contactMap (channel=${contact.channel ?? "*"}${contact.username ? ` username=${contact.username}` : ""}${contact.chatId ? ` chatId=${contact.chatId}` : ""})`,
+      }
+    } else if (ev.project) {
+      attribution = {
+        client: clientFromProject(ev.project, businessProjects),
+        project: ev.project,
+        via: `project namespace prefix (${ev.project})`,
+      }
+    } else if (dec.agent_id) {
+      const orgClient = agentToClient.get(dec.agent_id)
+      if (orgClient) {
+        attribution = {
+          client: orgClient,
+          project: `${orgClient}/_${ev.source}`,
+          via: `orgChart fallback (agent ${dec.agent_id} reports up to a PM whose project belongs to ${orgClient})`,
+        }
+      }
+    }
+
     sendJson(res, 200, {
       id: dispatchId,
       eventId,
@@ -681,6 +784,7 @@ export async function handleActivityGraphDetail(req: IncomingMessage, res: Serve
       transcriptLen,
       resolutionStatus: resn?.status ?? null,
       resultSummary: resn?.result_summary ?? null,
+      attribution,
     })
   } catch (e: any) {
     sendJson(res, 500, { error: e?.message ?? String(e) })

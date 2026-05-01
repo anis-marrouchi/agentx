@@ -42,6 +42,7 @@ export interface FleetDispatchDetail {
   transcriptLen: number | null
   resolutionStatus: string | null
   resultSummary: string | null
+  attribution?: { client: string; project: string; via: string }
 }
 
 export async function fetchDispatchDetail(id: string): Promise<FleetDispatchDetail> {

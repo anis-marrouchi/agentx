@@ -798,6 +798,9 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
           </span></div>
           <div className="drawer__row"><span className="k">Client</span><span className="v"><span className="dot" style={{ background: client?.color, marginRight: 6 }} />{client?.name || item.clientId}</span></div>
           <div className="drawer__row"><span className="k">Project</span><span className="v mono">{item.projectId}</span></div>
+          {detail?.attribution && (
+            <div className="drawer__row"><span className="k">Attributed via</span><span className="v" style={{ fontSize: 11, color: "var(--ax-muted)" }}>{detail.attribution.via}</span></div>
+          )}
           <div className="drawer__row"><span className="k">Agent</span><span className="v">{agent?.name || item.agentId} {agent && <span className="tier" style={{ marginLeft: 6 }}>{agent.tier}</span>}</span></div>
           <div className="drawer__row"><span className="k">Channel</span><span className="v">{channel?.label || item.channelId} <span className="mono" style={{ color: "var(--ax-muted)", marginLeft: 4 }}>· from {initiator?.name || "Schedule"}</span></span></div>
           <div className="drawer__row"><span className="k">Started</span><span className="v">{new Date(item.startedAt).toLocaleString()}</span></div>
