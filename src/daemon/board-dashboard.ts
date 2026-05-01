@@ -938,10 +938,14 @@ let _wikiHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>)
 function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   if (_wikiHandler) return _wikiHandler
   const wikiDir = resolve(process.cwd(), ".agentx/wiki")
+  // Match the CLI defaults exactly so the embedded view renders the
+  // same hub/sidebar/article markup as `agentx wiki serve` does — they
+  // share the handler, but mode changes which `hubHome`/`hubSidebar`
+  // branches fire (graph mode adds the article-list + type-label).
   _wikiHandler = createWikiHandler({
     wikiDir,
     pathPrefix: "/admin/wiki",
-    mode: "unified",
+    mode: "graph",
     // No remote-peer browsing in the embedded view — keeps the dashboard
     // independent of mesh state. Operators who want cross-mesh wiki nav
     // can still run `agentx wiki serve --peer <url>`.
