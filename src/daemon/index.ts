@@ -2760,12 +2760,29 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               pushNotifications: false,
               stateTransitionHistory: false,
             },
-            skills: this.registry.list().map((a) => ({
-              id: a.id,
-              name: a.name,
-              description: `Agent "${a.name}" (${a.tier})`,
-              tags: [a.tier],
-            })),
+            // Each agent advertised as a skill (legacy A2A naming). The
+            // description is what peers SEE in their [Landscape]: anaemic
+            // text here means the calling agent has no idea what we do.
+            // Prefer (in order) an explicit `description`, the first
+            // sentence of the systemPrompt, then the agent name as a
+            // last-resort placeholder.
+            skills: this.registry.list().map((a) => {
+              // registry.list() returns a flat shape; pull the raw def
+              // from the config so we can read systemPrompt / mentions
+              // / description.
+              const def = (this.config.agents as any)[a.id] || {}
+              const desc =
+                (typeof def.description === "string" && def.description.trim()) ||
+                firstSentence(def.systemPrompt) ||
+                `Agent "${a.name}" (${a.tier})`
+              const mentions = Array.isArray(def.mentions) ? def.mentions.slice(0, 4) : []
+              return {
+                id: a.id,
+                name: a.name,
+                description: desc,
+                tags: [a.tier, ...mentions],
+              }
+            }),
             // Channels this node hosts. Used by mesh peers to route
             // workflow `action.send` calls back to the originating channel
             // when the workflow runs on a different node than the channel
@@ -3476,6 +3493,18 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       this.json(res, 500, { error: e.message })
     }
   }
+}
+
+/** Pull the first sentence (or ~120 chars) out of a systemPrompt so the
+ *  agent-card description tells peers something useful. Returns "" when
+ *  the input is empty/missing — callers fall through to a default. */
+function firstSentence(prompt: unknown): string {
+  if (typeof prompt !== "string") return ""
+  const trimmed = prompt.trim()
+  if (!trimmed) return ""
+  const m = trimmed.match(/^[^.!?\n]+[.!?]?/)
+  const head = (m ? m[0] : trimmed).trim()
+  return head.length > 140 ? head.slice(0, 137) + "…" : head
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {

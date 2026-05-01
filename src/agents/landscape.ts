@@ -103,14 +103,21 @@ export class LandscapeBuilder {
     // on every flap. Health shows up in /health and /live, not here.
     const remotePeers = this.meshPeers.filter(p => p.skills.length > 0)
     if (remotePeers.length) {
-      lines.push("Remote:")
+      lines.push("")
+      lines.push("Remote agents (on mesh peers — address by id via /mesh/task or A2A):")
       // Stable ordering so the peer list doesn't shuffle between builds and
       // invalidate the cache even when the set is unchanged.
       const sortedPeers = [...remotePeers].sort((a, b) => a.peer.localeCompare(b.peer))
       for (const peer of sortedPeers) {
         const sortedSkills = [...peer.skills].sort((a, b) => a.id.localeCompare(b.id))
         for (const skill of sortedSkills) {
-          lines.push(`• ${skill.name} [${peer.peer}] — ${skill.description.slice(0, 60)}`)
+          // Surface the agent id (skill.id) — that's what /mesh/task and
+          // A2A endpoints take as the routing key. Render the friendly
+          // name in parens, then the description. Without the id, the
+          // calling agent has to guess the routing key from the name.
+          const desc = (skill.description || "").slice(0, 80)
+          const nameSuffix = skill.name && skill.name !== skill.id ? ` (${skill.name})` : ""
+          lines.push(`• ${skill.id}${nameSuffix} [${peer.peer}] — ${desc}`)
         }
       }
     }
