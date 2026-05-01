@@ -60,6 +60,9 @@ export interface ClassifierOptions {
   /** Minimum confidence (0..1) to commit without human approval. 1.0 = never.
    *  OR'd with the structural policy. */
   autoApproveConfidence?: number
+  /** Anthropic model id for the direct classifier call. Default haiku —
+   *  this is metadata, not work, so we use the cheapest fast model. */
+  classifierModel?: string
   log?: (...args: unknown[]) => void
 }
 
@@ -70,6 +73,7 @@ export class Classifier {
   private draftAgent?: string
   private autoApprove: number
   private autoApproveStructure: ApprovalStructurePolicy
+  private classifierModel: string
   private log: (...args: unknown[]) => void
 
   constructor(opts: ClassifierOptions) {
@@ -79,6 +83,7 @@ export class Classifier {
     this.draftAgent = opts.draftAgent
     this.autoApprove = opts.autoApproveConfidence ?? 1.0
     this.autoApproveStructure = opts.autoApproveStructure ?? "extend-leaves"
+    this.classifierModel = opts.classifierModel ?? "claude-haiku-4-5-20251001"
     this.log = opts.log ?? console.error.bind(console, "[classifier]")
   }
 
@@ -118,16 +123,11 @@ export class Classifier {
       }
     }
 
-    // 2. Cache miss — need an LLM proposal. Callers without a draftAgent
-    //    get null, which the context engine treats as "no classification
-    //    this turn, fall through to the old regex tags."
-    if (!this.draftAgent) return null
-    // Skip classification when the target agent IS the draftAgent. The
-    // classifier's sub-call goes through the same registry; with
-    // maxConcurrent=1 it would queue behind the task we're trying to
-    // classify for, deadlocking both.
-    if (input.agentId && input.agentId === this.draftAgent) return null
-
+    // 2. Cache miss — need an LLM proposal. Phase 2 of classifier-retire
+    //    replaced the /task → graph-agent dispatch with a direct Anthropic
+    //    Messages call, so we no longer need a draftAgent and the
+    //    self-dispatch deadlock guard (`agentId === draftAgent`) is moot.
+    //    `graph.enabled` is the only gate now.
     const schema = this.store.loadSchema()
     const nodes = this.store.loadNodes().nodes
     const proposal = await this.proposePath(input, schema, nodes).catch((e) => {
@@ -219,7 +219,9 @@ export class Classifier {
     }
   }
 
-  /** Ask the draftAgent to propose a path. Pure I/O; no side effects. */
+  /** Direct call to Anthropic to propose a path. Pure I/O; no side effects.
+   *  Bypasses the mesh / dispatch / ledger pipeline so a classification
+   *  doesn't surface as a sibling task in the activity graph. */
   private async proposePath(
     input: ClassifyInput,
     schema: GraphSchema,
@@ -291,42 +293,18 @@ export class Classifier {
       `confidence in [0,1]. Prefer low confidence over guessing.`,
     ].join("\n")
 
-    // 60s ceiling. Originally 20s on the assumption the classifier makes a
-    // tiny JSON-only call, but in practice the daemon routes it through the
-    // draftAgent's Claude Code subprocess which has real cold-start + queue
-    // wait costs. At 20s almost every proposal was timing out on a fresh
-    // daemon. 60s is the right balance: long enough for a sonnet turn,
-    // short enough that a genuinely hung sub-task doesn't stall the caller.
-    const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), 60_000)
-    let r: Response
-    try {
-      r = await fetch(`${this.daemonUrl}/task`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-        },
-        body: JSON.stringify({
-          agent: this.draftAgent,
-          message: userPrompt,
-          context: {
-            channel: "a2a",
-            sender: "graph-classifier",
-            systemPrompt:
-              "You are a taxonomy classifier. Respond with a single JSON object. No prose, no code fences.",
-          },
-        }),
-        signal: ac.signal,
-      })
-    } finally {
-      clearTimeout(timer)
-    }
-    if (!r.ok) throw new Error(`daemon /task HTTP ${r.status}`)
-    const data: any = await r.json()
-    if (data?.error) throw new Error(String(data.error))
-
-    const parsed = extractJson((data?.content || "").toString())
+    // Phase 2 of classifier-retire: direct Anthropic Messages API call.
+    // Replaces the previous /task → graph-agent → mesh dispatch path
+    // (which created a sibling ledger event per classification — typically
+    // 60-70% of all dispatches in the activity graph). Single Haiku call,
+    // ~200ms cold, no dispatch wrapper, no extra ledger row.
+    //
+    // The daemon's `graph.classifierModel` config knob picks the model
+    // (default haiku); falls back to draftAgent's tier model if the
+    // operator wired a draftAgent for back-compat.
+    const data: any = await this.callAnthropicDirect(userPrompt)
+    const text = extractTextContent(data)
+    const parsed = extractJson(text)
     if (!parsed || !Array.isArray(parsed.path)) return null
 
     // LLM often returns human-readable labels ("Business", "Sales Manager").
@@ -391,6 +369,74 @@ export class Classifier {
   ): void {
     this.store.commitNodesAlongPath(path, proposedAxes, schema, createdBy)
   }
+
+  /** Resolve the Anthropic API key for direct classifier calls. Order:
+   *    1. ANTHROPIC_API_KEY env var (most explicit)
+   *    2. ${apiKey} resolved from daemon config providers.claude.apiKey
+   *       (which is what other tier-orchestrator agents already use)
+   *    3. resolveToken() from auth-store (Claude Code subscription, etc.)
+   *  Throws when none is available — operator should set
+   *  ANTHROPIC_API_KEY or providers.claude.apiKey for the classifier
+   *  to function (it costs Haiku-class tokens per inbound event). */
+  private async resolveApiKey(): Promise<string> {
+    if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
+    // Lazy-import to avoid pulling auth-store into every consumer.
+    try {
+      const { resolveToken } = await import("@/utils/auth-store")
+      const t = resolveToken()
+      if (t?.token) return t.token
+    } catch { /* fall through */ }
+    throw new Error("Classifier: no ANTHROPIC_API_KEY available (set the env var or providers.claude.apiKey)")
+  }
+
+  /** Direct call to Anthropic Messages API. Replaces the legacy
+   *  fetch(/task) → mesh → graph-agent path so the classifier no longer
+   *  generates a sibling ledger event. Cheap model on purpose: this is
+   *  metadata, not work. 30s timeout — Haiku usually returns in <1s. */
+  private async callAnthropicDirect(userPrompt: string): Promise<unknown> {
+    const apiKey = await this.resolveApiKey()
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 30_000)
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: this.classifierModel,
+          max_tokens: 800,
+          system:
+            "You are a taxonomy classifier. Respond with a single JSON object on one line. No prose, no code fences.",
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+        signal: ac.signal,
+      })
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "")
+        throw new Error(`Anthropic API ${res.status}: ${errText.slice(0, 200)}`)
+      }
+      return await res.json()
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+}
+
+/** Pull the first text content block out of an Anthropic Messages API
+ *  response. Matches the shape src/agent/providers/claude.ts uses; kept
+ *  inline so the classifier doesn't depend on the agent provider stack
+ *  (which has heavier tool-use plumbing the classifier doesn't need). */
+function extractTextContent(response: any): string {
+  if (!response || typeof response !== "object") return ""
+  const content = response.content
+  if (!Array.isArray(content)) return ""
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string") return block.text
+  }
+  return ""
 }
 
 /** Normalize an LLM-proposed node label to a valid node id. Matches the

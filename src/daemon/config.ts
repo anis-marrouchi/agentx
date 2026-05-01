@@ -380,6 +380,11 @@ const graphConfigSchema = z.object({
    *  is driven by `autoApproveStructure` alone. Lower it to e.g. 0.7 if you
    *  also want high-confidence structural changes auto-approved. */
   autoApproveConfidence: z.number().min(0).max(1).default(1.0),
+  /** Anthropic model id used for the direct classifier call (Phase 2 of
+   *  classifier-retire). Default haiku — classification is metadata, not
+   *  work, so we use the cheapest fast model. Override only if Haiku is
+   *  rate-limited or you want to A/B test. */
+  classifierModel: z.string().default("claude-haiku-4-5-20251001"),
   /** Weights for the wiki hybrid retrieval score. Path-ancestry match vs
    *  BM25 over article text. Sum need not be 1. */
   retrievalWeights: z.object({

@@ -280,6 +280,7 @@ export class AgentRegistry {
         draftAgent,
         autoApproveStructure: config.graph.autoApproveStructure,
         autoApproveConfidence: config.graph.autoApproveConfidence,
+        classifierModel: config.graph.classifierModel,
         log: (...a) => log("[classifier]", ...a),
       })
     }
