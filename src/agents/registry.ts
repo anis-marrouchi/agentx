@@ -413,6 +413,54 @@ export class AgentRegistry {
    *  conversation history to agents that need to rebuild context. */
   getSessionStore(): SessionStore { return this.sessions }
 
+  /** Fire-and-forget pre-rotation memo capture. Spawns a one-shot Haiku
+   *  call against the about-to-be-dropped Claude session asking for the
+   *  facts/decisions worth carrying forward, persists the result into
+   *  MemoryStore. Runs asynchronously so the calling rotation path
+   *  doesn't pay the extraction latency — the next user turn dispatches
+   *  immediately on the fresh session, and the memo lands in time for
+   *  whichever turn arrives ~30s later (which is when atlas's bloated-
+   *  session WhatsApp conversations actually need it).
+   *
+   *  Errors are swallowed by design — memory continuity is best-effort,
+   *  it must never block or break the rotation it's hooked into. */
+  private async captureRotationMemoAsync(
+    agentId: string,
+    def: AgentDef,
+    resumeSessionId: string,
+    channel: string,
+    chatId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      const { extractRotationMemo } = await import("./rotation-memo")
+      const result = await extractRotationMemo(def, resumeSessionId)
+      if (!result.memo) {
+        this.log(
+          `[${agentId}] rotation memo skipped (${reason}, ${result.reason}, ${result.durationMs}ms)`,
+        )
+        return
+      }
+      // Pull a few keywords from the chatId / channel so the memo
+      // surfaces from MemoryStore.findRelevant when the same chat
+      // continues. Without keywords BM25 has nothing to score against
+      // and the memo only floats up via the recent-fallback branch.
+      const chatKeyword = chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
+      this.memoryStore.addMemory(agentId, {
+        agentId,
+        category: "fact",
+        content: `[Rotation memo · ${reason}] ${result.memo}`,
+        keywords: ["rotation-memo", channel, ...chatKeyword],
+        source: { channel, chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
+      })
+      this.log(
+        `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars)`,
+      )
+    } catch (e: any) {
+      this.log(`rotation memo error: ${e?.message || e}`)
+    }
+  }
+
   /**
    * Build peer list for context engine.
    */
@@ -724,6 +772,7 @@ export class AgentRegistry {
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "stale")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
@@ -740,6 +789,7 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
       const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
@@ -757,6 +807,7 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTurns(task.agentId, channel, chatId)) {
       const turns = this.sessions.getTurnCount(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] max-turns rotation for ${channel}:${chatId} (${turns} turns ≥ ${this.sessions.getMaxTurnsPerSession()})`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "max-turns")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
