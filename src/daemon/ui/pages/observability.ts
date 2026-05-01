@@ -19,16 +19,14 @@ export interface ObservabilityPageOpts {
 export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): string {
   const body = `<div class="ax-obs">
   <header class="ax-obs__head">
-    <h1>Observability</h1>
-    <p class="ax-obs__sub">What your agents did, how much it cost, and what went wrong.</p>
+    <h1>Health</h1>
+    <p class="ax-obs__sub">Platform-health view: what each agent ran, what failed, and how the router decided. <span class="ax-obs__sub-link">Spend lives on the <a href="/admin/cost">Cost</a> page.</span></p>
     <nav class="ax-obs__tabs" role="tablist">
       <button class="ax-obs__tab is-active" data-tab="overview" role="tab">Overview</button>
       <button class="ax-obs__tab" data-tab="activity" role="tab">Activity</button>
-      <button class="ax-obs__tab" data-tab="cost" role="tab">Cost</button>
       <button class="ax-obs__tab" data-tab="errors" role="tab">Errors</button>
-      <span class="ax-obs__tab-sep" aria-hidden="true">·</span>
-      <button class="ax-obs__tab ax-obs__tab--tech" data-tab="routing" role="tab">Routing</button>
-      <button class="ax-obs__tab ax-obs__tab--tech" data-tab="rotations" role="tab">Rotations</button>
+      <button class="ax-obs__tab" data-tab="routing" role="tab">Routing</button>
+      <button class="ax-obs__tab" data-tab="rotations" role="tab">Rotations</button>
     </nav>
     <div class="ax-obs__filters" id="obs-filters">
       <label>Agent
@@ -92,22 +90,6 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
     </div>
   </section>
 
-  <section class="ax-obs__pane" data-pane="cost">
-    <div class="ax-obs__kpis" id="obs-cost-kpis"></div>
-    <div class="ax-obs__card">
-      <h3>30-day spend trend</h3>
-      <div id="obs-cost-trend" class="ax-obs__chart ax-obs__chart--cost"></div>
-    </div>
-    <div class="ax-obs__card">
-      <h3>Per-agent cost (30 days)</h3>
-      <table class="ax-obs__table">
-        <thead><tr><th>Agent</th><th class="num">Tasks</th><th class="num">Spend</th><th class="num">Tier-2 surcharge</th></tr></thead>
-        <tbody id="obs-cost-agents"></tbody>
-      </table>
-      <p class="ax-obs__empty" id="obs-cost-agents-empty" hidden>No usage in the last 30 days.</p>
-    </div>
-  </section>
-
   <section class="ax-obs__pane" data-pane="errors">
     <div class="ax-obs__table-wrap"><table class="ax-obs__table">
       <thead><tr><th>When</th><th>Agent</th><th>Channel</th><th>What happened</th><th>Message</th></tr></thead>
@@ -136,9 +118,9 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
 </div>`
 
   return renderShell({
-    title: "AgentX · Observability",
-    activeTab: "observability",
-    subtitle: "Observability",
+    title: "AgentX · Health",
+    activeTab: "health",
+    subtitle: "Health",
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     body,
@@ -160,8 +142,6 @@ const OBS_PAGE_CSS = `
 }
 .ax-obs__tab:hover { color: var(--ax-text); }
 .ax-obs__tab.is-active { color: var(--ax-text); border-bottom-color: var(--ax-accent, #3a7bd5); }
-.ax-obs__tab--tech { font-size: 11px; opacity: 0.7; }
-.ax-obs__tab-sep { color: var(--ax-muted); padding: 0 6px; opacity: 0.5; }
 .ax-obs__filters { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; padding: 8px 0; }
 .ax-obs__filters label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ax-muted); }
 .ax-obs__filters input {
@@ -312,7 +292,7 @@ const OBS_PAGE_SCRIPT = `
     var limit = document.getElementById('obs-limit').value || 50;
 
     var url, qs = (agent ? '?agent=' + encodeURIComponent(agent) : '');
-    if (tab === 'overview' || tab === 'activity' || tab === 'cost') {
+    if (tab === 'overview' || tab === 'activity') {
       url = '/api/admin/observability/' + tab + qs;
     } else {
       qs = '?limit=' + encodeURIComponent(limit) + (agent ? '&agent=' + encodeURIComponent(agent) : '');
@@ -331,7 +311,6 @@ const OBS_PAGE_SCRIPT = `
   function render(tab, data){
     if (tab === 'overview') return renderOverview(data);
     if (tab === 'activity') return renderActivity(data);
-    if (tab === 'cost') return renderCost(data);
     if (tab === 'errors') return renderErrors(data);
     if (tab === 'routing') return renderRouting(data);
     if (tab === 'rotations') return renderRotations(data);
@@ -429,34 +408,6 @@ const OBS_PAGE_SCRIPT = `
           + '<td class="num" ' + (r.errors_7d > 0 ? 'style="color:#cf222e;font-weight:600"' : '') + '>' + fmtNum(r.errors_7d) + '</td>'
           + '<td class="num">' + fmtMs(r.avg_duration_ms) + '</td>'
           + '<td class="small">' + fmtRel(r.last_active) + '</td>'
-          + '</tr>';
-      }).join('');
-    }
-  }
-
-  function renderCost(data){
-    if (!data) return;
-    var k = data.kpis || {};
-    document.getElementById('obs-cost-kpis').innerHTML = [
-      kpi('Today', fmtMoney(k.spendToday), deltaMoney(k.spendToday - (k.spendYesterday || 0))),
-      kpi('Last 7 days', fmtMoney(k.spend7d), 'avg ' + fmtMoney(k.spend7d / 7) + '/day'),
-      kpi('Last 30 days', fmtMoney(k.spend30d), 'avg ' + fmtMoney(k.spend30d / 30) + '/day'),
-      kpi('Tier-2 surcharge today', fmtMoney(k.tier2Today), (k.tier2PctToday * 100).toFixed(1) + '% of today\\u2019s spend'),
-    ].join('');
-    document.getElementById('obs-cost-trend').innerHTML = renderBarChart(data.trend || [], 'day', 'spend', null, true);
-
-    var rows = data.perAgent || [];
-    if (rows.length === 0) {
-      document.getElementById('obs-cost-agents-empty').hidden = false;
-      document.getElementById('obs-cost-agents').innerHTML = '';
-    } else {
-      document.getElementById('obs-cost-agents-empty').hidden = true;
-      document.getElementById('obs-cost-agents').innerHTML = rows.map(function(r){
-        return '<tr>'
-          + '<td>' + esc(r.agent_id) + '</td>'
-          + '<td class="num">' + fmtNum(r.tasks) + '</td>'
-          + '<td class="num">' + fmtMoney(r.spend) + '</td>'
-          + '<td class="num small" ' + (r.tier2 > 0 ? 'style="color:#bf8700"' : '') + '>' + fmtMoney(r.tier2) + '</td>'
           + '</tr>';
       }).join('');
     }

@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "observability"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -248,23 +248,24 @@ export function renderTopbar(opts: TopbarOpts): string {
   // /admin/graph for debugging the classifier, but we don't promote it in the
   // main nav until it earns its keep (wiki absorb writing graphPath, or
   // graph-based routing).
-  // Usage + Wiki run on their own ports. Emit a __HOST__ sentinel the
-  // client-side TOPBAR_SCRIPT rewrites to location.hostname, so the link
-  // works on localhost and Tailscale/LAN hostnames alike. Override with
-  // AGENTX_USAGE_URL / AGENTX_WIKI_URL when those surfaces live on a
-  // different host.
-  const usageUrl = process.env.AGENTX_USAGE_URL || `http://__HOST__:4201`
-  const wikiUrl = process.env.AGENTX_WIKI_URL || `http://__HOST__:4200`
-
+  //
+  // Health = SRE/platform-health (routing rules, rotations, errors-with-stack).
+  //   Renamed from "Observability" — that name suggested business-flow but
+  //   the page only ever covered platform health.
+  // Cost = top-level page (was a tab inside Observability + a standalone
+  //   `agentx usage serve` on port 4201). Both folded here.
+  // Wiki = embedded view over the running wiki server (`agentx wiki serve`,
+  //   default port 4200). One-stop nav; the wiki server is still where the
+  //   actual rendering happens.
   const tabs = [
     { id: "live", label: "Live", href: "/live", external: false },
     { id: "boards", label: "Boards", href: "/", external: false },
     { id: "workflows", label: "Workflows", href: "/workflows", external: false },
-    { id: "observability", label: "Observability", href: "/admin/observability", external: false },
     { id: "graph", label: "Activity Graph", href: "/admin/activity-graph", external: false },
+    { id: "health", label: "Health", href: "/admin/health", external: false },
+    { id: "cost", label: "Cost", href: "/admin/cost", external: false },
+    { id: "wiki", label: "Wiki", href: "/admin/wiki", external: false },
     { id: "admin", label: "Settings", href: "/admin", external: false },
-    { id: "wiki", label: "Wiki", href: wikiUrl, external: true },
-    { id: "usage", label: "Usage", href: usageUrl, external: true },
     { id: "glossary", label: "Glossary", href: "/glossary", external: false },
   ].map((t) => {
     const cls = t.id === opts.activeTab ? "ax-topbar__tab is-active" : "ax-topbar__tab"

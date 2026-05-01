@@ -61,15 +61,10 @@ usage
     }
   })
 
-// agentx usage serve — web dashboard
-usage
-  .command("serve")
-  .description("start a web dashboard for token usage visualization")
-  .option("--port <n>", "port number", "4201")
-  .action(async (opts) => {
-    const { startUsageDashboard } = await import("@/daemon/usage-dashboard")
-    startUsageDashboard(parseInt(opts.port))
-  })
+// `agentx usage serve` was removed — the same data now lives at
+// /admin/cost on the dashboard, so there's no second port to keep
+// running. Anyone with a stale `usage serve` bookmark gets a redirect
+// from the dashboard root pointing to /admin/cost.
 
 // agentx usage report — run Python analyzer
 usage

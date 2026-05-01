@@ -149,7 +149,8 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
       sendJson(res, 200, { rows: labelled })
       return true
     }
-    if (slug === "summary") {
+    // The page calls `/overview`; legacy callers hit `/summary`. Same data.
+    if (slug === "summary" || slug === "overview") {
       sendJson(res, 200, buildSummary(opened.db))
       return true
     }

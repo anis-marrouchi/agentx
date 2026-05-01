@@ -13,6 +13,8 @@ import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
+import { renderCostPage } from "./ui/pages/cost"
+import { renderWikiPage } from "./ui/pages/wiki"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
@@ -30,8 +32,7 @@ import type { TopbarPeer } from "./topbar"
 // --- Kanban Board Dashboard ---
 //
 // Zero-build web UI, served on its own port (default 4202, bound 127.0.0.1).
-// Mirrors src/daemon/usage-dashboard.ts — inline HTML/CSS/JS, manual routing,
-// no framework.
+// Inline HTML/CSS/JS, manual routing, no framework.
 //
 // Column kinds (see src/boards/config.ts):
 //   - open-backlog: opened issues with no Status::* scoped label
@@ -201,13 +202,36 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
   }
-  // /admin/observability — read-only view over route_traces + rotations + errors.
-  if (method === "GET" && path === "/admin/observability") {
+  // /admin/health — platform-health view over route_traces + rotations + errors.
+  // Renamed from /admin/observability — that name suggested business flow,
+  // but the page only ever covered platform health. Old URL redirects so
+  // existing bookmarks keep working.
+  if (method === "GET" && (path === "/admin/health" || path === "/admin/observability")) {
+    if (path === "/admin/observability") {
+      res.writeHead(302, { Location: "/admin/health" })
+      res.end()
+      return
+    }
     handleObservabilityGet(req, res, buildTopbarPeers(ctx.config))
     return
   }
   if (method === "GET" && path.startsWith("/api/admin/observability/")) {
     if (await handleObservabilityApi(req, res, path)) return
+  }
+  // /admin/cost — token-spend page. Replaces the standalone
+  // `agentx usage serve` (port 4201) and the Cost tab inside Health.
+  if (method === "GET" && path === "/admin/cost") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // /admin/wiki — embeds the running `agentx wiki serve` so wiki nav
+  // happens without leaving the dashboard. The wiki server is still the
+  // canonical renderer; this is just a one-stop-nav frame.
+  if (method === "GET" && path === "/admin/wiki") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWikiPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
   }
   // /admin/activity-graph — perspective lens over the intent ledger.
   if (method === "GET" && path === "/admin/activity-graph") {
