@@ -117,6 +117,8 @@ const GRAPH_CSS = `
 }
 .ax-graph__chk { cursor: pointer; user-select: none; }
 .ax-graph__hint { color: var(--ax-muted); font-size: 11px; margin-left: auto; }
+.ax-graph__hint.is-stale { color: #cf222e; }
+.ax-graph__hint.is-stale::before { content: "⚠ "; }
 
 .ax-graph__canvas-wrap {
   position: relative; border: 1px solid var(--ax-border); border-radius: 8px;
@@ -176,10 +178,30 @@ const GRAPH_CSS = `
 .ax-node-initiator--label {
   font-size: 10px; fill: #b45309; font-weight: 600;
 }
-.ax-node-group { cursor: pointer; transition: transform 0.18s ease; transform-box: fill-box; transform-origin: center; }
-.ax-node-group:hover { transform: scale(1.06); }
-.ax-node-group.is-root { filter: drop-shadow(0 0 6px rgba(255, 200, 0, 0.6)); }
+.ax-node-group { cursor: pointer; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease; }
+.ax-node-group .ax-node-shape { transition: transform 0.18s ease, fill 0.2s; transform-box: fill-box; transform-origin: center; }
+.ax-node-group:hover .ax-node-shape { transform: scale(1.06); }
+.ax-node-group.is-root { filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.7)); }
 .ax-node-group.is-dim { opacity: 0.35; }
+.ax-node-group.is-entering { animation: ax-node-enter 0.4s ease-out; }
+.ax-node-group.is-exiting { animation: ax-node-exit 0.3s ease-in forwards; }
+@keyframes ax-node-enter {
+  0% { opacity: 0; }
+  60% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+@keyframes ax-node-exit {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.ax-edge.is-entering { animation: ax-edge-fadein 0.4s ease-out; }
+@keyframes ax-edge-fadein {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+/* Particle traveling along an a2a or dispatch path while in-flight */
+.ax-particle { fill: #bf8700; }
+.ax-particle--dispatch { fill: #2da44e; }
 .ax-node-count {
   font-size: 10px; fill: white; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none;
 }
@@ -416,11 +438,25 @@ const GRAPH_SCRIPT = `
     return positions;
   }
 
-  // ---- RENDER ----------------------------------------------------------
+  // ---- RENDER (incremental — reuses DOM nodes across snapshots so CSS
+  // transitions on transform animate position changes smoothly) ---------
+
+  // DOM caches keyed by node-id / edge-id so renders are diffs.
+  var nodeEls = new Map();        // node.id -> <g>
+  var edgeEls = new Map();        // edge.id -> <path>
+  var bboxEls = new Map();        // node.id -> <rect> + <text> (client/project boundary in "All" mode)
+  var particleEls = new Map();    // edge.id -> <circle> with <animateMotion>
+
+  function clearAll() {
+    nodeEls.forEach(function(el){ el.remove(); }); nodeEls.clear();
+    edgeEls.forEach(function(el){ el.remove(); }); edgeEls.clear();
+    bboxEls.forEach(function(b){ b.rect.remove(); b.label.remove(); }); bboxEls.clear();
+    particleEls.forEach(function(el){ el.remove(); }); particleEls.clear();
+  }
+
   function render(snap) {
-    nodesG.innerHTML = '';
-    edgesG.innerHTML = '';
     if (!snap.nodes.length) {
+      clearAll();
       emptyEl.hidden = false;
       stamp.textContent = '';
       return;
@@ -432,74 +468,194 @@ const GRAPH_SCRIPT = `
     var renderEdges = snap.edges;
     if (activeOnly) {
       renderEdges = renderEdges.filter(function(e){ return e.active || e.kind === 'contains'; });
-      // Keep only nodes touched by active edges (or root + containment ancestors)
       renderEdges.forEach(function(e){ keepNodes.add(e.from); keepNodes.add(e.to); });
       if (snap.root) keepNodes.add(snap.root);
     }
     var renderNodes = activeOnly ? snap.nodes.filter(function(n){ return keepNodes.has(n.id); }) : snap.nodes;
 
+    // Skip invisible kinds in "All" mode (handled by bbox)
+    var skipNode = function(n){ return !snap.root && (n.type === 'client' || n.type === 'project'); };
+    // In "All" mode skip containment edges (bbox conveys it)
+    var visibleEdges = renderEdges.filter(function(e){ return snap.root || e.kind !== 'contains'; });
+
     var pos = layout({ nodes: renderNodes, edges: renderEdges, root: snap.root });
+
+    var seenNodeIds = new Set();
+    var seenEdgeIds = new Set();
+    var seenBboxIds = new Set();
 
     // ---- Boundary boxes (clients + projects in "All" mode) ----
     if (!snap.root) {
       renderNodes.forEach(function(n){
         var p = pos[n.id];
-        if (n.type === 'client' && p && p._bbox) {
-          var rect = svgEl('rect', { x: p._bbox.x, y: p._bbox.y, width: p._bbox.w, height: p._bbox.h, class: 'ax-node-client' });
-          edgesG.appendChild(rect); // behind nodes
-          var lbl = svgEl('text', { x: p._bbox.x + 12, y: p._bbox.y + 22, class: 'ax-node-client--label' }, n.label);
+        if (!p || !p._bbox) return;
+        if (n.type !== 'client' && n.type !== 'project') return;
+        seenBboxIds.add(n.id);
+        var entry = bboxEls.get(n.id);
+        var cls = n.type === 'client' ? 'ax-node-client' : 'ax-node-project';
+        var lblCls = n.type === 'client' ? 'ax-node-client--label' : 'ax-node-project--label';
+        var lblOffsetY = n.type === 'client' ? 22 : 14;
+        if (!entry) {
+          var rect = svgEl('rect', { x: p._bbox.x, y: p._bbox.y, width: p._bbox.w, height: p._bbox.h, class: cls });
+          edgesG.appendChild(rect);
+          var lbl = svgEl('text', { x: p._bbox.x + (n.type === 'client' ? 12 : 8), y: p._bbox.y + lblOffsetY, class: lblCls }, n.label);
           edgesG.appendChild(lbl);
-        }
-        if (n.type === 'project' && p && p._bbox) {
-          var rect2 = svgEl('rect', { x: p._bbox.x, y: p._bbox.y, width: p._bbox.w, height: p._bbox.h, class: 'ax-node-project' });
-          edgesG.appendChild(rect2);
-          var lbl2 = svgEl('text', { x: p._bbox.x + 8, y: p._bbox.y + 14, class: 'ax-node-project--label' }, n.label);
-          edgesG.appendChild(lbl2);
+          rect.addEventListener('click', function(){ pushPerspective(n); });
+          rect.addEventListener('mouseenter', function(ev){ showNodeTip(n, ev); });
+          rect.addEventListener('mousemove', moveTip);
+          rect.addEventListener('mouseleave', hideTip);
+          rect.style.cursor = 'pointer';
+          bboxEls.set(n.id, { rect: rect, label: lbl });
+        } else {
+          // Animate position via CSS transition on attribute change isn't
+          // free for SVG <rect> — use inline style transitions on x/y.
+          entry.rect.setAttribute('x', p._bbox.x);
+          entry.rect.setAttribute('y', p._bbox.y);
+          entry.rect.setAttribute('width', p._bbox.w);
+          entry.rect.setAttribute('height', p._bbox.h);
+          entry.label.setAttribute('x', p._bbox.x + (n.type === 'client' ? 12 : 8));
+          entry.label.setAttribute('y', p._bbox.y + lblOffsetY);
+          entry.label.textContent = n.label;
         }
       });
     }
+    // Remove bboxes that aren't in the new snapshot
+    bboxEls.forEach(function(entry, id){
+      if (!seenBboxIds.has(id)) {
+        entry.rect.remove();
+        entry.label.remove();
+        bboxEls.delete(id);
+      }
+    });
 
-    // ---- Edges (beziers) ----
-    renderEdges.forEach(function(e){
-      // Skip containment edges in "All" mode (the boundary boxes already convey it visually)
-      if (!snap.root && e.kind === 'contains') return;
+    // ---- Edges (paths + particles) ----
+    visibleEdges.forEach(function(e){
       var from = pos[e.from], to = pos[e.to];
       if (!from || !to) return;
+      seenEdgeIds.add(e.id);
+
       var dx = to.x - from.x, dy = to.y - from.y;
-      // Bezier control point — perpendicular offset for curvature
       var cx = (from.x + to.x) / 2 + (dy * 0.18);
       var cy = (from.y + to.y) / 2 - (dx * 0.18);
       var d = 'M' + from.x + ',' + from.y + ' Q' + cx + ',' + cy + ' ' + to.x + ',' + to.y;
+      var pathId = 'p-' + e.id.replace(/[^a-zA-Z0-9]/g, '-');
       var marker = (e.kind === 'dispatches') ? 'arrow-dispatch' : (e.kind === 'a2a') ? 'arrow-a2a' : (e.kind === 'resolves') ? 'arrow-resolve' : null;
-      var pathAttrs = {
-        d: d,
-        class: 'ax-edge ax-edge--' + e.kind + (e.active ? ' is-active' : ''),
-        'data-edge': e.id,
-      };
-      if (marker) pathAttrs['marker-end'] = 'url(#' + marker + ')';
-      var path = svgEl('path', pathAttrs);
-      path.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
-      path.addEventListener('mousemove', function(ev){ moveTip(ev); });
-      path.addEventListener('mouseleave', hideTip);
-      edgesG.appendChild(path);
+      var nextCls = 'ax-edge ax-edge--' + e.kind + (e.active ? ' is-active' : '');
+
+      var path = edgeEls.get(e.id);
+      if (!path) {
+        path = svgEl('path', {
+          d: d,
+          id: pathId,
+          class: nextCls + ' is-entering',
+          'data-edge': e.id,
+        });
+        if (marker) path.setAttribute('marker-end', 'url(#' + marker + ')');
+        path.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
+        path.addEventListener('mousemove', moveTip);
+        path.addEventListener('mouseleave', hideTip);
+        edgesG.appendChild(path);
+        edgeEls.set(e.id, path);
+      } else {
+        path.setAttribute('d', d);
+        path.setAttribute('class', nextCls);
+        if (marker) path.setAttribute('marker-end', 'url(#' + marker + ')');
+        else path.removeAttribute('marker-end');
+        path.id = pathId; // ensure stable id
+      }
+
+      // Particle on active dispatch and a2a edges. SVG <animateMotion> draws
+      // a small filled circle traveling along the path at a constant rate —
+      // the visual cue that "work is moving" between nodes.
+      var wantsParticle = e.active && (e.kind === 'a2a' || e.kind === 'dispatches');
+      var particle = particleEls.get(e.id);
+      if (wantsParticle) {
+        if (!particle) {
+          particle = svgEl('circle', { r: 3.5, class: 'ax-particle' + (e.kind === 'dispatches' ? ' ax-particle--dispatch' : '') });
+          var motion = svgEl('animateMotion', { dur: e.kind === 'a2a' ? '1.4s' : '1.8s', repeatCount: 'indefinite' });
+          var mpath = svgEl('mpath');
+          mpath.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + pathId);
+          mpath.setAttribute('href', '#' + pathId);
+          motion.appendChild(mpath);
+          particle.appendChild(motion);
+          edgesG.appendChild(particle);
+          particleEls.set(e.id, particle);
+        }
+      } else if (particle) {
+        particle.remove();
+        particleEls.delete(e.id);
+      }
+    });
+    // Remove edges that left the snapshot
+    edgeEls.forEach(function(el, id){
+      if (!seenEdgeIds.has(id)) {
+        el.remove();
+        edgeEls.delete(id);
+        var p = particleEls.get(id);
+        if (p) { p.remove(); particleEls.delete(id); }
+      }
     });
 
     // ---- Nodes ----
     renderNodes.forEach(function(n){
       var p = pos[n.id];
       if (!p) return;
-      // Skip rendering visual on client/project in "All" mode (already drawn as bbox)
-      if (!snap.root && (n.type === 'client' || n.type === 'project')) return;
-      var g = svgEl('g', { class: 'ax-node-group' + (n.id === snap.root ? ' is-root' : ''), 'data-node': n.id, transform: 'translate(' + p.x + ',' + p.y + ')' });
-      drawNode(g, n);
-      g.addEventListener('mouseenter', function(ev){ showNodeTip(n, ev); });
-      g.addEventListener('mousemove', function(ev){ moveTip(ev); });
-      g.addEventListener('mouseleave', hideTip);
-      g.addEventListener('click', function(){ pushPerspective(n); });
-      nodesG.appendChild(g);
+      if (skipNode(n)) return;
+      seenNodeIds.add(n.id);
+      var g = nodeEls.get(n.id);
+      var transform = 'translate(' + p.x + ',' + p.y + ')';
+      if (!g) {
+        g = svgEl('g', {
+          class: 'ax-node-group is-entering' + (n.id === snap.root ? ' is-root' : ''),
+          'data-node': n.id,
+          transform: transform,
+        });
+        drawNode(g, n);
+        g.addEventListener('mouseenter', function(ev){ showNodeTip(n, ev); });
+        g.addEventListener('mousemove', moveTip);
+        g.addEventListener('mouseleave', hideTip);
+        g.addEventListener('click', function(){ pushPerspective(n); });
+        nodesG.appendChild(g);
+        nodeEls.set(n.id, g);
+      } else {
+        // Existing node — just update transform; CSS transition animates
+        g.setAttribute('transform', transform);
+        var cls = 'ax-node-group' + (n.id === snap.root ? ' is-root' : '');
+        g.setAttribute('class', cls);
+        // Update active count badge if changed
+        updateNodeCount(g, n);
+      }
+    });
+    // Remove nodes that left
+    nodeEls.forEach(function(el, id){
+      if (!seenNodeIds.has(id)) {
+        el.classList.add('is-exiting');
+        setTimeout(function(){ el.remove(); }, 320);
+        nodeEls.delete(id);
+      }
     });
 
-    stamp.textContent = renderNodes.length + ' nodes · ' + renderEdges.length + ' edges · ' + new Date(snap.ts).toLocaleTimeString();
+    stamp.textContent = renderNodes.length + ' nodes · ' + visibleEdges.length + ' edges · streamed ' + new Date(snap.ts).toLocaleTimeString();
+  }
+
+  function updateNodeCount(g, n) {
+    // Find existing badge group
+    var badge = g.querySelector('.ax-node-count-bg');
+    if (n.count && n.count > 0) {
+      if (!badge) {
+        // Compute badge offset based on node type
+        var dx = n.type === 'agent' ? 22 : 24;
+        var dy = n.type === 'agent' ? -22 : -16;
+        drawCountBadge(g, n.count, dx, dy);
+      } else {
+        var txt = g.querySelector('.ax-node-count');
+        if (txt) txt.textContent = String(n.count);
+      }
+    } else if (badge) {
+      var txtEl = g.querySelector('.ax-node-count');
+      badge.remove();
+      if (txtEl) txtEl.remove();
+    }
   }
 
   function drawNode(g, n) {
@@ -581,12 +737,12 @@ const GRAPH_SCRIPT = `
   function pushPerspective(n) {
     stack.push({ root: n.id, label: n.label, type: n.type });
     renderCrumbs();
-    fetchAndRender();
+    connect();
   }
   function popTo(idx) {
     stack = stack.slice(0, idx);
     renderCrumbs();
-    fetchAndRender();
+    connect();
   }
   function renderCrumbs() {
     var html = '<a class="ax-graph__crumb' + (stack.length === 0 ? ' is-active' : '') + '" data-pop="0" href="#">All</a>';
@@ -605,23 +761,69 @@ const GRAPH_SCRIPT = `
     });
   }
 
-  // ---- FETCH -----------------------------------------------------------
-  async function fetchAndRender() {
+  // ---- LIVE STREAM (SSE) ----------------------------------------------
+  // Fresh snapshot every TICK_MS from the server. The render is
+  // incremental — same DOM nodes get reused across snapshots so the CSS
+  // transition on .ax-node-group { transition: transform } animates
+  // position changes smoothly. Reconnects on error/close.
+  var es = null;
+  var reconnectTimer = null;
+
+  function streamUrl() {
+    var hours = winSelect.value;
+    var root = stack.length ? stack[stack.length - 1].root : '';
+    return '/api/admin/activity-graph/stream?hours=' + encodeURIComponent(hours) + (root ? '&root=' + encodeURIComponent(root) : '');
+  }
+
+  function connect() {
+    if (es) { try { es.close(); } catch(_){} es = null; }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    es = new EventSource(streamUrl(), { withCredentials: true });
+    es.addEventListener('snapshot', function(ev){
+      try {
+        snapshot = JSON.parse(ev.data);
+        render(snapshot);
+        stamp.classList.remove('is-stale');
+      } catch (e) { console.error('snapshot parse failed', e); }
+    });
+    es.addEventListener('error', function(){
+      stamp.classList.add('is-stale');
+      // EventSource auto-reconnects on transient errors, but on a clean
+      // 4xx/5xx the readyState becomes CLOSED and we need to retry manually.
+      if (es && es.readyState === 2) {
+        reconnectTimer = setTimeout(connect, 2000);
+      }
+    });
+  }
+
+  // One-shot fetch fallback (used by the manual refresh button so the
+  // button does something visible even when the SSE is mid-tick).
+  async function fetchOnce() {
     var hours = winSelect.value;
     var root = stack.length ? stack[stack.length - 1].root : '';
     var qs = '?hours=' + encodeURIComponent(hours) + (root ? '&root=' + encodeURIComponent(root) : '');
     try {
       var r = await fetch('/api/admin/activity-graph' + qs, { credentials: 'same-origin' });
-      var data = await r.json();
-      snapshot = data;
+      snapshot = await r.json();
       render(snapshot);
     } catch (e) { console.error('graph fetch failed', e); }
   }
 
-  document.getElementById('ax-graph-refresh').addEventListener('click', fetchAndRender);
-  winSelect.addEventListener('change', fetchAndRender);
+  document.getElementById('ax-graph-refresh').addEventListener('click', function(){
+    fetchOnce();      // immediate render
+    connect();        // re-connect SSE so we don't wait a full tick
+  });
+  winSelect.addEventListener('change', connect);
   activeOnlyChk.addEventListener('change', function(){ if (snapshot) render(snapshot); });
 
-  fetchAndRender();
+  connect();
+  // Tab visibility: pause stream when tab hidden, reopen on return
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) {
+      if (es) { try { es.close(); } catch(_){} es = null; }
+    } else {
+      connect();
+    }
+  });
 })();
 `

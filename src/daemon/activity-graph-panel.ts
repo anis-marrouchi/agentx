@@ -345,3 +345,67 @@ export async function handleActivityGraphApi(req: IncomingMessage, res: ServerRe
   }
   return true
 }
+
+/** SSE stream — server pushes a fresh snapshot every TICK_MS. The client
+ *  diffs locally against its previous snapshot to animate adds/removes/
+ *  active-state changes. Stateless on the server side: each tick re-opens
+ *  the ledger read-only, builds the snapshot, writes the event, closes.
+ *  Polling-as-SSE is dumb-simple and avoids hooking the bus surface. */
+const TICK_MS = 5000
+
+export async function handleActivityGraphStream(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  if (path !== "/api/admin/activity-graph/stream" && !path.startsWith("/api/admin/activity-graph/stream?")) return false
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  })
+  res.write(`: connected\n\n`)
+
+  const url = new URL(req.url || "/", "http://_")
+  const root = url.searchParams.get("root")
+  const windowH = parseInt(url.searchParams.get("hours") || "24", 10)
+  const windowMs = Math.max(1, Math.min(168, Number.isFinite(windowH) ? windowH : 24)) * 60 * 60 * 1000
+
+  let stopped = false
+  const stop = () => { stopped = true }
+  req.on("close", stop)
+  req.on("error", stop)
+  res.on("close", stop)
+  res.on("error", stop)
+
+  // Heartbeat every 25s so reverse proxies don't kill the connection on idle.
+  const hb = setInterval(() => {
+    if (stopped) return
+    try { res.write(`: hb\n\n`) } catch { stop() }
+  }, 25_000)
+
+  try {
+    while (!stopped) {
+      const opened = openLedger()
+      if (opened) {
+        try {
+          const snap = buildSnapshot(opened.db, root, windowMs)
+          res.write(`event: snapshot\n`)
+          res.write(`data: ${JSON.stringify(snap)}\n\n`)
+        } catch (e: any) {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: e?.message ?? String(e) })}\n\n`)
+        } finally {
+          opened.close()
+        }
+      } else {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: "ledger not available" })}\n\n`)
+      }
+      // Sleep, but break early if the connection died.
+      const start = Date.now()
+      while (!stopped && Date.now() - start < TICK_MS) {
+        await new Promise((r) => setTimeout(r, 200))
+      }
+    }
+  } finally {
+    clearInterval(hb)
+    try { res.end() } catch { /* nothing */ }
+  }
+  return true
+}

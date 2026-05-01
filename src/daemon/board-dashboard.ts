@@ -13,7 +13,7 @@ import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
-import { handleActivityGraphGet, handleActivityGraphApi } from "./activity-graph-panel"
+import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
@@ -211,6 +211,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "GET" && path === "/api/admin/activity-graph") {
     if (await handleActivityGraphApi(req, res, path)) return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/activity-graph/stream")) {
+    if (await handleActivityGraphStream(req, res, path)) return
   }
   // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
   const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
