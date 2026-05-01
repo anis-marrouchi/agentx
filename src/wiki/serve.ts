@@ -1077,13 +1077,33 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
 
 // --- Server ---
 
-export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" | "unified" = "graph"): void {
+export interface WikiHandlerOpts {
+  wikiDir: string
+  agentFilter?: string
+  peerUrls?: string[]
+  mode?: "flat" | "graph" | "unified"
+  /** Mount this handler under a URL prefix (e.g. "/admin/wiki" when
+   *  embedded in the dashboard). Routes are matched against the path
+   *  with the prefix stripped, and hrefs in the rendered HTML get the
+   *  prefix re-prepended so links round-trip back to the same mount. */
+  pathPrefix?: string
+}
+
+/** Build the wiki HTTP request handler. Same logic as `startWikiServer`,
+ *  but factored out so the dashboard can mount it at `/admin/wiki/*` —
+ *  one HTTP listener instead of two. */
+export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  const { wikiDir, agentFilter, peerUrls = [], mode = "graph", pathPrefix = "" } = opts
+  const prefix = pathPrefix.replace(/\/+$/, "")
   const hub = new WikiHub(wikiDir, undefined, mode)
   const mesh = peerUrls.length > 0 ? new MeshWikiClient(peerUrls) : null
 
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url || "/", `http://localhost:${port}`)
-    const path = decodeURIComponent(url.pathname)
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url || "/", `http://localhost`)
+    const rawPath = decodeURIComponent(url.pathname)
+    const path = prefix && rawPath.startsWith(prefix)
+      ? (rawPath.slice(prefix.length) || "/")
+      : rawPath
 
     let html: string | null = null
     let status = 200
@@ -1275,8 +1295,35 @@ export function startWikiServer(wikiDir: string, port: number = 4200, agentFilte
     }
 
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(html)
-  })
+    res.end(prefix ? prefixHrefs(html, prefix) : html)
+  }
+}
 
+/** Re-prepend the mount prefix to every absolute internal href the wiki
+ *  generates (`/article/...`, `/agent/...`, `/tag/...`, `/`, `/search`,
+ *  `/lint`, `/entries`, `/remote/...`). Skips `//` (protocol-relative)
+ *  and external links. Cheap: a few regexes on the rendered HTML so we
+ *  don't need to thread `pathPrefix` through every layout helper.
+ *
+ *  Also injects a small "← Dashboard" pill so embedded users have a way
+ *  back to the AgentX dashboard tabs (the wiki page renders its own
+ *  full-screen UI and replaces the dashboard chrome). */
+function prefixHrefs(html: string, prefix: string): string {
+  // href and form action attributes
+  html = html.replace(/(\s(?:href|action)=")\/(?!\/)/g, `$1${prefix}/`)
+  // de-dupe if already prefixed
+  html = html.replace(new RegExp(`(${prefix})${prefix}/`, "g"), `${prefix}/`)
+  // back-pill — fixed top-right, neutral styling so it works in any wiki theme
+  const pill = `<a href="/admin" style="position:fixed;top:10px;right:14px;z-index:9999;padding:5px 11px;background:rgba(0,0,0,0.55);color:#fff;font:12px/1.2 'IBM Plex Sans',system-ui,sans-serif;text-decoration:none;border-radius:6px;border:1px solid rgba(255,255,255,0.18);backdrop-filter:blur(6px)">← Dashboard</a>`
+  html = html.replace(/<body([^>]*)>/, `<body$1>${pill}`)
+  return html
+}
+
+/** Thin wrapper that runs the handler on its own port. Kept for the
+ *  `agentx wiki serve` CLI; the dashboard uses `createWikiHandler`
+ *  directly. */
+export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" | "unified" = "graph"): void {
+  const handler = createWikiHandler({ wikiDir, agentFilter, peerUrls, mode })
+  const server = createServer((req, res) => { void handler(req, res) })
   server.listen(port)
 }

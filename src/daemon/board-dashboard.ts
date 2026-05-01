@@ -14,7 +14,7 @@ import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-pa
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { renderCostPage } from "./ui/pages/cost"
-import { renderWikiPage } from "./ui/pages/wiki"
+import { createWikiHandler } from "@/wiki/serve"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
@@ -225,12 +225,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  // /admin/wiki — embeds the running `agentx wiki serve` so wiki nav
-  // happens without leaving the dashboard. The wiki server is still the
-  // canonical renderer; this is just a one-stop-nav frame.
-  if (method === "GET" && path === "/admin/wiki") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWikiPage({ peers: buildTopbarPeers(ctx.config) }))
+  // /admin/wiki/* — wiki UI mounted natively into the dashboard. Same
+  // renderer as `agentx wiki serve`, no second port required. The wiki
+  // hub instance is created lazily on first request and reused for the
+  // lifetime of the dashboard process; updates from `wiki absorb` are
+  // picked up because each render rebuilds its index from disk.
+  if (method === "GET" && (path === "/admin/wiki" || path.startsWith("/admin/wiki/"))) {
+    if (path === "/admin/wiki") {
+      // Trailing slash so internal links stay relative to the mount.
+      res.writeHead(302, { Location: "/admin/wiki/" })
+      res.end()
+      return
+    }
+    await getOrCreateWikiHandler(ctx)(req, res)
     return
   }
   // /admin/activity-graph — perspective lens over the intent ledger.
@@ -921,6 +928,27 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
     base.error = e.message || String(e)
   }
   return base
+}
+
+// Lazy /admin/wiki/* handler — built once per dashboard process. The
+// WikiHub it wraps reads articles from disk on every request (no
+// in-memory cache), so absorbs and edits from elsewhere show up
+// without a restart.
+let _wikiHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | null = null
+function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  if (_wikiHandler) return _wikiHandler
+  const wikiDir = resolve(process.cwd(), ".agentx/wiki")
+  _wikiHandler = createWikiHandler({
+    wikiDir,
+    pathPrefix: "/admin/wiki",
+    mode: "unified",
+    // No remote-peer browsing in the embedded view — keeps the dashboard
+    // independent of mesh state. Operators who want cross-mesh wiki nav
+    // can still run `agentx wiki serve --peer <url>`.
+  })
+  // ctx is passed for future use (auth etc.) but unused right now.
+  void ctx
+  return _wikiHandler
 }
 
 // Tiny helper to double-json a Response only once.
