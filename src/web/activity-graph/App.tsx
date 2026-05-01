@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import {
-  fetchSnapshot, subscribeSnapshot, fmtDur, fmtTime, fmtRelative,
+  fetchSnapshot, subscribeSnapshot, fetchDispatchDetail, fmtDur, fmtTime, fmtRelative,
   type FleetSnapshot, type FleetDispatch, type FleetClient, type FleetAgent,
-  type FleetChannel, type FleetInitiator,
+  type FleetChannel, type FleetInitiator, type FleetDispatchDetail,
 } from "./api"
 
 // ─────────────────────────────────────────────────────────────────────
@@ -756,11 +756,29 @@ function FlowJourneyRow({ d, lookup, onClick }: { d: FleetDispatch; lookup: Look
 // Detail drawer
 
 function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup: Lookup; onClose: () => void }) {
+  const [detail, setDetail] = useState<FleetDispatchDetail | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!item) { setDetail(null); return }
+    setLoading(true)
+    let cancelled = false
+    fetchDispatchDetail(item.id)
+      .then((d) => { if (!cancelled) { setDetail(d); setLoading(false) } })
+      .catch((e) => { if (!cancelled) { console.error(e); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [item?.id])
+
   if (!item) return null
   const client = lookup.getClient(item.clientId)
   const agent = lookup.getAgent(item.agentId)
   const channel = lookup.getChannel(item.channelId)
   const initiator = lookup.getInitiator(item.initiatorId)
+
+  // Prefer the detail's longer text; fall back to the inline preview.
+  const inputText = detail?.input || item.inputPreview || ""
+  const responseText = detail?.response || ""
+
   return (
     <>
       <div className="drawer-overlay" onClick={onClose} />
@@ -781,9 +799,39 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
           <div className="drawer__row"><span className="k">Client</span><span className="v"><span className="dot" style={{ background: client?.color, marginRight: 6 }} />{client?.name || item.clientId}</span></div>
           <div className="drawer__row"><span className="k">Project</span><span className="v mono">{item.projectId}</span></div>
           <div className="drawer__row"><span className="k">Agent</span><span className="v">{agent?.name || item.agentId} {agent && <span className="tier" style={{ marginLeft: 6 }}>{agent.tier}</span>}</span></div>
+          <div className="drawer__row"><span className="k">Channel</span><span className="v">{channel?.label || item.channelId} <span className="mono" style={{ color: "var(--ax-muted)", marginLeft: 4 }}>· from {initiator?.name || "Schedule"}</span></span></div>
           <div className="drawer__row"><span className="k">Started</span><span className="v">{new Date(item.startedAt).toLocaleString()}</span></div>
           <div className="drawer__row"><span className="k">Duration</span><span className="v">{fmtDur(item.duration)}{item.active ? " (running)" : ""}</span></div>
-          {item.tokens > 0 && <div className="drawer__row"><span className="k">Tokens</span><span className="v mono">{item.tokens.toLocaleString()}</span></div>}
+
+          {/* Conversation panes — what was sent, what came back */}
+          <div className="conv">
+            <div className="conv__pane">
+              <div className="conv__hd">
+                <span className="dot" style={{ background: channel?.color }} />
+                <span className="conv__role">Inbound · {initiator?.name || channel?.label}</span>
+              </div>
+              <pre className="conv__body">{inputText || (loading ? "Loading…" : "(no inbound text)")}</pre>
+            </div>
+            <div className="conv__pane">
+              <div className="conv__hd">
+                <span className="avatar avatar--agent" style={{ width: 18, height: 18, fontSize: 8 }}>{(agent?.name || item.agentId).slice(0, 2).toUpperCase()}</span>
+                <span className="conv__role">Outbound · {agent?.name || item.agentId}</span>
+                {item.active && <span className="chip chip--active" style={{ marginLeft: "auto" }}>● in progress</span>}
+              </div>
+              <pre className="conv__body">{
+                responseText
+                  ? responseText
+                  : item.active
+                    ? "(still running — response will appear here when complete)"
+                    : loading
+                      ? "Loading…"
+                      : "(response not captured)"
+              }</pre>
+              {detail?.transcriptLen && detail.transcriptLen > 1 && (
+                <div className="conv__meta">Full transcript: {detail.transcriptLen} turns (in <span className="mono">.agentx/task-history/</span>)</div>
+              )}
+            </div>
+          </div>
 
           <div className="drawer__journey">
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ax-muted)", fontWeight: 600, marginBottom: 12 }}>Task journey</div>

@@ -20,6 +20,34 @@ export interface FleetDispatch {
   active: boolean
   outcome: "completed" | "active" | "error"
   tokens: number
+  inputPreview: string
+}
+
+export interface FleetDispatchDetail {
+  id: string
+  eventId: string
+  source: string
+  subject: string | null
+  intent: string | null
+  project: string | null
+  decidedBy: string
+  agentId: string | null
+  outcome: string
+  reason: string | null
+  startedAt: number
+  resolvedAt: number | null
+  durationMs: number | null
+  input: string
+  response: string | null
+  transcriptLen: number | null
+  resolutionStatus: string | null
+  resultSummary: string | null
+}
+
+export async function fetchDispatchDetail(id: string): Promise<FleetDispatchDetail> {
+  const r = await fetch(`/api/admin/activity-graph/dispatch/${encodeURIComponent(id)}`, { credentials: "same-origin" })
+  if (!r.ok) throw new Error(`detail fetch ${r.status}`)
+  return await r.json() as FleetDispatchDetail
 }
 export interface FleetSnapshot {
   now: number

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
-import { resolve } from "path"
-import { existsSync } from "fs"
+import { resolve, join } from "path"
+import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { renderActivityGraphPage } from "./ui/pages/activity-graph"
 import type { TopbarPeer } from "./topbar"
@@ -70,6 +70,10 @@ export interface FleetDispatch {
   active: boolean
   outcome: "completed" | "active" | "error"
   tokens: number
+  /** First ~200 chars of the inbound message text. Inline so the drawer
+   *  can render the trigger without an extra round-trip. Full text +
+   *  agent response come from the detail endpoint. */
+  inputPreview: string
 }
 export interface FleetSnapshot {
   now: number
@@ -236,6 +240,45 @@ function initialsFor(name: string): string {
   return String(name || "?").slice(0, 2).toUpperCase()
 }
 
+/** Pull a short text preview of what triggered this event from its
+ *  raw payload. Each source stashes the human-meaningful text in a
+ *  different place; we try the most-likely paths in order and trim
+ *  to a fixed cap. Empty string when nothing readable was found. */
+function inputPreviewFrom(source: string, raw: any): string {
+  if (!raw || typeof raw !== "object") return ""
+  const candidates: Array<unknown> = []
+  // Chat-style normalized IncomingMessage
+  if (typeof raw.text === "string") candidates.push(raw.text)
+  // Telegram raw payload
+  if (raw.message?.text) candidates.push(raw.message.text)
+  if (raw.message?.caption) candidates.push(raw.message.caption)
+  // GitLab webhook
+  if (raw.object_attributes?.note) candidates.push(raw.object_attributes.note)
+  if (raw.object_attributes?.title) {
+    const t = raw.object_attributes.title
+    const d = raw.object_attributes.description
+    candidates.push(d ? `${t}\n${d}` : t)
+  }
+  // GitHub webhook
+  if (raw.comment?.body) candidates.push(raw.comment.body)
+  if (raw.issue?.title) candidates.push(raw.issue.title + (raw.issue.body ? `\n${raw.issue.body}` : ""))
+  if (raw.pull_request?.title) candidates.push(raw.pull_request.title)
+  // mesh / cron / workflow envelopes
+  if (typeof raw.message === "string") candidates.push(raw.message)
+  if (typeof raw.prompt === "string") candidates.push(raw.prompt)
+  if (typeof raw.input === "string") candidates.push(raw.input)
+  if (raw.payload && typeof raw.payload.text === "string") candidates.push(raw.payload.text)
+  if (raw.payload && typeof raw.payload.message === "string") candidates.push(raw.payload.message)
+
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim().length > 0) {
+      const s = c.trim()
+      return s.length > 220 ? s.slice(0, 217) + "…" : s
+    }
+  }
+  return ""
+}
+
 // Trim "merge_request:957:..." → "MR #957", "issue:42:..." → "issue #42", etc.
 function shortSubject(subject: string | null): string {
   if (!subject) return "(no subject)"
@@ -346,6 +389,8 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
       initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱" })
     }
 
+    const inputPreview = inputPreviewFrom(ev.source, raw)
+
     // For each dispatched decision on this event, emit a dispatch row
     for (const d of decisionsByEvent.get(ev.id) ?? []) {
       if (d.outcome !== "dispatched" || !d.agent_id) continue
@@ -374,6 +419,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
         active,
         outcome,
         tokens: 0,
+        inputPreview,
       })
     }
   }
@@ -515,4 +561,131 @@ export async function handleActivityGraphStream(req: IncomingMessage, res: Serve
 function clampWindow(h: number): number {
   if (!Number.isFinite(h) || h < 1) return 6
   return Math.min(720, Math.max(1, h))
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch detail — joins the file-based task-history JSON to recover the
+// full input + agent's response for the drawer. The ledger doesn't store
+// responses (only resolutions), so we look them up by (agentId, startedAt±)
+// in .agentx/task-history/<agent>/<day>/*.json.
+
+interface TaskRecordLite {
+  id?: string
+  agentId?: string
+  channel?: string
+  message?: string
+  responseText?: string
+  startedAt?: string | number
+  durationMs?: number
+  ok?: boolean
+}
+
+function findTaskRecord(agentId: string, startedAtMs: number, fuzzMs = 5_000): TaskRecordLite | null {
+  const day = new Date(startedAtMs).toISOString().slice(0, 10)
+  const dir = resolve(process.cwd(), ".agentx/task-history", agentId, day)
+  if (!existsSync(dir)) {
+    // Try yesterday too — UTC day boundary can put a 22:59 dispatch on
+    // either side depending on local TZ.
+    const yDay = new Date(startedAtMs - 86400_000).toISOString().slice(0, 10)
+    const yDir = resolve(process.cwd(), ".agentx/task-history", agentId, yDay)
+    if (!existsSync(yDir)) return null
+    return scanDir(yDir, startedAtMs, fuzzMs)
+  }
+  return scanDir(dir, startedAtMs, fuzzMs)
+}
+
+function scanDir(dir: string, startedAtMs: number, fuzzMs: number): TaskRecordLite | null {
+  let best: TaskRecordLite | null = null
+  let bestDelta = Infinity
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue
+    let parsed: TaskRecordLite
+    try { parsed = JSON.parse(readFileSync(join(dir, f), "utf-8")) }
+    catch { continue }
+    const ts = parsed.startedAt
+    let recMs: number
+    if (typeof ts === "number") recMs = ts
+    else if (typeof ts === "string") {
+      const n = Date.parse(ts)
+      if (!Number.isFinite(n)) continue
+      recMs = n
+    } else continue
+    const d = Math.abs(recMs - startedAtMs)
+    if (d < bestDelta && d <= fuzzMs) {
+      best = parsed
+      bestDelta = d
+    }
+  }
+  return best
+}
+
+export async function handleActivityGraphDetail(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  const m = path.match(/^\/api\/admin\/activity-graph\/dispatch\/([^/?]+)(?:\?.*)?$/)
+  if (!m) return false
+  const dispatchId = decodeURIComponent(m[1])
+  const sep = dispatchId.indexOf("|")
+  if (sep < 0) { sendJson(res, 400, { error: "invalid dispatch id" }); return true }
+  const eventId = dispatchId.slice(0, sep)
+  const decidedBy = dispatchId.slice(sep + 1)
+
+  const opened = openLedger()
+  if (!opened) { sendJson(res, 503, { error: "ledger not available" }); return true }
+  try {
+    const ev = opened.db
+      .prepare(`SELECT id, ts, source, project, subject, intent, raw_json FROM intent_events WHERE id = ?`)
+      .get(eventId) as { id: string; ts: number; source: string; project: string | null; subject: string | null; intent: string | null; raw_json: string } | undefined
+    if (!ev) { sendJson(res, 404, { error: "event not found" }); return true }
+
+    const dec = opened.db
+      .prepare(`SELECT decided_at, decided_by, agent_id, outcome, reason FROM intent_decisions WHERE event_id = ? AND decided_by = ?`)
+      .get(eventId, decidedBy) as { decided_at: number; decided_by: string; agent_id: string | null; outcome: string; reason: string | null } | undefined
+    if (!dec) { sendJson(res, 404, { error: "decision not found" }); return true }
+
+    const resn = opened.db
+      .prepare(`SELECT resolved_at, status, duration_ms, result_summary FROM intent_resolutions WHERE decision_event_id = ? AND decision_decided_by = ?`)
+      .get(eventId, decidedBy) as { resolved_at: number; status: string; duration_ms: number | null; result_summary: string | null } | undefined
+
+    let raw: any = null
+    try { raw = JSON.parse(ev.raw_json) } catch { /* ignore */ }
+    const fullInput = inputPreviewFrom(ev.source, raw) // returns truncated; pull a fuller version below
+    const longInput =
+      (raw && typeof raw === "object" && (raw.text || raw.message?.text || raw.message?.caption || raw.object_attributes?.note || raw.object_attributes?.description || raw.comment?.body || raw.issue?.body || (typeof raw.message === "string" ? raw.message : null) || (typeof raw.prompt === "string" ? raw.prompt : null) || null)) || fullInput
+
+    let response: string | null = null
+    let transcriptLen: number | null = null
+    if (dec.agent_id) {
+      const rec = findTaskRecord(dec.agent_id, dec.decided_at)
+      if (rec) {
+        if (typeof rec.responseText === "string") response = rec.responseText
+        const t = (rec as any).transcript
+        if (Array.isArray(t)) transcriptLen = t.length
+      }
+    }
+
+    sendJson(res, 200, {
+      id: dispatchId,
+      eventId,
+      source: ev.source,
+      subject: ev.subject,
+      intent: ev.intent,
+      project: ev.project,
+      decidedBy: dec.decided_by,
+      agentId: dec.agent_id,
+      outcome: dec.outcome,
+      reason: dec.reason,
+      startedAt: dec.decided_at,
+      resolvedAt: resn?.resolved_at ?? null,
+      durationMs: resn?.duration_ms ?? null,
+      input: longInput,
+      response,
+      transcriptLen,
+      resolutionStatus: resn?.status ?? null,
+      resultSummary: resn?.result_summary ?? null,
+    })
+  } catch (e: any) {
+    sendJson(res, 500, { error: e?.message ?? String(e) })
+  } finally {
+    opened.close()
+  }
+  return true
 }

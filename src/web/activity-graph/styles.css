@@ -553,4 +553,47 @@
 .ax-fleet .tip .t { font-weight: 600; margin-bottom: 4px; }
 .ax-fleet .tip .r { color: var(--ax-muted); margin-bottom: 1px; }
 
-/* tweaks panel uses its own styles — these are scoped overrides for our floating button */
+/* ── Conversation panes (drawer: inbound + outbound) ──────── */
+.ax-fleet .conv {
+  margin-top: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ax-fleet .conv__pane {
+  background: var(--ax-bg);
+  border: 1px solid var(--ax-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ax-fleet .conv__hd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--ax-bg-elev);
+  border-bottom: 1px solid var(--ax-border);
+  font-size: 11px;
+}
+.ax-fleet .conv__role {
+  font-weight: 600;
+  color: var(--ax-text);
+  letter-spacing: 0.01em;
+}
+.ax-fleet .conv__body {
+  margin: 0; padding: 12px 14px;
+  font-family: var(--ax-mono);
+  font-size: 11.5px; line-height: 1.55;
+  color: var(--ax-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow: auto;
+}
+.ax-fleet .conv__body:empty::before {
+  content: "—";
+  color: var(--ax-muted);
+}
+.ax-fleet .conv__meta {
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--ax-muted);
+  background: var(--ax-bg-elev);
+  border-top: 1px solid var(--ax-border);
+}
