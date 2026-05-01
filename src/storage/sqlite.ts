@@ -197,3 +197,44 @@ function runMigrations(db: Database.Database): void {
 export function getSchemaVersion(db: Database.Database): number {
   return (db.prepare("SELECT MAX(v) AS v FROM schema_version").get() as { v: number | null }).v ?? 0
 }
+
+export interface PruneResult {
+  taskHistory: number
+  rotations: number
+  routeTraces: number
+}
+
+/**
+ * Drop rows older than `retentionDays` from the operational tables that grow
+ * unbounded over time. `usage_daily` is bounded by (agent, model, day) and
+ * doesn't need pruning; the caller decides whether to keep aggregates beyond
+ * the retention window.
+ *
+ * Mirrors the file-based `pruneTaskHistory` sweep that runs at daemon
+ * startup. Cheap — three indexed deletes plus an incremental_vacuum.
+ */
+export function pruneSqliteTables(
+  db: Database.Database,
+  retentionDays: number,
+): PruneResult {
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+  const cutoffIso = new Date(cutoffMs).toISOString()
+
+  const taskHistory = (db
+    .prepare(`DELETE FROM task_history WHERE started_at < ?`)
+    .run(cutoffIso).changes ?? 0) as number
+  const rotations = (db
+    .prepare(`DELETE FROM rotations WHERE rotated_at < ?`)
+    .run(cutoffIso).changes ?? 0) as number
+  const routeTraces = (db
+    .prepare(`DELETE FROM route_traces WHERE at < ?`)
+    .run(cutoffIso).changes ?? 0) as number
+
+  // Reclaim the freelist pages so the file shrinks. WAL writes still
+  // checkpoint independently.
+  if (taskHistory + rotations + routeTraces > 0) {
+    try { db.pragma("incremental_vacuum") } catch { /* best-effort */ }
+  }
+
+  return { taskHistory, rotations, routeTraces }
+}

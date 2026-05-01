@@ -16,7 +16,7 @@ import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { WebhookHandler } from "./webhooks"
-import { openDb } from "@/storage/sqlite"
+import { openDb, pruneSqliteTables } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
@@ -433,6 +433,21 @@ export class AgentXDaemon {
       const removed = this.registry.pruneTaskHistory()
       if (removed > 0) this.log(`  Pruned ${removed} old task-history folder(s)`)
     } catch { /* best-effort */ }
+
+    // SQLite-side retention sweep — task_history / rotations / route_traces
+    // grow unbounded otherwise. 90 days is generous for live debugging while
+    // keeping the file small enough to rsync. Same window as task-history files.
+    try {
+      if (this.db) {
+        const r = pruneSqliteTables(this.db, 90)
+        const total = r.taskHistory + r.rotations + r.routeTraces
+        if (total > 0) {
+          this.log(`  Pruned ${total} old SQLite row(s) (task_history=${r.taskHistory}, rotations=${r.rotations}, route_traces=${r.routeTraces})`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  SQLite prune skipped: ${e?.message ?? e}`)
+    }
 
     // Warm the per-agent last-summary cache from disk so dashboard cards have
     // something to show the instant the daemon boots.

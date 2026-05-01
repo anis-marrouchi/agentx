@@ -12,6 +12,7 @@ import { SORTABLE_JS } from "./vendor/sortable"
 import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
+import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
@@ -193,6 +194,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/admin/graph") {
     handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
+  }
+  // /admin/observability — read-only view over route_traces + rotations + errors.
+  if (method === "GET" && path === "/admin/observability") {
+    handleObservabilityGet(req, res, buildTopbarPeers(ctx.config))
+    return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/observability/")) {
+    if (await handleObservabilityApi(req, res, path)) return
   }
   // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
   const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
