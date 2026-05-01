@@ -158,20 +158,20 @@ const OBS_PAGE_CSS = `
   background: transparent; border: 0; padding: 8px 14px; cursor: pointer;
   font: inherit; color: var(--ax-muted); border-bottom: 2px solid transparent;
 }
-.ax-obs__tab:hover { color: var(--ax-fg); }
-.ax-obs__tab.is-active { color: var(--ax-fg); border-bottom-color: var(--ax-accent, #3a7bd5); }
+.ax-obs__tab:hover { color: var(--ax-text); }
+.ax-obs__tab.is-active { color: var(--ax-text); border-bottom-color: var(--ax-accent, #3a7bd5); }
 .ax-obs__tab--tech { font-size: 11px; opacity: 0.7; }
 .ax-obs__tab-sep { color: var(--ax-muted); padding: 0 6px; opacity: 0.5; }
 .ax-obs__filters { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; padding: 8px 0; }
 .ax-obs__filters label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ax-muted); }
 .ax-obs__filters input {
   font: inherit; padding: 6px 8px; border: 1px solid var(--ax-border);
-  border-radius: 6px; background: var(--ax-bg); color: var(--ax-fg); width: 160px;
+  border-radius: 6px; background: var(--ax-bg); color: var(--ax-text); width: 160px;
 }
 .ax-obs__filters input[type="number"] { width: 80px; }
 .ax-obs__filters button {
   padding: 6px 14px; border: 1px solid var(--ax-border); background: var(--ax-bg);
-  color: var(--ax-fg); border-radius: 6px; cursor: pointer; font: inherit;
+  color: var(--ax-text); border-radius: 6px; cursor: pointer; font: inherit;
 }
 .ax-obs__filters button:hover { background: var(--ax-surface-2); }
 .ax-obs__pane { display: none; }
@@ -224,7 +224,7 @@ const OBS_PAGE_CSS = `
 .ax-obs__bar[data-tooltip]:hover::after {
   content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%;
   transform: translateX(-50%); white-space: nowrap; padding: 4px 8px;
-  background: var(--ax-fg); color: var(--ax-bg); border-radius: 4px;
+  background: var(--ax-text); color: var(--ax-bg); border-radius: 4px;
   font-size: 11px; pointer-events: none; z-index: 10;
 }
 .ax-obs__chart--cost .ax-obs__bar { background: #6b7280; }
@@ -232,7 +232,7 @@ const OBS_PAGE_CSS = `
 .ax-obs__pill {
   display: inline-block; padding: 1px 7px; border-radius: 10px;
   font-size: 10px; font-weight: 600; text-transform: uppercase;
-  background: var(--ax-surface-2); color: var(--ax-fg);
+  background: var(--ax-surface-2); color: var(--ax-text);
 }
 .ax-obs__pill--match { background: rgba(46, 160, 67, 0.15); color: #2da44e; }
 .ax-obs__pill--drop { background: rgba(207, 34, 46, 0.15); color: #cf222e; }

@@ -50,7 +50,7 @@ export function renderActivityGraphPage(opts: ActivityGraphPageOpts = {}): strin
   </header>
 
   <section class="ax-graph__canvas-wrap">
-    <svg id="ax-graph-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" preserveAspectRatio="xMidYMid meet">
+    <svg id="ax-graph-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 700" preserveAspectRatio="xMidYMid meet">
       <defs>
         <marker id="arrow-dispatch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="#2da44e"/>
@@ -85,7 +85,7 @@ export function renderActivityGraphPage(opts: ActivityGraphPageOpts = {}): strin
 
   return renderShell({
     title: "AgentX · Activity Graph",
-    activeTab: "observability",
+    activeTab: "graph",
     subtitle: "Activity Graph",
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
@@ -103,7 +103,7 @@ const GRAPH_CSS = `
 .ax-graph__crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .ax-graph__crumb {
   padding: 4px 10px; border-radius: 999px; background: var(--ax-surface-2);
-  font-size: 12px; color: var(--ax-fg); text-decoration: none; cursor: pointer;
+  font-size: 12px; color: var(--ax-text); text-decoration: none; cursor: pointer;
   display: inline-flex; align-items: center; gap: 4px;
 }
 .ax-graph__crumb:hover { background: var(--ax-border); }
@@ -113,11 +113,11 @@ const GRAPH_CSS = `
 .ax-graph__controls label { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ax-muted); }
 .ax-graph__controls select {
   font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border);
-  border-radius: 6px; background: var(--ax-bg); color: var(--ax-fg);
+  border-radius: 6px; background: var(--ax-bg); color: var(--ax-text);
 }
 .ax-graph__controls button {
   padding: 4px 12px; border: 1px solid var(--ax-border); background: var(--ax-bg);
-  color: var(--ax-fg); border-radius: 6px; cursor: pointer; font: inherit;
+  color: var(--ax-text); border-radius: 6px; cursor: pointer; font: inherit;
 }
 .ax-graph__chk { cursor: pointer; user-select: none; }
 .ax-graph__hint { color: var(--ax-muted); font-size: 11px; margin-left: auto; }
@@ -131,7 +131,7 @@ const GRAPH_CSS = `
   cursor: pointer; font: inherit; border-right: 1px solid var(--ax-border);
 }
 .ax-graph__view-toggle button:last-child { border-right: 0; }
-.ax-graph__view-toggle button:hover { background: var(--ax-surface-2); color: var(--ax-fg); }
+.ax-graph__view-toggle button:hover { background: var(--ax-surface-2); color: var(--ax-text); }
 .ax-graph__view-toggle button.is-active { background: var(--ax-accent, #3a7bd5); color: white; }
 
 /* Timeline mode */
@@ -139,15 +139,15 @@ const GRAPH_CSS = `
 .ax-tl-lane-bg-even { fill: rgba(127, 127, 127, 0.04); }
 .ax-tl-lane-bg-odd { fill: transparent; }
 .ax-tl-lane-label {
-  font-size: 11px; font-weight: 600; fill: var(--ax-fg);
+  font-size: 13px; font-weight: 600; fill: var(--ax-text);
   cursor: pointer;
 }
 .ax-tl-lane-label:hover { fill: var(--ax-accent, #3a7bd5); text-decoration: underline; }
 .ax-tl-lane-label--type {
-  font-size: 9px; fill: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10px; fill: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.05em;
 }
 .ax-tl-time-tick { stroke: var(--ax-border); stroke-width: 0.5; stroke-dasharray: 2 2; }
-.ax-tl-time-label { font-size: 10px; fill: var(--ax-muted); text-anchor: middle; }
+.ax-tl-time-label { font-size: 11px; fill: var(--ax-muted); text-anchor: middle; }
 .ax-tl-now-line { stroke: #2da44e; stroke-width: 1.5; }
 .ax-tl-now-line--pulse { animation: ax-tl-now-pulse 1.6s ease-in-out infinite; }
 @keyframes ax-tl-now-pulse { 50% { stroke-width: 3; opacity: 0.5; } }
@@ -187,7 +187,7 @@ const GRAPH_CSS = `
   stroke-dasharray: 4 3;
 }
 .ax-node-client--label {
-  font-size: 11px; font-weight: 600; fill: #e07a3a;
+  font-size: 14px; font-weight: 600; fill: #e07a3a;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .ax-node-project {
@@ -197,13 +197,13 @@ const GRAPH_CSS = `
   stroke-width: 1.2;
 }
 .ax-node-project--label {
-  font-size: 11px; font-weight: 500; fill: #3a7bd5;
+  font-size: 13px; font-weight: 500; fill: #3a7bd5;
 }
 .ax-node-subject {
   fill: #6b7280; opacity: 0.85;
 }
 .ax-node-subject--label {
-  font-size: 9.5px; fill: var(--ax-muted);
+  font-size: 11px; fill: var(--ax-muted);
 }
 .ax-node-agent {
   fill: rgba(46, 160, 67, 0.18);
@@ -211,7 +211,7 @@ const GRAPH_CSS = `
   stroke-width: 1.6;
 }
 .ax-node-agent--label {
-  font-size: 11px; font-weight: 600; fill: var(--ax-fg);
+  font-size: 13px; font-weight: 600; fill: var(--ax-text);
 }
 .ax-node-channel {
   fill: rgba(147, 51, 234, 0.16);
@@ -219,7 +219,7 @@ const GRAPH_CSS = `
   stroke-width: 1.2;
 }
 .ax-node-channel--label {
-  font-size: 11px; font-weight: 500; fill: #9333ea;
+  font-size: 13px; font-weight: 500; fill: #9333ea;
 }
 .ax-node-initiator {
   fill: rgba(245, 158, 11, 0.20);
@@ -227,7 +227,7 @@ const GRAPH_CSS = `
   stroke-width: 1.4;
 }
 .ax-node-initiator--label {
-  font-size: 10px; fill: #b45309; font-weight: 600;
+  font-size: 12px; fill: #d97706; font-weight: 600;
 }
 .ax-node-group { cursor: pointer; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease; }
 .ax-node-group .ax-node-shape { transition: transform 0.18s ease, fill 0.2s; transform-box: fill-box; transform-origin: center; }
@@ -297,7 +297,7 @@ const GRAPH_CSS = `
 
 .ax-graph__tip {
   position: absolute; pointer-events: none; max-width: 320px;
-  padding: 8px 10px; background: var(--ax-fg); color: var(--ax-bg);
+  padding: 8px 10px; background: var(--ax-text); color: var(--ax-bg);
   border-radius: 6px; font-size: 11px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   z-index: 10;
 }
@@ -348,7 +348,7 @@ const GRAPH_SCRIPT = `
   //   - all:    semantic clusters (clients top, agents bottom, channels left, initiators right)
 
   function layout(snap) {
-    var W = 1400, H = 800;
+    var W = 1400, H = 700;
     var positions = {};
     if (snap.root) {
       // rooted mode
@@ -406,16 +406,16 @@ const GRAPH_SCRIPT = `
       // Channels: left edge column
       var channels = snap.nodes.filter(function(n){ return n.type === 'channel'; });
       channels.forEach(function(c, i){
-        positions[c.id] = { x: 80, y: 80 + i * 80 };
+        positions[c.id] = { x: 80, y: 80 + i * 60 };
       });
       // Initiators: right edge column
       var initiators = snap.nodes.filter(function(n){ return n.type === 'initiator'; });
       initiators.forEach(function(c, i){
         positions[c.id] = { x: W - 80, y: 80 + i * 50 };
       });
-      // Agents: bottom row
+      // Agents: bottom row (closer to bottom edge but still in view)
       var agents = snap.nodes.filter(function(n){ return n.type === 'agent'; });
-      var agentY = H - 90;
+      var agentY = H - 70;
       var agentSpan = W - 280;
       agents.forEach(function(a, i){
         positions[a.id] = { x: 160 + (agents.length === 1 ? agentSpan/2 : (i / (agents.length - 1)) * agentSpan), y: agentY };
@@ -464,7 +464,9 @@ const GRAPH_SCRIPT = `
       var subjsByProj = {};
       subjects.forEach(function(s){
         var pk = subjToProj[s.id];
-        if (!pk) { positions[s.id] = { x: W/2, y: H/2 }; return; }
+        // Subjects without a project skip the project-bbox bucketing and
+        // get distributed by the orphan handler below.
+        if (!pk) return;
         if (!subjsByProj[pk]) subjsByProj[pk] = [];
         subjsByProj[pk].push(s);
       });
@@ -481,7 +483,23 @@ const GRAPH_SCRIPT = `
           positions[s.id] = { x: sx, y: sy };
         });
       });
-      // Default for any missed nodes
+      // Subjects without a project — distribute across the middle of the
+      // canvas in a grid so they don't all stack at center (the default
+      // when there are zero clients/projects, common on local dev nodes).
+      var orphanSubjects = subjects.filter(function(s){ return !positions[s.id]; });
+      if (orphanSubjects.length) {
+        var cols2 = Math.ceil(Math.sqrt(orphanSubjects.length * 1.5));
+        var rows2 = Math.ceil(orphanSubjects.length / cols2);
+        var midY0 = 80, midY1 = H - 200;
+        var midX0 = 200, midX1 = W - 200;
+        orphanSubjects.forEach(function(s, i){
+          var c = i % cols2, r = Math.floor(i / cols2);
+          var x = midX0 + (cols2 === 1 ? (midX1 - midX0)/2 : (c / (cols2 - 1)) * (midX1 - midX0));
+          var y = midY0 + (rows2 === 1 ? (midY1 - midY0)/2 : (r / (rows2 - 1)) * (midY1 - midY0));
+          positions[s.id] = { x: x, y: y };
+        });
+      }
+      // Default for any still-missed nodes
       snap.nodes.forEach(function(n){
         if (!positions[n.id]) positions[n.id] = { x: W/2, y: H/2 };
       });
@@ -828,7 +846,7 @@ const GRAPH_SCRIPT = `
     }
     emptyEl.hidden = true;
 
-    var W = 1400, H = 800;
+    var W = 1400, H = 700;
     var leftPad = 180, rightPad = 60, topPad = 50, bottomPad = 40;
     var laneAreaH = H - topPad - bottomPad;
     var timeAreaW = W - leftPad - rightPad;
@@ -918,10 +936,12 @@ const GRAPH_SCRIPT = `
 
     // ---- Edges (a2a + resolves) — drawn behind dots ----
     // Per-edge arc from (caller_lane, started_at) to (callee_lane, started_at)
+    var activeOnlyEdges = activeOnlyChk.checked;
     snap.edges.forEach(function(e){
       var fromLane = laneById[e.from], toLane = laneById[e.to];
       if (fromLane == null || toLane == null) return;
       if (e.kind !== 'a2a' && e.kind !== 'resolves' && e.kind !== 'dispatches') return;
+      if (activeOnlyEdges && !e.active) return;
       // Skip dispatches between lanes that aren't both shown (e.g. subject->agent
       // when subject not in lane). Only draw when both endpoints are lanes.
       var startTs = e.startedAt || e.resolvedAt;
@@ -943,26 +963,49 @@ const GRAPH_SCRIPT = `
     });
 
     // ---- Dots (one per dispatch decision) ----
-    // Pull dispatch edges (subject->agent) and plot a dot on the agent's lane
-    snap.edges.forEach(function(e){
-      if (e.kind !== 'dispatches') return;
+    // Plot each dispatch as a dot on the receiving agent's lane.
+    // Group dots that fall within ~6px of each other on the same lane
+    // and stack them vertically so each is hoverable / clickable.
+    var activeOnly = activeOnlyChk.checked;
+    var dispatchEdges = snap.edges.filter(function(e){
+      if (e.kind !== 'dispatches' || laneById[e.to] == null || !e.startedAt) return false;
+      if (activeOnly && !e.active) return false;
+      return true;
+    });
+    // Group key = "<lane>|<roundedX>" with 6px buckets
+    var bucket = {};
+    dispatchEdges.forEach(function(e){
       var lane = laneById[e.to];
-      if (lane == null) return;
-      if (!e.startedAt) return;
       var x = timeX(e.startedAt);
-      var y = laneY(lane);
-      var status = e.outcome || 'dispatched';
-      var dotCls = 'ax-tl-dot ax-tl-dot--' + (status === 'dispatched' && !e.resolvedAt ? 'dispatched' : status === 'halted' ? 'halted' : status === 'deduped' ? 'deduped' : status === 'error' ? 'error' : 'dispatched') + (e.active ? ' is-active' : '');
-      var dot = svgEl('circle', { cx: x, cy: y, r: 5, class: dotCls, 'data-edge': e.id });
-      dot.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
-      dot.addEventListener('mousemove', moveTip);
-      dot.addEventListener('mouseleave', hideTip);
-      // Click: re-root from this agent
-      dot.addEventListener('click', function(){
-        var agentNode = snap.nodes.find(function(n){ return n.id === e.to; });
-        if (agentNode) pushPerspective(agentNode);
+      var key = lane + '|' + Math.round(x / 6);
+      if (!bucket[key]) bucket[key] = { lane: lane, x: x, items: [] };
+      bucket[key].items.push(e);
+    });
+    Object.values(bucket).forEach(function(b){
+      var baseY = laneY(b.lane);
+      b.items.forEach(function(e, i){
+        var x = b.x + (i - (b.items.length - 1) / 2) * 0; // x stays anchored
+        // Stack vertically when more than one in the same bucket
+        var off = b.items.length === 1 ? 0 : ((i - (b.items.length - 1) / 2) * 5);
+        var y = baseY + off;
+        var status = e.outcome || 'dispatched';
+        var dotCls = 'ax-tl-dot ax-tl-dot--' +
+          (status === 'dispatched' && !e.resolvedAt ? 'dispatched'
+            : status === 'halted' ? 'halted'
+            : status === 'deduped' ? 'deduped'
+            : status === 'error' ? 'error'
+            : 'dispatched')
+          + (e.active ? ' is-active' : '');
+        var dot = svgEl('circle', { cx: x, cy: y, r: 5, class: dotCls, 'data-edge': e.id });
+        dot.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
+        dot.addEventListener('mousemove', moveTip);
+        dot.addEventListener('mouseleave', hideTip);
+        dot.addEventListener('click', function(){
+          var agentNode = snap.nodes.find(function(n){ return n.id === e.to; });
+          if (agentNode) pushPerspective(agentNode);
+        });
+        nodesG.appendChild(dot);
       });
-      nodesG.appendChild(dot);
     });
 
     stamp.textContent = laneEntities.length + ' lanes · ' + snap.edges.filter(function(e){ return e.kind === 'dispatches'; }).length + ' dispatches · streamed ' + new Date(snap.ts).toLocaleTimeString();
@@ -1040,7 +1083,21 @@ const GRAPH_SCRIPT = `
 
   // ---- VIEW DISPATCH ---------------------------------------------------
   var view = 'timeline'; // default
+  var lastView = null;
   function dispatchRender(snap) {
+    // When switching modes, clear ALL DOM children first because each mode
+    // appends its own elements directly to edgesG / nodesG (lane rows in
+    // timeline, boundary boxes in lens) that the other mode's renderer
+    // doesn't track or remove.
+    if (view !== lastView) {
+      nodesG.innerHTML = '';
+      edgesG.innerHTML = '';
+      nodeEls.clear();
+      edgeEls.clear();
+      bboxEls.clear();
+      particleEls.clear();
+      lastView = view;
+    }
     if (view === 'timeline') return renderTimeline(snap);
     return render(snap);
   }
