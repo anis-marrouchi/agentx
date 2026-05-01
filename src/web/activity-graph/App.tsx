@@ -66,12 +66,14 @@ interface FilterState {
   channel: string | null
   initiator: string | null
   activeOnly: boolean
+  showSystem: boolean
   search: string
 }
 function applyFilter(dispatches: FleetDispatch[], filter: FilterState, windowMs: number, now: number): FleetDispatch[] {
   const cutoff = now - windowMs
   return dispatches.filter((d) => {
     if (d.startedAt < cutoff && (!d.resolvedAt || d.resolvedAt < cutoff)) return false
+    if (!filter.showSystem && d.system) return false
     if (filter.client && d.clientId !== filter.client) return false
     if (filter.agent && d.agentId !== filter.agent) return false
     if (filter.channel && d.channelId !== filter.channel) return false
@@ -157,6 +159,9 @@ function Subbar(props: {
       ))}
       <button className={"facet " + (filter.activeOnly ? "is-on" : "")} onClick={() => updateFilter({ activeOnly: !filter.activeOnly })}>
         ● active only
+      </button>
+      <button className={"facet " + (filter.showSystem ? "is-on" : "")} onClick={() => updateFilter({ showSystem: !filter.showSystem })} title="Show internal infrastructure (classifier sub-calls, background workers)">
+        ⚙ show system
       </button>
       <div style={{ flex: 1 }} />
       <span className="live-pulse">{stale ? "reconnecting" : "Live · streaming"}</span>
@@ -879,7 +884,8 @@ export function App() {
   const [perspective, setPerspective] = useState<Perspective>("fleet")
   const [windowH, setWindowH] = useState(6)
   const [filter, setFilter] = useState<FilterState>({
-    client: null, agent: null, channel: null, initiator: null, activeOnly: false, search: "",
+    client: null, agent: null, channel: null, initiator: null,
+    activeOnly: false, showSystem: false, search: "",
   })
   const updateFilter = useCallback((patch: Partial<FilterState>) => setFilter((f) => ({ ...f, ...patch })), [])
   const [openItem, setOpenItem] = useState<FleetDispatch | null>(null)

@@ -21,6 +21,7 @@ export interface FleetDispatch {
   outcome: "completed" | "active" | "error"
   tokens: number
   inputPreview: string
+  system: boolean
 }
 
 export interface FleetDispatchDetail {

@@ -74,6 +74,11 @@ export interface FleetDispatch {
    *  can render the trigger without an extra round-trip. Full text +
    *  agent response come from the detail endpoint. */
   inputPreview: string
+  /** True when this dispatch is internal infrastructure (intent classifier,
+   *  background workers) rather than user-facing work. The activity graph
+   *  hides these by default — they bloat the view without telling the
+   *  business operator anything actionable. Toggle on to see them. */
+  system: boolean
 }
 export interface FleetSnapshot {
   now: number
@@ -123,6 +128,23 @@ function colorForClient(id: string): string {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
   return palette[Math.abs(h) % palette.length]
+}
+
+/** Returns true when this agent is internal infrastructure (intent
+ *  classifier, background workers) that shouldn't show as user-facing
+ *  work in the activity graph by default. Heuristics:
+ *    - explicit `agents[X].system === true` in agentx.json (NEW)
+ *    - well-known classifier names (graph-agent, *-classifier)
+ *  Operators can opt anything in/out via the config flag. */
+function isSystemAgent(agentId: string, daemonConfig: DaemonConfig | null): boolean {
+  if (!agentId) return false
+  const cfg = (daemonConfig as any)?.agents?.[agentId]
+  if (cfg && typeof cfg.system === "boolean") return cfg.system
+  // Default heuristic: the intent classifier is a known internal name,
+  // and any agent ending in "-classifier" is by convention internal.
+  if (agentId === "graph-agent" || agentId === "intent-classifier") return true
+  if (/-classifier$/.test(agentId)) return true
+  return false
 }
 
 function clientFromProject(project: string | null | undefined, projectsConfig?: Array<{ id: string; client?: string }>): string {
@@ -492,6 +514,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
         outcome,
         tokens: 0,
         inputPreview,
+        system: isSystemAgent(d.agent_id, daemonConfig),
       })
     }
   }
