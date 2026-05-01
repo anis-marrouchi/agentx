@@ -767,6 +767,11 @@ function FlowJourneyRow({ d, lookup, onClick }: { d: FleetDispatch; lookup: Look
       <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span className="avatar avatar--agent" style={{ width: 16, height: 16, fontSize: 8 }}>{d.agentId.slice(0, 2).toUpperCase()}</span>
         {d.agentId}
+        {d.nodeId && <span title={`Node: ${d.nodeId}`} style={{
+          fontSize: 9, padding: "1px 5px", borderRadius: 3,
+          background: "var(--ax-bg)", color: "var(--ax-muted)",
+          border: "1px solid var(--ax-border)", whiteSpace: "nowrap",
+        }}>{d.nodeId}</span>}
       </span>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ax-text-2)" }}>{d.subject}</span>
       <span className="mono" style={{ color: "var(--ax-muted)", fontSize: 10 }}>{fmtDur(d.duration)}</span>
@@ -828,7 +833,7 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
           {detail?.attribution && (
             <div className="drawer__row"><span className="k">Attributed via</span><span className="v" style={{ fontSize: 11, color: "var(--ax-muted)" }}>{detail.attribution.via}</span></div>
           )}
-          <div className="drawer__row"><span className="k">Agent</span><span className="v">{agent?.name || item.agentId} {agent && <span className="tier" style={{ marginLeft: 6 }}>{agent.tier}</span>}</span></div>
+          <div className="drawer__row"><span className="k">Agent</span><span className="v">{agent?.name || item.agentId} {agent && <span className="tier" style={{ marginLeft: 6 }}>{agent.tier}</span>}{item.nodeId && <span className="mono" style={{ marginLeft: 8, fontSize: 10, color: "var(--ax-muted)", padding: "1px 5px", border: "1px solid var(--ax-border)", borderRadius: 3 }}>{item.nodeId}</span>}</span></div>
           <div className="drawer__row"><span className="k">Channel</span><span className="v">{channel?.label || item.channelId} <span className="mono" style={{ color: "var(--ax-muted)", marginLeft: 4 }}>· from {initiator?.name || "Schedule"}{kindLabel(initiator?.kind) ? ` (${kindLabel(initiator?.kind)})` : ""}</span></span></div>
           <div className="drawer__row"><span className="k">Started</span><span className="v">{new Date(item.startedAt).toLocaleString()}</span></div>
           <div className="drawer__row"><span className="k">Duration</span><span className="v">{fmtDur(item.duration)}{item.active ? " (running)" : ""}</span></div>

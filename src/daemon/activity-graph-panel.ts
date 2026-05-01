@@ -83,6 +83,11 @@ export interface FleetDispatch {
    *  hides these by default — they bloat the view without telling the
    *  business operator anything actionable. Toggle on to see them. */
   system: boolean
+  /** Which mesh node produced this row. Set by the fleet merger when
+   *  combining snapshots from multiple peers; left undefined for
+   *  single-node responses. The UI renders it as a small badge so two
+   *  agents that share an id across nodes are still distinguishable. */
+  nodeId?: string
 }
 export interface FleetSnapshot {
   now: number
@@ -770,6 +775,69 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
 
 // ---------------------------------------------------------------------------
 // HTTP handlers
+
+/** Compute the local-only snapshot without going through HTTP. Lets the
+ *  fleet merger call us in-process for the local node instead of hitting
+ *  ourselves over the wire. */
+export function buildLocalActivityGraphSnapshot(windowH: number): FleetSnapshot | null {
+  const opened = openLedger()
+  if (!opened) return null
+  try {
+    return buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)
+  } finally {
+    opened.close()
+  }
+}
+
+/** Merge several activity-graph snapshots into one. Each input is tagged
+ *  with the nodeId it came from; that nodeId is stamped onto every
+ *  dispatch so the UI can render a small node badge. Clients, agents,
+ *  channels, and initiators dedupe by id (first writer wins for the
+ *  display fields like color/name) — they're concept-level entities,
+ *  not node-local processes, so a `mtgl` client on Mac and a `mtgl`
+ *  client on clawd should collapse into one row. Agents share names
+ *  across nodes too, but the dispatch's nodeId carries the disambiguation. */
+export function mergeFleetSnapshots(parts: Array<{ nodeId: string; snap: FleetSnapshot }>): FleetSnapshot {
+  const clients = new Map<string, FleetClient>()
+  const agents = new Map<string, FleetAgent>()
+  const channels = new Map<string, FleetChannel>()
+  const initiators = new Map<string, FleetInitiator>()
+  const dispatches: FleetDispatch[] = []
+  let now = 0
+  let windowH = 0
+  for (const { nodeId, snap } of parts) {
+    if (snap.now > now) now = snap.now
+    if (snap.windowH > windowH) windowH = snap.windowH
+    for (const c of snap.clients) {
+      const existing = clients.get(c.id)
+      if (!existing) clients.set(c.id, { ...c, projects: [...c.projects] })
+      else {
+        // Merge project lists across nodes; dedup with a Set.
+        const merged = Array.from(new Set([...existing.projects, ...c.projects])).sort()
+        clients.set(c.id, { ...existing, projects: merged })
+      }
+    }
+    for (const a of snap.agents) if (!agents.has(a.id)) agents.set(a.id, a)
+    for (const ch of snap.channels) if (!channels.has(ch.id)) channels.set(ch.id, ch)
+    for (const i of snap.initiators) if (!initiators.has(i.id)) initiators.set(i.id, i)
+    for (const d of snap.dispatches) {
+      // Tag the dispatch row with its source node so the UI can show a badge.
+      // Also rewrite the dispatch id to be globally unique — peers share the
+      // same `<eventId>|<decidedBy>` shape, and a collision would make the
+      // browser's React key reuse the wrong row across snapshots.
+      dispatches.push({ ...d, nodeId, id: `${nodeId}::${d.id}` })
+    }
+  }
+  return {
+    now: now || Date.now(),
+    windowH: windowH || 6,
+    clients: [...clients.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    agents: [...agents.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    channels: [...channels.values()],
+    initiators: [...initiators.values()],
+    dispatches: dispatches.sort((a, b) => b.startedAt - a.startedAt),
+  }
+}
 
 let _daemonConfigRef: DaemonConfig | null = null
 /** Wired by board-dashboard.ts when the dashboard starts so we can read

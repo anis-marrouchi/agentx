@@ -15,7 +15,7 @@ import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { renderCostPage } from "./ui/pages/cost"
 import { createWikiHandler } from "@/wiki/serve"
-import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph } from "./activity-graph-panel"
+import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
@@ -221,9 +221,52 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // request. Forward the whole call to that peer's dashboard before any
   // local handler picks it up, so the activity-graph + observability +
   // every other admin surface follow the selector.
+  //
+  // Special peerId="fleet" → fan-out + merge across local + every
+  // dashboard.daemons[] entry. Only meaningful for the activity-graph
+  // snapshot endpoint right now; other endpoints fall through to local
+  // until they grow merge semantics.
   if (path.startsWith("/api/admin/")) {
     const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
-    if (peerId && peerId !== "primary") {
+    if (peerId === "fleet") {
+      if (path === "/api/admin/activity-graph") {
+        await handleActivityGraphFleet(req, res, ctx)
+        return
+      }
+      // Dispatch detail in fleet mode: the id was rewritten to
+      // "<nodeName>::<originalId>" by the merger so React keys stay
+      // unique. Route the lookup back to the node that owns the row.
+      const detailMatch = path.match(/^\/api\/admin\/activity-graph\/dispatch\/(.+)$/)
+      if (detailMatch) {
+        const decoded = decodeURIComponent(detailMatch[1])
+        const sep = decoded.indexOf("::")
+        if (sep > 0) {
+          const nodeName = decoded.slice(0, sep)
+          const realId = decoded.slice(sep + 2)
+          const localNodeName = ctx.config.node?.id || ctx.config.node?.name || "local"
+          if (nodeName === localNodeName) {
+            // Local row — strip the prefix and let the local handler answer.
+            req.url = `/api/admin/activity-graph/dispatch/${encodeURIComponent(realId)}`
+            // Fall through to the regular handler below.
+          } else {
+            const peerByName = (ctx.config.dashboard?.daemons || []).find((d) => (d.name || d.url) === nodeName)
+            if (peerByName) {
+              const peer = findPeer(peerByName.url.replace(/\/+$/, ""), ctx.config)
+              if (peer) {
+                await proxyAdminToPeer(
+                  req, res, peer,
+                  `/api/admin/activity-graph/dispatch/${encodeURIComponent(realId)}`,
+                )
+                return
+              }
+            }
+            sendJson(res, 404, { error: `unknown node "${nodeName}" in fleet dispatch id` })
+            return
+          }
+        }
+      }
+      // Anything else in fleet mode → answer locally.
+    } else if (peerId && peerId !== "primary") {
       const peer = findPeer(peerId, ctx.config)
       if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
       // Strip ?peer= so the destination doesn't re-proxy.
@@ -1421,7 +1464,18 @@ function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): Topba
     dashboardUrl: resolvePeerDashboardUrl(d),
     tokenScope: (d.dashboardToken || d.token) ? "proxy-ready" : undefined,
   }))
-  return [primary, ...extras]
+  // Fleet pseudo-peer: only meaningful when there's at least one
+  // remote peer to merge with. Placed at the bottom so users tend to
+  // notice it after they've used the per-peer entries first.
+  const fleet: TopbarPeer[] = extras.length > 0
+    ? [{
+        id: "fleet",
+        name: "Fleet (all peers)",
+        dashboardUrl: "",
+        tokenScope: "merged across nodes",
+      }]
+    : []
+  return [primary, ...extras, ...fleet]
 }
 
 /**
@@ -1430,6 +1484,57 @@ function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): Topba
  * replaces anything the browser sent with the peer's configured token so
  * the local dashboard.token (if any) doesn't leak across nodes.
  */
+/** Fleet-mode activity-graph snapshot: build the local snapshot in-process,
+ *  fetch every configured peer's snapshot via its dashboard API, merge.
+ *  Per-peer failures don't fail the whole call — they're just dropped from
+ *  the merge and logged, so a single dead peer doesn't black out the view. */
+async function handleActivityGraphFleet(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: { config: DaemonConfig; token?: string },
+): Promise<void> {
+  const url = new URL(req.url || "/", "http://_")
+  const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
+  const localNodeId = ctx.config.node?.id || ctx.config.node?.name || "local"
+
+  const parts: Array<{ nodeId: string; snap: FleetSnapshot }> = []
+
+  // Local node: in-process call, no HTTP round-trip.
+  const localSnap = buildLocalActivityGraphSnapshot(hours)
+  if (localSnap) parts.push({ nodeId: localNodeId, snap: localSnap })
+
+  // Each configured peer: HTTP fetch via the existing per-peer proxy logic.
+  // Fire in parallel; whichever peers respond on time get merged in.
+  const peerEntries = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  await Promise.all(peerEntries.map(async (d) => {
+    const peer = findPeer(d.url.replace(/\/+$/, ""), ctx.config)
+    if (!peer) return
+    try {
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), 8000)
+      try {
+        const r = await fetch(`${peer.url}/api/admin/activity-graph?hours=${hours}`, {
+          headers: {
+            "Accept": "application/json",
+            "X-Agentx-Peer": "primary",
+            ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
+          },
+          signal: ac.signal,
+        })
+        if (!r.ok) return
+        const snap = await r.json() as FleetSnapshot
+        parts.push({ nodeId: d.name || d.url, snap })
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch {
+      // Drop this peer from the merge; the rest of the snapshot remains usable.
+    }
+  }))
+
+  sendJson(res, 200, mergeFleetSnapshots(parts))
+}
+
 async function proxyAdminToPeer(
   req: IncomingMessage,
   res: ServerResponse,

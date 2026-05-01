@@ -30,6 +30,8 @@ export interface FleetDispatch {
   tokens: number
   inputPreview: string
   system: boolean
+  /** Set in fleet mode: which mesh node produced this row. */
+  nodeId?: string
 }
 
 export interface FleetDispatchDetail {
