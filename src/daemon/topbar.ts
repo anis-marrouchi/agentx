@@ -261,6 +261,7 @@ export function renderTopbar(opts: TopbarOpts): string {
     { id: "boards", label: "Boards", href: "/", external: false },
     { id: "workflows", label: "Workflows", href: "/workflows", external: false },
     { id: "observability", label: "Observability", href: "/admin/observability", external: false },
+    { id: "graph", label: "Activity Graph", href: "/admin/activity-graph", external: false },
     { id: "admin", label: "Settings", href: "/admin", external: false },
     { id: "wiki", label: "Wiki", href: wikiUrl, external: true },
     { id: "usage", label: "Usage", href: usageUrl, external: true },
