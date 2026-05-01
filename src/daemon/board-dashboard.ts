@@ -463,6 +463,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // /api/workflows/tasks[*] — BPM inbox API lives on the daemon (the
+  // dispatcher owns the TaskStore + run-resume plumbing). Proxy through
+  // so the /inbox page on the dashboard works the same as on the daemon.
+  if (path.startsWith("/api/workflows/tasks") && (method === "GET" || method === "POST")) {
+    try {
+      const t = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(ctx.config.dashboard.token ? { Authorization: `Bearer ${ctx.config.dashboard.token}` } : {}),
+      }
+      const body = method === "POST"
+        ? await new Promise<string>((resolve) => {
+            const chunks: Buffer[] = []
+            req.on("data", (c) => chunks.push(c))
+            req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")))
+          })
+        : undefined
+      const r = await fetch(`${t}${req.url}`, { method, headers, body })
+      const text = await r.text()
+      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json" })
+      res.end(text)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "tasks proxy failed", message: e?.message || String(e) })
+    }
+    return
+  }
+
   // Workflow API — read (dashboard:read) / write (dashboard:write). Fine-
   // grained scope checks let read-only scoped tokens still populate the
   // /workflows observability page when dashboard.token isn't configured.

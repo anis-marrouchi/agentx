@@ -85,6 +85,72 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
     return handleRuns(req, res, deps, url)
   }
 
+  // /api/workflows/tasks[...]               (BPM inbox + submission)
+  // Must run BEFORE the /:id regex below — otherwise "tasks" gets matched
+  // as a workflow id and the GET handler returns 404 "workflow not found".
+  if (url.startsWith("/api/workflows/tasks")) {
+    if (!deps.tasks || !deps.dispatcher) return sendJson(res, 501, { error: "task engine not enabled" })
+    const trail = url.replace(/^\/api\/workflows\/tasks/, "")
+    if (trail === "" || trail.startsWith("?")) {
+      if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
+      if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+      const q = new URL(url, "http://_").searchParams
+      const actor = q.get("actor") || undefined
+      const tasks = actor ? deps.tasks.listForActor(actor) : deps.tasks.listOpen()
+      return sendJson(res, 200, { tasks })
+    }
+    const taskMatch = trail.match(/^\/([^\/?]+)(\/submit)?$/)
+    if (taskMatch) {
+      const taskId = decodeURIComponent(taskMatch[1])
+      if (taskMatch[2]) {
+        if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+        if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+        return withBody(req, res, async (body) => {
+          const parsed = formSubmissionSchema.safeParse(body && typeof body === "object" && "submission" in (body as object)
+            ? (body as { submission: unknown }).submission
+            : body)
+          if (!parsed.success) {
+            return sendJson(res, 400, {
+              error: "invalid submission",
+              issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+            })
+          }
+          const submittedBy = typeof (body as any)?.submittedBy === "string" ? (body as any).submittedBy : "anonymous"
+          const result = await deps.dispatcher!.submitTask(taskId, parsed.data, submittedBy)
+          if (!result.ok) return sendJson(res, 400, { error: result.error, fieldErrors: result.fieldErrors })
+          return sendJson(res, 200, { ok: true, runId: result.runId })
+        })
+      }
+      if (method === "GET") {
+        if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+        const task = deps.tasks.get(taskId)
+        if (!task) return sendJson(res, 404, { error: "task not found" })
+        return sendJson(res, 200, { task })
+      }
+    }
+  }
+
+  // /api/workflows/signal/:name        — POST manual signal emission.
+  // Must also run before the /:id regex (signal name shouldn't be treated
+  // as a workflow id).
+  if (url.startsWith("/api/workflows/signal/")) {
+    if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+    if (!deps.dispatcher) return sendJson(res, 501, { error: "dispatcher not enabled" })
+    const name = decodeURIComponent(url.replace(/^\/api\/workflows\/signal\//, "").split("?")[0])
+    if (!name) return sendJson(res, 400, { error: "signal name required" })
+    return withBody(req, res, (body) => {
+      const b = body as { scope?: "workflow" | "global"; workflowId?: string; payload?: Record<string, unknown> } | undefined
+      const emission = deps.dispatcher!.emitSignal({
+        name,
+        scope: b?.scope,
+        workflowId: b?.workflowId,
+        payload: b?.payload,
+      })
+      return sendJson(res, 200, { ok: true, emission })
+    })
+  }
+
   // /api/workflows/:id[/layout|/validate]   (various)
   const defMatch = url.match(/^\/api\/workflows\/([^\/?]+)(\/layout|\/validate)?(\?.*)?$/)
   if (defMatch) {
@@ -142,71 +208,6 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
         return sendJson(res, existed ? 200 : 404, existed ? { ok: true } : { error: "workflow not found" })
       }
     }
-  }
-
-  // /api/workflows/tasks               — GET list (inbox); ?actor=<id> filter
-  // /api/workflows/tasks/:id           — GET task detail
-  // /api/workflows/tasks/:id/submit    — POST submission
-  if (url.startsWith("/api/workflows/tasks")) {
-    if (!deps.tasks || !deps.dispatcher) return sendJson(res, 501, { error: "task engine not enabled" })
-    const trail = url.replace(/^\/api\/workflows\/tasks/, "")
-    if (trail === "" || trail.startsWith("?")) {
-      if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
-      if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-      const q = new URL(url, "http://_").searchParams
-      const actor = q.get("actor") || undefined
-      const tasks = actor ? deps.tasks.listForActor(actor) : deps.tasks.listOpen()
-      return sendJson(res, 200, { tasks })
-    }
-    const match = trail.match(/^\/([^\/?]+)(\/submit)?$/)
-    if (match) {
-      const taskId = decodeURIComponent(match[1])
-      if (match[2]) {
-        if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
-        if (!deps.requireScope(req, res, ["dashboard:write"])) return true
-        return withBody(req, res, async (body) => {
-          const parsed = formSubmissionSchema.safeParse(body && typeof body === "object" && "submission" in (body as object)
-            ? (body as { submission: unknown }).submission
-            : body)
-          if (!parsed.success) {
-            return sendJson(res, 400, {
-              error: "invalid submission",
-              issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-            })
-          }
-          const submittedBy = typeof (body as any)?.submittedBy === "string" ? (body as any).submittedBy : "anonymous"
-          const result = await deps.dispatcher!.submitTask(taskId, parsed.data, submittedBy)
-          if (!result.ok) return sendJson(res, 400, { error: result.error, fieldErrors: result.fieldErrors })
-          return sendJson(res, 200, { ok: true, runId: result.runId })
-        })
-      }
-      if (method === "GET") {
-        if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-        const task = deps.tasks.get(taskId)
-        if (!task) return sendJson(res, 404, { error: "task not found" })
-        return sendJson(res, 200, { task })
-      }
-    }
-  }
-
-  // /api/workflows/signal/:name        — POST manual signal emission.
-  // Body: { scope?: "workflow" | "global"; workflowId?: string; payload?: object }
-  if (url.startsWith("/api/workflows/signal/")) {
-    if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
-    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
-    if (!deps.dispatcher) return sendJson(res, 501, { error: "dispatcher not enabled" })
-    const name = decodeURIComponent(url.replace(/^\/api\/workflows\/signal\//, "").split("?")[0])
-    if (!name) return sendJson(res, 400, { error: "signal name required" })
-    return withBody(req, res, (body) => {
-      const b = body as { scope?: "workflow" | "global"; workflowId?: string; payload?: Record<string, unknown> } | undefined
-      const emission = deps.dispatcher!.emitSignal({
-        name,
-        scope: b?.scope,
-        workflowId: b?.workflowId,
-        payload: b?.payload,
-      })
-      return sendJson(res, 200, { ok: true, emission })
-    })
   }
 
   return sendJson(res, 404, { error: "unknown workflows endpoint", path: url })
