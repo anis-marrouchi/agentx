@@ -501,9 +501,46 @@ export class WhatsAppAdapter implements ChannelAdapter {
       : `${msg.chatId}@s.whatsapp.net`
 
     try {
-      const sent = await this.sock.sendMessage(jid, { text: msg.text })
+      let content: Record<string, unknown>
+
+      if (msg.poll) {
+        content = {
+          poll: {
+            name: msg.poll.name,
+            values: msg.poll.values,
+            selectableCount: msg.poll.selectableCount ?? 1,
+          },
+        }
+      } else if (msg.media) {
+        const mediaPayload: Record<string, unknown> = {
+          mimetype: msg.media.mimetype,
+        }
+        if (msg.media.caption) mediaPayload.caption = msg.media.caption
+        if (msg.media.fileName) mediaPayload.fileName = msg.media.fileName
+
+        const source = { url: msg.media.url }
+        switch (msg.media.type) {
+          case "image":
+            content = { image: source, ...mediaPayload }
+            break
+          case "video":
+            content = { video: source, ...mediaPayload }
+            break
+          case "audio":
+            content = { audio: source, ptt: false, ...mediaPayload }
+            break
+          case "document":
+            content = { document: source, ...mediaPayload }
+            break
+          default:
+            content = { document: source, ...mediaPayload }
+        }
+      } else {
+        content = { text: msg.text }
+      }
+
+      const sent = await this.sock.sendMessage(jid, content)
       const sentId = sent?.key?.id || ""
-      // Track to prevent loop (our own reply echoed back as fromMe)
       if (sentId) this.sentMessageIds.add(sentId)
       return sentId
     } catch (e: any) {

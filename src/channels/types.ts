@@ -61,6 +61,18 @@ export interface OutgoingMessage {
   replyTo?: string
   parseMode?: "markdown" | "html" | "plain"
   agentId?: string  // used by GitLab to select per-agent token
+  poll?: {
+    name: string
+    values: string[]
+    selectableCount?: number
+  }
+  media?: {
+    type: "image" | "document" | "audio" | "video"
+    url: string
+    caption?: string
+    mimetype?: string
+    fileName?: string
+  }
 }
 
 export interface ChannelAdapter {
