@@ -30,11 +30,15 @@ export function renderActivityGraphPage(opts: ActivityGraphPageOpts = {}): strin
       <a class="ax-graph__crumb is-active" data-root="" href="#">All</a>
     </nav>
     <div class="ax-graph__controls">
+      <div class="ax-graph__view-toggle">
+        <button class="is-active" data-view="timeline" type="button">Timeline</button>
+        <button data-view="lens" type="button">Lens</button>
+      </div>
       <label>Window
         <select id="ax-graph-window">
           <option value="1">1 hour</option>
-          <option value="6">6 hours</option>
-          <option value="24" selected>24 hours</option>
+          <option value="6" selected>6 hours</option>
+          <option value="24">24 hours</option>
           <option value="72">3 days</option>
           <option value="168">7 days</option>
         </select>
@@ -119,6 +123,53 @@ const GRAPH_CSS = `
 .ax-graph__hint { color: var(--ax-muted); font-size: 11px; margin-left: auto; }
 .ax-graph__hint.is-stale { color: #cf222e; }
 .ax-graph__hint.is-stale::before { content: "⚠ "; }
+
+/* View toggle */
+.ax-graph__view-toggle { display: inline-flex; border: 1px solid var(--ax-border); border-radius: 6px; overflow: hidden; }
+.ax-graph__view-toggle button {
+  padding: 4px 12px; border: 0; background: var(--ax-bg); color: var(--ax-muted);
+  cursor: pointer; font: inherit; border-right: 1px solid var(--ax-border);
+}
+.ax-graph__view-toggle button:last-child { border-right: 0; }
+.ax-graph__view-toggle button:hover { background: var(--ax-surface-2); color: var(--ax-fg); }
+.ax-graph__view-toggle button.is-active { background: var(--ax-accent, #3a7bd5); color: white; }
+
+/* Timeline mode */
+.ax-tl-lane-row { stroke: var(--ax-border); stroke-width: 0.5; }
+.ax-tl-lane-bg-even { fill: rgba(127, 127, 127, 0.04); }
+.ax-tl-lane-bg-odd { fill: transparent; }
+.ax-tl-lane-label {
+  font-size: 11px; font-weight: 600; fill: var(--ax-fg);
+  cursor: pointer;
+}
+.ax-tl-lane-label:hover { fill: var(--ax-accent, #3a7bd5); text-decoration: underline; }
+.ax-tl-lane-label--type {
+  font-size: 9px; fill: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ax-tl-time-tick { stroke: var(--ax-border); stroke-width: 0.5; stroke-dasharray: 2 2; }
+.ax-tl-time-label { font-size: 10px; fill: var(--ax-muted); text-anchor: middle; }
+.ax-tl-now-line { stroke: #2da44e; stroke-width: 1.5; }
+.ax-tl-now-line--pulse { animation: ax-tl-now-pulse 1.6s ease-in-out infinite; }
+@keyframes ax-tl-now-pulse { 50% { stroke-width: 3; opacity: 0.5; } }
+.ax-tl-now-label { font-size: 10px; fill: #2da44e; font-weight: 600; }
+
+.ax-tl-dot { cursor: pointer; transition: r 0.18s ease; }
+.ax-tl-dot:hover { r: 7; }
+.ax-tl-dot--dispatched { fill: #2da44e; stroke: white; stroke-width: 1.5; }
+.ax-tl-dot--halted { fill: #6b7280; stroke: white; stroke-width: 1.5; }
+.ax-tl-dot--deduped { fill: #9333ea; stroke: white; stroke-width: 1.5; opacity: 0.7; }
+.ax-tl-dot--error { fill: #cf222e; stroke: white; stroke-width: 1.5; }
+.ax-tl-dot.is-active { animation: ax-tl-dot-pulse 1.4s ease-in-out infinite; }
+@keyframes ax-tl-dot-pulse {
+  0%,100% { filter: drop-shadow(0 0 0 transparent); }
+  50% { filter: drop-shadow(0 0 6px rgba(46, 160, 67, 0.7)); }
+}
+
+.ax-tl-arc { fill: none; stroke-width: 1.6; pointer-events: stroke; }
+.ax-tl-arc--a2a { stroke: #bf8700; stroke-dasharray: 5 3; }
+.ax-tl-arc--resolve { stroke: #6b7280; opacity: 0.5; }
+.ax-tl-arc:hover { stroke-width: 3; opacity: 1; cursor: pointer; }
+.ax-tl-arc.is-active { animation: ax-edge-flow-a2a 1s linear infinite; }
 
 .ax-graph__canvas-wrap {
   position: relative; border: 1px solid var(--ax-border); border-radius: 8px;
@@ -761,6 +812,239 @@ const GRAPH_SCRIPT = `
     });
   }
 
+  // ---- TIMELINE (git-graph-style) -------------------------------------
+  // Lanes = entities (agents in default; root + 1-hop neighbours when
+  // rooted). Time axis = horizontal, oldest left, "now" right. Each
+  // dispatch decision is a dot on its agent's lane at decision_time.
+  // a2a calls draw a curved arc from the caller's lane to the callee's
+  // lane (forward in time). Resolutions draw a thinner arc back.
+
+  function renderTimeline(snap) {
+    if (!snap.nodes.length) {
+      clearAll();
+      emptyEl.hidden = false;
+      stamp.textContent = '';
+      return;
+    }
+    emptyEl.hidden = true;
+
+    var W = 1400, H = 800;
+    var leftPad = 180, rightPad = 60, topPad = 50, bottomPad = 40;
+    var laneAreaH = H - topPad - bottomPad;
+    var timeAreaW = W - leftPad - rightPad;
+
+    var hoursWindow = parseInt(winSelect.value, 10);
+    var nowMs = snap.ts;
+    var startMs = nowMs - hoursWindow * 3600 * 1000;
+
+    // ---- Lane assignment ----
+    // Default: top-N agents by activity in the window
+    // Rooted: root + 1-hop neighbours of compatible types
+    var laneEntities = computeTimelineLanes(snap);
+    var laneById = {};
+    laneEntities.forEach(function(n, i){ laneById[n.id] = i; });
+    var laneH = Math.max(36, Math.min(70, laneAreaH / Math.max(1, laneEntities.length)));
+
+    function laneY(i) { return topPad + i * laneH + laneH / 2; }
+    function timeX(ts) {
+      var t = Math.max(startMs, Math.min(nowMs, ts || startMs));
+      return leftPad + ((t - startMs) / Math.max(1, nowMs - startMs)) * timeAreaW;
+    }
+
+    // ---- Reset DOM caches that this mode owns ----
+    nodeEls.forEach(function(el){ el.remove(); }); nodeEls.clear();
+    edgeEls.forEach(function(el){ el.remove(); }); edgeEls.clear();
+    bboxEls.forEach(function(b){ b.rect.remove(); b.label.remove(); }); bboxEls.clear();
+    particleEls.forEach(function(el){ el.remove(); }); particleEls.clear();
+    nodesG.innerHTML = '';
+    edgesG.innerHTML = '';
+
+    // ---- Lane rows ----
+    laneEntities.forEach(function(n, i){
+      var y0 = topPad + i * laneH;
+      var bg = svgEl('rect', {
+        x: leftPad, y: y0, width: timeAreaW, height: laneH,
+        class: i % 2 === 0 ? 'ax-tl-lane-bg-even' : 'ax-tl-lane-bg-odd',
+      });
+      edgesG.appendChild(bg);
+      var sep = svgEl('line', {
+        x1: leftPad, y1: y0 + laneH, x2: leftPad + timeAreaW, y2: y0 + laneH,
+        class: 'ax-tl-lane-row',
+      });
+      edgesG.appendChild(sep);
+
+      // Label group on the left, clickable
+      var labelTypeY = y0 + laneH/2 - 6;
+      var labelMainY = y0 + laneH/2 + 7;
+      var typeText = svgEl('text', {
+        x: leftPad - 12, y: labelTypeY, 'text-anchor': 'end',
+        class: 'ax-tl-lane-label--type',
+      }, n.type);
+      var mainText = svgEl('text', {
+        x: leftPad - 12, y: labelMainY, 'text-anchor': 'end',
+        class: 'ax-tl-lane-label',
+      }, truncate(n.label, 22));
+      typeText.style.cursor = 'pointer';
+      mainText.addEventListener('click', function(){ pushPerspective(n); });
+      typeText.addEventListener('click', function(){ pushPerspective(n); });
+      mainText.addEventListener('mouseenter', function(ev){ showNodeTip(n, ev); });
+      mainText.addEventListener('mousemove', moveTip);
+      mainText.addEventListener('mouseleave', hideTip);
+      nodesG.appendChild(typeText);
+      nodesG.appendChild(mainText);
+    });
+
+    // ---- Time-axis ticks ----
+    var ticks = computeTimeTicks(startMs, nowMs);
+    ticks.forEach(function(t){
+      var x = timeX(t.ts);
+      edgesG.appendChild(svgEl('line', {
+        x1: x, y1: topPad, x2: x, y2: topPad + laneAreaH,
+        class: 'ax-tl-time-tick',
+      }));
+      nodesG.appendChild(svgEl('text', {
+        x: x, y: topPad + laneAreaH + 16, class: 'ax-tl-time-label',
+      }, t.label));
+    });
+    // "Now" line
+    var nowX = leftPad + timeAreaW;
+    edgesG.appendChild(svgEl('line', {
+      x1: nowX, y1: topPad - 4, x2: nowX, y2: topPad + laneAreaH + 4,
+      class: 'ax-tl-now-line ax-tl-now-line--pulse',
+    }));
+    nodesG.appendChild(svgEl('text', {
+      x: nowX, y: topPad - 8, class: 'ax-tl-now-label', 'text-anchor': 'end',
+    }, 'now'));
+
+    // ---- Edges (a2a + resolves) — drawn behind dots ----
+    // Per-edge arc from (caller_lane, started_at) to (callee_lane, started_at)
+    snap.edges.forEach(function(e){
+      var fromLane = laneById[e.from], toLane = laneById[e.to];
+      if (fromLane == null || toLane == null) return;
+      if (e.kind !== 'a2a' && e.kind !== 'resolves' && e.kind !== 'dispatches') return;
+      // Skip dispatches between lanes that aren't both shown (e.g. subject->agent
+      // when subject not in lane). Only draw when both endpoints are lanes.
+      var startTs = e.startedAt || e.resolvedAt;
+      var endTs = e.resolvedAt || e.startedAt;
+      if (!startTs) return;
+      var x1 = timeX(startTs), y1 = laneY(fromLane);
+      var x2 = timeX(endTs || startTs), y2 = laneY(toLane);
+      // Bezier control: pull horizontally for the lane jump
+      var midX = (x1 + x2) / 2;
+      var d = 'M' + x1 + ',' + y1 +
+              ' C' + midX + ',' + y1 + ' ' + midX + ',' + y2 + ' ' + x2 + ',' + y2;
+      var cls = 'ax-tl-arc ax-tl-arc--' + (e.kind === 'a2a' ? 'a2a' : 'resolve') + (e.active ? ' is-active' : '');
+      var path = svgEl('path', { d: d, class: cls, 'data-edge': e.id });
+      path.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
+      path.addEventListener('mousemove', moveTip);
+      path.addEventListener('mouseleave', hideTip);
+      edgesG.appendChild(path);
+      edgeEls.set(e.id, path);
+    });
+
+    // ---- Dots (one per dispatch decision) ----
+    // Pull dispatch edges (subject->agent) and plot a dot on the agent's lane
+    snap.edges.forEach(function(e){
+      if (e.kind !== 'dispatches') return;
+      var lane = laneById[e.to];
+      if (lane == null) return;
+      if (!e.startedAt) return;
+      var x = timeX(e.startedAt);
+      var y = laneY(lane);
+      var status = e.outcome || 'dispatched';
+      var dotCls = 'ax-tl-dot ax-tl-dot--' + (status === 'dispatched' && !e.resolvedAt ? 'dispatched' : status === 'halted' ? 'halted' : status === 'deduped' ? 'deduped' : status === 'error' ? 'error' : 'dispatched') + (e.active ? ' is-active' : '');
+      var dot = svgEl('circle', { cx: x, cy: y, r: 5, class: dotCls, 'data-edge': e.id });
+      dot.addEventListener('mouseenter', function(ev){ showEdgeTip(e, ev); });
+      dot.addEventListener('mousemove', moveTip);
+      dot.addEventListener('mouseleave', hideTip);
+      // Click: re-root from this agent
+      dot.addEventListener('click', function(){
+        var agentNode = snap.nodes.find(function(n){ return n.id === e.to; });
+        if (agentNode) pushPerspective(agentNode);
+      });
+      nodesG.appendChild(dot);
+    });
+
+    stamp.textContent = laneEntities.length + ' lanes · ' + snap.edges.filter(function(e){ return e.kind === 'dispatches'; }).length + ' dispatches · streamed ' + new Date(snap.ts).toLocaleTimeString();
+  }
+
+  function computeTimelineLanes(snap) {
+    // Score each node by participation in dispatch/a2a edges.
+    var score = {};
+    snap.edges.forEach(function(e){
+      if (e.kind === 'a2a' || e.kind === 'dispatches' || e.kind === 'resolves') {
+        score[e.from] = (score[e.from] || 0) + 1;
+        score[e.to] = (score[e.to] || 0) + 1;
+      }
+    });
+    // Lane candidates = agents (always), plus root + neighbours when rooted
+    var candidates = snap.nodes.filter(function(n){
+      return n.type === 'agent' || n.id === snap.root;
+    });
+    if (snap.root) {
+      // Add 1-hop neighbours of any type so the root's lane has its connections rendered
+      var neighbours = new Set();
+      snap.edges.forEach(function(e){
+        if (e.from === snap.root) neighbours.add(e.to);
+        if (e.to === snap.root) neighbours.add(e.from);
+      });
+      snap.nodes.forEach(function(n){
+        if (neighbours.has(n.id) && !candidates.find(function(c){ return c.id === n.id; })) {
+          candidates.push(n);
+        }
+      });
+    }
+    candidates.sort(function(a, b){
+      // Root first
+      if (a.id === snap.root) return -1;
+      if (b.id === snap.root) return 1;
+      // Then by score desc, then alphabetical
+      var d = (score[b.id] || 0) - (score[a.id] || 0);
+      if (d !== 0) return d;
+      return a.label < b.label ? -1 : 1;
+    });
+    // Cap at a reasonable number to keep lanes readable
+    return candidates.slice(0, 18);
+  }
+
+  function computeTimeTicks(startMs, nowMs) {
+    var span = nowMs - startMs;
+    // Pick a tick interval roughly 6-10 ticks across the range
+    var hourMs = 3600 * 1000;
+    var step;
+    if (span <= 1.5 * hourMs) step = 10 * 60 * 1000;        // 10 min
+    else if (span <= 8 * hourMs) step = hourMs;             // 1 hr
+    else if (span <= 36 * hourMs) step = 4 * hourMs;        // 4 hr
+    else if (span <= 8 * 24 * hourMs) step = 24 * hourMs;   // 1 day
+    else step = 7 * 24 * hourMs;                            // 1 wk
+
+    var ticks = [];
+    // Anchor on 'now', step backwards
+    var t = nowMs;
+    while (t >= startMs - step) {
+      ticks.push({ ts: t, label: fmtTickLabel(t, step) });
+      t -= step;
+    }
+    return ticks;
+  }
+  function fmtTickLabel(ts, step) {
+    var d = new Date(ts);
+    if (step < 3600 * 1000) {
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+    if (step < 24 * 3600 * 1000) {
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // ---- VIEW DISPATCH ---------------------------------------------------
+  var view = 'timeline'; // default
+  function dispatchRender(snap) {
+    if (view === 'timeline') return renderTimeline(snap);
+    return render(snap);
+  }
+
   // ---- LIVE STREAM (SSE) ----------------------------------------------
   // Fresh snapshot every TICK_MS from the server. The render is
   // incremental — same DOM nodes get reused across snapshots so the CSS
@@ -782,7 +1066,7 @@ const GRAPH_SCRIPT = `
     es.addEventListener('snapshot', function(ev){
       try {
         snapshot = JSON.parse(ev.data);
-        render(snapshot);
+        dispatchRender(snapshot);
         stamp.classList.remove('is-stale');
       } catch (e) { console.error('snapshot parse failed', e); }
     });
@@ -805,7 +1089,7 @@ const GRAPH_SCRIPT = `
     try {
       var r = await fetch('/api/admin/activity-graph' + qs, { credentials: 'same-origin' });
       snapshot = await r.json();
-      render(snapshot);
+      dispatchRender(snapshot);
     } catch (e) { console.error('graph fetch failed', e); }
   }
 
@@ -814,7 +1098,20 @@ const GRAPH_SCRIPT = `
     connect();        // re-connect SSE so we don't wait a full tick
   });
   winSelect.addEventListener('change', connect);
-  activeOnlyChk.addEventListener('change', function(){ if (snapshot) render(snapshot); });
+  activeOnlyChk.addEventListener('change', function(){ if (snapshot) dispatchRender(snapshot); });
+
+  // View toggle (Timeline ↔ Lens)
+  var toggleBtns = document.querySelectorAll('.ax-graph__view-toggle button');
+  toggleBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      toggleBtns.forEach(function(x){ x.classList.toggle('is-active', x === b); });
+      view = b.getAttribute('data-view');
+      // Adjust SVG viewBox per mode for best layout. Timeline benefits
+      // from a wider canvas; lens prefers a square-ish ratio.
+      svg.setAttribute('viewBox', view === 'timeline' ? '0 0 1400 800' : '0 0 1400 800');
+      if (snapshot) dispatchRender(snapshot);
+    });
+  });
 
   connect();
   // Tab visibility: pause stream when tab hidden, reopen on return
