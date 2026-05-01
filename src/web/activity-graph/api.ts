@@ -1,10 +1,17 @@
 // Fleet snapshot API — one-shot fetch + SSE subscription. The server
 // builds the same shape on every tick; the client diffs on its own.
 
+export type InitiatorKind =
+  | "telegram" | "whatsapp" | "slack" | "discord"
+  | "gitlab" | "github"
+  | "cron" | "workflow"
+  | "mesh" | "a2a"
+  | "system"
+
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }
 export interface FleetAgent { id: string; name: string; tier: "lead" | "worker"; model: string; role: string }
 export interface FleetChannel { id: string; label: string; color: string }
-export interface FleetInitiator { id: string; name: string; avatar: string }
+export interface FleetInitiator { id: string; name: string; avatar: string; kind: InitiatorKind }
 export interface FleetDispatch {
   id: string
   agentId: string
@@ -12,6 +19,7 @@ export interface FleetDispatch {
   projectId: string
   channelId: string
   initiatorId: string
+  initiatorKind?: InitiatorKind
   subject: string
   intent: string
   startedAt: number

@@ -27,6 +27,25 @@ function useFleet(windowH: number): { snap: FleetSnapshot | null; stale: boolean
 // Helpers
 
 function uniq<T>(arr: T[]): T[] { return Array.from(new Set(arr)) }
+
+/** Human label for the trigger kind. Used as a small caption under the
+ *  initiator's name so "Schedule" stops being the catch-all — every node
+ *  in the Flow column makes its origin obvious (GitLab MR / GitHub push /
+ *  Telegram / Cron / etc.). Returns undefined for kinds that don't add
+ *  information (chat-style channels are already implied by the channel
+ *  column to the right). */
+function kindLabel(kind: string | undefined): string | undefined {
+  switch (kind) {
+    case "gitlab":   return "GitLab webhook"
+    case "github":   return "GitHub webhook"
+    case "cron":     return "Cron job"
+    case "workflow": return "Workflow"
+    case "a2a":      return "Agent → Agent"
+    case "mesh":     return "Mesh"
+    case "system":   return "System"
+    default:         return undefined
+  }
+}
 function sum<T>(arr: T[], fn?: (x: T) => number): number {
   return arr.reduce((a, x) => a + (fn ? fn(x) : (x as unknown as number)), 0)
 }
@@ -52,7 +71,7 @@ function makeLookup(snap: FleetSnapshot): Lookup {
     getClient: (id) => cBy.get(id),
     getAgent: (id) => aBy.get(id),
     getChannel: (id) => chBy.get(id),
-    getInitiator: (id) => iBy.get(id) || { id, name: id, avatar: id.slice(0, 2).toUpperCase() },
+    getInitiator: (id) => iBy.get(id) || { id, name: id, avatar: id.slice(0, 2).toUpperCase(), kind: "system" as const },
     colorFor: (id) => cBy.get(id)?.color || "#6b7280",
   }
 }
@@ -637,7 +656,7 @@ function FlowPerspective(props: {
           title="Initiator"
           items={cols.initiators.map(([id, n]) => {
             const i = lookup.getInitiator(id)
-            return { id, label: i?.name || id, avatar: i?.avatar, count: n, type: "initiator" }
+            return { id, label: i?.name || id, avatar: i?.avatar, count: n, type: "initiator", sub: kindLabel(i?.kind) }
           })}
           hover={hover} setHover={setHover}
           onClick={(it) => updateFilter({ initiator: it.id })}
@@ -684,7 +703,7 @@ function FlowPerspective(props: {
   )
 }
 
-interface FlowItem { id: string; label: string; count: number; type: string; avatar?: string; color?: string }
+interface FlowItem { id: string; label: string; count: number; type: string; avatar?: string; color?: string; sub?: string }
 
 function FlowCol(props: {
   title: string; items: FlowItem[]
@@ -708,7 +727,10 @@ function FlowCol(props: {
             {it.avatar ? <span className="avatar">{it.avatar}</span>
               : it.color ? <span className="dot" style={{ background: it.color }} />
               : null}
-            <span className="nm">{it.label}</span>
+            <span className="nm" style={it.sub ? { display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.15 } : undefined}>
+              <span>{it.label}</span>
+              {it.sub && <span style={{ fontSize: 9, color: "var(--ax-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{it.sub}</span>}
+            </span>
             <span className="ct">{it.count}</span>
           </div>
         )
@@ -807,7 +829,7 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
             <div className="drawer__row"><span className="k">Attributed via</span><span className="v" style={{ fontSize: 11, color: "var(--ax-muted)" }}>{detail.attribution.via}</span></div>
           )}
           <div className="drawer__row"><span className="k">Agent</span><span className="v">{agent?.name || item.agentId} {agent && <span className="tier" style={{ marginLeft: 6 }}>{agent.tier}</span>}</span></div>
-          <div className="drawer__row"><span className="k">Channel</span><span className="v">{channel?.label || item.channelId} <span className="mono" style={{ color: "var(--ax-muted)", marginLeft: 4 }}>· from {initiator?.name || "Schedule"}</span></span></div>
+          <div className="drawer__row"><span className="k">Channel</span><span className="v">{channel?.label || item.channelId} <span className="mono" style={{ color: "var(--ax-muted)", marginLeft: 4 }}>· from {initiator?.name || "Schedule"}{kindLabel(initiator?.kind) ? ` (${kindLabel(initiator?.kind)})` : ""}</span></span></div>
           <div className="drawer__row"><span className="k">Started</span><span className="v">{new Date(item.startedAt).toLocaleString()}</span></div>
           <div className="drawer__row"><span className="k">Duration</span><span className="v">{fmtDur(item.duration)}{item.active ? " (running)" : ""}</span></div>
 
@@ -848,7 +870,7 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
               <div>
                 <div className="journey-step__label">Started by</div>
                 <div className="journey-step__val">{initiator?.name || "Schedule"}</div>
-                <div className="journey-step__time">via {channel?.label || item.channelId}</div>
+                <div className="journey-step__time">{kindLabel(initiator?.kind) ? `${kindLabel(initiator?.kind)} · ` : "via "}{channel?.label || item.channelId}</div>
               </div>
             </div>
             <div className="journey-step">

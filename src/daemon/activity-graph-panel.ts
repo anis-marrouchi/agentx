@@ -54,7 +54,7 @@ export function handleActivityGraphGet(_req: IncomingMessage, res: ServerRespons
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }
 export interface FleetAgent { id: string; name: string; tier: "lead" | "worker"; model: string; role: string }
 export interface FleetChannel { id: string; label: string; color: string }
-export interface FleetInitiator { id: string; name: string; avatar: string }
+export interface FleetInitiator { id: string; name: string; avatar: string; kind: InitiatorKind }
 export interface FleetDispatch {
   id: string
   agentId: string
@@ -62,6 +62,10 @@ export interface FleetDispatch {
   projectId: string
   channelId: string
   initiatorId: string
+  /** What kind of trigger started this dispatch — "telegram", "gitlab",
+   *  "github", "cron", "workflow", "a2a", … Lets the UI render a small
+   *  pill ("Anis · GitLab MR") instead of the catch-all "Schedule". */
+  initiatorKind?: InitiatorKind
   subject: string
   intent: string
   startedAt: number
@@ -101,9 +105,31 @@ const CHANNEL_DEF: Record<string, { label: string; color: string }> = {
   slack: { label: "Slack", color: "#4a154b" },
   discord: { label: "Discord", color: "#5865f2" },
   mesh: { label: "Mesh (a2a)", color: "#bf8700" },
-  cron: { label: "Schedule", color: "#6b7280" },
+  a2a: { label: "Agent → Agent", color: "#bf8700" },
+  cron: { label: "Cron", color: "#6b7280" },
   workflow: { label: "Workflow", color: "#9333ea" },
   api: { label: "API", color: "#3a7bd5" },
+}
+
+/** Collapse the storage `source` to the channel the operator thinks
+ *  they're looking at. Examples:
+ *    source=mesh, intent=mesh.github → "github"
+ *    source=mesh, intent=mesh.gitlab → "gitlab"
+ *    source=mesh, intent=mesh.a2a    → "a2a" (separate from generic mesh)
+ *    source=mesh, intent=mesh.task   → "mesh"
+ *  Everything else passes through unchanged. */
+function upstreamChannel(source: string, intent: string, raw: any): string {
+  if (source !== "mesh") return source
+  // raw.context.channel is canonical when present.
+  const ctxChan = raw?.context?.channel
+  if (typeof ctxChan === "string" && ctxChan in CHANNEL_DEF) return ctxChan
+  // Fall back to the intent suffix.
+  if (intent.startsWith("mesh.")) {
+    const suffix = intent.slice(5)
+    if (suffix === "a2a") return "a2a"
+    if (suffix in CHANNEL_DEF) return suffix
+  }
+  return "mesh"
 }
 
 // Stable client color from id hash — semantically muted but distinct.
@@ -254,8 +280,58 @@ function matchContact(
 //   - gitlab webhook: the raw GitLab payload is stored as-is, with user.* at
 //     the top level (no IncomingMessage wrapper).
 //   - github webhook: raw GitHub payload, sender.login at top level.
-function initiatorFrom(source: string, raw: any): { id: string; name: string; avatar: string } | null {
+//   - mesh: a routed task — the original channel + sender live under
+//     `raw.context.{channel,sender,senderUsername,senderId}`, NOT at top level.
+//   - cron: { jobId, agentId, firedAt } — no human; we name the cron job.
+//   - workflow: workflow run envelope with {workflowId|runId}.
+function initiatorFrom(source: string, intent: string, raw: any): { id: string; name: string; avatar: string; kind: InitiatorKind } | null {
   if (!raw || typeof raw !== "object") return null
+
+  // ---- mesh-routed events: dig into raw.context.* ----
+  // These look like {agentId, context:{channel, sender, senderUsername, senderId}, message}
+  // and currently fall through every check below — that's why so many show
+  // up as "Schedule". Treat the embedded context as the initiator.
+  if (source === "mesh") {
+    const ctx = raw.context && typeof raw.context === "object" ? raw.context : null
+    if (ctx) {
+      const senderUsername = typeof ctx.senderUsername === "string" ? ctx.senderUsername : null
+      const senderName = typeof ctx.sender === "string" ? ctx.sender : null
+      const senderId = typeof ctx.senderId === "string" ? ctx.senderId : null
+      // graph-classifier and similar pseudo-senders are system traffic; let
+      // the caller mark the row as "system" so the show-system toggle hides
+      // them rather than emitting a confusing entry under "Schedule".
+      const display = senderName || senderUsername || senderId
+      if (display && !isSystemSender(senderUsername || senderName || "")) {
+        const id = senderUsername || senderName || senderId!
+        // Channel-aware kind so the UI can render "Anis (GitLab MR)" etc.
+        const kind: InitiatorKind =
+          intent === "mesh.github" ? "github"
+          : intent === "mesh.gitlab" ? "gitlab"
+          : intent === "mesh.a2a" ? "a2a"
+          : "mesh"
+        return { id, name: senderName || senderUsername || id, avatar: initialsFor(display), kind }
+      }
+    }
+    // mesh.task without a recognizable sender → caller-dispatched a2a flow
+    return null
+  }
+
+  // ---- cron: name the job, never bucket it as anonymous "Schedule" ----
+  if (source === "cron") {
+    const jobId = typeof raw.jobId === "string" ? raw.jobId : null
+    if (jobId) {
+      return { id: `cron:${jobId}`, name: `Cron: ${jobId}`, avatar: "⏱", kind: "cron" }
+    }
+  }
+
+  // ---- workflow: name the run/workflow, not "Schedule" ----
+  if (source === "workflow") {
+    const wid =
+      (typeof raw.workflowId === "string" && raw.workflowId) ||
+      (typeof raw.runId === "string" && raw.runId) ||
+      (typeof raw.workflow === "string" && raw.workflow)
+    if (wid) return { id: `workflow:${wid}`, name: `Workflow: ${wid}`, avatar: "▶", kind: "workflow" }
+  }
 
   // Chat-style: IncomingMessage shape with sender.{id,username,name}.
   if (raw.sender && typeof raw.sender === "object") {
@@ -265,7 +341,7 @@ function initiatorFrom(source: string, raw: any): { id: string; name: string; av
     const id = username || (s.id != null ? String(s.id) : null) || name
     if (id) {
       const display = name || username || id
-      return { id, name: display, avatar: initialsFor(display) }
+      return { id, name: display, avatar: initialsFor(display), kind: chatKindFor(source) }
     }
   }
 
@@ -275,14 +351,14 @@ function initiatorFrom(source: string, raw: any): { id: string; name: string; av
     if (u && typeof u === "object" && (u.username || u.name)) {
       const id = u.username || u.name
       const name = u.name || u.username
-      return { id, name, avatar: initialsFor(name) }
+      return { id, name, avatar: initialsFor(name), kind: "gitlab" }
     }
   }
 
   // GitHub webhook payload — sender.login at top level.
   if (source === "github") {
     const s = raw.sender || raw.payload?.sender
-    if (s?.login) return { id: s.login, name: s.login, avatar: initialsFor(s.login) }
+    if (s?.login) return { id: s.login, name: s.login, avatar: initialsFor(s.login), kind: "github" }
   }
 
   // Last-ditch fallbacks for chat-style raw payloads we didn't catch above.
@@ -290,19 +366,51 @@ function initiatorFrom(source: string, raw: any): { id: string; name: string; av
     const f = raw.message?.from || raw.from
     if (f?.username) {
       const display = f.first_name || f.username
-      return { id: f.username, name: display, avatar: initialsFor(display) }
+      return { id: f.username, name: display, avatar: initialsFor(display), kind: "telegram" }
     }
-    if (f?.id) return { id: String(f.id), name: f.first_name || `tg:${f.id}`, avatar: initialsFor(f.first_name || `tg${f.id}`) }
+    if (f?.id) return { id: String(f.id), name: f.first_name || `tg:${f.id}`, avatar: initialsFor(f.first_name || `tg${f.id}`), kind: "telegram" }
   }
   if (source === "whatsapp") {
     const f = raw.from || raw.payload?.from
     if (f) {
       const id = String(f)
       const name = id.replace(/@.*$/, "")
-      return { id, name, avatar: initialsFor(name) }
+      return { id, name, avatar: initialsFor(name), kind: "whatsapp" }
     }
   }
   return null
+}
+
+/** Initiator origin — used by the UI to render a small pill next to the
+ *  initiator name (e.g. "Anis · GitLab MR", "Cron: daily-brief"). */
+export type InitiatorKind =
+  | "telegram" | "whatsapp" | "slack" | "discord"
+  | "gitlab" | "github"
+  | "cron" | "workflow"
+  | "mesh" | "a2a"
+  | "system"
+
+function chatKindFor(source: string): InitiatorKind {
+  if (source === "telegram" || source === "whatsapp" || source === "slack" || source === "discord") {
+    return source
+  }
+  return "system"
+}
+
+/** Pseudo-senders the orchestrator generates on internal hops (the graph
+ *  classifier sub-call, hook fan-outs, etc.). These don't represent real
+ *  initiators — they're system traffic. Flag them so the activity graph
+ *  can group them under "system" instead of inventing a fake person. */
+function isSystemSender(s: string): boolean {
+  if (!s) return false
+  const v = s.toLowerCase()
+  return (
+    v === "graph-classifier" ||
+    v === "graph-agent" ||
+    v.startsWith("system:") ||
+    v.startsWith("internal:") ||
+    v.endsWith("-system")
+  )
 }
 
 function initialsFor(name: string): string {
@@ -442,20 +550,27 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
       baseProjectId = ev.project
     }
 
-    const chanDef = CHANNEL_DEF[ev.source] || { label: ev.source, color: "#6b7280" }
-    if (!channelMap.has(ev.source)) channelMap.set(ev.source, { id: ev.source, label: chanDef.label, color: chanDef.color })
+    // Origin channel — what the operator thinks of as "where this came
+    // from". For mesh-routed events the source is "mesh" but the user
+    // experiences a GitLab MR / GitHub push / a2a hop; collapse to the
+    // upstream channel via raw.context.channel or the intent suffix.
+    const upstream = upstreamChannel(ev.source, ev.intent || "", raw)
+    const chanDef = CHANNEL_DEF[upstream] || { label: upstream, color: "#6b7280" }
+    if (!channelMap.has(upstream)) channelMap.set(upstream, { id: upstream, label: chanDef.label, color: chanDef.color })
 
     let initiatorId = "__system"
-    const init = initiatorFrom(ev.source, raw)
+    let initiatorKind: InitiatorKind | undefined
+    const init = initiatorFrom(ev.source, ev.intent || "", raw)
     if (init) {
       initiatorId = init.id
+      initiatorKind = init.kind
       // Contact-map can override the display name (e.g. map "marrouchi" → "Anis")
       const display = contact?.displayName || init.name
       if (!initiatorMap.has(init.id) || contact?.displayName) {
-        initiatorMap.set(init.id, { ...init, name: display, avatar: initialsFor(display) })
+        initiatorMap.set(init.id, { id: init.id, name: display, avatar: initialsFor(display), kind: init.kind })
       }
     } else if (!initiatorMap.has("__system")) {
-      initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱" })
+      initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱", kind: "system" })
     }
 
     const inputPreview = inputPreviewFrom(ev.source, raw)
@@ -503,8 +618,9 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
         agentId: d.agent_id,
         clientId,
         projectId,
-        channelId: ev.source,
+        channelId: upstream,
         initiatorId,
+        initiatorKind,
         subject: shortSubject(ev.subject),
         intent: ev.intent || "",
         startedAt,
@@ -563,7 +679,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
 
   const initiators: FleetInitiator[] = [...initiatorMap.values()]
   if (!initiators.find((i) => i.id === "__system")) {
-    initiators.push({ id: "__system", name: "Schedule", avatar: "⏱" })
+    initiators.push({ id: "__system", name: "Schedule", avatar: "⏱", kind: "system" })
   }
 
   return {
