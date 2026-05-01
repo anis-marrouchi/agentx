@@ -13,7 +13,7 @@ import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
-import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream } from "./activity-graph-panel"
+import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, setDaemonConfigForActivityGraph } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
@@ -73,6 +73,11 @@ export function startBoardDashboard(config: DaemonConfig): void {
   const workflowStore = new WorkflowStore(wfDir ? { baseDir: wfDir } : undefined)
   const workflowRuns = new RunStore(wfDir ? { baseDir: wfDir, nodeId: wfNodeId } : { nodeId: wfNodeId })
   const workflowLayouts = new LayoutStore(wfDir ? { baseDir: wfDir } : undefined)
+
+  // Activity-graph snapshot needs agent metadata (tier, model, name) from
+  // agentx.json — set the module-level reference so the snapshot builder can
+  // read it when serving each request.
+  setDaemonConfigForActivityGraph(config)
 
   const server = createServer(async (req, res) => {
     try {

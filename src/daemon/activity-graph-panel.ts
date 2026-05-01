@@ -4,16 +4,28 @@ import { existsSync } from "fs"
 import Database from "better-sqlite3"
 import { renderActivityGraphPage } from "./ui/pages/activity-graph"
 import type { TopbarPeer } from "./topbar"
+import type { DaemonConfig } from "./config"
 
-// --- /admin/activity-graph — Activity perspective lens ---
+// --- /admin/activity-graph — Fleet activity perspective view ---
 //
-// A live graph over the intent ledger that re-roots from any node's
-// perspective. The same data graph (clients, projects, subjects,
-// agents, channels, initiators) is re-projected depending on what
-// you click — the operator picks the lens, not the layout.
+// Server-side snapshot builder. Reads .agentx/intent/ledger.sqlite
+// (read-only) and the daemon config; produces a "fleet snapshot"
+// JSON the client React app consumes:
 //
-// Snapshot-driven for Phase 1 (refresh button); SSE live updates can
-// come in Phase 2 once we know the layout works.
+//   {
+//     now:        epoch ms,
+//     clients:    [{ id, name, color, projects: string[] }],
+//     agents:     [{ id, name, tier, model, role }],
+//     channels:   [{ id, label, color }],
+//     initiators: [{ id, name, avatar }],
+//     dispatches: [{ id, agentId, clientId, projectId, channelId,
+//                    initiatorId, subject, intent, startedAt,
+//                    resolvedAt, duration, active, outcome, tokens }]
+//   }
+//
+// One row per dispatched decision in the ledger window. Active = no
+// resolution row yet. Client/initiator extracted from the source-
+// specific raw_json payload.
 
 interface OpenedDb { db: Database.Database; close: () => void }
 
@@ -37,320 +49,324 @@ export function handleActivityGraphGet(_req: IncomingMessage, res: ServerRespons
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot types
 
-export type NodeType = "client" | "project" | "subject" | "agent" | "channel" | "initiator"
-
-export interface GraphNode {
-  id: string                    // typed key, e.g. "client:mtgl"
-  type: NodeType
-  label: string
-  sub?: string                  // secondary line (e.g. "12 active")
-  count?: number                // active edge count
-  data?: Record<string, unknown>
-}
-export interface GraphEdge {
+export interface FleetClient { id: string; name: string; color: string; projects: string[] }
+export interface FleetAgent { id: string; name: string; tier: "lead" | "worker"; model: string; role: string }
+export interface FleetChannel { id: string; label: string; color: string }
+export interface FleetInitiator { id: string; name: string; avatar: string }
+export interface FleetDispatch {
   id: string
-  from: string
-  to: string
-  kind: "contains" | "arrives" | "starts" | "dispatches" | "a2a" | "resolves"
-  active: boolean               // pulsing if true
-  startedAt?: number
-  resolvedAt?: number
-  preview?: string              // shown on hover
-  outcome?: string              // dispatched | halted | deduped | error
+  agentId: string
+  clientId: string
+  projectId: string
+  channelId: string
+  initiatorId: string
+  subject: string
+  intent: string
+  startedAt: number
+  resolvedAt: number | null
+  duration: number
+  active: boolean
+  outcome: "completed" | "active" | "error"
+  tokens: number
 }
-export interface GraphSnapshot {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-  root: string | null            // typed key of selected root, or null for "All"
-  rootMeta?: { type: NodeType; label: string }
-  windowMs: number
-  ts: number
-}
-
-interface LedgerEvent {
-  id: string
-  ts: number
-  source: string
-  project: string | null
-  subject: string | null
-  intent: string | null
-  raw_json: string
-}
-interface LedgerDecision {
-  event_id: string
-  decided_at: number
-  decided_by: string
-  agent_id: string | null
-  outcome: string
-  reason: string | null
-}
-interface LedgerResolution {
-  decision_event_id: string
-  decision_decided_by: string
-  resolved_at: number
-  status: string
-  duration_ms: number | null
-  result_summary: string | null
+export interface FleetSnapshot {
+  now: number
+  windowH: number
+  clients: FleetClient[]
+  agents: FleetAgent[]
+  channels: FleetChannel[]
+  initiators: FleetInitiator[]
+  dispatches: FleetDispatch[]
 }
 
-// Heuristic: derive a "client" from a project path. Format "<group>/<repo>"
-// → client = group. Falls back to "internal" for events with no project.
+// ---------------------------------------------------------------------------
+// Lookups: client palette + channel palette
+
+const CHANNEL_DEF: Record<string, { label: string; color: string }> = {
+  gitlab: { label: "GitLab", color: "#fc6d26" },
+  github: { label: "GitHub", color: "#6e7681" },
+  telegram: { label: "Telegram", color: "#0088cc" },
+  whatsapp: { label: "WhatsApp", color: "#25d366" },
+  slack: { label: "Slack", color: "#4a154b" },
+  discord: { label: "Discord", color: "#5865f2" },
+  mesh: { label: "Mesh (a2a)", color: "#bf8700" },
+  cron: { label: "Schedule", color: "#6b7280" },
+  workflow: { label: "Workflow", color: "#9333ea" },
+  api: { label: "API", color: "#3a7bd5" },
+}
+
+// Stable client color from id hash — semantically muted but distinct.
+function colorForClient(id: string): string {
+  // Reserve known clients to nice colours; everything else picks from a
+  // deterministic palette by hashing the id.
+  const known: Record<string, string> = {
+    mtgl: "#e07a3a",
+    ksi: "#3a7bd5",
+    noqta: "#10b981",
+    hasanah: "#bc8cff",
+    "hasanah-lab": "#bc8cff",
+    hackathonat: "#ec775c",
+    internal: "#6b7280",
+  }
+  if (known[id]) return known[id]
+  const palette = ["#e07a3a", "#3a7bd5", "#10b981", "#bc8cff", "#ec775c", "#bf8700", "#5865f2", "#cf222e"]
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  return palette[Math.abs(h) % palette.length]
+}
+
 function clientFromProject(project: string | null | undefined): string {
   if (!project) return "internal"
   const slash = project.indexOf("/")
   return slash > 0 ? project.slice(0, slash) : project
 }
 
-// Pull a sender / initiator name out of the source-specific raw payload.
-// Best-effort: GitLab uses user.name, Telegram uses from.username,
-// generic webhooks fall through to source-event-id. Returns null when
-// no human is implicated (mesh, cron, workflow).
-function initiatorFrom(source: string, raw: any): { username: string; label: string } | null {
+// Best-effort initiator extraction per source.
+function initiatorFrom(source: string, raw: any): { id: string; name: string; avatar: string } | null {
   if (!raw || typeof raw !== "object") return null
   if (source === "gitlab") {
     const u = raw.payload?.user || raw.user
-    if (u?.username || u?.name) return { username: u.username || u.name, label: u.name || u.username }
+    if (u?.username || u?.name) {
+      const id = u.username || u.name
+      const name = u.name || u.username
+      return { id, name, avatar: initialsFor(name) }
+    }
   }
   if (source === "github") {
     const u = raw.payload?.sender || raw.sender || raw.payload?.user
-    if (u?.login) return { username: u.login, label: u.login }
+    if (u?.login) return { id: u.login, name: u.login, avatar: initialsFor(u.login) }
   }
   if (source === "telegram") {
     const f = raw.from || raw.payload?.from
-    if (f?.username) return { username: f.username, label: f.first_name || f.username }
-    if (f?.id) return { username: String(f.id), label: f.first_name || `tg:${f.id}` }
+    if (f?.username) return { id: f.username, name: f.first_name || f.username, avatar: initialsFor(f.first_name || f.username) }
+    if (f?.id) return { id: String(f.id), name: f.first_name || `tg:${f.id}`, avatar: (f.first_name || "TG").slice(0, 2).toUpperCase() }
   }
   if (source === "whatsapp") {
     const j = raw.from || raw.payload?.from
-    if (j) return { username: String(j), label: String(j).replace(/@.*$/, "") }
+    if (j) {
+      const id = String(j)
+      const name = id.replace(/@.*$/, "")
+      return { id, name, avatar: initialsFor(name) }
+    }
   }
   return null
 }
 
-interface Aggregated {
-  events: Map<string, LedgerEvent>
-  decisionsByEvent: Map<string, LedgerDecision[]>
-  resolutionsByDecision: Map<string, LedgerResolution>      // key = event_id|decided_by
+function initialsFor(name: string): string {
+  const parts = String(name || "?").trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return String(name || "?").slice(0, 2).toUpperCase()
 }
 
-function loadAggregated(db: Database.Database, sinceMs: number): Aggregated {
-  const events = new Map<string, LedgerEvent>()
-  const decisionsByEvent = new Map<string, LedgerDecision[]>()
-  const resolutionsByDecision = new Map<string, LedgerResolution>()
+// Trim "merge_request:957:..." → "MR #957", "issue:42:..." → "issue #42", etc.
+function shortSubject(subject: string | null): string {
+  if (!subject) return "(no subject)"
+  let m: RegExpMatchArray | null
+  if ((m = subject.match(/^merge_request:(\d+)(?::note:(\d+))?/))) {
+    return m[2] ? `MR #${m[1]} · note ${m[2]}` : `MR #${m[1]}`
+  }
+  if ((m = subject.match(/^issue:(\d+)(?::note:(\d+))?/))) {
+    return m[2] ? `Issue #${m[1]} · note ${m[2]}` : `Issue #${m[1]}`
+  }
+  if ((m = subject.match(/^chat:(.+?):(.+)$/))) return `${m[1]} · ${m[2].slice(0, 40)}`
+  if ((m = subject.match(/^mesh:agent:(.+)$/))) return `→ ${m[1]}`
+  if ((m = subject.match(/^workflow:([^:]+):(.+)$/))) return `${m[1]} · ${m[2].slice(0, 30)}`
+  return subject.length > 60 ? subject.slice(0, 57) + "…" : subject
+}
 
-  const eventRows = db.prepare(`
+// ---------------------------------------------------------------------------
+// Snapshot builder
+
+function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | null, windowH: number): FleetSnapshot {
+  const now = Date.now()
+  const sinceMs = now - windowH * 3600 * 1000
+
+  // Pull events in the window.
+  const events = db.prepare(`
     SELECT id, ts, source, project, subject, intent, raw_json
     FROM intent_events WHERE ts >= ? ORDER BY ts ASC
-  `).all(sinceMs) as LedgerEvent[]
-  for (const e of eventRows) events.set(e.id, e)
+  `).all(sinceMs) as Array<{ id: string; ts: number; source: string; project: string | null; subject: string | null; intent: string | null; raw_json: string }>
 
-  if (events.size === 0) return { events, decisionsByEvent, resolutionsByDecision }
+  // Decisions for those events
+  const decisionsByEvent = new Map<string, Array<{ event_id: string; decided_at: number; decided_by: string; agent_id: string | null; outcome: string; reason: string | null }>>()
+  const resolutionsByDecision = new Map<string, { resolved_at: number; status: string; duration_ms: number | null; result_summary: string | null }>()
 
-  const ids = [...events.keys()]
-  const placeholders = ids.map((_, i) => `@id${i}`).join(",")
-  const params = Object.fromEntries(ids.map((id, i) => [`id${i}`, id]))
+  if (events.length > 0) {
+    const ids = events.map((e) => e.id)
+    const placeholders = ids.map((_, i) => `@id${i}`).join(",")
+    const params = Object.fromEntries(ids.map((id, i) => [`id${i}`, id]))
 
-  const decisionRows = db.prepare(`
-    SELECT event_id, decided_at, decided_by, agent_id, outcome, reason
-    FROM intent_decisions WHERE event_id IN (${placeholders}) ORDER BY decided_at ASC
-  `).all(params) as LedgerDecision[]
-  for (const d of decisionRows) {
-    if (!decisionsByEvent.has(d.event_id)) decisionsByEvent.set(d.event_id, [])
-    decisionsByEvent.get(d.event_id)!.push(d)
+    const decRows = db.prepare(`
+      SELECT event_id, decided_at, decided_by, agent_id, outcome, reason
+      FROM intent_decisions WHERE event_id IN (${placeholders}) ORDER BY decided_at ASC
+    `).all(params) as Array<{ event_id: string; decided_at: number; decided_by: string; agent_id: string | null; outcome: string; reason: string | null }>
+    for (const d of decRows) {
+      if (!decisionsByEvent.has(d.event_id)) decisionsByEvent.set(d.event_id, [])
+      decisionsByEvent.get(d.event_id)!.push(d)
+    }
+
+    const resRows = db.prepare(`
+      SELECT decision_event_id, decision_decided_by, resolved_at, status, duration_ms, result_summary
+      FROM intent_resolutions WHERE decision_event_id IN (${placeholders})
+    `).all(params) as Array<{ decision_event_id: string; decision_decided_by: string; resolved_at: number; status: string; duration_ms: number | null; result_summary: string | null }>
+    for (const r of resRows) {
+      resolutionsByDecision.set(`${r.decision_event_id}|${r.decision_decided_by}`, r)
+    }
   }
 
-  const resolutionRows = db.prepare(`
-    SELECT decision_event_id, decision_decided_by, resolved_at, status, duration_ms, result_summary
-    FROM intent_resolutions WHERE decision_event_id IN (${placeholders})
-  `).all(params) as LedgerResolution[]
-  for (const r of resolutionRows) {
-    resolutionsByDecision.set(`${r.decision_event_id}|${r.decision_decided_by}`, r)
-  }
+  // Build entity caches
+  const clientMap = new Map<string, FleetClient>()
+  const projectsByClient = new Map<string, Set<string>>()
+  const channelMap = new Map<string, FleetChannel>()
+  const initiatorMap = new Map<string, FleetInitiator>()
+  const dispatches: FleetDispatch[] = []
 
-  return { events, decisionsByEvent, resolutionsByDecision }
-}
-
-function buildSnapshot(db: Database.Database, root: string | null, windowMs: number): GraphSnapshot {
-  const sinceMs = Date.now() - windowMs
-  const { events, decisionsByEvent, resolutionsByDecision } = loadAggregated(db, sinceMs)
-
-  const nodes = new Map<string, GraphNode>()
-  const edges: GraphEdge[] = []
-  const ensure = (n: GraphNode) => { if (!nodes.has(n.id)) nodes.set(n.id, n) }
-
-  for (const ev of events.values()) {
+  for (const ev of events) {
     let raw: any = null
-    try { raw = JSON.parse(ev.raw_json) } catch { /* drop */ }
+    try { raw = JSON.parse(ev.raw_json) } catch { /* ignore */ }
 
-    const projectKey = ev.project ? `project:${ev.project}` : null
-    if (projectKey) {
-      const clientName = clientFromProject(ev.project)
-      const clientKey = `client:${clientName}`
-      ensure({ id: clientKey, type: "client", label: clientName })
-      ensure({ id: projectKey, type: "project", label: ev.project!, sub: clientName })
-      edges.push({ id: `${clientKey}>>${projectKey}`, from: clientKey, to: projectKey, kind: "contains", active: false })
+    const clientId = clientFromProject(ev.project)
+    const projectId = ev.project || `${clientId}/_${ev.source}`
+
+    if (!clientMap.has(clientId)) {
+      clientMap.set(clientId, { id: clientId, name: clientId, color: colorForClient(clientId), projects: [] })
     }
+    if (!projectsByClient.has(clientId)) projectsByClient.set(clientId, new Set())
+    projectsByClient.get(clientId)!.add(projectId)
 
-    const subjectKey = ev.subject ? `subject:${ev.source}:${ev.project ?? "_"}:${ev.subject}` : null
-    if (subjectKey) {
-      ensure({ id: subjectKey, type: "subject", label: ev.subject!, sub: ev.intent || ev.source })
-      if (projectKey) {
-        edges.push({ id: `${projectKey}>>${subjectKey}`, from: projectKey, to: subjectKey, kind: "contains", active: false })
-      }
-    }
+    const chanDef = CHANNEL_DEF[ev.source] || { label: ev.source, color: "#6b7280" }
+    if (!channelMap.has(ev.source)) channelMap.set(ev.source, { id: ev.source, label: chanDef.label, color: chanDef.color })
 
-    const channelKey = `channel:${ev.source}`
-    ensure({ id: channelKey, type: "channel", label: ev.source })
-
-    if (subjectKey) {
-      edges.push({
-        id: `${channelKey}>>${subjectKey}|${ev.id}`,
-        from: channelKey,
-        to: subjectKey,
-        kind: "arrives",
-        active: false,
-        startedAt: ev.ts,
-      })
-    }
-
+    let initiatorId = "__system"
     const init = initiatorFrom(ev.source, raw)
-    if (init && subjectKey) {
-      const initiatorKey = `initiator:${init.username}`
-      ensure({ id: initiatorKey, type: "initiator", label: init.label, sub: ev.source })
-      edges.push({
-        id: `${initiatorKey}>>${subjectKey}|${ev.id}`,
-        from: initiatorKey,
-        to: subjectKey,
-        kind: "starts",
-        active: false,
-        startedAt: ev.ts,
-      })
+    if (init) {
+      initiatorId = init.id
+      if (!initiatorMap.has(init.id)) initiatorMap.set(init.id, init)
+    } else if (!initiatorMap.has("__system")) {
+      initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱" })
     }
 
-    // dispatch + resolve edges per decision
+    // For each dispatched decision on this event, emit a dispatch row
     for (const d of decisionsByEvent.get(ev.id) ?? []) {
-      if (!d.agent_id) continue
-      const agentKey = `agent:${d.agent_id}`
-      ensure({ id: agentKey, type: "agent", label: d.agent_id })
+      if (d.outcome !== "dispatched" || !d.agent_id) continue
       const resKey = `${ev.id}|${d.decided_by}`
       const res = resolutionsByDecision.get(resKey)
-      const isActive = !res && d.outcome === "dispatched"
-      if (subjectKey) {
-        edges.push({
-          id: `dispatch:${ev.id}:${d.decided_by}`,
-          from: subjectKey,
-          to: agentKey,
-          kind: "dispatches",
-          active: isActive,
-          startedAt: d.decided_at,
-          resolvedAt: res?.resolved_at,
-          outcome: d.outcome,
-          preview: d.reason ?? undefined,
-        })
-        if (res) {
-          edges.push({
-            id: `resolve:${ev.id}:${d.decided_by}`,
-            from: agentKey,
-            to: subjectKey,
-            kind: "resolves",
-            active: false,
-            resolvedAt: res.resolved_at,
-            outcome: res.status,
-            preview: res.result_summary ?? undefined,
-          })
-        }
-      }
+      const startedAt = d.decided_at
+      const resolvedAt = res?.resolved_at ?? null
+      const active = resolvedAt === null
+      const duration = res?.duration_ms ?? (active ? now - startedAt : 0)
+      const outcome: FleetDispatch["outcome"] = active
+        ? "active"
+        : (res?.status === "error" || res?.status === "fail" ? "error" : "completed")
 
-      // a2a: when source is mesh, the calling agent's id sits in raw.fromAgent
-      if (ev.source === "mesh" && raw && typeof raw === "object") {
-        const fromAgentId = raw.fromAgent || raw.payload?.fromAgent || raw.callerAgent
-        if (typeof fromAgentId === "string" && fromAgentId !== d.agent_id) {
-          const fromKey = `agent:${fromAgentId}`
-          ensure({ id: fromKey, type: "agent", label: fromAgentId })
-          edges.push({
-            id: `a2a:${ev.id}:${d.decided_by}`,
-            from: fromKey,
-            to: agentKey,
-            kind: "a2a",
-            active: isActive,
-            startedAt: d.decided_at,
-            resolvedAt: res?.resolved_at,
-            preview: typeof raw.message === "string" ? String(raw.message).slice(0, 200) : undefined,
-          })
-        }
-      }
+      dispatches.push({
+        id: `${ev.id}|${d.decided_by}`,
+        agentId: d.agent_id,
+        clientId,
+        projectId,
+        channelId: ev.source,
+        initiatorId,
+        subject: shortSubject(ev.subject),
+        intent: ev.intent || "",
+        startedAt,
+        resolvedAt,
+        duration,
+        active,
+        outcome,
+        tokens: 0,
+      })
     }
   }
 
-  // Annotate node count = active edge count incident
-  const activeIncident = new Map<string, number>()
-  for (const e of edges) {
-    if (!e.active) continue
-    activeIncident.set(e.from, (activeIncident.get(e.from) || 0) + 1)
-    activeIncident.set(e.to, (activeIncident.get(e.to) || 0) + 1)
-  }
-  for (const n of nodes.values()) n.count = activeIncident.get(n.id) || 0
+  // Materialize clients with their project list
+  const clients: FleetClient[] = [...clientMap.values()].map((c) => ({
+    ...c,
+    projects: [...(projectsByClient.get(c.id) || [])].sort(),
+  })).sort((a, b) => a.id.localeCompare(b.id))
 
-  // Filter to neighbors of root if requested
-  let rootMeta: { type: NodeType; label: string } | undefined
-  let outNodes = [...nodes.values()]
-  let outEdges = edges
-  if (root && nodes.has(root)) {
-    const rNode = nodes.get(root)!
-    rootMeta = { type: rNode.type, label: rNode.label }
-    const keep = new Set<string>([root])
-    // BFS to depth 2
-    let frontier = new Set<string>([root])
-    for (let depth = 0; depth < 2; depth++) {
-      const next = new Set<string>()
-      for (const e of edges) {
-        if (frontier.has(e.from) && !keep.has(e.to)) { keep.add(e.to); next.add(e.to) }
-        if (frontier.has(e.to) && !keep.has(e.from)) { keep.add(e.from); next.add(e.from) }
+  // Agents: union of (configured agents) + (any agent that appears in dispatches)
+  const agents: FleetAgent[] = []
+  const agentSeen = new Set<string>()
+  if (daemonConfig) {
+    for (const [id, def] of Object.entries(daemonConfig.agents || {})) {
+      const a: FleetAgent = {
+        id,
+        name: def.name || id,
+        tier: def.tier === "claude-code" ? "lead" : "worker",
+        model: def.model || "",
+        role: def.systemPrompt ? def.systemPrompt.split(/[.\n]/)[0].slice(0, 60) : (def.tier || ""),
       }
-      frontier = next
-      if (frontier.size === 0) break
+      agents.push(a)
+      agentSeen.add(id)
     }
-    outNodes = outNodes.filter((n) => keep.has(n.id))
-    outEdges = outEdges.filter((e) => keep.has(e.from) && keep.has(e.to))
+  }
+  for (const d of dispatches) {
+    if (!agentSeen.has(d.agentId)) {
+      agents.push({ id: d.agentId, name: d.agentId, tier: "worker", model: "", role: "" })
+      agentSeen.add(d.agentId)
+    }
+  }
+  agents.sort((a, b) => a.id.localeCompare(b.id))
+
+  // Channels: include all known kinds (so the Flow view shows zero-traffic
+  // channels too) plus any unknown sources we observed.
+  const channels: FleetChannel[] = []
+  const channelSeen = new Set<string>()
+  for (const [id, def] of Object.entries(CHANNEL_DEF)) {
+    channels.push({ id, label: def.label, color: def.color })
+    channelSeen.add(id)
+  }
+  for (const c of channelMap.values()) {
+    if (!channelSeen.has(c.id)) channels.push(c)
+  }
+
+  const initiators: FleetInitiator[] = [...initiatorMap.values()]
+  if (!initiators.find((i) => i.id === "__system")) {
+    initiators.push({ id: "__system", name: "Schedule", avatar: "⏱" })
   }
 
   return {
-    nodes: outNodes,
-    edges: outEdges,
-    root: root && rootMeta ? root : null,
-    rootMeta,
-    windowMs,
-    ts: Date.now(),
+    now,
+    windowH,
+    clients,
+    agents,
+    channels,
+    initiators,
+    dispatches,
   }
 }
 
+// ---------------------------------------------------------------------------
+// HTTP handlers
+
+let _daemonConfigRef: DaemonConfig | null = null
+/** Wired by board-dashboard.ts when the dashboard starts so we can read
+ *  agent metadata (tier, model, name) for the snapshot. */
+export function setDaemonConfigForActivityGraph(cfg: DaemonConfig | null): void {
+  _daemonConfigRef = cfg
+}
+
 export async function handleActivityGraphApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
-  if (path !== "/api/admin/activity-graph") return false
+  if (path !== "/api/admin/activity-graph" && !path.startsWith("/api/admin/activity-graph?")) return false
   const opened = openLedger()
   if (!opened) {
-    sendJson(res, 503, { error: "intent ledger not available", nodes: [], edges: [] })
+    sendJson(res, 503, { error: "intent ledger not available", clients: [], agents: [], channels: [], initiators: [], dispatches: [] })
     return true
   }
   try {
     const url = new URL(req.url || "/", "http://_")
-    const root = url.searchParams.get("root")
-    const windowH = parseInt(url.searchParams.get("hours") || "24", 10)
-    const windowMs = Math.max(1, Math.min(168, Number.isFinite(windowH) ? windowH : 24)) * 60 * 60 * 1000
-    sendJson(res, 200, buildSnapshot(opened.db, root, windowMs))
+    const windowH = clampWindow(parseInt(url.searchParams.get("hours") || "6", 10))
+    sendJson(res, 200, buildFleetSnapshot(opened.db, _daemonConfigRef, windowH))
   } catch (e: any) {
-    sendJson(res, 500, { error: e?.message ?? String(e), nodes: [], edges: [] })
+    sendJson(res, 500, { error: e?.message ?? String(e) })
   } finally {
     opened.close()
   }
   return true
 }
 
-/** SSE stream — server pushes a fresh snapshot every TICK_MS. The client
- *  diffs locally against its previous snapshot to animate adds/removes/
- *  active-state changes. Stateless on the server side: each tick re-opens
- *  the ledger read-only, builds the snapshot, writes the event, closes.
- *  Polling-as-SSE is dumb-simple and avoids hooking the bus surface. */
 const TICK_MS = 5000
 
 export async function handleActivityGraphStream(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
@@ -364,29 +380,20 @@ export async function handleActivityGraphStream(req: IncomingMessage, res: Serve
   res.write(`: connected\n\n`)
 
   const url = new URL(req.url || "/", "http://_")
-  const root = url.searchParams.get("root")
-  const windowH = parseInt(url.searchParams.get("hours") || "24", 10)
-  const windowMs = Math.max(1, Math.min(168, Number.isFinite(windowH) ? windowH : 24)) * 60 * 60 * 1000
+  const windowH = clampWindow(parseInt(url.searchParams.get("hours") || "6", 10))
 
   let stopped = false
   const stop = () => { stopped = true }
-  req.on("close", stop)
-  req.on("error", stop)
-  res.on("close", stop)
-  res.on("error", stop)
-
-  // Heartbeat every 25s so reverse proxies don't kill the connection on idle.
-  const hb = setInterval(() => {
-    if (stopped) return
-    try { res.write(`: hb\n\n`) } catch { stop() }
-  }, 25_000)
+  req.on("close", stop); req.on("error", stop)
+  res.on("close", stop); res.on("error", stop)
+  const hb = setInterval(() => { if (!stopped) try { res.write(`: hb\n\n`) } catch { stop() } }, 25_000)
 
   try {
     while (!stopped) {
       const opened = openLedger()
       if (opened) {
         try {
-          const snap = buildSnapshot(opened.db, root, windowMs)
+          const snap = buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)
           res.write(`event: snapshot\n`)
           res.write(`data: ${JSON.stringify(snap)}\n\n`)
         } catch (e: any) {
@@ -397,15 +404,17 @@ export async function handleActivityGraphStream(req: IncomingMessage, res: Serve
       } else {
         res.write(`event: error\ndata: ${JSON.stringify({ error: "ledger not available" })}\n\n`)
       }
-      // Sleep, but break early if the connection died.
       const start = Date.now()
-      while (!stopped && Date.now() - start < TICK_MS) {
-        await new Promise((r) => setTimeout(r, 200))
-      }
+      while (!stopped && Date.now() - start < TICK_MS) await new Promise((r) => setTimeout(r, 200))
     }
   } finally {
     clearInterval(hb)
     try { res.end() } catch { /* nothing */ }
   }
   return true
+}
+
+function clampWindow(h: number): number {
+  if (!Number.isFinite(h) || h < 1) return 6
+  return Math.min(720, Math.max(1, h))
 }
