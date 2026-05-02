@@ -4,6 +4,14 @@ title: "Intent Knowledge Graph"
 
 # Intent Knowledge Graph
 
+## What this is, in plain English
+
+AgentX learns to recognize the *kind* of work each incoming message is — "this is a deploy request", "this is a customer complaint", "this is just chitchat". The labels live in a small taxonomy (a tree of categories) you can review and edit. Once a kind of message is labeled, the agent can use the label to pick the right team or skip work that doesn't apply.
+
+When a new message comes in, agentx asks an LLM to label it. New labels go to a review queue (one click to approve or reject). Once approved, the label is cached — the same kind of message next time costs no LLM call. Approved labels also tag your wiki articles, so when an agent later searches for institutional knowledge it can prefer content from the same sub-tree.
+
+You don't have to use this. It's optional. The classifier is **off by default**; turn it on in `agentx.json` under `graph.enabled` if you want to start labeling. Until then, agents fall back to simple regex tags and nothing changes about your existing setup.
+
 A hierarchical, enumerable intent taxonomy that classifies every incoming message into a path through a fixed-axis schema. Typed paths feed Layer 6 of the context engine and can tag wiki articles so retrieval can prefer content from the same sub-tree.
 
 ## The shape

@@ -14,6 +14,16 @@ This walkthrough builds a grant-application process that exercises **all four pa
 4. **Finance system** posts a webhook to release disbursement (external advance)
 5. **Closure letter sub-workflow** runs and completes (child advance)
 
+## The story first
+
+Alice is a grant officer at a small foundation. An applicant emails a 12-page grant proposal. Alice copies the proposal into the team's Telegram channel and tags `@grant-bot`.
+
+Behind the scenes, agentx fires a workflow: an AI agent reads the proposal and produces a one-page summary; the workflow then routes the summary to Bob (a senior reviewer) by posting a form to his WhatsApp.
+
+Bob fills the form (approve / approve-with-changes / decline) on his phone. If approved, the workflow triggers a webhook to the foundation's CRM (customer-relationship system). If declined, the workflow ends and posts the rationale back to Alice.
+
+Total operator time: 15 seconds (Alice tagging the bot, Bob filling a form). Total agent time: ~2 minutes. The whole flow lives in **one YAML file** you'll see below — no glue code, no scheduler, no separate database.
+
 ## 1 · Register actors
 
 ```bash

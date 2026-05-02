@@ -10,11 +10,11 @@ Each tab is also reachable directly via `#fragment`: `/admin#channels`, `/admin#
 
 ### Agents
 
-List view + create/edit/delete. Same fields the [per-agent page](./agent) exposes, but compact for adding many at once. Click any row to open the per-agent page.
+Add or remove the AI agents that work for you. Each agent is one identity — its name, its model, what it can be told to do. List view + create/edit/delete. Same fields the [per-agent page](./agent) exposes, but compact for adding many at once. Click any row to open the per-agent page.
 
 ### Channels
 
-The biggest tab. One section per channel kind (Telegram, WhatsApp, Discord, Slack, GitLab, GitHub, WebRTC). Each lets you:
+Wire up Telegram, Slack, Discord, GitLab, WhatsApp. This is where you paste bot tokens or scan QR codes. The biggest tab — one section per channel kind (Telegram, WhatsApp, Discord, Slack, GitLab, GitHub, WebRTC). Each lets you:
 
 - Toggle `enabled`
 - Add accounts/routes/agentMappings inline (no JSON editing)
@@ -23,15 +23,15 @@ The biggest tab. One section per channel kind (Telegram, WhatsApp, Discord, Slac
 
 ### Schedules
 
-Cron + natural-language scheduler in one tab. Mirrors `agentx schedule` and `agentx cron`. Add a job by typing English ("every weekday at 9am") and the parser fills in the cron expression preview. `--on-error` and `--notify` are dropdown chips.
+Set up cron jobs in plain English ("every weekday at 9am"). Each schedule fires a prompt at one of your agents. Mirrors `agentx schedule` and `agentx cron`. Add a job by typing English and the parser fills in the cron expression preview. `--on-error` and `--notify` are dropdown chips.
 
 ### Webhooks
 
-Inventory of inbound webhooks. Each row binds an `(agent, source)` to an optional signing secret env var. The dashboard auto-generates the public URL (`<bind>/webhook/<agentId>/<source>`). Per-event-type **triggers** (`triggers: { "issues.opened": "triage-bug" }`) and a **defaultWorkflow** dropdown live here too — see [config schema](../config-schema#webhooks).
+Bind incoming GitHub/GitLab webhooks to agents. When a PR opens, fire a review agent. Each row binds an `(agent, source)` to an optional signing secret env var. The dashboard auto-generates the public URL (`<bind>/webhook/<agentId>/<source>`). Per-event-type **triggers** (`triggers: { "issues.opened": "triage-bug" }`) and a **defaultWorkflow** dropdown live here too — see [config schema](../config-schema#webhooks).
 
 ### Mesh
 
-List of peers + health. Add a peer via paste-an-invite-link (resolves to `MESH_TOKEN` + URL automatically) or manually. Mirrors `agentx mesh`/`agentx connect mesh`.
+Connect this agentx machine to other agentx machines. Tasks can flow between them. List of peers + health. Add a peer via paste-an-invite-link (resolves to `MESH_TOKEN` + URL automatically) or manually. Mirrors `agentx mesh`/`agentx connect mesh`.
 
 ### Team
 
@@ -47,11 +47,11 @@ Configure the boards rendered on the home page. Add/edit/remove a board, set its
 
 ### Tokens
 
-Mint, list, revoke API tokens. Same surface as `agentx token`. Each row shows: id, name, scope, prefix, status (active/expired/revoked), last-used. Secrets show **once** at creation — stored hashed.
+Mint API keys for external tools that need to talk to your agentx. One token per integration; revoke any time. Same surface as `agentx token`. Each row shows: id, name, scope, prefix, status (active/expired/revoked), last-used. Secrets show **once** at creation — stored hashed.
 
 ### Advanced
 
-Raw JSON editor for `agentx.json` with Zod validation on save. Use this when the form-based tabs don't expose what you need (e.g. `boards[].columns`, `graph.retrievalWeights`, `webrtc.bot`). Also exposes:
+**For engineers.** Don't touch this unless support tells you to. Editing the raw config can leave the daemon in a broken state. Raw JSON editor for `agentx.json` with Zod validation on save. Use this when the form-based tabs don't expose what you need (e.g. `boards[].columns`, `graph.retrievalWeights`, `webrtc.bot`). Also exposes:
 
 - **Plugins**: edit `plugins[]` and run `agentx plugin doctor` from the browser
 - **Governance flags read-out**: shows resolved values of `INTENT_LEDGER_MODE`, `INTENT_PM_GATE_ENABLED` (read-only — env var changes still need a restart)

@@ -13,6 +13,59 @@ The same engine powers two ends of the spectrum:
 
 There's no separate engine for the two shapes. Authors pick the node types that match their problem.
 
+## A simple workflow, end-to-end
+
+Before the catalog: here's the smallest useful flow, in plain English.
+
+1. **Trigger fires** when a Telegram message contains the word "expense".
+2. **Agent extracts** the amount + category from the message.
+3. **If amount > $500**, route to a `userTask` form for the CFO; **else**, post directly to a Slack approvals channel.
+
+In YAML (each line annotated):
+
+```yaml
+id: expense-routing
+nodes:
+  - id: in                          # the trigger node
+    type: trigger.channel           # listen for channel messages
+    config:
+      channel: telegram             # only Telegram
+      match:
+        textContains: "expense"     # only messages with the word "expense"
+
+  - id: classify                    # ask an agent to read the message
+    type: agent
+    config:
+      agentId: finance-bot          # which agent runs
+      prompt: |
+        Extract amount (USD) and category from:
+        {{in.text}}                 # the user's text from the trigger
+      outputJson: true              # parse the reply as JSON
+
+  - id: route                       # branch on the parsed amount
+    type: branch
+    config:
+      on: "{{classify.json.amount}}"
+      cases:
+        - { gt: 500, port: cfo }    # >$500 → CFO branch
+        - { else: true, port: slack }
+
+  - id: cfo
+    type: userTask                  # pause until a human submits
+    config:
+      assignTo: actor:cfo
+      form: { fields: [approve, reject] }
+
+  - id: slack
+    type: action.send               # one-shot send, no wait
+    config:
+      channel: slack
+      chatId: "#approvals"
+      text: "Auto-approved: {{classify.json.amount}}"
+```
+
+That's it — five nodes, one branch, one human checkpoint. Below is the catalog of every node type you can use in a workflow. Each entry shows: what it does, the template fields it reads from the run state, and what it writes back. You probably won't need most of them on day one — start with `trigger`, `agent`, and `userTask`.
+
 ## Mental model
 
 A workflow **reflects a complete activity from start to end**. Each node is a step; each edge is a state transition. Transitions fire because a party *did something*, not because time passed — timers exist (SLAs, intermediate waits) but aren't the primary driver.

@@ -4,6 +4,8 @@ title: "PM gating — org-chart governance"
 
 # PM gating — org-chart governance
 
+PM-gating lets you say "only the PM (project manager) for this project can authorize work on it" or "developers can only file infrastructure tickets, not marketing requests." Without it, any agent can dispatch any task. With it, agentx checks the org chart on every dispatch — if the requesting agent isn't authorized for that project's intent, the dispatch is refused and logged. This playbook walks you through enabling the gate, defining a tiny org chart, and verifying that the gate refuses an out-of-scope request.
+
 When the project has a "human" hierarchy — director, project managers, coders — letting every inbound dispatch hit any agent loses the org-chart's intent. PM gating routes project-scoped events through the agent acting as that project's PM first; the PM then decides whether to handle, delegate, or escalate.
 
 This is Phase 3 of the architectural rescue. It rides on top of the [intent ledger](/reference/cli#ledger) (Phase 1) so every gate decision is auditable.

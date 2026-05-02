@@ -1,5 +1,9 @@
 # Config schema
 
+::: tip How to read this page
+This page is the source of truth for every field in `agentx.json`. Most operators never edit it directly — the dashboard's Settings page covers the common changes. Use this when (a) the dashboard doesn't expose what you need yet, (b) you're version-controlling `agentx.json` and want to know what each field means, or (c) you're debugging a config validation error. Selected fields are annotated with a "When to change" line where the default isn't obvious.
+:::
+
 Every field in `agentx.json`. Source of truth: [`src/daemon/config.ts`](https://github.com/anis-marrouchi/agentx/blob/master/src/daemon/config.ts) and [`src/business/config.ts`](https://github.com/anis-marrouchi/agentx/blob/master/src/business/config.ts).
 
 Environment variables are expanded inline: `${MY_TOKEN}` → `process.env.MY_TOKEN`. A `.env` file in the working directory is auto-loaded.
@@ -57,11 +61,11 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | `model` | string | — | Model id |
 | `systemPrompt` | string | — | Inline override (normally lives in `CLAUDE.md`) |
 | `mentions` | string[] | `[]` | `@handles` that route to this agent |
-| `intents` | string[] | `[]` | **Phase 5 — typed capabilities.** Free-form list of intent strings this agent is allowed to handle. When set, the org-chart `canHandle` check rejects dispatches with intents not in this list. Empty/unset = permissive (handles any intent). Examples: `["issue.opened", "merge_request.opened"]`, `["cron.fired", "message.received"]` |
-| `maxDelegationDepth` | number (0–50) | `5` | **Phase 8 — capability-bounded security.** Max distinct upstream agents in the delegation chain on the same `(project, subject)` before a dispatch to this agent is refused. The ledger walker counts distinct agents across recent decisions on the subject. Set to 0 to disable for an agent that's always called as the bottom of a chain |
+| `intents` | string[] | `[]` | **Phase 5 — typed capabilities.** Free-form list of intent strings this agent is allowed to handle. When set, the org-chart `canHandle` check rejects dispatches with intents not in this list. Empty/unset = permissive (handles any intent). Examples: `["issue.opened", "merge_request.opened"]`, `["cron.fired", "message.received"]`. **When to change:** set this to a comma-separated list when the agent should ONLY handle specific intents (e.g. `["issue.opened", "merge_request.opened"]` for a code-review agent that shouldn't pick up Telegram chitchat). Leave blank for permissive (default) |
+| `maxDelegationDepth` | number (0–50) | `5` | **Phase 8 — capability-bounded security.** Max distinct upstream agents in the delegation chain on the same `(project, subject)` before a dispatch to this agent is refused. The ledger walker counts distinct agents across recent decisions on the subject. Set to 0 to disable for an agent that's always called as the bottom of a chain. **When to change:** lower this (e.g. 2) for agents at the bottom of a chain — prevents cascade loops where A → B → A. Default 5 is fine for most teams |
 | `mcp` | `Record<string, McpServer>` | — | Per-agent MCP servers. Synced to `<workspace>/.mcp.json` at boot. Operator edits to `.mcp.json` are respected — see `agent-mcp.ts` |
 | `contextStrategy` | `"layered"` \| `"planner"` | inherited from `session.contextStrategy` | Per-agent override of the global context-assembly strategy |
-| `contextReferences` | bool | `false` | When true, the registry resolves references-recipes for this agent's workspace and renders a deterministic `[Verified References]` block at priority 4.7. Off by default — flip on per agent (e.g. `pm-ksi`, `devops-agent`) once a `references/` registry exists |
+| `contextReferences` | bool | `false` | When true, the registry resolves references-recipes for this agent's workspace and renders a deterministic `[Verified References]` block at priority 4.7. Off by default — flip on per agent (e.g. `pm-ksi`, `devops-agent`) once a `references/` registry exists. **When to change:** turn on for agents that need stable, cited facts (PMs, devops) — surfaces a `[Verified References]` block in the prompt. Off by default because not every agent has a `references/` registry |
 | `maxConcurrent` | number | `1` | Parallel turns allowed |
 | `maxExecutionMinutes` | number (1–240) | `20` | Hard wall-clock cap on a single Claude Code invocation. Exceeding sends SIGTERM (exit 143). Bump for devops/coder agents that run long investigations or multi-file refactors |
 | `permissionMode` | string | `default` | Claude Code permission mode (`default`, `acceptEdits`, `plan`, `bypassPermissions`) |
@@ -216,8 +220,8 @@ Controls Claude CLI `--resume` session reuse and the context-assembly strategy. 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `staleMinutes` | number (1–1440) | `45` | Idle timeout for `--resume`. After this many minutes of no activity the session is dropped and the next turn starts fresh. Longer = better prompt-cache hit; shorter = less `--resume` replay bloat |
-| `maxTurnsPerSession` | number (2–200) | `15` | Hard cap on turns per Claude CLI session. On hit, the next turn rotates. Prevents `--resume` replay growing unbounded across a long chat |
-| `tierTwoThresholdTokens` | number (50 000–200 000) | `195000` | If the prior turn's total input (input + cacheRead + cacheCreate) crosses this, rotate before the next turn. Claude bills tier-2 at 1.5× above 200K; default leaves a 5K headroom |
+| `maxTurnsPerSession` | number (2–200) | `15` | Hard cap on turns per Claude CLI session. On hit, the next turn rotates. Prevents `--resume` replay growing unbounded across a long chat. **When to change:** lower (e.g. 8) if your agents accumulate context bloat across long Telegram threads; raise (e.g. 30) if rotations are losing too much context mid-task |
+| `tierTwoThresholdTokens` | number (50 000–200 000) | `195000` | If the prior turn's total input (input + cacheRead + cacheCreate) crosses this, rotate before the next turn. Claude bills tier-2 at 1.5× above 200K; default leaves a 5K headroom. **When to change:** lower it (e.g. 150_000) if you're on the Anthropic Max plan and tier-2 surcharges are eating budget. Default 200_000 matches Anthropic's official threshold |
 | `contextStrategy` | `"layered"` \| `"planner"` | `"layered"` | Context assembly strategy. Per-task override via the `contextStrategy` field in `POST /task` or `AgentTask` |
 | `maxClaudeCodeDispatchesPerHour` | number | `80` | Soft dispatch budget for `claude-code`-tier agents (shared OAuth pools count across the fleet). Warns at 80% of the cap; short-circuits cold dispatches when exceeded — warm sessions always allowed. Sized for Max 5×; raise for Max 20× |
 | `maxClaudeCodeDispatchesPer5h` | number | `180` | 5-hour rolling counterpart to the hourly budget |
@@ -293,7 +297,7 @@ Per-message intent classification into a fixed-axis taxonomy. See [Intent graph]
 | `baseDir` | string | `.agentx/graph` | Where schema/nodes/classifications live |
 | `draftAgent` | string | — | Agent that proposes classifications |
 | `reviewAgent` | string | — | Agent used by `agentx graph review`. Should have the wiki skill so it can call `wiki query` for context |
-| `autoApproveStructure` | `strict` \| `extend-leaves` \| `any` | `extend-leaves` | Structural auto-approval policy |
+| `autoApproveStructure` | `strict` \| `extend-leaves` \| `any` | `extend-leaves` | Structural auto-approval policy. **When to change:** leave at default (`extend-leaves`) until you trust the classifier. Set to `any` only if you want zero review (not recommended); set to `strict` if you want to manually approve every label |
 | `autoApproveConfidence` | number (0–1) | `1.0` | Min classifier confidence to auto-approve. OR'd with `autoApproveStructure` |
 | `retrievalWeights.graph` / `.bm25` | number | `0.6` / `0.4` | Hybrid wiki-retrieval score weights (sum need not be 1) |
 
