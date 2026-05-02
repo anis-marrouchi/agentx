@@ -96,6 +96,11 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "DELETE /api/admin/business/project":    () => deleteProject(body),
       "POST /api/admin/business/contact":      () => upsertContact(body),
       "DELETE /api/admin/business/contact":    () => deleteContact(body),
+      // Boards — mirrors `agentx board` + `agentx board column` CLI.
+      "POST /api/admin/boards":          () => upsertBoard(body),
+      "DELETE /api/admin/boards":        () => deleteBoard(body),
+      "POST /api/admin/boards/columns":  () => upsertBoardColumn(body),
+      "DELETE /api/admin/boards/columns":() => deleteBoardColumn(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -249,7 +254,17 @@ function getAdminState() {
     projects: Array.isArray(businessCfg.projects) ? businessCfg.projects : [],
     contactMap: Array.isArray(businessCfg.contactMap) ? businessCfg.contactMap : [],
   }
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business }
+  // Boards — list with column metadata so the admin tab can edit them.
+  const boards = (Array.isArray(cfg.boards) ? cfg.boards : []).map((b: any) => ({
+    id: b.id,
+    name: b.name,
+    source: b.source || { type: "gitlab", projects: [] },
+    primaryToolLabel: b.primaryToolLabel || "",
+    timeRangeDays: b.timeRangeDays ?? 30,
+    closedWindowDays: b.closedWindowDays ?? 30,
+    columns: Array.isArray(b.columns) ? b.columns : [],
+  }))
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards }
 }
 
 // ========================================================================
@@ -1075,6 +1090,104 @@ async function deleteContact(body: any) {
     })
     if (cfg.business.contactMap.length === before) throw new Error("no matching contact entry")
     return `${before - cfg.business.contactMap.length} contact entry/entries removed`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Boards — admin write handlers (mirrors `agentx board` + `agentx board column`)
+// ========================================================================
+
+async function upsertBoard(body: any) {
+  const id = String(body?.id || "").trim()
+  const name = String(body?.name || "").trim()
+  const projectsRaw = String(body?.projects || "").split(/[,\n]/).map((s: string) => s.trim()).filter(Boolean)
+  if (!id) throw new Error("id required")
+  if (!name) throw new Error("name required")
+  if (projectsRaw.length === 0) throw new Error("at least one project path required")
+  const primaryToolLabel = body?.primaryToolLabel ? String(body.primaryToolLabel).trim() : ""
+  const timeRangeDays = Number.isFinite(Number(body?.timeRangeDays)) ? Number(body.timeRangeDays) : 30
+  const closedWindowDays = Number.isFinite(Number(body?.closedWindowDays)) ? Number(body.closedWindowDays) : 30
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.boards = Array.isArray(cfg.boards) ? cfg.boards : []
+    const idx = cfg.boards.findIndex((b: any) => b.id === id)
+    const next: any = {
+      id, name,
+      source: { type: "gitlab", projects: projectsRaw },
+      timeRangeDays, closedWindowDays,
+    }
+    if (primaryToolLabel) next.primaryToolLabel = primaryToolLabel
+    if (idx >= 0) {
+      // Preserve any existing columns / labels — we're only editing top-level fields here.
+      const prev = cfg.boards[idx]
+      cfg.boards[idx] = { ...prev, ...next, columns: prev.columns, labels: prev.labels }
+      return `board "${id}" updated`
+    }
+    cfg.boards.push(next)
+    return `board "${id}" added`
+  })
+  return { summary }
+}
+
+async function deleteBoard(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const before = list.length
+    cfg.boards = list.filter((b: any) => b.id !== id)
+    if (cfg.boards.length === before) throw new Error(`board "${id}" not found`)
+    return `board "${id}" removed`
+  })
+  return { summary }
+}
+
+async function upsertBoardColumn(body: any) {
+  const boardId = String(body?.boardId || "").trim()
+  const columnId = String(body?.columnId || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-")
+  const title = String(body?.title || "").trim()
+  const kind = String(body?.kind || "scoped-label")
+  if (!boardId) throw new Error("boardId required")
+  if (!columnId) throw new Error("columnId required")
+  if (!title) throw new Error("title required")
+  if (!["open-backlog", "scoped-label", "closed", "label"].includes(kind)) {
+    throw new Error("kind must be open-backlog | scoped-label | closed | label")
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const b = list.find((x: any) => x.id === boardId)
+    if (!b) throw new Error(`board "${boardId}" not found`)
+    b.columns = Array.isArray(b.columns) ? b.columns : []
+    const col: any = { id: columnId, title, kind, scopedPrefix: body?.scopedPrefix || "Status" }
+    if (kind === "scoped-label") {
+      if (!body?.scopedLabel) throw new Error("scopedLabel required for kind=scoped-label")
+      col.scopedLabel = String(body.scopedLabel)
+    }
+    if (kind === "label") {
+      if (!body?.mapsToLabel) throw new Error("mapsToLabel required for kind=label")
+      col.mapsToLabel = String(body.mapsToLabel)
+    }
+    if (body?.accent) col.accent = String(body.accent)
+    const idx = b.columns.findIndex((c: any) => c.id === columnId)
+    if (idx >= 0) { b.columns[idx] = { ...b.columns[idx], ...col }; return `column "${columnId}" updated` }
+    b.columns.push(col)
+    return `column "${columnId}" added to board "${boardId}"`
+  })
+  return { summary }
+}
+
+async function deleteBoardColumn(body: any) {
+  const boardId = String(body?.boardId || "").trim()
+  const columnId = String(body?.columnId || "").trim()
+  if (!boardId || !columnId) throw new Error("boardId and columnId required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const b = list.find((x: any) => x.id === boardId)
+    if (!b) throw new Error(`board "${boardId}" not found`)
+    const before = (b.columns || []).length
+    b.columns = (b.columns || []).filter((c: any) => c.id !== columnId)
+    if (b.columns.length === before) throw new Error(`column "${columnId}" not found`)
+    return `column "${columnId}" removed from board "${boardId}"`
   })
   return { summary }
 }

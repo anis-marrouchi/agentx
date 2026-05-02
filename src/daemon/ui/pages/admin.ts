@@ -159,6 +159,7 @@ const ADMIN_PAGE_BODY = `
   <button data-tab="mesh">Mesh</button>
   <button data-tab="team">Team</button>
   <button data-tab="business">Business</button>
+  <button data-tab="boards-cfg">Boards</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
@@ -629,6 +630,38 @@ const ADMIN_PAGE_BODY = `
     </div>
   </section>
 
+  <section id="tab-boards-cfg" class="tab">
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Kanban boards",
+      lead: "Configure the boards rendered on the home page. Mirrors <code>agentx board add/edit/remove</code> + <code>agentx board column</code>. Source is GitLab today; backlog/wiki sources land when the schema unlocks them.",
+    })}
+    ${witBanner({
+      persistKey: "boards-cfg",
+      bodyHtml: `<b>Two layers.</b> A board points to one or more GitLab projects (<code>source.projects</code>) and optionally filters by a primary tool label. Inside each board, <b>columns</b> map drag-drop actions to scoped-labels (e.g. dropping a card on "Doing" adds <code>Status::Doing</code>). The default flow is Open → To Do → Doing → On Hold → Review → Closed; override per-board with the column controls below.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Boards</h3>
+      <div id="boards-cfg-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update board</summary>
+        <div style="margin-top:10px">
+          <label>Board id<span class="hint">(unique slug, e.g. <code>mtgl</code>)</span></label>
+          <input id="bd-id" placeholder="mtgl" />
+          <label>Display name</label>
+          <input id="bd-name" placeholder="MTGL System" />
+          <label>GitLab project paths<span class="hint">(comma-separated, e.g. <code>mtgl/system,mtgl/website</code>)</span></label>
+          <input id="bd-projects" placeholder="mtgl/system" />
+          <label>Primary tool label <span class="hint">(optional — ANDed into every query, e.g. <code>Tool::Claude</code>)</span></label>
+          <input id="bd-label" placeholder="Tool::Claude" />
+          <div style="display:flex;gap:6px"><label style="flex:1">Open-window days<input id="bd-days" type="number" min="1" max="365" value="30" /></label><label style="flex:1">Closed-window days<input id="bd-closed-days" type="number" min="1" max="365" value="30" /></label></div>
+          <div class="actions"><button class="primary" onclick="upsertBoardCfg()">Save board</button><div id="bd-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
   <section id="tab-tokens" class="tab">
     ${sectionHead({
       icon: ICONS.tokens,
@@ -953,6 +986,8 @@ async function refresh() {
     wireTeamHandlers();
     renderBusiness();
     wireBusinessHandlers();
+    renderBoardsCfg();
+    wireBoardsCfgHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
   } catch (e) {
@@ -1438,6 +1473,118 @@ window.upsertProject = async function() {
     showMsg($('bp-msg'), 'ok', 'Project saved');
     await load();
   } catch (e) { showMsg($('bp-msg'), 'err', e.message); }
+}
+
+// ---------------- Boards-cfg tab ----------------
+
+function renderBoardsCfg() {
+  const boards = state.boards || [];
+  const list = $('boards-cfg-list');
+  if (!list) return;
+  if (boards.length === 0) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no boards configured</div>';
+    return;
+  }
+  list.innerHTML = boards.map(function(b){
+    const projects = ((b.source && b.source.projects) || []).map(p => '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(p) + '</span>').join(' ');
+    const cols = (b.columns || []).map(function(c){
+      const map = c.kind === 'scoped-label' ? 'scoped=' + (c.scopedLabel || '')
+                : c.kind === 'label' ? 'label=' + (c.mapsToLabel || '')
+                : c.kind === 'open-backlog' ? 'prefix=' + (c.scopedPrefix || 'Status')
+                : c.kind;
+      return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 6px;border:1px solid var(--ax-border);border-radius:3px;margin-right:4px;margin-bottom:4px"><b>' + escapeHtml(c.title) + '</b><span style="color:var(--ax-muted)">(' + escapeHtml(map) + ')</span><a href="#" data-act="bd-col-rm" data-board="' + escapeHtml(b.id) + '" data-column="' + escapeHtml(c.id) + '" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
+    }).join('');
+    return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:8px">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">' +
+        '<div><b>' + escapeHtml(b.name) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(b.id) + '</code></div>' +
+        '<div style="display:flex;gap:4px">' +
+          '<button class="ghost" data-act="bd-edit" data-id="' + escapeHtml(b.id) + '">Edit</button>' +
+          '<button class="ghost danger" data-act="bd-rm" data-id="' + escapeHtml(b.id) + '">Remove</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:6px">' + projects +
+        (b.primaryToolLabel ? '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">label: ' + escapeHtml(b.primaryToolLabel) + '</span>' : '') +
+        '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">open=' + (b.timeRangeDays || 30) + 'd / closed=' + (b.closedWindowDays || 30) + 'd</span>' +
+      '</div>' +
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--ax-border)">' +
+        '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">columns:</div>' +
+        (cols || '<i style="font-size:11px;color:var(--ax-muted)">no custom columns (board uses GitLab default flow)</i>') +
+        '<details style="margin-top:6px"><summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">+ add column</summary>' +
+          '<div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:end">' +
+            '<label>Id<input data-bd-col="id" data-board="' + escapeHtml(b.id) + '" placeholder="doing" /></label>' +
+            '<label>Title<input data-bd-col="title" data-board="' + escapeHtml(b.id) + '" placeholder="Doing" /></label>' +
+            '<label>Kind<select data-bd-col="kind" data-board="' + escapeHtml(b.id) + '"><option value="scoped-label">scoped-label</option><option value="label">label</option><option value="open-backlog">open-backlog</option><option value="closed">closed</option></select></label>' +
+            '<label>Scoped/label value<input data-bd-col="value" data-board="' + escapeHtml(b.id) + '" placeholder="Status::Doing" /></label>' +
+            '<button data-act="bd-col-add" data-board="' + escapeHtml(b.id) + '">Add</button>' +
+          '</div>' +
+        '</details>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function wireBoardsCfgHandlers() {
+  if (window.__boardsCfgWired) return;
+  window.__boardsCfgWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="bd-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'bd-rm') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Remove board ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/boards', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'bd-edit') {
+      // Pre-fill the add form so the operator can re-save.
+      const id = t.getAttribute('data-id');
+      const b = (state.boards || []).find(x => x.id === id);
+      if (!b) return;
+      $('bd-id').value = b.id;
+      $('bd-name').value = b.name || '';
+      $('bd-projects').value = ((b.source && b.source.projects) || []).join(',');
+      $('bd-label').value = b.primaryToolLabel || '';
+      $('bd-days').value = b.timeRangeDays || 30;
+      $('bd-closed-days').value = b.closedWindowDays || 30;
+      // Open the details and scroll to it
+      const details = document.querySelector('#tab-boards-cfg .add-form');
+      if (details) { details.open = true; details.scrollIntoView({ behavior: 'smooth' }); }
+    } else if (act === 'bd-col-rm') {
+      ev.preventDefault();
+      const boardId = t.getAttribute('data-board');
+      const columnId = t.getAttribute('data-column');
+      try { await req('DELETE', '/api/admin/boards/columns', { boardId, columnId }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'bd-col-add') {
+      const boardId = t.getAttribute('data-board');
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const id = card.querySelector('[data-bd-col="id"]').value.trim();
+      const title = card.querySelector('[data-bd-col="title"]').value.trim();
+      const kind = card.querySelector('[data-bd-col="kind"]').value;
+      const value = card.querySelector('[data-bd-col="value"]').value.trim();
+      if (!id || !title) { showMsg($('global-msg'), 'err', 'column id and title required'); return; }
+      const payload = { boardId, columnId: id, title, kind };
+      if (kind === 'scoped-label') payload.scopedLabel = value;
+      else if (kind === 'label') payload.mapsToLabel = value;
+      try { await req('POST', '/api/admin/boards/columns', payload); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+window.upsertBoardCfg = async function() {
+  const id = $('bd-id').value.trim();
+  const name = $('bd-name').value.trim();
+  const projects = $('bd-projects').value.trim();
+  const primaryToolLabel = $('bd-label').value.trim();
+  const timeRangeDays = parseInt($('bd-days').value, 10) || 30;
+  const closedWindowDays = parseInt($('bd-closed-days').value, 10) || 30;
+  try {
+    await req('POST', '/api/admin/boards', { id, name, projects, primaryToolLabel, timeRangeDays, closedWindowDays });
+    showMsg($('bd-msg'), 'ok', 'Board saved');
+    await load();
+  } catch (e) { showMsg($('bd-msg'), 'err', e.message); }
 }
 
 window.upsertContact = async function() {
