@@ -69,6 +69,7 @@ export async function handleAgentApi(
     const dispatch: Record<string, () => unknown | Promise<unknown>> = {
       "GET ": () => getAgentState(agentId),
       "PATCH ": () => patchAgent(agentId, body),
+      "PATCH capability": () => patchAgentCapability(agentId, body),
       "GET identity": () => getIdentityFiles(agentId),
       "GET identity/file": () => getIdentityFile(agentId, String(qs.path || "")),
       "PUT identity/file": () => putIdentityFile(agentId, body),
@@ -136,6 +137,12 @@ function getAgentState(agentId: string) {
     maxConcurrent: def.maxConcurrent ?? 1,
     maxExecutionMinutes: def.maxExecutionMinutes ?? 20,
     permissionMode: def.permissionMode || "default",
+    // Phase 5/8 capability fields — exposed so the Capability tab can
+    // render current values without a second round-trip.
+    intents: Array.isArray((def as any).intents) ? (def as any).intents : [],
+    maxDelegationDepth: (def as any).maxDelegationDepth ?? 5,
+    contextReferences: !!(def as any).contextReferences,
+    contextStrategy: (def as any).contextStrategy || "",
     overview,
     defaultWorker: cfg.node?.defaultAgent,
     draftAgent: cfg.dashboard?.draftAgent,
@@ -154,6 +161,45 @@ function patchAgent(agentId: string, body: any) {
     if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
     cfg.agents[agentId] = { ...cfg.agents[agentId], ...fields }
     return `agent "${agentId}" updated (${Object.keys(fields).join(", ")})`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+/** Phase 5/8 capability fields — separated from patchAgent so the
+ *  validation can be stricter (intent allow-list, depth ranges,
+ *  context-strategy enum) without affecting the basic patch path the
+ *  Overview tab uses. Mirrors `agentx agent capability`. */
+function patchAgentCapability(agentId: string, body: any) {
+  const fields: Record<string, any> = {}
+  if (Array.isArray(body?.intents)) fields.intents = body.intents.map((s: unknown) => String(s)).filter(Boolean)
+  if (body?.maxDelegationDepth !== undefined) {
+    const n = Number(body.maxDelegationDepth)
+    if (!Number.isFinite(n) || n < 0 || n > 50) throw new Error("maxDelegationDepth must be 0..50")
+    fields.maxDelegationDepth = n
+  }
+  if (body?.contextReferences !== undefined) fields.contextReferences = !!body.contextReferences
+  if (body?.contextStrategy !== undefined) {
+    if (body.contextStrategy && !["layered", "planner"].includes(body.contextStrategy)) {
+      throw new Error("contextStrategy must be layered|planner|empty")
+    }
+    if (body.contextStrategy) fields.contextStrategy = body.contextStrategy
+    else fields.contextStrategy = undefined
+  }
+  if (body?.maxExecutionMinutes !== undefined) {
+    const n = Number(body.maxExecutionMinutes)
+    if (!Number.isFinite(n) || n < 1 || n > 240) throw new Error("maxExecutionMinutes must be 1..240")
+    fields.maxExecutionMinutes = n
+  }
+  if (Object.keys(fields).length === 0) throw new Error("nothing to update")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    const next = { ...cfg.agents[agentId] }
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) delete next[k]
+      else next[k] = v
+    }
+    cfg.agents[agentId] = next
+    return `agent "${agentId}" capability updated (${Object.keys(fields).join(", ")})`
   })
   return { summary, agent: getAgentState(agentId) }
 }

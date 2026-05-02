@@ -131,6 +131,10 @@ const AGENT_PAGE_BODY = `
       Handovers
       <span class="ax-rail__count" id="rail-handovers-count">0</span>
     </a>
+    <a data-tab="capability">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      Capability
+    </a>
 
     <div class="ax-rail__sep"></div>
     <div class="ax-rail__label">Observe</div>
@@ -449,6 +453,55 @@ const AGENT_PAGE_BODY = `
       <div class="ax-panel">
         <div class="ax-panel__head"><div><h2>Taken over from somewhere</h2><p class="ax-lead" style="margin:0">Chats other agents routed <i>to</i> this agent.</p></div></div>
         <div id="ho-incoming"></div>
+      </div>
+    </section>
+
+    <!-- Capability — mirrors agentx agent capability -->
+    <section id="tab-capability" class="ax-panel__tab">
+      <div class="ax-panel">
+        <div class="ax-panel__head">
+          <div>
+            <h2>Capability flags</h2>
+            <p class="ax-lead" style="margin:0">Phase 5 typed dispatch, Phase 8 delegation depth, and per-agent context-engine overrides. Mirrors <code>agentx agent capability</code>. <b>Restart the daemon</b> after changes for them to take effect.</p>
+          </div>
+        </div>
+        <div class="ax-panel__body">
+          <label class="ax-field">
+            <span class="ax-field__label">Allowed intents <span class="ax-hint">(comma-separated allow-list — leave blank for permissive default)</span></span>
+            <input id="cap-intents" type="text" placeholder="issue.opened, merge_request.opened" />
+            <span class="ax-hint">Set to limit this agent to specific intents. The org-chart canHandle() check rejects anything not on the list.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Max delegation depth <span class="ax-hint">(0..50; lower for agents at the bottom of a chain)</span></span>
+            <input id="cap-mdd" type="number" min="0" max="50" />
+            <span class="ax-hint">Caps cascade chains where A → B → A. Default 5.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Context references</span>
+            <select id="cap-cref">
+              <option value="false">off — skip the [Verified References] block</option>
+              <option value="true">on — render deterministic references in the prompt</option>
+            </select>
+            <span class="ax-hint">Turn on for agents (PMs, devops) that need cited facts. Requires a <code>references/</code> registry in the workspace.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Context strategy <span class="ax-hint">(per-agent override; blank = global default)</span></span>
+            <select id="cap-cstrat">
+              <option value="">(global default)</option>
+              <option value="layered">layered — full context, larger prompt</option>
+              <option value="planner">planner — smaller prompt, more tool-driven exploration</option>
+            </select>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Max execution minutes <span class="ax-hint">(1..240; SIGTERM after this)</span></span>
+            <input id="cap-mxm" type="number" min="1" max="240" />
+            <span class="ax-hint">Wall-clock cap on a single Claude Code invocation. Default 20m. Bump for devops/coder agents that do long investigations.</span>
+          </label>
+          <div class="ax-form-actions" style="margin-top:14px">
+            <button class="ax-btn ax-btn--primary" id="cap-save">Save capability</button>
+            <span id="cap-msg" class="ax-hint" style="margin-left:10px"></span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -833,8 +886,46 @@ async function loadAgent(){
     // Stats placeholders; loadActivity() fills real numbers once the tab is visited.
     const handling = (a.runningTasks?.length) || 0;
     $('stat-handling').textContent = String(handling);
+
+    // Capability tab — Phase 5/8 fields. Mirrors the agentx agent capability CLI.
+    const intentsEl = $('cap-intents');
+    if (intentsEl) {
+      intentsEl.value = Array.isArray(a.intents) ? a.intents.join(', ') : '';
+      $('cap-mdd').value = a.maxDelegationDepth ?? 5;
+      $('cap-cref').value = a.contextReferences ? 'true' : 'false';
+      $('cap-cstrat').value = a.contextStrategy || '';
+      $('cap-mxm').value = a.maxExecutionMinutes ?? 20;
+    }
   } catch (e) { showMsg('err', e.message); }
 }
+
+// Capability save — POST to the same agent-config write path the
+// CLI uses, so both surfaces persist identically. (See agentx agent
+// capability in the CLI for the cli mirror.)
+(function(){
+  const capSaveBtn = document.getElementById('cap-save');
+  if (!capSaveBtn) return;
+  capSaveBtn.addEventListener('click', async () => {
+    const intentsRaw = document.getElementById('cap-intents').value.trim();
+    const intents = intentsRaw ? intentsRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    const body = {
+      intents: intents,
+      maxDelegationDepth: parseInt(document.getElementById('cap-mdd').value, 10) || 5,
+      contextReferences: document.getElementById('cap-cref').value === 'true',
+      maxExecutionMinutes: parseInt(document.getElementById('cap-mxm').value, 10) || 20,
+    };
+    const cstrat = document.getElementById('cap-cstrat').value;
+    if (cstrat) body.contextStrategy = cstrat;
+    const msg = document.getElementById('cap-msg');
+    try {
+      await req('PATCH', '/api/admin/agent/' + AGENT_ID + '/capability', body);
+      if (msg) { msg.textContent = '✓ saved — restart the daemon for changes to take effect'; msg.style.color = 'var(--ax-success)'; }
+      await loadAgent();
+    } catch (e) {
+      if (msg) { msg.textContent = e.message; msg.style.color = 'var(--ax-err)'; }
+    }
+  });
+})();
 
 $('btn-save-meta').addEventListener('click', async () => {
   const body = {

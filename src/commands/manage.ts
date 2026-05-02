@@ -190,9 +190,16 @@ agent
       changes.push(`contextReferences=${a.contextReferences}`)
     }
     if (opts.contextStrategy !== undefined) {
-      if (!["layered", "planner"].includes(opts.contextStrategy)) { console.log(chalk.red("  --context-strategy must be layered|planner")); process.exit(1) }
-      a.contextStrategy = opts.contextStrategy
-      changes.push(`contextStrategy=${opts.contextStrategy}`)
+      if (opts.contextStrategy === "-" || opts.contextStrategy === "") {
+        delete (a as any).contextStrategy
+        changes.push("contextStrategy cleared (uses global default)")
+      } else if (!["layered", "planner"].includes(opts.contextStrategy)) {
+        console.log(chalk.red("  --context-strategy must be layered|planner (or '-' to clear)"))
+        process.exit(1)
+      } else {
+        a.contextStrategy = opts.contextStrategy
+        changes.push(`contextStrategy=${opts.contextStrategy}`)
+      }
     }
     if (opts.maxExecutionMinutes !== undefined) {
       const n = parseInt(opts.maxExecutionMinutes, 10)
