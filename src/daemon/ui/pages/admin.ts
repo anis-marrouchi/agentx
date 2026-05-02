@@ -327,6 +327,33 @@ const ADMIN_PAGE_BODY = `
       bodyHtml: `<b>How does this work?</b> We give each channel a small "bridge" that forwards messages to AgentX. For chat apps (Telegram, Slack, Discord) you'll paste a bot token — we keep the value in your <code>.env</code> file and never send it over the network. For webhook-style sources (GitHub, GitLab) we hand you a URL to paste into their dashboard.`,
     })}
 
+    <details class="add-form" style="margin-top:14px;margin-bottom:18px" id="notif-section">
+      <summary class="primary">⚙ Notifications routing</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Where AgentX pings you when a task finishes, errors, or runs long. Mirrors <code>agentx notifications</code>.</p>
+        <div id="notif-current" style="font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;color:var(--ax-muted)">—</div>
+        <label>Channel<span class="hint">(telegram | whatsapp | slack | discord — leave blank to clear)</span></label>
+        <input id="notif-channel" placeholder="telegram" />
+        <label>Chat id</label>
+        <input id="notif-chat-id" placeholder="-1001234567890" />
+        <label>Account id <span class="hint">(optional — when the channel is multi-account, e.g. multiple Telegram bots)</span></label>
+        <input id="notif-account-id" placeholder="default" />
+        <label>Long-task threshold (seconds) <span class="hint">(0 disables long-task pings)</span></label>
+        <input id="notif-threshold" type="number" min="0" max="3600" />
+        <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
+          <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">Events to ping on</legend>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-complete" /> task complete</label>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-error" /> task error</label>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="notif-on-queued" /> task queued</label>
+        </fieldset>
+        <div class="actions" style="margin-top:10px">
+          <button class="primary" onclick="saveNotifications()">Save notifications</button>
+          <button class="ghost" onclick="clearNotificationsDestination()">Clear destination</button>
+          <div id="notif-msg" class="msg"></div>
+        </div>
+      </div>
+    </details>
+
     <div id="ch-chatapps-label">${secLabel({ label: "Chat apps" })}</div>
     <div class="ax-connectors" id="ch-chatapps"></div>
 
@@ -988,6 +1015,8 @@ async function refresh() {
     wireBusinessHandlers();
     renderBoardsCfg();
     wireBoardsCfgHandlers();
+    renderNotifications();
+    wireWebhookTriggerHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
   } catch (e) {
@@ -1046,6 +1075,35 @@ function renderWebhooks() {
           '<button class="ax-btn ax-btn--ghost" style="padding:3px 9px;font-size:11px" data-copy="' + escapeHtml(url) + '">Copy</button>' +
         '</div>' +
         '<div style="font-size:11px;color:var(--ax-muted);margin-top:6px">' + escapeHtml(meta.hint) + '</div>';
+
+      // Triggers + defaultWorkflow editor — collapsed by default. Maps a
+      // platform event-type (e.g. "issues.opened") to a workflow id; the
+      // defaultWorkflow runs when no specific trigger matches.
+      const triggers = (w.triggers && typeof w.triggers === 'object') ? w.triggers : {};
+      const triggerRows = Object.keys(triggers).map(function(evt){
+        return '<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><code style="flex:1;font-size:11px">' + escapeHtml(evt) + ' → ' + escapeHtml(triggers[evt]) + '</code><a href="#" data-act="wh-trig-rm" data-id="' + escapeHtml(w.id) + '" data-event="' + escapeHtml(evt) + '" style="color:var(--ax-muted);font-size:11px">×</a></div>';
+      }).join('');
+      const trigBlock = document.createElement('details');
+      trigBlock.style.marginTop = '8px';
+      trigBlock.innerHTML =
+        '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">Routing — event-type triggers + default workflow</summary>' +
+        '<div style="margin-top:8px;padding:8px 10px;background:var(--ax-surface);border-radius:4px">' +
+          '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Event-type → workflow id (e.g. <code>issues.opened</code> → <code>triage-bug</code>):</div>' +
+          (triggerRows || '<div style="font-size:11px;color:var(--ax-muted);font-style:italic">no triggers — every event uses the default workflow below</div>') +
+          '<div style="display:flex;gap:6px;margin-top:6px">' +
+            '<input data-wh-trig-event placeholder="event-type" style="flex:1;font-size:11px" />' +
+            '<input data-wh-trig-wf placeholder="workflow id" style="flex:1;font-size:11px" />' +
+            '<button data-act="wh-trig-add" data-id="' + escapeHtml(w.id) + '" class="ax-btn" style="padding:3px 9px;font-size:11px">Add</button>' +
+          '</div>' +
+          '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--ax-border)">' +
+            '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Default workflow (fires when no trigger matches):</div>' +
+            '<div style="display:flex;gap:6px">' +
+              '<input data-wh-default value="' + escapeHtml(w.defaultWorkflow || '') + '" placeholder="(none)" style="flex:1;font-size:11px" />' +
+              '<button data-act="wh-default-save" data-id="' + escapeHtml(w.id) + '" class="ax-btn" style="padding:3px 9px;font-size:11px">Save</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      card.appendChild(trigBlock);
 
       card.querySelector('[data-copy]').addEventListener('click', (e) => {
         const u = e.currentTarget.dataset.copy;
@@ -1568,6 +1626,97 @@ function wireBoardsCfgHandlers() {
       if (kind === 'scoped-label') payload.scopedLabel = value;
       else if (kind === 'label') payload.mapsToLabel = value;
       try { await req('POST', '/api/admin/boards/columns', payload); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+// ---------------- Notifications + Webhook triggers ----------------
+
+function renderNotifications() {
+  const n = state.notifications || {};
+  const cur = $('notif-current');
+  if (cur) {
+    if (n.destination) {
+      const acct = n.destination.accountId ? ' (account=' + escapeHtml(n.destination.accountId) + ')' : '';
+      cur.innerHTML = '<b>Routing to</b> <code>' + escapeHtml(n.destination.channel) + ':' + escapeHtml(n.destination.chatId) + '</code>' + acct;
+    } else {
+      cur.innerHTML = '<i>No destination set — notifications go to the daemon log only.</i>';
+    }
+  }
+  if ($('notif-channel') && n.destination) {
+    $('notif-channel').value = n.destination.channel || '';
+    $('notif-chat-id').value = n.destination.chatId || '';
+    $('notif-account-id').value = n.destination.accountId || '';
+  }
+  if ($('notif-threshold')) $('notif-threshold').value = n.longTaskThreshold ?? 30;
+  if ($('notif-on-complete')) $('notif-on-complete').checked = n.on?.taskComplete !== false;
+  if ($('notif-on-error')) $('notif-on-error').checked = n.on?.taskError !== false;
+  if ($('notif-on-queued')) $('notif-on-queued').checked = !!n.on?.taskQueued;
+}
+
+window.saveNotifications = async function() {
+  const channel = $('notif-channel').value.trim();
+  const chatId = $('notif-chat-id').value.trim();
+  const accountId = $('notif-account-id').value.trim();
+  const threshold = parseInt($('notif-threshold').value, 10);
+  const body = {
+    on: {
+      taskComplete: $('notif-on-complete').checked,
+      taskError: $('notif-on-error').checked,
+      taskQueued: $('notif-on-queued').checked,
+    },
+    longTaskThreshold: Number.isFinite(threshold) ? threshold : 30,
+  };
+  if (channel && chatId) {
+    body.destination = { channel, chatId, ...(accountId ? { accountId } : {}) };
+  }
+  try {
+    await req('POST', '/api/admin/notifications', body);
+    showMsg($('notif-msg'), 'ok', 'Saved');
+    await load();
+  } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+window.clearNotificationsDestination = async function() {
+  try {
+    await req('POST', '/api/admin/notifications', { destination: null });
+    showMsg($('notif-msg'), 'ok', 'Destination cleared');
+    await load();
+  } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+function wireWebhookTriggerHandlers() {
+  if (window.__whTrigWired) return;
+  window.__whTrigWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="wh-"]');
+    if (!t) return;
+    const id = t.getAttribute('data-id');
+    if (t.getAttribute('data-act') === 'wh-trig-rm') {
+      ev.preventDefault();
+      const evt = t.getAttribute('data-event');
+      const wh = state.webhooks.find(w => w.id === id);
+      if (!wh) return;
+      const next = { ...(wh.triggers || {}) };
+      delete next[evt];
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, triggers: next }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (t.getAttribute('data-act') === 'wh-trig-add') {
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const evt = card.querySelector('[data-wh-trig-event]').value.trim();
+      const wf = card.querySelector('[data-wh-trig-wf]').value.trim();
+      if (!evt || !wf) { showMsg($('global-msg'), 'err', 'event-type + workflow id required'); return; }
+      const wh = state.webhooks.find(w => w.id === id);
+      const next = { ...((wh && wh.triggers) || {}), [evt]: wf };
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, triggers: next }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (t.getAttribute('data-act') === 'wh-default-save') {
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const defaultWorkflow = card.querySelector('[data-wh-default]').value.trim();
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, defaultWorkflow }); await load(); }
       catch (e) { showMsg($('global-msg'), 'err', e.message); }
     }
   });

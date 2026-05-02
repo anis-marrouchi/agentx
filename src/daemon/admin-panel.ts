@@ -101,6 +101,12 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "DELETE /api/admin/boards":        () => deleteBoard(body),
       "POST /api/admin/boards/columns":  () => upsertBoardColumn(body),
       "DELETE /api/admin/boards/columns":() => deleteBoardColumn(body),
+      // Notifications — single mutation endpoint that takes a partial body
+      // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
+      "POST /api/admin/notifications":   () => updateNotifications(body),
+      // Webhook triggers + defaultWorkflow editor (in addition to existing
+      // /api/admin/webhooks add/edit/delete).
+      "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -216,6 +222,10 @@ function getAdminState() {
     secretEnv: w.secretEnv || "",
     description: w.description || "",
     enabled: w.enabled !== false,
+    // Trigger / defaultWorkflow routing — surfaced so the Webhooks tab
+    // can render them inline without a second round-trip.
+    triggers: (w.triggers && typeof w.triggers === "object") ? w.triggers : {},
+    defaultWorkflow: w.defaultWorkflow || "",
   })) : []
   const mesh = {
     enabled: !!cfg.mesh?.enabled,
@@ -254,6 +264,17 @@ function getAdminState() {
     projects: Array.isArray(businessCfg.projects) ? businessCfg.projects : [],
     contactMap: Array.isArray(businessCfg.contactMap) ? businessCfg.contactMap : [],
   }
+  // Notifications — destination + event toggles + long-task threshold.
+  const notificationsCfg = (cfg.notifications || {}) as any
+  const notifications = {
+    longTaskThreshold: notificationsCfg.longTaskThreshold ?? 30,
+    destination: notificationsCfg.destination || null,
+    on: {
+      taskComplete: notificationsCfg.on?.taskComplete !== false,
+      taskError: notificationsCfg.on?.taskError !== false,
+      taskQueued: !!notificationsCfg.on?.taskQueued,
+    },
+  }
   // Boards — list with column metadata so the admin tab can edit them.
   const boards = (Array.isArray(cfg.boards) ? cfg.boards : []).map((b: any) => ({
     id: b.id,
@@ -264,7 +285,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards, notifications }
 }
 
 // ========================================================================
@@ -1188,6 +1209,83 @@ async function deleteBoardColumn(body: any) {
     b.columns = (b.columns || []).filter((c: any) => c.id !== columnId)
     if (b.columns.length === before) throw new Error(`column "${columnId}" not found`)
     return `column "${columnId}" removed from board "${boardId}"`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Notifications — admin write handler (mirrors `agentx notifications`)
+// ========================================================================
+
+async function updateNotifications(body: any) {
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.notifications = cfg.notifications || {}
+    const changes: string[] = []
+    if (body && typeof body === "object") {
+      if ("destination" in body) {
+        if (!body.destination) {
+          delete cfg.notifications.destination
+          changes.push("destination cleared")
+        } else if (body.destination.channel && body.destination.chatId) {
+          cfg.notifications.destination = {
+            channel: String(body.destination.channel),
+            chatId: String(body.destination.chatId),
+            ...(body.destination.accountId ? { accountId: String(body.destination.accountId) } : {}),
+          }
+          changes.push(`destination=${body.destination.channel}:${body.destination.chatId}`)
+        } else {
+          throw new Error("destination requires channel + chatId")
+        }
+      }
+      if ("on" in body && body.on && typeof body.on === "object") {
+        cfg.notifications.on = cfg.notifications.on || {}
+        for (const k of ["taskComplete", "taskError", "taskQueued"]) {
+          if (k in body.on) cfg.notifications.on[k] = !!body.on[k]
+        }
+        changes.push("on=" + JSON.stringify(cfg.notifications.on))
+      }
+      if ("longTaskThreshold" in body) {
+        const n = Number(body.longTaskThreshold)
+        if (!Number.isFinite(n) || n < 0) throw new Error("longTaskThreshold must be a non-negative number")
+        cfg.notifications.longTaskThreshold = n
+        changes.push(`threshold=${n}s`)
+      }
+    }
+    if (changes.length === 0) throw new Error("nothing to update")
+    return `notifications updated (${changes.join(", ")})`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Webhook triggers — granular event-type → workflow id mapping
+// ========================================================================
+
+async function updateWebhookTriggers(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("webhook id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.webhooks) ? cfg.webhooks : []
+    const w = list.find((x: any) => x.id === id)
+    if (!w) throw new Error(`webhook "${id}" not found`)
+    if ("triggers" in body) {
+      if (body.triggers === null || (typeof body.triggers === "object" && Object.keys(body.triggers).length === 0)) {
+        delete w.triggers
+      } else if (typeof body.triggers === "object") {
+        // shape check — keys are event names (free-form), values are workflow ids
+        const out: Record<string, string> = {}
+        for (const [k, v] of Object.entries(body.triggers as Record<string, unknown>)) {
+          if (typeof v === "string" && v.trim()) out[String(k)] = v.trim()
+        }
+        if (Object.keys(out).length === 0) delete w.triggers
+        else w.triggers = out
+      }
+    }
+    if ("defaultWorkflow" in body) {
+      if (!body.defaultWorkflow) delete w.defaultWorkflow
+      else w.defaultWorkflow = String(body.defaultWorkflow).trim()
+    }
+    return `webhook "${id}" triggers/defaultWorkflow updated`
   })
   return { summary }
 }

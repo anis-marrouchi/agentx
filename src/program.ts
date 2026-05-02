@@ -18,6 +18,7 @@ import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
 import { task } from "@/commands/task"
 import { business } from "@/commands/business"
+import { notifications } from "@/commands/notifications"
 import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
 import { serve } from "@/commands/serve"
@@ -71,6 +72,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(workflow)
     .addCommand(task)
     .addCommand(business)
+    .addCommand(notifications)
     .addCommand(actor)
     .addCommand(role)
     .addCommand(watch)
