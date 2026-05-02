@@ -876,6 +876,7 @@ async function refresh() {
     renderWebhooks();
     renderMesh();
     renderTeam();
+    wireTeamHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
   } catch (e) {
@@ -1099,12 +1100,17 @@ function initialsOf(name, id) {
 }
 
 // ---------------- Actors & Roles tab ----------------
+//
+// Inline onclick handlers can't pass quoted strings cleanly here — the
+// whole admin page is generated via a TypeScript template literal, so
+// escaped single-quotes in the JS source collapse and break the JS
+// parser. We attach a single delegated click handler instead and route
+// by data-act / data-id attributes.
 
 function renderTeam() {
   const actors = state.actors || [];
   const roles = state.roles || [];
 
-  // Actors list
   const al = $('actors-list');
   if (al) {
     if (!actors.length) {
@@ -1124,13 +1130,12 @@ function renderTeam() {
             '</div>' +
             '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + channels + '</div>' +
           '</div>' +
-          '<button class="ghost danger" onclick="deleteActor(\'' + escapeHtml(a.id).replace(/'/g, "\\'") + '\')">Delete</button>' +
+          '<button class="ghost danger" data-act="delete-actor" data-id="' + escapeHtml(a.id) + '">Delete</button>' +
         '</div>';
       }).join('');
     }
   }
 
-  // Roles list
   const rl = $('roles-list');
   if (rl) {
     if (!roles.length) {
@@ -1140,7 +1145,7 @@ function renderTeam() {
         const memberPills = (r.members || []).map(m => {
           const ref = m.actor || m.role || '';
           return '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(ref) +
-            ' <a href="#" onclick="revokeMember(\'' + escapeHtml(r.id).replace(/'/g, "\\'") + '\',\'' + escapeHtml(ref).replace(/'/g, "\\'") + '\');return false" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
+            ' <a href="#" data-act="revoke" data-role="' + escapeHtml(r.id) + '" data-member="' + escapeHtml(ref) + '" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
         }).join(' ');
         const memberOptions = '<option value="">— add actor or role —</option>' +
           actors.filter(a => !(r.members || []).some(m => m.actor === a.id)).map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.id) + ' (' + escapeHtml(a.name) + ')</option>').join('') +
@@ -1148,10 +1153,10 @@ function renderTeam() {
         return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:6px">' +
           '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">' +
             '<div><b>' + escapeHtml(r.name) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(r.id) + '</code> <span style="font-size:11px;color:var(--ax-muted)">strategy: ' + escapeHtml(r.assignmentStrategy) + '</span></div>' +
-            '<button class="ghost danger" onclick="deleteRole(\'' + escapeHtml(r.id).replace(/'/g, "\\'") + '\')">Delete</button>' +
+            '<button class="ghost danger" data-act="delete-role" data-id="' + escapeHtml(r.id) + '">Delete</button>' +
           '</div>' +
           '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + (memberPills || '<i style="font-size:11px;color:var(--ax-muted)">no members yet</i>') +
-            '<select onchange="grantMember(\'' + escapeHtml(r.id).replace(/'/g, "\\'") + '\', this.value); this.value=\'\'" style="margin-left:auto;font-size:11px;padding:2px 6px">' + memberOptions + '</select>' +
+            '<select data-act="grant" data-role="' + escapeHtml(r.id) + '" style="margin-left:auto;font-size:11px;padding:2px 6px">' + memberOptions + '</select>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -1159,13 +1164,54 @@ function renderTeam() {
   }
 }
 
+// Single delegated click + change handler for the Team tab. Wired once
+// at page-init time below renderTeam in the existing DOMContentLoaded
+// flow — see the wireTeamHandlers call.
+function wireTeamHandlers() {
+  if (window.__teamWired) return;
+  window.__teamWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'delete-actor') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Delete actor ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/actors', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'delete-role') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Delete role ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/roles', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'revoke') {
+      ev.preventDefault();
+      const role = t.getAttribute('data-role');
+      const member = t.getAttribute('data-member');
+      try { await req('POST', '/api/admin/roles/revoke', { role, member }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+  document.addEventListener('change', async (ev) => {
+    const t = ev.target.closest('select[data-act="grant"]');
+    if (!t) return;
+    const role = t.getAttribute('data-role');
+    const member = t.value;
+    if (!member) return;
+    try { await req('POST', '/api/admin/roles/grant', { role, member }); await load(); }
+    catch (e) { showMsg($('global-msg'), 'err', e.message); }
+  });
+}
+
+// Form-submit shims kept on window for the inline onclick="upsertActor()"
+// handlers in the add-form summary blocks.
+
 window.upsertActor = async function() {
   const id = $('ac-id').value.trim();
   const name = $('ac-name').value.trim();
   const email = $('ac-email').value.trim();
   const channelsRaw = $('ac-channels').value.trim();
   const timezone = $('ac-timezone').value.trim();
-  // Parse "channel:handle*, channel:handle"
   const channels = channelsRaw.split(',').map(s => s.trim()).filter(Boolean).map(s => {
     const preferredForTasks = s.endsWith('*');
     const clean = preferredForTasks ? s.slice(0, -1) : s;
@@ -1180,14 +1226,6 @@ window.upsertActor = async function() {
   } catch (e) { showMsg($('ac-msg'), 'err', e.message); }
 }
 
-window.deleteActor = async function(id) {
-  if (!confirm('Delete actor ' + id + '?')) return;
-  try {
-    await req('DELETE', '/api/admin/actors', { id });
-    await load();
-  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
-}
-
 window.upsertRole = async function() {
   const id = $('rl-id').value.trim();
   const name = $('rl-name').value.trim();
@@ -1198,29 +1236,6 @@ window.upsertRole = async function() {
     showMsg($('rl-msg'), 'ok', 'Role saved');
     await load();
   } catch (e) { showMsg($('rl-msg'), 'err', e.message); }
-}
-
-window.deleteRole = async function(id) {
-  if (!confirm('Delete role ' + id + '?')) return;
-  try {
-    await req('DELETE', '/api/admin/roles', { id });
-    await load();
-  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
-}
-
-window.grantMember = async function(role, member) {
-  if (!member) return;
-  try {
-    await req('POST', '/api/admin/roles/grant', { role, member });
-    await load();
-  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
-}
-
-window.revokeMember = async function(role, member) {
-  try {
-    await req('POST', '/api/admin/roles/revoke', { role, member });
-    await load();
-  } catch (e) { showMsg($('global-msg'), 'err', e.message); }
 }
 
 /** Pick a stable avatar variant from the string hash. Gives each agent a
