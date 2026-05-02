@@ -93,6 +93,42 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
   if (url.startsWith("/api/workflows/tasks")) {
     if (!deps.tasks || !deps.dispatcher) return sendJson(res, 501, { error: "task engine not enabled" })
     const trail = url.replace(/^\/api\/workflows\/tasks/, "")
+    if (trail === "/history" || trail.startsWith("/history?")) {
+      if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
+      if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+      const q = new URL(url, "http://_").searchParams
+      const limitRaw = parseInt(q.get("limit") || "50", 10)
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50
+      const archived = deps.tasks.listArchived()
+      // Newest first; cap at limit. Compute duration + SLA breach inline so
+      // the client doesn't need a third round-trip.
+      const rows = archived
+        .filter((t) => !!t.submittedAt)
+        .sort((a, b) => (a.submittedAt! < b.submittedAt! ? 1 : -1))
+        .slice(0, limit)
+        .map((t) => {
+          const created = Date.parse(t.createdAt)
+          const submitted = Date.parse(t.submittedAt!)
+          const due = t.dueAt ? Date.parse(t.dueAt) : null
+          const breachedSla = due !== null && submitted > due
+          return {
+            id: t.id,
+            runId: t.runId,
+            workflowId: t.workflowId,
+            title: t.title,
+            assignee: t.assignee,
+            submittedBy: t.submittedBy,
+            submittedAt: t.submittedAt,
+            submittedAction: t.submittedAction,
+            createdAt: t.createdAt,
+            dueAt: t.dueAt ?? null,
+            durationMs: Number.isFinite(submitted - created) ? submitted - created : null,
+            breachedSla,
+            status: t.status,
+          }
+        })
+      return sendJson(res, 200, { rows })
+    }
     if (trail === "" || trail.startsWith("?")) {
       if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
       if (!deps.requireScope(req, res, ["dashboard:read"])) return true

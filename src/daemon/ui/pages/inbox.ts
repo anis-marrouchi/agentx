@@ -42,8 +42,20 @@ export function renderInboxPage(opts: InboxPageOpts = {}): string {
   <section class="ax-inbox__detail">
     <header id="inbox-detail-head">
       <span class="hint">Select a task to open its form.</span>
+      <button id="inbox-history-toggle" type="button" style="margin-left:auto;font-size:11px;padding:4px 10px;border:1px solid var(--ax-border);border-radius:4px;background:var(--ax-bg);color:var(--ax-fg);cursor:pointer">Show completed history</button>
     </header>
     <div id="inbox-detail-body" class="ax-inbox__detail-body"></div>
+    <div id="inbox-history" class="ax-inbox__detail-body" style="display:none;padding:14px 16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h3 style="margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600">Completed user-tasks (most recent first)</h3>
+        <span style="font-size:11px;color:var(--ax-muted)">SLA breaches highlighted in red</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'IBM Plex Mono',monospace">
+        <thead><tr style="text-align:left;color:var(--ax-muted);text-transform:uppercase;letter-spacing:0.04em;font-size:10px"><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">submitted</th><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">workflow</th><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">title</th><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">by</th><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">duration</th><th style="padding:5px 7px;border-bottom:1px solid var(--ax-border)">sla</th></tr></thead>
+        <tbody id="inbox-history-rows"></tbody>
+      </table>
+      <p id="inbox-history-empty" style="font-size:11px;color:var(--ax-muted);font-style:italic;margin:14px 0 0;display:none">no completed user-tasks yet</p>
+    </div>
   </section>
 </div>
 
@@ -350,6 +362,59 @@ const INBOX_PAGE_SCRIPT = `
     fetchTasks();
   });
   $('#inbox-refresh').addEventListener('click', fetchTasks);
+
+  // History toggle — surfaces the SLA-aware completion log.
+  let historyOpen = false;
+  function fmtDuration(ms) {
+    if (ms == null) return '—';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ' + (s % 60) + 's';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+  }
+  function fmtTs(s) {
+    if (!s) return '—';
+    return s.replace('T', ' ').slice(0, 16);
+  }
+  async function loadHistory() {
+    try {
+      const r = await fetch('/api/workflows/tasks/history?limit=100');
+      const data = await r.json();
+      const rows = data.rows || [];
+      const tbody = $('#inbox-history-rows');
+      const empty = $('#inbox-history-empty');
+      if (rows.length === 0) { empty.style.display = ''; tbody.innerHTML = ''; return; }
+      empty.style.display = 'none';
+      tbody.innerHTML = rows.map(function(r){
+        const slaCell = r.dueAt
+          ? (r.breachedSla
+              ? '<span style="color:var(--ax-err,#e74c3c)">breached</span>'
+              : '<span style="color:#2ecc71">on time</span>')
+          : '<span style="color:var(--ax-muted)">—</span>';
+        const rowStyle = r.breachedSla ? 'background:rgba(231,76,60,0.06)' : '';
+        return '<tr style="' + rowStyle + '">' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + escHtml(fmtTs(r.submittedAt)) + '</td>' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + escHtml(r.workflowId || '') + '</td>' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + escHtml((r.title || '').slice(0, 60)) + '</td>' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + escHtml(r.submittedBy || '') + '</td>' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + escHtml(fmtDuration(r.durationMs)) + '</td>' +
+          '<td style="padding:4px 7px;border-bottom:1px solid var(--ax-border)">' + slaCell + '</td>' +
+        '</tr>';
+      }).join('');
+    } catch (e) {
+      $('#inbox-history-empty').textContent = 'failed to load: ' + e.message;
+      $('#inbox-history-empty').style.display = '';
+    }
+  }
+  $('#inbox-history-toggle').addEventListener('click', () => {
+    historyOpen = !historyOpen;
+    $('#inbox-history').style.display = historyOpen ? 'block' : 'none';
+    $('#inbox-detail-body').style.display = historyOpen ? 'none' : '';
+    $('#inbox-history-toggle').textContent = historyOpen ? 'Show open inbox' : 'Show completed history';
+    if (historyOpen) loadHistory();
+  });
 
   fetchTasks();
   setInterval(fetchTasks, 10000);
