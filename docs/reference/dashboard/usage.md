@@ -1,14 +1,28 @@
-# Usage dashboard
+# Usage dashboard (legacy)
 
-The token-usage dashboard runs on a **separate process** from the main board dashboard. Start it with:
+::: warning Folded into `/admin/cost`
+The standalone `agentx usage serve` HTTP server was removed in May 2026.
+Same data now lives at **`/admin/cost`** on the main dashboard — one less
+process and port to keep alive. Read [Cost](./cost.md) for the current
+guide. The CLI helpers `agentx usage today` and `agentx usage report`
+are unchanged.
+:::
+
+The historical content below describes the old standalone process for
+reference. If you're operating a current install, you want
+[`/admin/cost`](./cost.md) instead.
+
+---
+
+The token-usage dashboard used to run on a **separate process** from the main board dashboard. It was started with:
 
 ```bash
-agentx usage serve --port 4203
+agentx usage serve --port 4203   # removed
 ```
 
-Default port `4203` so it doesn't collide with the board on `4202`.
+Default port `4203` so it didn't collide with the board on `4202`.
 
-This is intentionally isolated: the usage dashboard reads from the operational SQLite (`.agentx/db.sqlite`) plus the Claude Code session JSONL on disk. It doesn't talk to the running daemon — safe to run as a cron-spawned readonly process or inside CI when investigating cost spikes.
+This was intentionally isolated: the usage dashboard read from the operational SQLite (`.agentx/db.sqlite`) plus the Claude Code session JSONL on disk. It didn't talk to the running daemon — safe to run as a cron-spawned readonly process or inside CI when investigating cost spikes.
 
 ## What you'll see
 

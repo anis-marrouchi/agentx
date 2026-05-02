@@ -67,6 +67,15 @@ If `agentx.json` is missing, the wizard creates one. If it exists, the wizard ex
 | `agentx agent list` (alias `ls`) | List configured agents with workspace and mentions |
 | `agentx agent add` | Add an agent interactively |
 | `agentx agent remove <id>` (alias `rm`) | Remove agent from config (workspace is preserved) |
+| `agentx agent capability <id> --show` | Print the agent's current capability bounds + context strategy |
+| `agentx agent capability <id> --intents "issue.opened,merge_request.opened"` | Set the typed intent allow-list — dispatches with intents not in the list are rejected by `canHandle()` |
+| `agentx agent capability <id> --intents -` | Clear the intent allow-list (default empty = permissive) |
+| `agentx agent capability <id> --max-delegation-depth 3` | Cap cascade chains — agent stops delegating after N hops |
+| `agentx agent capability <id> --context-references true` | Enable the deterministic `[Verified References]` context block (requires `.agentx/references/` to be populated) |
+| `agentx agent capability <id> --context-strategy planner` | Swap the per-agent context engine (e.g. `layered`, `planner`) |
+| `agentx agent capability <id> --max-execution-minutes 45` | Per-agent execution-time ceiling |
+
+These flags configure capability-bounded dispatch and per-agent context strategy. `--intents` is a typed allow-list — when set, the org-chart `canHandle()` check rejects dispatches with intents not in the list (default empty = permissive). `--max-delegation-depth` caps cascade chains; `--context-references` enables the deterministic [Verified References] context block; `--context-strategy` swaps the per-agent context engine. Without these flags, you'd hand-edit `agentx.json`.
 
 ## Channels
 
@@ -74,6 +83,25 @@ If `agentx.json` is missing, the wizard creates one. If it exists, the wizard ex
 |---|---|
 | `agentx channel list` (alias `ls`) | List channels + agent bindings |
 | `agentx channel add` | Add a channel interactively (Telegram / WhatsApp / Discord / GitLab) — legacy path; prefer `connect` |
+
+## Business layer
+
+The `business` block in `agentx.json` describes how your team is organized — who reports to whom, which projects exist, and how Telegram/WhatsApp chat senders map to clients/projects. AgentX uses this for PM-gating (only the PM can authorize work on their project) and for activity-graph attribution (a Telegram group's chatId tells the graph which client the agent was helping). Edit it via these commands or in the Business tab at `/admin`. Restart the daemon for changes to take effect.
+
+| Command | Description |
+|---|---|
+| `agentx business show` | Print orgChart, projects, contactMap (the resolved business config) |
+| `agentx business orgchart add <agentId> --role <role> [--reports-to <id>] [--start 09:00] [--end 17:00] [--days mon,tue,wed,thu,fri] [--utilization 0.8]` | Add an agent to the org chart with role, reporting line, and working-hours window |
+| `agentx business orgchart remove <agentId>` | Remove an agent from the org chart |
+| `agentx business orgchart list` | List all org-chart entries |
+| `agentx business project add <id> [--pm <agentId>] [--client <name>]` | Register a project with optional PM and client name |
+| `agentx business project remove <id>` | Remove a project |
+| `agentx business project list` | List all projects |
+| `agentx business contact add --client <name> [--channel telegram] [--chat-id ...] [--username ...] [--sender-id ...] [--project ...] [--display-name ...]` | Map a chat sender (chatId / username / senderId) to a client and optional project |
+| `agentx business contact remove [--channel] [--chat-id ...] [--username ...]` | Remove a contact mapping |
+| `agentx business contact list` | List all contact mappings |
+
+Business-layer edits ↔ `/admin` Business tab. PM-gating is gated by `INTENT_PM_GATE_ENABLED=true` (see Environment variables).
 
 ## Connect (pairing flows, recommended)
 
@@ -230,10 +258,18 @@ agentx config unset crons.test-cron
 
 ## Usage & tokens
 
+```bash
+# agentx usage serve  ← removed in May 2026
+# the data lives at /admin/cost on the dashboard now
+agentx usage today                          # quick today snapshot (still works)
+agentx usage report --days 7                # Python session analyzer (still works)
+```
+
+The standalone `usage serve` HTTP server (port 4201) was folded into the dashboard's `/admin/cost` page — same data, one less port to manage.
+
 | Command | Description |
 |---|---|
 | `agentx usage today` | Token usage summary — last 7 days, per agent |
-| `agentx usage serve [--port <n>]` | Web dashboard |
 | `agentx usage report [--days <n>]` | Full session analysis across Claude Code JSONL |
 
 ## Board
@@ -245,7 +281,13 @@ The Kanban dashboard. Visualizes work across configured `boards[]` (GitLab proje
 | `agentx board serve [--port <n>] [--bind <host>]` | Start the dashboard server (default port 4202). Live view always available; boards only when `boards[]` is configured. Falls back to setup-only mode if `agentx.json` is missing |
 | `agentx board list` | List configured boards (id, source projects, primary label, time-range window) |
 | `agentx board add <id> --name <n> --projects <a,b> [--label <L>] [--days <n>] [--closed-days <n>]` | Append a GitLab board to `agentx.json`. Validates + auto-reloads the dashboard |
+| `agentx board edit <id> --name <name> --projects <csv> --label <label> --days <n> --closed-days <n>` | Update an existing board's metadata (any subset of flags) |
 | `agentx board remove <id>` (alias `rm`) | Drop a board by id |
+| `agentx board column list <boardId>` | List the column flow for a board |
+| `agentx board column add <boardId> <columnId> --title <title> --kind <kind> --scoped <label>\|--label <name>` | Append a column to the board's flow |
+| `agentx board column remove <boardId> <columnId>` | Remove a column from the flow |
+
+The `column` subcommand manages the column flow within a board (Open → Doing → Review → Closed, etc.). Each column maps a drag-drop action to a scoped label (`Status::Doing`) or a flat label, or to opening/closing the issue. The default flow is six columns following the GitLab `Status::*` convention; override per-board when you need a different shape (e.g. PR review boards with `Review::Approved` columns).
 
 See [Boards & Kanban](/reference/boards) for the column model and label conventions.
 
@@ -292,6 +334,10 @@ Per-message intent classification into a fixed-axis taxonomy. Typed paths feed L
 |---|---|
 | `agentx graph review [--agent <id>] [--max N] [--dry-run] [--daemon-url <url>]` | Triage pending classifications via the configured review agent. The reviewer may call `wiki query` for context before deciding approve / reject / skip. On approve, new nodes commit + the fingerprint cache populates so subsequent similar messages skip the LLM. |
 | `agentx graph pull --from <peer-url> [--token <t>] [--limit <n>] [--dry-run]` | Cross-mesh sync: pull schema + nodes + approved classifications from a peer's graph. Conflicts skip silently; local always wins. Schema divergence is reported, not reconciled |
+| `agentx graph migrate` | Bulk-remap `classifications.jsonl` + `index.json` from v1 → v2 schema |
+| `agentx graph migrate --dry-run` | Preview the migration without writing |
+
+When the intent-graph schema changes shape (Phase 1 of classifier-retire migrated from a 5-level v1 hierarchy to a 2-level v2 verb taxonomy), past classifications need a one-time bulk remap so the cache and audit log reference the new node IDs. Idempotent + makes a backup before writing.
 
 ## Procedure (SOPs)
 
@@ -341,6 +387,23 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 - Put `agentx workflow validate` in your CI pipeline before any merge that touches `.agentx/workflows/` — the linter catches unreachable states, unknown transition targets, and terminal-state-with-outgoing-edges.
 - `agentx workflow runs --limit 5` is the fastest way to answer "what's the daemon doing right now with workflow X?" — pair it with `agentx daemon logs -f` to watch the corresponding agent dispatches.
 - On multi-node mesh deployments, `runs` is per-node (runs belong to their home node). Use the dashboard `/workflows` page for a cross-node view.
+
+## Tasks (workflow user-task inbox)
+
+When a workflow has a `userTask` node, it pauses until a human fills the form. The dashboard `/inbox` page shows these forms with a click-to-fill UI. This CLI surface is the terminal equivalent — for scripting, headless ops, or quickly resolving a task without opening a browser. Form fields (text, long-text, number, boolean, date, select, multi-select) get prompted one at a time.
+
+| Command | Description |
+|---|---|
+| `agentx task list` | List all open user-tasks (mirrors dashboard `/inbox`) |
+| `agentx task list --actor <id>` | Filter to one actor |
+| `agentx task list --json` | Machine-readable output |
+| `agentx task show <id>` | View a task's form definition (fields, types, validation) |
+| `agentx task submit <id>` | Interactive form submission — prompts one field at a time |
+| `agentx task submit <id> --as <actor>` | Submit as a specific actor (overrides default identity) |
+| `agentx task submit <id> --json '{"values":{"k":"v"}}'` | Non-interactive submission for scripting |
+| `agentx task submit <id> --secondary` | Click the "reject"-style secondary button instead of the primary submit |
+
+`agentx task list` ↔ dashboard `/inbox`. Use the CLI when you're already in a terminal or need to script bulk-resolution; use the dashboard when you want the click-to-fill UI.
 
 ## Actors & roles (BPM)
 

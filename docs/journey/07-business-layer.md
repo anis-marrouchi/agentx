@@ -236,8 +236,9 @@ curl http://localhost:19900/business/kpi/week
 Or see token cost alongside:
 
 ```bash
-agentx usage today
-agentx usage serve --port 4300   # dashboard
+agentx usage today        # terminal summary
+# Web view: open the dashboard's /admin/cost tab — same data, richer view.
+# (The old `agentx usage serve` standalone server was folded into /admin/cost in May 2026.)
 ```
 
 ## The daily reporter

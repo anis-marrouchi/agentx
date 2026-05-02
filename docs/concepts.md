@@ -135,7 +135,7 @@ When a message lands while the agent is already working:
 - `agentx daemon watch` — color-coded live activity
 - `curl -N http://localhost:19900/events` — raw SSE stream
 - `agentx daemon logs -f` — daemon log tail
-- `agentx usage today` / `agentx usage serve` — token + cost dashboard
+- `agentx usage today` — terminal token-cost summary (the standalone `agentx usage serve` was folded into the dashboard's `/admin/cost` page in May 2026)
 - `AGENTX_DEBUG=webhook,cron,mesh` — verbose categories (`agent`, `channel`, `cron`, `mesh`, `context`, `memory`, `webhook`, `config`, `all`)
 
 ## Hot-reload

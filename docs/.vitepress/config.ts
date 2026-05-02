@@ -78,7 +78,11 @@ export default withMermaid(defineConfig({
             { text: "Intent graph", link: "/reference/dashboard/graph" },
             { text: "Per-agent page", link: "/reference/dashboard/agent" },
             { text: "Admin panel", link: "/reference/dashboard/admin" },
-            { text: "Usage dashboard", link: "/reference/dashboard/usage" },
+            { text: "Cost", link: "/reference/dashboard/cost" },
+            { text: "Health", link: "/reference/dashboard/health" },
+            { text: "Business", link: "/reference/dashboard/business" },
+            { text: "Team (actors & roles)", link: "/reference/dashboard/team" },
+            { text: "Usage dashboard (legacy)", link: "/reference/dashboard/usage" },
           ],
         },
         {

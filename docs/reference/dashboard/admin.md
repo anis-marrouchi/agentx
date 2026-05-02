@@ -33,6 +33,18 @@ Inventory of inbound webhooks. Each row binds an `(agent, source)` to an optiona
 
 List of peers + health. Add a peer via paste-an-invite-link (resolves to `MESH_TOKEN` + URL automatically) or manually. Mirrors `agentx mesh`/`agentx connect mesh`.
 
+### Team
+
+Actors and roles for workflow user-tasks. **Actors** are humans with channel handles (Telegram/WhatsApp/Slack/Discord/email) — when a workflow assigns a task to `actor:alice` the form lands on Alice's preferred channel. **Roles** group actors with an assignment strategy (`first-available`, `round-robin`, `all`) so a `role:on-call` task picks the right person automatically. Mirrors `agentx actor` + `agentx role`. See [Team](./team) for the full guide.
+
+### Business
+
+The org chart, projects, and contact map that drive PM-gating and activity-graph attribution. Three sections — **Org chart** (agentId → role + reportsTo + schedule), **Projects** (id → optional pm + client), **Contact map** (chatId/username → client/project for free-text channels). Mirrors `agentx business`. See [Business](./business) for the full guide.
+
+### Boards
+
+Configure the boards rendered on the home page. Add/edit/remove a board, set its GitLab projects, primary tool label, time windows, and column flow (drag-drop → scoped label). Mirrors `agentx board` + `agentx board column`. The actual kanban view lives at `/` — this tab is the configuration surface.
+
 ### Tokens
 
 Mint, list, revoke API tokens. Same surface as `agentx token`. Each row shows: id, name, scope, prefix, status (active/expired/revoked), last-used. Secrets show **once** at creation — stored hashed.

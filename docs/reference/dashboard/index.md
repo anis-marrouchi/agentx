@@ -13,10 +13,13 @@ The dashboard is agentx's web UI — a single HTTP surface served by the daemon 
 | `/inbox` | [Inbox](./inbox) | Open user-tasks for the signed-in actor (or all actors) with form renderer |
 | `/processes` | [Processes](./processes) | Live view of in-flight workflow runs with composition-tree + SLA indicators |
 | `/graph` | [Intent graph](./graph) | Triage queue + taxonomy tree + schema editor for the intent classifier |
-| `/admin` | [Admin panel](./admin) | Settings: Agents / Channels / Schedules / Webhooks / Mesh / Tokens / Advanced |
+| `/admin` | [Admin panel](./admin) | Settings: Agents / Channels / Schedules / Webhooks / Mesh / Team / Business / Boards / Tokens / Advanced |
 | `/admin/agents/<id>` | [Per-agent page](./agent) | Edit metadata, system prompt, skills, identity files (CLAUDE.md), channels, handovers |
-
-The token usage dashboard runs on a **separate process** (`agentx usage serve`) — see [Usage dashboard](./usage).
+| `/admin/cost` | [Cost](./cost) | Spend rollup + per-agent + tier-2 surcharge (replaces the old standalone `agentx usage serve`) |
+| `/admin/health` | [Health](./health) | Platform-health view — Overview / Activity / Errors / Routing / Rotations / Logs / Doctor |
+| `/admin/ledger` | Ledger explorer | Read-only window over the intent ledger (stats / events / divergences / in-flight) |
+| `/admin/wiki/` | Wiki | Native wiki UI mounted in the dashboard process (no separate server required) |
+| `/admin/activity-graph` | Activity Graph | Per-dispatch lens with fleet view, initiator extraction, peer selector |
 
 ## Configuration
 
