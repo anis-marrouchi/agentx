@@ -28,6 +28,7 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
       <button class="ax-obs__tab" data-tab="routing" role="tab">Routing</button>
       <button class="ax-obs__tab" data-tab="rotations" role="tab">Rotations</button>
       <button class="ax-obs__tab" data-tab="logs" role="tab">Logs</button>
+      <button class="ax-obs__tab" data-tab="doctor" role="tab">Doctor</button>
     </nav>
     <div class="ax-obs__filters" id="obs-filters">
       <label>Agent
@@ -127,6 +128,16 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
       <span id="obs-logs-status" class="ax-obs__hint">connecting…</span>
     </div>
     <pre id="obs-logs-body" class="ax-obs__logs-body"></pre>
+  </section>
+
+  <section class="ax-obs__pane" data-pane="doctor">
+    <p class="ax-obs__hint">Preflight checks — same as <code>agentx doctor</code>. Read-only. Re-run any time.</p>
+    <div class="ax-obs__doctor-toolbar">
+      <button id="obs-doctor-run" type="button">Re-run checks</button>
+      <label class="ax-obs__inline"><input id="obs-doctor-running" type="checkbox" checked /> probe running daemon</label>
+      <span id="obs-doctor-summary" class="ax-obs__hint">—</span>
+    </div>
+    <div id="obs-doctor-body" class="ax-obs__doctor-body"></div>
   </section>
 </div>`
 
@@ -244,6 +255,21 @@ const OBS_PAGE_CSS = `
 .ax-obs__logs-body .warn { color: #d4ac0d; }
 .ax-obs__logs-body .info { color: var(--ax-fg); }
 .ax-obs__logs-body .dim { color: var(--ax-muted); }
+.ax-obs__doctor-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.ax-obs__doctor-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-obs__doctor-toolbar button:hover { background: var(--ax-surface); }
+.ax-obs__doctor-body { display: flex; flex-direction: column; gap: 10px; }
+.ax-obs__doctor-group { background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 6px; padding: 10px 14px; }
+.ax-obs__doctor-group h4 { font-family: 'IBM Plex Sans', sans-serif; font-size: 11px; font-weight: 600; margin: 0 0 8px; color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ax-obs__doctor-row { display: grid; grid-template-columns: 60px 1fr; gap: 10px; padding: 5px 0; border-top: 1px solid var(--ax-border); align-items: baseline; }
+.ax-obs__doctor-row:first-child { border-top: 0; }
+.ax-obs__doctor-sev { font-size: 10px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 3px; text-align: center; }
+.ax-obs__doctor-sev.ok { color: #2ecc71; background: rgba(46,204,113,0.12); }
+.ax-obs__doctor-sev.warn { color: #d4ac0d; background: rgba(212,172,13,0.14); }
+.ax-obs__doctor-sev.fail { color: var(--ax-err, #e74c3c); background: rgba(231,76,60,0.14); }
+.ax-obs__doctor-title { font-size: 12px; font-weight: 500; }
+.ax-obs__doctor-detail { font-size: 11px; color: var(--ax-muted); margin-top: 2px; font-family: 'IBM Plex Mono', monospace; word-break: break-word; }
+.ax-obs__doctor-fix { font-size: 11px; color: var(--ax-accent, #3a7bd5); margin-top: 2px; }
 `
 
 const OBS_PAGE_SCRIPT = `
@@ -313,6 +339,7 @@ const OBS_PAGE_SCRIPT = `
   async function load(tab){
     if (tab === 'logs') return ensureLogsStream();
     if (logsState.es) closeLogsStream();
+    if (tab === 'doctor') return loadDoctor();
     var agent = document.getElementById('obs-agent').value || '';
     var limit = document.getElementById('obs-limit').value || 50;
 
@@ -373,6 +400,42 @@ const OBS_PAGE_SCRIPT = `
   function closeLogsStream(){
     if (logsState.es) { try { logsState.es.close(); } catch (e) {} logsState.es = null; }
   }
+  // ----- Doctor tab: preflight checks (mirror of agentx doctor) -----
+  async function loadDoctor(){
+    var running = document.getElementById('obs-doctor-running').checked;
+    document.getElementById('obs-doctor-summary').textContent = 'running…';
+    try {
+      var r = await fetch('/api/admin/doctor?running=' + (running ? 'true' : 'false'), { credentials: 'same-origin' });
+      var data = await r.json();
+      var s = data.summary || {};
+      document.getElementById('obs-doctor-summary').textContent =
+        'ok=' + (s.ok || 0) + '  warn=' + (s.warnings || 0) + '  fail=' + (s.errors || 0);
+      var grouped = {};
+      for (var i = 0; i < (data.checks || []).length; i++) {
+        var c = data.checks[i];
+        (grouped[c.group] = grouped[c.group] || []).push(c);
+      }
+      var html = '';
+      Object.keys(grouped).forEach(function(g){
+        html += '<div class="ax-obs__doctor-group"><h4>' + esc(g) + '</h4>';
+        grouped[g].forEach(function(c){
+          html += '<div class="ax-obs__doctor-row">' +
+            '<span class="ax-obs__doctor-sev ' + esc(c.severity) + '">' + esc(c.severity) + '</span>' +
+            '<div>' +
+              '<div class="ax-obs__doctor-title">' + esc(c.title) + '</div>' +
+              (c.detail ? '<div class="ax-obs__doctor-detail">' + esc(c.detail) + '</div>' : '') +
+              (c.fix ? '<div class="ax-obs__doctor-fix">→ ' + esc(c.fix) + '</div>' : '') +
+            '</div>' +
+          '</div>';
+        });
+        html += '</div>';
+      });
+      document.getElementById('obs-doctor-body').innerHTML = html || '<p class="ax-obs__empty">no checks</p>';
+    } catch (e) {
+      document.getElementById('obs-doctor-summary').textContent = 'failed: ' + e.message;
+    }
+  }
+
   function wireLogsToolbar(){
     var pauseBtn = document.getElementById('obs-logs-pause');
     var clearBtn = document.getElementById('obs-logs-clear');
@@ -579,6 +642,8 @@ const OBS_PAGE_SCRIPT = `
   var lim = document.getElementById('obs-limit');
   if (lim) lim.addEventListener('change', function(){ load(current); });
 
+  document.getElementById('obs-doctor-run').addEventListener('click', loadDoctor);
+  document.getElementById('obs-doctor-running').addEventListener('change', loadDoctor);
   wireLogsToolbar();
   document.getElementById('obs-logs-filter').addEventListener('input', function(){
     // re-render existing buffered lines through the filter

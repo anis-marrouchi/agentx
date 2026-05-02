@@ -288,6 +288,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     await streamDaemonLogs(req, res)
     return
   }
+  // /api/admin/doctor — preflight check JSON. Same shape as
+  // `agentx doctor --json`, served in-process.
+  if (method === "GET" && path === "/api/admin/doctor") {
+    try {
+      const { runDoctorChecks } = await import("@/commands/doctor")
+      const url = new URL(req.url || "/", "http://_")
+      const running = url.searchParams.get("running") !== "false"
+      const result = await runDoctorChecks({ running })
+      sendJson(res, 200, result)
+    } catch (e: any) {
+      sendJson(res, 500, { error: e?.message || String(e) })
+    }
+    return
+  }
   // /admin/ledger — read-only window over .agentx/intent/ledger.sqlite.
   // Mirrors `agentx ledger stats/events/divergences/active`. Replay and
   // lineage stay CLI-only.

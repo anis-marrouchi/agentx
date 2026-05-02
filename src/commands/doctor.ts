@@ -19,14 +19,31 @@ import { loadDaemonConfig } from "@/daemon/config"
 // Exit code: 0 if clean, 1 if any error, 0 if only warnings (so CI won't block
 // on advisory checks).
 
-type Severity = "ok" | "warn" | "fail"
+export type Severity = "ok" | "warn" | "fail"
 
-interface Check {
+export interface Check {
   severity: Severity
   group: string
   title: string
   detail?: string
   fix?: string
+}
+
+/** Run every preflight check and return the result as data. Exposed so
+ *  the dashboard's /admin/doctor route can render the same checks the
+ *  `agentx doctor` CLI prints — without spawning a child process. */
+export async function runDoctorChecks(
+  opts: { running?: boolean } = {},
+): Promise<{ checks: Check[]; summary: { errors: number; warnings: number; ok: number } }> {
+  const checks: Check[] = []
+  await runEnvChecks(checks)
+  const cfg = runConfigChecks(checks)
+  if (cfg) runReferenceChecks(checks, cfg)
+  if (cfg) runWorkspaceChecks(checks, cfg)
+  if (cfg) runWorkspaceSettingsChecks(checks, cfg)
+  if (cfg) runRoutingChecks(checks, cfg)
+  if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
+  return { checks, summary: summarize(checks) }
 }
 
 export const doctor = new Command()
@@ -35,23 +52,13 @@ export const doctor = new Command()
   .option("--no-running", "skip the live daemon probe")
   .option("--json", "emit machine-readable JSON (stable shape for CI)")
   .action(async (opts) => {
-    const checks: Check[] = []
-    await runEnvChecks(checks)
-    const cfg = runConfigChecks(checks)
-    if (cfg) runReferenceChecks(checks, cfg)
-    if (cfg) runWorkspaceChecks(checks, cfg)
-    if (cfg) runWorkspaceSettingsChecks(checks, cfg)
-    if (cfg) runRoutingChecks(checks, cfg)
-    if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
-
+    const { checks, summary } = await runDoctorChecks({ running: opts.running !== false })
     if (opts.json) {
-      process.stdout.write(JSON.stringify({ checks, summary: summarize(checks) }, null, 2) + "\n")
+      process.stdout.write(JSON.stringify({ checks, summary }, null, 2) + "\n")
     } else {
       printHumanReport(checks)
     }
-
-    const { errors } = summarize(checks)
-    process.exit(errors > 0 ? 1 : 0)
+    process.exit(summary.errors > 0 ? 1 : 0)
   })
 
 // ---------------------------------------------------------------------------
