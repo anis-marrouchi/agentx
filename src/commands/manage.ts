@@ -139,6 +139,73 @@ agent
     console.log(chalk.green(`  Agent "${id}" removed from config (workspace preserved)`))
   })
 
+// agentx agent capability — set intents / maxDelegationDepth / contextReferences /
+// contextStrategy without hand-editing agentx.json. These are the Phase 5/8 fields
+// the second-pass parity audit flagged as CLI-only-via-JSON.
+agent
+  .command("capability <id>")
+  .alias("caps")
+  .description("set agent capability flags (intents, maxDelegationDepth, contextReferences, contextStrategy)")
+  .option("--intents <csv>", "comma-separated intent allow-list (set to '-' to clear)")
+  .option("--max-delegation-depth <n>", "max distinct upstream agents on the same subject before refusal (0 disables)")
+  .option("--context-references <bool>", "render the deterministic [Verified References] block (true|false)")
+  .option("--context-strategy <name>", "per-agent override: layered | planner")
+  .option("--max-execution-minutes <n>", "wall-clock cap on a single Claude Code call (1–240)")
+  .option("--show", "just print the current capability fields")
+  .action(async (id: string, opts) => {
+    const config = loadConfig()
+    const a = config.agents?.[id]
+    if (!a) { console.log(chalk.red(`  Agent "${id}" not found`)); process.exit(1) }
+    if (opts.show) {
+      console.log()
+      console.log(chalk.bold(`  ${id}`))
+      console.log(`    intents             ${(a.intents && a.intents.length) ? (a.intents as string[]).join(", ") : chalk.dim("(any)")}`)
+      console.log(`    maxDelegationDepth  ${a.maxDelegationDepth ?? 5}`)
+      console.log(`    contextReferences   ${a.contextReferences ? "on" : chalk.dim("off")}`)
+      console.log(`    contextStrategy     ${a.contextStrategy || chalk.dim("(global default)")}`)
+      console.log(`    maxExecutionMinutes ${a.maxExecutionMinutes ?? 20}`)
+      console.log()
+      return
+    }
+    const changes: string[] = []
+    if (opts.intents !== undefined) {
+      if (opts.intents === "-" || opts.intents === "") {
+        a.intents = []
+        changes.push("intents cleared (permissive)")
+      } else {
+        a.intents = String(opts.intents).split(",").map((s) => s.trim()).filter(Boolean)
+        changes.push(`intents=[${a.intents.join(", ")}]`)
+      }
+    }
+    if (opts.maxDelegationDepth !== undefined) {
+      const n = parseInt(opts.maxDelegationDepth, 10)
+      if (!Number.isFinite(n) || n < 0 || n > 50) { console.log(chalk.red("  --max-delegation-depth must be 0..50")); process.exit(1) }
+      a.maxDelegationDepth = n
+      changes.push(`maxDelegationDepth=${n}`)
+    }
+    if (opts.contextReferences !== undefined) {
+      const v = String(opts.contextReferences).toLowerCase()
+      if (!["true", "false", "on", "off", "1", "0"].includes(v)) { console.log(chalk.red("  --context-references must be true|false")); process.exit(1) }
+      a.contextReferences = v === "true" || v === "on" || v === "1"
+      changes.push(`contextReferences=${a.contextReferences}`)
+    }
+    if (opts.contextStrategy !== undefined) {
+      if (!["layered", "planner"].includes(opts.contextStrategy)) { console.log(chalk.red("  --context-strategy must be layered|planner")); process.exit(1) }
+      a.contextStrategy = opts.contextStrategy
+      changes.push(`contextStrategy=${opts.contextStrategy}`)
+    }
+    if (opts.maxExecutionMinutes !== undefined) {
+      const n = parseInt(opts.maxExecutionMinutes, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 240) { console.log(chalk.red("  --max-execution-minutes must be 1..240")); process.exit(1) }
+      a.maxExecutionMinutes = n
+      changes.push(`maxExecutionMinutes=${n}`)
+    }
+    if (changes.length === 0) { console.log(chalk.yellow("  no changes — pass at least one flag, or use --show")); process.exit(1) }
+    await saveConfig(config)
+    console.log(chalk.green(`  ✓ ${id}: ${changes.join(", ")}`))
+    console.log(chalk.dim(`  Restart the daemon (or POST /reload) for the change to take effect.`))
+  })
+
 // ==================== agentx channel ====================
 
 export const channel = new Command()
