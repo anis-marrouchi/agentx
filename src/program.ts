@@ -19,6 +19,7 @@ import { workflow } from "@/commands/workflow"
 import { task } from "@/commands/task"
 import { business } from "@/commands/business"
 import { actor, role } from "@/commands/actor"
+import { watch } from "@/commands/watch"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
@@ -72,6 +73,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(business)
     .addCommand(actor)
     .addCommand(role)
+    .addCommand(watch)
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)

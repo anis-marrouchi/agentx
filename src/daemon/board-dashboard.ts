@@ -528,6 +528,58 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // the cross-fleet view: runs fired on clawd-server when GitLab events
   // land there, runs fired on Mac when local channels fire. We merge
   // the local list with the main-daemon's list and return the union.
+  // Fan-out SSE proxy for /events — multiplexes every configured peer
+  // daemon's event stream into a single stream. Lets the board-dashboard
+  // show live activity across the whole fleet.
+  if (method === "GET" && path === "/events") {
+    const url = new URL(req.url || "/", "http://localhost")
+    const qs = url.searchParams.toString()
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    })
+    const targets: Array<{ name: string; url: string; token?: string }> = [
+      { name: ctx.config.node.name || "local", url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
+      ...(ctx.config.dashboard.daemons || []).map((d) => ({ name: d.name, url: d.url, token: d.token })),
+    ]
+    const closed = { flag: false }
+    const controllers: AbortController[] = []
+    req.on("close", () => { closed.flag = true; for (const c of controllers) try { c.abort() } catch { /* */ } })
+    // Heartbeat — some proxies drop idle SSE at 30s.
+    const heartbeat = setInterval(() => { if (!closed.flag) { try { res.write(": ping\n\n") } catch { /* */ } } }, 15000)
+    req.on("close", () => clearInterval(heartbeat))
+    for (const t of targets) {
+      void (async () => {
+        const headers: Record<string, string> = { Accept: "text/event-stream" }
+        if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+        const ctrl = new AbortController()
+        controllers.push(ctrl)
+        try {
+          const r = await fetch(`${t.url.replace(/\/+$/, "")}/events${qs ? `?${qs}` : ""}`, { headers, signal: ctrl.signal })
+          if (!r.ok || !r.body) return
+          const reader = r.body.getReader()
+          const dec = new TextDecoder()
+          let buf = ""
+          while (!closed.flag) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += dec.decode(value, { stream: true })
+            let idx: number
+            while ((idx = buf.indexOf("\n\n")) >= 0) {
+              const frame = buf.slice(0, idx)
+              buf = buf.slice(idx + 2)
+              if (closed.flag) break
+              try { res.write(frame + "\n\n") } catch { closed.flag = true }
+            }
+          }
+        } catch { /* ignore — peer disconnected or aborted */ }
+      })()
+    }
+    return
+  }
+
   if (method === "GET" && path === "/api/workflows/runs") {
     try {
       const url = new URL(req.url || "/", "http://localhost")

@@ -1,11 +1,12 @@
 import { evaluateBranch, findNode, initialPendingFromTrigger, nextNodes } from "./engine"
 import { resolveHandler } from "./nodes/handlers"
-import type { AgentExecuteRequest, AgentExecuteResponse } from "./nodes/types"
+import type { AgentExecuteRequest, AgentExecuteResponse, NodeResult } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import type { WorkflowStore } from "./store"
 import { TaskStore } from "./task-store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
+import type { EventBus } from "../daemon/event-bus"
 import { ActorStore } from "../actors/store"
 import { validateSubmission } from "../forms/validator"
 import type { FormSubmission } from "../forms/types"
@@ -92,6 +93,11 @@ export interface DispatcherOptions {
   timers?: TimerService
   /** Optional signal bus. Workflow-scoped default if omitted. */
   signals?: SignalBus
+  /** Optional observability bus. When present, the dispatcher emits
+   *  run-phase events (created / ok / failed / paused / resumed /
+   *  completed) so operators can watch live via SSE or CLI. No-op when
+   *  absent — the dispatcher runs exactly as before. */
+  events?: EventBus
 }
 
 /** Subset of channel adapter API used for the auto-acknowledge lifecycle on
@@ -106,6 +112,12 @@ interface AckCapableAdapter {
 
 const ACK_TYPING_INTERVAL_MS = 4000
 
+/** Max parallel node handlers per run. Caps fan-out storms (e.g.,
+ *  gateway.parallel(fanOut) → 100 branches) from exhausting agent
+ *  slots. Chosen to be meaningful for the common case (3–8 parallel
+ *  approvers / implementations) while never going wild. */
+const MAX_PARALLEL_PER_RUN = 8
+
 export class WorkflowDispatcher {
   private readonly store: WorkflowStore
   private readonly runs: RunStore
@@ -118,12 +130,22 @@ export class WorkflowDispatcher {
   readonly tasks: TaskStore
   readonly timers: TimerService
   readonly signals: SignalBus
+  readonly events?: EventBus
   private readonly renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
    *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
    *  other's lifecycles. */
   private readonly ackTypingTimers: Map<string, ReturnType<typeof setInterval>> = new Map()
+  /** Per-run commit chain. The parallel walk loop fires node handlers
+   *  concurrently via Promise.allSettled, but every state-mutating
+   *  operation (recordExecution, joinCounter update, pause transition,
+   *  resume) must land atomically — runs are a single log and the
+   *  read-update-write on joinCounters + dedup check on idempotencyKey
+   *  need to see a consistent snapshot. Serialising commits through a
+   *  per-run promise chain gives us that guarantee without a broader
+   *  global lock; different runs still progress independently. */
+  private readonly commitChains: Map<string, Promise<unknown>> = new Map()
 
   constructor(opts: DispatcherOptions) {
     this.store = opts.store
@@ -137,6 +159,7 @@ export class WorkflowDispatcher {
     this.tasks = opts.tasks ?? new TaskStore()
     this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
     this.signals = opts.signals ?? new SignalBus()
+    this.events = opts.events
     this.renderUserTask = opts.renderUserTask
 
     // Register the timer-fire callback once. TimerService is a per-node
@@ -149,6 +172,36 @@ export class WorkflowDispatcher {
     this.signals.subscribe((emission) => this.resumeFromSignal(emission))
   }
 
+  /** Publish a run-phase event if an EventBus is configured. No-op
+   *  otherwise. Used by the walk loop + resume paths so operators can
+   *  Monitor runs live. */
+  private emitRunEvent(args: {
+    runId: string; workflowId: string; nodeId?: string; phase: string; status?: string; note?: string; homeNode?: string
+  }): void {
+    if (!this.events) return
+    try {
+      this.events.publish({
+        kind: "run",
+        runId: args.runId, workflowId: args.workflowId,
+        nodeId: args.nodeId, phase: args.phase,
+        status: args.status, note: args.note, homeNode: args.homeNode,
+      })
+    } catch { /* defensive — a bus failure never breaks the engine */ }
+  }
+
+  /** Serialise a state-mutating operation against all other commits for
+   *  the same run. Parallel branches execute their handlers concurrently,
+   *  but their commits land one after another — keeping joinCounters +
+   *  pending + pausedAt + recordExecution dedup consistent. */
+  private async commit<T>(runId: string, fn: () => Promise<T> | T): Promise<T> {
+    const prev = this.commitChains.get(runId) ?? Promise.resolve()
+    const next = prev.then(() => fn(), () => fn())
+    // Keep the chain alive until the caller's fn settles. We don't care
+    // about fn's result type for the chain tail — `unknown` is enough.
+    this.commitChains.set(runId, next.then(() => undefined, () => undefined))
+    return next as Promise<T>
+  }
+
   /** Public helper for the HTTP API to emit a signal programmatically. */
   emitSignal(args: { name: string; scope?: "workflow" | "global"; workflowId?: string; payload?: Record<string, unknown> }): SignalEmission {
     const emission: SignalEmission = {
@@ -159,6 +212,17 @@ export class WorkflowDispatcher {
       emittedAt: new Date().toISOString(),
     }
     this.signals.emit(emission)
+    if (this.events) {
+      try {
+        this.events.publish({
+          kind: "signal",
+          name: emission.name,
+          scope: emission.scope,
+          workflowId: emission.workflowId || undefined,
+          payload: emission.payload,
+        })
+      } catch { /* ignore */ }
+    }
     return emission
   }
 
@@ -177,31 +241,38 @@ export class WorkflowDispatcher {
       if (!matchesSignal(waiter, emission)) continue
       const wf = this.store.list().find((w) => w.id === run.workflowId)
       if (!wf) continue
-      const node = findNode(wf, run.pausedAt.nodeId)
-      const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
-      const output = {
-        receivedAt: new Date().toISOString(),
-        name: emission.name,
-        payload: emission.payload,
-      }
-      const entry: NodeExecutionEntry = {
-        at: output.receivedAt,
-        nodeId: run.pausedAt.nodeId,
-        inputKeys: [],
-        status: "resumed",
-        output,
-        idempotencyKey: idempotencyKey(run.id, run.pausedAt.nodeId, `signal:${emission.name}:${emission.emittedAt}`),
-      }
-      const newContext: Record<string, Record<string, unknown>> = { ...run.context, [run.pausedAt.nodeId]: output }
-      this.runs.recordExecution({
-        runId: run.id,
-        entry,
-        nextPending: successors,
-        status: "running",
-        pausedAt: null,
-        context: newContext,
+      // Resume under the per-run mutex so a concurrent walk batch (or
+      // another signal firing at the same instant) can't see a half-
+      // transitioned pausedAt/pending/status set.
+      await this.commit(run.id, () => {
+        const fresh = this.runs.get(run.id)
+        if (!fresh || fresh.status !== "paused" || !fresh.pausedAt || fresh.pausedAt.kind !== "signalWait") return
+        if (!matchesSignal({ name: fresh.pausedAt.signalName, scope: fresh.pausedAt.scope, workflowId: fresh.workflowId, match: fresh.pausedAt.match ?? {} }, emission)) return
+        const node = findNode(wf, fresh.pausedAt.nodeId)
+        const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+        const output = {
+          receivedAt: new Date().toISOString(),
+          name: emission.name,
+          payload: emission.payload,
+        }
+        this.runs.recordExecution({
+          runId: fresh.id,
+          entry: {
+            at: output.receivedAt,
+            nodeId: fresh.pausedAt.nodeId,
+            inputKeys: [],
+            status: "resumed",
+            output,
+            idempotencyKey: idempotencyKey(fresh.id, fresh.pausedAt.nodeId, `signal:${emission.name}:${emission.emittedAt}`),
+          },
+          nextPending: successors,
+          status: "running",
+          pausedAt: null,
+          context: { ...fresh.context, [fresh.pausedAt.nodeId]: output },
+        })
+        this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from signal "${emission.name}"`)
+        this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: fresh.pausedAt.nodeId, phase: "resumed", status: "running", note: `signal:${emission.name}` })
       })
-      this.log(`[workflow:${wf.id}] run ${run.id} resumed from signal "${emission.name}"`)
       void this.walk(wf, run.id, `signal:${emission.name}`)
         .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-signal failed: ${e.message}`))
     }
@@ -212,34 +283,31 @@ export class WorkflowDispatcher {
    *  resumes by seeding the timer node's output with { firedAt } and
    *  enqueueing successors. */
   private async resumeFromTimer(t: TimerRecord): Promise<void> {
-    const run = this.runs.get(t.runId)
-    if (!run || run.status !== "paused") return
-    if (!run.pausedAt || run.pausedAt.kind !== "timerWait" || run.pausedAt.nodeId !== t.nodeId) return
-    const wf = this.store.list().find((w) => w.id === run.workflowId)
+    const wf = this.store.list().find((w) => w.id === (this.runs.get(t.runId)?.workflowId ?? ""))
     if (!wf) return
-    const node = findNode(wf, t.nodeId)
-    const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
-    const firedAt = new Date().toISOString()
-    const output = { firedAt, scheduledFor: t.fireAt }
-    const entry: NodeExecutionEntry = {
-      at: firedAt,
-      nodeId: t.nodeId,
-      inputKeys: [],
-      status: "resumed",
-      output,
-      idempotencyKey: idempotencyKey(run.id, t.nodeId, `timer:${t.id}`),
-    }
-    const newContext: Record<string, Record<string, unknown>> = { ...run.context, [t.nodeId]: output }
-    this.runs.recordExecution({
-      runId: run.id,
-      entry,
-      nextPending: successors,
-      status: "running",
-      pausedAt: null,
-      context: newContext,
+    await this.commit(t.runId, () => {
+      const fresh = this.runs.get(t.runId)
+      if (!fresh || fresh.status !== "paused") return
+      if (!fresh.pausedAt || fresh.pausedAt.kind !== "timerWait" || fresh.pausedAt.nodeId !== t.nodeId) return
+      const node = findNode(wf, t.nodeId)
+      const successors = node ? wf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+      const firedAt = new Date().toISOString()
+      const output = { firedAt, scheduledFor: t.fireAt }
+      this.runs.recordExecution({
+        runId: fresh.id,
+        entry: {
+          at: firedAt, nodeId: t.nodeId, inputKeys: [], status: "resumed", output,
+          idempotencyKey: idempotencyKey(fresh.id, t.nodeId, `timer:${t.id}`),
+        },
+        nextPending: successors,
+        status: "running",
+        pausedAt: null,
+        context: { ...fresh.context, [t.nodeId]: output },
+      })
+      this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
+      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: t.nodeId, phase: "resumed", status: "running", note: `timer:${t.id}` })
     })
-    this.log(`[workflow:${wf.id}] run ${run.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
-    void this.walk(wf, run.id, `timer:${t.id}`)
+    void this.walk(wf, t.runId, `timer:${t.id}`)
       .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
   }
 
@@ -479,6 +547,7 @@ export class WorkflowDispatcher {
         initialContext: { [init.triggerId]: event.payload },
       })
       this.log(`[workflow:${workflow.id}] run ${run.id} created from trigger "${init.triggerId}" for ${entityRef.id}`)
+      this.emitRunEvent({ runId: run.id, workflowId: workflow.id, phase: "created", status: run.status, homeNode: run.homeNode })
       // Channel-triggered: kick off the react+typing lifecycle so users see
       // the same "I'm on it" affordances they get from the router's path.
       if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
@@ -557,156 +626,176 @@ export class WorkflowDispatcher {
     let run = this.runs.get(runId)
     if (!run) return
 
+    // Batch-parallel walk: dispatch up to MAX_PARALLEL_PER_RUN pending
+    // node handlers concurrently via Promise.allSettled. Each node's
+    // handler runs unguarded (parallel); only the commit (recordExecution
+    // + joinCounters + pause transitions) runs under the per-run mutex.
+    // For linear workflows (single pending) this collapses to the old
+    // serial path — identical behaviour, identical history.
     while (run.status === "running" && run.pending.length > 0) {
-      const nodeId: string = run.pending[0]
-      const remaining: string[] = run.pending.slice(1)
+      const batch = run.pending.slice(0, MAX_PARALLEL_PER_RUN)
+      await Promise.allSettled(
+        batch.map((nodeId) => this.executeNodeAndCommit(workflow, runId, nodeId, triggeringEventId)),
+      )
+      const fresh = this.runs.get(runId)
+      if (!fresh) return
+      run = fresh
+      if (run.status !== "running") return
+    }
+  }
+
+  /** Execute one node + commit its result. Handler runs outside the
+   *  mutex (so sibling branches run concurrently). Dedup + recordExecution
+   *  + joinCounters run inside commit() so state transitions never
+   *  interleave. */
+  private async executeNodeAndCommit(
+    workflow: Workflow,
+    runId: string,
+    nodeId: string,
+    triggeringEventId: string,
+  ): Promise<void> {
+    const key = idempotencyKey(runId, nodeId, triggeringEventId)
+
+    // --- phase 1 (guarded): dedup check + resolve handler ---
+    const prelude = await this.commit(runId, () => {
+      const run = this.runs.get(runId)
+      if (!run) return { kind: "done" as const }
+      if (run.status !== "running") return { kind: "done" as const }
       const node = findNode(workflow, nodeId)
       if (!node) {
         this.log(`[workflow:${workflow.id}] missing node "${nodeId}" — marking run failed`)
         this.runs.recordExecution({
-          runId: run.id,
-          entry: {
-            at: new Date().toISOString(),
-            nodeId,
-            inputKeys: [],
-            status: "failed",
-            idempotencyKey: idempotencyKey(run.id, nodeId, triggeringEventId),
-            note: "node definition missing from workflow",
+          runId, entry: {
+            at: new Date().toISOString(), nodeId, inputKeys: [], status: "failed",
+            idempotencyKey: key, note: "node definition missing from workflow",
           },
-          nextPending: remaining,
+          nextPending: run.pending.filter((x) => x !== nodeId),
           status: "failed",
         })
-        return
+        return { kind: "done" as const }
       }
-
       const handler = resolveHandler(node.type)
       if (!handler) {
         this.log(`[workflow:${workflow.id}] no handler for node type "${node.type}"`)
         this.runs.recordExecution({
-          runId: run.id,
-          entry: {
-            at: new Date().toISOString(),
-            nodeId,
-            inputKeys: [],
-            status: "failed",
-            idempotencyKey: idempotencyKey(run.id, nodeId, triggeringEventId),
-            note: `no handler for node type "${node.type}"`,
+          runId, entry: {
+            at: new Date().toISOString(), nodeId, inputKeys: [], status: "failed",
+            idempotencyKey: key, note: `no handler for node type "${node.type}"`,
           },
-          nextPending: remaining,
+          nextPending: run.pending.filter((x) => x !== nodeId),
           status: "failed",
         })
-        return
+        return { kind: "done" as const }
       }
-
-      const key = idempotencyKey(run.id, nodeId, triggeringEventId)
       if (run.history.some((h) => h.idempotencyKey === key)) {
-        // Already executed — skip.  Dispatcher advances past without
-        // re-running, to support idempotent webhook retries.
-        run = this.runs.recordExecution({
-          runId: run.id,
-          entry: {
-            at: new Date().toISOString(),
-            nodeId,
-            inputKeys: [],
-            status: "skipped",
-            idempotencyKey: key + "_dedup",
-            note: "duplicate execution dropped",
+        this.runs.recordExecution({
+          runId, entry: {
+            at: new Date().toISOString(), nodeId, inputKeys: [], status: "skipped",
+            idempotencyKey: key + "_dedup", note: "duplicate execution dropped",
           },
-          nextPending: remaining,
-        }) ?? run
-        continue
-      }
-
-      const inputKeys = workflow.edges.filter((e) => e.to === nodeId).map((e) => e.from)
-      let result
-      try {
-        result = await handler({
-          workflow, run, node,
-          channels: this.channels,
-          agents: this.agents,
-          actors: this.actors,
-          tasks: this.tasks,
-          forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
-          log: this.log,
+          nextPending: run.pending.filter((x) => x !== nodeId),
         })
-      } catch (e: any) {
-        this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
-        result = { error: e.message }
+        return { kind: "done" as const }
       }
+      return { kind: "go" as const, run, node, handler }
+    })
+    if (prelude.kind === "done") return
 
+    // --- phase 2 (unguarded): actually run the handler, parallel-safe ---
+    const { run, node, handler } = prelude
+    const inputKeys = workflow.edges.filter((e) => e.to === nodeId).map((e) => e.from)
+    let result: NodeResult
+    try {
+      result = await handler({
+        workflow, run, node,
+        channels: this.channels,
+        agents: this.agents,
+        actors: this.actors,
+        tasks: this.tasks,
+        forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
+        log: this.log,
+      })
+    } catch (e: any) {
+      this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
+      result = { error: e.message }
+    }
+
+    // --- phase 3 (guarded): persist result + side effects ---
+    await this.commit(runId, async () => {
+      const fresh = this.runs.get(runId)
+      if (!fresh) return
       const now = new Date().toISOString()
+      const remainingFromPending = fresh.pending.filter((x) => x !== nodeId)
+
       if (result.error) {
-        const entry: NodeExecutionEntry = {
-          at: now, nodeId, inputKeys,
-          status: "failed",
-          idempotencyKey: key,
-          note: result.error.slice(0, 200),
-        }
-        run = this.runs.recordExecution({ runId: run.id, entry, nextPending: remaining, status: "failed" }) ?? run
+        // If run is already paused/terminal from a sibling, just append
+        // the exec entry without flipping status.
+        const statusUpdate = fresh.status === "running" ? ("failed" as const) : undefined
+        this.runs.recordExecution({
+          runId, entry: {
+            at: now, nodeId, inputKeys, status: "failed",
+            idempotencyKey: key, note: result.error.slice(0, 200),
+          },
+          nextPending: remainingFromPending,
+          status: statusUpdate,
+        })
+        this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "failed", status: statusUpdate ?? fresh.status, note: result.error.slice(0, 200) })
         return
       }
       if (result.paused && result.pausedAt) {
-        // Sub-process pause: spawn the child run (no walk yet), patch the
-        // child id into pausedAt, persist the parent's pause, THEN kick the
-        // child walk. Decoupling the walk kick from spawn avoids a race
-        // where a fast child finishes before the parent's pause is on disk.
         let pausedAt = result.pausedAt
         let spawnedChild: WorkflowRun | null = null
         if (result.spawnChild && pausedAt.kind === "subProcess") {
           spawnedChild = await this.spawnChild({
-            parent: run,
-            parentNodeId: nodeId,
+            parent: fresh, parentNodeId: nodeId,
             childWorkflowId: result.spawnChild.workflowId,
             input: result.spawnChild.input,
           })
           if (!spawnedChild) {
-            const entry: NodeExecutionEntry = {
-              at: now, nodeId, inputKeys,
-              status: "failed",
-              idempotencyKey: key,
-              note: `subProcess: child workflow "${result.spawnChild.workflowId}" not found`,
-            }
-            run = this.runs.recordExecution({ runId: run.id, entry, nextPending: remaining, status: "failed" }) ?? run
+            this.runs.recordExecution({
+              runId, entry: {
+                at: now, nodeId, inputKeys, status: "failed",
+                idempotencyKey: key,
+                note: `subProcess: child workflow "${result.spawnChild.workflowId}" not found`,
+              },
+              nextPending: remainingFromPending, status: "failed",
+            })
             return
           }
           pausedAt = { ...pausedAt, childRunId: spawnedChild.id }
         }
-        const entry: NodeExecutionEntry = {
-          at: now, nodeId, inputKeys,
-          status: "paused",
-          idempotencyKey: key,
-        }
-        run = this.runs.recordExecution({
-          runId: run.id, entry,
-          nextPending: remaining,
+        this.runs.recordExecution({
+          runId, entry: {
+            at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key,
+          },
+          nextPending: remainingFromPending,
           status: "paused",
           pausedAt,
-        }) ?? run
-
-        // Parent pause is now on disk — safe to kick the child walk.
+        })
+        this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "paused", status: "paused", note: pausedAt.kind })
         if (spawnedChild) this.kickChildWalk(spawnedChild)
-
-        // Schedule the timer for timerWait pauses. A fast fireAt (already
-        // past) fires on the next tick.
         if (pausedAt.kind === "timerWait") {
           try {
             this.timers.schedule({
-              runId: run.id,
-              workflowId: workflow.id,
-              nodeId: pausedAt.nodeId,
+              runId, workflowId: workflow.id, nodeId: pausedAt.nodeId,
               fireAt: pausedAt.fireAt,
-              cancelKey: `${run.id}:${pausedAt.nodeId}`,
+              cancelKey: `${runId}:${pausedAt.nodeId}`,
             })
           } catch (e: any) {
             this.log(`[workflow:${workflow.id}] timer schedule failed: ${e.message}`)
           }
         }
-
-        // Render userTask AFTER persisting the pause, so a failing channel
-        // renderer doesn't lose the task record (retry from inbox works).
-        if (pausedAt.kind === "userTask" && this.renderUserTask) {
+        if (pausedAt.kind === "userTask") {
           const taskRecord = this.tasks.get(pausedAt.taskId)
-          if (taskRecord) {
+          if (taskRecord && this.events) {
+            try {
+              this.events.publish({
+                kind: "task", taskId: taskRecord.id, workflowId: workflow.id, runId,
+                phase: "created", title: taskRecord.title, assignedTo: taskRecord.assignedTo,
+              })
+            } catch { /* ignore */ }
+          }
+          if (taskRecord && this.renderUserTask) {
             try { await this.renderUserTask(taskRecord) }
             catch (e: any) { this.log(`[workflow:${workflow.id}] userTask render failed: ${e.message}`) }
           }
@@ -714,16 +803,13 @@ export class WorkflowDispatcher {
         return
       }
 
-      // Success — fold the node's output into context, enqueue successors.
+      // Success path — fold output, join-gate, enqueue successors.
       const output: Record<string, unknown> = result.output ?? {}
-      const newContext: Record<string, Record<string, unknown>> = { ...run.context, [nodeId]: output }
+      const newContext: Record<string, Record<string, unknown>> = { ...fresh.context, [nodeId]: output }
       const { nextPending } = nextNodes({ workflow, fromNodeId: nodeId, selectedPort: result.port })
 
-      // Join-gate filtering: for each successor that is a
-      // `gateway.parallel(mode=join)`, bump the arrival counter. Only
-      // enqueue the join once every incoming edge has delivered.
       const readyNext: string[] = []
-      const joinCounters: Record<string, string[]> = { ...(run.joinCounters ?? {}) }
+      const joinCounters: Record<string, string[]> = { ...(fresh.joinCounters ?? {}) }
       for (const succId of nextPending) {
         const succ = findNode(workflow, succId)
         const isJoin = succ?.type === "gateway.parallel" && String((succ.config as { mode?: unknown } | undefined)?.mode ?? "fanOut") === "join"
@@ -737,29 +823,31 @@ export class WorkflowDispatcher {
           delete joinCounters[succId]
         }
       }
-      const merged = [...remaining, ...readyNext]
+      const merged = [...remainingFromPending, ...readyNext]
       const terminal = node.type === "end"
 
-      const entry: NodeExecutionEntry = {
-        at: now,
-        nodeId,
-        inputKeys,
-        status: "ok",
-        output,
-        idempotencyKey: key,
-      }
-      run = this.runs.recordExecution({
-        runId: run.id,
-        entry,
+      // Respect a sibling branch's pause: if the run is already non-running,
+      // don't flip status back to running. Still record the exec entry +
+      // merged pending so the resume path can see the siblings' successors.
+      const statusUpdate = fresh.status === "running"
+        ? (terminal ? (String(node.config.status ?? "completed") as WorkflowRun["status"]) : ("running" as const))
+        : undefined
+
+      const updated = this.runs.recordExecution({
+        runId,
+        entry: { at: now, nodeId, inputKeys, status: "ok", output, idempotencyKey: key },
         nextPending: terminal ? [] : merged,
-        status: terminal ? (String(node.config.status ?? "completed") as WorkflowRun["status"]) : "running",
+        status: statusUpdate,
         context: newContext,
         joinCounters,
-      }) ?? run
+      })
 
-      // Side-effect: emit signals produced by `signal.emit` nodes. Runs
-      // AFTER the exec entry is persisted so listeners observing the run
-      // see the complete history before reacting.
+      this.emitRunEvent({
+        runId, workflowId: workflow.id, nodeId,
+        phase: terminal ? "completed" : "ok",
+        status: updated?.status ?? fresh.status,
+      })
+
       if (result.emitSignal) {
         this.emitSignal({
           name: result.emitSignal.name,
@@ -769,20 +857,14 @@ export class WorkflowDispatcher {
         })
       }
 
-      if (terminal) {
-        // Sub-process child reached its end node → notify the parent so it
-        // can resume at its subProcess node. Fire-and-forget; any failure
-        // is logged but doesn't block the child's terminal state.
-        if (run.parentRunId && run.parentNodeId) {
-          void this.resumeParent({
-            parentRunId: run.parentRunId,
-            parentNodeId: run.parentNodeId,
-            childRun: run,
-          }).catch((e: any) => this.log(`[workflow:${workflow.id}] resumeParent failed: ${e.message}`))
-        }
-        return
+      if (terminal && updated && updated.parentRunId && updated.parentNodeId) {
+        void this.resumeParent({
+          parentRunId: updated.parentRunId,
+          parentNodeId: updated.parentNodeId,
+          childRun: updated,
+        }).catch((e: any) => this.log(`[workflow:${workflow.id}] resumeParent failed: ${e.message}`))
       }
-    }
+    })
   }
 
   // ---------------- Sub-process helpers ----------------
@@ -852,48 +934,44 @@ export class WorkflowDispatcher {
     parentNodeId: string
     childRun: WorkflowRun
   }): Promise<void> {
-    const parent = this.runs.get(args.parentRunId)
-    if (!parent || parent.status !== "paused") return
-    if (!parent.pausedAt || parent.pausedAt.kind !== "subProcess") return
-    if (parent.pausedAt.nodeId !== args.parentNodeId) return
-    if (parent.pausedAt.childRunId !== args.childRun.id) return
-
-    const parentWf = this.store.list().find((w) => w.id === parent.workflowId)
+    const preliminaryParent = this.runs.get(args.parentRunId)
+    if (!preliminaryParent) return
+    const parentWf = this.store.list().find((w) => w.id === preliminaryParent.workflowId)
     if (!parentWf) return
 
-    const node = findNode(parentWf, args.parentNodeId)
-    const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+    await this.commit(args.parentRunId, () => {
+      const parent = this.runs.get(args.parentRunId)
+      if (!parent || parent.status !== "paused") return
+      if (!parent.pausedAt || parent.pausedAt.kind !== "subProcess") return
+      if (parent.pausedAt.nodeId !== args.parentNodeId) return
+      if (parent.pausedAt.childRunId !== args.childRun.id) return
 
-    // The child's output bundle is its end-node inputs — take the last
-    // non-empty node output in the child's history as a simplification.
-    const childOutput: Record<string, unknown> = {
-      childRunId: args.childRun.id,
-      status: args.childRun.status,
-      output: pickChildOutput(args.childRun),
-    }
-
-    const entry: NodeExecutionEntry = {
-      at: new Date().toISOString(),
-      nodeId: args.parentNodeId,
-      inputKeys: [],
-      status: "resumed",
-      output: childOutput,
-      idempotencyKey: idempotencyKey(parent.id, args.parentNodeId, `child:${args.childRun.id}`),
-    }
-    const newContext: Record<string, Record<string, unknown>> = {
-      ...parent.context,
-      [args.parentNodeId]: childOutput,
-    }
-    this.runs.recordExecution({
-      runId: parent.id,
-      entry,
-      nextPending: successors,
-      status: "running",
-      pausedAt: null,
-      context: newContext,
+      const node = findNode(parentWf, args.parentNodeId)
+      const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+      const childOutput: Record<string, unknown> = {
+        childRunId: args.childRun.id,
+        status: args.childRun.status,
+        output: pickChildOutput(args.childRun),
+      }
+      this.runs.recordExecution({
+        runId: parent.id,
+        entry: {
+          at: new Date().toISOString(),
+          nodeId: args.parentNodeId,
+          inputKeys: [],
+          status: "resumed",
+          output: childOutput,
+          idempotencyKey: idempotencyKey(parent.id, args.parentNodeId, `child:${args.childRun.id}`),
+        },
+        nextPending: successors,
+        status: "running",
+        pausedAt: null,
+        context: { ...parent.context, [args.parentNodeId]: childOutput },
+      })
+      this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
+      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: args.parentNodeId, phase: "resumed", status: "running", note: `child:${args.childRun.id}` })
     })
-    this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
-    void this.walk(parentWf, parent.id, `child:${args.childRun.id}`)
+    void this.walk(parentWf, args.parentRunId, `child:${args.childRun.id}`)
   }
 
   // ---------------- User-task submit / resume ----------------
@@ -908,52 +986,67 @@ export class WorkflowDispatcher {
     const validated = validateSubmission(task.form, submission)
     if (!validated.ok) return { ok: false, error: "form validation failed", fieldErrors: validated.errors }
 
-    const parent = this.runs.get(task.runId)
-    if (!parent || parent.status !== "paused") return { ok: false, error: `run ${task.runId} is not paused` }
-    if (!parent.pausedAt || parent.pausedAt.kind !== "userTask" || parent.pausedAt.taskId !== taskId) {
-      return { ok: false, error: `run ${task.runId} is not waiting on task ${taskId}` }
-    }
+    const preliminary = this.runs.get(task.runId)
+    if (!preliminary) return { ok: false, error: `run ${task.runId} not found` }
+    const parentWf = this.store.list().find((w) => w.id === preliminary.workflowId)
+    if (!parentWf) return { ok: false, error: `workflow ${preliminary.workflowId} not found` }
 
-    const parentWf = this.store.list().find((w) => w.id === parent.workflowId)
-    if (!parentWf) return { ok: false, error: `workflow ${parent.workflowId} not found` }
-
-    const node = findNode(parentWf, task.nodeId)
-    const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
-
-    const output: Record<string, unknown> = {
-      submittedBy,
-      submittedAt: new Date().toISOString(),
-      values: validated.values,
-      action: submission.action,
-    }
-    const entry: NodeExecutionEntry = {
-      at: new Date().toISOString(),
-      nodeId: task.nodeId,
-      inputKeys: [],
-      status: "resumed",
-      output,
-      idempotencyKey: idempotencyKey(parent.id, task.nodeId, `task:${taskId}:${submission.action}`),
-    }
-    const newContext = { ...parent.context, [task.nodeId]: output }
-    this.runs.recordExecution({
-      runId: parent.id,
-      entry,
-      nextPending: successors,
-      status: "running",
-      pausedAt: null,
-      context: newContext,
+    const commitResult = await this.commit(task.runId, ():
+      | { ok: true; runId: string }
+      | { ok: false; error: string } => {
+      const parent = this.runs.get(task.runId)
+      if (!parent || parent.status !== "paused") return { ok: false, error: `run ${task.runId} is not paused` }
+      if (!parent.pausedAt || parent.pausedAt.kind !== "userTask" || parent.pausedAt.taskId !== taskId) {
+        return { ok: false, error: `run ${task.runId} is not waiting on task ${taskId}` }
+      }
+      const node = findNode(parentWf, task.nodeId)
+      const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
+      const output: Record<string, unknown> = {
+        submittedBy,
+        submittedAt: new Date().toISOString(),
+        values: validated.values,
+        action: submission.action,
+      }
+      this.runs.recordExecution({
+        runId: parent.id,
+        entry: {
+          at: new Date().toISOString(),
+          nodeId: task.nodeId,
+          inputKeys: [],
+          status: "resumed",
+          output,
+          idempotencyKey: idempotencyKey(parent.id, task.nodeId, `task:${taskId}:${submission.action}`),
+        },
+        nextPending: successors,
+        status: "running",
+        pausedAt: null,
+        context: { ...parent.context, [task.nodeId]: output },
+      })
+      this.tasks.save({
+        ...task,
+        status: "completed",
+        submittedBy,
+        submittedAt: output.submittedAt as string,
+        submittedValues: validated.values,
+        submittedAction: submission.action,
+      })
+      this.log(`[workflow:${parentWf.id}] run ${parent.id} resumed from userTask ${taskId}`)
+      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: task.nodeId, phase: "resumed", status: "running", note: `task:${taskId}` })
+      if (this.events) {
+        try {
+          this.events.publish({
+            kind: "task",
+            taskId, workflowId: parentWf.id, runId: parent.id,
+            phase: "submitted", submittedBy,
+            title: task.title, assignedTo: task.assignedTo,
+          })
+        } catch { /* ignore */ }
+      }
+      return { ok: true, runId: parent.id }
     })
-    this.tasks.save({
-      ...task,
-      status: "completed",
-      submittedBy,
-      submittedAt: output.submittedAt as string,
-      submittedValues: validated.values,
-      submittedAction: submission.action,
-    })
-    this.log(`[workflow:${parentWf.id}] run ${parent.id} resumed from userTask ${taskId}`)
-    void this.walk(parentWf, parent.id, `task:${taskId}`)
-    return { ok: true, runId: parent.id }
+    if (!commitResult.ok) return commitResult
+    void this.walk(parentWf, task.runId, `task:${taskId}`)
+    return commitResult
   }
 }
 
