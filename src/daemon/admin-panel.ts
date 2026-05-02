@@ -89,6 +89,13 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "DELETE /api/admin/roles":  () => deleteRoleById(body),
       "POST /api/admin/roles/grant":  () => grantRoleMember(body),
       "POST /api/admin/roles/revoke": () => revokeRoleMember(body),
+      // Business layer — orgChart / projects / contactMap (mirrors `agentx business`).
+      "POST /api/admin/business/orgchart":     () => upsertOrgEntry(body),
+      "DELETE /api/admin/business/orgchart":   () => deleteOrgEntry(body),
+      "POST /api/admin/business/project":      () => upsertProject(body),
+      "DELETE /api/admin/business/project":    () => deleteProject(body),
+      "POST /api/admin/business/contact":      () => upsertContact(body),
+      "DELETE /api/admin/business/contact":    () => deleteContact(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -232,7 +239,17 @@ function getAdminState() {
     members: Array.isArray(r.members) ? r.members : [],
     assignmentStrategy: r.assignmentStrategy || "first-available",
   })).sort((a: any, b: any) => a.id.localeCompare(b.id))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles }
+  // Business layer — read straight off the config so the panel stays in
+  // sync with `agentx business` CLI mutations.
+  const businessCfg = (cfg.business || {}) as any
+  const business = {
+    enabled: !!businessCfg.enabled,
+    timezone: businessCfg.timezone || "UTC",
+    orgChart: businessCfg.orgChart || {},
+    projects: Array.isArray(businessCfg.projects) ? businessCfg.projects : [],
+    contactMap: Array.isArray(businessCfg.contactMap) ? businessCfg.contactMap : [],
+  }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business }
 }
 
 // ========================================================================
@@ -944,6 +961,122 @@ async function revokeRoleMember(body: any) {
   if (filtered.length === role.members.length) return { summary: `${member} not in ${roleId}`, role }
   const saved = store.saveRole({ ...role, members: filtered })
   return { summary: `${member} revoked from ${roleId}`, role: saved }
+}
+
+// ========================================================================
+// Business layer — admin write handlers (mirrors `agentx business`)
+// ========================================================================
+
+async function upsertOrgEntry(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  const role = String(body?.role || "").trim()
+  if (!agentId) throw new Error("agentId required")
+  if (!role) throw new Error("role required")
+  const days = Array.isArray(body?.days) && body.days.length > 0
+    ? body.days
+    : ["mon", "tue", "wed", "thu", "fri"]
+  const start = String(body?.start || "09:00")
+  const end = String(body?.end || "17:00")
+  const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
+  const utilization = typeof body?.utilizationTarget === "number" ? body.utilizationTarget : 0.8
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.orgChart = cfg.business.orgChart || {}
+    cfg.business.orgChart[agentId] = {
+      role,
+      ...(reportsTo ? { reportsTo } : {}),
+      schedule: { days, start, end },
+      utilizationTarget: utilization,
+    }
+    return `orgChart "${agentId}" upserted`
+  })
+  return { summary }
+}
+
+async function deleteOrgEntry(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  if (!agentId) throw new Error("agentId required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.business?.orgChart || !(agentId in cfg.business.orgChart)) {
+      throw new Error(`no orgChart entry for "${agentId}"`)
+    }
+    delete cfg.business.orgChart[agentId]
+    return `orgChart "${agentId}" removed`
+  })
+  return { summary }
+}
+
+async function upsertProject(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("project id required")
+  const pm = body?.pm ? String(body.pm).trim() : ""
+  const client = body?.client ? String(body.client).trim() : ""
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.projects = cfg.business.projects || []
+    const idx = cfg.business.projects.findIndex((p: any) => p.id === id)
+    const next: any = { id, ...(pm ? { pm } : {}), ...(client ? { client } : {}) }
+    if (idx >= 0) cfg.business.projects[idx] = { ...cfg.business.projects[idx], ...next }
+    else cfg.business.projects.push(next)
+    return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
+  })
+  return { summary }
+}
+
+async function deleteProject(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("project id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = cfg.business?.projects || []
+    const before = list.length
+    cfg.business.projects = list.filter((p: any) => p.id !== id)
+    if (cfg.business.projects.length === before) throw new Error(`no project "${id}"`)
+    return `project "${id}" removed`
+  })
+  return { summary }
+}
+
+async function upsertContact(body: any) {
+  const client = String(body?.client || "").trim()
+  if (!client) throw new Error("client required")
+  if (!body?.chatId && !body?.username && !body?.senderId) {
+    throw new Error("one of chatId / username / senderId required")
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.contactMap = cfg.business.contactMap || []
+    const entry: any = { client }
+    if (body?.channel) entry.channel = String(body.channel)
+    if (body?.chatId) entry.chatId = String(body.chatId)
+    if (body?.username) entry.username = String(body.username)
+    if (body?.senderId) entry.senderId = String(body.senderId)
+    if (body?.project) entry.project = String(body.project)
+    if (body?.displayName) entry.displayName = String(body.displayName)
+    cfg.business.contactMap.push(entry)
+    const key = entry.chatId || entry.username || entry.senderId
+    return `contact ${entry.channel ? entry.channel + "/" : ""}${key} → ${client} added`
+  })
+  return { summary }
+}
+
+async function deleteContact(body: any) {
+  const filters = ["channel", "chatId", "username", "senderId"]
+  const provided = filters.filter((f) => body?.[f])
+  if (provided.length === 0) throw new Error("at least one filter (channel/chatId/username/senderId) required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = cfg.business?.contactMap || []
+    const before = list.length
+    cfg.business.contactMap = list.filter((c: any) => {
+      // Drop entries that match every provided filter; keep the rest.
+      for (const f of provided) {
+        if (c[f] !== body[f]) return true
+      }
+      return false
+    })
+    if (cfg.business.contactMap.length === before) throw new Error("no matching contact entry")
+    return `${before - cfg.business.contactMap.length} contact entry/entries removed`
+  })
+  return { summary }
 }
 
 // Keep reference so unused-import linters don't trip. rmSync is wired for a

@@ -158,6 +158,7 @@ const ADMIN_PAGE_BODY = `
   <button data-tab="webhooks">Webhooks</button>
   <button data-tab="mesh">Mesh</button>
   <button data-tab="team">Team</button>
+  <button data-tab="business">Business</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
@@ -555,6 +556,79 @@ const ADMIN_PAGE_BODY = `
     </div>
   </section>
 
+  <section id="tab-business" class="tab">
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Business layer",
+      lead: "Org chart, projects, and contact map — the data that drives PM gating and activity-graph attribution. Mirrors <code>agentx business</code>.",
+    })}
+    ${witBanner({
+      persistKey: "business",
+      bodyHtml: `<b>Three concepts.</b> The <b>org chart</b> is who reports to whom (<code>reportsTo</code>). <b>Projects</b> map an id to a PM and client (drives the PM gate and lets the activity graph attribute work to the right client). The <b>contact map</b> tells the activity graph which client a Telegram/WhatsApp chat belongs to — without it, free-text channels fall into the catch-all "internal" bucket. Editing here writes to <code>agentx.json</code>; restart the daemon (or POST /reload) for the change to take effect.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Org chart</h3>
+      <div id="business-org-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update org-chart entry</summary>
+        <div style="margin-top:10px">
+          <label>Agent id<span class="hint">(must match a configured agent — e.g. <code>devops-agent</code>)</span></label>
+          <input id="bo-agentId" placeholder="devops-agent" />
+          <label>Role title</label>
+          <input id="bo-role" placeholder="DevOps" />
+          <label>Reports to <span class="hint">(another agent id; leave blank for top-level)</span></label>
+          <input id="bo-reportsTo" placeholder="coo-agent" />
+          <label>Schedule <span class="hint">(start–end · days, e.g. <code>09:00 17:00 mon,tue,wed,thu,fri</code>)</span></label>
+          <div style="display:flex;gap:6px"><input id="bo-start" placeholder="09:00" style="width:80px" /><input id="bo-end" placeholder="17:00" style="width:80px" /><input id="bo-days" placeholder="mon,tue,wed,thu,fri" /></div>
+          <div class="actions"><button class="primary" onclick="upsertOrgEntry()">Save entry</button><div id="bo-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Projects</h3>
+      <div id="business-project-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update project</summary>
+        <div style="margin-top:10px">
+          <label>Project id<span class="hint">(<code>owner/repo</code> for GitLab/GitHub; stable string for internal projects)</span></label>
+          <input id="bp-id" placeholder="mtgl/system" />
+          <label>PM <span class="hint">(agentId — drives the PM gate)</span></label>
+          <input id="bp-pm" placeholder="pm-mtgl" />
+          <label>Client <span class="hint">(used by the activity graph to attribute traffic)</span></label>
+          <input id="bp-client" placeholder="mtgl" />
+          <div class="actions"><button class="primary" onclick="upsertProject()">Save project</button><div id="bp-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Contact map</h3>
+      <div id="business-contact-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add contact mapping</summary>
+        <div style="margin-top:10px">
+          <label>Channel <span class="hint">(telegram | whatsapp | slack | discord — optional)</span></label>
+          <input id="bc-channel" placeholder="telegram" />
+          <label>Chat id <span class="hint">(e.g. <code>-100…</code>, JID — pick at least one of these three)</span></label>
+          <input id="bc-chatId" placeholder="-1003861455814" />
+          <label>Username</label>
+          <input id="bc-username" placeholder="anis" />
+          <label>Sender id</label>
+          <input id="bc-senderId" placeholder="8500203323" />
+          <label>Client <span class="hint">(required)</span></label>
+          <input id="bc-client" placeholder="noqta" />
+          <label>Project <span class="hint">(optional — defaults to <code>&lt;client&gt;/_chat</code>)</span></label>
+          <input id="bc-project" placeholder="noqta/internal" />
+          <label>Display name <span class="hint">(initiator pill override)</span></label>
+          <input id="bc-displayName" placeholder="Anis Marrouchi" />
+          <div class="actions"><button class="primary" onclick="upsertContact()">Save mapping</button><div id="bc-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
   <section id="tab-tokens" class="tab">
     ${sectionHead({
       icon: ICONS.tokens,
@@ -877,6 +951,8 @@ async function refresh() {
     renderMesh();
     renderTeam();
     wireTeamHandlers();
+    renderBusiness();
+    wireBusinessHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
   } catch (e) {
@@ -1236,6 +1312,152 @@ window.upsertRole = async function() {
     showMsg($('rl-msg'), 'ok', 'Role saved');
     await load();
   } catch (e) { showMsg($('rl-msg'), 'err', e.message); }
+}
+
+// ---------------- Business tab ----------------
+
+function renderBusiness() {
+  const b = state.business || {};
+  const orgChart = b.orgChart || {};
+  const projects = b.projects || [];
+  const contactMap = b.contactMap || [];
+
+  const ol = $('business-org-list');
+  if (ol) {
+    const entries = Object.entries(orgChart);
+    if (entries.length === 0) {
+      ol.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no org-chart entries</div>';
+    } else {
+      ol.innerHTML = entries.map(function(kv){
+        const id = kv[0]; const e = kv[1];
+        const reports = e.reportsTo ? '<span style="font-size:11px;color:var(--ax-muted)">→ ' + escapeHtml(e.reportsTo) + '</span>' : '';
+        const sched = e.schedule ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml((e.schedule.days || []).join(',')) + ' ' + escapeHtml(e.schedule.start || '') + '–' + escapeHtml(e.schedule.end || '') + '</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+            '<code style="font-size:12px">' + escapeHtml(id) + '</code>' +
+            '<b>' + escapeHtml(e.role || '') + '</b>' + reports + sched +
+          '</div>' +
+          '<button class="ghost danger" data-act="biz-org-rm" data-id="' + escapeHtml(id) + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  const pl = $('business-project-list');
+  if (pl) {
+    if (projects.length === 0) {
+      pl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no projects</div>';
+    } else {
+      pl.innerHTML = projects.map(function(p){
+        const pm = p.pm ? '<span style="font-size:11px;color:var(--ax-muted)">pm=' + escapeHtml(p.pm) + '</span>' : '';
+        const client = p.client ? '<span style="font-size:11px;color:var(--ax-muted)">client=' + escapeHtml(p.client) + '</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><code style="font-size:12px">' + escapeHtml(p.id) + '</code>' + pm + client + '</div>' +
+          '<button class="ghost danger" data-act="biz-proj-rm" data-id="' + escapeHtml(p.id) + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  const cl = $('business-contact-list');
+  if (cl) {
+    if (contactMap.length === 0) {
+      cl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no contact mappings</div>';
+    } else {
+      cl.innerHTML = contactMap.map(function(c, idx){
+        const key = c.chatId ? 'chatId=' + c.chatId : c.username ? 'username=' + c.username : c.senderId ? 'senderId=' + c.senderId : '?';
+        const dn = c.displayName ? '<span style="font-size:11px;color:var(--ax-muted)">(' + escapeHtml(c.displayName) + ')</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+            (c.channel ? '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(c.channel) + '</span>' : '') +
+            '<code style="font-size:12px">' + escapeHtml(key) + '</code>' +
+            '<span style="font-size:11px;color:var(--ax-muted)">→ ' + escapeHtml(c.client) + (c.project ? '/' + escapeHtml(c.project) : '') + '</span>' + dn +
+          '</div>' +
+          '<button class="ghost danger" data-act="biz-contact-rm" data-idx="' + idx + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+}
+
+function wireBusinessHandlers() {
+  if (window.__bizWired) return;
+  window.__bizWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="biz-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'biz-org-rm') {
+      const agentId = t.getAttribute('data-id');
+      if (!confirm('Remove org-chart entry for ' + agentId + '?')) return;
+      try { await req('DELETE', '/api/admin/business/orgchart', { agentId }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-proj-rm') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Remove project ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/business/project', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-contact-rm') {
+      const idx = parseInt(t.getAttribute('data-idx') || '-1', 10);
+      const list = (state.business && state.business.contactMap) || [];
+      const c = list[idx];
+      if (!c) return;
+      const filters = {};
+      if (c.channel) filters.channel = c.channel;
+      if (c.chatId) filters.chatId = c.chatId;
+      else if (c.username) filters.username = c.username;
+      else if (c.senderId) filters.senderId = c.senderId;
+      try { await req('DELETE', '/api/admin/business/contact', filters); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+window.upsertOrgEntry = async function() {
+  const agentId = $('bo-agentId').value.trim();
+  const role = $('bo-role').value.trim();
+  const reportsTo = $('bo-reportsTo').value.trim();
+  const start = $('bo-start').value.trim() || '09:00';
+  const end = $('bo-end').value.trim() || '17:00';
+  const days = ($('bo-days').value.trim() || 'mon,tue,wed,thu,fri').split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    await req('POST', '/api/admin/business/orgchart', { agentId, role, reportsTo, start, end, days });
+    $('bo-agentId').value = ''; $('bo-role').value = ''; $('bo-reportsTo').value = '';
+    showMsg($('bo-msg'), 'ok', 'Entry saved');
+    await load();
+  } catch (e) { showMsg($('bo-msg'), 'err', e.message); }
+}
+
+window.upsertProject = async function() {
+  const id = $('bp-id').value.trim();
+  const pm = $('bp-pm').value.trim();
+  const client = $('bp-client').value.trim();
+  try {
+    await req('POST', '/api/admin/business/project', { id, pm, client });
+    $('bp-id').value = ''; $('bp-pm').value = ''; $('bp-client').value = '';
+    showMsg($('bp-msg'), 'ok', 'Project saved');
+    await load();
+  } catch (e) { showMsg($('bp-msg'), 'err', e.message); }
+}
+
+window.upsertContact = async function() {
+  const channel = $('bc-channel').value.trim();
+  const chatId = $('bc-chatId').value.trim();
+  const username = $('bc-username').value.trim();
+  const senderId = $('bc-senderId').value.trim();
+  const client = $('bc-client').value.trim();
+  const project = $('bc-project').value.trim();
+  const displayName = $('bc-displayName').value.trim();
+  if (!chatId && !username && !senderId) {
+    showMsg($('bc-msg'), 'err', 'one of chat-id / username / sender-id required');
+    return;
+  }
+  try {
+    await req('POST', '/api/admin/business/contact', { channel, chatId, username, senderId, client, project, displayName });
+    ['bc-channel','bc-chatId','bc-username','bc-senderId','bc-client','bc-project','bc-displayName'].forEach(id => { $(id).value = ''; });
+    showMsg($('bc-msg'), 'ok', 'Mapping saved');
+    await load();
+  } catch (e) { showMsg($('bc-msg'), 'err', e.message); }
 }
 
 /** Pick a stable avatar variant from the string hash. Gives each agent a
