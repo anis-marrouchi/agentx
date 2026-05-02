@@ -13,6 +13,7 @@ import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
+import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
 import { createWikiHandler } from "@/wiki/serve"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
@@ -286,6 +287,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/api/admin/logs/stream") {
     await streamDaemonLogs(req, res)
     return
+  }
+  // /admin/ledger — read-only window over .agentx/intent/ledger.sqlite.
+  // Mirrors `agentx ledger stats/events/divergences/active`. Replay and
+  // lineage stay CLI-only.
+  if (method === "GET" && path === "/admin/ledger") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/ledger/")) {
+    if (await handleLedgerApi(req, res, path)) return
   }
   // /admin/cost — token-spend page. Replaces the standalone
   // `agentx usage serve` (port 4201) and the Cost tab inside Health.
