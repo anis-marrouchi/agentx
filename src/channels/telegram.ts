@@ -310,7 +310,29 @@ export class TelegramAdapter implements ChannelAdapter {
       // This prevents 409 conflicts when restarting.
       await this.apiCall(config.token, "deleteWebhook", { drop_pending_updates: false }).catch(() => {})
 
-      const me = await this.apiCall(config.token, "getMe")
+      // Retry getMe with backoff. Cold-start fleet boot does N parallel
+      // verifications and a transient `fetch failed` (DNS/TLS hiccup,
+      // upstream 502) used to silently skip the account permanently —
+      // observed in production when 2 of 7 bots dropped out for the rest
+      // of the session. Three tries at 2s/5s/10s catches the common case
+      // without delaying the legit-failure path much.
+      let me: any
+      let lastErr: any
+      const delays = [0, 2000, 5000, 10000]
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]))
+        try {
+          me = await this.apiCall(config.token, "getMe")
+          if (attempt > 0) this.log(`Bot account "${accountId}" verified on retry ${attempt}`)
+          break
+        } catch (e: any) {
+          lastErr = e
+          if (attempt < delays.length - 1) {
+            this.log(`Verify attempt ${attempt + 1} failed for "${accountId}" (${e.message}) — retrying`)
+          }
+        }
+      }
+      if (!me) throw lastErr
       const botUserId = me.result?.id
       const botUsername = me.result?.username
       this.log(`Bot @${botUsername} ready (account: ${accountId})`)
@@ -320,7 +342,7 @@ export class TelegramAdapter implements ChannelAdapter {
       this.accountPolling.set(accountId, true)
       this.pollLoop(accountId, config)
     } catch (e: any) {
-      this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
+      this.log(`Failed to verify bot for account "${accountId}" after retries: ${e.message}`)
     }
   }
 
