@@ -27,6 +27,7 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
       <button class="ax-obs__tab" data-tab="errors" role="tab">Errors</button>
       <button class="ax-obs__tab" data-tab="routing" role="tab">Routing</button>
       <button class="ax-obs__tab" data-tab="rotations" role="tab">Rotations</button>
+      <button class="ax-obs__tab" data-tab="logs" role="tab">Logs</button>
     </nav>
     <div class="ax-obs__filters" id="obs-filters">
       <label>Agent
@@ -114,6 +115,18 @@ export function renderObservabilityPage(opts: ObservabilityPageOpts = {}): strin
       <tbody id="obs-rotations"></tbody>
     </table></div>
     <p class="ax-obs__empty" id="obs-rotations-empty" hidden>(no rows)</p>
+  </section>
+
+  <section class="ax-obs__pane" data-pane="logs">
+    <p class="ax-obs__hint">Live tail of the daemon's stdout — same source as <code>agentx daemon logs -f</code>. Streams via SSE; falls back to /tmp/agentx-daemon.log when the daemon isn't under systemd.</p>
+    <div class="ax-obs__logs-toolbar">
+      <input id="obs-logs-filter" type="text" placeholder="grep (case-insensitive)" />
+      <label class="ax-obs__inline"><input id="obs-logs-autoscroll" type="checkbox" checked /> auto-scroll</label>
+      <button id="obs-logs-pause" type="button">Pause</button>
+      <button id="obs-logs-clear" type="button">Clear</button>
+      <span id="obs-logs-status" class="ax-obs__hint">connecting…</span>
+    </div>
+    <pre id="obs-logs-body" class="ax-obs__logs-body"></pre>
   </section>
 </div>`
 
@@ -221,6 +234,16 @@ const OBS_PAGE_CSS = `
 .ax-obs__pill--max-turns { background: rgba(99, 110, 123, 0.15); color: #57606a; }
 .ax-obs__pill--idle { background: rgba(218, 119, 6, 0.15); color: #bf8700; }
 .ax-obs__empty { color: var(--ax-muted); font-style: italic; padding: 18px 0; margin: 0; }
+.ax-obs__logs-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.ax-obs__logs-toolbar input[type="text"] { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 5px 9px; min-width: 220px; background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-fg); }
+.ax-obs__logs-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-obs__logs-toolbar button:hover { background: var(--ax-surface); }
+.ax-obs__inline { font-size: 11px; color: var(--ax-muted); display: inline-flex; align-items: center; gap: 4px; }
+.ax-obs__logs-body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; line-height: 1.45; height: calc(100vh - 320px); min-height: 360px; overflow-y: auto; background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 4px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.ax-obs__logs-body .err { color: var(--ax-err, #e74c3c); }
+.ax-obs__logs-body .warn { color: #d4ac0d; }
+.ax-obs__logs-body .info { color: var(--ax-fg); }
+.ax-obs__logs-body .dim { color: var(--ax-muted); }
 `
 
 const OBS_PAGE_SCRIPT = `
@@ -288,6 +311,8 @@ const OBS_PAGE_SCRIPT = `
   }
 
   async function load(tab){
+    if (tab === 'logs') return ensureLogsStream();
+    if (logsState.es) closeLogsStream();
     var agent = document.getElementById('obs-agent').value || '';
     var limit = document.getElementById('obs-limit').value || 50;
 
@@ -306,6 +331,63 @@ const OBS_PAGE_SCRIPT = `
     } catch (e) {
       console.error('observability fetch failed', e);
     }
+  }
+
+  // ----- Logs tab: SSE-driven live tail -----
+  var logsState = { es: null, paused: false, buffer: [], maxLines: 2000 };
+  function classifyLine(s){
+    var l = s.toLowerCase();
+    if (l.indexOf('error') >= 0 || l.indexOf('fail') >= 0) return 'err';
+    if (l.indexOf('warn') >= 0) return 'warn';
+    if (l.indexOf('debug') >= 0 || l.indexOf('[graph]') >= 0) return 'dim';
+    return 'info';
+  }
+  function renderLogsLine(line){
+    if (!line) return;
+    var body = document.getElementById('obs-logs-body');
+    var filter = (document.getElementById('obs-logs-filter').value || '').toLowerCase();
+    if (filter && line.toLowerCase().indexOf(filter) === -1) return;
+    var span = document.createElement('span');
+    span.className = classifyLine(line);
+    span.textContent = line + '\\n';
+    body.appendChild(span);
+    while (body.children.length > logsState.maxLines) body.removeChild(body.firstChild);
+    if (document.getElementById('obs-logs-autoscroll').checked) {
+      body.scrollTop = body.scrollHeight;
+    }
+  }
+  function ensureLogsStream(){
+    if (logsState.es || logsState.paused) {
+      document.getElementById('obs-logs-status').textContent = logsState.paused ? 'paused' : 'live';
+      return;
+    }
+    document.getElementById('obs-logs-status').textContent = 'connecting…';
+    var es = new EventSource('/api/admin/logs/stream', { withCredentials: true });
+    logsState.es = es;
+    es.addEventListener('line', function(ev){ renderLogsLine(ev.data); });
+    es.addEventListener('open', function(){ document.getElementById('obs-logs-status').textContent = 'live'; });
+    es.addEventListener('error', function(){
+      document.getElementById('obs-logs-status').textContent = 'disconnected (retrying)';
+    });
+  }
+  function closeLogsStream(){
+    if (logsState.es) { try { logsState.es.close(); } catch (e) {} logsState.es = null; }
+  }
+  function wireLogsToolbar(){
+    var pauseBtn = document.getElementById('obs-logs-pause');
+    var clearBtn = document.getElementById('obs-logs-clear');
+    if (!pauseBtn || pauseBtn.dataset.wired) return;
+    pauseBtn.dataset.wired = '1';
+    pauseBtn.addEventListener('click', function(){
+      logsState.paused = !logsState.paused;
+      pauseBtn.textContent = logsState.paused ? 'Resume' : 'Pause';
+      if (logsState.paused) closeLogsStream();
+      else ensureLogsStream();
+      document.getElementById('obs-logs-status').textContent = logsState.paused ? 'paused' : 'connecting…';
+    });
+    clearBtn.addEventListener('click', function(){
+      document.getElementById('obs-logs-body').innerHTML = '';
+    });
   }
 
   function render(tab, data){
@@ -496,6 +578,16 @@ const OBS_PAGE_SCRIPT = `
   document.getElementById('obs-agent').addEventListener('change', function(){ load(current); });
   var lim = document.getElementById('obs-limit');
   if (lim) lim.addEventListener('change', function(){ load(current); });
+
+  wireLogsToolbar();
+  document.getElementById('obs-logs-filter').addEventListener('input', function(){
+    // re-render existing buffered lines through the filter
+    var body = document.getElementById('obs-logs-body');
+    var filter = (this.value || '').toLowerCase();
+    Array.from(body.children).forEach(function(s){
+      s.style.display = (filter && s.textContent.toLowerCase().indexOf(filter) === -1) ? 'none' : '';
+    });
+  });
 
   load(current);
 })();

@@ -280,6 +280,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path.startsWith("/api/admin/observability/")) {
     if (await handleObservabilityApi(req, res, path)) return
   }
+  // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
+  // `agentx daemon logs -f`. On systemd-managed nodes this calls
+  // journalctl; on others it falls back to /tmp/agentx-daemon.log.
+  if (method === "GET" && path === "/api/admin/logs/stream") {
+    await streamDaemonLogs(req, res)
+    return
+  }
   // /admin/cost — token-spend page. Replaces the standalone
   // `agentx usage serve` (port 4201) and the Cost tab inside Health.
   if (method === "GET" && path === "/admin/cost") {
@@ -1533,6 +1540,92 @@ async function handleActivityGraphFleet(
   }))
 
   sendJson(res, 200, mergeFleetSnapshots(parts))
+}
+
+/** SSE-stream the daemon's stdout to the dashboard /admin/health Logs tab.
+ *  Picks the best available source: prefers `journalctl -u agentx -f`
+ *  (systemd-managed nodes like clawd-server), falls back to `tail -F` on
+ *  /tmp/agentx-daemon.log (Mac dev launches), or the tail of the
+ *  workspace pid log if neither exists. Mirrors the source the
+ *  `agentx daemon logs -f` CLI hits, so both surfaces show the same
+ *  data.
+ *
+ *  The spawned process inherits the dashboard's permissions; on
+ *  clawd-server `clawd` already has read access to its agentx unit's
+ *  journal via the systemd-journal group (no sudo needed). On Mac the
+ *  log file is world-readable. */
+async function streamDaemonLogs(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const { spawn, execSync } = await import("child_process")
+
+  // Prefer journalctl when available — it captures stdout from systemd,
+  // which is where the daemon's logs actually land on prod. Fall back to
+  // the legacy /tmp file the CLI uses.
+  let cmd: string
+  let args: string[]
+  try {
+    execSync("which journalctl", { stdio: "pipe" })
+    cmd = "journalctl"
+    args = ["-u", "agentx", "--no-pager", "-n", "200", "-f", "-o", "cat"]
+  } catch {
+    // Mac (launchd) logs to ~/.agentx/logs/daemon-stdout.log; the legacy
+    // /tmp/agentx-daemon.log is the foreground-launch path. Probe both.
+    const home = process.env.HOME || ""
+    const candidates = [
+      home && `${home}/.agentx/logs/daemon-stdout.log`,
+      "/tmp/agentx-daemon.log",
+    ].filter(Boolean) as string[]
+    const file = candidates.find((f) => existsSync(f))
+    if (!file) {
+      res.writeHead(503, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        error: "no log source — install journalctl, run the daemon under launchd, or run it foreground writing to /tmp/agentx-daemon.log",
+        searched: candidates,
+      }))
+      return
+    }
+    cmd = "tail"
+    args = ["-F", "-n", "200", file]
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  })
+  res.write(`: source=${cmd}\n\n`)
+
+  const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] })
+  let buffer = ""
+  const onData = (chunk: Buffer) => {
+    buffer += chunk.toString("utf8")
+    let idx
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).replace(/\r$/, "")
+      buffer = buffer.slice(idx + 1)
+      // SSE: each line gets its own `event: line` so the client can
+      // listen by name. Escape newlines defensively (lines should not
+      // contain any since we split on them, but be safe).
+      try { res.write(`event: line\ndata: ${line.replace(/\n/g, " ")}\n\n`) } catch { /* */ }
+    }
+  }
+  child.stdout?.on("data", onData)
+  // Mirror stderr too so the operator sees crash output.
+  child.stderr?.on("data", onData)
+
+  // Heartbeat keeps middleboxes from idling the connection out.
+  const hb = setInterval(() => {
+    try { res.write(`: hb\n\n`) } catch { /* */ }
+  }, 15_000)
+
+  const cleanup = () => {
+    clearInterval(hb)
+    try { child.kill() } catch { /* */ }
+    try { res.end() } catch { /* */ }
+  }
+  req.on("close", cleanup)
+  child.on("exit", cleanup)
+  child.on("error", cleanup)
 }
 
 async function proxyAdminToPeer(
