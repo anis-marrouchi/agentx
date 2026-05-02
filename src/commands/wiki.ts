@@ -2210,3 +2210,85 @@ wiki
 
     console.log()
   })
+
+// ---------------------------------------------------------------------------
+// agentx wiki export / import — bulk tarball backup of .agentx/wiki/
+//
+// Closes the audit gap: no operator-facing way to back up wiki content
+// before a risky migration or move it between installs. Tarball is the
+// safest portable shape; we don't ship a sync tool yet (see `wiki migrate`
+// for in-place schema changes).
+
+wiki
+  .command("export [output]")
+  .description("export the entire wiki tree to a .tar.gz")
+  .option("--dir <path>", "wiki directory to archive (default: .agentx/wiki)")
+  .option("--include-raw", "also include raw entries (.agentx/wiki/raw/) — bigger archive")
+  .action(async (output, opts) => {
+    const wikiDir = opts.dir ? resolve(process.cwd(), opts.dir) : resolve(process.cwd(), ".agentx/wiki")
+    if (!existsSync(wikiDir)) {
+      console.log(chalk.red(`  Wiki dir not found: ${wikiDir}`))
+      process.exit(1)
+    }
+    const date = new Date().toISOString().slice(0, 10)
+    const out = output ? resolve(process.cwd(), output) : resolve(process.cwd(), `agentx-wiki-${date}.tar.gz`)
+    const parent = resolve(wikiDir, "..")
+    const base = wikiDir.split("/").pop() || "wiki"
+    const args = ["-C", parent, "-czf", out]
+    if (!opts.includeRaw) args.push("--exclude=" + base + "/raw")
+    args.push(base)
+    console.log(chalk.dim(`  tar ${args.join(" ")}`))
+    const { spawnSync } = await import("child_process")
+    const r = spawnSync("tar", args, { stdio: "inherit" })
+    if (r.status !== 0) {
+      console.log(chalk.red(`  tar exited with ${r.status}`))
+      process.exit(r.status || 1)
+    }
+    const { statSync } = await import("fs")
+    const size = existsSync(out) ? statSync(out).size : 0
+    console.log()
+    console.log(chalk.green(`  ✓ wrote ${out} (${formatWikiBytes(size)})`))
+    console.log(chalk.dim(`  Restore on another node: agentx wiki import ${out}`))
+    console.log()
+  })
+
+wiki
+  .command("import <archive>")
+  .description("restore a wiki archive (created with `agentx wiki export`)")
+  .option("--dir <path>", "where to restore (default: .agentx/wiki)")
+  .option("--force", "overwrite existing wiki without prompting")
+  .action(async (archive, opts) => {
+    const archivePath = resolve(process.cwd(), archive)
+    if (!existsSync(archivePath)) {
+      console.log(chalk.red(`  archive not found: ${archivePath}`))
+      process.exit(1)
+    }
+    const target = opts.dir ? resolve(process.cwd(), opts.dir) : resolve(process.cwd(), ".agentx/wiki")
+    if (existsSync(target) && !opts.force) {
+      console.log(chalk.yellow(`  ${target} already exists.`))
+      console.log(chalk.yellow(`  Re-run with --force to overwrite (existing files where the archive has them; others stay).`))
+      process.exit(1)
+    }
+    const parent = resolve(target, "..")
+    const { mkdirSync } = await import("fs")
+    mkdirSync(parent, { recursive: true })
+    const args = ["-C", parent, "-xzf", archivePath]
+    console.log(chalk.dim(`  tar ${args.join(" ")}`))
+    const { spawnSync } = await import("child_process")
+    const r = spawnSync("tar", args, { stdio: "inherit" })
+    if (r.status !== 0) {
+      console.log(chalk.red(`  tar exited with ${r.status}`))
+      process.exit(r.status || 1)
+    }
+    console.log()
+    console.log(chalk.green(`  ✓ restored to ${target}`))
+    console.log(chalk.dim(`  Restart the daemon (or POST /reload) for the wiki hub to pick up the new content.`))
+    console.log()
+  })
+
+function formatWikiBytes(b: number): string {
+  if (b < 1024) return b + "B"
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + "K"
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + "M"
+  return (b / 1024 / 1024 / 1024).toFixed(2) + "G"
+}
