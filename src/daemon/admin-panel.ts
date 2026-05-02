@@ -70,6 +70,9 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
       "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
+      "GET /api/admin/channels/whatsapp/chats": () => proxyDaemonJson("/whatsapp/chats"),
+      "GET /api/admin/channels/whatsapp/contacts": () => proxyDaemonJson("/whatsapp/contacts"),
+      "POST /api/admin/channels/whatsapp/ingest": () => proxyDaemonPostJson("/whatsapp/ingest", body),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -107,6 +110,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // Webhook triggers + defaultWorkflow editor (in addition to existing
       // /api/admin/webhooks add/edit/delete).
       "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
+      // Mesh health-check cadence — mirrors `agentx mesh health`.
+      "POST /api/admin/mesh/health":     () => updateMeshHealth(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -235,6 +240,10 @@ function getAdminState() {
       name: p.name,
       hasToken: !!p.token,
     })),
+    healthCheck: {
+      interval: cfg.mesh?.healthCheck?.interval ?? 60,
+      timeout: cfg.mesh?.healthCheck?.timeout ?? 10,
+    },
   }
   // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
   const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
@@ -518,6 +527,21 @@ function editTelegramAccount(body: any) {
 async function proxyDaemonJson(pathOnDaemon: string): Promise<any> {
   const { url, headers } = daemonTarget()
   const r = await fetch(url + pathOnDaemon, { headers })
+  const text = await r.text()
+  if (!r.ok) throw new Error(`daemon ${r.status}: ${text.slice(0, 200)}`)
+  try { return JSON.parse(text) } catch { return { raw: text } }
+}
+
+/** POST variant — forwards a JSON body to a daemon endpoint and returns
+ *  the parsed JSON. Used to reach daemon-process-owned operations like
+ *  WhatsApp ingest from the dashboard process. */
+async function proxyDaemonPostJson(pathOnDaemon: string, body: any): Promise<any> {
+  const { url, headers } = daemonTarget()
+  const r = await fetch(url + pathOnDaemon, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  })
   const text = await r.text()
   if (!r.ok) throw new Error(`daemon ${r.status}: ${text.slice(0, 200)}`)
   try { return JSON.parse(text) } catch { return { raw: text } }
@@ -1209,6 +1233,30 @@ async function deleteBoardColumn(body: any) {
     b.columns = (b.columns || []).filter((c: any) => c.id !== columnId)
     if (b.columns.length === before) throw new Error(`column "${columnId}" not found`)
     return `column "${columnId}" removed from board "${boardId}"`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Mesh health-check cadence — admin write handler
+// ========================================================================
+
+async function updateMeshHealth(body: any) {
+  const interval = body?.interval !== undefined ? Number(body.interval) : undefined
+  const timeout = body?.timeout !== undefined ? Number(body.timeout) : undefined
+  if (interval !== undefined && (!Number.isFinite(interval) || interval < 5 || interval > 3600)) {
+    throw new Error("interval must be 5..3600 seconds")
+  }
+  if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 1 || timeout > 60)) {
+    throw new Error("timeout must be 1..60 seconds")
+  }
+  if (interval === undefined && timeout === undefined) throw new Error("nothing to update")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.mesh = cfg.mesh || {}
+    cfg.mesh.healthCheck = cfg.mesh.healthCheck || {}
+    if (interval !== undefined) cfg.mesh.healthCheck.interval = interval
+    if (timeout !== undefined) cfg.mesh.healthCheck.timeout = timeout
+    return `mesh.healthCheck updated (interval=${cfg.mesh.healthCheck.interval}s, timeout=${cfg.mesh.healthCheck.timeout}s)`
   })
   return { summary }
 }

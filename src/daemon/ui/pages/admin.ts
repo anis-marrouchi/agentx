@@ -528,6 +528,18 @@ const ADMIN_PAGE_BODY = `
       <input id="m-token" type="password" />
       <div class="actions"><button class="primary" onclick="addMeshPeer()">Add peer</button><div id="m-msg" class="msg"></div></div>
     </div>
+
+    <details class="add-form" style="margin-top:16px">
+      <summary class="primary">⏱ Health-check cadence</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">How often AgentX pings each peer to check if it's alive. Mirrors <code>agentx mesh health</code>. Lower interval = faster peer-down detection (more wake noise on flaky links); higher = quieter on battery-constrained mobile peers.</p>
+        <div class="rowf">
+          <div><label>Interval (seconds, 5..3600)<span class="hint">(default 60)</span></label><input id="mh-interval" type="number" min="5" max="3600" /></div>
+          <div><label>Timeout (seconds, 1..60)<span class="hint">(default 10)</span></label><input id="mh-timeout" type="number" min="1" max="60" /></div>
+        </div>
+        <div class="actions"><button class="primary" onclick="saveMeshHealth()">Save</button><div id="mh-msg" class="msg"></div></div>
+      </div>
+    </details>
   </section>
 
   <section id="tab-team" class="tab">
@@ -1150,7 +1162,10 @@ async function toggleWebhook(id, enabled) {
 }
 
 function renderMesh() {
-  const m = state.mesh || { enabled: false, peers: [] };
+  const m = state.mesh || { enabled: false, peers: [], healthCheck: { interval: 60, timeout: 10 } };
+  const hc = m.healthCheck || { interval: 60, timeout: 10 };
+  if ($('mh-interval')) $('mh-interval').value = hc.interval ?? 60;
+  if ($('mh-timeout')) $('mh-timeout').value = hc.timeout ?? 10;
 
   // Hero card: status message + enable toggle + SVG network viz.
   const hero = $('mesh-hero');
@@ -1722,6 +1737,23 @@ function wireWebhookTriggerHandlers() {
   });
 }
 
+window.saveMeshHealth = async function() {
+  const interval = parseInt($('mh-interval').value, 10);
+  const timeout = parseInt($('mh-timeout').value, 10);
+  const body = {};
+  if (Number.isFinite(interval)) body.interval = interval;
+  if (Number.isFinite(timeout)) body.timeout = timeout;
+  if (Object.keys(body).length === 0) {
+    showMsg($('mh-msg'), 'err', 'set interval and/or timeout');
+    return;
+  }
+  try {
+    await req('POST', '/api/admin/mesh/health', body);
+    showMsg($('mh-msg'), 'ok', 'Saved');
+    await load();
+  } catch (e) { showMsg($('mh-msg'), 'err', e.message); }
+}
+
 window.upsertBoardCfg = async function() {
   const id = $('bd-id').value.trim();
   const name = $('bd-name').value.trim();
@@ -2237,8 +2269,55 @@ function renderWhatsAppPane() {
       '<div id="wa-connected" style="display:none;padding:14px;background:color-mix(in oklch,var(--ax-accent) 10%,transparent);border:1px solid color-mix(in oklch,var(--ax-accent) 35%,transparent);border-radius:6px;color:var(--ax-accent);font-size:13px">✓ Paired — the daemon is signed in.</div>' +
       '<div id="wa-disabled" style="display:none;padding:14px;font-size:12px;color:var(--ax-muted);line-height:1.6">WhatsApp is currently disabled in <code>agentx.json</code>. Enable it there (or via the Advanced tab) and restart the daemon; the QR will appear once Baileys needs it.</div>' +
       '<div class="hint-block" style="margin-top:12px">Routes, phone numbers, and allow-lists live under <code>channels.whatsapp</code> in the <b>Advanced</b> tab. Requires <code>@whiskeysockets/baileys</code> installed in the daemon&rsquo;s dir.</div>' +
-    '</div>';
+    '</div>' +
+    '<details class="add-form" style="margin-top:14px"><summary class="primary">📥 Wiki ingest from WhatsApp</summary>' +
+      '<div style="margin-top:10px">' +
+        '<p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Sweep observed WhatsApp chats/contacts into an agent\'s wiki. Mirrors <code>agentx whatsapp ingest-all/list-chats/list-contacts</code>.</p>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<button class="ax-btn" onclick="loadWhatsAppLists()">Reload chats + contacts</button>' +
+          '<label class="ax-inline" style="display:inline-flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="wa-ingest-dry" checked /> dry-run</label>' +
+          '<label class="ax-inline" style="display:inline-flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="wa-ingest-force" /> force (override <code>ingest.enabled=false</code>)</label>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<input id="wa-ingest-agent" placeholder="agent id (defaults to channels.whatsapp.defaultAgent)" style="flex:1" />' +
+          '<button class="ax-btn ax-btn--primary" onclick="runWhatsAppIngest()">Sweep now</button>' +
+        '</div>' +
+        '<div id="wa-ingest-msg" class="msg" style="margin-bottom:10px"></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Chats</h4><div id="wa-chats" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click reload</div></div>' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Contacts</h4><div id="wa-contacts" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click reload</div></div>' +
+        '</div>' +
+      '</div>' +
+    '</details>';
   startWhatsAppPolling();
+}
+
+window.loadWhatsAppLists = async function() {
+  try {
+    const [chats, contacts] = await Promise.all([
+      req('GET', '/api/admin/channels/whatsapp/chats').catch(() => ({chats:[]})),
+      req('GET', '/api/admin/channels/whatsapp/contacts').catch(() => ({contacts:[]})),
+    ]);
+    const cl = $('wa-chats');
+    const cs = chats.chats || [];
+    cl.innerHTML = cs.length ? cs.slice(0, 100).map(c => '<div>' + escapeHtml(c.name || c.jid || '?') + ' <span style="color:var(--ax-muted)">' + (c.kind || '') + '</span></div>').join('') : '<i style="color:var(--ax-muted)">empty</i>';
+    const xl = $('wa-contacts');
+    const xs = contacts.contacts || [];
+    xl.innerHTML = xs.length ? xs.slice(0, 100).map(c => '<div>' + escapeHtml(c.name || c.jid || '?') + '</div>').join('') : '<i style="color:var(--ax-muted)">empty</i>';
+  } catch (e) { showMsg($('wa-ingest-msg'), 'err', e.message); }
+}
+
+window.runWhatsAppIngest = async function() {
+  const agent = $('wa-ingest-agent').value.trim();
+  const dryRun = $('wa-ingest-dry').checked;
+  const force = $('wa-ingest-force').checked;
+  const body = { dryRun, force };
+  if (agent) body.agent = agent;
+  showMsg($('wa-ingest-msg'), 'info', 'sweeping…');
+  try {
+    const r = await req('POST', '/api/admin/channels/whatsapp/ingest', body);
+    showMsg($('wa-ingest-msg'), 'ok', 'Done — ' + (r.summary || JSON.stringify(r).slice(0, 120)));
+  } catch (e) { showMsg($('wa-ingest-msg'), 'err', e.message); }
 }
 
 const _wa = { timer: null, lastQRSeen: '' };

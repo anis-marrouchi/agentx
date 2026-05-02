@@ -622,6 +622,44 @@ mesh
     console.log(chalk.green(`  Peer "${name}" removed`))
   })
 
+// agentx mesh health — tune the per-peer health-check cadence (heartbeat
+// interval + timeout). Intentionally narrow knob: lower interval if
+// you need fast peer-down detection, raise it on flaky / battery-
+// constrained mobile peers to reduce wake noise.
+mesh
+  .command("health")
+  .description("tune mesh peer health checks (interval + timeout, in seconds)")
+  .option("--interval <s>", "seconds between health probes (default 60)")
+  .option("--timeout <s>", "per-probe timeout in seconds (default 10)")
+  .option("--show", "just print the current values")
+  .action(async (opts) => {
+    const config = loadConfig() as any
+    config.mesh = config.mesh || {}
+    config.mesh.healthCheck = config.mesh.healthCheck || {}
+    if (opts.show) {
+      console.log(`  interval ${config.mesh.healthCheck.interval ?? 60}s`)
+      console.log(`  timeout  ${config.mesh.healthCheck.timeout ?? 10}s`)
+      return
+    }
+    const changes: string[] = []
+    if (opts.interval !== undefined) {
+      const n = parseInt(opts.interval, 10)
+      if (!Number.isFinite(n) || n < 5 || n > 3600) { console.log(chalk.red("  --interval must be 5..3600 seconds")); process.exit(1) }
+      config.mesh.healthCheck.interval = n
+      changes.push(`interval=${n}s`)
+    }
+    if (opts.timeout !== undefined) {
+      const n = parseInt(opts.timeout, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 60) { console.log(chalk.red("  --timeout must be 1..60 seconds")); process.exit(1) }
+      config.mesh.healthCheck.timeout = n
+      changes.push(`timeout=${n}s`)
+    }
+    if (changes.length === 0) { console.log(chalk.yellow("  no changes — pass --interval and/or --timeout, or --show")); process.exit(1) }
+    await saveConfig(config)
+    console.log(chalk.green(`  ✓ mesh.healthCheck: ${changes.join(", ")}`))
+    console.log(chalk.dim("  Restart the daemon for the new cadence to take effect."))
+  })
+
 // ==================== agentx skill ====================
 
 export const skillCmd = new Command()

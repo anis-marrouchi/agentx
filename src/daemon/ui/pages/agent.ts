@@ -205,6 +205,9 @@ const AGENT_PAGE_BODY = `
               <option value="private">Private (only this node)</option>
               <option value="public">Public API</option>
             </select>
+            <div id="public-api-hint" style="display:none;margin-top:6px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;font-size:11px;color:var(--ax-muted)">
+              Public API enabled. External callers POST to <code id="public-api-url" style="font-family:'IBM Plex Mono',monospace"></code> with a token scoped <code>agent:<span id="public-api-scope"></span></code> or <code>agent:*</code>. Mint one in the <a href="/admin#tokens">Tokens tab</a>.
+            </div>
           </div>
         </div>
       </div>
@@ -875,6 +878,23 @@ async function loadAgent(){
     $('f-tier').value = a.tier || 'claude-code';
     $('f-model').value = a.model || '';
     $('f-access').value = a.access || 'private';
+    // Public-API hint — show endpoint + scope when access is public.
+    const hintEl = document.getElementById('public-api-hint');
+    if (hintEl) {
+      const isPublic = a.access === 'public';
+      hintEl.style.display = isPublic ? '' : 'none';
+      if (isPublic) {
+        const daemonUrl = (state && state.daemonUrl) || (location.origin || '').replace(':4202', ':18800');
+        const urlEl = document.getElementById('public-api-url');
+        const scopeEl = document.getElementById('public-api-scope');
+        if (urlEl) urlEl.textContent = daemonUrl + '/api/public/agents/' + AGENT_ID + '/messages';
+        if (scopeEl) scopeEl.textContent = AGENT_ID;
+      }
+    }
+    // Also re-render when the operator flips the dropdown.
+    $('f-access').addEventListener('change', () => {
+      if (hintEl) hintEl.style.display = $('f-access').value === 'public' ? '' : 'none';
+    }, { once: true });
     setOpt('maxConcurrent', a.maxConcurrent ?? 1);
     setOpt('maxExecutionMinutes', a.maxExecutionMinutes ?? 20);
     setOpt('permissionMode', a.permissionMode || 'default');
