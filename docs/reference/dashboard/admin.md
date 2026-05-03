@@ -2,7 +2,7 @@
 
 Path: `/admin`
 
-Single-file settings surface with seven tabs rendered in-place via a client-side data-tab switcher. Every tab is a typed view over a slice of `agentx.json` — saves go through `applyConfigMutation`, so the daemon hot-reloads on every successful write.
+Single-file settings surface with a row of tabs (Agents, Channels, Schedules, Webhooks, Mesh, Team, Business, Boards, Actions, Tokens, Advanced) rendered in-place via a client-side data-tab switcher. Every tab is a typed view over a slice of `agentx.json` — saves go through `applyConfigMutation`, so the daemon hot-reloads on every successful write.
 
 Each tab is also reachable directly via `#fragment`: `/admin#channels`, `/admin#tokens`, etc. Many empty-state links across the dashboard deep-link here.
 
@@ -45,6 +45,10 @@ The org chart, projects, and contact map that drive PM-gating and activity-graph
 
 Configure the boards rendered on the home page. Add/edit/remove a board, set its GitLab projects, primary tool label, time windows, and column flow (drag-drop → scoped label). Mirrors `agentx board` + `agentx board column`. The actual kanban view lives at `/` — this tab is the configuration surface.
 
+### Actions
+
+The [action registry](../actions) — reusable shell or HTTP invocations (CRM webhooks, transactional email, Stripe lookups, internal scripts) you call from CLI, workflows, or here. Each row shows the action id, kind, target, and inputs; expand a row to **Run now** with a stdout/stderr panel rendered inline. Mirrors `agentx actions list/add/remove/run`. Use the `+ Add or update action` form to register a new one without leaving the browser; secrets stay in the daemon's env (templated as `${ENV_VAR}`), the action JSON only carries the shape.
+
 ### Tokens
 
 Mint API keys for external tools that need to talk to your agentx. One token per integration; revoke any time. Same surface as `agentx token`. Each row shows: id, name, scope, prefix, status (active/expired/revoked), last-used. Secrets show **once** at creation — stored hashed.
@@ -62,6 +66,8 @@ Mint API keys for external tools that need to talk to your agentx. One token per
 | You want to… | Do this |
 |---|---|
 | Add a Telegram bot | Channels → Telegram → **Add account** → paste token → verify |
+| Wire a CRM webhook (HubSpot / Salesforce / Pipedrive) | Actions → **+ Add** → kind `http`, paste URL, headers `Authorization: Bearer ${HUBSPOT_TOKEN}`, set inputs |
+| Send transactional email from a workflow | Actions → register a SendGrid `http` action → call it from an `action.run` node |
 | Mint a token for a Slack integration | Tokens → **Create** → name, scope `dashboard:read,task:write`, expires |
 | Wire a GitHub webhook to a triage workflow | Webhooks → **Add** → source=github, agentId, secretEnv, triggers `issues.opened: triage-bug` |
 | Add a mesh peer | Mesh → **Paste invite link** → done |

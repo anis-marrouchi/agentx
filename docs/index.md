@@ -113,6 +113,15 @@ features:
     details: Append-only ledger captures every routing decision; replay reproduces them deterministically. PM-gating, typed capabilities, and delegation-depth caps make admission control auditable.
     link: /playbooks/pm-gating
     linkText: Enable governance
+  - icon:
+      src: /icons/zap.svg
+      alt: Actions registry
+      width: 32
+      height: 32
+    title: Wire SaaS without code
+    details: Register a HubSpot, Salesforce, Stripe, SendGrid, or Zendesk call once with typed inputs and templated secrets — call it from CLI, dashboard, workflows, or an agent prompt. No more curl-in-cron sprawl.
+    link: /reference/actions
+    linkText: Connect a SaaS API
 ---
 
 ## Three ways to start

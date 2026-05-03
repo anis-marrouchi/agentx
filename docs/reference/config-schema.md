@@ -337,6 +337,29 @@ Array of installed npm package names. The loader does dynamic `import(name)` at 
 
 Plugins can register channel adapters via `ctx.addChannel()` and subscribe to bus events via `ctx.on()`.
 
+## Actions registry (separate files)
+
+Actions do **not** live in `agentx.json`. Each action is its own file at `.agentx/actions/<id>.json`. Schema (Zod, `src/actions/types.ts`):
+
+```jsonc
+{
+  "id": "hubspot-create-contact",          // ^[a-z][a-z0-9_-]*$
+  "title": "Create HubSpot contact",
+  "description": "Pushes a contact into HubSpot CRM",
+  "kind": "http",                          // "shell" | "http"
+  "url": "https://api.hubapi.com/crm/v3/objects/contacts",
+  "method": "POST",                        // GET | POST | PUT | PATCH | DELETE
+  "headers": { "Authorization": "Bearer ${HUBSPOT_TOKEN}" },
+  "body": "{\"properties\":{\"email\":\"{{email}}\"}}",
+  "inputs": [
+    { "name": "email", "type": "string", "required": true, "description": "Contact's primary email" }
+  ],
+  "timeoutMs": 30000                       // 100..600000
+}
+```
+
+`kind: shell` swaps the URL/method/headers/body fields for `command`, `cwd`, and an optional `env: { KEY: "value" }` map. Templates (`{{name}}`, `${ENV_VAR}`) work everywhere. See the [Actions reference](./actions) for the integration cookbook.
+
 ## `business` (optional)
 
 See [Journey 7 — Business layer](/journey/07-business-layer) for worked examples.

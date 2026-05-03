@@ -100,6 +100,7 @@ export default withMermaid(defineConfig({
             { text: "Public agents", link: "/reference/public-agents" },
             { text: "Intent knowledge graph", link: "/reference/graph" },
             { text: "Workflows", link: "/reference/workflows" },
+            { text: "Actions registry", link: "/reference/actions" },
             { text: "Tailscale mesh VPN", link: "/reference/tailscale-setup" },
             { text: "agentx doctor", link: "/reference/doctor" },
             { text: "Rollback runbook", link: "/reference/rollback-runbook" },

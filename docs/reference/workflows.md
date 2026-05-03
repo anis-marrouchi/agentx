@@ -110,7 +110,22 @@ Four party kinds advance a run:
 
 ### Actions
 
-`action.send`, `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.react`, `action.editMessage`, `action.logTime`, `action.callHTTP`. Each verb is a thin wrapper over the matching channel adapter method.
+Built-in verbs (one method per channel adapter): `action.send`, `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.react`, `action.editMessage`, `action.logTime`, `action.callHTTP`.
+
+`action.run` invokes a registered action from the [action registry](./actions). Config takes an `actionId` plus a templated `inputs` map; output mirrors the registry's `ActionRunResult` so downstream nodes can branch.
+
+```json
+{
+  "id": "notify_lead",
+  "type": "action.run",
+  "config": {
+    "actionId": "slack-notify",
+    "inputs": { "text": "New lead from {{trigger.source}}: {{trigger.email}}" }
+  }
+}
+```
+
+Outputs: <code v-pre>{{ &lt;nodeId&gt;.ok / .status / .output / .errors / .durationMs }}</code>. Use `action.callHTTP` for one-off calls inside a single workflow, `action.run` when the same call shows up in three or more places (or in a CLI/cron) and deserves to be promoted to the registry.
 
 ### BPM
 

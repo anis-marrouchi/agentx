@@ -405,6 +405,54 @@ When a workflow has a `userTask` node, it pauses until a human fills the form. T
 
 `agentx task list` ↔ dashboard `/inbox`. Use the CLI when you're already in a terminal or need to script bulk-resolution; use the dashboard when you want the click-to-fill UI.
 
+## Actions (reusable invocations)
+
+The action registry — named, parameterized shell or HTTP calls operators register once and invoke from CLI, dashboard, or workflows. Replaces hand-rolled `curl`/`exec` snippets sprinkled across crons and prompts. Storage: one JSON file per action under `.agentx/actions/<id>.json`. See the dedicated [Actions reference](./actions) for the integration cookbook.
+
+| Command | Description |
+|---|---|
+| `agentx actions list [--json]` | List registered actions with kind + first input summary |
+| `agentx actions show <id> [--json]` | Print an action's full definition (command/url, inputs, env, timeout) |
+| `agentx actions add <id> --kind <shell\|http> --title <text> [...]` | Register or replace an action non-interactively. See flags below |
+| `agentx actions remove <id>` (alias `rm`) | Delete an action |
+| `agentx actions run <id> [--input k=v ...] [--json]` | Invoke the action and print stdout/stderr (shell) or response body (http) |
+
+Common flags for `add`:
+
+- `--kind shell` → `--command "<templated cmd>"`, optional `--cwd <path>`
+- `--kind http` → `--url <u>`, `--method GET|POST|PUT|PATCH|DELETE`, `--headers '<json>'`, `--body '<template>'`
+- `--inputs "name:type[!],..."` — comma-separated; `!` marks the input required. Types: `string`, `number`, `boolean`
+- `--timeout <ms>` (default 30000, max 600000)
+
+Templating: `{{name}}` resolves to an input value; `${ENV_VAR}` resolves against `process.env` of the agentx daemon. Output is capped at 32KB per stream.
+
+**Examples:**
+
+```bash
+# CRM webhook — push a fresh lead from a chat into HubSpot
+agentx actions add hubspot-create-contact \
+  --kind http --title "Create HubSpot contact" \
+  --url "https://api.hubapi.com/crm/v3/objects/contacts" \
+  --method POST \
+  --headers '{"Authorization":"Bearer ${HUBSPOT_TOKEN}","Content-Type":"application/json"}' \
+  --body '{"properties":{"email":"{{email}}","firstname":"{{firstname}}","lastname":"{{lastname}}"}}' \
+  --inputs 'email:string!,firstname:string,lastname:string'
+
+# Transactional email via SendGrid
+agentx actions add sendgrid-send \
+  --kind http --title "SendGrid transactional email" \
+  --url "https://api.sendgrid.com/v3/mail/send" \
+  --headers '{"Authorization":"Bearer ${SENDGRID_API_KEY}","Content-Type":"application/json"}' \
+  --body '{"personalizations":[{"to":[{"email":"{{to}}"}]}],"from":{"email":"noreply@example.com"},"subject":"{{subject}}","content":[{"type":"text/plain","value":"{{body}}"}]}' \
+  --inputs 'to:string!,subject:string!,body:string!'
+
+# Run on demand (or wire into a cron / workflow)
+agentx actions run hubspot-create-contact \
+  --input email=jane@acme.com --input firstname=Jane --input lastname=Doe
+```
+
+For a richer integration cookbook (CRM, ERP, support, billing) see the [Actions reference](./actions).
+
 ## Actors & roles (BPM)
 
 Actors are humans who can be assigned to `userTask` nodes; roles are groups of actors with an assignment strategy.
@@ -422,6 +470,29 @@ Actors are humans who can be assigned to `userTask` nodes; roles are groups of a
 | `agentx role show <id>` | JSON dump including resolved actor ids (walks nested roles). |
 
 `userTask` nodes set `assignTo: "actor:alice"` or `assignTo: "role:reviewers"`. Forms render in the assignee's preferred channel (Telegram/WhatsApp/Slack one-click URLs, or the `/inbox` web UI).
+
+## Memory (per-agent notes)
+
+Long-lived experiential notes the agent reads on every turn — Claude-Code-style structured memory. Each memory has a kind (`user`, `feedback`, `project`, `reference`) and a one-line description; the daemon indexes them into a `MEMORY.md` table that is appended to the agent's system prompt at run time.
+
+Use it for facts the agent should keep across sessions: who the user is, how they prefer feedback worded, project-specific context, or pointers to external systems (CRM project codes, Notion DBs, Slack channels).
+
+| Command | Description |
+|---|---|
+| `agentx memory add --agent <id> --name <slug> --type <kind> --description <line> [--body <text> \| --from <file>]` | Add a memory. `--type` is `user`, `feedback`, `project`, or `reference` |
+| `agentx memory list --agent <id> [--json]` | List memories for an agent |
+| `agentx memory show <name> --agent <id>` | Print the full body of a memory |
+| `agentx memory remove <name> --agent <id>` (alias `rm`) | Delete a memory |
+| `agentx memory index --agent <id>` | Print the `MEMORY.md` index the agent sees in its prompt |
+
+**Example:** save a CRM convention so the agent doesn't keep asking which Salesforce project codes map to which clients.
+
+```bash
+agentx memory add --agent sales-ops \
+  --name salesforce-projects --type reference \
+  --description "Salesforce project codes per client (avoid asking each time)" \
+  --body "ACME → SF-1042; Globex → SF-1077; Initech → SF-1101"
+```
 
 ## Tokens
 
