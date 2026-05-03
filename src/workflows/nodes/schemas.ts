@@ -143,6 +143,10 @@ const ACTION_RUN_OUTPUT: OutputField[] = [
   { path: "durationMs", type: "number", description: "Wall time of the invocation, in milliseconds." },
 ]
 
+const ACTION_BUILTIN_OUTPUT: OutputField[] = [
+  { path: "*", type: "any", description: "The built-in's typed response. Shape depends on the action — e.g. http.fetch returns {status, statusText, headers, body, truncated, url}; mesh.delegate returns {peer, agent, response}; extract.structured returns {data, model, usage}. See GET /api/actions/builtin for each action's schema." },
+]
+
 const BRANCH_OUTPUT: OutputField[] = [
   { path: "port", type: "string", description: "Which outgoing port matched. Downstream edges with `fromPort` matching this value will fire." },
 ]
@@ -229,6 +233,7 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
   "action.logTime":     { summary: "Logged time spent on a GitLab issue/MR.", fields: ACTION_LOG_TIME_OUTPUT },
   "action.callHTTP":    { summary: "Made an outbound HTTP request with templated params.", fields: ACTION_CALL_HTTP_OUTPUT },
   "action.run":         { summary: "Invoked a registered action from the action registry. Output is the full ActionRunResult.", fields: ACTION_RUN_OUTPUT },
+  "action.builtin":     { summary: "Invoked a daemon-shipped typed built-in action (improvement plan #6) by name. Output is the built-in's validated response.", fields: ACTION_BUILTIN_OUTPUT },
   "userTask":           { summary: "Paused for a human to submit a form. Resumes with the submission in this node's output.", fields: USER_TASK_OUTPUT },
   "subProcess":         { summary: "Spawned a child workflow and waited for its completion.", fields: SUB_PROCESS_OUTPUT },
   "signal.emit":        { summary: "Published a signal to the bus. Runs elsewhere can resume on it via `signal.wait`.", fields: SIGNAL_EMIT_OUTPUT },

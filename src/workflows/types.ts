@@ -49,6 +49,12 @@ export const nodeTypeSchema = z.enum([
   // Lets operators define a reusable shell/http action once and call it
   // from many workflows without duplicating the command/url/headers.
   "action.run",
+  // Built-in typed action invocation (improvement plan #6 + #9). Calls
+  // a daemon-shipped action (http.fetch, mesh.delegate, extract.structured,
+  // etc.) by name. Input is templated against the run context the same
+  // way action.run is. Output is the validated builtin response so
+  // downstream nodes can pipe typed data forward without reparsing.
+  "action.builtin",
   // BPM: human tasks + composition + signals + intermediate timer
   "userTask",
   "subProcess",

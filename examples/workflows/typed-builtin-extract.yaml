@@ -1,0 +1,79 @@
+# Typed-builtin extraction workflow
+#
+# Demonstrates the new action.builtin node (improvement plan #9 + #6):
+# fetch a public JSON feed, extract typed fields with extract.structured,
+# and write the structured records as JSONL. End-to-end no shell-out,
+# no operator-defined actions — just composing daemon-shipped typed
+# primitives.
+#
+# Trigger this manually via the dashboard or with:
+#   curl -s -X POST http://localhost:18800/workflows/typed-builtin-extract/run \
+#     -H "Content-Type: application/json" \
+#     -d '{"trigger":{"feed":"https://hacker-news.firebaseio.com/v0/topstories.json"}}'
+
+id: typed-builtin-extract
+version: 2
+title: "Typed extraction pipeline (built-ins demo)"
+priority: 0
+fanOut: false
+
+flow:
+  - trigger
+  - fetch_feed
+  - extract_top
+  - persist
+  - done
+
+nodes:
+  - id: trigger
+    type: trigger.manual
+    config: {}
+
+  # Step 1: GET the JSON feed via the typed http.fetch built-in.
+  # Output is shaped {status, statusText, headers, body, truncated, url}
+  # — downstream nodes reference it via {{fetch_feed.body}}.
+  - id: fetch_feed
+    type: action.builtin
+    config:
+      name: http.fetch
+      input:
+        url: "{{trigger.feed}}"
+        timeoutMs: 15000
+
+  # Step 2: ask Claude to extract the first 5 IDs into a typed array.
+  # extract.structured returns {data, model, usage}; data conforms to
+  # the schema we declare here, so persist below can write it raw.
+  - id: extract_top
+    type: action.builtin
+    config:
+      name: extract.structured
+      input:
+        model: claude-haiku-4-5
+        prompt: |
+          The following body is a JSON array of HackerNews story IDs.
+          Return the FIRST 5 ids as an array of integers.
+          Body: {{fetch_feed.body}}
+        schema:
+          type: object
+          properties:
+            ids:
+              type: array
+              items: { type: number }
+              minItems: 1
+              maxItems: 5
+          required: [ids]
+
+  # Step 3: append the extracted ids to a JSONL log via the file built-in.
+  - id: persist
+    type: action.builtin
+    config:
+      name: file.write_jsonl
+      input:
+        path: ".agentx/builtin-demo.jsonl"
+        records:
+          - { fetched_at: "{{trigger.feed}}", top_ids: "{{extract_top.data.ids}}" }
+        createDirs: true
+
+  - id: done
+    type: end
+    config: {}

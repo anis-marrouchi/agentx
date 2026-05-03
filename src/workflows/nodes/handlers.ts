@@ -381,6 +381,51 @@ const actionRunHandler: NodeHandler = async (ctx) => {
   }
 }
 
+/** Action.builtin: call a daemon-shipped typed built-in action by name
+ *  (improvement plan #6 + #9). Closes the loop on the typed-workflow-DSL
+ *  story — workflow YAMLs can compose http.fetch / extract.structured /
+ *  file.read_lines / mesh.delegate / etc. without operator-defined action
+ *  records. Input is templated against the run context the same way
+ *  action.run handles its `inputs` field.
+ *
+ *  Config shape:
+ *    {
+ *      kind: "action.builtin",
+ *      config: {
+ *        name: "http.fetch",          // built-in name (dotted)
+ *        input: { url: "{{previousNodeId.url}}" }   // any templatable object
+ *      }
+ *    }
+ *
+ *  Output: the built-in's typed response, exposed under the run context
+ *  as `<nodeId>` so downstream nodes can reference it via templates.
+ *  On error (Zod validation, timeout, handler throw) returns
+ *  `{ error: ... }` so branch / rule nodes can react.
+ */
+const actionBuiltinHandler: NodeHandler = async (ctx) => {
+  const rendered = renderParams(ctx.node.config, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
+  const name = String(rendered.name ?? "")
+  if (!name) return { error: `action.builtin "${ctx.node.id}" needs a "name" (e.g. "http.fetch")` }
+  const input = (rendered.input && typeof rendered.input === "object")
+    ? rendered.input as Record<string, unknown>
+    : {}
+  const { runBuiltin, getBuiltin } = await import("../../actions/builtin")
+  if (!getBuiltin(name)) {
+    return { error: `action.builtin "${ctx.node.id}": unknown built-in "${name}"` }
+  }
+  try {
+    const output = await runBuiltin(name, input)
+    return { output: output as Record<string, unknown> }
+  } catch (e: any) {
+    // ZodError surfaces as a validation failure with a path-aware
+    // message. Other errors (network, timeout, handler throw) come
+    // through with their own message. Either way, return as a node
+    // error so the engine can branch / surface in the run log.
+    const msg = e?.name === "ZodError" ? `validation: ${e.message}` : (e?.message || String(e))
+    return { error: `action.builtin "${name}" failed: ${msg}` }
+  }
+}
+
 /** Transform: derive a bundle from upstream context. V2 scope is tight — we
  *  support two modes:
  *    1. `path`: pick a value from context by dotted path, expose as {value}
@@ -695,6 +740,7 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "action.logTime":     logTimeHandler,
   "action.callHTTP":    callHTTPHandler,
   "action.run":         actionRunHandler,
+  "action.builtin":     actionBuiltinHandler,
   "userTask":        userTaskHandler,
   "subProcess":      subProcessHandler,
   "signal.emit":     signalEmitHandler,
