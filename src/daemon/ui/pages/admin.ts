@@ -369,6 +369,7 @@ const ADMIN_PAGE_BODY = `
       <div id="ch-slack" hidden><div id="slack-section" class="section-block"></div></div>
       <div id="ch-discord" hidden></div>
       <div id="ch-gitlab" hidden></div>
+      <div id="ch-webrtc" hidden></div>
       <div id="ch-github" hidden></div>
     </div>
   </section>
@@ -1958,6 +1959,7 @@ const CHANNEL_DEFS = [
   { id: 'discord',  icon: 'DC', label: 'Discord' },
   { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
   { id: 'github',   icon: 'GH', label: 'GitHub' },
+  { id: 'webrtc',   icon: '☎',  label: 'Calls (WebRTC)' },
 ];
 
 /** Per-connector card metadata — logo color, long description, setup time.
@@ -1969,6 +1971,7 @@ const CONNECTOR_META = {
   discord:  { group: 'chat', brand: '#5865F2', desc: 'Works in servers, threads, and DMs. Create a Discord bot, grant Read/Send Messages, paste the token.' },
   gitlab:   { group: 'dev',  brand: '#FC6D26', desc: 'Pings your agent on MRs, issues, and pipeline events. Works with self-hosted too.' },
   github:   { group: 'dev',  brand: '#24292e', desc: 'Pings your agent on PRs, issues, and CI runs. Configure per-repo.' },
+  webrtc:   { group: 'chat', brand: '#10B981', desc: 'Voice calls with a transcribing bot. Live on the /call page; history of recent calls below.' },
 };
 
 function renderChannelsGrid() {
@@ -2042,7 +2045,7 @@ function channelSubtext(id, status) {
  *  the matching connector card. */
 function showChannelPane(id) {
   state.__activeChannel = id;
-  const panes = ['telegram','whatsapp','slack','discord','gitlab','github'];
+  const panes = ['telegram','whatsapp','slack','discord','gitlab','github','webrtc'];
   for (const p of panes) {
     const el = document.getElementById('ch-' + p);
     if (el) el.hidden = (p !== id);
@@ -2065,6 +2068,7 @@ function showChannelPane(id) {
   else if (id === 'gitlab') renderGitLabPane();
   else if (id === 'github') renderGitHubPane();
   else if (id === 'whatsapp') renderWhatsAppPane();
+  else if (id === 'webrtc') renderWebRtcPane();
 }
 
 function channelStatus(id) {
@@ -2246,6 +2250,52 @@ function jumpToWebhooks() {
   }
   const src = document.getElementById('w-source');
   if (src) src.value = 'github';
+}
+
+function renderWebRtcPane() {
+  const pane = $('ch-webrtc');
+  if (!pane) return;
+  pane.innerHTML =
+    '<div class="ax-section-card"><div class="ax-section-card__head">' +
+      '<div class="ax-section-card__icon" style="background:#10B981;color:#fff">☎</div>' +
+      '<div class="ax-section-card__info"><h3>Calls (WebRTC)</h3><div class="ax-section-card__sub">Live calls happen on <a href="/call" target="_blank">/call</a>. The transcribing bot can be invited per call from there. This panel shows active + recent sessions.</div></div></div>' +
+    '<div class="ax-stack" style="margin-top:14px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<h3 style="margin:0;font-size:13px">Active calls</h3>' +
+        '<button class="ax-btn" onclick="loadWebRtcHistory()">Refresh</button>' +
+      '</div>' +
+      '<div id="webrtc-active" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click refresh</div>' +
+      '<h3 style="margin:14px 0 8px;font-size:13px">Recent sessions <span style="font-size:11px;color:var(--ax-muted);font-weight:normal">(in-process ring buffer, last ~50)</span></h3>' +
+      '<div id="webrtc-history" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;max-height:280px;overflow-y:auto">click refresh</div>' +
+    '</div>';
+  loadWebRtcHistory();
+}
+
+window.loadWebRtcHistory = async function() {
+  try {
+    const data = await req('GET', '/api/admin/channels/webrtc/history');
+    const active = data.active || [];
+    const history = data.history || [];
+    const fmtTs = function(ms) { const d = new Date(ms); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0'); };
+    const fmtDur = function(s) { if (s < 60) return s + 's'; const m = Math.floor(s/60); return m + 'm ' + (s % 60) + 's'; };
+    $('webrtc-active').innerHTML = active.length
+      ? active.map(function(b){ return '<div>· call=' + escapeHtml(b.callId.slice(0, 12)) + ' agent=<b>' + escapeHtml(b.agentId) + '</b> target=' + escapeHtml(b.target) + ' uptime=' + fmtDur(b.uptimeSec) + '</div>'; }).join('')
+      : '<i style="color:var(--ax-muted)">no active calls</i>';
+    $('webrtc-history').innerHTML = history.length
+      ? '<div style="display:grid;grid-template-columns:130px 110px 110px 1fr 70px 60px;gap:6px;font-size:10px;color:var(--ax-muted);text-transform:uppercase;letter-spacing:0.04em;padding-bottom:4px;border-bottom:1px solid var(--ax-border);margin-bottom:4px"><div>started</div><div>agent</div><div>target</div><div>callId</div><div>duration</div><div>chunks</div></div>' +
+        history.map(function(h){ return '<div style="display:grid;grid-template-columns:130px 110px 110px 1fr 70px 60px;gap:6px;padding:3px 0">' +
+          '<div>' + escapeHtml(fmtTs(h.startedAt)) + '</div>' +
+          '<div><b>' + escapeHtml(h.agentId) + '</b></div>' +
+          '<div>' + escapeHtml(h.target) + '</div>' +
+          '<div style="color:var(--ax-muted)">' + escapeHtml(h.callId.slice(0, 24)) + '</div>' +
+          '<div>' + escapeHtml(fmtDur(h.durationSec)) + '</div>' +
+          '<div>' + h.transcriptChunks + '</div>' +
+        '</div>'; }).join('')
+      : '<i style="color:var(--ax-muted)">no completed sessions in this daemon\'s memory yet</i>';
+  } catch (e) {
+    $('webrtc-active').innerHTML = '<i style="color:var(--ax-err)">failed: ' + e.message + '</i>';
+    $('webrtc-history').innerHTML = '';
+  }
 }
 
 function renderWhatsAppPane() {

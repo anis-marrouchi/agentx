@@ -70,6 +70,10 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
       "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
+      // WebRTC bot history — active calls + ring buffer of recently-completed
+      // sessions. Lives on the daemon (BotManager owns it); the dashboard
+      // proxies the read-only view here.
+      "GET /api/admin/channels/webrtc/history": () => proxyDaemonJson("/webrtc/history"),
       "GET /api/admin/channels/whatsapp/chats": () => proxyDaemonJson("/whatsapp/chats"),
       "GET /api/admin/channels/whatsapp/contacts": () => proxyDaemonJson("/whatsapp/contacts"),
       "POST /api/admin/channels/whatsapp/ingest": () => proxyDaemonPostJson("/whatsapp/ingest", body),

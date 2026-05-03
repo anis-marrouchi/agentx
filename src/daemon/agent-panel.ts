@@ -70,6 +70,8 @@ export async function handleAgentApi(
       "GET ": () => getAgentState(agentId),
       "PATCH ": () => patchAgent(agentId, body),
       "PATCH capability": () => patchAgentCapability(agentId, body),
+      "POST mcp": () => upsertAgentMcp(agentId, body),
+      "DELETE mcp": () => deleteAgentMcp(agentId, body),
       "GET identity": () => getIdentityFiles(agentId),
       "GET identity/file": () => getIdentityFile(agentId, String(qs.path || "")),
       "PUT identity/file": () => putIdentityFile(agentId, body),
@@ -143,6 +145,9 @@ function getAgentState(agentId: string) {
     maxDelegationDepth: (def as any).maxDelegationDepth ?? 5,
     contextReferences: !!(def as any).contextReferences,
     contextStrategy: (def as any).contextStrategy || "",
+    // MCP servers — { name → { command, args, env? } }. Synced to
+    // <workspace>/.mcp.json by agent-mcp.ts at daemon boot.
+    mcp: ((def as any).mcp && typeof (def as any).mcp === "object") ? (def as any).mcp : {},
     overview,
     defaultWorker: cfg.node?.defaultAgent,
     draftAgent: cfg.dashboard?.draftAgent,
@@ -161,6 +166,51 @@ function patchAgent(agentId: string, body: any) {
     if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
     cfg.agents[agentId] = { ...cfg.agents[agentId], ...fields }
     return `agent "${agentId}" updated (${Object.keys(fields).join(", ")})`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+/** Add or update one MCP server entry on an agent. Body shape:
+ *    { name: string, command: string, args?: string[], env?: Record<string,string> }
+ *  The agent.mcp record is keyed by name, and agent-mcp.ts syncs the merged
+ *  result to <workspace>/.mcp.json the next time the daemon boots / reloads.
+ *  Operator edits to .mcp.json are respected (the sync layer marks them
+ *  operator-owned and skips them) — this endpoint only writes to agentx.json. */
+function upsertAgentMcp(agentId: string, body: any) {
+  const name = String(body?.name || "").trim()
+  const command = String(body?.command || "").trim()
+  if (!name) throw new Error("name required")
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error("name must be identifier-safe (alnum, _, -)")
+  if (!command) throw new Error("command required")
+  const args = Array.isArray(body?.args) ? body.args.map((a: unknown) => String(a)) : []
+  let env: Record<string, string> | undefined
+  if (body?.env && typeof body.env === "object") {
+    env = {}
+    for (const [k, v] of Object.entries(body.env as Record<string, unknown>)) {
+      if (typeof v === "string") env[k] = v
+    }
+    if (Object.keys(env).length === 0) env = undefined
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    cfg.agents[agentId].mcp = cfg.agents[agentId].mcp || {}
+    cfg.agents[agentId].mcp[name] = { command, args, ...(env ? { env } : {}) }
+    return `agent "${agentId}" mcp.${name} upserted`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+function deleteAgentMcp(agentId: string, body: any) {
+  const name = String(body?.name || "").trim()
+  if (!name) throw new Error("name required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    if (!cfg.agents[agentId].mcp || !(name in cfg.agents[agentId].mcp)) {
+      throw new Error(`no mcp.${name} on "${agentId}"`)
+    }
+    delete cfg.agents[agentId].mcp[name]
+    if (Object.keys(cfg.agents[agentId].mcp).length === 0) delete cfg.agents[agentId].mcp
+    return `agent "${agentId}" mcp.${name} removed`
   })
   return { summary, agent: getAgentState(agentId) }
 }

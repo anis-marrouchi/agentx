@@ -2755,6 +2755,18 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           break
         }
 
+        case "GET /webrtc/history": {
+          if (!this.botManager) {
+            this.json(res, 404, { error: "WebRTC bot not enabled" })
+            return
+          }
+          // In-process ring buffer of recently-completed sessions. Surfaces
+          // call activity to the admin UI without requiring transcript
+          // persistence to disk (that's still opt-in via webrtcBot.transcriptChannel).
+          this.json(res, 200, { active: this.botManager.active(), history: this.botManager.history() })
+          break
+        }
+
         case "GET /webrtc/config": {
           const wrtc = this.config.channels.webrtc
           if (!wrtc?.enabled) {

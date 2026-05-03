@@ -506,6 +506,44 @@ const AGENT_PAGE_BODY = `
           </div>
         </div>
       </div>
+
+      <!-- MCP servers — synced to <workspace>/.mcp.json by agent-mcp.ts at boot -->
+      <div class="ax-panel" style="margin-top:14px">
+        <div class="ax-panel__head">
+          <div>
+            <h2>MCP servers</h2>
+            <p class="ax-lead" style="margin:0">Each entry becomes a server in the agent\'s <code>.mcp.json</code>. Operator-edited entries in that file are respected (the sync layer marks them operator-owned and skips them); this tab only writes to <code>agentx.json</code>.</p>
+          </div>
+        </div>
+        <div class="ax-panel__body">
+          <div id="mcp-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
+          <details>
+            <summary style="cursor:pointer;font-size:12px;color:var(--ax-accent,#3a7bd5)">+ Add or update server</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <label class="ax-field">
+                <span class="ax-field__label">Name <span class="ax-hint">(identifier; will key the entry in agent.mcp)</span></span>
+                <input id="mcp-name" type="text" placeholder="filesystem, gitlab, brave-search…" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Command</span>
+                <input id="mcp-command" type="text" placeholder="npx" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Args <span class="ax-hint">(comma-separated)</span></span>
+                <input id="mcp-args" type="text" placeholder="-y, @modelcontextprotocol/server-filesystem, /Users/me/code" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Env <span class="ax-hint">(KEY=value, comma-separated; optional)</span></span>
+                <input id="mcp-env" type="text" placeholder="GITLAB_TOKEN=glpat-…, GITLAB_HOST=https://gitlab.example.com" />
+              </label>
+              <div class="ax-form-actions">
+                <button class="ax-btn ax-btn--primary" id="mcp-save">Save MCP server</button>
+                <span id="mcp-msg" class="ax-hint" style="margin-left:10px"></span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
     </section>
 
     <!-- Activity -->
@@ -916,8 +954,71 @@ async function loadAgent(){
       $('cap-cstrat').value = a.contextStrategy || '';
       $('cap-mxm').value = a.maxExecutionMinutes ?? 20;
     }
+    // MCP servers list
+    const mcpListEl = document.getElementById('mcp-list');
+    if (mcpListEl) {
+      const mcp = a.mcp || {};
+      const names = Object.keys(mcp);
+      if (names.length === 0) {
+        mcpListEl.innerHTML = '<div style="font-size:11px;color:var(--ax-muted);font-style:italic;padding:8px;border:1px dashed var(--ax-border);border-radius:4px">no MCP servers configured</div>';
+      } else {
+        mcpListEl.innerHTML = names.map(function(n){
+          const s = mcp[n];
+          const args = (s.args || []).map(function(x){ return esc(x); }).join(' ');
+          const envCount = s.env ? Object.keys(s.env).length : 0;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--ax-border);border-radius:4px">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div><b>' + esc(n) + '</b> <code style="font-size:11px;color:var(--ax-muted);margin-left:4px">' + esc(s.command) + ' ' + args + '</code></div>' +
+              (envCount ? '<div style="font-size:11px;color:var(--ax-muted);margin-top:2px">env: ' + envCount + ' var(s)</div>' : '') +
+            '</div>' +
+            '<button class="ax-btn ax-btn--danger" data-mcp-rm="' + esc(n) + '">Remove</button>' +
+          '</div>';
+        }).join('');
+        mcpListEl.querySelectorAll('[data-mcp-rm]').forEach(function(b){
+          b.addEventListener('click', async function(){
+            const n = b.getAttribute('data-mcp-rm');
+            if (!confirm('Remove MCP server "' + n + '"?')) return;
+            try {
+              await req('DELETE', '/api/admin/agent/' + AGENT_ID + '/mcp', { name: n });
+              await loadAgent();
+            } catch (e) { showMsg('err', e.message); }
+          });
+        });
+      }
+    }
   } catch (e) { showMsg('err', e.message); }
 }
+
+// MCP save — adds or updates one server entry on the agent.
+(function(){
+  const btn = document.getElementById('mcp-save');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const name = document.getElementById('mcp-name').value.trim();
+    const command = document.getElementById('mcp-command').value.trim();
+    const argsRaw = document.getElementById('mcp-args').value.trim();
+    const envRaw = document.getElementById('mcp-env').value.trim();
+    const args = argsRaw ? argsRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    const env = {};
+    if (envRaw) {
+      envRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(pair){
+        const eq = pair.indexOf('=');
+        if (eq > 0) env[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+      });
+    }
+    const body = { name, command, args };
+    if (Object.keys(env).length > 0) body.env = env;
+    const msg = document.getElementById('mcp-msg');
+    try {
+      await req('POST', '/api/admin/agent/' + AGENT_ID + '/mcp', body);
+      if (msg) { msg.textContent = '✓ saved — agent picks it up at next daemon boot'; msg.style.color = 'var(--ax-success)'; }
+      ['mcp-name','mcp-command','mcp-args','mcp-env'].forEach(function(id){ document.getElementById(id).value = ''; });
+      await loadAgent();
+    } catch (e) {
+      if (msg) { msg.textContent = e.message; msg.style.color = 'var(--ax-err)'; }
+    }
+  });
+})();
 
 // Capability save — POST to the same agent-config write path the
 // CLI uses, so both surfaces persist identically. (See agentx agent
