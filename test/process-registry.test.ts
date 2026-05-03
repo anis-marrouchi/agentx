@@ -28,6 +28,7 @@ class FakeHandle implements ProcessHandle {
     public readonly key: ProcessKey,
     public readonly opts: SpawnOptions,
     private readonly fakeOpts: FakeOptions = {},
+    initialHash: string | null = null,
   ) {
     this._snap = {
       key,
@@ -39,6 +40,7 @@ class FakeHandle implements ProcessHandle {
       turnCount: 0,
       lastInputTokens: 0,
       pendingTaskId: null,
+      claudeMdHash: initialHash,
     }
   }
 
@@ -87,8 +89,10 @@ class FakeHandle implements ProcessHandle {
 
 class FakeFactory implements ProcessFactory {
   spawned: FakeHandle[] = []
+  /** Optional hash to record on every spawn — drift tests set this. */
+  initialHash: string | null = null
   spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle {
-    const h = new FakeHandle(key, opts)
+    const h = new FakeHandle(key, opts, {}, this.initialHash)
     this.spawned.push(h)
     return h
   }
@@ -295,6 +299,133 @@ describe("ProcessRegistry — idle/stale sweep", () => {
     vi.advanceTimersByTime(150)
     await Promise.resolve()
     expect(reg.list()).toHaveLength(0) // reaped
+  })
+})
+
+describe("ProcessRegistry — CLAUDE.md drift sweep", () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it("kills idle handles when the workspace hash changes", async () => {
+    const factory = new FakeFactory()
+    factory.initialHash = "abc123"
+    let liveHash = "abc123"
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000_000,
+      staleTimeoutMs: 1_000_000,
+      sweepIntervalMs: 100,
+      currentWorkspaceHash: () => liveHash,
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setIdle()
+    // First sweep: no drift, hash matches.
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    expect(reg.list()).toHaveLength(1)
+    expect(h.killReasons).toHaveLength(0)
+    // Operator edits CLAUDE.md → hash changes.
+    liveHash = "def456"
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    expect(reg.list()).toHaveLength(0)
+    expect(h.killReasons.some((r) => r.startsWith("claude-md drifted"))).toBe(true)
+  })
+
+  it("does NOT kill warm-hot or warm-cold handles even when hash drifts (mid-turn safety)", async () => {
+    const factory = new FakeFactory()
+    factory.initialHash = "abc"
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000_000,
+      staleTimeoutMs: 1_000_000,
+      sweepIntervalMs: 100,
+      currentWorkspaceHash: () => "different",
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    // warm-cold (default). Hash differs but we should NOT kill mid-turn.
+    vi.advanceTimersByTime(500)
+    await Promise.resolve()
+    expect(h.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(1)
+
+    // Now go warm-hot. Still not killed.
+    h.setWarmHot()
+    vi.advanceTimersByTime(500)
+    await Promise.resolve()
+    expect(h.killReasons).toHaveLength(0)
+
+    // Transition to idle → next sweep kills.
+    h.setIdle()
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    expect(h.killReasons.some((r) => r.startsWith("claude-md drifted"))).toBe(true)
+  })
+
+  it("treats unmarked → marked as drift (and vice versa)", async () => {
+    const factory = new FakeFactory()
+    factory.initialHash = null
+    let liveHash: string | null = null
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000_000,
+      staleTimeoutMs: 1_000_000,
+      sweepIntervalMs: 100,
+      currentWorkspaceHash: () => liveHash,
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setIdle()
+    // null === null, no drift.
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    expect(h.killReasons).toHaveLength(0)
+    // user-edited file converted to managed (or first managed gen ran)
+    liveHash = "newhash"
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    expect(h.killReasons.some((r) => r.includes("unmarked → newhash"))).toBe(true)
+  })
+
+  it("hash-read failures don't crash the sweeper", async () => {
+    const factory = new FakeFactory()
+    factory.initialHash = "abc"
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000_000,
+      staleTimeoutMs: 1_000_000,
+      sweepIntervalMs: 100,
+      currentWorkspaceHash: () => { throw new Error("EACCES: permission denied") },
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setIdle()
+    vi.advanceTimersByTime(150)
+    await Promise.resolve()
+    // Survived the throw — handle still alive, sweeper still running.
+    expect(reg.list()).toHaveLength(1)
+    expect(h.killReasons).toHaveLength(0)
+  })
+
+  it("does nothing when no currentWorkspaceHash hook is configured", async () => {
+    const factory = new FakeFactory()
+    factory.initialHash = "abc"
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000_000,
+      staleTimeoutMs: 1_000_000,
+      sweepIntervalMs: 100,
+      // currentWorkspaceHash intentionally omitted
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setIdle()
+    vi.advanceTimersByTime(500)
+    await Promise.resolve()
+    expect(reg.list()).toHaveLength(1)
+    expect(h.killReasons).toHaveLength(0)
   })
 })
 

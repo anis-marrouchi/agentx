@@ -22,7 +22,7 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import { ProcessRegistry } from "@/agents/process-registry"
-import { ClaudeProcessFactory } from "@/agents/claude-process-factory"
+import { ClaudeProcessFactory, readClaudeMdHashSafe } from "@/agents/claude-process-factory"
 import { setProcessRegistry } from "@/agents/process-registry-instance"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
@@ -244,7 +244,16 @@ export class AgentXDaemon {
     if (persistentAgents.length > 0) {
       try {
         const factory = new ClaudeProcessFactory({ log: (m) => this.log(`  ${m}`) })
-        const procReg = new ProcessRegistry({ factory, log: (m) => this.log(`  ${m}`) })
+        const procReg = new ProcessRegistry({
+          factory,
+          log: (m) => this.log(`  ${m}`),
+          // Drift detection: re-read each handle's workspace CLAUDE.md
+          // hash on every sweep. When the hash changes (user edited
+          // an agent's prompt, daemon's auto-refresh ran, etc.), the
+          // sweeper kills the idle handle so the next dispatch picks
+          // up the new file. Mid-turn handles get checked next idle.
+          currentWorkspaceHash: (_key, workspace) => readClaudeMdHashSafe(workspace),
+        })
         procReg.start()
         setProcessRegistry(procReg)
         this.processRegistry = procReg

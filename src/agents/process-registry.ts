@@ -67,6 +67,11 @@ export interface ProcessSnapshot {
   pendingTaskId: string | null
   /** Reason the process is dead, when state === "dead". */
   deadReason?: string
+  /** Managed-marker hash of CLAUDE.md at spawn time (null for unmarked
+   *  / user-edited files). The drift sweep re-reads the live file's
+   *  hash and kills idle handles whose hash no longer matches, so the
+   *  next dispatch picks up the edited prompt. */
+  claudeMdHash: string | null
 }
 
 export interface SpawnOptions {
@@ -157,14 +162,30 @@ export interface ProcessRegistryConfig {
   sweepIntervalMs?: number
   factory: ProcessFactory
   log?: (msg: string) => void
+  /** Optional drift detector — called per idle handle on each sweep.
+   *  Returns the current workspace CLAUDE.md hash for the agent (or
+   *  null when unmarked / missing). The registry compares against the
+   *  hash stored on the handle's snapshot at spawn time and kills
+   *  handles whose hashes don't match.
+   *
+   *  Callers wire this from src/agents/workspace-setup.ts where the
+   *  managed-marker hash logic already lives — the registry stays
+   *  decoupled from the marker format itself. When unset, drift
+   *  detection is disabled (default for tests). */
+  currentWorkspaceHash?: (key: ProcessKey, workspace: string) => string | null
 }
 
 export class ProcessRegistry {
   private handles = new Map<ProcessKeyString, ProcessHandle>()
   private sweeper?: ReturnType<typeof setInterval>
-  private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log">> & {
+  /** Per-handle workspace path captured at acquire time. Drift sweep
+   *  re-reads each handle's workspace via the currentWorkspaceHash
+   *  hook to compare against the stored hash. */
+  private handleWorkspace = new Map<ProcessKeyString, string>()
+  private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log" | "currentWorkspaceHash">> & {
     factory: ProcessFactory
     log: (msg: string) => void
+    currentWorkspaceHash?: (key: ProcessKey, workspace: string) => string | null
   }
 
   constructor(cfg: ProcessRegistryConfig) {
@@ -176,6 +197,7 @@ export class ProcessRegistry {
       sweepIntervalMs: cfg.sweepIntervalMs ?? 5_000,
       factory: cfg.factory,
       log: cfg.log ?? (() => {}),
+      currentWorkspaceHash: cfg.currentWorkspaceHash,
     }
   }
 
@@ -236,6 +258,7 @@ export class ProcessRegistry {
 
     const handle = this.cfg.factory.spawn(key, opts)
     this.handles.set(ks, handle)
+    this.handleWorkspace.set(ks, opts.workspace)
     this.cfg.log(`[process-registry] spawned ${ks}`)
     return handle
   }
@@ -251,6 +274,7 @@ export class ProcessRegistry {
     const handle = this.handles.get(ks)
     if (!handle) return
     this.handles.delete(ks)
+    this.handleWorkspace.delete(ks)
     if (opts.kill) {
       void handle.kill(opts.reason ?? "release")
     }
@@ -267,6 +291,7 @@ export class ProcessRegistry {
     const handle = this.handles.get(ks)
     if (!handle) return
     this.handles.delete(ks)
+    this.handleWorkspace.delete(ks)
     await handle.kill(reason)
   }
 
@@ -306,13 +331,20 @@ export class ProcessRegistry {
     return true
   }
 
-  /** Per-tick sweep — kill processes idle past the timeout. */
+  /**
+   * Per-tick sweep — kills idle processes past timeout, reaps dead
+   * handles, and detects CLAUDE.md drift on idle handles. Drift
+   * kills only fire on idle handles to avoid disturbing a turn that's
+   * still streaming; the next sweep catches the handle once it
+   * transitions back to idle.
+   */
   private sweepIdle(): void {
     const now = Date.now()
     for (const [ks, h] of this.handles.entries()) {
       const snap = h.snapshot()
       if (h.state() === "dead") {
         this.handles.delete(ks)
+        this.handleWorkspace.delete(ks)
         this.cfg.log(`[process-registry] reaped dead ${ks}`)
         continue
       }
@@ -320,12 +352,43 @@ export class ProcessRegistry {
       const idleFor = now - snap.lastTurnAt
       if (idleFor >= this.cfg.staleTimeoutMs) {
         this.handles.delete(ks)
+        this.handleWorkspace.delete(ks)
         void h.kill(`stale (idle ${Math.round(idleFor / 1000)}s)`)
         this.cfg.log(`[process-registry] killed stale ${ks}`)
-      } else if (idleFor >= this.cfg.idleTimeoutMs) {
+        continue
+      }
+      if (idleFor >= this.cfg.idleTimeoutMs) {
         this.handles.delete(ks)
+        this.handleWorkspace.delete(ks)
         void h.kill(`idle (${Math.round(idleFor / 1000)}s)`)
         this.cfg.log(`[process-registry] killed idle ${ks}`)
+        continue
+      }
+
+      // Drift detection — only when the operator wired a hash hook.
+      // Reads the current managed-marker hash from the workspace's
+      // CLAUDE.md and kills handles whose hash has changed since
+      // spawn, so the next dispatch loads the edited prompt.
+      if (this.cfg.currentWorkspaceHash) {
+        const workspace = this.handleWorkspace.get(ks)
+        if (workspace) {
+          let currentHash: string | null = null
+          try {
+            currentHash = this.cfg.currentWorkspaceHash(h.key, workspace)
+          } catch (e: any) {
+            // Hash-read failure must not crash the sweeper. Log + skip.
+            this.cfg.log(`[process-registry] drift-check failed for ${ks}: ${e?.message || e}`)
+            continue
+          }
+          if (currentHash !== snap.claudeMdHash) {
+            this.handles.delete(ks)
+            this.handleWorkspace.delete(ks)
+            const fromHash = snap.claudeMdHash ?? "unmarked"
+            const toHash = currentHash ?? "unmarked"
+            void h.kill(`claude-md drifted (${fromHash} → ${toHash})`)
+            this.cfg.log(`[process-registry] killed drifted ${ks} (${fromHash} → ${toHash})`)
+          }
+        }
       }
     }
   }

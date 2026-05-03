@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
+import { existsSync, readFileSync } from "fs"
+import { resolve } from "path"
 import {
   type ProcessFactory,
   type ProcessHandle,
@@ -9,6 +11,7 @@ import {
   type TurnEvent,
   type TurnInput,
 } from "./process-registry"
+import { readManagedHash } from "./workspace-setup"
 
 // --- Real subprocess factory for `claude` ---
 //
@@ -30,6 +33,24 @@ import {
 interface ParsedEvent {
   type: string
   [k: string]: unknown
+}
+
+/**
+ * Read the managed-marker hash from a workspace's CLAUDE.md, returning
+ * null when the file is missing or has no marker (user-edited). Used
+ * both at spawn (to record the baseline) and from the registry's drift
+ * sweep (to detect changes). Read failures swallowed so a permission
+ * issue doesn't crash the spawn or the sweeper.
+ */
+export function readClaudeMdHashSafe(workspace: string): string | null {
+  const path = resolve(workspace, "CLAUDE.md")
+  if (!existsSync(path)) return null
+  try {
+    const content = readFileSync(path, "utf8")
+    return readManagedHash(content)
+  } catch {
+    return null
+  }
 }
 
 const TURN_DEADLINE_MS = 20 * 60 * 1000   // 20 min absolute per turn
@@ -89,6 +110,7 @@ class ClaudeProcessHandle implements ProcessHandle {
       turnCount: 0,
       lastInputTokens: 0,
       pendingTaskId: null,
+      claudeMdHash: readClaudeMdHashSafe(spawnOpts.workspace),
     }
 
     this.child.stdout.setEncoding("utf8")
