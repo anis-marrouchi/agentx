@@ -20,7 +20,15 @@ agentx.json.*
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
-docs/architecture
+# docs/architecture is allowlist-published. Default-ignore everything inside;
+# add a `!` exception for each file we want tracked. Keeps private
+# rescue/kickoff notes off-repo while letting public design notes ship.
+docs/architecture/*
+!docs/architecture/hexabot-vs-agentx.md
+!docs/architecture/plugins.md
+!docs/architecture/surface-contract.md
+!docs/architecture/workflows-yaml.md
+!docs/architecture/persistent-claude-process.md
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd
