@@ -11,6 +11,18 @@ import type { AgentDef } from "@/daemon/config"
 // - sdk: uses Claude Agent SDK (API key, programmatic)
 // - orchestrator: uses agentx's own agentic loop (any provider)
 
+/** Message shown to operators when the `claude` CLI isn't on PATH. Hits both
+ *  the streaming and non-streaming paths — without this we used to surface
+ *  "Claude Code exited with code unknown" / "code ENOENT", neither of which
+ *  hints at the actual fix. */
+function claudeMissingMessage(): string {
+  return (
+    `Claude Code CLI not found on PATH. Install it before starting an agent: ` +
+    `https://docs.claude.com/en/docs/claude-code . On Linux/macOS:  npm i -g @anthropic-ai/claude-code  ` +
+    `then verify with  claude --version. If you don't intend to use the claude-code engine, set the agent's tier to "sdk" or "orchestrator" in agentx.json.`
+  )
+}
+
 export interface AgentPeer {
   id: string
   name: string
@@ -312,7 +324,7 @@ export async function executeClaudeCode(
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string }>((resolve, reject) => {
       const childEnv = buildAgentEnv(agent.workspace)
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -340,6 +352,8 @@ export async function executeClaudeCode(
       let errMsg: string
       if (exitCode === 143) {
         errMsg = `Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else if (exitCode === "ENOENT" || /ENOENT|spawn claude/i.test(stderr || "")) {
+        errMsg = claudeMissingMessage()
       } else {
         errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
       }
@@ -543,12 +557,18 @@ export async function executeClaudeCodeStreaming(
       // surface that as a recognizable timeout message instead of leaking
       // "exited with code undefined" into the user's chat. Mirrors the
       // non-streaming path's exit-143 handling.
-      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean }
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; failed?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
       if (r.timedOut) {
         errMsg = `Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
       } else if (r.signal) {
         errMsg = stderr.trim() || `Claude Code killed by signal ${r.signal}`
+      } else if (r.code === "ENOENT" || /ENOENT|spawn claude/i.test((r.shortMessage || "") + " " + stderr)) {
+        // execa surfaces "binary not on PATH" as { failed: true, code: 'ENOENT',
+        // exitCode: undefined } — without an explicit branch this used to leak
+        // through as "Claude Code exited with code unknown", leaving operators
+        // with no clue that the issue is a missing CLI.
+        errMsg = claudeMissingMessage()
       } else {
         errMsg = stderr.trim() || `Claude Code exited with code ${r.exitCode ?? "unknown"}`
       }
