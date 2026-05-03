@@ -2076,6 +2076,35 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         return
       }
 
+      // Persistent-process registry — operator surface (improvement plan #5,
+      // persistent flavor). Returns 503 when no agent has persistentProcess
+      // enabled (registry singleton not initialized). The path lives under
+      // /api/processes so it doesn't collide with the existing /processes
+      // HTML dashboard route registered earlier in this dispatcher.
+      //   GET  /api/processes
+      //   POST /api/processes/kill   { agentId, channel, chatId, reason? }
+      if (req.method === "GET" && path === "/api/processes") {
+        if (!this.processRegistry) { this.json(res, 503, { error: "process registry not enabled" }); return }
+        this.json(res, 200, { processes: this.processRegistry.list() })
+        return
+      }
+      if (req.method === "POST" && path === "/api/processes/kill") {
+        if (!this.processRegistry) { this.json(res, 503, { error: "process registry not enabled" }); return }
+        try {
+          const body = await readJsonBody(req)
+          const { agentId, channel, chatId, reason } = body as { agentId: string; channel: string; chatId: string; reason?: string }
+          if (!agentId || !channel || !chatId) {
+            this.json(res, 400, { error: "agentId, channel, chatId required" })
+            return
+          }
+          await this.processRegistry.kill({ agentId, channel, chatId }, reason || "operator")
+          this.json(res, 200, { killed: { agentId, channel, chatId } })
+        } catch (e: any) {
+          this.json(res, 500, { error: e?.message || String(e) })
+        }
+        return
+      }
+
       // OpenAI-compatible endpoint for ElevenLabs, Cursor, etc.
       // POST /v1/chat/completions or /llm/:agentId/v1/chat/completions
       if (req.method === "POST" && (path === "/v1/chat/completions" || path.match(/^\/llm\/[^/]+\/v1\/chat\/completions$/))) {
@@ -3049,6 +3078,8 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "POST /task { agent, message, context? }",
               "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
+              "GET  /api/processes  — live persistent claude processes (JSON)",
+              "POST /api/processes/kill { agentId, channel, chatId, reason? }",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
