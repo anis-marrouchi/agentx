@@ -9,7 +9,7 @@ import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
-import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
+import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
@@ -190,6 +190,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "POST" && path === "/api/setup") {
     await handleWizardPost(req, res)
+    return
+  }
+  if (method === "POST" && path === "/api/setup/start-daemon") {
+    await handleStartDaemonPost(req, res)
     return
   }
 

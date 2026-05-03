@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs"
 import { resolve } from "path"
 import { hostname } from "os"
+import { spawn } from "child_process"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig, writeAgentxConfig } from "./config-mutate"
 import { renderSetupPage } from "./ui/pages/setup"
+import { loadDaemonConfig } from "./config"
 
 /** Shape of the pre-render state snapshot — exported so the page file can
  *  type its props without re-importing this whole module. */
@@ -272,5 +274,78 @@ export async function handleWizardPost(req: IncomingMessage, res: ServerResponse
     res.writeHead(400, { "Content-Type": "application/json" })
     res.end(JSON.stringify({ error: e.message || "wizard failed" }))
   }
+}
+
+/**
+ * POST /api/setup/start-daemon — fork `agentx daemon start` from the wizard's
+ * success page so non-technical operators don't have to switch to a terminal.
+ *
+ * Spawns detached so the daemon survives the wizard process exiting, then
+ * polls the daemon URL until it answers (or we hit the timeout). Returns the
+ * resolved URL on success, or the underlying error + the path the operator
+ * should hit manually on failure.
+ */
+export async function handleStartDaemonPost(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  res.setHeader("Content-Type", "application/json")
+  let bind: string
+  try {
+    const cfg = loadDaemonConfig()
+    bind = cfg.node?.bind || "127.0.0.1:18800"
+  } catch (e: any) {
+    res.writeHead(400)
+    res.end(JSON.stringify({ ok: false, error: `Config validation failed: ${e.message}` }))
+    return
+  }
+
+  const url = `http://${bind.replace(/^0\.0\.0\.0/, "127.0.0.1")}`
+  // Already up? (Idempotent — clicking the button twice is harmless.)
+  if (await probe(url)) {
+    res.writeHead(200)
+    res.end(JSON.stringify({ ok: true, url, alreadyRunning: true }))
+    return
+  }
+
+  // dist/cli.js sits beside this file's compiled chunk. Use process.argv[1]
+  // when available — that's the entrypoint the user invoked, which works for
+  // both `agentx setup` (resolves to dist/cli.js) and `tsx src/cli.ts` in dev.
+  const cli = process.argv[1] || resolve(import.meta.dirname, "cli.js")
+  try {
+    const child = spawn(process.execPath, [cli, "daemon", "start"], {
+      detached: true,
+      stdio: "ignore",
+      cwd: process.cwd(),
+    })
+    child.unref()
+  } catch (e: any) {
+    res.writeHead(500)
+    res.end(JSON.stringify({ ok: false, error: `Failed to spawn daemon: ${e.message}`, manualUrl: url }))
+    return
+  }
+
+  // Poll for up to ~12s. Daemon boot covers .env load, config parse, mesh
+  // discovery, and bot registration — usually under 4s on a clean install.
+  const deadline = Date.now() + 12_000
+  while (Date.now() < deadline) {
+    await new Promise((ok) => setTimeout(ok, 400))
+    if (await probe(url)) {
+      res.writeHead(200)
+      res.end(JSON.stringify({ ok: true, url, alreadyRunning: false }))
+      return
+    }
+  }
+
+  res.writeHead(504)
+  res.end(JSON.stringify({
+    ok: false,
+    error: "Daemon spawn succeeded but never bound the port within 12s — check `agentx daemon status` and the dotfile log for errors.",
+    manualUrl: url,
+  }))
+}
+
+async function probe(baseUrl: string): Promise<boolean> {
+  try {
+    const r = await fetch(baseUrl, { method: "GET", signal: AbortSignal.timeout(800) })
+    return r.status > 0 && r.status < 600
+  } catch { return false }
 }
 
