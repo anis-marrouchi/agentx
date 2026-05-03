@@ -541,6 +541,37 @@ export function expandEnvVars(obj: unknown): unknown {
 }
 
 /**
+ * Translate raw Zod issues into actionable, copy-pasteable fixes for the
+ * patterns we see in real first-run failures (missing tokens, missing
+ * required env vars, etc.). Falls through silently for unknown patterns —
+ * the raw `issues` block is always shown above this hint block.
+ */
+function friendlyConfigHints(issues: ReadonlyArray<z.ZodIssue>, configPath: string): string[] {
+  const hints: string[] = []
+  const seen = new Set<string>()
+  for (const issue of issues) {
+    const path = issue.path.join(".")
+    // Telegram account block exists but token is empty/missing — by far the
+    // most common first-run trip. Tell the operator exactly which two
+    // recoveries are valid, with the literal config path to edit.
+    const tgTokenMatch = /^channels\.telegram\.accounts\.([^.]+)\.token$/.exec(path)
+    if (tgTokenMatch && issue.message.toLowerCase().includes("required")) {
+      const account = tgTokenMatch[1]
+      const key = `tg:${account}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      hints.push(
+        `Hint: Telegram account "${account}" is enabled but has no bot token.\n` +
+        `  Either:\n` +
+        `    A) Open ${configPath} and set channels.telegram.accounts.${account}.token to your bot token (or "\${TG_${account.toUpperCase()}_BOT_TOKEN}" + the matching .env entry).\n` +
+        `    B) If you don't need Telegram on this instance, remove the entire "telegram" block under "channels" (or set channels.telegram.enabled to false AND drop accounts.${account}).`
+      )
+    }
+  }
+  return hints
+}
+
+/**
  * Load daemon config from agentx.json, with env var expansion and validation.
  */
 export function loadDaemonConfig(configPath?: string): DaemonConfig {
@@ -588,7 +619,9 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     const issues = result.error.issues
       .map((i) => `  ${i.path.join(".")}: ${i.message}`)
       .join("\n")
-    throw new Error(`Config validation failed (${foundPath}):\n${issues}`)
+    const hints = friendlyConfigHints(result.error.issues, foundPath)
+    const hintBlock = hints.length ? `\n\n${hints.join("\n\n")}` : ""
+    throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
   return result.data
