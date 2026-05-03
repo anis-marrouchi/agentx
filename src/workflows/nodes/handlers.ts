@@ -350,6 +350,37 @@ const callHTTPHandler: NodeHandler = async (ctx) => {
   }
 }
 
+/** Action.run: invoke a registered action from .agentx/actions/<id>.json
+ *  with templated inputs. Output is the full ActionRunResult so downstream
+ *  nodes can branch on `.ok`, `.status`, or read `.output` text. */
+const actionRunHandler: NodeHandler = async (ctx) => {
+  const rendered = renderParams(ctx.node.config, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
+  const actionId = String(rendered.actionId ?? rendered.id ?? "")
+  if (!actionId) return { error: `action.run "${ctx.node.id}" needs actionId` }
+  const inputs = (rendered.inputs && typeof rendered.inputs === "object")
+    ? rendered.inputs as Record<string, unknown>
+    : {}
+  const { ActionStore } = await import("../../actions/store")
+  const { runAction } = await import("../../actions/runner")
+  const action = new ActionStore().get(actionId)
+  if (!action) return { error: `action.run "${ctx.node.id}": no action "${actionId}" in registry` }
+  try {
+    const result = await runAction(action, inputs)
+    const output: Record<string, unknown> = {
+      ok: result.ok,
+      output: result.output,
+      status: result.status,
+      durationMs: result.durationMs,
+    }
+    if (result.errors !== undefined) output.errors = result.errors
+    return result.ok
+      ? { output }
+      : { output, error: `action "${actionId}" failed (status=${result.status})` }
+  } catch (e: any) {
+    return { error: `action.run failed: ${e.message}` }
+  }
+}
+
 /** Transform: derive a bundle from upstream context. V2 scope is tight — we
  *  support two modes:
  *    1. `path`: pick a value from context by dotted path, expose as {value}
@@ -663,6 +694,7 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "action.editMessage": editMessageHandler,
   "action.logTime":     logTimeHandler,
   "action.callHTTP":    callHTTPHandler,
+  "action.run":         actionRunHandler,
   "userTask":        userTaskHandler,
   "subProcess":      subProcessHandler,
   "signal.emit":     signalEmitHandler,

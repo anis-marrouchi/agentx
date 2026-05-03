@@ -44,6 +44,11 @@ export const nodeTypeSchema = z.enum([
   "action.editMessage",
   "action.logTime",
   "action.callHTTP",
+  // Registered action invocation — references an entry from the action
+  // registry (.agentx/actions/<id>.json) by id, with templated inputs.
+  // Lets operators define a reusable shell/http action once and call it
+  // from many workflows without duplicating the command/url/headers.
+  "action.run",
   // BPM: human tasks + composition + signals + intermediate timer
   "userTask",
   "subProcess",

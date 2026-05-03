@@ -906,6 +906,30 @@ function ActionLogTimeForm({ node, patchData }: FormProps) {
   )
 }
 
+function ActionRunForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { actionId?: string; inputs?: Record<string, unknown> }
+  const inputsJson = JSON.stringify(cfg.inputs ?? {}, null, 2)
+  return (
+    <>
+      <Section title="Action">
+        <Field label="Action id" hint="Slug of a registered action (.agentx/actions/<id>.json). Manage in Settings → Actions or via `agentx actions`.">
+          <Input mono value={String(cfg.actionId ?? "")} onChange={(v) => patchData({ actionId: v })} placeholder="deploy-staging" />
+        </Field>
+      </Section>
+      <Section title="Inputs" defaultOpen={true}>
+        <Field label="Inputs (JSON object)" hint='Values templated into the action. Strings support {{nodeId.path}} — e.g. {"version": "{{trigger.tag}}"}'>
+          <Area mono rows={5} value={inputsJson} onChange={(v) => {
+            try { patchData({ inputs: JSON.parse(v) }) } catch { /* mid-edit */ }
+          }} placeholder={'{\n  "version": "{{trigger.tag}}"\n}'} />
+        </Field>
+      </Section>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, padding: "0 10px" }}>
+        Output: <span className="mono">{"{{ <nodeId>.ok / .status / .output / .errors / .durationMs }}"}</span>
+      </div>
+    </>
+  )
+}
+
 function ActionCallHTTPForm({ node, patchData }: FormProps) {
   const cfg = node.config as { url?: string; method?: string; headers?: Record<string, string>; body?: unknown }
   return (
@@ -1243,6 +1267,7 @@ const FORM_FOR_TYPE: Record<string, (p: FormProps) => ReactNode> = {
   "action.editMessage": (p) => <ActionEditMessageForm {...p} />,
   "action.logTime":     (p) => <ActionLogTimeForm {...p} />,
   "action.callHTTP":    (p) => <ActionCallHTTPForm {...p} />,
+  "action.run":         (p) => <ActionRunForm {...p} />,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

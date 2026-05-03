@@ -165,6 +165,7 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
     case "action.editMessage": return { channel: "gitlab", messageId: "", text: "" }
     case "action.logTime":     return { channel: "gitlab" }
     case "action.callHTTP":    return { url: "", method: "POST" }
+    case "action.run":         return { actionId: "", inputs: {} }
     case "end":                return { status: "completed" }
   }
   return {}

@@ -24,6 +24,7 @@ export type NodeType =
   | "action.editMessage"
   | "action.logTime"
   | "action.callHTTP"
+  | "action.run"
   | "userTask"
   | "subProcess"
   | "signal.emit"

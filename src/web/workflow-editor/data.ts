@@ -54,6 +54,7 @@ export const PALETTE: PaletteSection[] = [
     { id: "action.createIssue", type: "action.createIssue", label: "Create issue", hint: "Open a new GitLab issue", glyph: "g-action", icon: "plus" },
     { id: "action.setLabel",    type: "action.setLabel",    label: "Set Label",    hint: "Add or remove labels", glyph: "g-action", icon: "tag" },
     { id: "action.callHTTP",    type: "action.callHTTP",    label: "HTTP Request", hint: "Call an external service", glyph: "g-action", icon: "globe" },
+    { id: "action.run",         type: "action.run",         label: "Registered action", hint: "Invoke a shell/http action from the registry", glyph: "g-action", icon: "lightning" },
     { id: "action.logTime",     type: "action.logTime",     label: "Log Time",     hint: "Record time spent in a state", glyph: "g-action", icon: "clock" },
   ]},
 ]
