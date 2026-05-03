@@ -74,6 +74,10 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // sessions. Lives on the daemon (BotManager owns it); the dashboard
       // proxies the read-only view here.
       "GET /api/admin/channels/webrtc/history": () => proxyDaemonJson("/webrtc/history"),
+      // Action registry — list/upsert/delete + on-demand run.
+      "POST /api/admin/actions":   () => upsertAction(body),
+      "DELETE /api/admin/actions": () => deleteAction(body),
+      "POST /api/admin/actions/run": () => runActionFromAdmin(body),
       "GET /api/admin/channels/whatsapp/chats": () => proxyDaemonJson("/whatsapp/chats"),
       "GET /api/admin/channels/whatsapp/contacts": () => proxyDaemonJson("/whatsapp/contacts"),
       "POST /api/admin/channels/whatsapp/ingest": () => proxyDaemonPostJson("/whatsapp/ingest", body),
@@ -288,6 +292,23 @@ function getAdminState() {
       taskQueued: !!notificationsCfg.on?.taskQueued,
     },
   }
+  // Actions — load all registered actions for the Actions tab.
+  let actions: Array<any> = []
+  try {
+    const items = readJsonDir(".agentx/actions")
+    actions = items.filter((a: any) => a && typeof a === "object" && a.id).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      description: a.description || "",
+      inputs: Array.isArray(a.inputs) ? a.inputs : [],
+      timeoutMs: a.timeoutMs ?? 30_000,
+      // Surface the kind-specific summary fields the tab renders.
+      command: a.kind === "shell" ? a.command : undefined,
+      url: a.kind === "http" ? a.url : undefined,
+      method: a.kind === "http" ? a.method : undefined,
+    })).sort((a: any, b: any) => a.id.localeCompare(b.id))
+  } catch { /* empty registry is fine */ }
   // Boards — list with column metadata so the admin tab can edit them.
   const boards = (Array.isArray(cfg.boards) ? cfg.boards : []).map((b: any) => ({
     id: b.id,
@@ -298,7 +319,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards, notifications }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards, notifications, actions }
 }
 
 // ========================================================================
@@ -1239,6 +1260,47 @@ async function deleteBoardColumn(body: any) {
     return `column "${columnId}" removed from board "${boardId}"`
   })
   return { summary }
+}
+
+// ========================================================================
+// Action registry — admin write + run handlers
+// ========================================================================
+//
+// Mirrors the `agentx actions` CLI: upsert / delete / run actions stored
+// under `.agentx/actions/<id>.json`. The runner returns the same shape
+// the CLI prints, capped at 32KB per stream.
+
+async function upsertAction(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const { actionSchema } = await import("@/actions/types")
+  if (!body || typeof body !== "object") throw new Error("body required")
+  const parsed = actionSchema.safeParse(body)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    throw new Error(`${issue.path.join(".") || "<root>"}: ${issue.message}`)
+  }
+  const saved = new ActionStore().save(parsed.data)
+  return { summary: `action "${saved.id}" saved (${saved.kind})`, action: saved }
+}
+
+async function deleteAction(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  if (!new ActionStore().delete(id)) throw new Error(`action "${id}" not found`)
+  return { summary: `action "${id}" removed` }
+}
+
+async function runActionFromAdmin(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const { runAction } = await import("@/actions/runner")
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const action = new ActionStore().get(id)
+  if (!action) throw new Error(`action "${id}" not found`)
+  const inputs = (body?.inputs && typeof body.inputs === "object") ? body.inputs as Record<string, unknown> : {}
+  const result = await runAction(action, inputs)
+  return { summary: `action "${id}" ${result.ok ? "ok" : "failed"} (${result.durationMs}ms)`, result }
 }
 
 // ========================================================================

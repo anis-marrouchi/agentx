@@ -20,6 +20,7 @@ import { task } from "@/commands/task"
 import { business } from "@/commands/business"
 import { notifications } from "@/commands/notifications"
 import { retention } from "@/commands/retention"
+import { actions as actionsCmd } from "@/commands/actions"
 import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
 import { memory as memoryCmd } from "@/commands/memory"
@@ -76,6 +77,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(business)
     .addCommand(notifications)
     .addCommand(retention)
+    .addCommand(actionsCmd)
     .addCommand(actor)
     .addCommand(role)
     .addCommand(watch)

@@ -34,6 +34,7 @@ const ICONS = {
   mesh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="12" r="2"/><path d="M7.4 7.4l3.2 3.2M13.4 13.4l3.2 3.2M16.6 7.4l-3.2 3.2M10.6 13.4l-3.2 3.2"/></svg>`,
   tokens: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-8 8a4 4 0 1 1-6 6m6-6l5-5 3 3-5 5m-3-3l3 3"/></svg>`,
   advanced: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 13l2 2 4-4"/></svg>`,
+  actions: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
 }
 
 export interface AdminPageOpts {
@@ -160,6 +161,7 @@ const ADMIN_PAGE_BODY = `
   <button data-tab="team">Team</button>
   <button data-tab="business">Business</button>
   <button data-tab="boards-cfg">Boards</button>
+  <button data-tab="actions">Actions</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
@@ -702,6 +704,69 @@ const ADMIN_PAGE_BODY = `
     </div>
   </section>
 
+  <section id="tab-actions" class="tab">
+    ${sectionHead({
+      icon: ICONS.actions,
+      title: "Action registry",
+      lead: "Reusable shell commands and HTTP calls. Workflows invoke them by id; the dashboard runs them on demand for smoke-tests. Mirrors <code>agentx actions</code>.",
+    })}
+    ${witBanner({
+      persistKey: "actions",
+      bodyHtml: `<b>Two flavors.</b> <code>shell</code> runs a templated command on the daemon host (cwd + extra env vars supported). <code>http</code> calls a URL with templated method/headers/body. Inputs are typed (string / number / boolean) and fill <code>{{name}}</code> markers; <code>$VAR</code> resolves against the daemon's process env. Output capped at 32KB.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Registered actions</h3>
+      <div id="actions-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update action</summary>
+        <div style="margin-top:10px">
+          <label>Id<span class="hint">(unique slug — e.g. <code>deploy-staging</code>)</span></label>
+          <input id="ac-id" placeholder="deploy-staging" />
+          <label>Title</label>
+          <input id="ac-title" placeholder="Deploy staging" />
+          <label>Description<span class="hint">(optional)</span></label>
+          <input id="ac-desc" placeholder="Build, push, restart staging" />
+          <label>Kind</label>
+          <select id="ac-kind">
+            <option value="shell">shell</option>
+            <option value="http">http</option>
+          </select>
+
+          <div id="ac-shell-fields">
+            <label>Command<span class="hint">(supports <code>{{input}}</code> + <code>$ENV</code>)</span></label>
+            <input id="ac-command" placeholder="git pull && pnpm deploy --version={{version}}" />
+            <label>Working directory<span class="hint">(optional)</span></label>
+            <input id="ac-cwd" placeholder="/srv/staging" />
+          </div>
+
+          <div id="ac-http-fields" style="display:none">
+            <label>URL</label>
+            <input id="ac-url" placeholder="https://api.example.com/deploy" />
+            <label>Method</label>
+            <select id="ac-method">
+              <option value="POST">POST</option>
+              <option value="GET">GET</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+            <label>Headers<span class="hint">(JSON object, optional)</span></label>
+            <input id="ac-headers" placeholder='{"Authorization":"Bearer $TOKEN"}' />
+            <label>Body<span class="hint">(template — JSON or text, skipped on GET/DELETE)</span></label>
+            <textarea id="ac-body" rows="3" placeholder='{"version":"{{version}}"}'></textarea>
+          </div>
+
+          <label>Inputs<span class="hint">(comma-separated <code>name:type[!]</code> — <code>!</code> = required. e.g. <code>version:string!,dryRun:boolean</code>)</span></label>
+          <input id="ac-inputs" placeholder="version:string!,dryRun:boolean" />
+          <label>Timeout (ms)</label>
+          <input id="ac-timeout" type="number" min="100" max="600000" value="30000" />
+          <div class="actions"><button class="primary" onclick="upsertAction()">Save action</button><div id="ac-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
   <section id="tab-tokens" class="tab">
     ${sectionHead({
       icon: ICONS.tokens,
@@ -1029,6 +1094,9 @@ async function refresh() {
     renderBoardsCfg();
     wireBoardsCfgHandlers();
     renderNotifications();
+    renderActions();
+    wireActionsHandlers();
+    wireActionKindToggle();
     wireWebhookTriggerHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
@@ -1700,6 +1768,188 @@ window.clearNotificationsDestination = async function() {
     showMsg($('notif-msg'), 'ok', 'Destination cleared');
     await load();
   } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+// ---------------- Action registry ----------------
+
+function renderActions() {
+  const list = $('actions-list');
+  if (!list) return;
+  const items = state.actions || [];
+  if (items.length === 0) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no actions yet — add one below or via <code>agentx actions add</code></div>';
+    return;
+  }
+  list.innerHTML = items.map(function(a) {
+    const target = a.kind === 'shell'
+      ? '<span class="muted">shell:</span> <code>' + escapeHtml(String(a.command || '').slice(0, 90)) + '</code>'
+      : '<span class="muted">' + escapeHtml(a.method || 'POST') + '</span> <code>' + escapeHtml(String(a.url || '').slice(0, 90)) + '</code>';
+    const inputPills = (a.inputs || []).map(function(inp) {
+      const req = inp.required ? '<span style="color:var(--ax-warn)">*</span>' : '';
+      return '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-right:4px">' + escapeHtml(inp.name) + req + ':' + escapeHtml(inp.type) + '</span>';
+    }).join('');
+    const inputForm = (a.inputs || []).map(function(inp) {
+      const ph = inp.description ? escapeHtml(inp.description) : escapeHtml(inp.name);
+      const t = inp.type === 'number' ? 'number' : inp.type === 'boolean' ? 'checkbox' : 'text';
+      const def = inp.defaultValue !== undefined ? String(inp.defaultValue) : '';
+      const valAttr = t === 'checkbox'
+        ? (def === 'true' ? ' checked' : '')
+        : (def ? ' value="' + escapeHtml(def) + '"' : '');
+      return '<label style="display:block;margin:4px 0;font-size:11px"><span style="display:inline-block;min-width:120px;color:var(--ax-muted)">' + escapeHtml(inp.name) + '</span>'
+        + '<input data-ac-input data-name="' + escapeHtml(inp.name) + '" type="' + t + '" placeholder="' + ph + '"' + valAttr + ' style="width:60%" />'
+        + '</label>';
+    }).join('');
+    return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:8px" data-ac-card="' + escapeHtml(a.id) + '">'
+      + '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">'
+        + '<div><b>' + escapeHtml(a.title) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(a.id) + '</code> '
+          + '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">' + escapeHtml(a.kind) + '</span></div>'
+        + '<div style="display:flex;gap:4px">'
+          + '<button class="ghost" data-act="ac-edit" data-id="' + escapeHtml(a.id) + '">Edit</button>'
+          + '<button class="ghost danger" data-act="ac-rm" data-id="' + escapeHtml(a.id) + '">Remove</button>'
+        + '</div>'
+      + '</div>'
+      + '<div style="margin-top:6px;font-size:11px">' + target + '</div>'
+      + (a.description ? '<div style="margin-top:4px;font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.description) + '</div>' : '')
+      + (inputPills ? '<div style="margin-top:6px">' + inputPills + '</div>' : '')
+      + '<details style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--ax-border)">'
+        + '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent)">▶ Run</summary>'
+        + '<div style="margin-top:8px">'
+          + (inputForm || '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:6px">no inputs — invokes verbatim</div>')
+          + '<div style="margin-top:6px;display:flex;gap:6px;align-items:center">'
+            + '<button class="primary" data-act="ac-run" data-id="' + escapeHtml(a.id) + '">Run now</button>'
+            + '<span class="msg" data-ac-msg style="margin:0;padding:4px 8px"></span>'
+          + '</div>'
+          + '<pre data-ac-output style="display:none;margin-top:8px;padding:8px;background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:4px;font-family:var(--ax-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;max-height:280px;overflow:auto"></pre>'
+        + '</div>'
+      + '</details>'
+    + '</div>';
+  }).join('');
+}
+
+function wireActionKindToggle() {
+  if (window.__acKindWired) return;
+  window.__acKindWired = true;
+  const sel = $('ac-kind');
+  if (!sel) return;
+  const apply = () => {
+    const k = sel.value;
+    const sh = $('ac-shell-fields'); if (sh) sh.style.display = k === 'shell' ? '' : 'none';
+    const ht = $('ac-http-fields'); if (ht) ht.style.display = k === 'http' ? '' : 'none';
+  };
+  sel.addEventListener('change', apply);
+  apply();
+}
+
+function wireActionsHandlers() {
+  if (window.__actionsWired) return;
+  window.__actionsWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="ac-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    const id = t.getAttribute('data-id');
+    if (act === 'ac-rm') {
+      if (!confirm('Remove action ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/actions', { id }); await refresh(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'ac-edit') {
+      const a = (state.actions || []).find(x => x.id === id);
+      if (!a) return;
+      $('ac-id').value = a.id;
+      $('ac-title').value = a.title || '';
+      $('ac-desc').value = a.description || '';
+      $('ac-kind').value = a.kind;
+      $('ac-kind').dispatchEvent(new Event('change'));
+      if (a.kind === 'shell') {
+        $('ac-command').value = a.command || '';
+        $('ac-cwd').value = a.cwd || '';
+      } else {
+        $('ac-url').value = a.url || '';
+        $('ac-method').value = a.method || 'POST';
+      }
+      $('ac-inputs').value = (a.inputs || []).map(i => i.name + ':' + i.type + (i.required ? '!' : '')).join(',');
+      $('ac-timeout').value = a.timeoutMs ?? 30000;
+      const details = document.querySelector('#tab-actions .add-form');
+      if (details) { details.open = true; details.scrollIntoView({ behavior: 'smooth' }); }
+    } else if (act === 'ac-run') {
+      const card = t.closest('[data-ac-card]');
+      if (!card) return;
+      const inputs = {};
+      card.querySelectorAll('[data-ac-input]').forEach(el => {
+        const name = el.getAttribute('data-name');
+        if (el.type === 'checkbox') inputs[name] = el.checked;
+        else if (el.value !== '') inputs[name] = el.value;
+      });
+      const msgEl = card.querySelector('[data-ac-msg]');
+      const outEl = card.querySelector('[data-ac-output]');
+      if (msgEl) { msgEl.className = 'msg warn'; msgEl.textContent = 'running…'; msgEl.style.display = 'inline-block'; }
+      try {
+        const r = await req('POST', '/api/admin/actions/run', { id, inputs });
+        const result = r.result || {};
+        if (msgEl) {
+          msgEl.className = 'msg ' + (result.ok ? 'ok' : 'err');
+          msgEl.textContent = (result.ok ? 'ok' : 'failed') + ' · status=' + result.status + ' · ' + result.durationMs + 'ms';
+        }
+        if (outEl) {
+          let text = '';
+          if (result.output) text += result.output;
+          if (result.errors) text += (text ? '\n--- stderr ---\n' : '') + result.errors;
+          outEl.textContent = text || '(no output)';
+          outEl.style.display = 'block';
+        }
+      } catch (e) {
+        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = e.message; }
+        if (outEl) outEl.style.display = 'none';
+      }
+    }
+  });
+}
+
+window.upsertAction = async function() {
+  const id = $('ac-id').value.trim();
+  const title = $('ac-title').value.trim();
+  const kind = $('ac-kind').value;
+  if (!id) { showMsg($('ac-msg'), 'err', 'id required'); return; }
+  if (!title) { showMsg($('ac-msg'), 'err', 'title required'); return; }
+  const inputsCsv = $('ac-inputs').value.trim();
+  const inputs = inputsCsv ? inputsCsv.split(',').map(s => s.trim()).filter(Boolean).map(part => {
+    const required = part.endsWith('!');
+    const clean = required ? part.slice(0, -1) : part;
+    const colon = clean.indexOf(':');
+    const name = colon >= 0 ? clean.slice(0, colon) : clean;
+    const type = colon >= 0 ? clean.slice(colon + 1) : 'string';
+    return { name, type, required };
+  }) : [];
+  const body = {
+    id, title, kind, inputs,
+    timeoutMs: parseInt($('ac-timeout').value, 10) || 30000,
+  };
+  const desc = $('ac-desc').value.trim();
+  if (desc) body.description = desc;
+  if (kind === 'shell') {
+    const cmd = $('ac-command').value.trim();
+    if (!cmd) { showMsg($('ac-msg'), 'err', 'command required for shell'); return; }
+    body.command = cmd;
+    const cwd = $('ac-cwd').value.trim();
+    if (cwd) body.cwd = cwd;
+  } else if (kind === 'http') {
+    const url = $('ac-url').value.trim();
+    if (!url) { showMsg($('ac-msg'), 'err', 'url required for http'); return; }
+    body.url = url;
+    body.method = $('ac-method').value;
+    const headers = $('ac-headers').value.trim();
+    if (headers) {
+      try { body.headers = JSON.parse(headers); }
+      catch { showMsg($('ac-msg'), 'err', 'headers must be valid JSON'); return; }
+    }
+    const reqBody = $('ac-body').value;
+    if (reqBody) body.body = reqBody;
+  }
+  try {
+    await req('POST', '/api/admin/actions', body);
+    showMsg($('ac-msg'), 'ok', 'saved');
+    await refresh();
+  } catch (e) { showMsg($('ac-msg'), 'err', e.message); }
 }
 
 function wireWebhookTriggerHandlers() {
