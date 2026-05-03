@@ -116,6 +116,27 @@ export const businessConfigSchema = z.object({
   workTickMinutes: z.number().int().min(1).max(60).default(15),
   /** Max queue depth for an idle agent before skipping the work tick (avoids piling up). */
   idleQueueThreshold: z.number().int().min(0).default(0),
+  /** Standup-tick gating + plan-driven priorities. The day-cycle's morning
+   *  STANDUP used to fire unconditionally per agent — operators reported it
+   *  as "mechanical" because it dispatched a Claude turn even when no human
+   *  had set a plan for the day. Now: the cycle reads
+   *  .agentx/plans/<date>.md (day → week → month fallback) and either
+   *  injects the plan as standup priorities, or posts a "no plan today"
+   *  notification to mainChannel and dispatches no agent. */
+  standup: z.object({
+    /** Master switch. When false, fireStandup is a no-op (silent). */
+    enabled: z.boolean().default(true),
+    /** Plans directory, relative to the daemon CWD. */
+    plansDir: z.string().default(".agentx/plans"),
+    /** Hard ceiling on how many agents the standup tick can dispatch in a
+     *  single morning — guards against an org-chart misconfiguration
+     *  fanning out to dozens of Claude calls before anyone notices. */
+    maxAgentsPerDay: z.number().int().min(1).max(100).default(20),
+    /** When true, even with a plan present the cycle won't dispatch — only
+     *  posts the resolved plan to mainChannel for human review. Useful as
+     *  a kill-switch while iterating on plan formats. */
+    dryRun: z.boolean().default(false),
+  }).default({}),
 })
 
 export type BusinessConfig = z.infer<typeof businessConfigSchema>
