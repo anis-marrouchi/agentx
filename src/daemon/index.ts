@@ -4,6 +4,7 @@ import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { resolvePermission } from "@/agents/runtime"
+import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -501,6 +502,17 @@ export class AgentXDaemon {
       const loaded = this.registry.hydrateLastSummariesFromDisk()
       if (loaded > 0) this.log(`  Loaded last-activity summaries for ${loaded} agent(s)`)
     } catch { /* best-effort */ }
+
+    // Built-in actions (improvement plan #6) — typed Zod-validated
+    // primitives any agent can call over /api/actions/builtin/:name.
+    // Idempotent registration; safe across daemon restarts in-process.
+    try {
+      registerAllBuiltins()
+      const n = listBuiltins().length
+      this.log(`  Built-in actions: ${n} registered`)
+    } catch (e: any) {
+      this.log(`  Built-in actions: registration failed (${e.message})`)
+    }
 
     this.log("")
     this.log("  Ready.")
@@ -2126,6 +2138,34 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         this.json(res, 200, { processes: this.processRegistry.list() })
         return
       }
+      // Built-in actions (improvement plan #6).
+      //   GET  /api/actions/builtin              — list registered built-ins
+      //   POST /api/actions/builtin/:name        — run one with body as input
+      if (req.method === "GET" && path === "/api/actions/builtin") {
+        this.json(res, 200, { actions: listBuiltins() })
+        return
+      }
+      const builtinRunMatch = req.method === "POST" && path.match(/^\/api\/actions\/builtin\/([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)$/)
+      if (builtinRunMatch) {
+        const name = builtinRunMatch[1]
+        if (!getBuiltin(name)) { this.json(res, 404, { error: `unknown built-in: ${name}` }); return }
+        try {
+          const body = await readJsonBody(req)
+          const output = await runBuiltin(name, body)
+          this.json(res, 200, { output })
+        } catch (e: any) {
+          // Zod validation errors surface as 400; runtime errors as 500.
+          // Distinguishing on `e.name === "ZodError"` keeps callers'
+          // retry logic simple — 4xx = fix the input, 5xx = retry.
+          if (e?.name === "ZodError") {
+            this.json(res, 400, { error: e.message })
+          } else {
+            this.json(res, 500, { error: e?.message || String(e) })
+          }
+        }
+        return
+      }
+
       if (req.method === "POST" && path === "/api/processes/kill") {
         if (!this.processRegistry) { this.json(res, 503, { error: "process registry not enabled" }); return }
         try {
@@ -3119,6 +3159,8 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
               "GET  /api/processes  — live persistent claude processes (JSON)",
               "POST /api/processes/kill { agentId, channel, chatId, reason? }",
+              "GET  /api/actions/builtin  — list shipped built-in typed actions",
+              "POST /api/actions/builtin/:name  — run a built-in with JSON body input",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
