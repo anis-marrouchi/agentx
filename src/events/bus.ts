@@ -58,12 +58,47 @@ export interface AgentXEvents {
     at: string
   }
 
-  /** A task is about to be dispatched to the agent runtime. */
+  /** A task is about to be dispatched to the agent runtime.
+   *
+   *  taskId is the ULID for the per-execution trace
+   *  (src/storage/traces.ts). Emitters generate it BEFORE firing this
+   *  event so it can also be threaded into the runtime call chain;
+   *  the SQLite subscriber uses it to open the trace row, and the
+   *  streaming parser uses it to record per-step tool_use/tool_result
+   *  rows. Optional for backward compatibility — emitters that haven't
+   *  been updated still produce a valid event and the subscriber
+   *  falls back to allocating its own id. */
   "task:started": {
     agentId: string
     channel: string
     chatId: string
     messagePreview: string // first ~200 chars
+    at: string
+    taskId?: string
+  }
+
+  /** A single step inside an in-flight task — typically a tool call or
+   *  tool result inside the Claude streaming response. Producer is the
+   *  per-event callback inside registry.execute's streaming path; the
+   *  SQLite subscriber persists each step into task_trace_steps under
+   *  the task's ULID. inputSummary / outputSummary are caller-byte-
+   *  capped (typically 8KB) so a runaway tool result can't blow up the
+   *  bus payload or DB row size.
+   *
+   *  Conventional `name` values: "tool_use" | "tool_result" |
+   *  "llm_message" | "session_rotation" | "error" | "preflight". Free-
+   *  form strings are accepted to let future capture sites extend
+   *  without a schema bump. */
+  "task:step": {
+    taskId: string
+    agentId: string
+    name: string
+    action?: string
+    status?: "ok" | "error" | "in-flight"
+    inputSummary?: string
+    outputSummary?: string
+    error?: string
+    ms?: number
     at: string
   }
 

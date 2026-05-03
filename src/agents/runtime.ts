@@ -67,6 +67,12 @@ export interface AgentTask {
     eventId: string
     decidedBy: string
   }
+  /** ULID for the per-execution trace row in task_traces (improvement
+   *  plan #2). Allocated by registry.execute right before emitting the
+   *  task:started bus event so per-step capture sites in the streaming
+   *  parser can append rows under the same id. Optional — when unset,
+   *  step capture is a no-op. */
+  taskId?: string
   context?: {
     channel?: string
     sender?: string

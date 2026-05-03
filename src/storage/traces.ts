@@ -129,9 +129,17 @@ export interface ListTracesFilters {
 /**
  * Insert an in-flight trace row and return its ULID. Callers thread the
  * returned id through the executor and call recordTraceEnd at finish time.
+ *
+ * `taskId` is optional — when supplied, the caller has already allocated
+ * a ULID upstream (e.g. registry.execute generating it before the bus
+ * event so the runtime can capture per-step rows under the same id).
+ * When omitted, a fresh ULID is allocated here.
  */
-export function recordTraceStart(db: Database.Database, input: TraceStartInput): string {
-  const taskId = newEventId()
+export function recordTraceStart(
+  db: Database.Database,
+  input: TraceStartInput,
+  taskId: string = newEventId(),
+): string {
   db.prepare(`
     INSERT INTO task_traces (
       task_id, agent_id, channel, chat_id, workflow_run_id, workflow_id,

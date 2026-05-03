@@ -116,13 +116,20 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
       workflowRunId = p.chatId.slice("workflow:".length) || null
     }
     try {
-      const taskId = recordTraceStart(db, {
-        agentId: p.agentId,
-        channel: p.channel,
-        chatId: p.chatId,
-        messagePreview: p.messagePreview,
-        workflowRunId,
-      })
+      // Honour an upstream-allocated taskId when present. Lets the
+      // runtime emit per-step rows under the same id without a second
+      // round-trip. When absent, allocate one ourselves.
+      const taskId = recordTraceStart(
+        db,
+        {
+          agentId: p.agentId,
+          channel: p.channel,
+          chatId: p.chatId,
+          messagePreview: p.messagePreview,
+          workflowRunId,
+        },
+        p.taskId,
+      )
       pendingTraceIds.set(key, taskId)
     } catch { /* observability best-effort */ }
   }
@@ -197,6 +204,25 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     }
   }
 
+  const onStep = (p: AgentXEvents["task:step"]) => {
+    // task:step fires from inside the streaming parser per tool_use /
+    // tool_result block. Persist directly under the supplied taskId
+    // — no pending-map lookup needed since the producer already knows
+    // its trace id. Failures are swallowed so a hot inner loop can't
+    // crash the agent from observability.
+    try {
+      recordTraceStep(db, p.taskId, {
+        name: p.name,
+        action: p.action ?? null,
+        status: p.status ?? null,
+        inputSummary: p.inputSummary ?? null,
+        outputSummary: p.outputSummary ?? null,
+        error: p.error ?? null,
+        ms: p.ms ?? null,
+      })
+    } catch { /* */ }
+  }
+
   const onRotated = (p: AgentXEvents["session:rotated"]) => {
     try {
       stmts.insertRotation.run({
@@ -261,6 +287,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
 
   bus.on("task:started", onStarted)
   bus.on("task:completed", onCompleted)
+  bus.on("task:step", onStep)
   bus.on("session:rotated", onRotated)
   bus.on("message:matched", onMatched)
   bus.on("message:dropped", onDropped)
@@ -268,6 +295,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
   return () => {
     bus.off("task:started", onStarted)
     bus.off("task:completed", onCompleted)
+    bus.off("task:step", onStep)
     bus.off("session:rotated", onRotated)
     bus.off("message:matched", onMatched)
     bus.off("message:dropped", onDropped)

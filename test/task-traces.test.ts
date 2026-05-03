@@ -324,6 +324,147 @@ describe("attachSqliteSubscribers — task:started / task:completed → traces",
   })
 })
 
+describe("emitTraceStepsFromStreamEvent — stream-json → task:step", () => {
+  it("emits one task:step per tool_use block in an assistant message", async () => {
+    const { emitTraceStepsFromStreamEvent } = await import("../src/agents/registry")
+    const { getEventBus } = await import("../src/events/bus")
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const seen: any[] = []
+    bus.on("task:step", (p: any) => seen.push(p))
+    try {
+      emitTraceStepsFromStreamEvent("01TASK", "atlas", {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "thinking..." },
+            { type: "tool_use", name: "Bash", input: { command: "ls" } },
+            { type: "tool_use", name: "Read", input: { file: "/tmp/x" } },
+          ],
+        },
+      })
+      expect(seen).toHaveLength(2)
+      expect(seen[0]).toMatchObject({
+        taskId: "01TASK",
+        agentId: "atlas",
+        name: "tool_use",
+        action: "Bash",
+        status: "in-flight",
+      })
+      expect(seen[0].inputSummary).toContain('"command":"ls"')
+      expect(seen[1].action).toBe("Read")
+    } finally {
+      bus.removeAllListeners()
+    }
+  })
+
+  it("emits a task:step for tool_result, status reflects is_error", async () => {
+    const { emitTraceStepsFromStreamEvent } = await import("../src/agents/registry")
+    const { getEventBus } = await import("../src/events/bus")
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const seen: any[] = []
+    bus.on("task:step", (p: any) => seen.push(p))
+    try {
+      emitTraceStepsFromStreamEvent("01TASK", "atlas", {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", content: "ok output", is_error: false },
+            { type: "tool_result", content: "boom", is_error: true },
+          ],
+        },
+      })
+      expect(seen).toHaveLength(2)
+      expect(seen[0]).toMatchObject({ name: "tool_result", status: "ok", outputSummary: "ok output" })
+      expect(seen[1]).toMatchObject({ name: "tool_result", status: "error", outputSummary: "boom" })
+    } finally {
+      bus.removeAllListeners()
+    }
+  })
+
+  it("ignores irrelevant event types (system, result, text-only assistant)", async () => {
+    const { emitTraceStepsFromStreamEvent } = await import("../src/agents/registry")
+    const { getEventBus } = await import("../src/events/bus")
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const seen: any[] = []
+    bus.on("task:step", (p: any) => seen.push(p))
+    try {
+      emitTraceStepsFromStreamEvent("01TASK", "atlas", { type: "system", subtype: "init" })
+      emitTraceStepsFromStreamEvent("01TASK", "atlas", { type: "result", duration_ms: 500 })
+      emitTraceStepsFromStreamEvent("01TASK", "atlas", {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "no tools here" }] },
+      })
+      expect(seen).toHaveLength(0)
+    } finally {
+      bus.removeAllListeners()
+    }
+  })
+
+  it("clipForTrace truncates large payloads with a [+N] tail", async () => {
+    const { clipForTrace, TRACE_STEP_SUMMARY_BYTES } = await import("../src/agents/registry")
+    const small = "hello"
+    expect(clipForTrace(small)).toBe(small)
+    const big = "x".repeat(TRACE_STEP_SUMMARY_BYTES + 1234)
+    const out = clipForTrace(big)
+    expect(out.length).toBeGreaterThan(TRACE_STEP_SUMMARY_BYTES)
+    expect(out).toMatch(/…\[\+1234\]$/)
+  })
+})
+
+describe("attachSqliteSubscribers — task:step → task_trace_steps", () => {
+  it("persists tool_use and tool_result steps in order", async () => {
+    const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
+    const { getEventBus } = await import("../src/events/bus")
+    const db = openTmp()
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const dispose = attachSqliteSubscribers(db)
+    try {
+      // Open a trace via a started event so the subscriber maps the chat
+      // → trace id (also confirms the upstream taskId path: subscriber
+      // honours the supplied id, not a fresh one).
+      bus.emit("task:started", {
+        agentId: "atlas",
+        channel: "telegram",
+        chatId: "c",
+        messagePreview: "x",
+        at: new Date().toISOString(),
+        taskId: "01PROVIDED",
+      })
+
+      bus.emit("task:step", {
+        taskId: "01PROVIDED",
+        agentId: "atlas",
+        name: "tool_use",
+        action: "Bash",
+        status: "in-flight",
+        inputSummary: '{"command":"ls"}',
+        at: new Date().toISOString(),
+      } as any)
+      bus.emit("task:step", {
+        taskId: "01PROVIDED",
+        agentId: "atlas",
+        name: "tool_result",
+        status: "ok",
+        outputSummary: "file1\nfile2",
+        at: new Date().toISOString(),
+      } as any)
+
+      const trace = getTrace(db, "01PROVIDED")!
+      expect(trace.task.taskId).toBe("01PROVIDED")
+      expect(trace.steps).toHaveLength(2)
+      expect(trace.steps[0]).toMatchObject({ seq: 0, name: "tool_use", action: "Bash" })
+      expect(trace.steps[1]).toMatchObject({ seq: 1, name: "tool_result", status: "ok" })
+    } finally {
+      dispose()
+      bus.removeAllListeners()
+    }
+  })
+})
+
 describe("pruneSqliteTables — task_traces cascade", () => {
   it("deletes old traces and cascades steps", () => {
     const db = openTmp()

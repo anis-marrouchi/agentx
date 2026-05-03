@@ -18,6 +18,7 @@ import { getDefaultLedger } from "@/intent/instance"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
+import { newEventId } from "@/intent/ulid"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -142,6 +143,77 @@ function buildWikiQueryHint(agentWiki: ReturnType<WikiHub["getAgentWiki"]>, agen
  * Stateful so we can emit only the *delta* of assistant text across consecutive
  * `assistant` snapshot events (Claude re-sends the cumulative content each tick).
  */
+/**
+ * Cap a string at the configured byte budget, suffixing with "…[+N]" when
+ * truncated so the trace reader knows there's more upstream. 8KB lets us
+ * keep a useful preview of e.g. a Bash tool's stdout while bounding the
+ * row size — anything larger almost always exceeds operator attention.
+ */
+export const TRACE_STEP_SUMMARY_BYTES = 8 * 1024
+export function clipForTrace(s: string): string {
+  if (s.length <= TRACE_STEP_SUMMARY_BYTES) return s
+  const remaining = s.length - TRACE_STEP_SUMMARY_BYTES
+  return s.slice(0, TRACE_STEP_SUMMARY_BYTES) + `…[+${remaining}]`
+}
+
+/**
+ * Translate a Claude stream-json event into zero-or-more task:step bus
+ * events. Mirrors the block walks in makeStreamEventFormatter but emits
+ * structured rows for SQLite persistence rather than terminal text.
+ *
+ * Why a separate function (and not extending the formatter)? Two
+ * concerns. The formatter is for the dashboard's live terminal modal —
+ * its output is a string and its job is to read like a transcript. The
+ * trace store wants typed rows that survive a daemon restart. Keeping
+ * them separate means future refactors of either don't ripple.
+ */
+export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, event: any): void {
+  if (!event || typeof event !== "object") return
+  const t = event.type
+  const at = new Date().toISOString()
+  const bus = getEventBus()
+
+  if (t === "assistant" && event.message?.content) {
+    for (const block of event.message.content) {
+      if (block.type === "tool_use") {
+        const inputJson = block.input != null ? JSON.stringify(block.input) : ""
+        bus.emit("task:step", {
+          taskId,
+          agentId,
+          name: "tool_use",
+          action: typeof block.name === "string" ? block.name : null,
+          status: "in-flight",
+          inputSummary: inputJson ? clipForTrace(inputJson) : null,
+          at,
+        } as any)
+      }
+    }
+    return
+  }
+  if (t === "user" && event.message?.content) {
+    for (const block of event.message.content) {
+      if (block.type === "tool_result") {
+        const content = Array.isArray(block.content)
+          ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
+          : typeof block.content === "string" ? block.content : ""
+        bus.emit("task:step", {
+          taskId,
+          agentId,
+          // Action mirrors the originating tool name when Claude provides
+          // tool_use_id. We don't have a quick lookup here without
+          // threading more state, so leave action null and let consumers
+          // pair via tool_use_id if they care.
+          name: "tool_result",
+          status: block.is_error ? "error" : "ok",
+          outputSummary: content ? clipForTrace(content) : null,
+          at,
+        } as any)
+      }
+    }
+    return
+  }
+}
+
 function makeStreamEventFormatter(): (event: any) => string {
   let textSeen = ""
   return (event: any): string => {
@@ -682,6 +754,13 @@ export class AgentRegistry {
         try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
       }
     }
+    // Allocate the per-execution trace id eagerly so both the streaming
+    // parser (per-step capture below) and the bus emit a few lines down
+    // can target the same task_traces row. Closures defined here reference
+    // it by name; the variable is set before any callback can fire.
+    const traceTaskId = newEventId()
+    task.taskId = traceTaskId
+
     let onEvent: ((event: any) => void) | undefined
     if (onDelta) {
       // Caller's onDelta still fires only for assistant text (unchanged).
@@ -691,6 +770,16 @@ export class AgentRegistry {
       onEvent = (event: any) => {
         const formatted = formatter(event)
         if (formatted) pushToBuffer(formatted)
+        // Per-step trace capture (improvement plan #2). Fire one
+        // task:step event per tool_use / tool_result block. The
+        // SQLite subscriber persists it under traceTaskId.
+        emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
+      }
+    } else {
+      // Even without a dashboard subscriber, we want trace steps for
+      // /traces/:id. Build a minimal onEvent that ONLY emits steps.
+      onEvent = (event: any) => {
+        emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
       }
     }
 
@@ -715,12 +804,17 @@ export class AgentRegistry {
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
     const taskStartedAt = Date.now()
+    // traceTaskId allocated above (alongside the streaming onEvent
+    // callback). Including it in task:started lets the SQLite
+    // subscriber open the trace row under the same id the per-step
+    // emitter uses.
     getEventBus().emit("task:started", {
       agentId: task.agentId,
       channel,
       chatId,
       messagePreview: (task.message || "").slice(0, 200),
       at: new Date(taskStartedAt).toISOString(),
+      taskId: traceTaskId,
     })
 
     // Classify the message through the intent graph when enabled. Skip for
