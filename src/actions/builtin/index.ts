@@ -9,7 +9,10 @@
 // human review.
 
 import { registerBuiltin, _resetBuiltinsForTesting as _registryReset } from "./registry"
+import { extractStructured } from "./extract"
+import { fileReadLines, fileWriteJsonl } from "./file"
 import { httpFetch, httpPost } from "./http"
+import { meshDelegate } from "./mesh"
 
 /**
  * Register every shipped built-in. Idempotent — re-registering the
@@ -18,8 +21,12 @@ import { httpFetch, httpPost } from "./http"
  * the in-memory registry's current state.
  */
 export function registerAllBuiltins(): void {
+  registerBuiltin(extractStructured)
+  registerBuiltin(fileReadLines)
+  registerBuiltin(fileWriteJsonl)
   registerBuiltin(httpFetch)
   registerBuiltin(httpPost)
+  registerBuiltin(meshDelegate)
 }
 
 /** Test-only — clears the registry. Re-call registerAllBuiltins to repopulate. */

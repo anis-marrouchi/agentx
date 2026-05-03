@@ -33,6 +33,7 @@ import { recordMeshDispatch } from "@/intent/sources/mesh"
 import { setDefaultGovernance } from "@/intent/governance"
 import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
+import { setMesh } from "@/a2a/mesh-instance"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
   RunStore as WorkflowRunStore,
@@ -185,6 +186,9 @@ export class AgentXDaemon {
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
+      // Register on the singleton so built-in actions (mesh.delegate)
+      // can call into the mesh without threading the instance through.
+      setMesh(this.mesh)
       // Bridge mesh peer-state transitions into the event bus so
       // operators watching /events see recoveries + losses in real time.
       this.mesh.onPeerChange((e) => {
