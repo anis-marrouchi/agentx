@@ -123,6 +123,23 @@ export interface ProcessFactory {
   spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle
 }
 
+/**
+ * Thrown by `acquire` when at the global or per-agent cap and no idle
+ * handle is evictable. Callers — typically the per-turn driver in
+ * runtime.ts — catch this and fall back to spawn-per-task. Using a
+ * named error class is more robust than message-sniffing.
+ */
+export class RegistryCapExceeded extends Error {
+  constructor(
+    message: string,
+    public readonly scope: "global" | "agent",
+    public readonly cap: number,
+  ) {
+    super(message)
+    this.name = "RegistryCapExceeded"
+  }
+}
+
 export interface ProcessRegistryConfig {
   /** Hard global cap. Default 64. When at cap, oldest idle handle is
    *  evicted to make room for the next acquire. */
@@ -203,13 +220,17 @@ export class ProcessRegistry {
       this.evictOldestIdle({ scope: "agent", agentId: key.agentId })
     }
     if (this.handles.size >= this.cfg.maxProcessesGlobal) {
-      throw new Error(
+      throw new RegistryCapExceeded(
         `process registry at global cap (${this.cfg.maxProcessesGlobal}) and no idle handle to evict`,
+        "global",
+        this.cfg.maxProcessesGlobal,
       )
     }
     if (this.countForAgent(key.agentId) >= this.cfg.maxProcessesPerAgent) {
-      throw new Error(
+      throw new RegistryCapExceeded(
         `process registry at per-agent cap for ${key.agentId} (${this.cfg.maxProcessesPerAgent}) and no idle handle to evict`,
+        "agent",
+        this.cfg.maxProcessesPerAgent,
       )
     }
 

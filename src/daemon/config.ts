@@ -87,6 +87,19 @@ const agentConfigSchema = z.object({
    *  agents that do long investigations or multi-file refactors. */
   maxExecutionMinutes: z.number().int().min(1).max(240).default(20),
   permissionMode: z.string().default("default"),
+  /** When true, this agent's claude-code dispatches reuse a long-lived
+   *  subprocess per (channel, chatId) instead of spawning a fresh
+   *  `claude -p` per turn. Driven over stdin via stream-json input,
+   *  which keeps the prompt cache warm across turns within a chat
+   *  (turn 1 cache_create=12897 → turn 2 cache_create=20 + cache_read
+   *  =24575 in the 2026-05-03 spike — 3-5× latency win on chat-shaped
+   *  workloads). When the registry can't allocate a slot (global or
+   *  per-agent cap exceeded), the dispatch falls back to spawn-per-task
+   *  silently with a warning log. Other tiers (sdk, orchestrator)
+   *  ignore this flag. Default false until the persistent path
+   *  finishes its soak; flip per-agent first, then per-fleet.
+   *  See docs/architecture/persistent-claude-process.md for the design. */
+  persistentProcess: z.boolean().default(false),
   queueMode: z.enum(["collect", "followup", "drop"]).default("collect"),
   heartbeat: z.object({
     enabled: z.boolean().default(false),

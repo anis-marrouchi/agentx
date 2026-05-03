@@ -21,6 +21,9 @@ import { openDb, pruneSqliteTables } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
+import { ProcessRegistry } from "@/agents/process-registry"
+import { ClaudeProcessFactory } from "@/agents/claude-process-factory"
+import { setProcessRegistry } from "@/agents/process-registry-instance"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
@@ -79,6 +82,9 @@ export class AgentXDaemon {
   private loadedPlugins: LoadedPlugin[] = []
   private readonly agentMemory: AgentMemory = new AgentMemory()
   private contacts!: ContactDirectory
+  /** Persistent-claude process registry. Null when no agent has
+   *  persistentProcess: true (legacy spawn-per-task path). */
+  private processRegistry: ProcessRegistry | null = null
   /** Unified observability bus. Publishers (workflow engine, mesh,
    *  channels, signals) emit here; subscribers (SSE, CLI, board
    *  dashboard) filter by kind / workflow / actor. Created eagerly so
@@ -227,6 +233,25 @@ export class AgentXDaemon {
       }
     } catch (e: any) {
       this.log(`  SQLite: skipped (${e.message})`)
+    }
+
+    // Persistent-process registry (improvement plan #5, persistent flavor).
+    // Only spin up when at least one agent opts in via persistentProcess:
+    // true; otherwise the singleton stays null and executeTask follows the
+    // legacy spawn-per-task path. Caps + idle-eviction defaults from
+    // ProcessRegistryConfig are operator-tunable later if needed.
+    const persistentAgents = Object.values(this.config.agents).filter((a) => (a as any).persistentProcess)
+    if (persistentAgents.length > 0) {
+      try {
+        const factory = new ClaudeProcessFactory({ log: (m) => this.log(`  ${m}`) })
+        const procReg = new ProcessRegistry({ factory, log: (m) => this.log(`  ${m}`) })
+        procReg.start()
+        setProcessRegistry(procReg)
+        this.processRegistry = procReg
+        this.log(`  ProcessRegistry: enabled for ${persistentAgents.length} agent(s)`)
+      } catch (e: any) {
+        this.log(`  ProcessRegistry: skipped (${e.message})`)
+      }
     }
 
     // Initialize business layer (if enabled)
@@ -545,6 +570,16 @@ export class AgentXDaemon {
       this.router.flushPersistence?.()
     } catch (e: any) {
       this.log(`  Router flush error: ${e.message}`)
+    }
+
+    try {
+      if (this.processRegistry) {
+        this.log("  Stopping persistent claude processes...")
+        await this.processRegistry.stop()
+        setProcessRegistry(null)
+      }
+    } catch (e: any) {
+      this.log(`  ProcessRegistry stop error: ${e.message}`)
     }
 
     try {

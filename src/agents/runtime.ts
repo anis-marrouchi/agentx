@@ -4,6 +4,8 @@ import { StringDecoder } from "string_decoder"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { buildAgentEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
+import { getProcessRegistry } from "./process-registry-instance"
+import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -712,6 +714,117 @@ export async function executeOrchestrator(
 /**
  * Route a task to the correct execution tier.
  */
+/**
+ * Execute a task by reusing a persistent claude subprocess held in the
+ * ProcessRegistry. Driven over `--input-format stream-json` on stdin;
+ * the same parser path handles output. See
+ * docs/architecture/persistent-claude-process.md for the design.
+ *
+ * Forwards every stream event to `onEvent` so the existing trace
+ * capture site (registry.ts emitTraceStepsFromStreamEvent) continues
+ * to populate task_trace_steps unchanged.
+ *
+ * Returns null when the registry can't allocate a slot (cap exceeded,
+ * binary not installed, etc.) — caller falls back to spawn-per-task.
+ */
+async function executeClaudeCodePersistent(
+  agent: AgentDef,
+  task: AgentTask,
+  historyContext?: string,
+  resumeSessionId?: string,
+  onEvent?: (event: any) => void,
+): Promise<AgentResponse | null> {
+  const registry = getProcessRegistry()
+  if (!registry) return null
+
+  const start = Date.now()
+  const channel = task.context?.channel || "api"
+  const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+  const key: ProcessKey = { agentId: task.agentId, channel, chatId }
+
+  let handle
+  try {
+    handle = registry.acquire(key, {
+      agentId: task.agentId,
+      channel,
+      chatId,
+      workspace: agent.workspace,
+      model: task.model || agent.model,
+      permissionMode: agent.permissionMode,
+      systemPromptAppend: task.systemPromptAppend,
+      resumeSessionId,
+    })
+  } catch (e: any) {
+    if (e instanceof RegistryCapExceeded) return null
+    // Anything else — return null too; caller falls back. Persistent
+    // path must never be more brittle than the spawn-per-task one.
+    return null
+  }
+
+  const prompt = buildPrompt(agent, task, historyContext)
+
+  // Accumulate response data from the stream events. Mirrors what
+  // parseClaudeJsonOutput does for the spawn-per-task JSON envelope.
+  let finalText = ""
+  let finalError: string | undefined
+  let usage: TokenUsage | undefined
+  let billedModel: string | undefined
+  let sessionId: string | undefined
+
+  try {
+    for await (const evt of handle.runTurn({ message: prompt, taskId: task.taskId ?? "unknown" })) {
+      // Forward to existing onEvent — trace step emitter, dashboard
+      // formatter, etc. all keep working without changes.
+      if (onEvent) {
+        try { onEvent(evt.raw) } catch { /* observability best-effort */ }
+      }
+
+      if (evt.type === "assistant") {
+        // Assistant snapshots are cumulative — overwrite, don't append.
+        const blocks = ((evt.raw as any).message?.content ?? []) as Array<{ type: string; text?: string }>
+        for (const block of blocks) {
+          if (block.type === "text" && typeof block.text === "string") {
+            finalText = block.text
+          }
+        }
+      }
+
+      if (evt.type === "result") {
+        const r = evt.raw as any
+        if (r.is_error) {
+          finalError = renderFriendlyError(friendlyModelError(typeof r.result === "string" ? r.result : "claude error"))
+        } else if (typeof r.result === "string" && r.result.length > 0) {
+          // Final result text (sometimes more authoritative than the last
+          // assistant snapshot, especially for very short responses).
+          finalText = r.result
+        }
+        if (typeof r.session_id === "string") sessionId = r.session_id
+        if (r.usage) {
+          usage = {
+            inputTokens: r.usage.input_tokens || 0,
+            outputTokens: r.usage.output_tokens || 0,
+            cacheReadTokens: r.usage.cache_read_input_tokens || 0,
+            cacheCreateTokens: r.usage.cache_creation_input_tokens || 0,
+          }
+        }
+        if (typeof (r.message?.model) === "string") billedModel = r.message.model
+        else if (typeof r.model === "string") billedModel = r.model
+      }
+    }
+  } catch (e: any) {
+    finalError = `persistent claude process error: ${e?.message || String(e)}`
+  }
+
+  return {
+    content: finalText,
+    error: finalError,
+    duration: Date.now() - start,
+    usage,
+    billedModel,
+    claudeSessionId: sessionId,
+  }
+}
+
 export async function executeTask(
   agent: AgentDef,
   task: AgentTask,
@@ -723,6 +836,14 @@ export async function executeTask(
 ): Promise<AgentResponse> {
   switch (agent.tier) {
     case "claude-code":
+      // Persistent-process path (improvement plan #5, persistent flavor).
+      // Returns null when the registry isn't available or can't allocate
+      // a slot — we fall through to the legacy spawn-per-task path so
+      // a registry-only failure can never block dispatch.
+      if (agent.persistentProcess) {
+        const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent)
+        if (persistent !== null) return persistent
+      }
       if (onDelta) {
         return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
