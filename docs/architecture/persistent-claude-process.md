@@ -1,9 +1,37 @@
 # Persistent Claude Process — Design Note
 
-**Status:** draft, private (gitignored under `docs/architecture/`)
+**Status:** draft, public (`docs/architecture/`, allowlist-tracked in `.gitignore`)
 **Author:** Claude Opus 4.7 (1M context), 2026-05-03
 **Plan reference:** improvement plan #5 ("`claude-api` tier") + user-stated framing on persistent process reuse with `/clear`, `/compact`, `--resume`
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-03 (post-CLI-doc-review — see "Gating question resolved" below)
+
+---
+
+## Gating question resolved (added 2026-05-03)
+
+The CLI reference + headless docs (https://code.claude.com/docs/en/cli-reference, https://code.claude.com/docs/en/headless) confirm two things that change the implementation:
+
+1. **Slash commands DO NOT work in `claude -p` mode.** Verbatim from the headless docs:
+
+   > User-invoked skills like `/commit` and built-in commands are only available in interactive mode. In `-p` mode, describe the task you want to accomplish instead.
+
+   The original design's "When to use `/compact` vs `/clear` vs `--resume`" table assumed slash commands would work via stdin in non-interactive mode. They won't. Every AgentX invocation runs in `-p`. The `/compact`-in-place lever does not exist for us.
+
+2. **`--input-format stream-json` is the documented multi-turn primitive in `-p` mode.** Combined with `--output-format stream-json --verbose`, this keeps stdin open and accepts multiple turns as JSON messages on stdin without a TTY. **This** is what makes the persistent-process design viable — not slash commands.
+
+**Architecture pivots (kept what was right, dropped what was wishful):**
+
+- ✅ Process-per-session (Option B in §"Architecture options considered") still wins.
+- ✅ `--resume` for cross-spawn continuity unchanged.
+- ✅ Concurrency model unchanged — agent × chat × channel = independent processes.
+- ❌ "Send `/clear` between chats" → drop. We'd never reuse a process across chats anyway (process-per-session means one process binds to one chat for its lifetime).
+- ❌ "Send `/compact` for tier-2 / max-turns rotation" → drop. Replace with **kill + respawn**, optionally seeding the new process with an application-level summary via `--append-system-prompt`.
+- ➕ New primitive: `--input-format stream-json` for in-session multi-turn.
+- ➕ New rotation primitive: `--fork-session` — resumes a session but allocates a new session_id. Cleaner than "clear `claudeSessionId` and let next call spawn without `--resume`".
+
+The §"When to use `/compact` vs `/clear` vs `--resume`" table is rewritten below in §"Session-management, post-CLI-doc-review". The original table is preserved for historical context but should not guide implementation.
+
+---
 
 ---
 
@@ -144,9 +172,34 @@ incoming task for (agent, channel, chatId):
 
 **Heuristic:** prefer `/clear` for routine stale rotation; `kill+respawn` when the agent's workspace files have changed (detected via the managed-marker hash from improvement plan fix #1) or when the operator forces it.
 
-### When to use `/compact` vs `/clear` vs `--resume`
+### Session-management, post-CLI-doc-review (supersedes the table below)
 
-This is the user's specific question and deserves an unambiguous answer:
+After confirming slash commands don't work in `-p`, the operative table is:
+
+| Scenario | Action | CLI primitive |
+|---|---|---|
+| First turn in a chat | spawn process, no `--resume` | `claude -p --input-format stream-json --output-format stream-json --verbose [--append-system-prompt …]` |
+| Subsequent turn, same chat, process alive | write a JSON message to the existing process's stdin | (no new spawn) |
+| Subsequent turn, same chat, process gone | spawn process with `--resume <stored sessionId>` | `--resume` |
+| Stale rotation (idle > 45min) | kill process; next turn spawns fresh | process kill + clear stored sessionId |
+| Max-turns rotation (turns ≥ 15) | kill process; before next spawn, summarize last N turns at the application layer and seed via `--append-system-prompt` (and use a fresh session) | `--append-system-prompt` |
+| Tier-2 rotation (input ≥ 180K) | same as max-turns — kill + summarize + fresh start | `--append-system-prompt` |
+| Workspace files changed (CLAUDE.md hash mismatch) | kill process; next spawn picks up new files | process kill |
+| `permissionMode` changed | kill process; next spawn passes new flag | process kill |
+| Operator force-rotate | kill process | process kill (or `--fork-session` flag if we want continuity-with-new-id) |
+| Chat ended | kill process | process kill |
+
+**Mnemonic update:** `--resume` preserves *what was said and the cache*; kill+respawn preserves *who said it* (workspace + permission); kill+respawn+`--append-system-prompt` simulates compact (preserves the gist while resetting the cache). There is no in-place `/compact` available to us.
+
+The "simulate `/compact`" path needs design before we ship — composing a summary requires a secondary call. Two options: (a) reuse the same agent for self-summary (cheap, but mid-task), (b) run a dedicated tiny summarizer model. Per-agent benchmark before we default to either.
+
+---
+
+### Original table — superseded by the section above, kept for reference
+
+The next subsection assumes slash commands work in `-p`. **They do not.** Reading this only to understand what the original design proposed:
+
+#### When to use `/compact` vs `/clear` vs `--resume` (DEPRECATED)
 
 | Scenario | Action | Rationale |
 |---|---|---|
@@ -249,7 +302,7 @@ Rollback: at any stage, flip the flag → next dispatch uses spawn-per-task path
 
 2. **Default idle timeout.** I propose 30s for "warm idle" (process kept alive between turns of the same chat) and 45min for stale rotation (consistent with current SessionStore). Reasonable?
 
-3. **`/compact` vs `/clear` for max-turns rotation.** Current rotation kills the session entirely (forces fresh resume). Switching to `/compact` preserves continuity at the cost of some compute (compaction itself spends tokens). Worth the trade? Per-agent override?
+3. ~~`/compact` vs `/clear` for max-turns rotation.~~ **MOOT** — slash commands don't work in `-p` mode. Replacement question: **on max-turns / tier-2 rotation, do we run an application-level summary** (kill + respawn with `--append-system-prompt` containing a compressed summary), or just kill+respawn cold? The summary preserves continuity at the cost of one extra inference call per rotation. **Sub-question:** if we summarize, who runs it — the same agent in a self-summary turn, or a dedicated tiny summarizer (haiku) so we don't burden the production model? Per-agent override sensible.
 
 4. **Workspace-file drift detection.** Should CLAUDE.md changes trigger a kill+respawn, or is "reload at next stale rotation" good enough? The conservative choice (kill on drift) is a few minutes of extra work; the relaxed choice means stale config rides for up to 45 min.
 
@@ -267,28 +320,32 @@ For estimation only — actual commit splitting decided when we start.
 
 | Step | Effort | Risk |
 |---|---|---|
+| Read `/en/agent-sdk/streaming-input` upstream — confirm stream-json input wire format | ½ hr | — |
 | ProcessRegistry skeleton + tests (in-memory, no real subprocess) | 1 day | low |
-| Real subprocess wrapper (spawn, stdin/stdout pipe, exit handler) | 2 days | medium (concurrency bugs are subtle) |
-| Per-turn driver (write turn, read result, parse stream-json) | 1 day | low (existing parser reusable) |
-| Watchdog timers (per-turn + no-output) | ½ day | low |
-| Slash-command driver (`/clear`, `/compact`, `--resume` integration) | 1 day | medium (need to confirm slash command semantics in non-interactive mode) |
-| Eviction (idle timeout, LRU, per-agent cap) | 1 day | low |
-| Workspace-drift detection wiring | ½ day | low |
+| Real subprocess wrapper (spawn with stream-json input/output, stdin write helper, stdout reader, exit handler) | 2 days | medium (concurrency bugs are subtle) |
+| Per-turn driver (build JSON message, write to stdin, read events, parse) | 1 day | low (existing stream-json parser at `registry.ts` is reusable) |
+| Watchdog timers (per-turn budget + no-output stall detection) | ½ day | low |
+| ~~Slash-command driver~~ **CUT** — slash commands don't work in `-p`. Replaced by: | | |
+| Application-level summary-on-rotate (compose summary, kill + respawn with `--append-system-prompt`) | 1 day | medium (which agent does the summary? same agent self-summary or dedicated summarizer?) |
+| Eviction (idle timeout, LRU, per-agent cap, global cap) | 1 day | low |
+| Workspace-drift detection wiring (CLAUDE.md managed-marker hash check) | ½ day | low |
 | `agentx process list/kill` CLI | ½ day | low |
-| `agents.<id>.persistentProcess` config flag + routing | ½ day | low |
+| `agents.<id>.persistentProcess` config flag + routing in `executeTask` | ½ day | low |
 | Documentation + migration playbook | ½ day | — |
 
-Rough total: **~8.5 engineer-days** for v1 ship. Stage 2 / 3 soaks add calendar time, not engineering time.
+Rough total: **~8 engineer-days** for v1 ship (was 8.5; the slash-command driver is gone; summary-on-rotate replaces a portion of it). Stage 2 / 3 soaks add calendar time, not engineering time.
 
 ---
 
 ## Risk register
 
-1. **Slash commands may not work in `claude -p` non-interactive mode.** The slash commands are documented for the interactive REPL; CLI behaviour needs verification before committing to this design. **First-thing-to-validate** before any other work.
+1. ~~Slash commands may not work in `claude -p` non-interactive mode.~~ **RESOLVED 2026-05-03** by upstream docs. They don't, and `--input-format stream-json` is the documented multi-turn alternative. Design adapted; see "Gating question resolved" at the top of this doc.
 2. **Long-running children can leak memory.** Claude Code is a Node process; node's GC is fine but custom modules / hooks may have their own state. Operator-visible memory monitoring (`agentx process list` showing RSS) should ship in v1.
 3. **Stream parsing under sustained traffic might miss events under back-pressure.** If the daemon falls behind reading the child's stdout, the kernel pipe buffer fills, child stalls. Need a non-blocking reader and dropped-event detection.
-4. **`/compact` cost is non-trivial.** Compaction itself spends a few thousand tokens. If turns are short, the compact-instead-of-rotate strategy could spend more than the cache-saved tokens. Per-agent benchmark before defaulting.
+4. ~~`/compact` cost is non-trivial.~~ **MOOT** — `/compact` not available in `-p` mode. Application-level summary-on-rotate is the replacement; its cost characteristics are different (one extra inference call per rotation rather than transcript compression). Benchmark before defaulting which agents enable it.
 5. **`--resume` semantics on a long-stored session_id.** If the daemon was off for a week and a user sends a new turn, we resume a session whose last activity was a week ago. Claude Code is fine with this in principle, but anomalous in practice. Tier-2 detection should still kick in based on stored `lastInputTokens`.
+6. **Stream-json input wire format is documented at `/en/agent-sdk/streaming-input` — not yet read.** Need to confirm the exact JSON message shape before implementation. Should be a 30-minute task. **First implementation step.**
+7. **`--bare` is "the recommended mode for scripted/SDK calls" and "will become the default for `-p` in a future release."** AgentX relies on per-agent `CLAUDE.md` being read at startup; bare skips that. We need to either explicitly opt out of bare, or replicate CLAUDE.md content via `--append-system-prompt-file`. The eventual default-flip is a breaking change to plan for.
 
 ---
 
