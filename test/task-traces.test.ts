@@ -9,6 +9,7 @@ import {
   recordTraceStep,
   getTrace,
   listTraces,
+  cleanupOrphanedTraces,
 } from "../src/storage/traces"
 
 let tmp: string
@@ -291,6 +292,59 @@ describe("attachSqliteSubscribers — task:started / task:completed → traces",
     }
   })
 
+  it("finalizes the right trace when two tasks on the same (agent, channel, chatId) overlap", async () => {
+    // Reproduces a bug found in the 2026-05-03 live smoke test: with the
+    // old pending-map keyed only by (agent, channel, chatId), task B's
+    // started overwrote task A's slot, then A's completion ended B with
+    // A's data, and B's completion fired into nothing — leaving A
+    // stranded as in-flight. The fix: task:completed now carries an
+    // explicit taskId from the producer.
+    const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
+    const { getEventBus } = await import("../src/events/bus")
+    const db = openTmp()
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const dispose = attachSqliteSubscribers(db)
+    try {
+      bus.emit("task:started", {
+        agentId: "agent", channel: "telegram", chatId: "shared",
+        messagePreview: "first", at: new Date().toISOString(),
+        taskId: "01TASK_A",
+      })
+      bus.emit("task:started", {
+        agentId: "agent", channel: "telegram", chatId: "shared",
+        messagePreview: "second", at: new Date().toISOString(),
+        taskId: "01TASK_B",
+      })
+      // Both completions arrive in any order — each ends its own trace.
+      bus.emit("task:completed", {
+        taskId: "01TASK_A",
+        agentId: "agent", channel: "telegram", chatId: "shared",
+        durationMs: 13000, inputTokens: 100, outputTokens: 50,
+        at: new Date().toISOString(),
+      } as any)
+      bus.emit("task:completed", {
+        taskId: "01TASK_B",
+        agentId: "agent", channel: "telegram", chatId: "shared",
+        durationMs: 8000, inputTokens: 30, outputTokens: 20,
+        at: new Date().toISOString(),
+      } as any)
+
+      const a = getTrace(db, "01TASK_A")!.task
+      const b = getTrace(db, "01TASK_B")!.task
+      expect(a.status).toBe("ok")
+      expect(a.inputTokens).toBe(100)
+      expect(b.status).toBe("ok")
+      expect(b.inputTokens).toBe(30)
+      // Their finished_at must be set; old bug left A.finished_at = null.
+      expect(a.finishedAt).not.toBeNull()
+      expect(b.finishedAt).not.toBeNull()
+    } finally {
+      dispose()
+      bus.removeAllListeners()
+    }
+  })
+
   it("marks the trace status='error' when task:completed carries an error", async () => {
     const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
     const { getEventBus } = await import("../src/events/bus")
@@ -462,6 +516,34 @@ describe("attachSqliteSubscribers — task:step → task_trace_steps", () => {
       dispose()
       bus.removeAllListeners()
     }
+  })
+})
+
+describe("cleanupOrphanedTraces", () => {
+  it("cancels all in-flight traces and leaves finalized ones alone", () => {
+    const db = openTmp()
+    const orphan = recordTraceStart(db, { agentId: "a" })
+    const finished = recordTraceStart(db, { agentId: "b" })
+    recordTraceEnd(db, finished, { status: "ok" })
+
+    const n = cleanupOrphanedTraces(db)
+    expect(n).toBe(1)
+
+    const o = getTrace(db, orphan)!.task
+    expect(o.status).toBe("canceled")
+    expect(o.error).toContain("daemon-restart")
+    expect(o.finishedAt).not.toBeNull()
+    // duration_ms intentionally not computed — we don't know the real
+    // end time, NULL is more honest than a backdated value.
+    expect(o.durationMs).toBeNull()
+
+    const f = getTrace(db, finished)!.task
+    expect(f.status).toBe("ok")
+  })
+
+  it("returns 0 when nothing is in-flight", () => {
+    const db = openTmp()
+    expect(cleanupOrphanedTraces(db)).toBe(0)
   })
 })
 

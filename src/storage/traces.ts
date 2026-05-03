@@ -289,6 +289,30 @@ export function getTrace(
   return { task: rowToTrace(row), steps: stepRows.map(rowToStep) }
 }
 
+/**
+ * Cancel any in-flight trace rows left over from a previous daemon
+ * lifetime. Mirrors the intent ledger's startup cleanup (rescue plan
+ * Phase 1 commit a8514d9): a hard-killed daemon never gets to fire
+ * task:completed, so the row sits "in-flight" forever and contaminates
+ * triage queries (`agentx trace list --status in-flight`) with stale
+ * orphans. Run once at daemon boot before subscribers attach.
+ *
+ * Returns the number of rows updated. duration_ms is intentionally NOT
+ * computed — we don't know when the task actually ended; preserving
+ * NULL there is more honest than backdating to "now".
+ */
+export function cleanupOrphanedTraces(db: Database.Database): number {
+  const now = Date.now()
+  const r = db.prepare(`
+    UPDATE task_traces
+       SET status = 'canceled',
+           error = 'daemon-restart (orphaned in-flight)',
+           finished_at = ?
+     WHERE status = 'in-flight'
+  `).run(now)
+  return (r.changes ?? 0) as number
+}
+
 /** Triage / dashboard surface — list traces newest-first, filtered. */
 export function listTraces(db: Database.Database, filters: ListTracesFilters = {}): TraceRecord[] {
   const where: string[] = []

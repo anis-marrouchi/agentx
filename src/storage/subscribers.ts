@@ -138,7 +138,13 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     const key = `${p.agentId}:${p.channel}:${p.chatId}`
     const start = pending.get(key)
     pending.delete(key)
-    const traceTaskId = pendingTraceIds.get(key)
+    // Prefer the explicit taskId in the event when present — eliminates
+    // the corruption mode where two overlapping tasks on the same
+    // (agentId, channel, chatId) overwrite each other in the map and
+    // strand the earlier task as in-flight forever (caught in the live
+    // smoke test 2026-05-03). Fall back to the pending-map lookup for
+    // legacy emitters.
+    const traceTaskId = p.taskId ?? pendingTraceIds.get(key)
     pendingTraceIds.delete(key)
     const id = `${p.agentId}:${p.channel}:${p.chatId}:${p.at}`
     const status = p.error ? "error" : "ok"
@@ -237,9 +243,10 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
 
     // Record session_rotation as a step on the in-flight trace, when one
     // exists. Rotations between turns (no active task) are captured only
-    // in the rotations table above.
+    // in the rotations table above. Prefer p.taskId when emitted; fall
+    // back to the pending-map lookup for emitters that don't carry it.
     const traceKey = `${p.agentId}:${p.channel}:${p.chatId}`
-    const traceTaskId = pendingTraceIds.get(traceKey)
+    const traceTaskId = p.taskId ?? pendingTraceIds.get(traceKey)
     if (traceTaskId) {
       try {
         recordTraceStep(db, traceTaskId, {

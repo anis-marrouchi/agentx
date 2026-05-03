@@ -20,7 +20,7 @@ import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
-import { getTrace, listTraces } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
@@ -211,6 +211,15 @@ export class AgentXDaemon {
       const db = openDb()
       this.db = db
       if (db) {
+        // Cancel any traces left in-flight from a previous daemon lifetime.
+        // Without this, hard-killed tasks accumulate forever and clutter
+        // `agentx trace list --status in-flight`. Mirrors the intent
+        // ledger's startup cleanup (rescue plan a8514d9). Runs BEFORE
+        // subscribers attach so the cleanup can't race with new starts.
+        const cleaned = cleanupOrphanedTraces(db)
+        if (cleaned > 0) {
+          this.log(`  Traces: canceled ${cleaned} orphaned in-flight row(s) from prior run`)
+        }
         attachSqliteSubscribers(db)
         this.log(`  SQLite: ${db.name}`)
       } else {

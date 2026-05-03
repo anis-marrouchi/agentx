@@ -111,6 +111,12 @@ export interface AgentXEvents {
    *  optional and additive — emitters that don't compute the split simply
    *  omit them and subscribers treat the missing values as 0. */
   "task:completed": {
+    /** Trace ULID — when present, lets subscribers finalize the exact
+     *  trace row that the matching task:started opened, eliminating the
+     *  ambiguity when two tasks for the same (agent, channel, chatId)
+     *  overlap. Optional for backward compatibility; subscribers fall
+     *  back to a pending-map lookup when absent. */
+    taskId?: string
     agentId: string
     channel: string
     chatId: string
@@ -129,6 +135,9 @@ export interface AgentXEvents {
 
   /** Claude session rotation fired (stale / max-turns / tier-2). */
   "session:rotated": {
+    /** Trace ULID of the in-flight task at rotation time, when known.
+     *  When set, the rotation is recorded as a step on that trace. */
+    taskId?: string
     agentId: string
     channel: string
     chatId: string

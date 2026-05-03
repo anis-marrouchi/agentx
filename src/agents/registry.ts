@@ -1308,6 +1308,7 @@ export class AgentRegistry {
       // helper so the two sites can never drift.
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
       getEventBus().emit("task:completed", {
+        taskId: traceTaskId,
         agentId: task.agentId,
         channel,
         chatId,
