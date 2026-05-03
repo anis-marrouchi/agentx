@@ -2264,9 +2264,9 @@ function renderWebRtcPane() {
         '<h3 style="margin:0;font-size:13px">Active calls</h3>' +
         '<button class="ax-btn" onclick="loadWebRtcHistory()">Refresh</button>' +
       '</div>' +
-      '<div id="webrtc-active" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click refresh</div>' +
+      '<div id="webrtc-active" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click refresh</div>' +
       '<h3 style="margin:14px 0 8px;font-size:13px">Recent sessions <span style="font-size:11px;color:var(--ax-muted);font-weight:normal">(in-process ring buffer, last ~50)</span></h3>' +
-      '<div id="webrtc-history" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;max-height:280px;overflow-y:auto">click refresh</div>' +
+      '<div id="webrtc-history" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px;max-height:280px;overflow-y:auto">click refresh</div>' +
     '</div>';
   loadWebRtcHistory();
 }
@@ -2291,7 +2291,7 @@ window.loadWebRtcHistory = async function() {
           '<div>' + escapeHtml(fmtDur(h.durationSec)) + '</div>' +
           '<div>' + h.transcriptChunks + '</div>' +
         '</div>'; }).join('')
-      : '<i style="color:var(--ax-muted)">no completed sessions in this daemon\'s memory yet</i>';
+      : '<i style="color:var(--ax-muted)">no completed sessions in this daemon&#39;s memory yet</i>';
   } catch (e) {
     $('webrtc-active').innerHTML = '<i style="color:var(--ax-err)">failed: ' + e.message + '</i>';
     $('webrtc-history').innerHTML = '';
@@ -2322,7 +2322,7 @@ function renderWhatsAppPane() {
     '</div>' +
     '<details class="add-form" style="margin-top:14px"><summary class="primary">📥 Wiki ingest from WhatsApp</summary>' +
       '<div style="margin-top:10px">' +
-        '<p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Sweep observed WhatsApp chats/contacts into an agent\'s wiki. Mirrors <code>agentx whatsapp ingest-all/list-chats/list-contacts</code>.</p>' +
+        '<p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Sweep observed WhatsApp chats/contacts into an agent&#39;s wiki. Mirrors <code>agentx whatsapp ingest-all/list-chats/list-contacts</code>.</p>' +
         '<div style="display:flex;gap:8px;margin-bottom:10px">' +
           '<button class="ax-btn" onclick="loadWhatsAppLists()">Reload chats + contacts</button>' +
           '<label class="ax-inline" style="display:inline-flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="wa-ingest-dry" checked /> dry-run</label>' +
@@ -2334,8 +2334,8 @@ function renderWhatsAppPane() {
         '</div>' +
         '<div id="wa-ingest-msg" class="msg" style="margin-bottom:10px"></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Chats</h4><div id="wa-chats" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click reload</div></div>' +
-          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Contacts</h4><div id="wa-contacts" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">click reload</div></div>' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Chats</h4><div id="wa-chats" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click reload</div></div>' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Contacts</h4><div id="wa-contacts" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click reload</div></div>' +
         '</div>' +
       '</div>' +
     '</details>';
