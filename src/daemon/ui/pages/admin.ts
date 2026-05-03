@@ -3475,7 +3475,7 @@ const JV_HINTS = {
   'agents[].id': 'lowercase handle, used in logs',
   'agents[].tier': 'which AI engine runs this agent (claude-code / sdk / orchestrator)',
   'agents[].mentions': 'trigger words that wake this agent',
-  'channels.telegram.accounts[].botToken': 'reference to an env-var, not the token itself',
+  'channels.telegram.accounts[].token': 'reference to an env-var, not the token itself',
   'channels.telegram.accounts[].agentBinding': 'which agent answers messages to this bot',
   'crons[].schedule': 'standard five-field cron',
   'mesh.peers[].url': 'full URL including port',

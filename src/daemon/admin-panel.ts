@@ -194,7 +194,7 @@ function getAdminState() {
       id,
       botUsername: acc.botUsername || "",
       agentBinding: acc.agentBinding || "",
-      botTokenRef: acc.botToken || "",
+      botTokenRef: acc.token || "",
     })),
   }
   const slack = {
@@ -514,9 +514,15 @@ function addTelegramAccount(body: any) {
     cfg.channels.telegram.accounts = cfg.channels.telegram.accounts || {}
     if (cfg.channels.telegram.accounts[id]) throw new Error(`Telegram account "${id}" already exists.`)
     if (!cfg.agents?.[agentBinding]) throw new Error(`Unknown agent "${agentBinding}".`)
+    // Schema (telegramAccountSchema) keys are `token` + `agentBinding`. Zod
+    // silently strips unknown fields, so writing `botToken` produced configs
+    // that failed to validate with `token: Required` even after the operator
+    // added the env var. `botUsername` is not in the schema; passing it does
+    // nothing (kept here only because the form collects it — drop once the
+    // form is updated to omit it).
+    void botUsername
     cfg.channels.telegram.accounts[id] = {
-      botToken: "${" + botTokenEnv + "}",
-      botUsername,
+      token: "${" + botTokenEnv + "}",
       agentBinding,
     }
     return `added telegram account "${id}"`
@@ -537,7 +543,7 @@ function editTelegramAccount(body: any) {
     }
     if (typeof patch.botUsername === "string") acc.botUsername = patch.botUsername.trim()
     if (typeof patch.botTokenEnv === "string" && patch.botTokenEnv.trim()) {
-      acc.botToken = "${" + patch.botTokenEnv.trim() + "}"
+      acc.token = "${" + patch.botTokenEnv.trim() + "}"
     }
     return `updated telegram account "${id}"`
   })

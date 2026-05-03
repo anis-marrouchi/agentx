@@ -209,9 +209,15 @@ function agentBlock(payload: WizardPayload, workspaceDir: string, mentions: stri
 }
 
 function telegramAccountBlock(payload: WizardPayload, tokenRef: string) {
+  // Field names must match telegramAccountSchema (src/daemon/config.ts):
+  //   token: z.string()       — NOT "botToken"
+  //   agentBinding: z.string()
+  // Zod silently strips unknown keys, so writing "botToken" produced
+  // configs that failed validation with `token: Required` even when the
+  // operator had TG_<AGENT>_BOT_TOKEN set in .env.
+  void payload.telegram?.botUsername  // collected by the form but not in the schema; intentional drop.
   return {
-    botToken: "${" + tokenRef + "}",
-    botUsername: payload.telegram?.botUsername || "",
+    token: "${" + tokenRef + "}",
     agentBinding: payload.agent.id,
   }
 }
