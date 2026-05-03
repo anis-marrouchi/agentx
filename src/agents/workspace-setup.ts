@@ -1,7 +1,38 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "fs"
 import { resolve } from "path"
+import { createHash } from "crypto"
 import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
+
+// Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
+// files apart from user-edited ones. On daemon start, files with the marker
+// are silently regenerated when the systemPrompt hash changes; files without
+// the marker are treated as user-owned and never touched.
+const MANAGED_MARKER_PREFIX = "<!-- agentx-managed: hash="
+const MANAGED_MARKER_SUFFIX = " -->"
+
+function systemPromptHash(systemPrompt: string | undefined): string {
+  return createHash("sha256")
+    .update(systemPrompt ?? "")
+    .digest("hex")
+    .slice(0, 16)
+}
+
+function buildManagedMarker(systemPrompt: string | undefined): string {
+  return `${MANAGED_MARKER_PREFIX}${systemPromptHash(systemPrompt)}${MANAGED_MARKER_SUFFIX}`
+}
+
+/**
+ * Read the managed marker from an existing file's first line, if present.
+ * Returns the hash (truncated sha256 hex) when found, null otherwise.
+ * Files without the marker are user-managed and untouchable.
+ */
+export function readManagedHash(content: string): string | null {
+  const firstLine = content.split("\n", 1)[0] ?? ""
+  if (!firstLine.startsWith(MANAGED_MARKER_PREFIX)) return null
+  if (!firstLine.endsWith(MANAGED_MARKER_SUFFIX)) return null
+  return firstLine.slice(MANAGED_MARKER_PREFIX.length, firstLine.length - MANAGED_MARKER_SUFFIX.length)
+}
 
 // --- Workspace Setup: align agent workspaces with Claude Code best practices ---
 //
@@ -22,20 +53,28 @@ function detectRole(agentId: string, def: AgentDef): "coding" | "pm" | "devops" 
 }
 
 /** Generate CLAUDE.md for an agent workspace */
-function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: string): string {
+export function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: string): string {
   const role = detectRole(agentId, def)
   const lines: string[] = []
 
+  // Managed-marker on line 1 — used by setupWorkspace to detect stale
+  // auto-generated files and regenerate them when systemPrompt changes.
+  // User-edited files (no marker) are left alone forever.
+  lines.push(buildManagedMarker(def.systemPrompt))
   lines.push(`# ${def.name}`)
   lines.push("")
   lines.push("@AGENTS.md")
   lines.push("")
 
-  // Agent identity from systemPrompt (first 3 lines)
-  if (def.systemPrompt) {
-    const promptLines = def.systemPrompt.split("\n").slice(0, 3).join("\n")
+  // Agent identity from systemPrompt — emitted verbatim. Truncating here would
+  // silently drop instructions (e.g. multi-paragraph protocols), so we trade
+  // a few extra tokens in CLAUDE.md for fidelity. The runtime path already
+  // forwards the full systemPrompt via --append-system-prompt; this section
+  // mirrors it for tools that read CLAUDE.md as workspace context.
+  if (def.systemPrompt && def.systemPrompt.trim().length > 0) {
     lines.push("## Role")
-    lines.push(promptLines)
+    lines.push("")
+    lines.push(def.systemPrompt.trimEnd())
     lines.push("")
   }
 
@@ -281,16 +320,52 @@ export function setupWorkspace(
     }
   }
 
-  // AGENTS.md (agents.md spec)
+  /**
+   * Write a managed file with the agentx-managed marker. If the file already
+   * exists and starts with our marker, regenerate when the embedded hash
+   * doesn't match the current expected hash. Files without the marker are
+   * treated as user-owned and left alone.
+   */
+  const writeManaged = (path: string, content: string, expectedHash: string) => {
+    if (!existsSync(path)) {
+      mkdirSync(resolve(path, ".."), { recursive: true })
+      writeFileSync(path, content)
+      created.push(path)
+      return
+    }
+    let existing: string
+    try {
+      existing = readFileSync(path, "utf8")
+    } catch {
+      skipped.push(path)
+      return
+    }
+    const existingHash = readManagedHash(existing)
+    if (existingHash === null) {
+      // User-edited (no marker) — never overwrite.
+      skipped.push(path)
+      return
+    }
+    if (existingHash === expectedHash) {
+      skipped.push(path)
+      return
+    }
+    writeFileSync(path, content)
+    created.push(`${path} (refreshed)`)
+  }
+
+  // AGENTS.md (agents.md spec) — first-line of systemPrompt only, currently
+  // not managed-marker'd. Left as writeIfMissing for now.
   writeIfMissing(
     resolve(workspace, "AGENTS.md"),
     generateAgentsMd({ name: def.name, id: agentId, role: def.systemPrompt?.split("\n")[0], workspace, tier: def.tier }),
   )
 
-  // CLAUDE.md
-  writeIfMissing(
+  // CLAUDE.md — managed: silently refreshed when systemPrompt changes.
+  writeManaged(
     resolve(workspace, "CLAUDE.md"),
     generateClaudeMd(agentId, def, daemonPort),
+    systemPromptHash(def.systemPrompt),
   )
 
   // .claude/settings.json
