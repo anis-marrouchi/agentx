@@ -87,6 +87,21 @@ const agentConfigSchema = z.object({
    *  agents that do long investigations or multi-file refactors. */
   maxExecutionMinutes: z.number().int().min(1).max(240).default(20),
   permissionMode: z.string().default("default"),
+  /** Improvement plan #3 — tool-use-required preset. When set,
+   *  AgentX inspects the stream-json events from each task and
+   *  fails the response with `tool_required_not_called: <name>`
+   *  when none of the listed tool names was invoked. Catches the
+   *  silent-degrade pattern observed when a model below the
+   *  capability bar (e.g. Haiku on a Write-required prompt)
+   *  produces a plausible-looking text response without ever
+   *  calling the required tool. Caller can retry with a stronger
+   *  model or sharpen the prompt.
+   *
+   *  Tool names match the canonical Claude Code names ("Write",
+   *  "Edit", "Bash", "Read", …). Free-form so future tools work
+   *  without a schema bump. Empty/unset means no enforcement
+   *  (default — backward compatible). */
+  toolUseRequired: z.array(z.string()).default([]),
   /** When true, this agent's claude-code dispatches reuse a long-lived
    *  subprocess per (channel, chatId) instead of spawning a fresh
    *  `claude -p` per turn. Driven over stdin via stream-json input,

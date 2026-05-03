@@ -259,6 +259,55 @@ function buildClaudeArgs(
 }
 
 /**
+ * Improvement plan #4 — return the resolved permission posture for an
+ * agent, including the actual CLI flag that gets passed (or doesn't).
+ * Lets operators answer "what permissions does my agent actually run
+ * with?" without reading the runtime source. Surfaced on
+ * `GET /agents/:id` and logged at every claude-code spawn so the
+ * operator can grep journalctl.
+ */
+export interface ResolvedPermission {
+  /** Raw value from agentx.json, e.g. "default" / "bypassPermissions" / "plan" / "auto" / etc. */
+  configured: string
+  /** Whether the spawn includes --dangerously-skip-permissions. */
+  skipPermissions: boolean
+  /** Best-effort one-line summary suitable for journalctl. */
+  summary: string
+}
+
+export function resolvePermission(agent: AgentDef): ResolvedPermission {
+  const configured = agent.permissionMode || "default"
+  const skipPermissions = configured === "bypassPermissions"
+  const summary = skipPermissions
+    ? `bypassPermissions (--dangerously-skip-permissions)`
+    : `${configured} (no skip-permissions flag)`
+  return { configured, skipPermissions, summary }
+}
+
+/**
+ * Single-line spawn audit that lands in stderr per dispatch. Lets
+ * operators verify what every claude subprocess was actually invoked
+ * with — specifically the permission flag, which is the load-bearing
+ * security knob. Quiet on info paths (no flooding journalctl) — just
+ * one line per spawn, with the agentId so `journalctl | grep <id>` is
+ * useful.
+ */
+export function logClaudeSpawn(
+  agentId: string,
+  agent: AgentDef,
+  modelOverride: string | undefined,
+  resumeSessionId: string | undefined,
+  via: "spawn" | "stream" | "persistent",
+): void {
+  const perm = resolvePermission(agent)
+  const model = modelOverride || agent.model || "<default>"
+  const resume = resumeSessionId ? ` resume=${resumeSessionId.slice(0, 8)}…` : ""
+  // Use process.stderr directly so this surfaces under journalctl even
+  // when an agent's logger is detached. Single line, prefixed for grep.
+  process.stderr.write(`[claude-spawn] agent=${agentId} via=${via} model=${model} perm=${perm.summary}${resume}\n`)
+}
+
+/**
  * Parse JSON output from `claude -p --output-format json`.
  * Returns the text result and session_id.
  */
@@ -329,6 +378,7 @@ export async function executeClaudeCode(
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
   const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend)
+  logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -420,6 +470,7 @@ export async function executeClaudeCodeStreaming(
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
   const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend)
+  logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
   // Capture model + usage + session id from the stream events — Claude Code
@@ -743,7 +794,9 @@ async function executeClaudeCodePersistent(
   const key: ProcessKey = { agentId: task.agentId, channel, chatId }
 
   let handle
+  let wasFreshSpawn = false
   try {
+    const before = registry.list().length
     handle = registry.acquire(key, {
       agentId: task.agentId,
       channel,
@@ -754,11 +807,17 @@ async function executeClaudeCodePersistent(
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
     })
+    wasFreshSpawn = registry.list().length > before
   } catch (e: any) {
     if (e instanceof RegistryCapExceeded) return null
     // Anything else — return null too; caller falls back. Persistent
     // path must never be more brittle than the spawn-per-task one.
     return null
+  }
+  // Audit log only on fresh spawns — reused handles already audited at
+  // their original spawn. Cuts noise on chats that turn frequently.
+  if (wasFreshSpawn) {
+    logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "persistent")
   }
 
   const prompt = buildPrompt(agent, task, historyContext)

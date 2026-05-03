@@ -3,6 +3,7 @@ import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, 
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
+import { resolvePermission } from "@/agents/runtime"
 import { MessageRouter } from "@/channels/router"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -2047,6 +2048,34 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         return
       }
 
+      // Resolved agent config (improvement plan #4). Operators can ask
+      // "what permissions does my agent actually run with" without
+      // reading runtime source. Returns: tier, model, permissionMode,
+      // resolved spawn-time skip-permissions flag, persistentProcess,
+      // toolUseRequired, workspace, and the mention list. Excludes
+      // systemPrompt (large, dump via /admin if needed).
+      const agentRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)$/)
+      if (agentRecordMatch) {
+        const id = agentRecordMatch[1]
+        const def = this.config.agents[id]
+        if (!def) { this.json(res, 404, { error: "agent not found" }); return }
+        const perm = resolvePermission(def)
+        this.json(res, 200, {
+          id,
+          name: def.name,
+          tier: def.tier,
+          model: def.model ?? null,
+          workspace: def.workspace,
+          mentions: def.mentions ?? [],
+          maxConcurrent: def.maxConcurrent,
+          maxExecutionMinutes: def.maxExecutionMinutes,
+          permission: perm,
+          persistentProcess: !!(def as any).persistentProcess,
+          toolUseRequired: (def as any).toolUseRequired ?? [],
+        })
+        return
+      }
+
       // Per-task execution traces (improvement plan #2). Cross-agent ULID
       // keyed; populated by capture sites in registry.execute / runtime.ts.
       // Returns 503 when SQLite is unavailable so callers can degrade
@@ -3085,6 +3114,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "GET  /graph/nodes",
               "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",
               "POST /task { agent, message, context? }",
+              "GET  /agents/:id  — resolved agent config (permission, tier, model, persistentProcess, toolUseRequired)",
               "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
               "GET  /api/processes  — live persistent claude processes (JSON)",

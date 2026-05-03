@@ -167,6 +167,47 @@ export function clipForTrace(s: string): string {
  * trace store wants typed rows that survive a daemon restart. Keeping
  * them separate means future refactors of either don't ripple.
  */
+/**
+ * Tally a single stream event's tool_use blocks into the running per-task
+ * counter. Mirrors the block walks used elsewhere — assistant.tool_use
+ * fires once per tool the model invoked. Called from the same onEvent
+ * pipeline that drives trace step capture, so there's no extra parse pass.
+ */
+export function tallyToolUses(counter: Map<string, number>, event: any): void {
+  if (!event || typeof event !== "object") return
+  if (event.type !== "assistant") return
+  const blocks = event.message?.content
+  if (!Array.isArray(blocks)) return
+  for (const block of blocks) {
+    if (block?.type !== "tool_use") continue
+    const name = typeof block.name === "string" ? block.name : ""
+    if (!name) continue
+    counter.set(name, (counter.get(name) ?? 0) + 1)
+  }
+}
+
+/**
+ * Improvement plan #3 — given an agent's `toolUseRequired` list and the
+ * tally of tool_use invocations from this task, return the FIRST tool
+ * name that wasn't invoked, or null when the contract was satisfied.
+ *
+ * Empty / unset toolUseRequired → null (no enforcement). Non-empty list
+ * with at least one missing tool → the missing tool name; the caller
+ * surfaces this as `tool_required_not_called: <name>` so retry logic
+ * can distinguish "model didn't follow the tool-use contract" from
+ * other error shapes.
+ */
+export function firstMissingRequiredTool(
+  required: string[] | undefined,
+  invoked: Map<string, number>,
+): string | null {
+  if (!required || required.length === 0) return null
+  for (const name of required) {
+    if ((invoked.get(name) ?? 0) === 0) return name
+  }
+  return null
+}
+
 export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, event: any): void {
   if (!event || typeof event !== "object") return
   const t = event.type
@@ -761,6 +802,14 @@ export class AgentRegistry {
     const traceTaskId = newEventId()
     task.taskId = traceTaskId
 
+    // Per-task tool-use tally (improvement plan #3). Counts each
+    // assistant tool_use block by tool name so we can compare against
+    // agent.toolUseRequired after the response returns. The count is
+    // populated regardless of toolUseRequired being set so traces
+    // and dashboards always have it; the post-task check only fires
+    // when the agent has the flag.
+    const toolUsesByName = new Map<string, number>()
+
     let onEvent: ((event: any) => void) | undefined
     if (onDelta) {
       // Caller's onDelta still fires only for assistant text (unchanged).
@@ -774,12 +823,14 @@ export class AgentRegistry {
         // task:step event per tool_use / tool_result block. The
         // SQLite subscriber persists it under traceTaskId.
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
+        tallyToolUses(toolUsesByName, event)
       }
     } else {
       // Even without a dashboard subscriber, we want trace steps for
       // /traces/:id. Build a minimal onEvent that ONLY emits steps.
       onEvent = (event: any) => {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
+        tallyToolUses(toolUsesByName, event)
       }
     }
 
@@ -1300,6 +1351,25 @@ export class AgentRegistry {
       }
 
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
+
+      // Improvement plan #3 — fail with a typed error when the agent
+      // declared toolUseRequired and the model didn't invoke at least
+      // one of the listed tools. Only fires when the response itself
+      // wasn't already an error (an outer error wins). The error
+      // message uses the canonical `tool_required_not_called: <name>`
+      // shape so retry / fallback logic can pattern-match on it.
+      if (!response.error) {
+        const missing = firstMissingRequiredTool(state.def.toolUseRequired, toolUsesByName)
+        if (missing) {
+          const invokedSummary = Array.from(toolUsesByName.entries())
+            .map(([n, c]) => `${n}=${c}`)
+            .join(", ") || "none"
+          response.error = `tool_required_not_called: ${missing} (invoked: ${invokedSummary})`
+          response.content = ""
+          this.log(`[${task.agentId}] tool-use contract violation — required ${missing}, observed ${invokedSummary}`)
+        }
+      }
+
       finalResponse = response
 
       // Split this request's tokens into tier1/tier2 buckets so subscribers
