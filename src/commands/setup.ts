@@ -61,9 +61,10 @@ function resolveDashboardPort(): number {
 }
 
 function resolveCliEntry(): string {
-  // When installed via npm, __dirname points at dist/; cli.js sits beside it.
-  // In dev, we resolve through the current script so `tsx` works too.
-  const candidate = resolve(__dirname, "cli.js")
+  // When installed via npm, import.meta.dirname points at dist/; cli.js sits
+  // beside it. The bundle is ESM, so CommonJS __dirname is not defined.
+  // In dev, we fall back to the current script so `tsx` works too.
+  const candidate = resolve(import.meta.dirname, "cli.js")
   return existsSync(candidate) ? candidate : (process.argv[1] || candidate)
 }
 

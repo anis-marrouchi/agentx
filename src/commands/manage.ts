@@ -106,7 +106,7 @@ agent
 
     // Install wiki skill
     const wikiSkillSrc = resolve(process.cwd(), "src/wiki/SKILL.md")
-    const wikiSkillDist = resolve(__dirname, "../wiki/SKILL.md")
+    const wikiSkillDist = resolve(import.meta.dirname, "../wiki/SKILL.md")
     const skillSrc = existsSync(wikiSkillSrc) ? wikiSkillSrc : wikiSkillDist
     if (existsSync(skillSrc)) {
       mkdirSync(resolve(ws, ".claude/skills/wiki"), { recursive: true })
