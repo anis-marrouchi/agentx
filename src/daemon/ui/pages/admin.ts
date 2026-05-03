@@ -1893,7 +1893,7 @@ function wireActionsHandlers() {
         if (outEl) {
           let text = '';
           if (result.output) text += result.output;
-          if (result.errors) text += (text ? '\n--- stderr ---\n' : '') + result.errors;
+          if (result.errors) text += (text ? '\\n--- stderr ---\\n' : '') + result.errors;
           outEl.textContent = text || '(no output)';
           outEl.style.display = 'block';
         }
