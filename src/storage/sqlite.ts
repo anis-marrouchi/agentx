@@ -181,6 +181,73 @@ function runMigrations(db: Database.Database): void {
         ALTER TABLE usage_daily ADD COLUMN tier2_cache_create_tokens INTEGER DEFAULT 0;
       `,
     },
+    {
+      // task_traces — per-execution observability surface (improvement plan
+      // #2). One row per executeTask invocation, keyed by a ULID task_id so
+      // it's URL-safe + monotonically sortable. Workflow context columns let
+      // pattern queries group runs by workflow ("agent-managed workflow as
+      // the program" framing); intent_event_id cross-links into the rescue
+      // plan's intent ledger so a dispatch decision joins to the execution
+      // it produced. Tokens snapshot the final usage at finish time.
+      v: 6,
+      sql: `
+        CREATE TABLE task_traces (
+          task_id TEXT PRIMARY KEY,
+          agent_id TEXT NOT NULL,
+          channel TEXT,
+          chat_id TEXT,
+          workflow_run_id TEXT,
+          workflow_id TEXT,
+          workflow_node_id TEXT,
+          intent_event_id TEXT,
+          intent_decided_by TEXT,
+          resume_session_id TEXT,
+          final_session_id TEXT,
+          model TEXT,
+          status TEXT NOT NULL,
+          started_at INTEGER NOT NULL,
+          finished_at INTEGER,
+          duration_ms INTEGER,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          cache_read_tokens INTEGER,
+          cache_create_tokens INTEGER,
+          error TEXT,
+          message_preview TEXT
+        );
+        CREATE INDEX idx_traces_agent_started   ON task_traces(agent_id, started_at);
+        CREATE INDEX idx_traces_workflow_run    ON task_traces(workflow_run_id);
+        CREATE INDEX idx_traces_intent_event    ON task_traces(intent_event_id);
+        CREATE INDEX idx_traces_status_started  ON task_traces(status, started_at);
+      `,
+    },
+    {
+      // task_trace_steps — append-only step ledger inside one task. Sequence
+      // numbers are 0-based and unique per task_id; ON DELETE CASCADE so
+      // pruning task_traces removes children atomically. The (input|output)_
+      // summary columns are TEXT — callers cap byte-size at the call site,
+      // not in the schema, because the right cap depends on the step kind
+      // (a tool_use's args vs a tool_result's stdout have very different
+      // typical sizes).
+      v: 7,
+      sql: `
+        CREATE TABLE task_trace_steps (
+          task_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          action TEXT,
+          status TEXT,
+          input_summary TEXT,
+          output_summary TEXT,
+          error TEXT,
+          ms INTEGER,
+          started_at INTEGER NOT NULL,
+          PRIMARY KEY (task_id, seq),
+          FOREIGN KEY (task_id) REFERENCES task_traces(task_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_trace_steps_name ON task_trace_steps(name, started_at);
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {
@@ -202,6 +269,7 @@ export interface PruneResult {
   taskHistory: number
   rotations: number
   routeTraces: number
+  taskTraces: number
 }
 
 /**
@@ -229,12 +297,17 @@ export function pruneSqliteTables(
   const routeTraces = (db
     .prepare(`DELETE FROM route_traces WHERE at < ?`)
     .run(cutoffIso).changes ?? 0) as number
+  // task_traces uses ms-epoch INTEGERs (not ISO strings) on started_at.
+  // task_trace_steps cascades automatically via ON DELETE CASCADE.
+  const taskTraces = (db
+    .prepare(`DELETE FROM task_traces WHERE started_at < ?`)
+    .run(cutoffMs).changes ?? 0) as number
 
   // Reclaim the freelist pages so the file shrinks. WAL writes still
   // checkpoint independently.
-  if (taskHistory + rotations + routeTraces > 0) {
+  if (taskHistory + rotations + routeTraces + taskTraces > 0) {
     try { db.pragma("incremental_vacuum") } catch { /* best-effort */ }
   }
 
-  return { taskHistory, rotations, routeTraces }
+  return { taskHistory, rotations, routeTraces, taskTraces }
 }

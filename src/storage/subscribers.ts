@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 import { getEventBus, type AgentXEvents } from "@/events/bus"
+import { recordTraceStart, recordTraceEnd, recordTraceStep } from "@/storage/traces"
 
 // --- Bus subscribers that persist to SQLite ---
 //
@@ -90,6 +91,11 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
   const bus = getEventBus()
   const stmts = prepare(db)
   const pending = new Map<string, PendingTask>()
+  // Parallel map: key → ULID task_id assigned at task:started, looked up at
+  // task:completed / session:rotated to attach end-state and step rows.
+  // Separate from `pending` because PendingTask carries fields task_history
+  // needs; this one carries only what task_traces needs.
+  const pendingTraceIds = new Map<string, string>()
 
   const onStarted = (p: AgentXEvents["task:started"]) => {
     const key = `${p.agentId}:${p.channel}:${p.chatId}`
@@ -100,14 +106,50 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
       startedAt: p.at,
       messagePreview: p.messagePreview,
     })
+
+    // Improvement plan #2 — open a trace row at start so per-step capture
+    // sites have a target. Workflow context derived from the chatId
+    // convention (`workflow:${runId}`) so we don't need a payload bump
+    // on the bus event.
+    let workflowRunId: string | null = null
+    if (typeof p.chatId === "string" && p.chatId.startsWith("workflow:")) {
+      workflowRunId = p.chatId.slice("workflow:".length) || null
+    }
+    try {
+      const taskId = recordTraceStart(db, {
+        agentId: p.agentId,
+        channel: p.channel,
+        chatId: p.chatId,
+        messagePreview: p.messagePreview,
+        workflowRunId,
+      })
+      pendingTraceIds.set(key, taskId)
+    } catch { /* observability best-effort */ }
   }
 
   const onCompleted = (p: AgentXEvents["task:completed"]) => {
     const key = `${p.agentId}:${p.channel}:${p.chatId}`
     const start = pending.get(key)
     pending.delete(key)
+    const traceTaskId = pendingTraceIds.get(key)
+    pendingTraceIds.delete(key)
     const id = `${p.agentId}:${p.channel}:${p.chatId}:${p.at}`
     const status = p.error ? "error" : "ok"
+
+    // Finalize the trace row — same status/tokens task_history records,
+    // plus duration computed inside the UPDATE.
+    if (traceTaskId) {
+      try {
+        recordTraceEnd(db, traceTaskId, {
+          status: p.error ? "error" : "ok",
+          inputTokens: p.inputTokens ?? null,
+          outputTokens: p.outputTokens ?? null,
+          cacheReadTokens: p.cacheReadTokens ?? null,
+          cacheCreateTokens: p.cacheCreateTokens ?? null,
+          error: p.error ?? null,
+        })
+      } catch { /* */ }
+    }
 
     try {
       stmts.insertTaskHistory.run({
@@ -166,6 +208,23 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
         rotated_at: p.at,
       })
     } catch { /* */ }
+
+    // Record session_rotation as a step on the in-flight trace, when one
+    // exists. Rotations between turns (no active task) are captured only
+    // in the rotations table above.
+    const traceKey = `${p.agentId}:${p.channel}:${p.chatId}`
+    const traceTaskId = pendingTraceIds.get(traceKey)
+    if (traceTaskId) {
+      try {
+        recordTraceStep(db, traceTaskId, {
+          name: "session_rotation",
+          action: p.reason,
+          inputSummary: p.lastTurnInputTokens != null
+            ? `last_turn_input_tokens=${p.lastTurnInputTokens}`
+            : null,
+        })
+      } catch { /* */ }
+    }
   }
 
   const onMatched = (p: AgentXEvents["message:matched"]) => {

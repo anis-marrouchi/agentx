@@ -20,6 +20,7 @@ import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables } from "@/storage/sqlite"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
+import { getTrace, listTraces } from "@/storage/traces"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
@@ -1993,6 +1994,44 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         return
       }
 
+      // Per-task execution traces (improvement plan #2). Cross-agent ULID
+      // keyed; populated by capture sites in registry.execute / runtime.ts.
+      // Returns 503 when SQLite is unavailable so callers can degrade
+      // gracefully rather than seeing 500s.
+      //   GET /traces?agentId=&channel=&chatId=&workflowRunId=&status=
+      //              &since=<msEpoch>&until=<msEpoch>&limit=N
+      //   GET /traces/:taskId
+      const traceListMatch = req.method === "GET" && path === "/traces"
+      if (traceListMatch) {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const numParam = (k: string): number | undefined => {
+          const v = url.searchParams.get(k)
+          if (v === null || v === "") return undefined
+          const n = parseInt(v, 10)
+          return Number.isFinite(n) ? n : undefined
+        }
+        const traces = listTraces(this.db, {
+          agentId: url.searchParams.get("agentId") || undefined,
+          channel: url.searchParams.get("channel") || undefined,
+          chatId: url.searchParams.get("chatId") || undefined,
+          workflowRunId: url.searchParams.get("workflowRunId") || undefined,
+          status: url.searchParams.get("status") || undefined,
+          since: numParam("since"),
+          until: numParam("until"),
+          limit: numParam("limit"),
+        })
+        this.json(res, 200, { traces })
+        return
+      }
+      const traceRecordMatch = req.method === "GET" && path.match(/^\/traces\/([^/]+)$/)
+      if (traceRecordMatch) {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const rec = getTrace(this.db, traceRecordMatch[1])
+        if (!rec) { this.json(res, 404, { error: "not found" }); return }
+        this.json(res, 200, rec)
+        return
+      }
+
       // OpenAI-compatible endpoint for ElevenLabs, Cursor, etc.
       // POST /v1/chat/completions or /llm/:agentId/v1/chat/completions
       if (req.method === "POST" && (path === "/v1/chat/completions" || path.match(/^\/llm\/[^/]+\/v1\/chat\/completions$/))) {
@@ -2964,6 +3003,8 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "GET  /graph/nodes",
               "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",
               "POST /task { agent, message, context? }",
+              "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
+              "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
