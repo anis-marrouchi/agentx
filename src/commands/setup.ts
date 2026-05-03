@@ -80,6 +80,16 @@ function openBrowser(url: string): void {
     : process.platform === "win32" ? "start"
     : "xdg-open"
   try {
-    spawn(cmd, [url], { stdio: "ignore", detached: true }).unref()
-  } catch { /* best-effort; user can visit the URL manually */ }
+    // spawn() reports a missing binary (ENOENT) via an async "error" event on
+    // the child, NOT a synchronous throw — so the try/catch alone wouldn't
+    // catch it. Headless Linux servers commonly lack xdg-open; without the
+    // listener the unhandled error propagates and kills the wizard process.
+    const child = spawn(cmd, [url], { stdio: "ignore", detached: true })
+    child.once("error", () => {
+      console.log(chalk.dim(`  Couldn't auto-open the browser. Visit ${url} manually.`))
+    })
+    child.unref()
+  } catch {
+    console.log(chalk.dim(`  Couldn't auto-open the browser. Visit ${url} manually.`))
+  }
 }
