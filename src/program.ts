@@ -7,6 +7,7 @@ import { doctor } from "@/commands/doctor"
 import { agent, channel, cron, mesh, skillCmd, references, hook, migrate, configCmd } from "@/commands/manage"
 import { db as dbCmd } from "@/commands/db"
 import { ledger as ledgerCmd } from "@/commands/ledger"
+import { trace as traceCmd } from "@/commands/trace"
 import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
@@ -64,6 +65,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(references)
     .addCommand(dbCmd)
     .addCommand(ledgerCmd)
+    .addCommand(traceCmd)
     .addCommand(backlog)
     .addCommand(hook)
     .addCommand(migrate)
