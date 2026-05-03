@@ -1,5 +1,9 @@
 # Context strategies
 
+::: tip TL;DR for operators
+Use the default (`layered`). The only reason to switch to `planner` is if your agent consistently gives wrong answers on hard questions — try `planner` for one day, see if quality improves, decide. Change it with: `agentx agent capability <agentId> --context-strategy planner`. Everything below is for engineers tuning the cache budget.
+:::
+
 AgentX offers two strategies for assembling the context each agent sees on every turn: **layered** (default) and **planner**. This page explains what each does, when to use which, the per-turn token/cost profile, and the session-rotation knobs that tame the default strategy's worst case.
 
 The source of truth:

@@ -5,6 +5,7 @@ import {
   type GraphNode,
   type Classification,
 } from "./types"
+import { createProvider, type ProviderName, type AgentProvider } from "@/agent/providers"
 
 // --- Intent Knowledge Graph classifier ---
 //
@@ -60,6 +61,15 @@ export interface ClassifierOptions {
   /** Minimum confidence (0..1) to commit without human approval. 1.0 = never.
    *  OR'd with the structural policy. */
   autoApproveConfidence?: number
+  /** Provider used for the in-process classifier call. Defaults to
+   *  "claude-code", which auto-detects auth via `loadAuthConfig()` —
+   *  Claude Max OAuth (CLI subprocess), API key, etc. NEVER opens a
+   *  paid path beyond what the operator has already configured. */
+  classifierProvider?: ProviderName
+  /** Model id passed to the provider. For claude-code OAuth this is
+   *  mapped through `CLI_MODEL_ALIASES` (sonnet/opus/haiku). Cheap
+   *  default — classification is metadata, not work. */
+  classifierModel?: string
   log?: (...args: unknown[]) => void
 }
 
@@ -70,6 +80,9 @@ export class Classifier {
   private draftAgent?: string
   private autoApprove: number
   private autoApproveStructure: ApprovalStructurePolicy
+  private classifierModel: string
+  private classifierProviderName: ProviderName
+  private providerInstance?: AgentProvider
   private log: (...args: unknown[]) => void
 
   constructor(opts: ClassifierOptions) {
@@ -79,7 +92,20 @@ export class Classifier {
     this.draftAgent = opts.draftAgent
     this.autoApprove = opts.autoApproveConfidence ?? 1.0
     this.autoApproveStructure = opts.autoApproveStructure ?? "extend-leaves"
+    this.classifierModel = opts.classifierModel ?? "claude-haiku-4-5-20251001"
+    this.classifierProviderName = opts.classifierProvider ?? "claude-code"
     this.log = opts.log ?? console.error.bind(console, "[classifier]")
+  }
+
+  /** Lazily build the provider instance. Lazy because constructing
+   *  ClaudeCodeProvider hits auth-store; deferring it keeps the
+   *  classifier importable in tests / dry-run paths that never call
+   *  classify(). */
+  private getProvider(): AgentProvider {
+    if (!this.providerInstance) {
+      this.providerInstance = createProvider(this.classifierProviderName)
+    }
+    return this.providerInstance
   }
 
   async classify(input: ClassifyInput): Promise<ClassifyResult | null> {
@@ -89,9 +115,24 @@ export class Classifier {
       sender: input.sender,
     })
 
-    // 1. Cache hit — instant return, zero LLM.
+    // 1. Cache hit — instant return, zero LLM. Logged to classifications.jsonl
+    //    so the cache-hit rate is measurable from the persisted record alone
+    //    (otherwise hits leave no trace and ROI of the classifier is invisible).
     const cached = this.store.getFingerprint(fp)
     if (cached) {
+      this.store.appendClassification({
+        ts: new Date().toISOString(),
+        msgHash: fp,
+        agentId: input.agentId,
+        channel: input.channel,
+        sender: input.sender,
+        path: cached.path,
+        proposedAxes: {},
+        leaf: cached.leaf,
+        source: "cache",
+        status: "approved",
+        preview: input.text.slice(0, 200),
+      })
       return {
         path: cached.path,
         pathId: hashPath(cached.path),
@@ -103,16 +144,11 @@ export class Classifier {
       }
     }
 
-    // 2. Cache miss — need an LLM proposal. Callers without a draftAgent
-    //    get null, which the context engine treats as "no classification
-    //    this turn, fall through to the old regex tags."
-    if (!this.draftAgent) return null
-    // Skip classification when the target agent IS the draftAgent. The
-    // classifier's sub-call goes through the same registry; with
-    // maxConcurrent=1 it would queue behind the task we're trying to
-    // classify for, deadlocking both.
-    if (input.agentId && input.agentId === this.draftAgent) return null
-
+    // 2. Cache miss — need an LLM proposal. Phase 2 of classifier-retire
+    //    replaced the /task → graph-agent dispatch with a direct Anthropic
+    //    Messages call, so we no longer need a draftAgent and the
+    //    self-dispatch deadlock guard (`agentId === draftAgent`) is moot.
+    //    `graph.enabled` is the only gate now.
     const schema = this.store.loadSchema()
     const nodes = this.store.loadNodes().nodes
     const proposal = await this.proposePath(input, schema, nodes).catch((e) => {
@@ -204,7 +240,9 @@ export class Classifier {
     }
   }
 
-  /** Ask the draftAgent to propose a path. Pure I/O; no side effects. */
+  /** Direct call to Anthropic to propose a path. Pure I/O; no side effects.
+   *  Bypasses the mesh / dispatch / ledger pipeline so a classification
+   *  doesn't surface as a sibling task in the activity graph. */
   private async proposePath(
     input: ClassifyInput,
     schema: GraphSchema,
@@ -222,14 +260,23 @@ export class Classifier {
       axes: n.axes,
     }))
     const userPrompt = [
-      `You are the intent classifier for AgentX's knowledge graph.`,
+      `You are the intent classifier for AgentX. You answer ONE question:`,
+      `"what kind of work does this message describe?" — verb-level only.`,
       ``,
-      `SCHEMA (fixed axes per level, root → leaf):`,
+      `IMPORTANT — what NOT to encode in the path:`,
+      `- Client / company / project / team names. Those are already on the event`,
+      `  metadata (project, channel, agentId). Embedding them in the path causes`,
+      `  duplicate nodes (one per client) for the same verb.`,
+      `- The specific subject (issue number, file name, person name). Same reason.`,
+      `- The agent's name or role. Pick the verb the *requester* intended.`,
+      ``,
+      `SCHEMA (fixed levels — pick one node per level):`,
       "```json",
       JSON.stringify(schema, null, 2),
       "```",
       ``,
-      `EXISTING NODES (choose ids from here when the message matches; propose NEW nodes only when nothing fits):`,
+      `EXISTING NODES (prefer reusing these; only invent a new node when no`,
+      `existing one fits):`,
       "```json",
       JSON.stringify(nodesForPrompt, null, 2),
       "```",
@@ -241,59 +288,42 @@ export class Classifier {
       `channel: ${input.channel ?? "?"}`,
       `sender: ${input.sender ?? "?"}`,
       ``,
-      `TASK: classify this message into one path through the schema — one node per level from root toward leaf. Shorter paths are OK if you are not confident past a certain depth. For any node id you invent, include its axes in proposedAxes.`,
+      `TASK:`,
+      `1. Classify into 'category' (closed enum): code, ops, support, admin,`,
+      `   knowledge, social, system. Pick the closest fit.`,
+      `2. Pick or propose a 'verb' node. Verb ids are dot-namespaced lower-kebab,`,
+      `   e.g. "review.merge-request", "deploy.staging", "investigate.error",`,
+      `   "chat.greeting", "fix.bug". Reuse an existing verb when the message is`,
+      `   the same kind of work as something already classified, even when the`,
+      `   client / project / subject differs.`,
+      ``,
+      `Examples (right vs wrong):`,
+      `- "Please review MR #957 on mtgl/system" → ["code", "review.merge-request"]`,
+      `   NOT ["business", "noqta", "mtgl-v2", "review-mr-957-system"]`,
+      `- "Deploy ksi-v2 to staging please" → ["ops", "deploy.staging"]`,
+      `   NOT ["business", "noqta", "ksi-v2", "deploy-ksi-v2-to-staging"]`,
+      `- "Hello Atlas" → ["support", "chat.greeting"]`,
       ``,
       `NODE ID RULES (strict — invalid ids get dropped):`,
-      `- lowercase-kebab only: [a-z0-9][a-z0-9_-]*`,
-      `- no spaces, no uppercase, no punctuation, no Arabic/other non-Latin`,
-      `- if the human-readable label is "Sales Manager", the id is "sales-manager"`,
-      `- if the label contains non-Latin script, use a short Latin-slug + put the original in axes.name`,
-      `- good: "business", "noqta", "sales-manager", "activity-review-mr"`,
-      `- bad:  "Business", "sales manager", "Scope: Business", "تليجرام"`,
-      ``,
-      `If a node needs a display name, put the human-readable form in axes.name — never in the node id.`,
+      `- lowercase-kebab + dots only: [a-z0-9][a-z0-9._-]*`,
+      `- no spaces, no uppercase, no Arabic/other non-Latin`,
+      `- verb ids should use a "category.specific" or "verb.modifier" shape`,
       ``,
       `Return ONE JSON object on one line, no prose, no fences:`,
       `  { "path": string[], "proposedAxes": { [nodeId]: { [axisName]: string } }, "leaf": { "input"?: string, "output"?: string }, "confidence": number }`,
       `confidence in [0,1]. Prefer low confidence over guessing.`,
     ].join("\n")
 
-    // 60s ceiling. Originally 20s on the assumption the classifier makes a
-    // tiny JSON-only call, but in practice the daemon routes it through the
-    // draftAgent's Claude Code subprocess which has real cold-start + queue
-    // wait costs. At 20s almost every proposal was timing out on a fresh
-    // daemon. 60s is the right balance: long enough for a sonnet turn,
-    // short enough that a genuinely hung sub-task doesn't stall the caller.
-    const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), 60_000)
-    let r: Response
-    try {
-      r = await fetch(`${this.daemonUrl}/task`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-        },
-        body: JSON.stringify({
-          agent: this.draftAgent,
-          message: userPrompt,
-          context: {
-            channel: "a2a",
-            sender: "graph-classifier",
-            systemPrompt:
-              "You are a taxonomy classifier. Respond with a single JSON object. No prose, no code fences.",
-          },
-        }),
-        signal: ac.signal,
-      })
-    } finally {
-      clearTimeout(timer)
-    }
-    if (!r.ok) throw new Error(`daemon /task HTTP ${r.status}`)
-    const data: any = await r.json()
-    if (data?.error) throw new Error(String(data.error))
-
-    const parsed = extractJson((data?.content || "").toString())
+    // Phase 2 of classifier-retire: in-process provider call.
+    // Replaces the `/task → graph-agent → mesh` dispatch path that
+    // generated a sibling ledger event per classification (60–70% of
+    // dispatches in the activity graph). Reuses whatever auth the
+    // operator already configured (Claude Max OAuth via CLI subprocess,
+    // Anthropic API key, etc.) — never opens a paid path the operator
+    // didn't already opt into. The provider returns a plain JSON-text
+    // GenerationResult, so we parse the same way as before.
+    const text = await this.callProvider(userPrompt)
+    const parsed = extractJson(text)
     if (!parsed || !Array.isArray(parsed.path)) return null
 
     // LLM often returns human-readable labels ("Business", "Sales Manager").
@@ -302,7 +332,7 @@ export class Classifier {
     // We also drop any element that can't be slugified into a valid id (e.g.
     // a path entry of pure Arabic script) — better to classify with a shorter
     // path than to have the store reject the whole classification.
-    const NODE_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
+    const NODE_ID_RE = /^[a-z0-9][a-z0-9._-]*$/
     const slugMap = new Map<string, string>()
     const path: string[] = parsed.path
       .filter((s: unknown): s is string => typeof s === "string" && s.length > 0)
@@ -358,15 +388,44 @@ export class Classifier {
   ): void {
     this.store.commitNodesAlongPath(path, proposedAxes, schema, createdBy)
   }
+
+  /** Run the prompt through whichever AgentProvider the operator already
+   *  configured (Claude Max subscription via CLI, Anthropic API key, …).
+   *  Hard rule: NEVER open a paid path the operator didn't opt into —
+   *  this is just a thin wrapper that reuses existing auth. 30s timeout
+   *  is enough for Haiku/CLI cold-start; any longer and the classifier
+   *  is stalling the caller. */
+  private async callProvider(userPrompt: string): Promise<string> {
+    const provider = this.getProvider()
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 30_000)
+    try {
+      const res = await provider.generate(
+        [
+          {
+            role: "system",
+            content:
+              "You are a taxonomy classifier. Respond with a single JSON object on one line. No prose, no code fences.",
+          },
+          { role: "user", content: userPrompt },
+        ],
+        { model: this.classifierModel, maxTokens: 800 },
+      )
+      return res.content || ""
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 }
 
 /** Normalize an LLM-proposed node label to a valid node id. Matches the
- *  schema's `^[a-z0-9][a-z0-9_-]*$` — lowercase, alnum/_/-, leading alnum. */
+ *  schema's `^[a-z0-9][a-z0-9._-]*$` — lowercase, alnum/./-/_, leading alnum.
+ *  Dots are preserved for verb ids like "review.merge-request". */
 function slugifyNodeId(raw: string): string {
   const s = raw
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "")
     .replace(/-{2,}/g, "-")
   if (!s) return ""

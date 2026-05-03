@@ -4,7 +4,10 @@ import { init } from "@/commands/init"
 import { setup } from "@/commands/setup"
 import { token } from "@/commands/token"
 import { doctor } from "@/commands/doctor"
-import { agent, channel, cron, mesh, skillCmd, hook, migrate, configCmd } from "@/commands/manage"
+import { agent, channel, cron, mesh, skillCmd, references, hook, migrate, configCmd } from "@/commands/manage"
+import { db as dbCmd } from "@/commands/db"
+import { ledger as ledgerCmd } from "@/commands/ledger"
+import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
@@ -13,11 +16,19 @@ import { wiki } from "@/commands/wiki"
 import { graph } from "@/commands/graph"
 import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
+import { task } from "@/commands/task"
+import { business } from "@/commands/business"
+import { plan } from "@/commands/plan"
+import { notifications } from "@/commands/notifications"
+import { retention } from "@/commands/retention"
+import { actions as actionsCmd } from "@/commands/actions"
 import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
+import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
 import { whatsapp } from "@/commands/whatsapp"
+import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { getPackageInfo } from "@/utils/get-package-info"
 
@@ -50,6 +61,10 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(schedule)
     .addCommand(mesh)
     .addCommand(skillCmd)
+    .addCommand(references)
+    .addCommand(dbCmd)
+    .addCommand(ledgerCmd)
+    .addCommand(backlog)
     .addCommand(hook)
     .addCommand(migrate)
     .addCommand(configCmd)
@@ -59,14 +74,22 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(graph)
     .addCommand(procedure)
     .addCommand(workflow)
+    .addCommand(task)
+    .addCommand(business)
+    .addCommand(plan)
+    .addCommand(notifications)
+    .addCommand(retention)
+    .addCommand(actionsCmd)
     .addCommand(actor)
     .addCommand(role)
     .addCommand(watch)
+    .addCommand(memoryCmd)
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)
     .addCommand(bench)
     .addCommand(whatsapp)
+    .addCommand(pluginCmd)
     .addCommand(completion)
 
   return program

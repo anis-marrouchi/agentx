@@ -2,9 +2,12 @@ import type { DaemonConfig, CronJobDef } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
 import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
-import { writeFileSync, mkdirSync, existsSync } from "fs"
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordCronDispatch } from "@/intent/sources/cron"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -243,11 +246,46 @@ export class CronScheduler {
     this.timers.set(jobId, timer)
   }
 
+  /**
+   * Phase 1 commit 6.d — record one cron-fire decision in the ledger
+   * when the source is enabled. Wrapped in try/catch so a ledger
+   * failure can never break cron dispatch — legacy stays authoritative
+   * until the 1c per-source promotion lands.
+   */
+  private recordCronDecisionInLedger(
+    jobId: string,
+    agentId: string,
+    firedAt: Date,
+    legacy: import("@/intent/divergence").LegacyOutcome,
+  ): { eventId: string; decidedBy: string } | undefined {
+    if (getLedgerMode("cron") === "off") return undefined
+    try {
+      const decision = recordCronDispatch(
+        getDefaultLedger(),
+        { jobId, agentId, firedAt },
+        JSON.stringify({ jobId, agentId, firedAt: firedAt.toISOString() }),
+        legacy,
+      )
+      if (decision.outcome === "dispatched") {
+        return { eventId: decision.eventId, decidedBy: decision.decidedBy }
+      }
+      return undefined
+    } catch (e: any) {
+      this.log(`[ledger] cron "${jobId}" record failed: ${e?.message ?? e}`)
+      return undefined
+    }
+  }
+
   private async executeJob(jobId: string, retryAttempt: number = 0): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job || !this.running) return
 
     const isRetry = retryAttempt > 0
+    // firedAt is captured here (rather than below at the original
+    // `startedAt` declaration) so the ledger event has a stable
+    // sourceEventId regardless of whether we record at the hook-block
+    // path or the dispatch path.
+    const firedAt = new Date()
 
     // Pre-hook
     if (this.hooks?.has("pre:cron-run" as any)) {
@@ -259,22 +297,39 @@ export class CronScheduler {
       })
       if (hookResult.blocked) {
         this.log(`Job "${jobId}" blocked by hook: ${hookResult.message}`)
+        this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+          agentId: null, outcome: "halted",
+          reason: `pre-hook blocked: ${hookResult.message ?? ""}`.trim(),
+        })
         this.scheduleNext(jobId)
         return
       }
     }
 
     this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`)
-    const startedAt = new Date()
+    const startedAt = firedAt
     job.lastRun = startedAt
     job.totalRuns++
+
+    // Phase 1 commit 6.d — record the dispatch decision before the
+    // (potentially long-running) registry.execute call. The returned
+    // intentRef threads through to registry.execute so it records a
+    // resolution on completion.
+    const intentRef = this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
+      agentId: job.agent, outcome: "dispatched", reason: isRetry ? `retry ${retryAttempt}` : null,
+    })
 
     try {
       const response = await this.registry.execute({
         message: withOutputCap(job.prompt, job.maxOutputTokens),
         agentId: job.agent,
         model: job.model,
-        context: { channel: "cron" },
+        intentRef,
+        // chatId per-job so different cron jobs for the same agent don't
+        // collide in one "default" session. Without this, the marketing
+        // daily-brief and the marketing weekly-report cron share history,
+        // and one job's prompt context bleeds into the other.
+        context: { channel: "cron", chatId: `cron:${jobId}` },
       })
 
       const result: CronRunResult = {
@@ -415,7 +470,7 @@ export class CronScheduler {
             job.maxOutputTokens,
           ),
           agentId: job.agent,
-          context: { channel: "cron" },
+          context: { channel: "cron", chatId: `cron:${jobId}` },
         })
 
         const result: CronRunResult = {
@@ -500,7 +555,6 @@ export class CronScheduler {
   private loadLastRuns(): Record<string, string> | null {
     try {
       if (!existsSync(this.lastRunFile)) return null
-      const { readFileSync } = require("fs")
       return JSON.parse(readFileSync(this.lastRunFile, "utf-8"))
     } catch {
       return null

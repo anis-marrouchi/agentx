@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
-import { writeFileSync, existsSync, unlinkSync, mkdirSync, watch, type FSWatcher } from "fs"
+import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
@@ -17,6 +17,15 @@ import { CronScheduler } from "@/crons/scheduler"
 import { Logger } from "./logger"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
+import { openDb, pruneSqliteTables } from "@/storage/sqlite"
+import { attachSqliteSubscribers } from "@/storage/subscribers"
+import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
+import { loadPlugins, type LoadedPlugin } from "@/plugins"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordMeshDispatch } from "@/intent/sources/mesh"
+import { setDefaultGovernance } from "@/intent/governance"
+import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -30,6 +39,10 @@ import {
 } from "@/workflows"
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { LandscapeBuilder } from "@/agents/landscape"
+import { AgentMemory } from "@/agents/agent-memory"
+import { ContactDirectory } from "@/agents/contacts"
+import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
+import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { ServiceMatcher } from "@/services/matcher"
@@ -61,6 +74,10 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
+  private db: import("better-sqlite3").Database | null = null
+  private loadedPlugins: LoadedPlugin[] = []
+  private readonly agentMemory: AgentMemory = new AgentMemory()
+  private contacts!: ContactDirectory
   /** Unified observability bus. Publishers (workflow engine, mesh,
    *  channels, signals) emit here; subscribers (SSE, CLI, board
    *  dashboard) filter by kind / workflow / actor. Created eagerly so
@@ -87,6 +104,10 @@ export class AgentXDaemon {
     this.log("Loading configuration...")
     this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
+
+    // Initialize the contact directory now that `this.log` is available.
+    // Empty file (or missing file) is fine — operators populate it later.
+    this.contacts = new ContactDirectory(process.cwd(), this.log)
 
     // Validate
     const warnings = validateWorkspaces(this.config)
@@ -181,6 +202,23 @@ export class AgentXDaemon {
     // Initialize webhook handler (after mesh so mesh-forwarding works)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks)
 
+    // Move 2: open SQLite + attach bus subscribers. Best-effort — if the
+    // native binding isn't available (operator hasn't run pnpm install),
+    // openDb returns null and subscribers are skipped. Existing JSON
+    // writes continue regardless. SQLite is observability-grade for now.
+    try {
+      const db = openDb()
+      this.db = db
+      if (db) {
+        attachSqliteSubscribers(db)
+        this.log(`  SQLite: ${db.name}`)
+      } else {
+        this.log(`  SQLite: not opened (native binding unavailable or path unwritable)`)
+      }
+    } catch (e: any) {
+      this.log(`  SQLite: skipped (${e.message})`)
+    }
+
     // Initialize business layer (if enabled)
     if (this.config.business?.enabled) {
       try {
@@ -192,6 +230,35 @@ export class AgentXDaemon {
           this.log,
         )
         this.router.setBusiness(this.business)
+
+        // Phase 3 — wire org-chart governance into decideAndCommit when
+        // INTENT_PM_GATE_ENABLED is set. Default off so the live shadow
+        // soak isn't disturbed; flip on per-deployment after soak
+        // findings settle. The DispatchGovernance hooks read from
+        // BusinessLayer.org so PM/canHandle changes apply on next event
+        // without a daemon restart.
+        if (process.env.INTENT_PM_GATE_ENABLED === "true" || process.env.INTENT_PM_GATE_ENABLED === "1") {
+          const org = this.business.org
+          const agents = this.config.agents
+          setDefaultGovernance({
+            pmFor: (project) => org.pmFor(project),
+            // canHandle layers two checks:
+            //   1. Org-chart membership (Phase 3) — agent is registered.
+            //   2. Phase 5 typed-capability check — agent's `intents`
+            //      list (when non-empty) must include the dispatched
+            //      intent. When the list is empty (default), handles all.
+            canHandle: (agentId, project, intent) => {
+              if (!org.canHandle(agentId, project, intent)) return false
+              return agentCanHandleIntent(agents[agentId], intent)
+            },
+            // Phase 8 — delegation-depth check. Walks the ledger's
+            // prior decisions on (project, subject) and refuses
+            // dispatches past the target agent's maxDelegationDepth.
+            withinDelegationBudget: (agentId, project, subject) =>
+              withinDelegationBudget(getDefaultLedger(), agents[agentId], agentId, project, subject),
+          })
+          this.log("  Ledger governance: PM gate + capability + delegation-depth ENABLED")
+        }
       } catch (e: any) {
         this.log(`[business] initialization failed: ${e.message}`)
       }
@@ -208,8 +275,73 @@ export class AgentXDaemon {
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
 
+    // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
+    //    the previous process. Their agents died with the previous
+    //    daemon; without writing a "canceled" resolution they'd block
+    //    Inv-ActiveTaskSafety on the same (project, subject) forever.
+    //    Only fires when the ledger is reachable (some source has
+    //    mode != "off"); the IntentLedger singleton is lazy and
+    //    construction would otherwise be skipped entirely under
+    //    deploy-default mode=off.
+    try {
+      const anySourceActive = (
+        ["telegram", "slack", "whatsapp", "discord", "gitlab", "github", "workflow", "cron", "mesh"] as const
+      ).some((s) => getLedgerMode(s) !== "off")
+      if (anySourceActive) {
+        const closed = getDefaultLedger().cleanupOrphanedDispatches("daemon-restart")
+        if (closed > 0) {
+          this.log(`  Ledger: cleaned up ${closed} orphaned in-flight dispatch(es) from previous process`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Ledger orphan-cleanup failed: ${e?.message ?? e}`)
+    }
+
+    // 0.5. Move B — load JS/TS plugins. Each plugin's setup() runs here so
+    //      it can register channel adapters BEFORE startChannels() and
+    //      attach bus subscribers BEFORE any event fires. setup() is
+    //      raced against a 15s timeout per plugin; failures log and
+    //      continue. Plugin-registered channels are folded into the
+    //      router right after startChannels() so they participate in
+    //      routing alongside built-in adapters.
+    try {
+      const builtInChannelNames = new Set([
+        "telegram", "whatsapp", "discord", "slack", "gitlab", "github",
+      ])
+      this.loadedPlugins = await loadPlugins({
+        config: this.config,
+        agents: new Map(Object.entries(this.config.agents)),
+        log: this.log,
+        isChannelNameTaken: (n) => builtInChannelNames.has(n),
+        daemonVersion: process.env.npm_package_version,
+      })
+      if (this.loadedPlugins.length > 0) {
+        this.log(`  Plugins: ${this.loadedPlugins.length} loaded — ${this.loadedPlugins.map(p => p.manifest.name).join(", ")}`)
+      }
+    } catch (e: any) {
+      // loadPlugins() is supposed to never throw, but defend anyway —
+      // a plugin failure must not abort daemon boot.
+      this.log(`  Plugins: loader threw (${e?.message ?? e}) — continuing without plugins`)
+      this.loadedPlugins = []
+    }
+
     // 1. Start channels
     await this.startChannels()
+    // After startChannels, fold plugin-registered channels into the router
+    // and call their start(). Done here (not inside startChannels itself)
+    // so the lifecycle ordering is explicit: built-in channels first,
+    // plugin channels second.
+    for (const p of this.loadedPlugins) {
+      for (const ch of p.channels) {
+        try {
+          this.router.addChannel(ch)
+          await ch.start()
+          this.log(`  Plugin channel: ${ch.name} (from ${p.manifest.name})`)
+        } catch (e: any) {
+          this.log(`  Plugin channel "${ch.name}" failed to start: ${e?.message ?? e}`)
+        }
+      }
+    }
 
     // 2. Start cron scheduler
     await this.cron.start()
@@ -260,6 +392,17 @@ export class AgentXDaemon {
       this.log(`    ${agent.id} (${agent.tier}) → ${agent.workspace}`)
     }
 
+    // Install the `remember` skill + sync existing memory into each
+    // agent's workspace. Write-if-absent for the skill (respect any
+    // customizations); replace-in-place for the CLAUDE.md sentinel
+    // block and the explicit .agentx-memory.md file.
+    this.installAgentMemorySurface()
+
+    // Sync each agent's MCP server config to <workspace>/.mcp.json.
+    // Operator-owned files (no agentx marker) are skipped; only files
+    // we wrote ourselves are rewritten or removed.
+    this.installAgentMcpConfig()
+
     // Print cron summary
     const cronJobs = this.cron.list()
     if (cronJobs.length) {
@@ -291,6 +434,21 @@ export class AgentXDaemon {
       const removed = this.registry.pruneTaskHistory()
       if (removed > 0) this.log(`  Pruned ${removed} old task-history folder(s)`)
     } catch { /* best-effort */ }
+
+    // SQLite-side retention sweep — task_history / rotations / route_traces
+    // grow unbounded otherwise. 90 days is generous for live debugging while
+    // keeping the file small enough to rsync. Same window as task-history files.
+    try {
+      if (this.db) {
+        const r = pruneSqliteTables(this.db, 90)
+        const total = r.taskHistory + r.rotations + r.routeTraces
+        if (total > 0) {
+          this.log(`  Pruned ${total} old SQLite row(s) (task_history=${r.taskHistory}, rotations=${r.rotations}, route_traces=${r.routeTraces})`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  SQLite prune skipped: ${e?.message ?? e}`)
+    }
 
     // Warm the per-agent last-summary cache from disk so dashboard cards have
     // something to show the instant the daemon boots.
@@ -340,6 +498,37 @@ export class AgentXDaemon {
       this.log(`  Channel stop error: ${e.message}`)
     }
 
+    // Drain active agent tasks before exit. Channels are already stopped, so
+    // the active count can only shrink. This is what lets `systemctl restart`
+    // survive long-running agent turns (e.g. a 3-minute coder reply) without
+    // killing them mid-flight. The inflight log handles messages that hadn't
+    // started yet — drain handles ones already executing.
+    //
+    // Drain ceiling: AGENTX_DRAIN_TIMEOUT_MS (default 300_000 = 5 min). Keep
+    // systemd's TimeoutStopSec ≥ this + ~30s margin or systemd will SIGKILL
+    // mid-drain.
+    try {
+      const drainTimeoutMs = parseInt(process.env.AGENTX_DRAIN_TIMEOUT_MS || "300000", 10)
+      const drainStart = Date.now()
+      const inflightCount = () => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
+      let active = inflightCount()
+      if (active > 0) {
+        this.log(`  Draining ${active} in-flight task(s) — local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()} (max ${Math.round(drainTimeoutMs / 1000)}s)...`)
+        while (active > 0 && Date.now() - drainStart < drainTimeoutMs) {
+          await new Promise(r => setTimeout(r, 500))
+          active = inflightCount()
+        }
+        const elapsedMs = Date.now() - drainStart
+        if (active === 0) {
+          this.log(`  Drain complete (${elapsedMs}ms)`)
+        } else {
+          this.log(`  Drain timeout after ${elapsedMs}ms — ${active} task(s) still in flight (local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()}), exiting anyway`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Drain error: ${e.message}`)
+    }
+
     try {
       // Persist router dedup + any debounced per-channel state before exit so
       // a clean stop doesn't drop the last in-memory window of processed ids.
@@ -383,6 +572,18 @@ export class AgentXDaemon {
         this.webrtc.shutdown()
       }
     } catch {}
+
+    // Move B — dispose plugins. Each dispose() runs the plugin's optional
+    // teardown() AND removes every bus subscription it attached via
+    // ctx.on(). Run sequentially so a slow teardown doesn't race with
+    // the daemon's own shutdown logging.
+    for (const p of this.loadedPlugins) {
+      try {
+        await p.dispose()
+      } catch (e: any) {
+        this.log(`  Plugin dispose error (${p.manifest.name}): ${e?.message ?? e}`)
+      }
+    }
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
 
@@ -595,6 +796,20 @@ export class AgentXDaemon {
       } catch (e: any) {
         this.log(`[reload] landscape rebuild failed: ${e.message}`)
       }
+      // Phase 4: when agents change locally, kick mesh peers to re-probe
+      // us — and equally re-probe THEM so their roster changes are pulled
+      // into our directory without waiting up to a full health-check tick.
+      // Closes the "newly-added remote agent silently unreachable for up
+      // to 60s" symptom the operator reported.
+      if (this.mesh && this.mesh.peerCount() > 0) {
+        try {
+          const refreshed = await this.mesh.refreshAll()
+          const healthy = refreshed.filter(r => r.healthy).length
+          applied.push(`mesh.refresh(${healthy}/${refreshed.length})`)
+        } catch (e: any) {
+          this.log(`[reload] mesh refresh failed: ${e.message}`)
+        }
+      }
     }
 
     // 8. Sections that still require a full restart — narrowed down to:
@@ -633,6 +848,32 @@ export class AgentXDaemon {
       restartRequired.push("channels")
     } else if (tgChanged && !tgHandled) {
       restartRequired.push("channels.telegram")
+    }
+
+    // 8a. Contact directory — re-read .agentx/contacts.json. The contacts
+    //     file is independent of agentx.json (operator-managed, sibling of
+    //     .agentx/sessions); reloading it here lets `agentx_send_contact`
+    //     pick up edits without a daemon restart.
+    {
+      const before = this.contacts.size()
+      const result = this.contacts.reload()
+      if (result.error) {
+        this.log(`[reload] contacts.json invalid: ${result.error}`)
+      } else if (result.count !== before) {
+        applied.push(`contacts(${result.count})`)
+      }
+    }
+
+    // 8b. Webhook entries — hot-reload triggers / secretEnv / mesh routes
+    //     without a daemon bounce. Phase 4 closes the recurring complaint
+    //     that adding a webhook route to agentx.json required a restart.
+    if (JSON.stringify(this.config.webhooks) !== JSON.stringify(next.webhooks)) {
+      try {
+        this.webhooks.setWebhookEntries(next.webhooks)
+        applied.push(`webhooks(${next.webhooks.length})`)
+      } catch (e: any) {
+        this.log(`[reload] webhooks hot-reload failed: ${e.message}`)
+      }
     }
 
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
@@ -1003,6 +1244,12 @@ export class AgentXDaemon {
     // when `workflows.enabled` is false to keep existing installs silent.
     await this.bootWorkflowEngine()
 
+    // Wire SessionStore to the channel adapters so cold-create sessions can
+    // call adapter.seedHistory() and mirror the live channel before the
+    // first turn renders. Installed AFTER all addChannel calls (above) so
+    // the resolver sees the full channel set.
+    this.registry.getSessionStore().setAdapterResolver((channel) => this.router.getChannel(channel))
+
     await this.router.startAll()
   }
 
@@ -1036,11 +1283,24 @@ export class AgentXDaemon {
       execute: async (req: AgentExecuteRequest): Promise<AgentExecuteResponse> => {
         const start = Date.now()
         try {
+          // Scope each workflow run to its own session bucket so concurrent
+          // runs of the same workflow (or even different workflows hitting
+          // the same agent) don't collide in api:default. Without this,
+          // every workflow turn for `coder-agent` ends up in
+          // `coder-agent:api:default:<day>.json` regardless of which run
+          // produced it — bleeding context across runs and breaking the
+          // single-conversation guarantee per workflow run.
+          const wfChatId = req.workflowRunId ? `workflow:${req.workflowRunId}` : "workflow:adhoc"
           const resp = await this.registry.execute({
             agentId: req.agentId,
             message: req.message,
             workflowRunId: req.workflowRunId,
             timeoutMinutes: req.timeoutMinutes,
+            context: {
+              channel: "workflow",
+              chatId: wfChatId,
+              sender: "workflow",
+            },
           })
           return {
             content: resp.content ?? "",
@@ -1234,6 +1494,10 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // Phase 3: webhook handler can now dispatch workflows per event-type
+    // (webhooks[].triggers map). When `triggers` is unset, behavior is
+    // unchanged from prior versions.
+    this.webhooks.setWorkflowDispatcher(dispatcher)
 
     // Phase 3: wire trigger.cron timers + trigger.hook subscribers for
     // workflows that declare them. Channel-triggered workflows (gitlab-issue,
@@ -1245,6 +1509,25 @@ export class AgentXDaemon {
 
     const count = store.list().length
     this.log(`  Workflows: enabled (${count} definition${count === 1 ? "" : "s"} loaded from ${cfg.dir}, editor=${cfg.editor}, cron=${cronTimers}, hook=${hookSubscribers})`)
+
+    // Static dispatch-graph analysis. v0 only logs — auto-quarantine + admin
+    // surface land in follow-up turns. Surfacing the conflicts at boot already
+    // tells operators which workflows are racing against existing dispatch
+    // paths (e.g. gitlab agentMappings) so they can flip state to `disabled`
+    // by hand until the auto-fix layer ships.
+    try {
+      const { detectConflicts } = await import("@/workflows/conflict-detector")
+      const conflicts = detectConflicts(store.list(), this.config)
+      if (conflicts.length > 0) {
+        this.log(`  Workflows: ${conflicts.length} dispatch conflict(s) detected`)
+        for (const c of conflicts) {
+          this.log(`    [${c.severity}] ${c.workflowId}: ${c.summary}`)
+          this.log(`      → ${c.suggestion}`)
+        }
+      }
+    } catch (e: any) {
+      this.log(`  Workflows: conflict-detector failed: ${e.message}`)
+    }
   }
 
   private async startHttpApi(): Promise<void> {
@@ -1481,6 +1764,16 @@ export class AgentXDaemon {
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
         return
+      }
+
+      // Agent-memory API — lets running Claude Code sessions save their
+      // own experiential memory from inside a Bash tool call.
+      //   GET  /api/memory?agent=<id>            → list records + MEMORY.md
+      //   GET  /api/memory/<id>?agent=<id>       → one record
+      //   POST /api/memory  body: {agentId, type, name, description, body, append?}
+      //   DELETE /api/memory/<name>?agent=<id>   → remove
+      if (path.startsWith("/api/memory")) {
+        if (await this.handleMemoryApi(req, res, path, url)) return
       }
 
       // BPM user-task API: list + submit. Lives on the main daemon
@@ -1722,7 +2015,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
-            usage: this.registry.getTodayUsage(),
+            usage: this.resolveTodayUsage(),
           })
           break
 
@@ -1977,11 +2270,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           const mapping = mappings.find((m: any) => m.agentId === agentId)
           let token: string | undefined
           if (mapping?.tokenFile) {
-            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || mapping?.token
           if (!token && ghConfig?.tokenFile) {
-            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || ghConfig?.token
           if (!token) {
@@ -2016,11 +2309,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           const mapping = mappings.find((m: any) => m.agentId === agentId)
           let token: string | undefined
           if (mapping?.tokenFile) {
-            try { token = require("fs").readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(mapping.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || mapping?.token
           if (!token && ghConfig?.tokenFile) {
-            try { token = require("fs").readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
+            try { token = readFileSync(ghConfig.tokenFile, "utf-8").trim().split("\n")[0].trim() } catch { /* */ }
           }
           token = token || ghConfig?.token
           if (!token) {
@@ -2049,6 +2342,195 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             this.json(res, 200, { ok: true, ...result })
           } catch (e: any) {
             this.json(res, 500, { ok: false, error: e?.message || String(e) })
+          }
+          break
+        }
+
+        case "POST /recall": {
+          // Conversation recall — reads stored sessions for a given agent
+          // (optionally narrowed to a channel/chatId) and returns turns
+          // newest-first with a cursor for pagination. Read-only.
+          const body = await readBody(req)
+          if (!body.agent) {
+            this.json(res, 400, { error: "Required: agent (id of the agent whose sessions to recall)" })
+            break
+          }
+          try {
+            const result = this.registry.getSessionStore().recallTurns({
+              agentId: String(body.agent),
+              channel: body.channel ? String(body.channel) : undefined,
+              chatId: body.chatId ? String(body.chatId) : undefined,
+              before: body.before ? String(body.before) : undefined,
+              after: body.after ? String(body.after) : undefined,
+              lookbackDays: typeof body.lookbackDays === "number" ? body.lookbackDays : undefined,
+              limit: typeof body.limit === "number" ? body.limit : undefined,
+              query: body.query ? String(body.query) : undefined,
+              participants: Array.isArray(body.participants)
+                ? body.participants.map((p: unknown) => String(p))
+                : undefined,
+            })
+            this.json(res, 200, result)
+          } catch (e: any) {
+            this.json(res, 500, { error: e?.message || String(e) })
+          }
+          break
+        }
+
+        case "POST /chat/recent": {
+          // Cross-agent view of a chat. Returns the most recent messages
+          // across EVERY agent's session for the given (channel, chatId)
+          // — sorted oldest-first so the caller reads it like a transcript.
+          // Use cases:
+          //   - Agent introspection ("what was just said in this chat?")
+          //   - Multi-agent groups where one agent needs to see what another
+          //     replied without going through A2A indirection (today's
+          //     cx→devops→marketing speculation thread is the failure mode
+          //     this fixes).
+          // Bounded by sinceISO (default: last 24h) and limit (default: 30,
+          // max 200) so a long-running group can't blow up an agent's prompt.
+          const body = await readBody(req)
+          if (!body.channel || !body.chatId) {
+            this.json(res, 400, { error: "Required: channel, chatId" })
+            break
+          }
+          try {
+            const messages = this.registry.getSessionStore().recentByChatId({
+              channel: String(body.channel),
+              chatId: String(body.chatId),
+              sinceISO: typeof body.sinceISO === "string" ? body.sinceISO : undefined,
+              limit: typeof body.limit === "number" ? body.limit : undefined,
+            })
+            this.json(res, 200, { messages, count: messages.length })
+          } catch (e: any) {
+            this.json(res, 500, { error: e?.message || String(e) })
+          }
+          break
+        }
+
+        case "POST /send/agent": {
+          // Explicit A2A send: route to another agent via mesh (or local
+          // dispatch when the target lives on this daemon). This is the
+          // deterministic path for "agent A asks agent B to do X" — no
+          // contact-directory fallback, no name fuzzy-matching. Caller
+          // must pass an exact agentId. Returns the resulting task id /
+          // remote message id when the mesh accepts the task.
+          const body = await readBody(req)
+          if (!body.agentId || !body.text) {
+            this.json(res, 400, { error: "Required: agentId, text" })
+            break
+          }
+          const targetAgent = String(body.agentId)
+          const text = String(body.text)
+          // Local agent? Dispatch directly through the registry.
+          const localDef = this.registry.getAgent(targetAgent)
+          if (localDef) {
+            try {
+              const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+              const response = await this.registry.execute({
+                agentId: targetAgent,
+                message: text,
+                context: { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" },
+              })
+              this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
+            } catch (e: any) {
+              this.json(res, 500, { error: e.message })
+            }
+            break
+          }
+          // Remote agent? Find the mesh peer that advertises this agent.
+          if (!this.mesh) {
+            this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
+            break
+          }
+          const directory = this.mesh.directory()
+          const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
+          if (!peer) {
+            const known = [
+              ...Object.keys(this.config.agents),
+              ...directory.flatMap((p) => p.skills.map((s) => s.id)),
+            ]
+            this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
+            break
+          }
+          try {
+            const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+            const messageId = await this.mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+            this.json(res, 200, { ok: true, messageId, peer: peer.peer })
+          } catch (e: any) {
+            this.json(res, 500, { error: e.message, peer: peer.peer })
+          }
+          break
+        }
+
+        case "POST /send/contact": {
+          // Resolve a free-form contact name through the contact directory,
+          // pick a channel address, then dispatch via the regular
+          // sendOutbound path. Refuses on miss/ambiguous/fuzzy(no-confirm)
+          // so the caller can ask the user to disambiguate. Distinct from
+          // /send (which requires a chatId) and /send/agent (which uses
+          // mesh), so route_traces records why each path was taken.
+          const body = await readBody(req)
+          if (!body.contactName || !body.text) {
+            this.json(res, 400, { error: "Required: contactName, text" })
+            break
+          }
+          const name = String(body.contactName)
+          const text = String(body.text)
+          const preferredChannel = body.channel ? String(body.channel) : undefined
+          const confirmed = body.confirmed === true
+          const result = this.contacts.resolve(name)
+
+          if (result.kind === "miss") {
+            this.json(res, 404, { error: `No contact matches "${name}"`, hint: "Add the contact to .agentx/contacts.json and POST /reload." })
+            break
+          }
+          if (result.kind === "ambiguous") {
+            this.json(res, 409, { error: "ambiguous", candidates: result.candidates.map((c) => ({ id: c.id, name: c.name, channels: Object.keys(c.channels) })) })
+            break
+          }
+          if (result.kind === "fuzzy" && !confirmed) {
+            // Refuse silent fuzzy match — caller (the LLM) must confirm.
+            // Returns the candidate so the agent can ask the user "did you mean X?".
+            this.json(res, 409, {
+              error: "fuzzy-match-needs-confirmation",
+              candidate: { id: result.contact.id, name: result.contact.name, channels: Object.keys(result.contact.channels) },
+              confidence: result.confidence,
+              hint: "Re-call with confirmed:true once the user has confirmed this is the intended recipient.",
+            })
+            break
+          }
+          // Cross-channel collision check: if the name also resolves to a
+          // registered local agent, surface ambiguity rather than silently
+          // pick the contact. Mesh peers handled the same way.
+          const collidesWithLocalAgent = !!this.registry.getAgent(name)
+          const collidesWithMeshAgent = this.mesh?.directory()?.some((p) => p.skills.some((s) => s.id.toLowerCase() === name.toLowerCase()))
+          if (collidesWithLocalAgent || collidesWithMeshAgent) {
+            this.json(res, 409, {
+              error: "ambiguous",
+              hint: `"${name}" resolves to BOTH a contact (id=${result.contact.id}) and an agent. Use /send/agent for the agent, or pass contactId="${result.contact.id}" to /send/contact for the contact.`,
+            })
+            break
+          }
+          const picked = this.contacts.pickChannel(result.contact, preferredChannel)
+          if (!picked) {
+            this.json(res, 400, { error: `Contact "${result.contact.id}" has no channels configured` })
+            break
+          }
+          if (preferredChannel && picked.channel !== preferredChannel) {
+            this.json(res, 400, { error: `Contact "${result.contact.id}" has no "${preferredChannel}" channel`, available: Object.keys(result.contact.channels) })
+            break
+          }
+          try {
+            const messageId = await this.router.sendOutbound({
+              channel: picked.channel,
+              chatId: picked.address,
+              text,
+              agentId: body.agentId as string | undefined,
+              accountId: body.accountId as string | undefined,
+            })
+            this.json(res, 200, { ok: true, messageId: messageId || null, contactId: result.contact.id, channel: picked.channel })
+          } catch (e: any) {
+            this.json(res, 400, { error: e.message })
           }
           break
         }
@@ -2091,6 +2573,17 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
             return
           }
+          // A2A sender identity — when present, must resolve to an agent on
+          // the calling peer. Log-warn (not enforce) for one release so
+          // older mesh peers can roll out the field before we reject. The
+          // shape "no body.context" is what classic A2A calls look like;
+          // human-facing /task callers (CLI, dashboard) always set
+          // context.channel, so the warning targets only mesh traffic.
+          const senderAgentId = typeof body.senderAgentId === "string" ? body.senderAgentId : undefined
+          const looksLikeA2A = !body.context
+          if (looksLikeA2A && !senderAgentId) {
+            this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
+          }
           // Per-task context strategy override. When absent, registry falls
           // back to config.session.contextStrategy. Used by the bench
           // harness to A/B the same request under "layered" vs "planner"
@@ -2099,6 +2592,36 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             body.contextStrategy === "layered" || body.contextStrategy === "planner"
               ? body.contextStrategy
               : undefined
+          // Phase 1 commit 6.d — record the inbound mesh dispatch decision
+          // in the ledger. The mesh protocol has no stable request id, so
+          // each call records as its own event row (no per-event idempotency).
+          // Wrapped in try/catch so a ledger failure cannot break /task —
+          // legacy stays authoritative until 1c per-source promotion lands.
+          let intentRef: { eventId: string; decidedBy: string } | undefined
+          if (getLedgerMode("mesh") !== "off") {
+            try {
+              const decision = recordMeshDispatch(
+                getDefaultLedger(),
+                {
+                  agentId,
+                  senderAgentId,
+                  context: body.context as any,
+                },
+                JSON.stringify({ agentId, senderAgentId, context: body.context, message: typeof body.message === "string" ? body.message.slice(0, 200) : "" }),
+                {
+                  agentId,
+                  outcome: "dispatched",
+                  reason: senderAgentId ? `from ${senderAgentId}` : null,
+                },
+              )
+              if (decision.outcome === "dispatched") {
+                intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
+              }
+            } catch (e: any) {
+              this.log(`[ledger] mesh /task agent="${agentId}" record failed: ${e?.message ?? e}`)
+            }
+          }
+
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
           // awaits the final response — they don't see deltas, just the result.
@@ -2108,6 +2631,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               message: body.message as string,
               context: body.context as any,
               contextStrategy,
+              intentRef,
             },
             () => {},
           )
@@ -2235,6 +2759,18 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           break
         }
 
+        case "GET /webrtc/history": {
+          if (!this.botManager) {
+            this.json(res, 404, { error: "WebRTC bot not enabled" })
+            return
+          }
+          // In-process ring buffer of recently-completed sessions. Surfaces
+          // call activity to the admin UI without requiring transcript
+          // persistence to disk (that's still opt-in via webrtcBot.transcriptChannel).
+          this.json(res, 200, { active: this.botManager.active(), history: this.botManager.history() })
+          break
+        }
+
         case "GET /webrtc/config": {
           const wrtc = this.config.channels.webrtc
           if (!wrtc?.enabled) {
@@ -2264,12 +2800,29 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               pushNotifications: false,
               stateTransitionHistory: false,
             },
-            skills: this.registry.list().map((a) => ({
-              id: a.id,
-              name: a.name,
-              description: `Agent "${a.name}" (${a.tier})`,
-              tags: [a.tier],
-            })),
+            // Each agent advertised as a skill (legacy A2A naming). The
+            // description is what peers SEE in their [Landscape]: anaemic
+            // text here means the calling agent has no idea what we do.
+            // Prefer (in order) an explicit `description`, the first
+            // sentence of the systemPrompt, then the agent name as a
+            // last-resort placeholder.
+            skills: this.registry.list().map((a) => {
+              // registry.list() returns a flat shape; pull the raw def
+              // from the config so we can read systemPrompt / mentions
+              // / description.
+              const def = (this.config.agents as any)[a.id] || {}
+              const desc =
+                (typeof def.description === "string" && def.description.trim()) ||
+                firstSentence(def.systemPrompt) ||
+                `Agent "${a.name}" (${a.tier})`
+              const mentions = Array.isArray(def.mentions) ? def.mentions.slice(0, 4) : []
+              return {
+                id: a.id,
+                name: a.name,
+                description: desc,
+                tags: [a.tier, ...mentions],
+              }
+            }),
             // Channels this node hosts. Used by mesh peers to route
             // workflow `action.send` calls back to the originating channel
             // when the workflow runs on a different node than the channel
@@ -2535,6 +3088,165 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
   private json(res: ServerResponse, status: number, data: unknown): void {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
+  }
+
+  /** Pick today's usage rollup according to AGENTX_USAGE_READ:
+   *    - "sqlite": SQLite only (empty if db null / no rows)
+   *    - "json":   JSON only (legacy behaviour)
+   *    - "sqlite-then-json" (default): try SQLite, fall back to JSON when
+   *      the rollup is empty (no agents seen today). Transparent for
+   *      operators on first deploy where SQLite is empty until the first
+   *      task completes. */
+  private resolveTodayUsage(): ReturnType<AgentRegistry["getTodayUsage"]> {
+    const mode = getUsageReadMode()
+    if (mode === "json") return this.registry.getTodayUsage()
+    const rollup = loadTodayRollup(this.db)
+    if (mode === "sqlite") return rollup
+    // sqlite-then-json
+    if (Object.keys(rollup.agents).length > 0) return rollup
+    return this.registry.getTodayUsage()
+  }
+
+  /** Boot-time: install the `remember` skill into every agent workspace
+   *  that doesn't already have it, and sync each agent's existing memory
+   *  into <workspace>/CLAUDE.md + .agentx-memory.md. Idempotent — safe to
+   *  run on every daemon start. Write-if-absent for the skill, sentinel-
+   *  replace for CLAUDE.md, so operator edits survive. */
+  private installAgentMemorySurface(): void {
+    for (const agent of this.registry.list()) {
+      const ws = agent.workspace
+      if (!ws || !existsSync(ws)) continue
+      try {
+        const skillsDir = resolve(ws, ".claude", "skills")
+        mkdirSync(skillsDir, { recursive: true })
+        const skillPath = resolve(skillsDir, REMEMBER_SKILL_FILENAME)
+        if (!existsSync(skillPath)) {
+          writeFileSync(skillPath, REMEMBER_SKILL_BODY)
+          this.log(`  memory-skill: installed remember.md → ${agent.id}`)
+        }
+        // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
+        // sentinel block from whatever is currently on disk.
+        this.agentMemory.syncToWorkspace(agent.id, ws)
+      } catch (e: any) {
+        this.log(`  memory-skill: ${agent.id} install failed — ${e?.message ?? e}`)
+      }
+    }
+  }
+
+  /** Boot-time: sync each agent's `mcp` config block to
+   *  <workspace>/.mcp.json. Mirrors installAgentMemorySurface — same
+   *  ownership semantics, marker-based to preserve operator edits. */
+  private installAgentMcpConfig(): void {
+    for (const [agentId, def] of Object.entries(this.config.agents)) {
+      const ws = def.workspace
+      if (!ws || !existsSync(ws)) continue
+      const mcp = ((def as any).mcp ?? {}) as McpServerMap
+      try {
+        const result = syncMcpToWorkspace(ws, mcp)
+        switch (result) {
+          case "installed":
+            this.log(`  mcp: installed ${Object.keys(mcp).length} server(s) → ${agentId}`)
+            break
+          case "updated":
+            this.log(`  mcp: updated .mcp.json (${Object.keys(mcp).length} server(s)) → ${agentId}`)
+            break
+          case "removed":
+            this.log(`  mcp: removed managed .mcp.json (config now empty) → ${agentId}`)
+            break
+          case "skipped-operator-owned":
+            // Only worth surfacing when there's a config the operator
+            // is silently overriding. Otherwise stay quiet.
+            if (Object.keys(mcp).length > 0) {
+              this.log(`  mcp: ${agentId} has operator-owned .mcp.json — skipping (delete file or marker to let agentx manage)`)
+            }
+            break
+          case "noop":
+            break
+        }
+      } catch (e: any) {
+        this.log(`  mcp: ${agentId} install failed — ${e?.message ?? e}`)
+      }
+    }
+  }
+
+  /** Look up an agent's workspace from the live registry. Returns null
+   *  for agents the daemon doesn't know about (e.g., a stale memory
+   *  entry for a since-removed agent). */
+  private workspaceFor(agentId: string): string | null {
+    for (const a of this.registry.list()) if (a.id === agentId) return a.workspace
+    return null
+  }
+
+  /** Agent-memory HTTP surface. Agents call this from inside a Claude
+   *  Code session via `Bash` + `curl` — see the `remember` skill. The
+   *  heavy lifting is in `AgentRegistry.agentMemory` (AgentMemory); this
+   *  is a thin JSON wrapper that validates + delegates. */
+  private async handleMemoryApi(
+    req: IncomingMessage, res: ServerResponse, path: string, url: URL,
+  ): Promise<boolean> {
+    const mem = this.agentMemory
+
+    // GET /api/memory?agent=<id>
+    if (req.method === "GET" && path === "/api/memory") {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      this.json(res, 200, { agent, memories: mem.list(agent), index: mem.indexMarkdown(agent) })
+      return true
+    }
+    // GET /api/memory/:name?agent=<id>
+    const oneMatch = req.method === "GET" && path.match(/^\/api\/memory\/([^\/?]+)$/)
+    if (oneMatch) {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      const rec = mem.get(agent, decodeURIComponent(oneMatch[1]))
+      if (!rec) { this.json(res, 404, { error: "no such memory" }); return true }
+      this.json(res, 200, { memory: rec })
+      return true
+    }
+    // POST /api/memory — write a memory
+    if (req.method === "POST" && path === "/api/memory") {
+      let body: any
+      try { body = await readJsonBody(req) } catch (e: any) {
+        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
+      }
+      const agentId = typeof body?.agentId === "string" ? body.agentId : ""
+      const type    = typeof body?.type === "string" ? body.type : ""
+      const name    = typeof body?.name === "string" ? body.name : ""
+      const description = typeof body?.description === "string" ? body.description : ""
+      const newBody = typeof body?.body === "string" ? body.body : ""
+      const append  = body?.append === true
+      if (!agentId || !type || !name || !description || !newBody) {
+        this.json(res, 400, { error: "required fields: agentId, type, name, description, body" })
+        return true
+      }
+      try {
+        let finalBody = newBody
+        if (append) {
+          const existing = mem.get(agentId, name)
+          if (existing) finalBody = `${existing.body.trimEnd()}\n\n${newBody.trim()}`
+        }
+        const rec = mem.save({ agentId, type: type as any, name, description, body: finalBody })
+        const ws = this.workspaceFor(agentId)
+        if (ws) { try { mem.syncToWorkspace(agentId, ws) } catch { /* best effort */ } }
+        this.json(res, 200, { ok: true, memory: rec, syncedToWorkspace: !!ws })
+      } catch (e: any) {
+        this.json(res, 400, { error: e?.message || "save failed" })
+      }
+      return true
+    }
+    // DELETE /api/memory/:name?agent=<id>
+    const delMatch = req.method === "DELETE" && path.match(/^\/api\/memory\/([^\/?]+)$/)
+    if (delMatch) {
+      const agent = url.searchParams.get("agent") || ""
+      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
+      const ok = mem.remove(agent, decodeURIComponent(delMatch[1]))
+      if (!ok) { this.json(res, 404, { error: "no such memory" }); return true }
+      const ws = this.workspaceFor(agent)
+      if (ws) { try { mem.syncToWorkspace(agent, ws) } catch { /* best effort */ } }
+      this.json(res, 200, { ok: true })
+      return true
+    }
+    return false
   }
 
   /** Mesh receiver for forwarded workflow events. Peers POST the same
@@ -2821,6 +3533,18 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       this.json(res, 500, { error: e.message })
     }
   }
+}
+
+/** Pull the first sentence (or ~120 chars) out of a systemPrompt so the
+ *  agent-card description tells peers something useful. Returns "" when
+ *  the input is empty/missing — callers fall through to a default. */
+function firstSentence(prompt: unknown): string {
+  if (typeof prompt !== "string") return ""
+  const trimmed = prompt.trim()
+  if (!trimmed) return ""
+  const m = trimmed.match(/^[^.!?\n]+[.!?]?/)
+  const head = (m ? m[0] : trimmed).trim()
+  return head.length > 140 ? head.slice(0, 137) + "…" : head
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {

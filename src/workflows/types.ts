@@ -44,6 +44,11 @@ export const nodeTypeSchema = z.enum([
   "action.editMessage",
   "action.logTime",
   "action.callHTTP",
+  // Registered action invocation — references an entry from the action
+  // registry (.agentx/actions/<id>.json) by id, with templated inputs.
+  // Lets operators define a reusable shell/http action once and call it
+  // from many workflows without duplicating the command/url/headers.
+  "action.run",
   // BPM: human tasks + composition + signals + intermediate timer
   "userTask",
   "subProcess",
@@ -111,6 +116,17 @@ export const workflowSchema = z.object({
   version: z.literal(2).default(2),
   title: z.string().min(1),
   description: z.string().optional(),
+  /** Lifecycle state. The dispatcher and trigger registrar honor this:
+   *   - active:      normal — triggers register, runs create + advance
+   *   - disabled:    operator kill switch (config or admin action). No new
+   *                  triggers, no new runs. In-flight runs continue.
+   *   - quarantined: system set by the conflict detector when this workflow
+   *                  would race with another dispatch path (e.g. a gitlab
+   *                  agentMapping handles the same project the workflow
+   *                  triggers on). Treated like `disabled` at runtime;
+   *                  resolved by either fixing the conflict or operator
+   *                  explicitly flipping the state back to `active`. */
+  state: z.enum(["active", "disabled", "quarantined"]).default("active"),
   /** Higher priority wins when multiple workflows match the same event.
    *  Default 0. Ties broken by id. */
   priority: z.number().int().default(0),

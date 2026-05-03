@@ -34,6 +34,7 @@ const ICONS = {
   mesh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="12" r="2"/><path d="M7.4 7.4l3.2 3.2M13.4 13.4l3.2 3.2M16.6 7.4l-3.2 3.2M10.6 13.4l-3.2 3.2"/></svg>`,
   tokens: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-8 8a4 4 0 1 1-6 6m6-6l5-5 3 3-5 5m-3-3l3 3"/></svg>`,
   advanced: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 13l2 2 4-4"/></svg>`,
+  actions: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
 }
 
 export interface AdminPageOpts {
@@ -157,6 +158,10 @@ const ADMIN_PAGE_BODY = `
   <button data-tab="crons">Schedules</button>
   <button data-tab="webhooks">Webhooks</button>
   <button data-tab="mesh">Mesh</button>
+  <button data-tab="team">Team</button>
+  <button data-tab="business">Business</button>
+  <button data-tab="boards-cfg">Boards</button>
+  <button data-tab="actions">Actions</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>
 </nav>
@@ -324,6 +329,33 @@ const ADMIN_PAGE_BODY = `
       bodyHtml: `<b>How does this work?</b> We give each channel a small "bridge" that forwards messages to AgentX. For chat apps (Telegram, Slack, Discord) you'll paste a bot token — we keep the value in your <code>.env</code> file and never send it over the network. For webhook-style sources (GitHub, GitLab) we hand you a URL to paste into their dashboard.`,
     })}
 
+    <details class="add-form" style="margin-top:14px;margin-bottom:18px" id="notif-section">
+      <summary class="primary">⚙ Notifications routing</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Where AgentX pings you when a task finishes, errors, or runs long. Mirrors <code>agentx notifications</code>.</p>
+        <div id="notif-current" style="font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;color:var(--ax-muted)">—</div>
+        <label>Channel<span class="hint">(telegram | whatsapp | slack | discord — leave blank to clear)</span></label>
+        <input id="notif-channel" placeholder="telegram" />
+        <label>Chat id</label>
+        <input id="notif-chat-id" placeholder="-1001234567890" />
+        <label>Account id <span class="hint">(optional — when the channel is multi-account, e.g. multiple Telegram bots)</span></label>
+        <input id="notif-account-id" placeholder="default" />
+        <label>Long-task threshold (seconds) <span class="hint">(0 disables long-task pings)</span></label>
+        <input id="notif-threshold" type="number" min="0" max="3600" />
+        <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
+          <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">Events to ping on</legend>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-complete" /> task complete</label>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-error" /> task error</label>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="notif-on-queued" /> task queued</label>
+        </fieldset>
+        <div class="actions" style="margin-top:10px">
+          <button class="primary" onclick="saveNotifications()">Save notifications</button>
+          <button class="ghost" onclick="clearNotificationsDestination()">Clear destination</button>
+          <div id="notif-msg" class="msg"></div>
+        </div>
+      </div>
+    </details>
+
     <div id="ch-chatapps-label">${secLabel({ label: "Chat apps" })}</div>
     <div class="ax-connectors" id="ch-chatapps"></div>
 
@@ -339,6 +371,7 @@ const ADMIN_PAGE_BODY = `
       <div id="ch-slack" hidden><div id="slack-section" class="section-block"></div></div>
       <div id="ch-discord" hidden></div>
       <div id="ch-gitlab" hidden></div>
+      <div id="ch-webrtc" hidden></div>
       <div id="ch-github" hidden></div>
     </div>
   </section>
@@ -497,6 +530,240 @@ const ADMIN_PAGE_BODY = `
       <label>Auth token<span class="hint">(optional — use a scoped token with <code>mesh:peer</code>)</span></label>
       <input id="m-token" type="password" />
       <div class="actions"><button class="primary" onclick="addMeshPeer()">Add peer</button><div id="m-msg" class="msg"></div></div>
+    </div>
+
+    <details class="add-form" style="margin-top:16px">
+      <summary class="primary">⏱ Health-check cadence</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">How often AgentX pings each peer to check if it's alive. Mirrors <code>agentx mesh health</code>. Lower interval = faster peer-down detection (more wake noise on flaky links); higher = quieter on battery-constrained mobile peers.</p>
+        <div class="rowf">
+          <div><label>Interval (seconds, 5..3600)<span class="hint">(default 60)</span></label><input id="mh-interval" type="number" min="5" max="3600" /></div>
+          <div><label>Timeout (seconds, 1..60)<span class="hint">(default 10)</span></label><input id="mh-timeout" type="number" min="1" max="60" /></div>
+        </div>
+        <div class="actions"><button class="primary" onclick="saveMeshHealth()">Save</button><div id="mh-msg" class="msg"></div></div>
+      </div>
+    </details>
+  </section>
+
+  <section id="tab-team" class="tab">
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Actors & Roles",
+      lead: "Humans (Actors) and groups of humans (Roles) that workflow user-tasks can be assigned to. Mirrors <code>agentx actor</code> and <code>agentx role</code>.",
+    })}
+    ${witBanner({
+      persistKey: "team",
+      bodyHtml: `<b>Actors</b> are people. They carry one or more channel handles (Telegram, WhatsApp, Slack, Discord, email) so user-tasks land in a place they actually read. <b>Roles</b> are named groups — assigning a userTask to a role lets the engine pick a member by strategy (first-available, round-robin, all). Assignees in workflow YAML are referenced as <code>actor:&lt;id&gt;</code> or <code>role:&lt;id&gt;</code>.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Actors</h3>
+      <div id="actors-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add actor</summary>
+        <div style="margin-top:10px">
+          <label>Actor id<span class="hint">(must start with <code>actor:</code>, e.g. <code>actor:anis</code>)</span></label>
+          <input id="ac-id" placeholder="actor:anis" />
+          <label>Display name</label>
+          <input id="ac-name" placeholder="Anis Marrouchi" />
+          <label>Email <span class="hint">(optional)</span></label>
+          <input id="ac-email" placeholder="anis@noqta.tn" />
+          <label>Channel handles<span class="hint">(at least one — channel:handle, comma-separated, mark preferred with *)</span></label>
+          <input id="ac-channels" placeholder="telegram:marrouchi*, whatsapp:21612345678" />
+          <label>Timezone <span class="hint">(optional, e.g. <code>Africa/Tunis</code>)</span></label>
+          <input id="ac-timezone" placeholder="Africa/Tunis" />
+          <div class="actions"><button class="primary" onclick="upsertActor()">Save actor</button><div id="ac-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Roles</h3>
+      <div id="roles-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add role</summary>
+        <div style="margin-top:10px">
+          <label>Role id<span class="hint">(must start with <code>role:</code>, e.g. <code>role:on-call</code>)</span></label>
+          <input id="rl-id" placeholder="role:on-call" />
+          <label>Display name</label>
+          <input id="rl-name" placeholder="On-call engineers" />
+          <label>Assignment strategy</label>
+          <select id="rl-strategy">
+            <option value="first-available">first-available — first listed member sees the task</option>
+            <option value="round-robin">round-robin — rotate across members</option>
+            <option value="all">all — every member sees the task</option>
+          </select>
+          <div class="actions"><button class="primary" onclick="upsertRole()">Save role</button><div id="rl-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section id="tab-business" class="tab">
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Business layer",
+      lead: "Org chart, projects, and contact map — the data that drives PM gating and activity-graph attribution. Mirrors <code>agentx business</code>.",
+    })}
+    ${witBanner({
+      persistKey: "business",
+      bodyHtml: `<b>Three concepts.</b> The <b>org chart</b> is who reports to whom (<code>reportsTo</code>). <b>Projects</b> map an id to a PM and client (drives the PM gate and lets the activity graph attribute work to the right client). The <b>contact map</b> tells the activity graph which client a Telegram/WhatsApp chat belongs to — without it, free-text channels fall into the catch-all "internal" bucket. Editing here writes to <code>agentx.json</code>; restart the daemon (or POST /reload) for the change to take effect.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Org chart</h3>
+      <div id="business-org-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update org-chart entry</summary>
+        <div style="margin-top:10px">
+          <label>Agent id<span class="hint">(must match a configured agent — e.g. <code>devops-agent</code>)</span></label>
+          <input id="bo-agentId" placeholder="devops-agent" />
+          <label>Role title</label>
+          <input id="bo-role" placeholder="DevOps" />
+          <label>Reports to <span class="hint">(another agent id; leave blank for top-level)</span></label>
+          <input id="bo-reportsTo" placeholder="coo-agent" />
+          <label>Schedule <span class="hint">(start–end · days, e.g. <code>09:00 17:00 mon,tue,wed,thu,fri</code>)</span></label>
+          <div style="display:flex;gap:6px"><input id="bo-start" placeholder="09:00" style="width:80px" /><input id="bo-end" placeholder="17:00" style="width:80px" /><input id="bo-days" placeholder="mon,tue,wed,thu,fri" /></div>
+          <div class="actions"><button class="primary" onclick="upsertOrgEntry()">Save entry</button><div id="bo-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Projects</h3>
+      <div id="business-project-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update project</summary>
+        <div style="margin-top:10px">
+          <label>Project id<span class="hint">(<code>owner/repo</code> for GitLab/GitHub; stable string for internal projects)</span></label>
+          <input id="bp-id" placeholder="mtgl/system" />
+          <label>PM <span class="hint">(agentId — drives the PM gate)</span></label>
+          <input id="bp-pm" placeholder="pm-mtgl" />
+          <label>Client <span class="hint">(used by the activity graph to attribute traffic)</span></label>
+          <input id="bp-client" placeholder="mtgl" />
+          <div class="actions"><button class="primary" onclick="upsertProject()">Save project</button><div id="bp-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Contact map</h3>
+      <div id="business-contact-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add contact mapping</summary>
+        <div style="margin-top:10px">
+          <label>Channel <span class="hint">(telegram | whatsapp | slack | discord — optional)</span></label>
+          <input id="bc-channel" placeholder="telegram" />
+          <label>Chat id <span class="hint">(e.g. <code>-100…</code>, JID — pick at least one of these three)</span></label>
+          <input id="bc-chatId" placeholder="-1003861455814" />
+          <label>Username</label>
+          <input id="bc-username" placeholder="anis" />
+          <label>Sender id</label>
+          <input id="bc-senderId" placeholder="8500203323" />
+          <label>Client <span class="hint">(required)</span></label>
+          <input id="bc-client" placeholder="noqta" />
+          <label>Project <span class="hint">(optional — defaults to <code>&lt;client&gt;/_chat</code>)</span></label>
+          <input id="bc-project" placeholder="noqta/internal" />
+          <label>Display name <span class="hint">(initiator pill override)</span></label>
+          <input id="bc-displayName" placeholder="Anis Marrouchi" />
+          <div class="actions"><button class="primary" onclick="upsertContact()">Save mapping</button><div id="bc-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section id="tab-boards-cfg" class="tab">
+    ${sectionHead({
+      icon: ICONS.tokens,
+      title: "Kanban boards",
+      lead: "Configure the boards rendered on the home page. Mirrors <code>agentx board add/edit/remove</code> + <code>agentx board column</code>. Source is GitLab today; backlog/wiki sources land when the schema unlocks them.",
+    })}
+    ${witBanner({
+      persistKey: "boards-cfg",
+      bodyHtml: `<b>Two layers.</b> A board points to one or more GitLab projects (<code>source.projects</code>) and optionally filters by a primary tool label. Inside each board, <b>columns</b> map drag-drop actions to scoped-labels (e.g. dropping a card on "Doing" adds <code>Status::Doing</code>). The default flow is Open → To Do → Doing → On Hold → Review → Closed; override per-board with the column controls below.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Boards</h3>
+      <div id="boards-cfg-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update board</summary>
+        <div style="margin-top:10px">
+          <label>Board id<span class="hint">(unique slug, e.g. <code>mtgl</code>)</span></label>
+          <input id="bd-id" placeholder="mtgl" />
+          <label>Display name</label>
+          <input id="bd-name" placeholder="MTGL System" />
+          <label>GitLab project paths<span class="hint">(comma-separated, e.g. <code>mtgl/system,mtgl/website</code>)</span></label>
+          <input id="bd-projects" placeholder="mtgl/system" />
+          <label>Primary tool label <span class="hint">(optional — ANDed into every query, e.g. <code>Tool::Claude</code>)</span></label>
+          <input id="bd-label" placeholder="Tool::Claude" />
+          <div style="display:flex;gap:6px"><label style="flex:1">Open-window days<input id="bd-days" type="number" min="1" max="365" value="30" /></label><label style="flex:1">Closed-window days<input id="bd-closed-days" type="number" min="1" max="365" value="30" /></label></div>
+          <div class="actions"><button class="primary" onclick="upsertBoardCfg()">Save board</button><div id="bd-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section id="tab-actions" class="tab">
+    ${sectionHead({
+      icon: ICONS.actions,
+      title: "Action registry",
+      lead: "Reusable shell commands and HTTP calls. Workflows invoke them by id; the dashboard runs them on demand for smoke-tests. Mirrors <code>agentx actions</code>.",
+    })}
+    ${witBanner({
+      persistKey: "actions",
+      bodyHtml: `<b>Two flavors.</b> <code>shell</code> runs a templated command on the daemon host (cwd + extra env vars supported). <code>http</code> calls a URL with templated method/headers/body. Inputs are typed (string / number / boolean) and fill <code>{{name}}</code> markers; <code>$VAR</code> resolves against the daemon's process env. Output capped at 32KB.`,
+    })}
+
+    <div class="ax-stack" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:13px">Registered actions</h3>
+      <div id="actions-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Add or update action</summary>
+        <div style="margin-top:10px">
+          <label>Id<span class="hint">(unique slug — e.g. <code>deploy-staging</code>)</span></label>
+          <input id="ac-id" placeholder="deploy-staging" />
+          <label>Title</label>
+          <input id="ac-title" placeholder="Deploy staging" />
+          <label>Description<span class="hint">(optional)</span></label>
+          <input id="ac-desc" placeholder="Build, push, restart staging" />
+          <label>Kind</label>
+          <select id="ac-kind">
+            <option value="shell">shell</option>
+            <option value="http">http</option>
+          </select>
+
+          <div id="ac-shell-fields">
+            <label>Command<span class="hint">(supports <code>{{input}}</code> + <code>$ENV</code>)</span></label>
+            <input id="ac-command" placeholder="git pull && pnpm deploy --version={{version}}" />
+            <label>Working directory<span class="hint">(optional)</span></label>
+            <input id="ac-cwd" placeholder="/srv/staging" />
+          </div>
+
+          <div id="ac-http-fields" style="display:none">
+            <label>URL</label>
+            <input id="ac-url" placeholder="https://api.example.com/deploy" />
+            <label>Method</label>
+            <select id="ac-method">
+              <option value="POST">POST</option>
+              <option value="GET">GET</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+            <label>Headers<span class="hint">(JSON object, optional)</span></label>
+            <input id="ac-headers" placeholder='{"Authorization":"Bearer $TOKEN"}' />
+            <label>Body<span class="hint">(template — JSON or text, skipped on GET/DELETE)</span></label>
+            <textarea id="ac-body" rows="3" placeholder='{"version":"{{version}}"}'></textarea>
+          </div>
+
+          <label>Inputs<span class="hint">(comma-separated <code>name:type[!]</code> — <code>!</code> = required. e.g. <code>version:string!,dryRun:boolean</code>)</span></label>
+          <input id="ac-inputs" placeholder="version:string!,dryRun:boolean" />
+          <label>Timeout (ms)</label>
+          <input id="ac-timeout" type="number" min="100" max="600000" value="30000" />
+          <div class="actions"><button class="primary" onclick="upsertAction()">Save action</button><div id="ac-msg" class="msg"></div></div>
+        </div>
+      </details>
     </div>
   </section>
 
@@ -820,6 +1087,17 @@ async function refresh() {
     renderCrons();
     renderWebhooks();
     renderMesh();
+    renderTeam();
+    wireTeamHandlers();
+    renderBusiness();
+    wireBusinessHandlers();
+    renderBoardsCfg();
+    wireBoardsCfgHandlers();
+    renderNotifications();
+    renderActions();
+    wireActionsHandlers();
+    wireActionKindToggle();
+    wireWebhookTriggerHandlers();
     initScheduleBuilder();
     initScheduleExpertAgentSelect();
   } catch (e) {
@@ -879,6 +1157,35 @@ function renderWebhooks() {
         '</div>' +
         '<div style="font-size:11px;color:var(--ax-muted);margin-top:6px">' + escapeHtml(meta.hint) + '</div>';
 
+      // Triggers + defaultWorkflow editor — collapsed by default. Maps a
+      // platform event-type (e.g. "issues.opened") to a workflow id; the
+      // defaultWorkflow runs when no specific trigger matches.
+      const triggers = (w.triggers && typeof w.triggers === 'object') ? w.triggers : {};
+      const triggerRows = Object.keys(triggers).map(function(evt){
+        return '<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><code style="flex:1;font-size:11px">' + escapeHtml(evt) + ' → ' + escapeHtml(triggers[evt]) + '</code><a href="#" data-act="wh-trig-rm" data-id="' + escapeHtml(w.id) + '" data-event="' + escapeHtml(evt) + '" style="color:var(--ax-muted);font-size:11px">×</a></div>';
+      }).join('');
+      const trigBlock = document.createElement('details');
+      trigBlock.style.marginTop = '8px';
+      trigBlock.innerHTML =
+        '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">Routing — event-type triggers + default workflow</summary>' +
+        '<div style="margin-top:8px;padding:8px 10px;background:var(--ax-surface);border-radius:4px">' +
+          '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Event-type → workflow id (e.g. <code>issues.opened</code> → <code>triage-bug</code>):</div>' +
+          (triggerRows || '<div style="font-size:11px;color:var(--ax-muted);font-style:italic">no triggers — every event uses the default workflow below</div>') +
+          '<div style="display:flex;gap:6px;margin-top:6px">' +
+            '<input data-wh-trig-event placeholder="event-type" style="flex:1;font-size:11px" />' +
+            '<input data-wh-trig-wf placeholder="workflow id" style="flex:1;font-size:11px" />' +
+            '<button data-act="wh-trig-add" data-id="' + escapeHtml(w.id) + '" class="ax-btn" style="padding:3px 9px;font-size:11px">Add</button>' +
+          '</div>' +
+          '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--ax-border)">' +
+            '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Default workflow (fires when no trigger matches):</div>' +
+            '<div style="display:flex;gap:6px">' +
+              '<input data-wh-default value="' + escapeHtml(w.defaultWorkflow || '') + '" placeholder="(none)" style="flex:1;font-size:11px" />' +
+              '<button data-act="wh-default-save" data-id="' + escapeHtml(w.id) + '" class="ax-btn" style="padding:3px 9px;font-size:11px">Save</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      card.appendChild(trigBlock);
+
       card.querySelector('[data-copy]').addEventListener('click', (e) => {
         const u = e.currentTarget.dataset.copy;
         navigator.clipboard.writeText(u).catch(() => {});
@@ -924,7 +1231,10 @@ async function toggleWebhook(id, enabled) {
 }
 
 function renderMesh() {
-  const m = state.mesh || { enabled: false, peers: [] };
+  const m = state.mesh || { enabled: false, peers: [], healthCheck: { interval: 60, timeout: 10 } };
+  const hc = m.healthCheck || { interval: 60, timeout: 10 };
+  if ($('mh-interval')) $('mh-interval').value = hc.interval ?? 60;
+  if ($('mh-timeout')) $('mh-timeout').value = hc.timeout ?? 10;
 
   // Hero card: status message + enable toggle + SVG network viz.
   const hero = $('mesh-hero');
@@ -1040,6 +1350,693 @@ function initialsOf(name, id) {
   const parts = src.split(/\\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return (parts[0] || id || '?').slice(0, 2).toUpperCase();
+}
+
+// ---------------- Actors & Roles tab ----------------
+//
+// Inline onclick handlers can't pass quoted strings cleanly here — the
+// whole admin page is generated via a TypeScript template literal, so
+// escaped single-quotes in the JS source collapse and break the JS
+// parser. We attach a single delegated click handler instead and route
+// by data-act / data-id attributes.
+
+function renderTeam() {
+  const actors = state.actors || [];
+  const roles = state.roles || [];
+
+  const al = $('actors-list');
+  if (al) {
+    if (!actors.length) {
+      al.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px 18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">No actors yet. Add one below or via <code>agentx actor add</code>.</div>';
+    } else {
+      al.innerHTML = actors.map(a => {
+        const channels = (a.channels || []).map(c =>
+          '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' +
+          escapeHtml(c.channel) + ':' + escapeHtml(String(c.handle).slice(0, 30)) +
+          (c.preferredForTasks ? ' ★' : '') + '</span>'
+        ).join(' ');
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:6px">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b>' + escapeHtml(a.name) + '</b><code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(a.id) + '</code>' +
+            (a.email ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.email) + '</span>' : '') +
+            (a.timezone ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.timezone) + '</span>' : '') +
+            '</div>' +
+            '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + channels + '</div>' +
+          '</div>' +
+          '<button class="ghost danger" data-act="delete-actor" data-id="' + escapeHtml(a.id) + '">Delete</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  const rl = $('roles-list');
+  if (rl) {
+    if (!roles.length) {
+      rl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px 18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">No roles yet. Add one below or via <code>agentx role create</code>.</div>';
+    } else {
+      rl.innerHTML = roles.map(r => {
+        const memberPills = (r.members || []).map(m => {
+          const ref = m.actor || m.role || '';
+          return '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(ref) +
+            ' <a href="#" data-act="revoke" data-role="' + escapeHtml(r.id) + '" data-member="' + escapeHtml(ref) + '" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
+        }).join(' ');
+        const memberOptions = '<option value="">— add actor or role —</option>' +
+          actors.filter(a => !(r.members || []).some(m => m.actor === a.id)).map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.id) + ' (' + escapeHtml(a.name) + ')</option>').join('') +
+          roles.filter(rr => rr.id !== r.id && !(r.members || []).some(m => m.role === rr.id)).map(rr => '<option value="' + escapeHtml(rr.id) + '">' + escapeHtml(rr.id) + ' (' + escapeHtml(rr.name) + ')</option>').join('');
+        return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:6px">' +
+          '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">' +
+            '<div><b>' + escapeHtml(r.name) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(r.id) + '</code> <span style="font-size:11px;color:var(--ax-muted)">strategy: ' + escapeHtml(r.assignmentStrategy) + '</span></div>' +
+            '<button class="ghost danger" data-act="delete-role" data-id="' + escapeHtml(r.id) + '">Delete</button>' +
+          '</div>' +
+          '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + (memberPills || '<i style="font-size:11px;color:var(--ax-muted)">no members yet</i>') +
+            '<select data-act="grant" data-role="' + escapeHtml(r.id) + '" style="margin-left:auto;font-size:11px;padding:2px 6px">' + memberOptions + '</select>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+  }
+}
+
+// Single delegated click + change handler for the Team tab. Wired once
+// at page-init time below renderTeam in the existing DOMContentLoaded
+// flow — see the wireTeamHandlers call.
+function wireTeamHandlers() {
+  if (window.__teamWired) return;
+  window.__teamWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'delete-actor') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Delete actor ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/actors', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'delete-role') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Delete role ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/roles', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'revoke') {
+      ev.preventDefault();
+      const role = t.getAttribute('data-role');
+      const member = t.getAttribute('data-member');
+      try { await req('POST', '/api/admin/roles/revoke', { role, member }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+  document.addEventListener('change', async (ev) => {
+    const t = ev.target.closest('select[data-act="grant"]');
+    if (!t) return;
+    const role = t.getAttribute('data-role');
+    const member = t.value;
+    if (!member) return;
+    try { await req('POST', '/api/admin/roles/grant', { role, member }); await load(); }
+    catch (e) { showMsg($('global-msg'), 'err', e.message); }
+  });
+}
+
+// Form-submit shims kept on window for the inline onclick="upsertActor()"
+// handlers in the add-form summary blocks.
+
+window.upsertActor = async function() {
+  const id = $('ac-id').value.trim();
+  const name = $('ac-name').value.trim();
+  const email = $('ac-email').value.trim();
+  const channelsRaw = $('ac-channels').value.trim();
+  const timezone = $('ac-timezone').value.trim();
+  const channels = channelsRaw.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+    const preferredForTasks = s.endsWith('*');
+    const clean = preferredForTasks ? s.slice(0, -1) : s;
+    const sep = clean.indexOf(':');
+    return { channel: clean.slice(0, sep), handle: clean.slice(sep + 1), preferredForTasks };
+  }).filter(c => c.channel && c.handle);
+  try {
+    await req('POST', '/api/admin/actors', { id, name, email: email || undefined, channels, timezone: timezone || undefined });
+    $('ac-id').value = ''; $('ac-name').value = ''; $('ac-email').value = ''; $('ac-channels').value = ''; $('ac-timezone').value = '';
+    showMsg($('ac-msg'), 'ok', 'Actor saved');
+    await load();
+  } catch (e) { showMsg($('ac-msg'), 'err', e.message); }
+}
+
+window.upsertRole = async function() {
+  const id = $('rl-id').value.trim();
+  const name = $('rl-name').value.trim();
+  const assignmentStrategy = $('rl-strategy').value;
+  try {
+    await req('POST', '/api/admin/roles', { id, name, assignmentStrategy });
+    $('rl-id').value = ''; $('rl-name').value = '';
+    showMsg($('rl-msg'), 'ok', 'Role saved');
+    await load();
+  } catch (e) { showMsg($('rl-msg'), 'err', e.message); }
+}
+
+// ---------------- Business tab ----------------
+
+function renderBusiness() {
+  const b = state.business || {};
+  const orgChart = b.orgChart || {};
+  const projects = b.projects || [];
+  const contactMap = b.contactMap || [];
+
+  const ol = $('business-org-list');
+  if (ol) {
+    const entries = Object.entries(orgChart);
+    if (entries.length === 0) {
+      ol.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no org-chart entries</div>';
+    } else {
+      ol.innerHTML = entries.map(function(kv){
+        const id = kv[0]; const e = kv[1];
+        const reports = e.reportsTo ? '<span style="font-size:11px;color:var(--ax-muted)">→ ' + escapeHtml(e.reportsTo) + '</span>' : '';
+        const sched = e.schedule ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml((e.schedule.days || []).join(',')) + ' ' + escapeHtml(e.schedule.start || '') + '–' + escapeHtml(e.schedule.end || '') + '</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+            '<code style="font-size:12px">' + escapeHtml(id) + '</code>' +
+            '<b>' + escapeHtml(e.role || '') + '</b>' + reports + sched +
+          '</div>' +
+          '<button class="ghost danger" data-act="biz-org-rm" data-id="' + escapeHtml(id) + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  const pl = $('business-project-list');
+  if (pl) {
+    if (projects.length === 0) {
+      pl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no projects</div>';
+    } else {
+      pl.innerHTML = projects.map(function(p){
+        const pm = p.pm ? '<span style="font-size:11px;color:var(--ax-muted)">pm=' + escapeHtml(p.pm) + '</span>' : '';
+        const client = p.client ? '<span style="font-size:11px;color:var(--ax-muted)">client=' + escapeHtml(p.client) + '</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><code style="font-size:12px">' + escapeHtml(p.id) + '</code>' + pm + client + '</div>' +
+          '<button class="ghost danger" data-act="biz-proj-rm" data-id="' + escapeHtml(p.id) + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  const cl = $('business-contact-list');
+  if (cl) {
+    if (contactMap.length === 0) {
+      cl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no contact mappings</div>';
+    } else {
+      cl.innerHTML = contactMap.map(function(c, idx){
+        const key = c.chatId ? 'chatId=' + c.chatId : c.username ? 'username=' + c.username : c.senderId ? 'senderId=' + c.senderId : '?';
+        const dn = c.displayName ? '<span style="font-size:11px;color:var(--ax-muted)">(' + escapeHtml(c.displayName) + ')</span>' : '';
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+            (c.channel ? '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(c.channel) + '</span>' : '') +
+            '<code style="font-size:12px">' + escapeHtml(key) + '</code>' +
+            '<span style="font-size:11px;color:var(--ax-muted)">→ ' + escapeHtml(c.client) + (c.project ? '/' + escapeHtml(c.project) : '') + '</span>' + dn +
+          '</div>' +
+          '<button class="ghost danger" data-act="biz-contact-rm" data-idx="' + idx + '">Remove</button>' +
+        '</div>';
+      }).join('');
+    }
+  }
+}
+
+function wireBusinessHandlers() {
+  if (window.__bizWired) return;
+  window.__bizWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="biz-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'biz-org-rm') {
+      const agentId = t.getAttribute('data-id');
+      if (!confirm('Remove org-chart entry for ' + agentId + '?')) return;
+      try { await req('DELETE', '/api/admin/business/orgchart', { agentId }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-proj-rm') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Remove project ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/business/project', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-contact-rm') {
+      const idx = parseInt(t.getAttribute('data-idx') || '-1', 10);
+      const list = (state.business && state.business.contactMap) || [];
+      const c = list[idx];
+      if (!c) return;
+      const filters = {};
+      if (c.channel) filters.channel = c.channel;
+      if (c.chatId) filters.chatId = c.chatId;
+      else if (c.username) filters.username = c.username;
+      else if (c.senderId) filters.senderId = c.senderId;
+      try { await req('DELETE', '/api/admin/business/contact', filters); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+window.upsertOrgEntry = async function() {
+  const agentId = $('bo-agentId').value.trim();
+  const role = $('bo-role').value.trim();
+  const reportsTo = $('bo-reportsTo').value.trim();
+  const start = $('bo-start').value.trim() || '09:00';
+  const end = $('bo-end').value.trim() || '17:00';
+  const days = ($('bo-days').value.trim() || 'mon,tue,wed,thu,fri').split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    await req('POST', '/api/admin/business/orgchart', { agentId, role, reportsTo, start, end, days });
+    $('bo-agentId').value = ''; $('bo-role').value = ''; $('bo-reportsTo').value = '';
+    showMsg($('bo-msg'), 'ok', 'Entry saved');
+    await load();
+  } catch (e) { showMsg($('bo-msg'), 'err', e.message); }
+}
+
+window.upsertProject = async function() {
+  const id = $('bp-id').value.trim();
+  const pm = $('bp-pm').value.trim();
+  const client = $('bp-client').value.trim();
+  try {
+    await req('POST', '/api/admin/business/project', { id, pm, client });
+    $('bp-id').value = ''; $('bp-pm').value = ''; $('bp-client').value = '';
+    showMsg($('bp-msg'), 'ok', 'Project saved');
+    await load();
+  } catch (e) { showMsg($('bp-msg'), 'err', e.message); }
+}
+
+// ---------------- Boards-cfg tab ----------------
+
+function renderBoardsCfg() {
+  const boards = state.boards || [];
+  const list = $('boards-cfg-list');
+  if (!list) return;
+  if (boards.length === 0) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no boards configured</div>';
+    return;
+  }
+  list.innerHTML = boards.map(function(b){
+    const projects = ((b.source && b.source.projects) || []).map(p => '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(p) + '</span>').join(' ');
+    const cols = (b.columns || []).map(function(c){
+      const map = c.kind === 'scoped-label' ? 'scoped=' + (c.scopedLabel || '')
+                : c.kind === 'label' ? 'label=' + (c.mapsToLabel || '')
+                : c.kind === 'open-backlog' ? 'prefix=' + (c.scopedPrefix || 'Status')
+                : c.kind;
+      return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 6px;border:1px solid var(--ax-border);border-radius:3px;margin-right:4px;margin-bottom:4px"><b>' + escapeHtml(c.title) + '</b><span style="color:var(--ax-muted)">(' + escapeHtml(map) + ')</span><a href="#" data-act="bd-col-rm" data-board="' + escapeHtml(b.id) + '" data-column="' + escapeHtml(c.id) + '" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
+    }).join('');
+    return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:8px">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">' +
+        '<div><b>' + escapeHtml(b.name) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(b.id) + '</code></div>' +
+        '<div style="display:flex;gap:4px">' +
+          '<button class="ghost" data-act="bd-edit" data-id="' + escapeHtml(b.id) + '">Edit</button>' +
+          '<button class="ghost danger" data-act="bd-rm" data-id="' + escapeHtml(b.id) + '">Remove</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:6px">' + projects +
+        (b.primaryToolLabel ? '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">label: ' + escapeHtml(b.primaryToolLabel) + '</span>' : '') +
+        '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">open=' + (b.timeRangeDays || 30) + 'd / closed=' + (b.closedWindowDays || 30) + 'd</span>' +
+      '</div>' +
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--ax-border)">' +
+        '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">columns:</div>' +
+        (cols || '<i style="font-size:11px;color:var(--ax-muted)">no custom columns (board uses GitLab default flow)</i>') +
+        '<details style="margin-top:6px"><summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">+ add column</summary>' +
+          '<div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:end">' +
+            '<label>Id<input data-bd-col="id" data-board="' + escapeHtml(b.id) + '" placeholder="doing" /></label>' +
+            '<label>Title<input data-bd-col="title" data-board="' + escapeHtml(b.id) + '" placeholder="Doing" /></label>' +
+            '<label>Kind<select data-bd-col="kind" data-board="' + escapeHtml(b.id) + '"><option value="scoped-label">scoped-label</option><option value="label">label</option><option value="open-backlog">open-backlog</option><option value="closed">closed</option></select></label>' +
+            '<label>Scoped/label value<input data-bd-col="value" data-board="' + escapeHtml(b.id) + '" placeholder="Status::Doing" /></label>' +
+            '<button data-act="bd-col-add" data-board="' + escapeHtml(b.id) + '">Add</button>' +
+          '</div>' +
+        '</details>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function wireBoardsCfgHandlers() {
+  if (window.__boardsCfgWired) return;
+  window.__boardsCfgWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="bd-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    if (act === 'bd-rm') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Remove board ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/boards', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'bd-edit') {
+      // Pre-fill the add form so the operator can re-save.
+      const id = t.getAttribute('data-id');
+      const b = (state.boards || []).find(x => x.id === id);
+      if (!b) return;
+      $('bd-id').value = b.id;
+      $('bd-name').value = b.name || '';
+      $('bd-projects').value = ((b.source && b.source.projects) || []).join(',');
+      $('bd-label').value = b.primaryToolLabel || '';
+      $('bd-days').value = b.timeRangeDays || 30;
+      $('bd-closed-days').value = b.closedWindowDays || 30;
+      // Open the details and scroll to it
+      const details = document.querySelector('#tab-boards-cfg .add-form');
+      if (details) { details.open = true; details.scrollIntoView({ behavior: 'smooth' }); }
+    } else if (act === 'bd-col-rm') {
+      ev.preventDefault();
+      const boardId = t.getAttribute('data-board');
+      const columnId = t.getAttribute('data-column');
+      try { await req('DELETE', '/api/admin/boards/columns', { boardId, columnId }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'bd-col-add') {
+      const boardId = t.getAttribute('data-board');
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const id = card.querySelector('[data-bd-col="id"]').value.trim();
+      const title = card.querySelector('[data-bd-col="title"]').value.trim();
+      const kind = card.querySelector('[data-bd-col="kind"]').value;
+      const value = card.querySelector('[data-bd-col="value"]').value.trim();
+      if (!id || !title) { showMsg($('global-msg'), 'err', 'column id and title required'); return; }
+      const payload = { boardId, columnId: id, title, kind };
+      if (kind === 'scoped-label') payload.scopedLabel = value;
+      else if (kind === 'label') payload.mapsToLabel = value;
+      try { await req('POST', '/api/admin/boards/columns', payload); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+// ---------------- Notifications + Webhook triggers ----------------
+
+function renderNotifications() {
+  const n = state.notifications || {};
+  const cur = $('notif-current');
+  if (cur) {
+    if (n.destination) {
+      const acct = n.destination.accountId ? ' (account=' + escapeHtml(n.destination.accountId) + ')' : '';
+      cur.innerHTML = '<b>Routing to</b> <code>' + escapeHtml(n.destination.channel) + ':' + escapeHtml(n.destination.chatId) + '</code>' + acct;
+    } else {
+      cur.innerHTML = '<i>No destination set — notifications go to the daemon log only.</i>';
+    }
+  }
+  if ($('notif-channel') && n.destination) {
+    $('notif-channel').value = n.destination.channel || '';
+    $('notif-chat-id').value = n.destination.chatId || '';
+    $('notif-account-id').value = n.destination.accountId || '';
+  }
+  if ($('notif-threshold')) $('notif-threshold').value = n.longTaskThreshold ?? 30;
+  if ($('notif-on-complete')) $('notif-on-complete').checked = n.on?.taskComplete !== false;
+  if ($('notif-on-error')) $('notif-on-error').checked = n.on?.taskError !== false;
+  if ($('notif-on-queued')) $('notif-on-queued').checked = !!n.on?.taskQueued;
+}
+
+window.saveNotifications = async function() {
+  const channel = $('notif-channel').value.trim();
+  const chatId = $('notif-chat-id').value.trim();
+  const accountId = $('notif-account-id').value.trim();
+  const threshold = parseInt($('notif-threshold').value, 10);
+  const body = {
+    on: {
+      taskComplete: $('notif-on-complete').checked,
+      taskError: $('notif-on-error').checked,
+      taskQueued: $('notif-on-queued').checked,
+    },
+    longTaskThreshold: Number.isFinite(threshold) ? threshold : 30,
+  };
+  if (channel && chatId) {
+    body.destination = { channel, chatId, ...(accountId ? { accountId } : {}) };
+  }
+  try {
+    await req('POST', '/api/admin/notifications', body);
+    showMsg($('notif-msg'), 'ok', 'Saved');
+    await load();
+  } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+window.clearNotificationsDestination = async function() {
+  try {
+    await req('POST', '/api/admin/notifications', { destination: null });
+    showMsg($('notif-msg'), 'ok', 'Destination cleared');
+    await load();
+  } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+// ---------------- Action registry ----------------
+
+function renderActions() {
+  const list = $('actions-list');
+  if (!list) return;
+  const items = state.actions || [];
+  if (items.length === 0) {
+    list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no actions yet — add one below or via <code>agentx actions add</code></div>';
+    return;
+  }
+  list.innerHTML = items.map(function(a) {
+    const target = a.kind === 'shell'
+      ? '<span class="muted">shell:</span> <code>' + escapeHtml(String(a.command || '').slice(0, 90)) + '</code>'
+      : '<span class="muted">' + escapeHtml(a.method || 'POST') + '</span> <code>' + escapeHtml(String(a.url || '').slice(0, 90)) + '</code>';
+    const inputPills = (a.inputs || []).map(function(inp) {
+      const req = inp.required ? '<span style="color:var(--ax-warn)">*</span>' : '';
+      return '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-right:4px">' + escapeHtml(inp.name) + req + ':' + escapeHtml(inp.type) + '</span>';
+    }).join('');
+    const inputForm = (a.inputs || []).map(function(inp) {
+      const ph = inp.description ? escapeHtml(inp.description) : escapeHtml(inp.name);
+      const t = inp.type === 'number' ? 'number' : inp.type === 'boolean' ? 'checkbox' : 'text';
+      const def = inp.defaultValue !== undefined ? String(inp.defaultValue) : '';
+      const valAttr = t === 'checkbox'
+        ? (def === 'true' ? ' checked' : '')
+        : (def ? ' value="' + escapeHtml(def) + '"' : '');
+      return '<label style="display:block;margin:4px 0;font-size:11px"><span style="display:inline-block;min-width:120px;color:var(--ax-muted)">' + escapeHtml(inp.name) + '</span>'
+        + '<input data-ac-input data-name="' + escapeHtml(inp.name) + '" type="' + t + '" placeholder="' + ph + '"' + valAttr + ' style="width:60%" />'
+        + '</label>';
+    }).join('');
+    return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:8px" data-ac-card="' + escapeHtml(a.id) + '">'
+      + '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">'
+        + '<div><b>' + escapeHtml(a.title) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(a.id) + '</code> '
+          + '<span class="ax-pill" style="font-size:10px;padding:2px 6px;margin-left:4px">' + escapeHtml(a.kind) + '</span></div>'
+        + '<div style="display:flex;gap:4px">'
+          + '<button class="ghost" data-act="ac-edit" data-id="' + escapeHtml(a.id) + '">Edit</button>'
+          + '<button class="ghost danger" data-act="ac-rm" data-id="' + escapeHtml(a.id) + '">Remove</button>'
+        + '</div>'
+      + '</div>'
+      + '<div style="margin-top:6px;font-size:11px">' + target + '</div>'
+      + (a.description ? '<div style="margin-top:4px;font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.description) + '</div>' : '')
+      + (inputPills ? '<div style="margin-top:6px">' + inputPills + '</div>' : '')
+      + '<details style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--ax-border)">'
+        + '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent)">▶ Run</summary>'
+        + '<div style="margin-top:8px">'
+          + (inputForm || '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:6px">no inputs — invokes verbatim</div>')
+          + '<div style="margin-top:6px;display:flex;gap:6px;align-items:center">'
+            + '<button class="primary" data-act="ac-run" data-id="' + escapeHtml(a.id) + '">Run now</button>'
+            + '<span class="msg" data-ac-msg style="margin:0;padding:4px 8px"></span>'
+          + '</div>'
+          + '<pre data-ac-output style="display:none;margin-top:8px;padding:8px;background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:4px;font-family:var(--ax-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;max-height:280px;overflow:auto"></pre>'
+        + '</div>'
+      + '</details>'
+    + '</div>';
+  }).join('');
+}
+
+function wireActionKindToggle() {
+  if (window.__acKindWired) return;
+  window.__acKindWired = true;
+  const sel = $('ac-kind');
+  if (!sel) return;
+  const apply = () => {
+    const k = sel.value;
+    const sh = $('ac-shell-fields'); if (sh) sh.style.display = k === 'shell' ? '' : 'none';
+    const ht = $('ac-http-fields'); if (ht) ht.style.display = k === 'http' ? '' : 'none';
+  };
+  sel.addEventListener('change', apply);
+  apply();
+}
+
+function wireActionsHandlers() {
+  if (window.__actionsWired) return;
+  window.__actionsWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="ac-"]');
+    if (!t) return;
+    const act = t.getAttribute('data-act');
+    const id = t.getAttribute('data-id');
+    if (act === 'ac-rm') {
+      if (!confirm('Remove action ' + id + '?')) return;
+      try { await req('DELETE', '/api/admin/actions', { id }); await refresh(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'ac-edit') {
+      const a = (state.actions || []).find(x => x.id === id);
+      if (!a) return;
+      $('ac-id').value = a.id;
+      $('ac-title').value = a.title || '';
+      $('ac-desc').value = a.description || '';
+      $('ac-kind').value = a.kind;
+      $('ac-kind').dispatchEvent(new Event('change'));
+      if (a.kind === 'shell') {
+        $('ac-command').value = a.command || '';
+        $('ac-cwd').value = a.cwd || '';
+      } else {
+        $('ac-url').value = a.url || '';
+        $('ac-method').value = a.method || 'POST';
+      }
+      $('ac-inputs').value = (a.inputs || []).map(i => i.name + ':' + i.type + (i.required ? '!' : '')).join(',');
+      $('ac-timeout').value = a.timeoutMs ?? 30000;
+      const details = document.querySelector('#tab-actions .add-form');
+      if (details) { details.open = true; details.scrollIntoView({ behavior: 'smooth' }); }
+    } else if (act === 'ac-run') {
+      const card = t.closest('[data-ac-card]');
+      if (!card) return;
+      const inputs = {};
+      card.querySelectorAll('[data-ac-input]').forEach(el => {
+        const name = el.getAttribute('data-name');
+        if (el.type === 'checkbox') inputs[name] = el.checked;
+        else if (el.value !== '') inputs[name] = el.value;
+      });
+      const msgEl = card.querySelector('[data-ac-msg]');
+      const outEl = card.querySelector('[data-ac-output]');
+      if (msgEl) { msgEl.className = 'msg warn'; msgEl.textContent = 'running…'; msgEl.style.display = 'inline-block'; }
+      try {
+        const r = await req('POST', '/api/admin/actions/run', { id, inputs });
+        const result = r.result || {};
+        if (msgEl) {
+          msgEl.className = 'msg ' + (result.ok ? 'ok' : 'err');
+          msgEl.textContent = (result.ok ? 'ok' : 'failed') + ' · status=' + result.status + ' · ' + result.durationMs + 'ms';
+        }
+        if (outEl) {
+          let text = '';
+          if (result.output) text += result.output;
+          if (result.errors) text += (text ? '\\n--- stderr ---\\n' : '') + result.errors;
+          outEl.textContent = text || '(no output)';
+          outEl.style.display = 'block';
+        }
+      } catch (e) {
+        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = e.message; }
+        if (outEl) outEl.style.display = 'none';
+      }
+    }
+  });
+}
+
+window.upsertAction = async function() {
+  const id = $('ac-id').value.trim();
+  const title = $('ac-title').value.trim();
+  const kind = $('ac-kind').value;
+  if (!id) { showMsg($('ac-msg'), 'err', 'id required'); return; }
+  if (!title) { showMsg($('ac-msg'), 'err', 'title required'); return; }
+  const inputsCsv = $('ac-inputs').value.trim();
+  const inputs = inputsCsv ? inputsCsv.split(',').map(s => s.trim()).filter(Boolean).map(part => {
+    const required = part.endsWith('!');
+    const clean = required ? part.slice(0, -1) : part;
+    const colon = clean.indexOf(':');
+    const name = colon >= 0 ? clean.slice(0, colon) : clean;
+    const type = colon >= 0 ? clean.slice(colon + 1) : 'string';
+    return { name, type, required };
+  }) : [];
+  const body = {
+    id, title, kind, inputs,
+    timeoutMs: parseInt($('ac-timeout').value, 10) || 30000,
+  };
+  const desc = $('ac-desc').value.trim();
+  if (desc) body.description = desc;
+  if (kind === 'shell') {
+    const cmd = $('ac-command').value.trim();
+    if (!cmd) { showMsg($('ac-msg'), 'err', 'command required for shell'); return; }
+    body.command = cmd;
+    const cwd = $('ac-cwd').value.trim();
+    if (cwd) body.cwd = cwd;
+  } else if (kind === 'http') {
+    const url = $('ac-url').value.trim();
+    if (!url) { showMsg($('ac-msg'), 'err', 'url required for http'); return; }
+    body.url = url;
+    body.method = $('ac-method').value;
+    const headers = $('ac-headers').value.trim();
+    if (headers) {
+      try { body.headers = JSON.parse(headers); }
+      catch { showMsg($('ac-msg'), 'err', 'headers must be valid JSON'); return; }
+    }
+    const reqBody = $('ac-body').value;
+    if (reqBody) body.body = reqBody;
+  }
+  try {
+    await req('POST', '/api/admin/actions', body);
+    showMsg($('ac-msg'), 'ok', 'saved');
+    await refresh();
+  } catch (e) { showMsg($('ac-msg'), 'err', e.message); }
+}
+
+function wireWebhookTriggerHandlers() {
+  if (window.__whTrigWired) return;
+  window.__whTrigWired = true;
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-act^="wh-"]');
+    if (!t) return;
+    const id = t.getAttribute('data-id');
+    if (t.getAttribute('data-act') === 'wh-trig-rm') {
+      ev.preventDefault();
+      const evt = t.getAttribute('data-event');
+      const wh = state.webhooks.find(w => w.id === id);
+      if (!wh) return;
+      const next = { ...(wh.triggers || {}) };
+      delete next[evt];
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, triggers: next }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (t.getAttribute('data-act') === 'wh-trig-add') {
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const evt = card.querySelector('[data-wh-trig-event]').value.trim();
+      const wf = card.querySelector('[data-wh-trig-wf]').value.trim();
+      if (!evt || !wf) { showMsg($('global-msg'), 'err', 'event-type + workflow id required'); return; }
+      const wh = state.webhooks.find(w => w.id === id);
+      const next = { ...((wh && wh.triggers) || {}), [evt]: wf };
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, triggers: next }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (t.getAttribute('data-act') === 'wh-default-save') {
+      const card = t.closest('.ax-row-card');
+      if (!card) return;
+      const defaultWorkflow = card.querySelector('[data-wh-default]').value.trim();
+      try { await req('POST', '/api/admin/webhooks/triggers', { id, defaultWorkflow }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    }
+  });
+}
+
+window.saveMeshHealth = async function() {
+  const interval = parseInt($('mh-interval').value, 10);
+  const timeout = parseInt($('mh-timeout').value, 10);
+  const body = {};
+  if (Number.isFinite(interval)) body.interval = interval;
+  if (Number.isFinite(timeout)) body.timeout = timeout;
+  if (Object.keys(body).length === 0) {
+    showMsg($('mh-msg'), 'err', 'set interval and/or timeout');
+    return;
+  }
+  try {
+    await req('POST', '/api/admin/mesh/health', body);
+    showMsg($('mh-msg'), 'ok', 'Saved');
+    await load();
+  } catch (e) { showMsg($('mh-msg'), 'err', e.message); }
+}
+
+window.upsertBoardCfg = async function() {
+  const id = $('bd-id').value.trim();
+  const name = $('bd-name').value.trim();
+  const projects = $('bd-projects').value.trim();
+  const primaryToolLabel = $('bd-label').value.trim();
+  const timeRangeDays = parseInt($('bd-days').value, 10) || 30;
+  const closedWindowDays = parseInt($('bd-closed-days').value, 10) || 30;
+  try {
+    await req('POST', '/api/admin/boards', { id, name, projects, primaryToolLabel, timeRangeDays, closedWindowDays });
+    showMsg($('bd-msg'), 'ok', 'Board saved');
+    await load();
+  } catch (e) { showMsg($('bd-msg'), 'err', e.message); }
+}
+
+window.upsertContact = async function() {
+  const channel = $('bc-channel').value.trim();
+  const chatId = $('bc-chatId').value.trim();
+  const username = $('bc-username').value.trim();
+  const senderId = $('bc-senderId').value.trim();
+  const client = $('bc-client').value.trim();
+  const project = $('bc-project').value.trim();
+  const displayName = $('bc-displayName').value.trim();
+  if (!chatId && !username && !senderId) {
+    showMsg($('bc-msg'), 'err', 'one of chat-id / username / sender-id required');
+    return;
+  }
+  try {
+    await req('POST', '/api/admin/business/contact', { channel, chatId, username, senderId, client, project, displayName });
+    ['bc-channel','bc-chatId','bc-username','bc-senderId','bc-client','bc-project','bc-displayName'].forEach(id => { $(id).value = ''; });
+    showMsg($('bc-msg'), 'ok', 'Mapping saved');
+    await load();
+  } catch (e) { showMsg($('bc-msg'), 'err', e.message); }
 }
 
 /** Pick a stable avatar variant from the string hash. Gives each agent a
@@ -1212,6 +2209,7 @@ const CHANNEL_DEFS = [
   { id: 'discord',  icon: 'DC', label: 'Discord' },
   { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
   { id: 'github',   icon: 'GH', label: 'GitHub' },
+  { id: 'webrtc',   icon: '☎',  label: 'Calls (WebRTC)' },
 ];
 
 /** Per-connector card metadata — logo color, long description, setup time.
@@ -1223,6 +2221,7 @@ const CONNECTOR_META = {
   discord:  { group: 'chat', brand: '#5865F2', desc: 'Works in servers, threads, and DMs. Create a Discord bot, grant Read/Send Messages, paste the token.' },
   gitlab:   { group: 'dev',  brand: '#FC6D26', desc: 'Pings your agent on MRs, issues, and pipeline events. Works with self-hosted too.' },
   github:   { group: 'dev',  brand: '#24292e', desc: 'Pings your agent on PRs, issues, and CI runs. Configure per-repo.' },
+  webrtc:   { group: 'chat', brand: '#10B981', desc: 'Voice calls with a transcribing bot. Live on the /call page; history of recent calls below.' },
 };
 
 function renderChannelsGrid() {
@@ -1296,7 +2295,7 @@ function channelSubtext(id, status) {
  *  the matching connector card. */
 function showChannelPane(id) {
   state.__activeChannel = id;
-  const panes = ['telegram','whatsapp','slack','discord','gitlab','github'];
+  const panes = ['telegram','whatsapp','slack','discord','gitlab','github','webrtc'];
   for (const p of panes) {
     const el = document.getElementById('ch-' + p);
     if (el) el.hidden = (p !== id);
@@ -1319,6 +2318,7 @@ function showChannelPane(id) {
   else if (id === 'gitlab') renderGitLabPane();
   else if (id === 'github') renderGitHubPane();
   else if (id === 'whatsapp') renderWhatsAppPane();
+  else if (id === 'webrtc') renderWebRtcPane();
 }
 
 function channelStatus(id) {
@@ -1502,6 +2502,52 @@ function jumpToWebhooks() {
   if (src) src.value = 'github';
 }
 
+function renderWebRtcPane() {
+  const pane = $('ch-webrtc');
+  if (!pane) return;
+  pane.innerHTML =
+    '<div class="ax-section-card"><div class="ax-section-card__head">' +
+      '<div class="ax-section-card__icon" style="background:#10B981;color:#fff">☎</div>' +
+      '<div class="ax-section-card__info"><h3>Calls (WebRTC)</h3><div class="ax-section-card__sub">Live calls happen on <a href="/call" target="_blank">/call</a>. The transcribing bot can be invited per call from there. This panel shows active + recent sessions.</div></div></div>' +
+    '<div class="ax-stack" style="margin-top:14px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<h3 style="margin:0;font-size:13px">Active calls</h3>' +
+        '<button class="ax-btn" onclick="loadWebRtcHistory()">Refresh</button>' +
+      '</div>' +
+      '<div id="webrtc-active" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click refresh</div>' +
+      '<h3 style="margin:14px 0 8px;font-size:13px">Recent sessions <span style="font-size:11px;color:var(--ax-muted);font-weight:normal">(in-process ring buffer, last ~50)</span></h3>' +
+      '<div id="webrtc-history" style="border:1px solid var(--ax-border);border-radius:6px;padding:8px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px;max-height:280px;overflow-y:auto">click refresh</div>' +
+    '</div>';
+  loadWebRtcHistory();
+}
+
+window.loadWebRtcHistory = async function() {
+  try {
+    const data = await req('GET', '/api/admin/channels/webrtc/history');
+    const active = data.active || [];
+    const history = data.history || [];
+    const fmtTs = function(ms) { const d = new Date(ms); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0'); };
+    const fmtDur = function(s) { if (s < 60) return s + 's'; const m = Math.floor(s/60); return m + 'm ' + (s % 60) + 's'; };
+    $('webrtc-active').innerHTML = active.length
+      ? active.map(function(b){ return '<div>· call=' + escapeHtml(b.callId.slice(0, 12)) + ' agent=<b>' + escapeHtml(b.agentId) + '</b> target=' + escapeHtml(b.target) + ' uptime=' + fmtDur(b.uptimeSec) + '</div>'; }).join('')
+      : '<i style="color:var(--ax-muted)">no active calls</i>';
+    $('webrtc-history').innerHTML = history.length
+      ? '<div style="display:grid;grid-template-columns:130px 110px 110px 1fr 70px 60px;gap:6px;font-size:10px;color:var(--ax-muted);text-transform:uppercase;letter-spacing:0.04em;padding-bottom:4px;border-bottom:1px solid var(--ax-border);margin-bottom:4px"><div>started</div><div>agent</div><div>target</div><div>callId</div><div>duration</div><div>chunks</div></div>' +
+        history.map(function(h){ return '<div style="display:grid;grid-template-columns:130px 110px 110px 1fr 70px 60px;gap:6px;padding:3px 0">' +
+          '<div>' + escapeHtml(fmtTs(h.startedAt)) + '</div>' +
+          '<div><b>' + escapeHtml(h.agentId) + '</b></div>' +
+          '<div>' + escapeHtml(h.target) + '</div>' +
+          '<div style="color:var(--ax-muted)">' + escapeHtml(h.callId.slice(0, 24)) + '</div>' +
+          '<div>' + escapeHtml(fmtDur(h.durationSec)) + '</div>' +
+          '<div>' + h.transcriptChunks + '</div>' +
+        '</div>'; }).join('')
+      : '<i style="color:var(--ax-muted)">no completed sessions in this daemon&#39;s memory yet</i>';
+  } catch (e) {
+    $('webrtc-active').innerHTML = '<i style="color:var(--ax-err)">failed: ' + e.message + '</i>';
+    $('webrtc-history').innerHTML = '';
+  }
+}
+
 function renderWhatsAppPane() {
   const w = state.whatsapp || {};
   const enabled = !!w.enabled;
@@ -1523,8 +2569,55 @@ function renderWhatsAppPane() {
       '<div id="wa-connected" style="display:none;padding:14px;background:color-mix(in oklch,var(--ax-accent) 10%,transparent);border:1px solid color-mix(in oklch,var(--ax-accent) 35%,transparent);border-radius:6px;color:var(--ax-accent);font-size:13px">✓ Paired — the daemon is signed in.</div>' +
       '<div id="wa-disabled" style="display:none;padding:14px;font-size:12px;color:var(--ax-muted);line-height:1.6">WhatsApp is currently disabled in <code>agentx.json</code>. Enable it there (or via the Advanced tab) and restart the daemon; the QR will appear once Baileys needs it.</div>' +
       '<div class="hint-block" style="margin-top:12px">Routes, phone numbers, and allow-lists live under <code>channels.whatsapp</code> in the <b>Advanced</b> tab. Requires <code>@whiskeysockets/baileys</code> installed in the daemon&rsquo;s dir.</div>' +
-    '</div>';
+    '</div>' +
+    '<details class="add-form" style="margin-top:14px"><summary class="primary">📥 Wiki ingest from WhatsApp</summary>' +
+      '<div style="margin-top:10px">' +
+        '<p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Sweep observed WhatsApp chats/contacts into an agent&#39;s wiki. Mirrors <code>agentx whatsapp ingest-all/list-chats/list-contacts</code>.</p>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<button class="ax-btn" onclick="loadWhatsAppLists()">Reload chats + contacts</button>' +
+          '<label class="ax-inline" style="display:inline-flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="wa-ingest-dry" checked /> dry-run</label>' +
+          '<label class="ax-inline" style="display:inline-flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="wa-ingest-force" /> force (override <code>ingest.enabled=false</code>)</label>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<input id="wa-ingest-agent" placeholder="agent id (defaults to channels.whatsapp.defaultAgent)" style="flex:1" />' +
+          '<button class="ax-btn ax-btn--primary" onclick="runWhatsAppIngest()">Sweep now</button>' +
+        '</div>' +
+        '<div id="wa-ingest-msg" class="msg" style="margin-bottom:10px"></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Chats</h4><div id="wa-chats" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click reload</div></div>' +
+          '<div><h4 style="font-size:11px;color:var(--ax-muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Contacts</h4><div id="wa-contacts" style="max-height:200px;overflow-y:auto;border:1px solid var(--ax-border);border-radius:4px;padding:6px;font-family:&quot;IBM Plex Mono&quot;,monospace;font-size:11px">click reload</div></div>' +
+        '</div>' +
+      '</div>' +
+    '</details>';
   startWhatsAppPolling();
+}
+
+window.loadWhatsAppLists = async function() {
+  try {
+    const [chats, contacts] = await Promise.all([
+      req('GET', '/api/admin/channels/whatsapp/chats').catch(() => ({chats:[]})),
+      req('GET', '/api/admin/channels/whatsapp/contacts').catch(() => ({contacts:[]})),
+    ]);
+    const cl = $('wa-chats');
+    const cs = chats.chats || [];
+    cl.innerHTML = cs.length ? cs.slice(0, 100).map(c => '<div>' + escapeHtml(c.name || c.jid || '?') + ' <span style="color:var(--ax-muted)">' + (c.kind || '') + '</span></div>').join('') : '<i style="color:var(--ax-muted)">empty</i>';
+    const xl = $('wa-contacts');
+    const xs = contacts.contacts || [];
+    xl.innerHTML = xs.length ? xs.slice(0, 100).map(c => '<div>' + escapeHtml(c.name || c.jid || '?') + '</div>').join('') : '<i style="color:var(--ax-muted)">empty</i>';
+  } catch (e) { showMsg($('wa-ingest-msg'), 'err', e.message); }
+}
+
+window.runWhatsAppIngest = async function() {
+  const agent = $('wa-ingest-agent').value.trim();
+  const dryRun = $('wa-ingest-dry').checked;
+  const force = $('wa-ingest-force').checked;
+  const body = { dryRun, force };
+  if (agent) body.agent = agent;
+  showMsg($('wa-ingest-msg'), 'info', 'sweeping…');
+  try {
+    const r = await req('POST', '/api/admin/channels/whatsapp/ingest', body);
+    showMsg($('wa-ingest-msg'), 'ok', 'Done — ' + (r.summary || JSON.stringify(r).slice(0, 120)));
+  } catch (e) { showMsg($('wa-ingest-msg'), 'err', e.message); }
 }
 
 const _wa = { timer: null, lastQRSeen: '' };
@@ -2382,7 +3475,7 @@ const JV_HINTS = {
   'agents[].id': 'lowercase handle, used in logs',
   'agents[].tier': 'which AI engine runs this agent (claude-code / sdk / orchestrator)',
   'agents[].mentions': 'trigger words that wake this agent',
-  'channels.telegram.accounts[].botToken': 'reference to an env-var, not the token itself',
+  'channels.telegram.accounts[].token': 'reference to an env-var, not the token itself',
   'channels.telegram.accounts[].agentBinding': 'which agent answers messages to this bot',
   'crons[].schedule': 'standard five-field cron',
   'mesh.peers[].url': 'full URL including port',

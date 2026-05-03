@@ -1,8 +1,18 @@
 import type { MeshPeer, DaemonConfig } from "@/daemon/config"
 import type { AgentCard, AgentSkill } from "./types"
 import { A2AClient } from "./client"
+import { Agent as UndiciAgent, fetch as undiciFetch } from "undici"
 
 // --- A2A Mesh: peer discovery, health checks, agent directory ---
+
+/** Custom undici dispatcher used by sendTask: peer agent calls can
+ *  block writing response headers for the full duration of the agent
+ *  run (often 5–30 min), so the default 300s headersTimeout has to be
+ *  disabled. AbortController on the call site enforces our actual cap. */
+const longTaskDispatcher = new UndiciAgent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+})
 
 export interface PeerState {
   peer: MeshPeer
@@ -144,6 +154,41 @@ export class A2AMesh {
     return { added, removed, updated }
   }
 
+  /** Number of peers currently registered (regardless of health). */
+  peerCount(): number {
+    return this.peers.size
+  }
+
+  /**
+   * Re-probe a single peer immediately. Use case: an operator just added
+   * an agent on the remote daemon and doesn't want to wait up to a full
+   * health-check interval (default 60s) before mentioning the new agent
+   * resolves. The probe pulls a fresh agent card and updates `state.agents`
+   * so `directory()` reflects the new roster on the very next route lookup.
+   *
+   * Returns true on success, false when the peer is unknown or the probe
+   * failed. Does NOT throw — callers can blindly fan-out across peers.
+   */
+  async refreshPeer(name: string): Promise<boolean> {
+    const state = this.peers.get(name)
+    if (!state) return false
+    await this.discoverPeer(name, state)
+    return state.healthy
+  }
+
+  /**
+   * Re-probe every peer in parallel. Cheap when peers are healthy
+   * (single GET /a2a/agent-card per peer). Used by `agentx mesh refresh`
+   * and after agent-roster changes to invalidate the cached directory.
+   */
+  async refreshAll(): Promise<{ name: string; healthy: boolean }[]> {
+    const probes = Array.from(this.peers.entries()).map(async ([name, state]) => {
+      await this.discoverPeer(name, state)
+      return { name, healthy: state.healthy }
+    })
+    return Promise.all(probes)
+  }
+
   /**
    * Discover agent cards from all peers.
    */
@@ -211,7 +256,29 @@ export class A2AMesh {
    * Uses the peer's /task HTTP endpoint (agentx daemon API).
    * If no agent specified, uses the first available agent on the peer.
    */
-  async sendTask(peerName: string, text: string, agentId?: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+  async sendTask(
+    peerName: string,
+    text: string,
+    agentId?: string,
+    opts: {
+      timeoutMs?: number
+      /** Identity of the agent on whose behalf this call is made. Forwarded
+       *  in the request body so the receiving daemon can record it in
+       *  route_traces and (in a future protocol revision) validate that the
+       *  caller is allowed to act for this agent. Optional during the
+       *  log-warn rollout; missing values produce a server-side warning. */
+      senderAgentId?: string
+      /** Origin context — channel, chatId, sender, channelMeta, etc. Forwarded
+       *  to the receiving daemon's /task handler verbatim so the receiver's
+       *  registry.execute() keys the session by the SAME (channel, chatId)
+       *  the sender used, instead of falling back to api/default. Without
+       *  this, a GitLab webhook routed across the mesh lands in the
+       *  recipient's api:default bucket with no project, no issue id, no
+       *  channelMeta — i.e., the mtgl/hasanah confusion incident on
+       *  2026-04-29 issue #709. Shape matches AgentTask.context. */
+      context?: Record<string, unknown>
+    } = {},
+  ): Promise<string> {
     const state = this.peers.get(peerName)
     if (!state) throw new Error(`Unknown peer: ${peerName}`)
     if (!state.healthy) throw new Error(`Peer "${peerName}" is not healthy`)
@@ -227,21 +294,42 @@ export class A2AMesh {
     }
 
     // Agent tasks frequently run for minutes (Claude Code sessions in
-    // particular). Node's default undici fetch aborts at 300s, which
-    // surfaces as an opaque "fetch failed" — exactly what tripped the
-    // gitlab-sdlc-loop implement-code step. Default to 30 minutes and
-    // let callers pass their workflow's agent-node timeoutMinutes when
-    // they know a tighter bound.
+    // particular). Two timeout layers to defeat:
+    //
+    //   1. AbortController on our side — explicit request timeout. Default 30 min.
+    //   2. undici dispatcher's `headersTimeout` (300s default) — fires
+    //      independently of AbortController while the peer is still
+    //      synchronously processing the agent task before writing
+    //      response headers. This is what surfaces as the opaque
+    //      "fetch failed" exactly 5 minutes in. Per-call dispatcher
+    //      with disabled headersTimeout/bodyTimeout fixes it.
     const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
-    let res: Response
+    // Use undici's own fetch — the Node global `fetch` ignores the
+    // `dispatcher` option (its undici instance is internal and separate
+    // from this package's). Without our custom dispatcher, headersTimeout
+    // would still default to 300s and abort before the agent finishes.
+    let res: Awaited<ReturnType<typeof undiciFetch>>
     try {
-      res = await fetch(url, {
+      res = await undiciFetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ agent, message: text }),
+        body: JSON.stringify({
+          agent,
+          message: text,
+          // A2A protocol field — receiving daemon validates and records.
+          // Omitted from the body (rather than sent as undefined) so the
+          // server's "missing senderAgentId" log-warn fires only when the
+          // caller genuinely didn't pass one.
+          ...(opts.senderAgentId ? { senderAgentId: opts.senderAgentId } : {}),
+          // Origin context (channel, chatId, channelMeta, sender, ...).
+          // Optional for back-compat — older callers continue to work, with
+          // the receiver defaulting channel/chatId as before.
+          ...(opts.context ? { context: opts.context } : {}),
+        }),
         signal: controller.signal,
+        dispatcher: longTaskDispatcher,
       })
     } catch (e: any) {
       clearTimeout(timer)

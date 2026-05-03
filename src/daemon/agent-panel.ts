@@ -69,6 +69,9 @@ export async function handleAgentApi(
     const dispatch: Record<string, () => unknown | Promise<unknown>> = {
       "GET ": () => getAgentState(agentId),
       "PATCH ": () => patchAgent(agentId, body),
+      "PATCH capability": () => patchAgentCapability(agentId, body),
+      "POST mcp": () => upsertAgentMcp(agentId, body),
+      "DELETE mcp": () => deleteAgentMcp(agentId, body),
       "GET identity": () => getIdentityFiles(agentId),
       "GET identity/file": () => getIdentityFile(agentId, String(qs.path || "")),
       "PUT identity/file": () => putIdentityFile(agentId, body),
@@ -136,6 +139,15 @@ function getAgentState(agentId: string) {
     maxConcurrent: def.maxConcurrent ?? 1,
     maxExecutionMinutes: def.maxExecutionMinutes ?? 20,
     permissionMode: def.permissionMode || "default",
+    // Phase 5/8 capability fields — exposed so the Capability tab can
+    // render current values without a second round-trip.
+    intents: Array.isArray((def as any).intents) ? (def as any).intents : [],
+    maxDelegationDepth: (def as any).maxDelegationDepth ?? 5,
+    contextReferences: !!(def as any).contextReferences,
+    contextStrategy: (def as any).contextStrategy || "",
+    // MCP servers — { name → { command, args, env? } }. Synced to
+    // <workspace>/.mcp.json by agent-mcp.ts at daemon boot.
+    mcp: ((def as any).mcp && typeof (def as any).mcp === "object") ? (def as any).mcp : {},
     overview,
     defaultWorker: cfg.node?.defaultAgent,
     draftAgent: cfg.dashboard?.draftAgent,
@@ -154,6 +166,90 @@ function patchAgent(agentId: string, body: any) {
     if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
     cfg.agents[agentId] = { ...cfg.agents[agentId], ...fields }
     return `agent "${agentId}" updated (${Object.keys(fields).join(", ")})`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+/** Add or update one MCP server entry on an agent. Body shape:
+ *    { name: string, command: string, args?: string[], env?: Record<string,string> }
+ *  The agent.mcp record is keyed by name, and agent-mcp.ts syncs the merged
+ *  result to <workspace>/.mcp.json the next time the daemon boots / reloads.
+ *  Operator edits to .mcp.json are respected (the sync layer marks them
+ *  operator-owned and skips them) — this endpoint only writes to agentx.json. */
+function upsertAgentMcp(agentId: string, body: any) {
+  const name = String(body?.name || "").trim()
+  const command = String(body?.command || "").trim()
+  if (!name) throw new Error("name required")
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error("name must be identifier-safe (alnum, _, -)")
+  if (!command) throw new Error("command required")
+  const args = Array.isArray(body?.args) ? body.args.map((a: unknown) => String(a)) : []
+  let env: Record<string, string> | undefined
+  if (body?.env && typeof body.env === "object") {
+    env = {}
+    for (const [k, v] of Object.entries(body.env as Record<string, unknown>)) {
+      if (typeof v === "string") env[k] = v
+    }
+    if (Object.keys(env).length === 0) env = undefined
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    cfg.agents[agentId].mcp = cfg.agents[agentId].mcp || {}
+    cfg.agents[agentId].mcp[name] = { command, args, ...(env ? { env } : {}) }
+    return `agent "${agentId}" mcp.${name} upserted`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+function deleteAgentMcp(agentId: string, body: any) {
+  const name = String(body?.name || "").trim()
+  if (!name) throw new Error("name required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    if (!cfg.agents[agentId].mcp || !(name in cfg.agents[agentId].mcp)) {
+      throw new Error(`no mcp.${name} on "${agentId}"`)
+    }
+    delete cfg.agents[agentId].mcp[name]
+    if (Object.keys(cfg.agents[agentId].mcp).length === 0) delete cfg.agents[agentId].mcp
+    return `agent "${agentId}" mcp.${name} removed`
+  })
+  return { summary, agent: getAgentState(agentId) }
+}
+
+/** Phase 5/8 capability fields — separated from patchAgent so the
+ *  validation can be stricter (intent allow-list, depth ranges,
+ *  context-strategy enum) without affecting the basic patch path the
+ *  Overview tab uses. Mirrors `agentx agent capability`. */
+function patchAgentCapability(agentId: string, body: any) {
+  const fields: Record<string, any> = {}
+  if (Array.isArray(body?.intents)) fields.intents = body.intents.map((s: unknown) => String(s)).filter(Boolean)
+  if (body?.maxDelegationDepth !== undefined) {
+    const n = Number(body.maxDelegationDepth)
+    if (!Number.isFinite(n) || n < 0 || n > 50) throw new Error("maxDelegationDepth must be 0..50")
+    fields.maxDelegationDepth = n
+  }
+  if (body?.contextReferences !== undefined) fields.contextReferences = !!body.contextReferences
+  if (body?.contextStrategy !== undefined) {
+    if (body.contextStrategy && !["layered", "planner"].includes(body.contextStrategy)) {
+      throw new Error("contextStrategy must be layered|planner|empty")
+    }
+    if (body.contextStrategy) fields.contextStrategy = body.contextStrategy
+    else fields.contextStrategy = undefined
+  }
+  if (body?.maxExecutionMinutes !== undefined) {
+    const n = Number(body.maxExecutionMinutes)
+    if (!Number.isFinite(n) || n < 1 || n > 240) throw new Error("maxExecutionMinutes must be 1..240")
+    fields.maxExecutionMinutes = n
+  }
+  if (Object.keys(fields).length === 0) throw new Error("nothing to update")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
+    const next = { ...cfg.agents[agentId] }
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) delete next[k]
+      else next[k] = v
+    }
+    cfg.agents[agentId] = next
+    return `agent "${agentId}" capability updated (${Object.keys(fields).join(", ")})`
   })
   return { summary, agent: getAgentState(agentId) }
 }

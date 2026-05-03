@@ -59,6 +59,11 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     <footer>
       <span id="wf-run-status" class="ax-wf__status-pill">—</span>
       <span id="wf-run-live" class="hint">—</span>
+      <span id="wf-run-actions" class="ax-wf__run-actions">
+        <button data-run-action="pause" type="button" title="Pause this run">Pause</button>
+        <button data-run-action="resume" type="button" title="Resume a paused run">Resume</button>
+        <button data-run-action="cancel" type="button" title="Cancel this run" class="danger">Cancel</button>
+      </span>
     </footer>
   </aside>
 </div>
@@ -273,6 +278,10 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__status-pill.running { background: color-mix(in oklch, var(--ax-accent) 15%, transparent); color: var(--ax-accent); }
 .ax-wf__status-pill.completed { color: var(--ax-muted); background: var(--ax-surface); }
 .ax-wf__status-pill.failed { color: var(--ax-err); background: color-mix(in oklch, var(--ax-err) 15%, transparent); }
+.ax-wf__run-actions { display: flex; gap: 4px; margin-left: auto; }
+.ax-wf__run-actions button { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-wf__run-actions button:hover { background: var(--ax-surface); }
+.ax-wf__run-actions button.danger:hover { background: color-mix(in oklch, var(--ax-err) 15%, transparent); border-color: var(--ax-err); color: var(--ax-err); }
 
 .ax-wf__icon {
   background: none; border: none; color: var(--ax-muted);
@@ -454,6 +463,7 @@ const WORKFLOWS_PAGE_SCRIPT = `
   // --- Run drawer ------------------------------------------------------
 
   async function openRun(runId) {
+    state.activeRunId = runId
     const res = await fetchJSON("/api/workflows/runs/" + encodeURIComponent(runId))
     paintRun(res.run || res)
     connectRunStream(runId)
@@ -463,6 +473,7 @@ const WORKFLOWS_PAGE_SCRIPT = `
   }
 
   function closeRun() {
+    state.activeRunId = null
     if (state.sse) { state.sse.close(); state.sse = null }
     const panel = $("#wf-run-panel")
     panel.classList.add("hidden")
@@ -574,12 +585,41 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
   // --- Bindings --------------------------------------------------------
 
+  // Run lifecycle action — pause / resume / cancel via setStatus on the
+  // backend RunStore, mirroring \`agentx workflow pause/resume/cancel\`.
+  // Opens a tiny confirm dialog for cancel since it's destructive.
+  async function runAction(action) {
+    if (!state.activeRunId) return
+    if (action === "cancel" && !confirm("Cancel this run? In-flight work will stop.")) return
+    const statusByAction = { pause: "paused", resume: "running", cancel: "canceled" }
+    const status = statusByAction[action]
+    if (!status) return
+    try {
+      const r = await fetch("/api/workflows/runs/" + encodeURIComponent(state.activeRunId) + "/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+        credentials: "same-origin",
+        body: JSON.stringify({ status }),
+      })
+      if (!r.ok) throw new Error("HTTP " + r.status + ": " + (await r.text()).slice(0, 120))
+      toast(action + "d")
+      refresh()
+      // Refresh the open run panel so the status pill updates immediately.
+      if (state.activeRunId) openRun(state.activeRunId)
+    } catch (e) {
+      toast("action failed: " + e.message)
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     $("#wf-refresh").addEventListener("click", refresh)
     $("#wf-run-close").addEventListener("click", closeRun)
     $("#wf-filter").addEventListener("input", (e) => {
       state.filter = e.target.value
       renderList()
+    })
+    document.querySelectorAll('#wf-run-actions [data-run-action]').forEach((b) => {
+      b.addEventListener('click', () => runAction(b.getAttribute('data-run-action')))
     })
     document.addEventListener("keydown", (e) => {
       if (e.key === "r" && !e.metaKey && document.activeElement?.tagName !== "INPUT") refresh()

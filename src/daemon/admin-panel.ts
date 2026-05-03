@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, rmSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, readdirSync } from "fs"
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
@@ -70,6 +70,17 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
       "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
+      // WebRTC bot history — active calls + ring buffer of recently-completed
+      // sessions. Lives on the daemon (BotManager owns it); the dashboard
+      // proxies the read-only view here.
+      "GET /api/admin/channels/webrtc/history": () => proxyDaemonJson("/webrtc/history"),
+      // Action registry — list/upsert/delete + on-demand run.
+      "POST /api/admin/actions":   () => upsertAction(body),
+      "DELETE /api/admin/actions": () => deleteAction(body),
+      "POST /api/admin/actions/run": () => runActionFromAdmin(body),
+      "GET /api/admin/channels/whatsapp/chats": () => proxyDaemonJson("/whatsapp/chats"),
+      "GET /api/admin/channels/whatsapp/contacts": () => proxyDaemonJson("/whatsapp/contacts"),
+      "POST /api/admin/channels/whatsapp/ingest": () => proxyDaemonPostJson("/whatsapp/ingest", body),
       "POST /api/admin/crons/preview": () => previewCron(body),
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
@@ -82,6 +93,33 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PUT /api/admin/files": () => writeFileForAgent(body),
       "POST /api/admin/files/skill": () => addSkillForAgent(body),
       "DELETE /api/admin/files/skill": () => removeSkillForAgent(body),
+      // Actors / roles — mirrors `agentx actor` + `agentx role` CLI.
+      "POST /api/admin/actors":   () => upsertActor(body),
+      "DELETE /api/admin/actors": () => deleteActorById(body),
+      "POST /api/admin/roles":    () => upsertRole(body),
+      "DELETE /api/admin/roles":  () => deleteRoleById(body),
+      "POST /api/admin/roles/grant":  () => grantRoleMember(body),
+      "POST /api/admin/roles/revoke": () => revokeRoleMember(body),
+      // Business layer — orgChart / projects / contactMap (mirrors `agentx business`).
+      "POST /api/admin/business/orgchart":     () => upsertOrgEntry(body),
+      "DELETE /api/admin/business/orgchart":   () => deleteOrgEntry(body),
+      "POST /api/admin/business/project":      () => upsertProject(body),
+      "DELETE /api/admin/business/project":    () => deleteProject(body),
+      "POST /api/admin/business/contact":      () => upsertContact(body),
+      "DELETE /api/admin/business/contact":    () => deleteContact(body),
+      // Boards — mirrors `agentx board` + `agentx board column` CLI.
+      "POST /api/admin/boards":          () => upsertBoard(body),
+      "DELETE /api/admin/boards":        () => deleteBoard(body),
+      "POST /api/admin/boards/columns":  () => upsertBoardColumn(body),
+      "DELETE /api/admin/boards/columns":() => deleteBoardColumn(body),
+      // Notifications — single mutation endpoint that takes a partial body
+      // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
+      "POST /api/admin/notifications":   () => updateNotifications(body),
+      // Webhook triggers + defaultWorkflow editor (in addition to existing
+      // /api/admin/webhooks add/edit/delete).
+      "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
+      // Mesh health-check cadence — mirrors `agentx mesh health`.
+      "POST /api/admin/mesh/health":     () => updateMeshHealth(body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -110,6 +148,21 @@ function readJsonBody(req: IncomingMessage): Promise<any> {
 // ========================================================================
 // Read helpers — /api/admin/state returns everything the panel needs in one call
 // ========================================================================
+
+function readJsonDir(relPath: string): any[] {
+  const dir = resolve(process.cwd(), relPath)
+  if (!existsSync(dir)) return []
+  const out: any[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue
+    try {
+      out.push(JSON.parse(readFileSync(resolve(dir, entry.name), "utf-8")))
+    } catch {
+      // skip malformed
+    }
+  }
+  return out
+}
 
 function readConfigRaw(): any {
   const file = resolve(process.cwd(), "agentx.json")
@@ -141,7 +194,7 @@ function getAdminState() {
       id,
       botUsername: acc.botUsername || "",
       agentBinding: acc.agentBinding || "",
-      botTokenRef: acc.botToken || "",
+      botTokenRef: acc.token || "",
     })),
   }
   const slack = {
@@ -182,6 +235,10 @@ function getAdminState() {
     secretEnv: w.secretEnv || "",
     description: w.description || "",
     enabled: w.enabled !== false,
+    // Trigger / defaultWorkflow routing — surfaced so the Webhooks tab
+    // can render them inline without a second round-trip.
+    triggers: (w.triggers && typeof w.triggers === "object") ? w.triggers : {},
+    defaultWorkflow: w.defaultWorkflow || "",
   })) : []
   const mesh = {
     enabled: !!cfg.mesh?.enabled,
@@ -191,10 +248,78 @@ function getAdminState() {
       name: p.name,
       hasToken: !!p.token,
     })),
+    healthCheck: {
+      interval: cfg.mesh?.healthCheck?.interval ?? 60,
+      timeout: cfg.mesh?.healthCheck?.timeout ?? 10,
+    },
   }
   // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
   const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name }
+  // Actors and roles — read directly from .agentx/actors and .agentx/roles
+  // so this stays in lockstep with `agentx actor`/`agentx role` CLI
+  // mutations without coupling to the ActorStore class (which lives in
+  // a chunk loaded only on the BPM dispatcher path).
+  const actors = readJsonDir(".agentx/actors").map((a: any) => ({
+    id: a.id, name: a.name, email: a.email,
+    channels: Array.isArray(a.channels) ? a.channels.map((c: any) => ({
+      channel: c.channel, handle: c.handle, preferredForTasks: !!c.preferredForTasks,
+    })) : [],
+    timezone: a.timezone,
+  })).sort((a: any, b: any) => a.id.localeCompare(b.id))
+  const roles = readJsonDir(".agentx/roles").map((r: any) => ({
+    id: r.id, name: r.name,
+    members: Array.isArray(r.members) ? r.members : [],
+    assignmentStrategy: r.assignmentStrategy || "first-available",
+  })).sort((a: any, b: any) => a.id.localeCompare(b.id))
+  // Business layer — read straight off the config so the panel stays in
+  // sync with `agentx business` CLI mutations.
+  const businessCfg = (cfg.business || {}) as any
+  const business = {
+    enabled: !!businessCfg.enabled,
+    timezone: businessCfg.timezone || "UTC",
+    orgChart: businessCfg.orgChart || {},
+    projects: Array.isArray(businessCfg.projects) ? businessCfg.projects : [],
+    contactMap: Array.isArray(businessCfg.contactMap) ? businessCfg.contactMap : [],
+  }
+  // Notifications — destination + event toggles + long-task threshold.
+  const notificationsCfg = (cfg.notifications || {}) as any
+  const notifications = {
+    longTaskThreshold: notificationsCfg.longTaskThreshold ?? 30,
+    destination: notificationsCfg.destination || null,
+    on: {
+      taskComplete: notificationsCfg.on?.taskComplete !== false,
+      taskError: notificationsCfg.on?.taskError !== false,
+      taskQueued: !!notificationsCfg.on?.taskQueued,
+    },
+  }
+  // Actions — load all registered actions for the Actions tab.
+  let actions: Array<any> = []
+  try {
+    const items = readJsonDir(".agentx/actions")
+    actions = items.filter((a: any) => a && typeof a === "object" && a.id).map((a: any) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      description: a.description || "",
+      inputs: Array.isArray(a.inputs) ? a.inputs : [],
+      timeoutMs: a.timeoutMs ?? 30_000,
+      // Surface the kind-specific summary fields the tab renders.
+      command: a.kind === "shell" ? a.command : undefined,
+      url: a.kind === "http" ? a.url : undefined,
+      method: a.kind === "http" ? a.method : undefined,
+    })).sort((a: any, b: any) => a.id.localeCompare(b.id))
+  } catch { /* empty registry is fine */ }
+  // Boards — list with column metadata so the admin tab can edit them.
+  const boards = (Array.isArray(cfg.boards) ? cfg.boards : []).map((b: any) => ({
+    id: b.id,
+    name: b.name,
+    source: b.source || { type: "gitlab", projects: [] },
+    primaryToolLabel: b.primaryToolLabel || "",
+    timeRangeDays: b.timeRangeDays ?? 30,
+    closedWindowDays: b.closedWindowDays ?? 30,
+    columns: Array.isArray(b.columns) ? b.columns : [],
+  }))
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards, notifications, actions }
 }
 
 // ========================================================================
@@ -318,7 +443,7 @@ function addAgent(body: any) {
   const claudeMd = resolve(workspace, "CLAUDE.md")
   if (!existsSync(claudeMd)) {
     try {
-      require("fs").mkdirSync(workspace, { recursive: true })
+      mkdirSync(workspace, { recursive: true })
       writeFileSync(claudeMd, `# ${name}\n\n${personality || "You are " + name + "."}\n`)
     } catch { /* best-effort */ }
   }
@@ -389,9 +514,15 @@ function addTelegramAccount(body: any) {
     cfg.channels.telegram.accounts = cfg.channels.telegram.accounts || {}
     if (cfg.channels.telegram.accounts[id]) throw new Error(`Telegram account "${id}" already exists.`)
     if (!cfg.agents?.[agentBinding]) throw new Error(`Unknown agent "${agentBinding}".`)
+    // Schema (telegramAccountSchema) keys are `token` + `agentBinding`. Zod
+    // silently strips unknown fields, so writing `botToken` produced configs
+    // that failed to validate with `token: Required` even after the operator
+    // added the env var. `botUsername` is not in the schema; passing it does
+    // nothing (kept here only because the form collects it — drop once the
+    // form is updated to omit it).
+    void botUsername
     cfg.channels.telegram.accounts[id] = {
-      botToken: "${" + botTokenEnv + "}",
-      botUsername,
+      token: "${" + botTokenEnv + "}",
       agentBinding,
     }
     return `added telegram account "${id}"`
@@ -412,7 +543,7 @@ function editTelegramAccount(body: any) {
     }
     if (typeof patch.botUsername === "string") acc.botUsername = patch.botUsername.trim()
     if (typeof patch.botTokenEnv === "string" && patch.botTokenEnv.trim()) {
-      acc.botToken = "${" + patch.botTokenEnv.trim() + "}"
+      acc.token = "${" + patch.botTokenEnv.trim() + "}"
     }
     return `updated telegram account "${id}"`
   })
@@ -427,6 +558,21 @@ function editTelegramAccount(body: any) {
 async function proxyDaemonJson(pathOnDaemon: string): Promise<any> {
   const { url, headers } = daemonTarget()
   const r = await fetch(url + pathOnDaemon, { headers })
+  const text = await r.text()
+  if (!r.ok) throw new Error(`daemon ${r.status}: ${text.slice(0, 200)}`)
+  try { return JSON.parse(text) } catch { return { raw: text } }
+}
+
+/** POST variant — forwards a JSON body to a daemon endpoint and returns
+ *  the parsed JSON. Used to reach daemon-process-owned operations like
+ *  WhatsApp ingest from the dashboard process. */
+async function proxyDaemonPostJson(pathOnDaemon: string, body: any): Promise<any> {
+  const { url, headers } = daemonTarget()
+  const r = await fetch(url + pathOnDaemon, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  })
   const text = await r.text()
   if (!r.ok) throw new Error(`daemon ${r.status}: ${text.slice(0, 200)}`)
   try { return JSON.parse(text) } catch { return { raw: text } }
@@ -795,12 +941,11 @@ function replaceConfigRaw(body: any): { summary: string; backupPath?: string } {
   const file = resolve(process.cwd(), "agentx.json")
   const backupPath = `${file}.bak.${Date.now()}`
   if (existsSync(file)) {
-    try { require("fs").copyFileSync(file, backupPath) } catch { /* best-effort */ }
+    try { copyFileSync(file, backupPath) } catch { /* best-effort */ }
   }
   writeFileSync(file, JSON.stringify(parsed, null, 2) + "\n", "utf-8")
   // Best-effort /reload; caller can also restart the daemon.
   try {
-    const { loadDaemonConfig } = require("./config")
     const cfg = loadDaemonConfig()
     const url = cfg.dashboard.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
     fetch(`${url}/reload`, { method: "POST" }).catch(() => null)
@@ -814,6 +959,455 @@ function normaliseMentions(s: any): string[] {
     .map((m) => m.trim())
     .filter(Boolean)
     .filter((m, i, a) => a.indexOf(m) === i)
+}
+
+// ========================================================================
+// Actors & Roles — admin write handlers (mirrors `agentx actor` / `agentx role`)
+// ========================================================================
+
+async function loadActorStore(): Promise<typeof import("@/actors/store").ActorStore.prototype> {
+  const { ActorStore } = await import("@/actors/store")
+  return new ActorStore()
+}
+
+async function upsertActor(body: any) {
+  const id = String(body?.id || "").trim()
+  const name = String(body?.name || "").trim()
+  if (!id.startsWith("actor:")) throw new Error("id must start with 'actor:'")
+  if (!name) throw new Error("name required")
+  const channels = Array.isArray(body?.channels) ? body.channels : []
+  if (channels.length === 0) throw new Error("at least one channel handle required")
+  const store = await loadActorStore()
+  const saved = store.saveActor({
+    id, name,
+    email: body?.email || undefined,
+    channels: channels.map((c: any) => ({
+      channel: c.channel,
+      handle: String(c.handle || "").trim(),
+      preferredForTasks: !!c.preferredForTasks,
+    })).filter((c: any) => c.handle),
+    timezone: body?.timezone || undefined,
+  })
+  return { summary: `Actor ${saved.id} saved`, actor: saved }
+}
+
+async function deleteActorById(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const store = await loadActorStore()
+  if (!store.deleteActor(id)) throw new Error(`actor ${id} not found`)
+  return { summary: `Actor ${id} deleted` }
+}
+
+async function upsertRole(body: any) {
+  const id = String(body?.id || "").trim()
+  const name = String(body?.name || "").trim()
+  if (!id.startsWith("role:")) throw new Error("id must start with 'role:'")
+  if (!name) throw new Error("name required")
+  const strategy = body?.assignmentStrategy || "first-available"
+  const store = await loadActorStore()
+  const existing = store.getRole(id)
+  const saved = store.saveRole({
+    id, name,
+    members: Array.isArray(body?.members) ? body.members : (existing?.members || []),
+    assignmentStrategy: strategy,
+    rotationCursor: existing?.rotationCursor ?? 0,
+  })
+  return { summary: `Role ${saved.id} saved`, role: saved }
+}
+
+async function deleteRoleById(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const store = await loadActorStore()
+  if (!store.deleteRole(id)) throw new Error(`role ${id} not found`)
+  return { summary: `Role ${id} deleted` }
+}
+
+async function grantRoleMember(body: any) {
+  const roleId = String(body?.role || "").trim()
+  const member = String(body?.member || "").trim()  // "actor:xyz" or "role:abc"
+  if (!roleId.startsWith("role:")) throw new Error("role required")
+  if (!member.startsWith("actor:") && !member.startsWith("role:")) throw new Error("member must be actor:<id> or role:<id>")
+  const store = await loadActorStore()
+  const role = store.getRole(roleId)
+  if (!role) throw new Error(`role ${roleId} not found`)
+  const next = member.startsWith("actor:")
+    ? { actor: member }
+    : { role: member }
+  const dup = role.members.some((m) => ("actor" in m ? m.actor : m.role) === member)
+  if (dup) return { summary: `${member} already in ${roleId}`, role }
+  const saved = store.saveRole({ ...role, members: [...role.members, next] })
+  return { summary: `${member} granted to ${roleId}`, role: saved }
+}
+
+async function revokeRoleMember(body: any) {
+  const roleId = String(body?.role || "").trim()
+  const member = String(body?.member || "").trim()
+  if (!roleId.startsWith("role:")) throw new Error("role required")
+  const store = await loadActorStore()
+  const role = store.getRole(roleId)
+  if (!role) throw new Error(`role ${roleId} not found`)
+  const filtered = role.members.filter((m) => ("actor" in m ? m.actor : m.role) !== member)
+  if (filtered.length === role.members.length) return { summary: `${member} not in ${roleId}`, role }
+  const saved = store.saveRole({ ...role, members: filtered })
+  return { summary: `${member} revoked from ${roleId}`, role: saved }
+}
+
+// ========================================================================
+// Business layer — admin write handlers (mirrors `agentx business`)
+// ========================================================================
+
+async function upsertOrgEntry(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  const role = String(body?.role || "").trim()
+  if (!agentId) throw new Error("agentId required")
+  if (!role) throw new Error("role required")
+  const days = Array.isArray(body?.days) && body.days.length > 0
+    ? body.days
+    : ["mon", "tue", "wed", "thu", "fri"]
+  const start = String(body?.start || "09:00")
+  const end = String(body?.end || "17:00")
+  const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
+  const utilization = typeof body?.utilizationTarget === "number" ? body.utilizationTarget : 0.8
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.orgChart = cfg.business.orgChart || {}
+    cfg.business.orgChart[agentId] = {
+      role,
+      ...(reportsTo ? { reportsTo } : {}),
+      schedule: { days, start, end },
+      utilizationTarget: utilization,
+    }
+    return `orgChart "${agentId}" upserted`
+  })
+  return { summary }
+}
+
+async function deleteOrgEntry(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  if (!agentId) throw new Error("agentId required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.business?.orgChart || !(agentId in cfg.business.orgChart)) {
+      throw new Error(`no orgChart entry for "${agentId}"`)
+    }
+    delete cfg.business.orgChart[agentId]
+    return `orgChart "${agentId}" removed`
+  })
+  return { summary }
+}
+
+async function upsertProject(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("project id required")
+  const pm = body?.pm ? String(body.pm).trim() : ""
+  const client = body?.client ? String(body.client).trim() : ""
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.projects = cfg.business.projects || []
+    const idx = cfg.business.projects.findIndex((p: any) => p.id === id)
+    const next: any = { id, ...(pm ? { pm } : {}), ...(client ? { client } : {}) }
+    if (idx >= 0) cfg.business.projects[idx] = { ...cfg.business.projects[idx], ...next }
+    else cfg.business.projects.push(next)
+    return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
+  })
+  return { summary }
+}
+
+async function deleteProject(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("project id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = cfg.business?.projects || []
+    const before = list.length
+    cfg.business.projects = list.filter((p: any) => p.id !== id)
+    if (cfg.business.projects.length === before) throw new Error(`no project "${id}"`)
+    return `project "${id}" removed`
+  })
+  return { summary }
+}
+
+async function upsertContact(body: any) {
+  const client = String(body?.client || "").trim()
+  if (!client) throw new Error("client required")
+  if (!body?.chatId && !body?.username && !body?.senderId) {
+    throw new Error("one of chatId / username / senderId required")
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.contactMap = cfg.business.contactMap || []
+    const entry: any = { client }
+    if (body?.channel) entry.channel = String(body.channel)
+    if (body?.chatId) entry.chatId = String(body.chatId)
+    if (body?.username) entry.username = String(body.username)
+    if (body?.senderId) entry.senderId = String(body.senderId)
+    if (body?.project) entry.project = String(body.project)
+    if (body?.displayName) entry.displayName = String(body.displayName)
+    cfg.business.contactMap.push(entry)
+    const key = entry.chatId || entry.username || entry.senderId
+    return `contact ${entry.channel ? entry.channel + "/" : ""}${key} → ${client} added`
+  })
+  return { summary }
+}
+
+async function deleteContact(body: any) {
+  const filters = ["channel", "chatId", "username", "senderId"]
+  const provided = filters.filter((f) => body?.[f])
+  if (provided.length === 0) throw new Error("at least one filter (channel/chatId/username/senderId) required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = cfg.business?.contactMap || []
+    const before = list.length
+    cfg.business.contactMap = list.filter((c: any) => {
+      // Drop entries that match every provided filter; keep the rest.
+      for (const f of provided) {
+        if (c[f] !== body[f]) return true
+      }
+      return false
+    })
+    if (cfg.business.contactMap.length === before) throw new Error("no matching contact entry")
+    return `${before - cfg.business.contactMap.length} contact entry/entries removed`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Boards — admin write handlers (mirrors `agentx board` + `agentx board column`)
+// ========================================================================
+
+async function upsertBoard(body: any) {
+  const id = String(body?.id || "").trim()
+  const name = String(body?.name || "").trim()
+  const projectsRaw = String(body?.projects || "").split(/[,\n]/).map((s: string) => s.trim()).filter(Boolean)
+  if (!id) throw new Error("id required")
+  if (!name) throw new Error("name required")
+  if (projectsRaw.length === 0) throw new Error("at least one project path required")
+  const primaryToolLabel = body?.primaryToolLabel ? String(body.primaryToolLabel).trim() : ""
+  const timeRangeDays = Number.isFinite(Number(body?.timeRangeDays)) ? Number(body.timeRangeDays) : 30
+  const closedWindowDays = Number.isFinite(Number(body?.closedWindowDays)) ? Number(body.closedWindowDays) : 30
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.boards = Array.isArray(cfg.boards) ? cfg.boards : []
+    const idx = cfg.boards.findIndex((b: any) => b.id === id)
+    const next: any = {
+      id, name,
+      source: { type: "gitlab", projects: projectsRaw },
+      timeRangeDays, closedWindowDays,
+    }
+    if (primaryToolLabel) next.primaryToolLabel = primaryToolLabel
+    if (idx >= 0) {
+      // Preserve any existing columns / labels — we're only editing top-level fields here.
+      const prev = cfg.boards[idx]
+      cfg.boards[idx] = { ...prev, ...next, columns: prev.columns, labels: prev.labels }
+      return `board "${id}" updated`
+    }
+    cfg.boards.push(next)
+    return `board "${id}" added`
+  })
+  return { summary }
+}
+
+async function deleteBoard(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const before = list.length
+    cfg.boards = list.filter((b: any) => b.id !== id)
+    if (cfg.boards.length === before) throw new Error(`board "${id}" not found`)
+    return `board "${id}" removed`
+  })
+  return { summary }
+}
+
+async function upsertBoardColumn(body: any) {
+  const boardId = String(body?.boardId || "").trim()
+  const columnId = String(body?.columnId || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-")
+  const title = String(body?.title || "").trim()
+  const kind = String(body?.kind || "scoped-label")
+  if (!boardId) throw new Error("boardId required")
+  if (!columnId) throw new Error("columnId required")
+  if (!title) throw new Error("title required")
+  if (!["open-backlog", "scoped-label", "closed", "label"].includes(kind)) {
+    throw new Error("kind must be open-backlog | scoped-label | closed | label")
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const b = list.find((x: any) => x.id === boardId)
+    if (!b) throw new Error(`board "${boardId}" not found`)
+    b.columns = Array.isArray(b.columns) ? b.columns : []
+    const col: any = { id: columnId, title, kind, scopedPrefix: body?.scopedPrefix || "Status" }
+    if (kind === "scoped-label") {
+      if (!body?.scopedLabel) throw new Error("scopedLabel required for kind=scoped-label")
+      col.scopedLabel = String(body.scopedLabel)
+    }
+    if (kind === "label") {
+      if (!body?.mapsToLabel) throw new Error("mapsToLabel required for kind=label")
+      col.mapsToLabel = String(body.mapsToLabel)
+    }
+    if (body?.accent) col.accent = String(body.accent)
+    const idx = b.columns.findIndex((c: any) => c.id === columnId)
+    if (idx >= 0) { b.columns[idx] = { ...b.columns[idx], ...col }; return `column "${columnId}" updated` }
+    b.columns.push(col)
+    return `column "${columnId}" added to board "${boardId}"`
+  })
+  return { summary }
+}
+
+async function deleteBoardColumn(body: any) {
+  const boardId = String(body?.boardId || "").trim()
+  const columnId = String(body?.columnId || "").trim()
+  if (!boardId || !columnId) throw new Error("boardId and columnId required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.boards) ? cfg.boards : []
+    const b = list.find((x: any) => x.id === boardId)
+    if (!b) throw new Error(`board "${boardId}" not found`)
+    const before = (b.columns || []).length
+    b.columns = (b.columns || []).filter((c: any) => c.id !== columnId)
+    if (b.columns.length === before) throw new Error(`column "${columnId}" not found`)
+    return `column "${columnId}" removed from board "${boardId}"`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Action registry — admin write + run handlers
+// ========================================================================
+//
+// Mirrors the `agentx actions` CLI: upsert / delete / run actions stored
+// under `.agentx/actions/<id>.json`. The runner returns the same shape
+// the CLI prints, capped at 32KB per stream.
+
+async function upsertAction(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const { actionSchema } = await import("@/actions/types")
+  if (!body || typeof body !== "object") throw new Error("body required")
+  const parsed = actionSchema.safeParse(body)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    throw new Error(`${issue.path.join(".") || "<root>"}: ${issue.message}`)
+  }
+  const saved = new ActionStore().save(parsed.data)
+  return { summary: `action "${saved.id}" saved (${saved.kind})`, action: saved }
+}
+
+async function deleteAction(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  if (!new ActionStore().delete(id)) throw new Error(`action "${id}" not found`)
+  return { summary: `action "${id}" removed` }
+}
+
+async function runActionFromAdmin(body: any) {
+  const { ActionStore } = await import("@/actions/store")
+  const { runAction } = await import("@/actions/runner")
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("id required")
+  const action = new ActionStore().get(id)
+  if (!action) throw new Error(`action "${id}" not found`)
+  const inputs = (body?.inputs && typeof body.inputs === "object") ? body.inputs as Record<string, unknown> : {}
+  const result = await runAction(action, inputs)
+  return { summary: `action "${id}" ${result.ok ? "ok" : "failed"} (${result.durationMs}ms)`, result }
+}
+
+// ========================================================================
+// Mesh health-check cadence — admin write handler
+// ========================================================================
+
+async function updateMeshHealth(body: any) {
+  const interval = body?.interval !== undefined ? Number(body.interval) : undefined
+  const timeout = body?.timeout !== undefined ? Number(body.timeout) : undefined
+  if (interval !== undefined && (!Number.isFinite(interval) || interval < 5 || interval > 3600)) {
+    throw new Error("interval must be 5..3600 seconds")
+  }
+  if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 1 || timeout > 60)) {
+    throw new Error("timeout must be 1..60 seconds")
+  }
+  if (interval === undefined && timeout === undefined) throw new Error("nothing to update")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.mesh = cfg.mesh || {}
+    cfg.mesh.healthCheck = cfg.mesh.healthCheck || {}
+    if (interval !== undefined) cfg.mesh.healthCheck.interval = interval
+    if (timeout !== undefined) cfg.mesh.healthCheck.timeout = timeout
+    return `mesh.healthCheck updated (interval=${cfg.mesh.healthCheck.interval}s, timeout=${cfg.mesh.healthCheck.timeout}s)`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Notifications — admin write handler (mirrors `agentx notifications`)
+// ========================================================================
+
+async function updateNotifications(body: any) {
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.notifications = cfg.notifications || {}
+    const changes: string[] = []
+    if (body && typeof body === "object") {
+      if ("destination" in body) {
+        if (!body.destination) {
+          delete cfg.notifications.destination
+          changes.push("destination cleared")
+        } else if (body.destination.channel && body.destination.chatId) {
+          cfg.notifications.destination = {
+            channel: String(body.destination.channel),
+            chatId: String(body.destination.chatId),
+            ...(body.destination.accountId ? { accountId: String(body.destination.accountId) } : {}),
+          }
+          changes.push(`destination=${body.destination.channel}:${body.destination.chatId}`)
+        } else {
+          throw new Error("destination requires channel + chatId")
+        }
+      }
+      if ("on" in body && body.on && typeof body.on === "object") {
+        cfg.notifications.on = cfg.notifications.on || {}
+        for (const k of ["taskComplete", "taskError", "taskQueued"]) {
+          if (k in body.on) cfg.notifications.on[k] = !!body.on[k]
+        }
+        changes.push("on=" + JSON.stringify(cfg.notifications.on))
+      }
+      if ("longTaskThreshold" in body) {
+        const n = Number(body.longTaskThreshold)
+        if (!Number.isFinite(n) || n < 0) throw new Error("longTaskThreshold must be a non-negative number")
+        cfg.notifications.longTaskThreshold = n
+        changes.push(`threshold=${n}s`)
+      }
+    }
+    if (changes.length === 0) throw new Error("nothing to update")
+    return `notifications updated (${changes.join(", ")})`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Webhook triggers — granular event-type → workflow id mapping
+// ========================================================================
+
+async function updateWebhookTriggers(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("webhook id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const list = Array.isArray(cfg.webhooks) ? cfg.webhooks : []
+    const w = list.find((x: any) => x.id === id)
+    if (!w) throw new Error(`webhook "${id}" not found`)
+    if ("triggers" in body) {
+      if (body.triggers === null || (typeof body.triggers === "object" && Object.keys(body.triggers).length === 0)) {
+        delete w.triggers
+      } else if (typeof body.triggers === "object") {
+        // shape check — keys are event names (free-form), values are workflow ids
+        const out: Record<string, string> = {}
+        for (const [k, v] of Object.entries(body.triggers as Record<string, unknown>)) {
+          if (typeof v === "string" && v.trim()) out[String(k)] = v.trim()
+        }
+        if (Object.keys(out).length === 0) delete w.triggers
+        else w.triggers = out
+      }
+    }
+    if ("defaultWorkflow" in body) {
+      if (!body.defaultWorkflow) delete w.defaultWorkflow
+      else w.defaultWorkflow = String(body.defaultWorkflow).trim()
+    }
+    return `webhook "${id}" triggers/defaultWorkflow updated`
+  })
+  return { summary }
 }
 
 // Keep reference so unused-import linters don't trip. rmSync is wired for a

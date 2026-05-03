@@ -40,12 +40,35 @@ interface ActiveBot {
   chunker: AudioChunker
   startedAt: number
   timeoutTimer: ReturnType<typeof setTimeout>
+  /** Number of transcript chunks dispatched so far. Surfaces in the
+   *  session-history ring buffer so /webrtc/history can show how
+   *  much speech actually happened on a call. */
+  transcriptChunks: number
 }
+
+/** Completed-session snapshot kept in a small ring buffer for the
+ *  admin /webrtc/history view. Persistence to disk is deliberately
+ *  deferred — operators wanting an audit trail enable a transcript
+ *  log via the `webrtcBot.transcriptChannel` config (separate flow). */
+export interface CompletedBotSession {
+  callId: string
+  agentId: string
+  target: string
+  startedAt: number
+  endedAt: number
+  durationSec: number
+  transcriptChunks: number
+  reason: string
+}
+
+const HISTORY_RING_SIZE = 50
 
 export class BotManager {
   private opts: BotManagerOptions
   private bots: Map<string, ActiveBot> = new Map()
   private whisper: Whisper
+  /** Ring buffer of recently-completed sessions. Surfaced via history(). */
+  private completed: CompletedBotSession[] = []
 
   constructor(opts: BotManagerOptions) {
     this.opts = opts
@@ -75,6 +98,7 @@ export class BotManager {
       onChunk: async (wav, durationMs) => {
         const text = await this.whisper.transcribe(wav)
         if (!text) return
+        this.recordTranscriptChunk(invite.callId)
         try {
           await this.opts.onTranscript({ invite, text, durationMs })
         } catch (e: any) {
@@ -112,19 +136,34 @@ export class BotManager {
 
     this.bots.set(invite.callId, {
       invite, bot, chunker, startedAt: Date.now(), timeoutTimer,
+      transcriptChunks: 0,
     })
     return { ok: true }
   }
 
   /** Close the bot for a call (manual hangup, peer disconnect, or timeout). */
-  tearDown(callId: string): void {
+  tearDown(callId: string, reason: string = "teardown"): void {
     const active = this.bots.get(callId)
     if (!active) return
     this.bots.delete(callId)
     clearTimeout(active.timeoutTimer)
     try { active.bot.close("manager teardown") } catch { /* */ }
     try { active.chunker.shutdown() } catch { /* */ }
-    this.opts.log(`[bot-manager] tore down bot for call=${callId} (was up ${Math.round((Date.now() - active.startedAt) / 1000)}s)`)
+    const endedAt = Date.now()
+    const durationSec = Math.round((endedAt - active.startedAt) / 1000)
+    this.opts.log(`[bot-manager] tore down bot for call=${callId} (was up ${durationSec}s)`)
+    // Push to ring buffer.
+    this.completed.unshift({
+      callId,
+      agentId: active.invite.agentId,
+      target: active.invite.target,
+      startedAt: active.startedAt,
+      endedAt,
+      durationSec,
+      transcriptChunks: active.transcriptChunks,
+      reason,
+    })
+    if (this.completed.length > HISTORY_RING_SIZE) this.completed.length = HISTORY_RING_SIZE
   }
 
   /** Snapshot for /health or admin UI. */
@@ -138,8 +177,25 @@ export class BotManager {
     }))
   }
 
+  /** Recently-completed sessions (ring buffer, newest first). Used by the
+   *  admin /webrtc/history view to surface call activity even after the
+   *  bot has torn down. Persistence to disk is deferred — opt in via the
+   *  webrtcBot.transcriptChannel config to also push transcripts to a
+   *  channel. */
+  history(): CompletedBotSession[] {
+    return [...this.completed]
+  }
+
+  /** Increment the transcript-chunk counter for an active call. Wired
+   *  from the onTranscript hook so /webrtc/history shows how much
+   *  speech actually happened on a call. */
+  recordTranscriptChunk(callId: string): void {
+    const active = this.bots.get(callId)
+    if (active) active.transcriptChunks++
+  }
+
   /** Tear down every active bot (daemon shutdown). */
   shutdown(): void {
-    for (const callId of [...this.bots.keys()]) this.tearDown(callId)
+    for (const callId of [...this.bots.keys()]) this.tearDown(callId, "shutdown")
   }
 }

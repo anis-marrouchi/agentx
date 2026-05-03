@@ -501,9 +501,46 @@ export class WhatsAppAdapter implements ChannelAdapter {
       : `${msg.chatId}@s.whatsapp.net`
 
     try {
-      const sent = await this.sock.sendMessage(jid, { text: msg.text })
+      let content: Record<string, unknown>
+
+      if (msg.poll) {
+        content = {
+          poll: {
+            name: msg.poll.name,
+            values: msg.poll.values,
+            selectableCount: msg.poll.selectableCount ?? 1,
+          },
+        }
+      } else if (msg.media) {
+        const mediaPayload: Record<string, unknown> = {
+          mimetype: msg.media.mimetype,
+        }
+        if (msg.media.caption) mediaPayload.caption = msg.media.caption
+        if (msg.media.fileName) mediaPayload.fileName = msg.media.fileName
+
+        const source = { url: msg.media.url }
+        switch (msg.media.type) {
+          case "image":
+            content = { image: source, ...mediaPayload }
+            break
+          case "video":
+            content = { video: source, ...mediaPayload }
+            break
+          case "audio":
+            content = { audio: source, ptt: false, ...mediaPayload }
+            break
+          case "document":
+            content = { document: source, ...mediaPayload }
+            break
+          default:
+            content = { document: source, ...mediaPayload }
+        }
+      } else {
+        content = { text: msg.text }
+      }
+
+      const sent = await this.sock.sendMessage(jid, content)
       const sentId = sent?.key?.id || ""
-      // Track to prevent loop (our own reply echoed back as fromMe)
       if (sentId) this.sentMessageIds.add(sentId)
       return sentId
     } catch (e: any) {
@@ -617,6 +654,37 @@ export class WhatsAppAdapter implements ChannelAdapter {
       this.log(`getHistory(${jid}) failed: ${e.message}`)
       return []
     }
+  }
+
+  /** ChannelAdapter.seedHistory: thin wrapper over getHistory() that maps
+   *  Baileys' HistoryMessage shape to the channel-agnostic SeededMessage
+   *  shape consumed by SessionStore on cold session create. Bounded by the
+   *  caller's maxMessages/maxChars; fromMe → role:agent. The chatId is the
+   *  Baileys jid (e.g., "21694xxx@s.whatsapp.net" for DMs). */
+  async seedHistory(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<import("./types").SeededMessage[]> {
+    const sinceMs = opts.sinceISO ? new Date(opts.sinceISO).getTime() : 0
+    const history = await this.getHistory(chatId, { limit: opts.maxMessages })
+    const out: import("./types").SeededMessage[] = []
+    let chars = 0
+    for (const m of history) {
+      if (sinceMs && (m.timestamp ?? 0) * 1000 < sinceMs) continue
+      if (!m.text) continue
+      const ts = m.timestamp ? new Date(m.timestamp * 1000).toISOString() : new Date().toISOString()
+      out.push({
+        role: m.fromMe ? "agent" : "user",
+        name: m.fromMe ? "agent" : (m.fromJid || "user"),
+        content: m.text,
+        timestamp: ts,
+        externalId: m.id,
+      })
+      chars += m.text.length
+      if (out.length >= opts.maxMessages) break
+      if (chars >= opts.maxChars) break
+    }
+    return out
   }
 
   /** Token-bucket gate for live Baileys reads. Enforces

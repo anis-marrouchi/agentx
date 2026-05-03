@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
-import { existsSync, readFileSync, statSync } from "fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 
@@ -19,14 +19,31 @@ import { loadDaemonConfig } from "@/daemon/config"
 // Exit code: 0 if clean, 1 if any error, 0 if only warnings (so CI won't block
 // on advisory checks).
 
-type Severity = "ok" | "warn" | "fail"
+export type Severity = "ok" | "warn" | "fail"
 
-interface Check {
+export interface Check {
   severity: Severity
   group: string
   title: string
   detail?: string
   fix?: string
+}
+
+/** Run every preflight check and return the result as data. Exposed so
+ *  the dashboard's /admin/doctor route can render the same checks the
+ *  `agentx doctor` CLI prints — without spawning a child process. */
+export async function runDoctorChecks(
+  opts: { running?: boolean } = {},
+): Promise<{ checks: Check[]; summary: { errors: number; warnings: number; ok: number } }> {
+  const checks: Check[] = []
+  await runEnvChecks(checks)
+  const cfg = runConfigChecks(checks)
+  if (cfg) runReferenceChecks(checks, cfg)
+  if (cfg) runWorkspaceChecks(checks, cfg)
+  if (cfg) runWorkspaceSettingsChecks(checks, cfg)
+  if (cfg) runRoutingChecks(checks, cfg)
+  if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
+  return { checks, summary: summarize(checks) }
 }
 
 export const doctor = new Command()
@@ -35,21 +52,13 @@ export const doctor = new Command()
   .option("--no-running", "skip the live daemon probe")
   .option("--json", "emit machine-readable JSON (stable shape for CI)")
   .action(async (opts) => {
-    const checks: Check[] = []
-    await runEnvChecks(checks)
-    const cfg = runConfigChecks(checks)
-    if (cfg) runReferenceChecks(checks, cfg)
-    if (cfg) runWorkspaceChecks(checks, cfg)
-    if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
-
+    const { checks, summary } = await runDoctorChecks({ running: opts.running !== false })
     if (opts.json) {
-      process.stdout.write(JSON.stringify({ checks, summary: summarize(checks) }, null, 2) + "\n")
+      process.stdout.write(JSON.stringify({ checks, summary }, null, 2) + "\n")
     } else {
       printHumanReport(checks)
     }
-
-    const { errors } = summarize(checks)
-    process.exit(errors > 0 ? 1 : 0)
+    process.exit(summary.errors > 0 ? 1 : 0)
   })
 
 // ---------------------------------------------------------------------------
@@ -222,6 +231,254 @@ function runWorkspaceChecks(checks: Check[], cfg: any): void {
       detail: missing.join("\n    "),
       fix: "The daemon will create missing folders on first task, but you won't see CLAUDE.md / skills until you populate them.",
     })
+  }
+}
+
+// Audit each agent's .claude/settings.json for known traps:
+//   - unexpanded ${VAR} literals in env values (Claude Code does NOT expand them)
+//   - env.PATH missing /usr/bin or /bin (basic utils unreachable)
+//   - JSON syntax errors
+//   - permissions.allow: [] explicitly empty alongside non-empty deny
+// Each finding is FAIL severity for the ${VAR} / PATH cases (these break the
+// agent's Bash tool entirely), WARN for the lockdown case.
+function runWorkspaceSettingsChecks(checks: Check[], cfg: any): void {
+  const VAR_RE = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/g
+  const findings: Array<{ severity: Severity; agent: string; msg: string }> = []
+
+  for (const [agentId, a] of Object.entries(cfg.agents || {}) as [string, any][]) {
+    if (!a.workspace) continue
+    const wsAbs = a.workspace.startsWith("/") ? a.workspace : resolve(process.cwd(), a.workspace)
+    for (const fname of ["settings.json", "settings.local.json"]) {
+      const p = resolve(wsAbs, ".claude", fname)
+      if (!existsSync(p)) continue
+      let data: any
+      try {
+        data = JSON.parse(readFileSync(p, "utf-8"))
+      } catch (e: any) {
+        findings.push({ severity: "fail", agent: agentId, msg: `${fname}: JSON parse error — ${e.message}` })
+        continue
+      }
+      const env = (data.env || {}) as Record<string, unknown>
+      for (const [k, v] of Object.entries(env)) {
+        if (typeof v !== "string") continue
+        const unexpanded = v.match(VAR_RE)
+        if (unexpanded) {
+          findings.push({
+            severity: "fail",
+            agent: agentId,
+            msg: `${fname} env.${k} contains unexpanded ${[...new Set(unexpanded)].join(",")} — Claude Code does NOT expand \${VAR} in settings.json (use a fully-literal value)`,
+          })
+        }
+      }
+      const pathVal = env.PATH
+      if (typeof pathVal === "string") {
+        const parts = pathVal.split(":").filter(Boolean)
+        if (!parts.includes("/usr/bin")) {
+          findings.push({ severity: "fail", agent: agentId, msg: `${fname} env.PATH missing /usr/bin — cat/head/sh/which will fail` })
+        }
+        if (!parts.includes("/bin")) {
+          findings.push({ severity: "fail", agent: agentId, msg: `${fname} env.PATH missing /bin — ls/cp/mv will fail` })
+        }
+      }
+      const perms = data.permissions
+      if (perms && typeof perms === "object" && "allow" in perms) {
+        const allow = perms.allow
+        const deny = perms.deny
+        if (Array.isArray(allow) && allow.length === 0 && Array.isArray(deny) && deny.length > 0) {
+          findings.push({
+            severity: "warn",
+            agent: agentId,
+            msg: `${fname} permissions.allow is explicitly [] with ${deny.length} deny rules — agent may be locked out (omit the key to use defaults instead)`,
+          })
+        }
+      }
+    }
+  }
+
+  if (findings.length === 0) {
+    checks.push({ severity: "ok", group: "Workspace settings", title: `All ${Object.keys(cfg.agents || {}).length} agent .claude/settings.json files clean` })
+    return
+  }
+  for (const f of findings) {
+    checks.push({
+      severity: f.severity,
+      group: "Workspace settings",
+      title: `${f.agent}: ${f.msg}`,
+      fix: f.severity === "fail" ? "Edit .claude/settings.json — replace ${VAR} with the literal value or omit the key to inherit." : "Either remove the empty allow list or populate it.",
+    })
+  }
+}
+
+// Surface routing / dispatch fragilities the recurring-patches plan
+// cataloged: webhook entries that route many event-types to a single
+// handler (github, gitlab), trigger maps pointing at workflow ids that
+// don't exist, mesh `node` fields naming peers that aren't configured,
+// gitlab agentMappings referencing unknown agents, and the very common
+// "I edited agentx.json but didn't reload" pitfall.
+function runRoutingChecks(checks: Check[], cfg: any): void {
+  const webhooks = (cfg.webhooks ?? []) as Array<{
+    id: string
+    source: string
+    agentId: string
+    enabled: boolean
+    node?: string
+    secretEnv?: string
+    triggers?: Record<string, string>
+    defaultWorkflow?: string
+  }>
+  const findings: Array<{ severity: Severity; title: string; fix?: string }> = []
+
+  // Build the set of known workflow ids. Workflows live as JSON files under
+  // `workflows.dir` (default .agentx/workflows/). The id is the filename
+  // sans extension; we don't need to parse the contents for this check.
+  const workflowDir = resolve(process.cwd(), cfg.workflows?.dir || ".agentx/workflows")
+  const knownWorkflows = new Set<string>()
+  try {
+    if (existsSync(workflowDir)) {
+      for (const f of readdirSync(workflowDir)) {
+        if (f.endsWith(".json") && !f.startsWith("_") && !f.endsWith(".disabled.json")) {
+          knownWorkflows.add(f.replace(/\.json$/, ""))
+        }
+      }
+    }
+  } catch { /* directory not yet populated; checks below tolerate empty set */ }
+
+  // 1. Multi-event-type sources (github, gitlab) without a triggers map.
+  //    Without it, every inbound event hits the same agent and the
+  //    duplicate-firing class of bug returns. Surface as REVIEW (warn) —
+  //    operators may genuinely want a single-handler setup, but they
+  //    should opt in by setting `defaultWorkflow` explicitly.
+  const multiEventSources = new Set(["github", "gitlab"])
+  for (const w of webhooks) {
+    if (!w.enabled) continue
+    if (!multiEventSources.has(w.source)) continue
+    const hasTriggers = w.triggers && Object.keys(w.triggers).length > 0
+    if (!hasTriggers && !w.defaultWorkflow) {
+      findings.push({
+        severity: "warn",
+        title: `webhook "${w.id}" (${w.source} -> ${w.agentId}) has no triggers map; every event-type collapses to the bound agent`,
+        fix: `Add a triggers map: { "issues.opened": "wf-id", "pull_request.synchronize": "wf-id" } — or set defaultWorkflow.`,
+      })
+    }
+  }
+
+  // 2. Trigger map references workflow ids that don't exist on disk.
+  //    Hard-fails the dispatch at runtime (and silently — dispatcher just
+  //    logs "workflow not found" and bails). Surface here as FAIL.
+  for (const w of webhooks) {
+    if (!w.enabled || !w.triggers) continue
+    for (const [eventType, workflowId] of Object.entries(w.triggers)) {
+      if (knownWorkflows.size > 0 && !knownWorkflows.has(workflowId)) {
+        findings.push({
+          severity: "fail",
+          title: `webhook "${w.id}".triggers["${eventType}"] -> "${workflowId}" — no such workflow under ${cfg.workflows?.dir || ".agentx/workflows"}`,
+          fix: `Create the workflow file or fix the id in agentx.json`,
+        })
+      }
+    }
+    if (w.defaultWorkflow && knownWorkflows.size > 0 && !knownWorkflows.has(w.defaultWorkflow)) {
+      findings.push({
+        severity: "fail",
+        title: `webhook "${w.id}".defaultWorkflow -> "${w.defaultWorkflow}" — no such workflow`,
+        fix: `Create the workflow file or fix the id in agentx.json`,
+      })
+    }
+  }
+
+  // 3. Mesh-routed webhooks naming peers that don't exist.
+  const peers = new Set<string>(((cfg.mesh?.peers ?? []) as Array<{ name: string }>).map(p => p.name))
+  for (const w of webhooks) {
+    if (!w.enabled || !w.node) continue
+    if (!peers.has(w.node)) {
+      findings.push({
+        severity: "fail",
+        title: `webhook "${w.id}" routes to mesh peer "${w.node}" which is not in mesh.peers`,
+        fix: `Add the peer to mesh.peers or remove the node field on the webhook.`,
+      })
+    }
+  }
+
+  // 4. Two enabled webhook entries collide on (source, agentId): the
+  //    Phase 3 dispatcher takes the first match, the second is silently
+  //    ignored — operators rarely realize.
+  const seen = new Map<string, string>()
+  for (const w of webhooks) {
+    if (!w.enabled) continue
+    const key = `${w.source}:${w.agentId}`
+    const prior = seen.get(key)
+    if (prior) {
+      findings.push({
+        severity: "warn",
+        title: `webhook entries "${prior}" and "${w.id}" both enabled for ${w.source} -> ${w.agentId}; only the first is dispatched`,
+        fix: `Disable one entry, or merge their triggers maps into a single entry.`,
+      })
+    } else {
+      seen.set(key, w.id)
+    }
+  }
+
+  // 5. GitLab agentMappings referencing agent ids that aren't in agents.
+  //    A mapping with `node:` set is a cross-mesh route — the agent lives
+  //    on a remote peer, not locally — so missing-from-agents is correct
+  //    and not a finding. We still warn when `node` names a peer that
+  //    isn't configured (caught by check #3 above for webhooks; same
+  //    invariant should hold for agentMappings).
+  const agentIds = new Set(Object.keys(cfg.agents ?? {}))
+  for (const m of (cfg.channels?.gitlab?.agentMappings ?? [])) {
+    if (!m?.agentId) continue
+    if (m.node) {
+      // Cross-mesh route — verify the named peer exists.
+      if (!peers.has(m.node)) {
+        findings.push({
+          severity: "fail",
+          title: `gitlab.agentMappings entry agentId="${m.agentId}" routes to mesh peer "${m.node}" which is not in mesh.peers`,
+          fix: `Add the peer to mesh.peers or drop the node field on the mapping.`,
+        })
+      }
+      continue
+    }
+    if (!agentIds.has(m.agentId)) {
+      findings.push({
+        severity: "warn",
+        title: `gitlab.agentMappings entry agentId="${m.agentId}" — no such agent in agents.* (and no node field, so it's not a cross-mesh route)`,
+        fix: `Add the agent to agents.*, set node:"<peer>" if the agent lives remotely, or remove the mapping.`,
+      })
+    }
+  }
+
+  // 6. Telegram accounts without an agentBinding silently drop every DM.
+  for (const [acctId, acct] of Object.entries((cfg.channels?.telegram?.accounts ?? {}) as Record<string, { agentBinding?: string }>)) {
+    if (!acct.agentBinding) {
+      findings.push({
+        severity: "fail",
+        title: `telegram account "${acctId}" has no agentBinding; every DM to this bot will drop`,
+        fix: `Set agentBinding to a valid agent id.`,
+      })
+    } else if (!agentIds.has(acct.agentBinding)) {
+      findings.push({
+        severity: "fail",
+        title: `telegram account "${acctId}".agentBinding -> "${acct.agentBinding}" — no such agent in agents.*`,
+        fix: `Fix the agentBinding or define the agent in agents.*.`,
+      })
+    }
+  }
+
+  // (Removed: the "agentx.json newer than daemon pid" check produced
+  //  false positives because the pid file is only rewritten on start,
+  //  not on hot-reload. The signal-to-noise was too low. A future check
+  //  can query /reload's `lastReload` timestamp via the daemon API
+  //  instead of using filesystem mtimes.)
+
+  if (findings.length === 0) {
+    checks.push({
+      severity: "ok",
+      group: "Routing",
+      title: `${webhooks.length} webhook(s), ${Object.keys(cfg.channels?.telegram?.accounts ?? {}).length} telegram account(s) — all routing references resolve`,
+    })
+    return
+  }
+  for (const f of findings) {
+    checks.push({ severity: f.severity, group: "Routing", title: f.title, fix: f.fix })
   }
 }
 

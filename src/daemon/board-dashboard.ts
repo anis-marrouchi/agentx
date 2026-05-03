@@ -9,15 +9,22 @@ import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
-import { handleWizardGet, handleWizardPost, wizardState } from "./setup-wizard"
+import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
+import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
+import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
+import { renderCostPage } from "./ui/pages/cost"
+import { createWikiHandler } from "@/wiki/serve"
+import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
+import { renderInboxPage } from "./ui/pages/inbox"
+import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
@@ -26,8 +33,7 @@ import type { TopbarPeer } from "./topbar"
 // --- Kanban Board Dashboard ---
 //
 // Zero-build web UI, served on its own port (default 4202, bound 127.0.0.1).
-// Mirrors src/daemon/usage-dashboard.ts — inline HTML/CSS/JS, manual routing,
-// no framework.
+// Inline HTML/CSS/JS, manual routing, no framework.
 //
 // Column kinds (see src/boards/config.ts):
 //   - open-backlog: opened issues with no Status::* scoped label
@@ -69,6 +75,11 @@ export function startBoardDashboard(config: DaemonConfig): void {
   const workflowStore = new WorkflowStore(wfDir ? { baseDir: wfDir } : undefined)
   const workflowRuns = new RunStore(wfDir ? { baseDir: wfDir, nodeId: wfNodeId } : { nodeId: wfNodeId })
   const workflowLayouts = new LayoutStore(wfDir ? { baseDir: wfDir } : undefined)
+
+  // Activity-graph snapshot needs agent metadata (tier, model, name) from
+  // agentx.json — set the module-level reference so the snapshot builder can
+  // read it when serving each request.
+  setDaemonConfigForActivityGraph(config)
 
   const server = createServer(async (req, res) => {
     try {
@@ -154,6 +165,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
+  if (method === "GET" && path === "/inbox") {
+    const actor = url.searchParams.get("actor") || undefined
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderInboxPage({ actor }))
+    return
+  }
+  if (method === "GET" && path === "/processes") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderProcessesPage({}))
+    return
+  }
+  // /graph is the canonical doc path; the page itself lives at /admin/graph.
+  if (method === "GET" && path === "/graph") {
+    res.writeHead(302, { Location: "/admin/graph" })
+    res.end()
+    return
+  }
 
   // Setup wizard — form-driven first-run experience for non-technical operators.
   if (method === "GET" && path === "/setup") {
@@ -162,6 +190,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "POST" && path === "/api/setup") {
     await handleWizardPost(req, res)
+    return
+  }
+  if (method === "POST" && path === "/api/setup/start-daemon") {
+    await handleStartDaemonPost(req, res)
     return
   }
 
@@ -175,24 +207,162 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
   }
+  // /admin/health — platform-health view over route_traces + rotations + errors.
+  // Renamed from /admin/observability — that name suggested business flow,
+  // but the page only ever covered platform health. Old URL redirects so
+  // existing bookmarks keep working.
+  if (method === "GET" && (path === "/admin/health" || path === "/admin/observability")) {
+    if (path === "/admin/observability") {
+      res.writeHead(302, { Location: "/admin/health" })
+      res.end()
+      return
+    }
+    handleObservabilityGet(req, res, buildTopbarPeers(ctx.config))
+    return
+  }
+  // ── Cross-mesh API proxy (must precede every /api/admin/* handler) ──
+  // When the topbar peer selector is set to a non-primary peer, the
+  // client-side fetch wrapper attaches X-Agentx-Peer / ?peer=<url> to the
+  // request. Forward the whole call to that peer's dashboard before any
+  // local handler picks it up, so the activity-graph + observability +
+  // every other admin surface follow the selector.
+  //
+  // Special peerId="fleet" → fan-out + merge across local + every
+  // dashboard.daemons[] entry. Only meaningful for the activity-graph
+  // snapshot endpoint right now; other endpoints fall through to local
+  // until they grow merge semantics.
+  if (path.startsWith("/api/admin/")) {
+    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    if (peerId === "fleet") {
+      if (path === "/api/admin/activity-graph") {
+        await handleActivityGraphFleet(req, res, ctx)
+        return
+      }
+      // Dispatch detail in fleet mode: the id was rewritten to
+      // "<nodeName>::<originalId>" by the merger so React keys stay
+      // unique. Route the lookup back to the node that owns the row.
+      const detailMatch = path.match(/^\/api\/admin\/activity-graph\/dispatch\/(.+)$/)
+      if (detailMatch) {
+        const decoded = decodeURIComponent(detailMatch[1])
+        const sep = decoded.indexOf("::")
+        if (sep > 0) {
+          const nodeName = decoded.slice(0, sep)
+          const realId = decoded.slice(sep + 2)
+          const localNodeName = ctx.config.node?.id || ctx.config.node?.name || "local"
+          if (nodeName === localNodeName) {
+            // Local row — strip the prefix and let the local handler answer.
+            req.url = `/api/admin/activity-graph/dispatch/${encodeURIComponent(realId)}`
+            // Fall through to the regular handler below.
+          } else {
+            const peerByName = (ctx.config.dashboard?.daemons || []).find((d) => (d.name || d.url) === nodeName)
+            if (peerByName) {
+              const peer = findPeer(peerByName.url.replace(/\/+$/, ""), ctx.config)
+              if (peer) {
+                await proxyAdminToPeer(
+                  req, res, peer,
+                  `/api/admin/activity-graph/dispatch/${encodeURIComponent(realId)}`,
+                )
+                return
+              }
+            }
+            sendJson(res, 404, { error: `unknown node "${nodeName}" in fleet dispatch id` })
+            return
+          }
+        }
+      }
+      // Anything else in fleet mode → answer locally.
+    } else if (peerId && peerId !== "primary") {
+      const peer = findPeer(peerId, ctx.config)
+      if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
+      // Strip ?peer= so the destination doesn't re-proxy.
+      const stripped = (url.search || "").replace(/[?&]peer=[^&]*/g, (m) => m.startsWith("?") ? "?" : "")
+      const cleanQuery = stripped === "?" ? "" : stripped
+      await proxyAdminToPeer(req, res, peer, path + cleanQuery)
+      return
+    }
+  }
+
+  if (method === "GET" && path.startsWith("/api/admin/observability/")) {
+    if (await handleObservabilityApi(req, res, path)) return
+  }
+  // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
+  // `agentx daemon logs -f`. On systemd-managed nodes this calls
+  // journalctl; on others it falls back to /tmp/agentx-daemon.log.
+  if (method === "GET" && path === "/api/admin/logs/stream") {
+    await streamDaemonLogs(req, res)
+    return
+  }
+  // /api/admin/doctor — preflight check JSON. Same shape as
+  // `agentx doctor --json`, served in-process.
+  if (method === "GET" && path === "/api/admin/doctor") {
+    try {
+      const { runDoctorChecks } = await import("@/commands/doctor")
+      const url = new URL(req.url || "/", "http://_")
+      const running = url.searchParams.get("running") !== "false"
+      const result = await runDoctorChecks({ running })
+      sendJson(res, 200, result)
+    } catch (e: any) {
+      sendJson(res, 500, { error: e?.message || String(e) })
+    }
+    return
+  }
+  // /admin/ledger — read-only window over .agentx/intent/ledger.sqlite.
+  // Mirrors `agentx ledger stats/events/divergences/active`. Replay and
+  // lineage stay CLI-only.
+  if (method === "GET" && path === "/admin/ledger") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderLedgerPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/ledger/")) {
+    if (await handleLedgerApi(req, res, path)) return
+  }
+  // /admin/cost — token-spend page. Replaces the standalone
+  // `agentx usage serve` (port 4201) and the Cost tab inside Health.
+  if (method === "GET" && path === "/admin/cost") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // /admin/wiki/* — wiki UI mounted natively into the dashboard. Same
+  // renderer as `agentx wiki serve`, no second port required. The wiki
+  // hub instance is created lazily on first request and reused for the
+  // lifetime of the dashboard process; updates from `wiki absorb` are
+  // picked up because each render rebuilds its index from disk.
+  if (method === "GET" && (path === "/admin/wiki" || path.startsWith("/admin/wiki/"))) {
+    if (path === "/admin/wiki") {
+      // Trailing slash so internal links stay relative to the mount.
+      res.writeHead(302, { Location: "/admin/wiki/" })
+      res.end()
+      return
+    }
+    await getOrCreateWikiHandler(ctx)(req, res)
+    return
+  }
+  // /admin/activity-graph — perspective lens over the intent ledger.
+  if (method === "GET" && path === "/admin/activity-graph") {
+    handleActivityGraphGet(req, res, buildTopbarPeers(ctx.config))
+    return
+  }
+  if (method === "GET" && path === "/api/admin/activity-graph") {
+    if (await handleActivityGraphApi(req, res, path)) return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/activity-graph/stream")) {
+    if (await handleActivityGraphStream(req, res, path)) return
+  }
+  if (method === "GET" && path.startsWith("/api/admin/activity-graph/dispatch/")) {
+    if (await handleActivityGraphDetail(req, res, path)) return
+  }
   // /admin/agents/<id> — dedicated per-agent page with md editor + skill mgr.
   const agentPageMatch = method === "GET" && path.match(/^\/admin\/agents\/([a-z0-9][a-z0-9_-]*)$/)
   if (agentPageMatch) {
     handleAgentPageGet(req, res, agentPageMatch[1], buildTopbarPeers(ctx.config), ctx.token)
     return
   }
-  // Cross-mesh admin proxy: when a non-primary peer is selected (header
-  // X-Agentx-Peer or ?peer=), forward the whole request to the peer's
-  // dashboard with its own token. The peer's board-server handles it as
-  // a normal admin call against its own agentx.json.
+  // (Cross-mesh proxy is now handled at the top of /api/admin/*. The
+  // local-token enforcement below still runs for any admin call that
+  // didn't match a specific handler above.)
   if (path.startsWith("/api/admin/")) {
-    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
-    if (peerId && peerId !== "primary") {
-      const peer = findPeer(peerId, ctx.config)
-      if (!peer) { sendJson(res, 404, { error: `unknown peer: ${peerId}` }); return }
-      await proxyAdminToPeer(req, res, peer, path + (url.search || ""))
-      return
-    }
     // Local admin calls: enforce dashboard.token (if configured) BEFORE the
     // dispatcher runs. The legacy ctx.token check further down only catches
     // paths nothing else handled — admin routes were silently bypassing it.
@@ -492,6 +662,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       sendJson(res, r.status, data)
     } catch (e: any) {
       sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
+    return
+  }
+
+  // /api/workflows/tasks[*] — BPM inbox API lives on the daemon (the
+  // dispatcher owns the TaskStore + run-resume plumbing). Proxy through
+  // so the /inbox page on the dashboard works the same as on the daemon.
+  if (path.startsWith("/api/workflows/tasks") && (method === "GET" || method === "POST")) {
+    try {
+      const t = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(ctx.config.dashboard.token ? { Authorization: `Bearer ${ctx.config.dashboard.token}` } : {}),
+      }
+      const body = method === "POST"
+        ? await new Promise<string>((resolve) => {
+            const chunks: Buffer[] = []
+            req.on("data", (c) => chunks.push(c))
+            req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")))
+          })
+        : undefined
+      const r = await fetch(`${t}${req.url}`, { method, headers, body })
+      const text = await r.text()
+      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json" })
+      res.end(text)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "tasks proxy failed", message: e?.message || String(e) })
     }
     return
   }
@@ -874,6 +1071,31 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
     base.error = e.message || String(e)
   }
   return base
+}
+
+// Lazy /admin/wiki/* handler — built once per dashboard process. The
+// WikiHub it wraps reads articles from disk on every request (no
+// in-memory cache), so absorbs and edits from elsewhere show up
+// without a restart.
+let _wikiHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | null = null
+function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  if (_wikiHandler) return _wikiHandler
+  const wikiDir = resolve(process.cwd(), ".agentx/wiki")
+  // Match the CLI defaults exactly so the embedded view renders the
+  // same hub/sidebar/article markup as `agentx wiki serve` does — they
+  // share the handler, but mode changes which `hubHome`/`hubSidebar`
+  // branches fire (graph mode adds the article-list + type-label).
+  _wikiHandler = createWikiHandler({
+    wikiDir,
+    pathPrefix: "/admin/wiki",
+    mode: "graph",
+    // No remote-peer browsing in the embedded view — keeps the dashboard
+    // independent of mesh state. Operators who want cross-mesh wiki nav
+    // can still run `agentx wiki serve --peer <url>`.
+  })
+  // ctx is passed for future use (auth etc.) but unused right now.
+  void ctx
+  return _wikiHandler
 }
 
 // Tiny helper to double-json a Response only once.
@@ -1331,7 +1553,18 @@ function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): Topba
     dashboardUrl: resolvePeerDashboardUrl(d),
     tokenScope: (d.dashboardToken || d.token) ? "proxy-ready" : undefined,
   }))
-  return [primary, ...extras]
+  // Fleet pseudo-peer: only meaningful when there's at least one
+  // remote peer to merge with. Placed at the bottom so users tend to
+  // notice it after they've used the per-peer entries first.
+  const fleet: TopbarPeer[] = extras.length > 0
+    ? [{
+        id: "fleet",
+        name: "Fleet (all peers)",
+        dashboardUrl: "",
+        tokenScope: "merged across nodes",
+      }]
+    : []
+  return [primary, ...extras, ...fleet]
 }
 
 /**
@@ -1340,6 +1573,143 @@ function buildTopbarPeers(config: DaemonConfig, ctxConfig?: DaemonConfig): Topba
  * replaces anything the browser sent with the peer's configured token so
  * the local dashboard.token (if any) doesn't leak across nodes.
  */
+/** Fleet-mode activity-graph snapshot: build the local snapshot in-process,
+ *  fetch every configured peer's snapshot via its dashboard API, merge.
+ *  Per-peer failures don't fail the whole call — they're just dropped from
+ *  the merge and logged, so a single dead peer doesn't black out the view. */
+async function handleActivityGraphFleet(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: { config: DaemonConfig; token?: string },
+): Promise<void> {
+  const url = new URL(req.url || "/", "http://_")
+  const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
+  const localNodeId = ctx.config.node?.id || ctx.config.node?.name || "local"
+
+  const parts: Array<{ nodeId: string; snap: FleetSnapshot }> = []
+
+  // Local node: in-process call, no HTTP round-trip.
+  const localSnap = buildLocalActivityGraphSnapshot(hours)
+  if (localSnap) parts.push({ nodeId: localNodeId, snap: localSnap })
+
+  // Each configured peer: HTTP fetch via the existing per-peer proxy logic.
+  // Fire in parallel; whichever peers respond on time get merged in.
+  const peerEntries = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
+  await Promise.all(peerEntries.map(async (d) => {
+    const peer = findPeer(d.url.replace(/\/+$/, ""), ctx.config)
+    if (!peer) return
+    try {
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), 8000)
+      try {
+        const r = await fetch(`${peer.url}/api/admin/activity-graph?hours=${hours}`, {
+          headers: {
+            "Accept": "application/json",
+            "X-Agentx-Peer": "primary",
+            ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
+          },
+          signal: ac.signal,
+        })
+        if (!r.ok) return
+        const snap = await r.json() as FleetSnapshot
+        parts.push({ nodeId: d.name || d.url, snap })
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch {
+      // Drop this peer from the merge; the rest of the snapshot remains usable.
+    }
+  }))
+
+  sendJson(res, 200, mergeFleetSnapshots(parts))
+}
+
+/** SSE-stream the daemon's stdout to the dashboard /admin/health Logs tab.
+ *  Picks the best available source: prefers `journalctl -u agentx -f`
+ *  (systemd-managed nodes like clawd-server), falls back to `tail -F` on
+ *  /tmp/agentx-daemon.log (Mac dev launches), or the tail of the
+ *  workspace pid log if neither exists. Mirrors the source the
+ *  `agentx daemon logs -f` CLI hits, so both surfaces show the same
+ *  data.
+ *
+ *  The spawned process inherits the dashboard's permissions; on
+ *  clawd-server `clawd` already has read access to its agentx unit's
+ *  journal via the systemd-journal group (no sudo needed). On Mac the
+ *  log file is world-readable. */
+async function streamDaemonLogs(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const { spawn, execSync } = await import("child_process")
+
+  // Prefer journalctl when available — it captures stdout from systemd,
+  // which is where the daemon's logs actually land on prod. Fall back to
+  // the legacy /tmp file the CLI uses.
+  let cmd: string
+  let args: string[]
+  try {
+    execSync("which journalctl", { stdio: "pipe" })
+    cmd = "journalctl"
+    args = ["-u", "agentx", "--no-pager", "-n", "200", "-f", "-o", "cat"]
+  } catch {
+    // Mac (launchd) logs to ~/.agentx/logs/daemon-stdout.log; the legacy
+    // /tmp/agentx-daemon.log is the foreground-launch path. Probe both.
+    const home = process.env.HOME || ""
+    const candidates = [
+      home && `${home}/.agentx/logs/daemon-stdout.log`,
+      "/tmp/agentx-daemon.log",
+    ].filter(Boolean) as string[]
+    const file = candidates.find((f) => existsSync(f))
+    if (!file) {
+      res.writeHead(503, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        error: "no log source — install journalctl, run the daemon under launchd, or run it foreground writing to /tmp/agentx-daemon.log",
+        searched: candidates,
+      }))
+      return
+    }
+    cmd = "tail"
+    args = ["-F", "-n", "200", file]
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  })
+  res.write(`: source=${cmd}\n\n`)
+
+  const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] })
+  let buffer = ""
+  const onData = (chunk: Buffer) => {
+    buffer += chunk.toString("utf8")
+    let idx
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).replace(/\r$/, "")
+      buffer = buffer.slice(idx + 1)
+      // SSE: each line gets its own `event: line` so the client can
+      // listen by name. Escape newlines defensively (lines should not
+      // contain any since we split on them, but be safe).
+      try { res.write(`event: line\ndata: ${line.replace(/\n/g, " ")}\n\n`) } catch { /* */ }
+    }
+  }
+  child.stdout?.on("data", onData)
+  // Mirror stderr too so the operator sees crash output.
+  child.stderr?.on("data", onData)
+
+  // Heartbeat keeps middleboxes from idling the connection out.
+  const hb = setInterval(() => {
+    try { res.write(`: hb\n\n`) } catch { /* */ }
+  }, 15_000)
+
+  const cleanup = () => {
+    clearInterval(hb)
+    try { child.kill() } catch { /* */ }
+    try { res.end() } catch { /* */ }
+  }
+  req.on("close", cleanup)
+  child.on("exit", cleanup)
+  child.on("error", cleanup)
+}
+
 async function proxyAdminToPeer(
   req: IncomingMessage,
   res: ServerResponse,

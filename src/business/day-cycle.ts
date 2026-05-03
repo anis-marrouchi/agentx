@@ -7,6 +7,7 @@ import type { Reporter } from "./reporter"
 import type { KPI } from "./kpi"
 import type { WorkSource } from "./work-pool"
 import { businessToolsDoc } from "./http"
+import { DayPlanStore, parsePriorities, type ResolvedPlan } from "./day-plan"
 
 // --- Day cycle: minute ticker that fires standup / work-tick / wrap prompts ---
 
@@ -24,6 +25,9 @@ export class DayCycle {
   private day: Map<string, AgentDayState> = new Map()
   private currentDate: string = new Date().toISOString().slice(0, 10)
   private runningTask: Set<string> = new Set()   // agentIds with an in-flight day-cycle call
+  private standupsFiredToday = 0                 // counter for maxAgentsPerDay guard
+  private noPlanNoticePostedFor?: string         // YYYY-MM-DD; ensures we post the "no plan today" line at most once per day
+  private planStore: DayPlanStore
 
   constructor(
     private config: BusinessConfig,
@@ -37,6 +41,7 @@ export class DayCycle {
     private log: (...args: unknown[]) => void,
   ) {
     for (const emp of org.all()) this.day.set(emp.agentId, {})
+    this.planStore = new DayPlanStore(this.config.standup.plansDir)
   }
 
   start(): void {
@@ -62,6 +67,7 @@ export class DayCycle {
     if (iso !== this.currentDate) {
       this.currentDate = iso
       for (const key of this.day.keys()) this.day.set(key, {})
+      this.standupsFiredToday = 0
     }
 
     // KPI on-clock accrual
@@ -131,14 +137,56 @@ export class DayCycle {
   }
 
   private async fireStandup(agentId: string): Promise<void> {
-    this.log(`[business] STANDUP → ${agentId}`)
+    const standup = this.config.standup
+    // Master switch — operator wanted a way to silence the cycle without
+    // turning off the whole business layer.
+    if (!standup.enabled) {
+      this.log(`[business] STANDUP skipped (standup.enabled=false) → ${agentId}`)
+      return
+    }
+    // Hard ceiling — guards against an org-chart misconfig fanning out to
+    // dozens of Claude calls in one morning before anyone notices.
+    if (this.standupsFiredToday >= standup.maxAgentsPerDay) {
+      this.log(`[business] STANDUP ceiling hit (${standup.maxAgentsPerDay}/day) — skipping ${agentId}`)
+      return
+    }
+
+    // Resolve the plan: day → week → month. If nothing is set anywhere,
+    // post a single "no plan today" notification to the main channel and
+    // dispatch nothing — the explicit anti-mechanical-burn rule.
+    const plan = this.planStore.resolve()
+    if (!plan) {
+      await this.postNoPlanNoticeOnce()
+      this.log(`[business] STANDUP skipped (no plan for ${this.currentDate}) → ${agentId}`)
+      return
+    }
+
+    // Dry-run mode: post the plan to the channel for human review but don't
+    // dispatch any agent. Lets operators eyeball the resolved plan before
+    // letting it drive Claude calls.
+    if (standup.dryRun) {
+      await this.postPlanPreviewOnce(plan)
+      this.log(`[business] STANDUP dry-run (plan ${plan.tier}/${plan.date}) — no dispatch`)
+      return
+    }
+
+    this.log(`[business] STANDUP → ${agentId} (plan ${plan.tier}/${plan.date})`)
+    this.standupsFiredToday++
     const role = this.roleContext(agentId)
+    const priorities = parsePriorities(plan.content)
+    const prioritiesBlock = priorities.length
+      ? `Today's priorities (from the ${plan.tier} plan, ${plan.date}):\n${priorities.map((p, i) => `  ${i + 1}. ${p}`).join("\n")}`
+      : `Today's plan (${plan.tier}, ${plan.date}):\n${plan.content.trim()}`
+
     const prompt =
 `${role}
 
 [STANDUP] It's the start of your work day.
-1. Call GET /business/work?agent=${agentId} to see your open work items.
-2. Pick your top 3 for today, in priority order.
+
+${prioritiesBlock}
+
+1. Call GET /business/work?agent=${agentId} to see your open work items, and reconcile them with the priorities above. The plan wins on tie-breaks.
+2. Pick your top 3 for today, in priority order, citing which plan item each one serves.
 3. Post your plan to the main channel via POST /business/post — keep it to 4-6 short lines.
 4. Flag any blockers via POST /business/escalate.`
     const content = await this.runLifecycle(agentId, prompt)
@@ -147,6 +195,29 @@ export class DayCycle {
       state.hadWorkToday = true
       this.day.set(agentId, state)
     }
+  }
+
+  /** Post one "no plan today" line to mainChannel per calendar date. After
+   *  the first STANDUP would have fired, we let the team know the cycle
+   *  saw nothing to do — quiet enough not to be annoying, loud enough that
+   *  a forgotten plan doesn't go unnoticed for a whole morning. */
+  private async postNoPlanNoticeOnce(): Promise<void> {
+    if (this.noPlanNoticePostedFor === this.currentDate) return
+    this.noPlanNoticePostedFor = this.currentDate
+    const text = `No plan for ${this.currentDate} — skipping standup. Set one with \`agentx plan set today …\` or via the admin → Plans tab.`
+    try { await this.reporter.postToMain(text) }
+    catch (e: any) { this.log(`[business] no-plan notice post failed: ${e?.message || e}`) }
+  }
+
+  /** Dry-run preview: post the resolved plan to the main channel so the
+   *  operator can eyeball it before turning dryRun off. Once per day per
+   *  resolved plan. */
+  private async postPlanPreviewOnce(plan: ResolvedPlan): Promise<void> {
+    if (this.noPlanNoticePostedFor === this.currentDate) return
+    this.noPlanNoticePostedFor = this.currentDate
+    const head = `[dry-run] Plan for ${this.currentDate} (resolved from ${plan.tier}/${plan.date}):`
+    try { await this.reporter.postToMain(`${head}\n${plan.content.trim()}`) }
+    catch (e: any) { this.log(`[business] plan-preview post failed: ${e?.message || e}`) }
   }
 
   private async fireWorkTick(agentId: string): Promise<void> {

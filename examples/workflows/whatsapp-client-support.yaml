@@ -1,0 +1,130 @@
+id: whatsapp-client-support
+version: 2
+title: WhatsApp client support triage
+description: >-
+  Incoming WhatsApp message from a client -> classify intent -> either look up
+  past tickets and reply, or create a new GitLab issue and confirm.
+priority: 10
+fanOut: false
+envAllow:
+  - GITLAB_TOKEN
+  - GITLAB_HOST
+
+nodes:
+  - id: trigger
+    type: trigger.channel
+    config:
+      source: whatsapp-message
+      filter: { chat: "*" }
+    position: { x: 40, y: 160 }
+
+  - id: classify
+    type: agent
+    config:
+      agentId: intent-classifier
+      prompt: |
+        A client named {{trigger.sender.name}} ({{trigger.fromJid}}) wrote:
+        ---
+        {{trigger.text}}
+        ---
+        Decide intent. Reply with exactly one line:
+        RESULT: status-check
+        RESULT: new-request
+        RESULT: other
+      resultParser: noqta-result-token
+      timeoutMinutes: 2
+    position: { x: 320, y: 160 }
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: classify.result, value: status-check } }
+          to: status
+        - when: { kind: equals, params: { path: classify.result, value: new-request } }
+          to: new
+      default: fallback
+    position: { x: 640, y: 160 }
+
+  - id: lookup_ticket
+    type: agent
+    config:
+      agentId: gitlab-ticket-lookup
+      prompt: |
+        Find open or recently-closed issues in noqta/web whose reporter mentions
+        {{trigger.sender.name}} or {{trigger.fromJid}} and that could relate to
+        this message:
+        ---
+        {{trigger.text}}
+        ---
+        Summarise the current status in one short paragraph suitable for a
+        WhatsApp reply.
+      timeoutMinutes: 3
+    position: { x: 960, y: 40 }
+
+  - id: reply_status
+    type: action.send
+    config:
+      channel: whatsapp
+      chatId: "{{trigger.chatId}}"
+      text: "{{lookup_ticket.reply}}"
+    position: { x: 1280, y: 40 }
+
+  - id: create_issue
+    type: action.createIssue
+    config:
+      channel: gitlab
+      project: noqta/web
+      title: "WhatsApp: {{trigger.sender.name}} — new request"
+      description: |-
+        From: {{trigger.sender.name}} ({{trigger.fromJid}})
+
+        {{trigger.text}}
+
+        ---
+        Opened automatically from WhatsApp workflow run {{run.id}}.
+      labels:
+        - source::whatsapp
+        - Triage
+    position: { x: 960, y: 200 }
+
+  - id: confirm_new
+    type: action.send
+    config:
+      channel: whatsapp
+      chatId: "{{trigger.chatId}}"
+      text: "Thanks {{trigger.sender.name}} — ticket {{create_issue.issue.webUrl}} opened. We'll reply here when there's an update."
+    position: { x: 1280, y: 200 }
+
+  - id: fallback
+    type: action.send
+    config:
+      channel: whatsapp
+      chatId: "{{trigger.chatId}}"
+      text: Got your message — a human will reply shortly.
+    position: { x: 960, y: 360 }
+
+  - id: done
+    type: end
+    config: { status: completed }
+    position: { x: 1560, y: 200 }
+
+# Linear prefix expressed via the flow: shorthand. Branches aren't
+# allowed in flow:, so the edge from `classify` into the branch and
+# all the branch's multi-port fan-out / fan-in use explicit edges.
+flow: [trigger, classify]
+
+edges:
+  - { from: classify,      to: route }
+  - { from: route, fromPort: status,   to: lookup_ticket }
+  - { from: route, fromPort: new,      to: create_issue }
+  - { from: route, fromPort: fallback, to: fallback }
+  - { from: lookup_ticket, to: reply_status }
+  - { from: create_issue,  to: confirm_new }
+  - { from: reply_status,  to: done }
+  - { from: confirm_new,   to: done }
+  - { from: fallback,      to: done }
+
+retention:
+  maxRuns: 500
+  maxDays: 90

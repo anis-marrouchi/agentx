@@ -12,6 +12,15 @@ import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs"
 import { resolve, dirname } from "path"
+import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
+import { runPipeline, type PipelineResult } from "./inbound/pipeline"
+import { defaultPipeline } from "./inbound/stages"
+import { pickAccountForAgent } from "./account-resolution"
+import { getEventBus } from "@/events/bus"
+import { getLedgerMode } from "@/intent/mode"
+import { getDefaultLedger } from "@/intent/instance"
+import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
+import type { LegacyOutcome } from "@/intent/divergence"
 
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
@@ -151,6 +160,14 @@ export class MessageRouter {
 
   /** Crash-safe inflight log (see InflightLog class above). */
   private inflight: InflightLog
+
+  /** In-flight mesh forwards (this node is awaiting a peer's response).
+   *  Counted so the daemon's shutdown drain can wait for these in addition
+   *  to local agent tasks — otherwise a clawd restart mid-forward kills the
+   *  awaiter, the peer's response lands on a dead connection, and the
+   *  inflight-replay re-runs the task on the peer. */
+  private activeMeshForwards = 0
+  getActiveMeshForwardCount(): number { return this.activeMeshForwards }
 
   constructor(
     registry: AgentRegistry,
@@ -292,11 +309,32 @@ export class MessageRouter {
 
     this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
 
+    let messageId: string | void
     if (adapter.name === "telegram" && accountId) {
-      return this.adapterSend(adapter, { ...msg, accountId })
+      messageId = await this.adapterSend(adapter, { ...msg, accountId })
+    } else {
+      messageId = await adapter.send(msg)
     }
 
-    return adapter.send(msg)
+    // Record outbound into the recipient agent's channel session so cron/api/
+    // a2a sends become visible to the next inbound turn on the same chatId.
+    // This closes the cron-vs-telegram split: when marketing-agent's daily
+    // cron sends "trend brief" to Anis at 06:17, the next telegram message
+    // from Anis at 08:36 sees the brief in session history instead of treating
+    // the conversation as fresh.
+    //
+    // Only fires when an agentId is set — manual /send tests without an agent
+    // identity stay out of session JSON to avoid polluting an agent's
+    // conversation with anonymous bot traffic.
+    if (msg.agentId) {
+      try {
+        this.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text)
+      } catch (e: any) {
+        this.log(`Failed to record outbound in recipient session: ${e.message}`)
+      }
+    }
+
+    return messageId
   }
 
   /** List registered channel names. */
@@ -388,6 +426,41 @@ export class MessageRouter {
     return false
   }
 
+  /**
+   * Phase 1 commit 6.b — record one router decision in the intent ledger
+   * when the source is enabled (mode != "off"). Covers all router
+   * channels (telegram, slack, whatsapp, discord). Each channel has its
+   * own per-source mode flag so they can be promoted independently in 1c.
+   * Wrapped in try/catch so a ledger failure can never break message
+   * routing — legacy is still authoritative until the 1c per-source
+   * promotion.
+   *
+   * Returns the recorded decision when ledger fired (and outcome was
+   * "dispatched"), so the caller can tag the IncomingMessage with
+   * `intentRef` for resolution-on-completion. Returns undefined when
+   * the source is off, the channel isn't supported, ledger threw, or
+   * the ledger's own decision was non-dispatched (deduped/halted —
+   * no resolution to write).
+   */
+  private recordRouterDecisionInLedger(
+    msg: IncomingMessage,
+    legacy: LegacyOutcome,
+  ): { eventId: string; decidedBy: string } | undefined {
+    const source = routerChannelToSource(msg.channel)
+    if (!source) return undefined // channel not router-supported (e.g., gitlab routes itself)
+    if (getLedgerMode(source) === "off") return undefined
+    try {
+      const decision = recordRouterDispatch(getDefaultLedger(), msg, source, JSON.stringify(msg), legacy)
+      if (decision.outcome === "dispatched") {
+        return { eventId: decision.eventId, decidedBy: decision.decidedBy }
+      }
+      return undefined
+    } catch (e: any) {
+      this.log(`[ledger] router ${msg.channel}/${msg.id} record failed: ${e?.message ?? e}`)
+      return undefined
+    }
+  }
+
   private async handleMessage(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
@@ -404,6 +477,9 @@ export class MessageRouter {
     // still hasn't received their answer.
     if (!opts.replay && this.isDuplicateMessage(msg)) {
       this.log(`Duplicate ${msg.channel} message dropped: ${msg.accountId || "default"}/${msg.id}`)
+      this.recordRouterDecisionInLedger(msg, {
+        agentId: null, outcome: "deduped", reason: "isDuplicateMessage",
+      })
       return
     }
 
@@ -423,6 +499,10 @@ export class MessageRouter {
 
       if (hookResult.blocked) {
         this.log(`Message blocked by hook: ${hookResult.message}`)
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `pre-hook blocked: ${hookResult.message ?? ""}`.trim(),
+        })
         return
       }
 
@@ -443,6 +523,14 @@ export class MessageRouter {
       const matched = this.serviceMatcher.match(msg.text, msg.sender.id, msg.channel)
       if (matched) {
         this.log(`Service matched: "${matched.service.name}" for ${msg.sender.name} (trigger: ${matched.trigger})`)
+        // Phase 1 commit 6.b-extended: service-matcher claims the message
+        // before agent routing. From the agent-router's POV no agent was
+        // dispatched — a service handler ran instead. Recorded as halted
+        // with the service name in the reason for forensics.
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `service-match: ${matched.service.name} (trigger: ${matched.trigger})`,
+        })
         const replyAccountId = msg.accountId
         this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
         const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
@@ -462,20 +550,47 @@ export class MessageRouter {
       }
     }
 
-    // Resolve agent — check local first, then mesh peers
-    const agentId = this.resolveAgent(msg)
+    // Resolve agent via the routing pipeline (Phase 2). Each stage produces
+    // a named decision; we trace the deciding stage so "why didn't agent X
+    // get this message?" is one log-line away.
+    const result = this.runRoutingPipeline(msg)
+    const agentId = result.agentId
 
     if (!agentId) {
+      this.traceRoute(msg, "drop", result.reason, result.decidingStage)
+      this.recordRouterDecisionInLedger(msg, {
+        agentId: null, outcome: "halted", reason: `routing:${result.reason}`,
+      })
       return
     }
 
     // Dedup: in groups, multiple bot accounts receive the same message.
-    // Only the account BOUND to this agent should handle it.
+    // Only the account BOUND to this agent should handle it. When multiple
+    // accounts share the same agentBinding, getAccountForAgent prefers one
+    // that's in the group — without this, dropping by the absent canonical
+    // bot would silently swallow messages received via the in-group bot.
     if (msg.group && msg.channel === "telegram") {
-      const boundAccount = this.getAccountForAgent(agentId)
+      const boundAccount = this.getAccountForAgent(agentId, msg.group.id)
       if (boundAccount && boundAccount !== msg.accountId) {
+        this.traceRoute(msg, "drop", `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`, "multi-account-dedup")
+        this.recordRouterDecisionInLedger(msg, {
+          agentId: null, outcome: "halted",
+          reason: `multi-account-dedup (bound=${boundAccount} got=${msg.accountId})`,
+        })
         return
       }
+    }
+
+    this.traceRoute(msg, "match", `${result.decidingStage} agent=${agentId}`, result.decidingStage, agentId)
+    const intentRef = this.recordRouterDecisionInLedger(msg, {
+      agentId, outcome: "dispatched", reason: result.decidingStage,
+    })
+    // Phase 1 / 6 — tag the IncomingMessage so registry.execute records
+    // a ledger resolution when the agent task completes. Only set when
+    // the ledger's own decision was "dispatched" (recordRouterDecision...
+    // already filtered the deduped/halted cases).
+    if (intentRef) {
+      msg = { ...msg, intentRef }
     }
 
     const chatId = msg.group?.id || msg.sender.id
@@ -533,8 +648,9 @@ export class MessageRouter {
 
     const agentName = agentDef.name || agentId
 
-    // Determine which bot account should send the response
-    const replyAccountId = this.getAccountForAgent(agentId) || msg.accountId
+    // Determine which bot account should send the response. In groups, prefer
+    // the account whose bot is actually present (matters for multi-bound agents).
+    const replyAccountId = this.getAccountForAgent(agentId, msg.group?.id) || msg.accountId
 
     this.log(
       `Routing [${msg.channel}/${msg.sender.name}] -> "${agentName}": ${msg.text.slice(0, 80)}`,
@@ -623,6 +739,10 @@ export class MessageRouter {
       {
         message: messageWithContext,
         agentId,
+        // Phase 1 / 6 — propagate the intent-ledger reference so the
+        // registry can record a resolution on completion. Set by
+        // gitlab/router shadow-mode wiring; absent under mode=off.
+        intentRef: msg.intentRef,
         context: {
           channel: msg.channel,
           sender: msg.sender.name,
@@ -866,6 +986,14 @@ export class MessageRouter {
             channel: originalMsg.channel,
             sender: `agent:${sourceAgentId}`,
             group: originalMsg.group?.name,
+            // Bot-to-bot recursion must keep the SAME chatId as the
+            // original message so the recursive reply lands in the same
+            // session as the conversation it's continuing. Previously
+            // chatId was derived from `group` (a name), which keyed the
+            // session by group NAME instead of group ID — leaking the
+            // recursive turn into a separate "default"/name-based bucket.
+            chatId: originalMsg.group?.id || originalMsg.sender.id,
+            channelMeta: originalMsg.channelMeta,
           },
         })
 
@@ -964,12 +1092,92 @@ export class MessageRouter {
     return setInterval(sendTyping, TYPING_INTERVAL_MS)
   }
 
+  // --- Routing observability ---
+  //
+  // Every inbound message produces exactly one [route] log line, with the
+  // routing decision (match | drop), the deciding stage, and a reason.
+  // Goes to the daemon stderr log so the existing ~/.agentx/logs/ audit
+  // captures it. Also publishes on the event bus so SQLite writers,
+  // dashboards, and plugins can subscribe without touching this code.
+  private traceRoute(msg: IncomingMessage, kind: "match" | "drop", reason: string, decidingStage = "unknown", agentId?: string): void {
+    const chat = msg.group?.id || msg.sender?.id || "?"
+    this.log(
+      `[route] ${msg.channel}:${chat} msgId=${msg.id} acct=${msg.accountId ?? "—"} kind=${kind} ${reason}`,
+    )
+    const at = new Date().toISOString()
+    if (kind === "match" && agentId) {
+      getEventBus().emit("message:matched", {
+        channel: msg.channel,
+        chatId: String(chat),
+        msgId: msg.id,
+        accountId: msg.accountId,
+        agentId,
+        decidingStage,
+        at,
+      })
+    } else if (kind === "drop") {
+      getEventBus().emit("message:dropped", {
+        channel: msg.channel,
+        chatId: String(chat),
+        msgId: msg.id,
+        accountId: msg.accountId,
+        decidingStage,
+        reason,
+        at,
+      })
+    }
+  }
+
+  // --- Routing pipeline ---
+  //
+  // Phase 2: replaces the legacy resolveAgent() switch. The pipeline runs
+  // a fixed-order list of named stages (see src/channels/inbound/stages/);
+  // the first non-`pass` decision wins. resolveAgent() is kept as a thin
+  // delegate for callers that only need the agentId and don't care about
+  // the trace.
+  private runRoutingPipeline(msg: IncomingMessage): PipelineResult {
+    const env: InboundEnvelope = fromIncoming(msg)
+    return runPipeline(env, defaultPipeline, {
+      config: this.config,
+      registry: this.registry,
+      handoverStore: this.handoverStore,
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      hasMeshAgent: (id) => {
+        if (!this.mesh) return false
+        return this.mesh.directory().some((p) => p.healthy && p.skills.some((s) => s.id === id))
+      },
+    })
+  }
+
   // --- Agent resolution ---
 
   /**
    * Handle a message by routing to a mesh peer's agent.
    * Searches peer agent cards for mention matches.
    */
+  /** Build the context payload that mesh.sendTask forwards to the receiving
+   *  daemon's /task handler. Without this, the receiver runs registry.execute
+   *  with default channel="api"/chatId="default" — losing the channel,
+   *  project, issue id, sender, and channelMeta the original adapter built
+   *  from the inbound webhook. Shape matches what processResolvedMessage
+   *  already passes to registry.execute on the local path, so a mesh-routed
+   *  task and a locally-routed task produce the same session keying and
+   *  the same prompt context. */
+  private buildMeshContext(msg: IncomingMessage, chatId: string): Record<string, unknown> {
+    return {
+      channel: msg.channel,
+      sender: msg.sender.name,
+      senderId: msg.sender.id,
+      senderUsername: msg.sender.username,
+      group: msg.group?.name,
+      chatId,
+      mediaPath: msg.media?.path,
+      mediaType: msg.media?.type,
+      replyToText: msg.replyToText,
+      channelMeta: msg.channelMeta,
+    }
+  }
+
   private async handleViaMesh(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
@@ -998,7 +1206,9 @@ export class MessageRouter {
           const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
           try {
-            const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id)
+            const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id, {
+              context: this.buildMeshContext(msg, chatId),
+            })
 
             clearInterval(typingTimer)
 
@@ -1064,7 +1274,9 @@ export class MessageRouter {
       const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
       try {
-        const response = await this.mesh.sendTask(peer.peer, msg.text, agentId)
+        const response = await this.mesh.sendTask(peer.peer, msg.text, agentId, {
+          context: this.buildMeshContext(msg, chatId),
+        })
         clearInterval(typingTimer)
 
         if (response) {
@@ -1125,8 +1337,11 @@ export class MessageRouter {
     const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
     const start = Date.now()
+    this.activeMeshForwards++
     try {
-      const response = await this.mesh.sendTask(peerName, msg.text, agentId)
+      const response = await this.mesh.sendTask(peerName, msg.text, agentId, {
+        context: this.buildMeshContext(msg, chatId),
+      })
       const duration = Date.now() - start
       clearInterval(typingTimer)
 
@@ -1164,89 +1379,26 @@ export class MessageRouter {
         accountId: replyAccountId,
       })
       return true
+    } finally {
+      this.activeMeshForwards--
     }
   }
 
-  private getAccountForAgent(agentId: string): string | undefined {
-    for (const [accountId, account] of Object.entries(this.config.channels.telegram.accounts)) {
-      if (account.agentBinding === agentId) {
-        return accountId
-      }
-    }
-    return undefined
+  private getAccountForAgent(agentId: string, groupId?: string): string | undefined {
+    const adapter = this.channels.get("telegram") as TelegramAdapter | undefined
+    return pickAccountForAgent(
+      this.config.channels.telegram.accounts,
+      agentId,
+      groupId,
+      adapter?.getGroupBotAccounts?.bind(adapter),
+    )
   }
 
+  /** @deprecated Phase 2 — resolveAgent now delegates to the pipeline.
+   *  Kept as a thin wrapper for callers that only need the agentId; new
+   *  code should call runRoutingPipeline() to get the full PipelineResult
+   *  (deciding stage, drop reason, per-stage trace). */
   private resolveAgent(msg: IncomingMessage): string | undefined {
-    // For GitLab: the adapter resolves agents deterministically via agentMappings
-    // (GitLab @username -> agentId). Don't use registry.findByMention() here
-    // because that matches Telegram handles, not GitLab usernames.
-    if (msg.channel === "gitlab") {
-      if (msg.resolvedAgent) {
-        this.log(`GitLab agent resolved by adapter: ${msg.resolvedAgent}`)
-        return msg.resolvedAgent
-      }
-      return undefined
-    }
-
-    // Runtime override takes precedence over every config-driven route.
-    // This is how operator-initiated handovers redirect traffic without a
-    // daemon restart.
-    const chatId = msg.group?.id ?? msg.sender.id
-    const override = this.handoverStore.get(msg.channel, chatId, msg.accountId)
-    if (override) {
-      this.log(
-        `[handover] ${msg.channel}:${chatId}${msg.accountId ? `:${msg.accountId}` : ""} -> ${override.toAgent} (handover)`,
-      )
-      return override.toAgent
-    }
-
-    // Pre-resolved by channel adapter (WhatsApp route-based, etc.)
-    if (msg.resolvedAgent) {
-      return msg.resolvedAgent
-    }
-
-    // DM: route to the account's bound agent
-    if (!msg.group) {
-      if (msg.channel === "telegram") {
-        const account = this.config.channels.telegram.accounts[msg.accountId]
-        return account?.agentBinding
-      }
-      if (msg.channel === "whatsapp") {
-        return this.config.channels.whatsapp.defaultAgent
-      }
-      return undefined
-    }
-
-    // Messages from another bot (cross-daemon Telegram cascades, e.g. one bot
-    // quoting another bot's handle in a prose reply) must only route on an
-    // explicit `@`-prefixed handle of a local agent. Bare-word matches like
-    // "nadia" in text or "devops-mtgl" mentioned in a reply would otherwise
-    // trigger spurious activations across daemons.
-    const atMentionsOnly = msg.sender.isBot === true
-
-    // Group: check policy
-    if (msg.channel === "telegram") {
-      const policy = this.config.channels.telegram.policy
-      if (policy.group === "mention-required") {
-        const agentId = this.registry.findByMention(msg.text, { atMentionsOnly })
-        if (!agentId) return undefined
-        return agentId
-      }
-    }
-
-    // Default: mention matching, then account binding
-    const mentionAgent = this.registry.findByMention(msg.text, { atMentionsOnly })
-    if (mentionAgent) return mentionAgent
-    // If this is a bot-origin message with no explicit @ match, drop it —
-    // don't fall through to account-binding which would route every bot reply
-    // in the group to the bound agent.
-    if (atMentionsOnly) return undefined
-
-    if (msg.channel === "telegram") {
-      const account = this.config.channels.telegram.accounts[msg.accountId]
-      return account?.agentBinding
-    }
-
-    return this.config.channels.whatsapp.defaultAgent
+    return this.runRoutingPipeline(msg).agentId
   }
 }

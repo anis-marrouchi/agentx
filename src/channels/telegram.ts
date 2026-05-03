@@ -1,7 +1,8 @@
-import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
+import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
 import { markdownToTelegramHtml } from "./telegram-format"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
+import { getCursorStore, type CursorStore } from "./cursor-store"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
@@ -134,6 +135,11 @@ class TelegramGroupStore {
 }
 
 /**
+ * @deprecated Replaced by FileCursorStore in src/channels/cursor-store.ts.
+ * Kept temporarily for callers we haven't migrated yet; do not introduce
+ * new uses. The ad-hoc 500ms debounce here was the root cause of the
+ * 2026-04-27 message-replay incident.
+ *
  * Persist long-poll `offset` per account to disk so a daemon restart doesn't
  * re-fetch updates Telegram still holds in its 24h retention window. Without
  * this, a crash loop (e.g. restart-counter cascade) causes the same message
@@ -188,7 +194,7 @@ class TelegramOffsetStore {
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram"
   private accounts: Map<string, TelegramAccountConfig>
-  private offsetStore: TelegramOffsetStore
+  private cursors: CursorStore
   private handler?: (msg: IncomingMessage) => Promise<void>
   private polling = false
   /** Per-account polling gate — flipped to false when an account is removed
@@ -210,7 +216,7 @@ export class TelegramAdapter implements ChannelAdapter {
     this.globalAllowFrom = opts.policy?.allowFrom
     this.log = log
     this.groupStore = new TelegramGroupStore(process.cwd())
-    this.offsetStore = new TelegramOffsetStore(process.cwd())
+    this.cursors = getCursorStore(process.cwd())
   }
 
   /** Effective sender allowlist for an account. Returns undefined when the
@@ -304,7 +310,29 @@ export class TelegramAdapter implements ChannelAdapter {
       // This prevents 409 conflicts when restarting.
       await this.apiCall(config.token, "deleteWebhook", { drop_pending_updates: false }).catch(() => {})
 
-      const me = await this.apiCall(config.token, "getMe")
+      // Retry getMe with backoff. Cold-start fleet boot does N parallel
+      // verifications and a transient `fetch failed` (DNS/TLS hiccup,
+      // upstream 502) used to silently skip the account permanently —
+      // observed in production when 2 of 7 bots dropped out for the rest
+      // of the session. Three tries at 2s/5s/10s catches the common case
+      // without delaying the legit-failure path much.
+      let me: any
+      let lastErr: any
+      const delays = [0, 2000, 5000, 10000]
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]))
+        try {
+          me = await this.apiCall(config.token, "getMe")
+          if (attempt > 0) this.log(`Bot account "${accountId}" verified on retry ${attempt}`)
+          break
+        } catch (e: any) {
+          lastErr = e
+          if (attempt < delays.length - 1) {
+            this.log(`Verify attempt ${attempt + 1} failed for "${accountId}" (${e.message}) — retrying`)
+          }
+        }
+      }
+      if (!me) throw lastErr
       const botUserId = me.result?.id
       const botUsername = me.result?.username
       this.log(`Bot @${botUsername} ready (account: ${accountId})`)
@@ -314,7 +342,7 @@ export class TelegramAdapter implements ChannelAdapter {
       this.accountPolling.set(accountId, true)
       this.pollLoop(accountId, config)
     } catch (e: any) {
-      this.log(`Failed to verify bot for account "${accountId}": ${e.message}`)
+      this.log(`Failed to verify bot for account "${accountId}" after retries: ${e.message}`)
     }
   }
 
@@ -335,9 +363,9 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     this.polling = false
-    // Flush any debounced offset writes BEFORE we release the Telegram session
-    // — otherwise a clean stop could drop the last in-memory offset update.
-    this.offsetStore.flush()
+    // Cursors commit synchronously per-update now (FileCursorStore), so
+    // there's nothing to flush here — every offset advance has already
+    // landed on disk before the next getUpdates ack.
     const aborts = Array.from(this.accounts.keys()).map((id) => this.stopAccount(id))
     await Promise.allSettled(aborts)
   }
@@ -440,6 +468,15 @@ export class TelegramAdapter implements ChannelAdapter {
   // Persistent group membership store
   private groupStore: TelegramGroupStore
 
+  /** Account IDs of bots currently active (member/administrator) in a group.
+   *  Used by the router to pick the correct bot when an agent has multiple
+   *  Telegram accounts bound to it (e.g. pm-ksi → both @noqta_ksi_bot and
+   *  @noqta_pm_ksi_bot) — the in-group account should win, otherwise messages
+   *  to the absent bot get silently dropped by multi-account-dedup. */
+  getGroupBotAccounts(groupId: string): string[] {
+    return this.groupStore.getGroupBots(groupId).map((b) => b.accountId)
+  }
+
   /**
    * Send a message. Returns the sent message ID.
    * Pass accountId to send from a specific bot account.
@@ -479,16 +516,50 @@ export class TelegramAdapter implements ChannelAdapter {
 
     try {
       const result = await this.apiCall(token, "sendMessage", params)
-      return String(result.result?.message_id || "")
+      const messageId = String(result.result?.message_id || "")
+      this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
+      return messageId
     } catch (e: any) {
       // Retry without formatting if MarkdownV2 fails
       if (params.parse_mode) {
         delete params.parse_mode
         params.text = text
         const result = await this.apiCall(token, "sendMessage", params)
-        return String(result.result?.message_id || "")
+        const messageId = String(result.result?.message_id || "")
+        this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
+        return messageId
       }
       throw e
+    }
+  }
+
+  /** Best-effort outbound shadow log. Captures every successful send into
+   *  the same per-chat shadow file the inbound writer uses, so seedHistory
+   *  + agent introspection see a complete picture (which bot identity sent
+   *  what, at which time). Failures are swallowed — the message already
+   *  went out on the wire; logging is observability, not correctness. */
+  private recordOutboundShadow(
+    chatId: string,
+    messageId: string,
+    content: string,
+    agentId?: string,
+    accountId?: string,
+  ): void {
+    if (!messageId) return // Telegram returned no id (formatted retry path leaves us nothing to dedup on)
+    try {
+      this.appendShadowLog(chatId, {
+        externalId: messageId,
+        role: "agent",
+        // Prefer agentId for the rendered "Agent: ..." line; fall back to
+        // accountId so even un-attributed sends (e.g., manual /send tests)
+        // surface a name in seeded history.
+        name: agentId || accountId || "agent",
+        content,
+        timestamp: new Date().toISOString(),
+        accountId,
+      })
+    } catch (e: any) {
+      this.log(`outbound shadow-log write failed: ${e.message}`)
     }
   }
 
@@ -699,7 +770,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
     while (this.polling && this.accountPolling.get(accountId) !== false) {
       try {
-        const offset = this.offsetStore.get(accountId) || 0
+        const stored = this.cursors.read("telegram", accountId)
+        const offset = typeof stored === "number" ? stored : 0
         const data = await this.apiCall(config.token, "getUpdates", {
           offset: offset || undefined,
           timeout: 30,
@@ -709,7 +781,14 @@ export class TelegramAdapter implements ChannelAdapter {
         const updates: TelegramUpdate[] = data.result || []
 
         for (const update of updates) {
-          this.offsetStore.set(accountId, update.update_id + 1)
+          // Synchronous commit BEFORE we hand the message to the router. The
+          // next getUpdates with this offset is what acks the upstream — if
+          // we crash between this line and the next poll, restart resumes
+          // from the same offset and Telegram redelivers the unprocessed
+          // updates. (Pre-2026-04-27 the old TelegramOffsetStore debounced
+          // 500ms, which left a window where Telegram had already deleted
+          // the message but the disk still pointed at the old offset.)
+          this.cursors.commit("telegram", accountId, update.update_id + 1)
 
           if (update.message && this.handler) {
             const msg = update.message
@@ -835,6 +914,25 @@ export class TelegramAdapter implements ChannelAdapter {
             // Track chat→account mapping for DM replies
             this.chatAccountMap.set(String(msg.chat.id), accountId)
 
+            // Shadow log every allowed inbound message — used by seedHistory
+            // on cold session create. Keyed by chat id (DM uses sender.id ==
+            // chat.id; group uses chat.id), matching how the router computes
+            // the SessionStore key (msg.group?.id || msg.sender.id). Off the
+            // hot path: best-effort, never blocks dispatch. accountId records
+            // WHICH of our bots received the message — the audit trail
+            // counterpart to the outbound write.
+            try {
+              this.appendShadowLog(String(msg.chat.id), {
+                externalId: String(msg.message_id),
+                role: "user",
+                name: incoming.sender.name,
+                content: text,
+                timestamp: incoming.timestamp.toISOString(),
+                accountId,
+              })
+            } catch (e: any) {
+              this.log(`shadow-log write failed: ${e.message}`)
+            }
 
             this.handler(incoming).catch((e) => {
               this.log(`Error handling message: ${e.message}`)
@@ -950,6 +1048,109 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     this.log(`Seeded: ${this.groupStore.getGroupBots(groupId).length} bot(s) in "${groupTitle || groupId}"`)
+  }
+
+  /** Append one entry to the shadow log for `chatId`. The shadow log is a
+   *  daily file at `.agentx/sessions/_telegram_raw:{chatId}:{day}.json` that
+   *  captures every allowed inbound (and adapter-side outbound) message
+   *  regardless of how the router resolved it — including periods when no
+   *  agent was bound or the daemon was offline (the next inbound triggers
+   *  a write). seedHistory reads it back on cold session create so a fresh
+   *  session mirrors the live chat instead of starting blank. */
+  private appendShadowLog(
+    chatId: string,
+    entry: {
+      externalId: string
+      role: "user" | "agent"
+      name: string
+      content: string
+      timestamp: string
+      /** Telegram bot account id used to send/receive (e.g., "noqta_cx_bot").
+       *  Recorded on outbound only — provides the audit trail for "which bot
+       *  actually sent this message" so debugging cross-account confusion
+       *  (the Nadia/CX bug) doesn't require API forensics. */
+      accountId?: string
+    },
+  ): void {
+    const day = entry.timestamp.slice(0, 10) // YYYY-MM-DD
+    const file = this.shadowLogPath(chatId, day)
+    let existing: { messages: typeof entry[] } = { messages: [] }
+    if (existsSync(file)) {
+      try {
+        existing = JSON.parse(readFileSync(file, "utf-8")) as { messages: typeof entry[] }
+        if (!Array.isArray(existing.messages)) existing.messages = []
+      } catch {
+        existing = { messages: [] }
+      }
+    }
+    // Dedup: skip if this externalId is already recorded for the day. Note
+    // that inbound and outbound externalIds CAN collide (Telegram numbers
+    // them per-chat, not per-direction), so we additionally key on role to
+    // avoid the rare case where an inbound `message_id=42` and an outbound
+    // `message_id=42` race on the same day.
+    if (existing.messages.some((m) => m.externalId === entry.externalId && m.role === entry.role)) return
+    existing.messages.push(entry)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify(existing, null, 2))
+  }
+
+  private shadowLogPath(chatId: string, day: string): string {
+    const safeChatId = chatId.replace(/[^a-zA-Z0-9_-]/g, "_")
+    return resolve(process.cwd(), ".agentx/sessions", `_telegram_raw:${safeChatId}:${day}.json`)
+  }
+
+  /** ChannelAdapter.seedHistory: returns the most recent shadow-logged
+   *  messages for `chatId`, walking back day-by-day until we hit
+   *  `maxMessages` or `maxChars`. Telegram's Bot API has no "fetch chat
+   *  history" endpoint, so the shadow log is our only source — meaning the
+   *  first deployment sees an empty seed for any pre-existing chat, and
+   *  context grows as the bot observes new traffic. */
+  async seedHistory(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<SeededMessage[]> {
+    const out: SeededMessage[] = []
+    let chars = 0
+    const today = new Date()
+    // Look back up to 14 days — enough to bridge weekend gaps without
+    // unbounded scanning. The maxMessages/maxChars caps stop us long before
+    // hitting day 14 in any normal chat.
+    const minDate = opts.sinceISO ? new Date(opts.sinceISO) : new Date(today.getTime() - 14 * 86400000)
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(today.getTime() - i * 86400000)
+      if (d.getTime() < minDate.getTime() - 86400000) break
+      const day = d.toISOString().slice(0, 10)
+      const file = this.shadowLogPath(chatId, day)
+      if (!existsSync(file)) continue
+      try {
+        const data = JSON.parse(readFileSync(file, "utf-8")) as {
+          messages?: Array<{ externalId: string; role: "user" | "agent"; name: string; content: string; timestamp: string; accountId?: string }>
+        }
+        const msgs = (data.messages ?? []).slice() // newest within the file
+        // Files are append-only in chronological order, so reverse to walk
+        // newest-first per day (matches our outer newest-first loop).
+        for (let j = msgs.length - 1; j >= 0; j--) {
+          const m = msgs[j]
+          if (opts.sinceISO && m.timestamp < opts.sinceISO) continue
+          out.push({
+            role: m.role,
+            name: m.name,
+            content: m.content,
+            timestamp: m.timestamp,
+            externalId: m.externalId,
+            accountId: m.accountId,
+          })
+          chars += m.content.length
+          if (out.length >= opts.maxMessages) break
+          if (chars >= opts.maxChars) break
+        }
+      } catch {
+        // Skip corrupt shadow files silently — they self-heal on next write.
+      }
+      if (out.length >= opts.maxMessages || chars >= opts.maxChars) break
+    }
+    // Caller wants oldest-first for buildHistoryContext rendering.
+    return out.reverse()
   }
 
   private async apiCall(

@@ -204,7 +204,10 @@ const SETUP_PAGE_CSS = `
 }
 .ax-next-steps { margin-top: 12px; padding-left: 20px; color: var(--ax-text-2); }
 .ax-next-steps li { margin: 4px 0; }
-.ax-next-steps code { background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px; color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-sm); }`
+.ax-next-steps code { background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px; color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-sm); }
+.ax-startd { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ax-startd__status { color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
+.ax-startd__status a { color: var(--ax-accent); }`
 
 const SETUP_SCRIPT = `<script>
 document.getElementById('enableTelegram').addEventListener('change', (e) => {
@@ -251,9 +254,30 @@ document.getElementById('wizard').addEventListener('submit', async (e) => {
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     const steps = data.nextSteps.map((s) => '<li>' + s.replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>') + '</li>').join('');
     msg.className = 'ax-msg is-ok';
-    msg.innerHTML = '<b>' + data.summary + '</b><ol class="ax-next-steps">' + steps + '</ol>';
+    msg.innerHTML = '<b>' + data.summary + '</b><ol class="ax-next-steps">' + steps + '</ol>'
+      + '<div class="ax-startd"><button type="button" id="startDaemonBtn" class="ax-btn ax-btn--primary">Start daemon now</button>'
+      + ' <span id="startDaemonStatus" class="ax-startd__status"></span></div>';
     btn.textContent = 'Done';
     btn.disabled = true;
+    document.getElementById('startDaemonBtn').addEventListener('click', async () => {
+      const sb = document.getElementById('startDaemonBtn');
+      const ss = document.getElementById('startDaemonStatus');
+      sb.disabled = true; sb.textContent = 'Starting…'; ss.textContent = '';
+      try {
+        const r = await fetch('/api/setup/start-daemon', { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          sb.textContent = d.alreadyRunning ? 'Already running' : 'Daemon up';
+          ss.innerHTML = 'Open <a href="' + d.url + '" target="_blank" rel="noopener">' + d.url + '</a>';
+        } else {
+          sb.disabled = false; sb.textContent = 'Try again';
+          ss.textContent = d.error + (d.manualUrl ? '  Manual: ' + d.manualUrl : '');
+        }
+      } catch (e) {
+        sb.disabled = false; sb.textContent = 'Try again';
+        ss.textContent = e.message;
+      }
+    });
   } catch (err) {
     msg.className = 'ax-msg is-err'; msg.textContent = err.message;
     btn.disabled = false; btn.textContent = 'Save and continue';

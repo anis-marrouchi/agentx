@@ -20,7 +20,7 @@ import {
   type Classification,
   type FingerprintEntry,
 } from "./types"
-import { STARTER_SCHEMA } from "./starter-schema"
+import { STARTER_SCHEMA, STARTER_VERB_NODES } from "./starter-schema"
 
 // --- Intent Knowledge Graph filesystem store ---
 //
@@ -51,7 +51,13 @@ export class GraphStore {
 
   // --- Schema ---
 
-  /** Load the graph schema, seeding STARTER_SCHEMA if the file is missing. */
+  /** Load the graph schema, seeding STARTER_SCHEMA if the file is missing.
+   *  Phase 1 of the classifier-retire plan ships a v2 verb-level schema;
+   *  installs with the v1 hierarchical schema (scope > org > unit >
+   *  activity) get auto-migrated on next load: the v1 file is renamed
+   *  to schema.v1.bak.json, the v2 starter is written, and the
+   *  per-event nodes.json + classifications.jsonl are left alone for
+   *  historical reading. New events classify under v2 from then on. */
   loadSchema(): GraphSchema {
     const p = this.schemaPath()
     if (!existsSync(p)) {
@@ -63,6 +69,36 @@ export class GraphStore {
     const parsed = graphSchemaSchema.safeParse(JSON.parse(raw))
     if (!parsed.success) {
       throw new Error(`Invalid ${p}: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
+    }
+    if ((parsed.data.version ?? 1) < (STARTER_SCHEMA.version ?? 2)) {
+      const backup = p.replace(/\.json$/, `.v${parsed.data.version ?? 1}.bak.json`)
+      try {
+        writeFileSync(backup, raw)
+        this.log(`migrated graph schema v${parsed.data.version ?? 1} -> v${STARTER_SCHEMA.version}; old saved at ${backup}`)
+      } catch (e: any) {
+        this.log(`could not back up old schema: ${e?.message ?? e}`)
+      }
+      this.saveSchema(STARTER_SCHEMA)
+      // Same treatment for nodes.json — the v1 nodes were parented under
+      // levels that don't exist in v2 and would fail validation. Archive
+      // them and re-seed.
+      const np = this.nodesPath()
+      if (existsSync(np)) {
+        const nbackup = np.replace(/\.json$/, `.v1.bak.json`)
+        try {
+          writeFileSync(nbackup, readFileSync(np, "utf-8"))
+          this.log(`archived v1 nodes.json -> ${nbackup}`)
+        } catch (e: any) {
+          this.log(`could not back up old nodes: ${e?.message ?? e}`)
+        }
+        try {
+          const seeded = seedNodesFile()
+          this.saveNodes(seeded)
+        } catch (e: any) {
+          this.log(`could not seed v2 nodes: ${e?.message ?? e}`)
+        }
+      }
+      return STARTER_SCHEMA
     }
     return parsed.data
   }
@@ -79,7 +115,14 @@ export class GraphStore {
 
   loadNodes(): NodesFile {
     const p = this.nodesPath()
-    if (!existsSync(p)) return { version: 1, nodes: [] }
+    if (!existsSync(p)) {
+      // Seed the verb-level taxonomy on first load. Lets the classifier
+      // pick from a stable set of common verbs out of the box, instead of
+      // inventing slightly-different variants for every event.
+      const seeded = seedNodesFile()
+      this.saveNodes(seeded)
+      return seeded
+    }
     const raw = readFileSync(p, "utf-8")
     const parsed = nodesFileSchema.safeParse(JSON.parse(raw))
     if (!parsed.success) {
@@ -497,4 +540,38 @@ function safeWriteJson(path: string, data: unknown): void {
   const tmp = `${path}.tmp-${process.pid}`
   writeFileSync(tmp, JSON.stringify(data, null, 2))
   renameSync(tmp, path)
+}
+
+/** Build the seed nodes.json — one category node per enum value, plus
+ *  one verb node per STARTER_VERB_NODES entry parented under its
+ *  category. Idempotent shape: same input always produces the same
+ *  file, so re-seeding is safe. */
+function seedNodesFile(): NodesFile {
+  const now = new Date().toISOString()
+  const nodes: NodesFile["nodes"] = []
+  const seenCats = new Set<string>()
+  for (const v of STARTER_VERB_NODES) {
+    if (!seenCats.has(v.category)) {
+      nodes.push({
+        id: v.category,
+        level: "category",
+        parentId: null,
+        axes: { kind: v.category },
+        createdAt: now,
+        createdBy: "starter",
+      })
+      seenCats.add(v.category)
+    }
+  }
+  for (const v of STARTER_VERB_NODES) {
+    nodes.push({
+      id: v.verb,
+      level: "verb",
+      parentId: v.category,
+      axes: { name: v.verb, ...(v.description ? { description: v.description } : {}) },
+      createdAt: now,
+      createdBy: "starter",
+    })
+  }
+  return { version: 1, nodes }
 }

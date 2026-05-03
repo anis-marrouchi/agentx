@@ -1,0 +1,22 @@
+namespace: example.ssh
+cards:
+  - id: prod
+    kind: ssh
+    summary: Example production host — replace with your own
+    fields:
+      user: root
+      host: 198.51.100.10
+      key: ~/.ssh/id_example
+    tags: [example, deploy]
+    ownerAgent: devops-agent
+    lastVerified: "1970-01-01"
+
+  - id: jump
+    kind: ssh
+    summary: Example bastion/jump host
+    fields:
+      user: jump
+      host: jump.example.com
+    tags: [example, jump]
+    ownerAgent: devops-agent
+    lastVerified: "1970-01-01"

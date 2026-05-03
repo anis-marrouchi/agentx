@@ -52,6 +52,19 @@ export interface IncomingMessage {
    *  can re-enter the engine with `kind: agentResult` transitions. Opaque
    *  everywhere outside src/workflows/. */
   workflowRunId?: string
+  /** Phase 1 / 6 — when set, identifies the intent-ledger decision row
+   *  this message corresponds to. The agent registry calls
+   *  `ledger.recordResolution(...)` when the dispatched task completes,
+   *  so Inv-ActiveTaskSafety's "decision in flight" check can clear.
+   *  Set by the channel adapter (gitlab, router) right after
+   *  recordGitLabTargetDispatch / recordRouterDispatch returns the
+   *  decision row. Undefined when the dispatch was deduped/halted by
+   *  the ledger (no resolution to write) or when the source is in
+   *  mode=off. */
+  intentRef?: {
+    eventId: string
+    decidedBy: string
+  }
 }
 
 export interface OutgoingMessage {
@@ -61,6 +74,18 @@ export interface OutgoingMessage {
   replyTo?: string
   parseMode?: "markdown" | "html" | "plain"
   agentId?: string  // used by GitLab to select per-agent token
+  poll?: {
+    name: string
+    values: string[]
+    selectableCount?: number
+  }
+  media?: {
+    type: "image" | "document" | "audio" | "video"
+    url: string
+    caption?: string
+    mimetype?: string
+    fileName?: string
+  }
 }
 
 export interface ChannelAdapter {
@@ -89,4 +114,28 @@ export interface ChannelAdapter {
 
   /** Get verified context for a chat (optional — channels implement what they can) */
   getChannelMeta?(chatId: string): Promise<ChannelMeta | undefined>
+
+  /** Fetch the most recent messages from the live channel for cold-start
+   *  session seeding. Called once per (agent, channel, chatId, day) when a
+   *  fresh session is created — never on warm cache hits. Bounded by
+   *  maxMessages and maxChars (enforced by the caller). Channels return their
+   *  own externalId so SessionStore can dedup against re-seeds. */
+  seedHistory?(
+    chatId: string,
+    opts: { sinceISO?: string; maxMessages: number; maxChars: number },
+  ): Promise<Array<SeededMessage>>
+}
+
+/** A message returned by seedHistory — flat, channel-agnostic. */
+export interface SeededMessage {
+  role: "user" | "agent"
+  name: string
+  content: string
+  timestamp: string
+  externalId?: string
+  /** Optional channel-side account/bot identity that handled this message
+   *  (e.g., Telegram accountId "noqta_cx_bot"). Captured by adapters that
+   *  shadow-log outbound, so seeded history preserves the audit trail of
+   *  which bot identity actually sent each line. Renderers may ignore it. */
+  accountId?: string
 }

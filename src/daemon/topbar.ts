@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -195,7 +195,52 @@ export const TOPBAR_SCRIPT = `<script>
       });
     } catch (e) {}
   }
-  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); }
+  /**
+   * Make the topbar peer selector actually drive page content. When the
+   * operator picks a non-primary peer, every /api/admin/* request gets an
+   * X-Agentx-Peer header (and every EventSource on that path gets a ?peer=
+   * query, since EventSource can't set headers). The dashboard's existing
+   * proxy handler picks it up and forwards to the chosen peer.
+   *
+   * Without this hook, the activity-graph (and other admin pages) silently
+   * keep showing only the local node's data even after the operator picks
+   * a different peer in the topbar.
+   */
+  function wirePeerProxy(){
+    if (window.__axPeerWired) return; window.__axPeerWired = true;
+    var origFetch = window.fetch.bind(window);
+    window.fetch = function(input, init){
+      try {
+        var peer = currentPeer();
+        if (peer && peer !== 'primary') {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+          if (url.indexOf('/api/admin/') === 0 || url.indexOf('/api/admin/') > 0) {
+            init = init || {};
+            init.headers = new Headers(init.headers || {});
+            init.headers.set('X-Agentx-Peer', peer);
+          }
+        }
+      } catch (e) {}
+      return origFetch(input, init);
+    };
+    var OrigES = window.EventSource;
+    if (OrigES) {
+      window.EventSource = function(url, cfg){
+        try {
+          var peer = currentPeer();
+          if (peer && peer !== 'primary' && typeof url === 'string' && url.indexOf('/api/admin/') >= 0) {
+            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'peer=' + encodeURIComponent(peer);
+          }
+        } catch (e) {}
+        return new OrigES(url, cfg);
+      };
+      window.EventSource.prototype = OrigES.prototype;
+      window.EventSource.CONNECTING = OrigES.CONNECTING;
+      window.EventSource.OPEN = OrigES.OPEN;
+      window.EventSource.CLOSED = OrigES.CLOSED;
+    }
+  }
+  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); wirePeerProxy(); }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', wire);
   } else { wire(); }
@@ -248,21 +293,25 @@ export function renderTopbar(opts: TopbarOpts): string {
   // /admin/graph for debugging the classifier, but we don't promote it in the
   // main nav until it earns its keep (wiki absorb writing graphPath, or
   // graph-based routing).
-  // Usage + Wiki run on their own ports. Emit a __HOST__ sentinel the
-  // client-side TOPBAR_SCRIPT rewrites to location.hostname, so the link
-  // works on localhost and Tailscale/LAN hostnames alike. Override with
-  // AGENTX_USAGE_URL / AGENTX_WIKI_URL when those surfaces live on a
-  // different host.
-  const usageUrl = process.env.AGENTX_USAGE_URL || `http://__HOST__:4201`
-  const wikiUrl = process.env.AGENTX_WIKI_URL || `http://__HOST__:4200`
-
+  //
+  // Health = SRE/platform-health (routing rules, rotations, errors-with-stack).
+  //   Renamed from "Observability" — that name suggested business-flow but
+  //   the page only ever covered platform health.
+  // Cost = top-level page (was a tab inside Observability + a standalone
+  //   `agentx usage serve` on port 4201). Both folded here.
+  // Wiki = embedded view over the running wiki server (`agentx wiki serve`,
+  //   default port 4200). One-stop nav; the wiki server is still where the
+  //   actual rendering happens.
   const tabs = [
     { id: "live", label: "Live", href: "/live", external: false },
     { id: "boards", label: "Boards", href: "/", external: false },
     { id: "workflows", label: "Workflows", href: "/workflows", external: false },
+    { id: "graph", label: "Activity Graph", href: "/admin/activity-graph", external: false },
+    { id: "graph", label: "Ledger", href: "/admin/ledger", external: false },
+    { id: "health", label: "Health", href: "/admin/health", external: false },
+    { id: "cost", label: "Cost", href: "/admin/cost", external: false },
+    { id: "wiki", label: "Wiki", href: "/admin/wiki", external: false },
     { id: "admin", label: "Settings", href: "/admin", external: false },
-    { id: "wiki", label: "Wiki", href: wikiUrl, external: true },
-    { id: "usage", label: "Usage", href: usageUrl, external: true },
     { id: "glossary", label: "Glossary", href: "/glossary", external: false },
   ].map((t) => {
     const cls = t.id === opts.activeTab ? "ax-topbar__tab is-active" : "ax-topbar__tab"

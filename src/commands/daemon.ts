@@ -2,6 +2,7 @@ import { Command } from "commander"
 import { AgentXDaemon } from "@/daemon"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
+import { existsSync, readFileSync } from "fs"
 
 // --- agentx daemon: start/stop/status/logs ---
 
@@ -19,22 +20,60 @@ daemon
   .action(async (opts) => {
     if (opts.detach) {
       const { spawn } = await import("child_process")
-      const args = ["dist/cli.js", "daemon", "start"]
+      const { openSync, writeFileSync, existsSync } = await import("fs")
+
+      // Use the actual node binary + entrypoint that's running this command.
+      // The previous version hardcoded `node dist/cli.js`, which broke for
+      // npm-installed users (no dist/cli.js relative to their CWD): the spawn
+      // succeeded with a PID, the child crashed immediately on missing module,
+      // and stdio:"ignore" hid the failure — leaving the operator with a
+      // "Daemon started" success line and a daemon that was never alive.
+      const cli = process.argv[1]
+      if (!cli || !existsSync(cli)) {
+        console.error(chalk.red(`  Cannot resolve agentx CLI entrypoint (process.argv[1]=${cli || "?"}).`))
+        console.error(chalk.dim(`  Try running without --detach to see the underlying error.`))
+        process.exit(1)
+      }
+      const args = [cli, "daemon", "start"]
       if (opts.config) args.push("-c", opts.config)
       if (opts.port) args.push("--port", opts.port)
 
-      const child = spawn("node", args, {
+      // Open the log file and pipe child stdout+stderr into it. Without this
+      // (the previous code did stdio:"ignore"), every detach-mode crash was
+      // invisible — the user was told to `tail -f /tmp/agentx-daemon.log`,
+      // but nothing ever wrote to that path, so the file didn't exist.
+      const logPath = "/tmp/agentx-daemon.log"
+      let logFd: number
+      try {
+        logFd = openSync(logPath, "a")
+      } catch (e: any) {
+        console.error(chalk.red(`  Failed to open ${logPath} for writing: ${e.message}`))
+        process.exit(1)
+      }
+
+      const child = spawn(process.execPath, args, {
         detached: true,
-        stdio: ["ignore", "ignore", "ignore"],
+        stdio: ["ignore", logFd, logFd],
         cwd: process.cwd(),
       })
       child.unref()
 
-      const { writeFileSync } = await import("fs")
       writeFileSync("/tmp/agentx-daemon.pid", String(child.pid))
       console.log(chalk.green(`Daemon started in background (PID: ${child.pid})`))
-      console.log(chalk.dim(`  Logs: tail -f /tmp/agentx-daemon.log`))
+      console.log(chalk.dim(`  Logs: tail -f ${logPath}`))
       console.log(chalk.dim(`  Stop: agentx daemon stop`))
+      // Brief sanity probe — if the child died in the first 1s (e.g. claude
+      // CLI missing, port already bound, config invalid), tell the operator
+      // to look at the log file rather than letting them discover it after
+      // `agentx daemon watch` fails 30 seconds later.
+      await new Promise((ok) => setTimeout(ok, 1000))
+      try {
+        process.kill(child.pid!, 0)
+      } catch {
+        console.log()
+        console.log(chalk.yellow(`  Daemon exited within 1s — check ${logPath} for the error:`))
+        console.log(chalk.dim(`    tail -n 40 ${logPath}`))
+      }
       return
     }
 
@@ -76,7 +115,6 @@ daemon
  *  process.env take precedence so a systemd override always wins. */
 function loadDotenv(path: string): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { existsSync, readFileSync } = require("fs") as typeof import("fs")
   if (!existsSync(path)) return
   const text = readFileSync(path, "utf-8")
   for (const raw of text.split("\n")) {
@@ -292,7 +330,12 @@ daemon
       }
     } catch (e: any) {
       console.log(chalk.red(`  Connection failed: ${e.message}`))
-      console.log(chalk.dim("  Is the daemon running? Try: agentx daemon status"))
+      console.log(chalk.dim("  Is the daemon running? Diagnostic order:"))
+      console.log(chalk.dim("    1) agentx daemon status     # is the daemon up?"))
+      console.log(chalk.dim("    2) tail -n 60 /tmp/agentx-daemon.log     # detach-mode crash log"))
+      console.log(chalk.dim("    3) journalctl -u agentx -n 60     # systemd-managed installs"))
+      console.log(chalk.dim("  If the log file is missing, the daemon never started — re-run without --detach"))
+      console.log(chalk.dim("  to see the error in the foreground."))
     }
   })
 

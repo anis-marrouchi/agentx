@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs"
 import { resolve } from "path"
+import type { ChannelAdapter, SeededMessage } from "@/channels/types"
+import { debug } from "@/observability/debug"
 
 // --- Conversation session store ---
 // One session per agent + channel + chatId + day.
@@ -11,6 +13,15 @@ export interface SessionMessage {
   name?: string        // sender name or agent name
   content: string
   timestamp: string
+  /** True when this message was injected by SessionStore.seedFromAdapter()
+   *  reading the live channel on cold session create — never via the inbound
+   *  router pipeline. Marked so observers can distinguish seeded turns from
+   *  live ones; the model sees them identically in buildHistoryContext. */
+  seeded?: boolean
+  /** Channel-side message id (Telegram update_id, GitLab note id, WhatsApp
+   *  key.id). Used to dedup re-seeds — if a message with this externalId is
+   *  already in the session, appendSeededMessages skips it. */
+  externalId?: string
 }
 
 export interface Session {
@@ -83,6 +94,40 @@ export function referencesOtherChat(message: string): boolean {
   return CROSS_CHAT_HINT_PATTERNS.some((re) => re.test(message))
 }
 
+/** Long-memory cues — phrases that imply the user is referencing something
+ *  beyond the current claude session window. Used by the registry to
+ *  pre-fetch a wider /recall window before the agent runs, so it doesn't
+ *  have to ask "when?" or guess. Returns the inferred lookback in days, or
+ *  0 when no long-memory cue is present (default short-memory regime). */
+const LONG_MEMORY_PATTERNS: Array<{ re: RegExp; days: number }> = [
+  // Days-scale (~1 day)
+  { re: /\byesterday\b/i, days: 2 },
+  { re: /\bأمس\b/, days: 2 },
+  // Days-scale (~3 days)
+  { re: /\bcouple (?:of )?days\b/i, days: 4 },
+  { re: /\bfew days\b/i, days: 4 },
+  // Week-scale (~7 days)
+  { re: /\blast week\b/i, days: 8 },
+  { re: /\bالأسبوع الماضي\b/, days: 8 },
+  { re: /\bweek ago\b/i, days: 8 },
+  // Generic "remember/previously/we discussed" — moderate look-back
+  { re: /\bremember\b/i, days: 3 },
+  { re: /\bpreviously\b/i, days: 3 },
+  { re: /\bwe (?:discussed|talked|agreed|decided)\b/i, days: 3 },
+  { re: /\bas (?:i|we) (?:said|told|mentioned)\b/i, days: 3 },
+  { re: /\bcontinue from\b/i, days: 3 },
+  { re: /\bتذكر\b/, days: 3 },
+]
+
+export function detectLongMemoryHint(message: string): { lookbackDays: number } | null {
+  if (!message) return null
+  let max = 0
+  for (const p of LONG_MEMORY_PATTERNS) {
+    if (p.re.test(message)) max = Math.max(max, p.days)
+  }
+  return max > 0 ? { lookbackDays: max } : null
+}
+
 /** True when appending `(role, name, content)` would duplicate the last
  *  message in `messages`. Used to collapse retries and double-sends at
  *  insert time, so dedup is stable across reload (duplicates never reach
@@ -117,6 +162,16 @@ export class SessionStore {
   private staleMinutes: number
   private maxTurnsPerSession: number
   private tierTwoThresholdTokens: number
+  /** Resolves a channel name to its adapter — installed by the daemon after
+   *  channels are registered (see daemon/index.ts after router.register). The
+   *  cold-create branch consults it to call adapter.seedHistory(). Optional;
+   *  when unset, seeding is a no-op (back-compat for tests, CLI tools, and
+   *  any caller that constructs SessionStore standalone). */
+  private adapterResolver?: (channel: string) => ChannelAdapter | undefined
+  /** In-flight seed promises keyed by sessionKey. Coalesces concurrent
+   *  cold-creates against the same (agent, channel, chatId, day) so we hit
+   *  the channel API exactly once per fresh session. */
+  private seedingPromises: Map<string, Promise<void>> = new Map()
 
   constructor(
     baseDir: string = process.cwd(),
@@ -133,6 +188,82 @@ export class SessionStore {
     this.staleMinutes = Math.max(1, opts.staleMinutes ?? DEFAULT_STALE_SESSION_MINUTES)
     this.maxTurnsPerSession = Math.max(2, opts.maxTurnsPerSession ?? DEFAULT_MAX_TURNS_PER_SESSION)
     this.tierTwoThresholdTokens = Math.max(50_000, opts.tierTwoThresholdTokens ?? DEFAULT_TIER_TWO_THRESHOLD_TOKENS)
+  }
+
+  /** Install the channel-adapter resolver. Called once at daemon startup
+   *  after MessageRouter has registered every adapter. Hot-reload of channel
+   *  adapters re-uses the same router, so the resolver stays valid across
+   *  /reload cycles without re-installation. */
+  setAdapterResolver(fn: (channel: string) => ChannelAdapter | undefined): void {
+    this.adapterResolver = fn
+  }
+
+  /** Seed a fresh session from the live channel before any user/agent
+   *  messages get appended. No-op when:
+   *    - the session already has messages (warm cache or partially loaded)
+   *    - no adapter resolver is installed
+   *    - the channel adapter has no seedHistory method
+   *  Concurrent calls against the same key share one in-flight promise so
+   *  the channel API is hit exactly once per cold create. Errors are
+   *  swallowed — a seeding failure should never block a turn. */
+  async seedIfEmpty(agentId: string, channel: string, chatId: string): Promise<void> {
+    if (!this.adapterResolver) return
+    const key = this.sessionKey(agentId, channel, chatId)
+    const inFlight = this.seedingPromises.get(key)
+    if (inFlight) return inFlight
+
+    const session = this.getSession(agentId, channel, chatId)
+    if (session.messages.length > 0) return
+
+    const adapter = this.adapterResolver(channel)
+    if (!adapter?.seedHistory) return
+
+    const promise = (async () => {
+      try {
+        const seeds = await adapter.seedHistory!(chatId, {
+          maxMessages: MAX_MESSAGES,
+          maxChars: MAX_HISTORY_CHARS,
+        })
+        if (seeds.length > 0) this.appendSeededMessages(session, seeds)
+      } catch {
+        // best-effort
+      }
+    })()
+    this.seedingPromises.set(key, promise)
+    try {
+      await promise
+    } finally {
+      this.seedingPromises.delete(key)
+    }
+  }
+
+  /** Append seeded messages to a session in chronological order, deduping
+   *  by externalId against anything already present. Marks each entry with
+   *  `seeded: true` so observers can distinguish them; the model's prompt
+   *  (buildHistoryContext) renders them identically to live turns. */
+  private appendSeededMessages(session: Session, seeds: SeededMessage[]): void {
+    if (seeds.length === 0) return
+    const existingIds = new Set<string>()
+    for (const m of session.messages) {
+      if (m.externalId) existingIds.add(m.externalId)
+    }
+    let appended = 0
+    for (const s of seeds) {
+      if (s.externalId && existingIds.has(s.externalId)) continue
+      session.messages.push({
+        role: s.role,
+        name: s.name,
+        content: s.content,
+        timestamp: s.timestamp,
+        seeded: true,
+        externalId: s.externalId,
+      })
+      appended++
+    }
+    if (appended === 0) return
+    this.trim(session)
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
   }
 
   /**
@@ -283,6 +414,244 @@ export class SessionStore {
     lines.push("")
 
     return lines.join("\n")
+  }
+
+  /**
+   * Recall conversation turns across multiple stored sessions for an agent.
+   *
+   * Used by the `/recall` HTTP endpoint and the [Conversation Recall] skill —
+   * when an agent receives a message that references prior context (anaphora,
+   * "as discussed", "correct me if I'm wrong"), it can call this to fetch
+   * the actual prior turns rather than guessing or running cold-start tool
+   * calls. Read-only; no side effects.
+   *
+   * Pagination: cursor by timestamp, descending (newest first). Pass the
+   * previous response's `oldestTs` as `before` to walk further back.
+   *
+   * Scoping: required `agentId`. `channel`/`chatId` narrow to a specific
+   * thread; omit them to recall across all of this agent's conversations.
+   * The store is per-agent on disk so we never leak another agent's chats.
+   */
+  recallTurns(opts: {
+    agentId: string
+    channel?: string
+    chatId?: string
+    before?: string
+    after?: string
+    /** Convenience override for `after`: number of days back from now. */
+    lookbackDays?: number
+    limit?: number
+    query?: string
+    participants?: string[]
+  }): {
+    turns: Array<{
+      ts: string
+      role: "user" | "agent"
+      senderName: string
+      content: string
+      channel: string
+      chatId: string
+      day: string
+      sessionFile: string
+    }>
+    oldestTs: string | null
+    hasMore: boolean
+    totalScanned: number
+  } {
+    const limit = Math.min(Math.max(opts.limit ?? 10, 1), 100)
+    // Default window: TODAY (UTC). Per the short-vs-long-memory split, most
+    // recall calls are about "what did we just say" — capping the window to
+    // today keeps the result tight and noise-free. Caller widens explicitly
+    // when the user message signals long memory ("yesterday", "last week",
+    // "remember when…") via `lookbackDays` or an explicit `after`.
+    const todayStart = new Date()
+    todayStart.setUTCHours(0, 0, 0, 0)
+    const defaultAfter =
+      typeof opts.lookbackDays === "number" && opts.lookbackDays > 0
+        ? new Date(Date.now() - opts.lookbackDays * 24 * 60 * 60 * 1000).toISOString()
+        : todayStart.toISOString()
+    const after = opts.after ?? defaultAfter
+    const before = opts.before ?? new Date(Date.now() + 1000).toISOString()
+
+    const safeAgentId = opts.agentId.replace(/[^a-zA-Z0-9_:-]/g, "_")
+    let allFiles: string[]
+    try {
+      allFiles = readdirSync(this.sessionsDir).filter(f =>
+        f.startsWith(`${safeAgentId}:`) && f.endsWith(".json"),
+      )
+    } catch {
+      return { turns: [], oldestTs: null, hasMore: false, totalScanned: 0 }
+    }
+
+    // Day-level prefilter via the trailing `:YYYY-MM-DD.json` segment so we
+    // don't open/parse files outside the requested window.
+    const afterDay = after.slice(0, 10)
+    const beforeDay = before.slice(0, 10)
+    const dayRe = /:(\d{4}-\d{2}-\d{2})\.json$/
+    const candidateFiles = allFiles.filter(f => {
+      const m = f.match(dayRe)
+      if (!m) return false
+      const day = m[1]
+      return day >= afterDay && day <= beforeDay
+    })
+
+    type CollectedTurn = {
+      ts: string
+      role: "user" | "agent"
+      senderName: string
+      content: string
+      channel: string
+      chatId: string
+      day: string
+      sessionFile: string
+    }
+    const collected: CollectedTurn[] = []
+    let totalScanned = 0
+    const queryLower = opts.query?.toLowerCase()
+    const participantSet = opts.participants?.length ? new Set(opts.participants) : undefined
+
+    for (const file of candidateFiles) {
+      let data: Session
+      try {
+        data = JSON.parse(readFileSync(resolve(this.sessionsDir, file), "utf-8")) as Session
+      } catch {
+        continue
+      }
+      if (data.agentId !== opts.agentId) continue
+      if (opts.channel && data.channel !== opts.channel) continue
+      if (opts.chatId && data.chatId !== opts.chatId) continue
+
+      for (const msg of data.messages) {
+        totalScanned++
+        if (!msg.timestamp || msg.timestamp < after || msg.timestamp >= before) continue
+        if (participantSet && msg.role === "user" && !participantSet.has(msg.name ?? "")) continue
+        if (queryLower && !msg.content.toLowerCase().includes(queryLower)) continue
+        collected.push({
+          ts: msg.timestamp,
+          role: msg.role,
+          senderName: msg.name ?? "",
+          content: msg.content,
+          channel: data.channel,
+          chatId: data.chatId,
+          day: data.day,
+          sessionFile: file,
+        })
+      }
+    }
+
+    collected.sort((a, b) => b.ts.localeCompare(a.ts))
+
+    const page = collected.slice(0, limit)
+    const oldestTs = page.length > 0 ? page[page.length - 1].ts : null
+    const hasMore = collected.length > limit
+
+    return { turns: page, oldestTs, hasMore, totalScanned }
+  }
+
+  /** Cross-agent view of a chat. Aggregates session messages from EVERY
+   *  agent that has a session for `(channel, chatId)` in the requested
+   *  window, sorts oldest-first, and dedups exact (timestamp, role, name,
+   *  content) collisions (which happen when two agents in the same group
+   *  both record the same inbound).
+   *
+   *  Differs from recallTurns in two ways:
+   *    1. Not scoped to one agentId — answers "what's in this chat across
+   *       all agents", which is the question the cx→devops→marketing thread
+   *       on 2026-04-29 needed and didn't have.
+   *    2. Returns oldest-first so the caller reads it like a transcript;
+   *       recallTurns returns newest-first because it paginates.
+   *
+   *  Bounded by the same MAX_MESSAGES default as buildHistoryContext so
+   *  callers don't accidentally pull a 5000-turn group into one prompt. */
+  recentByChatId(opts: {
+    channel: string
+    chatId: string
+    sinceISO?: string
+    limit?: number
+  }): Array<{
+    ts: string
+    role: "user" | "agent"
+    senderName: string
+    content: string
+    agentId: string
+    sessionFile: string
+  }> {
+    const limit = Math.min(Math.max(opts.limit ?? MAX_MESSAGES, 1), 200)
+    // Default window: last 24h. Wider than recallTurns' "today only" because
+    // the typical use is "what was just said" — covers overnight gaps that
+    // span midnight UTC.
+    const sinceISO = opts.sinceISO ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const sinceDay = sinceISO.slice(0, 10)
+
+    let allFiles: string[]
+    try {
+      allFiles = readdirSync(this.sessionsDir).filter((f) => f.endsWith(".json"))
+    } catch {
+      return []
+    }
+
+    // The session-file naming convention is `{agentId}:{channel}:{chatId}:{day}.json`.
+    // Build a substring key that captures channel+chatId; the agentId prefix
+    // and day suffix vary so we filter those after parse. Note `chatId` may
+    // itself contain colons (GitLab chatIds look like "group/project:issue:123"),
+    // so we can't naively split on ":". Cheap pre-filter: must contain
+    // `:${channel}:${chatId}:` as a substring.
+    const key = `:${opts.channel}:${opts.chatId}:`
+    const candidates = allFiles.filter((f) => {
+      if (!f.includes(key)) return false
+      // Day suffix prefilter — skip files whose day is older than sinceDay.
+      const m = f.match(/:(\d{4}-\d{2}-\d{2})\.json$/)
+      if (!m) return false
+      return m[1] >= sinceDay
+    })
+
+    type Row = {
+      ts: string
+      role: "user" | "agent"
+      senderName: string
+      content: string
+      agentId: string
+      sessionFile: string
+    }
+    const rows: Row[] = []
+    for (const file of candidates) {
+      let data: Session
+      try {
+        data = JSON.parse(readFileSync(resolve(this.sessionsDir, file), "utf-8")) as Session
+      } catch {
+        continue
+      }
+      // Defensive re-check after parse — substring match could collide with
+      // an agent whose id literally contains ":telegram:1816212449:".
+      if (data.channel !== opts.channel || data.chatId !== opts.chatId) continue
+
+      for (const msg of data.messages) {
+        if (!msg.timestamp || msg.timestamp < sinceISO) continue
+        rows.push({
+          ts: msg.timestamp,
+          role: msg.role,
+          senderName: msg.name ?? "",
+          content: msg.content,
+          agentId: data.agentId,
+          sessionFile: file,
+        })
+      }
+    }
+
+    // Dedup exact collisions across agents (same inbound recorded by two
+    // agents in the same group). Key on (ts, role, name, content).
+    const seen = new Set<string>()
+    const dedupped: Row[] = []
+    for (const r of rows) {
+      const k = `${r.ts}|${r.role}|${r.senderName}|${r.content}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      dedupped.push(r)
+    }
+
+    dedupped.sort((a, b) => a.ts.localeCompare(b.ts))
+    // Take the most recent `limit` (last entries when sorted oldest-first).
+    return dedupped.slice(-limit)
   }
 
   /**
@@ -484,6 +853,7 @@ export class SessionStore {
    * Trim session to stay within limits.
    */
   private trim(session: Session): void {
+    const beforeCount = session.messages.length
     // Trim by message count
     if (session.messages.length > MAX_MESSAGES) {
       session.messages = session.messages.slice(-MAX_MESSAGES)
@@ -494,6 +864,18 @@ export class SessionStore {
     while (totalChars > MAX_HISTORY_CHARS && session.messages.length > 2) {
       const removed = session.messages.shift()!
       totalChars -= removed.content.length
+    }
+
+    // Surface silent drops under `--debug context`. Without this, a long
+    // chat that rolls past the 30-message / 12K-char caps quietly loses
+    // older turns and the operator has no signal — exactly the failure
+    // mode that disguises itself as "agent forgot" amnesia.
+    const dropped = beforeCount - session.messages.length
+    if (dropped > 0) {
+      debug.cat(
+        "context",
+        `[${session.agentId}] ${session.channel}:${session.chatId} trim dropped ${dropped} message(s): ${beforeCount} -> ${session.messages.length} (${totalChars}c)`,
+      )
     }
   }
 

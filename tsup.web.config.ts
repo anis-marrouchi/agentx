@@ -12,10 +12,15 @@ import { defineConfig } from "tsup"
 // ends up inline in the bundle.
 
 export default defineConfig({
-  entry: { "workflow-editor": "src/web/workflow-editor/main.tsx" },
+  entry: {
+    "workflow-editor": "src/web/workflow-editor/main.tsx",
+    "activity-graph": "src/web/activity-graph/main.tsx",
+  },
   outDir: "dist/web",
   format: ["iife"],
-  globalName: "AgentXWorkflowEditor",
+  // tsup ignores globalName when entry is a record — each entry gets its own
+  // anonymous IIFE. For our pages that's fine: the bundle finds its mount
+  // point via DOM id and self-bootstraps.
   platform: "browser",
   target: "es2020",
   splitting: false,

@@ -122,6 +122,131 @@ board
     }
   })
 
+// agentx board edit — update a board in place
+board
+  .command("edit <id>")
+  .description("edit board fields without re-creating it")
+  .option("--name <name>", "rename")
+  .option("--projects <paths>", "comma-separated GitLab project paths (replaces the list)")
+  .option("--label <label>", "primary tool label (set to '-' to clear)")
+  .option("--days <n>", "open-window time range in days")
+  .option("--closed-days <n>", "closed-window in days")
+  .action((id: string, opts) => {
+    try {
+      mutateConfig((cfg) => {
+        const list = Array.isArray(cfg.boards) ? cfg.boards : []
+        const b = list.find((x: any) => x.id === id)
+        if (!b) throw new Error(`board "${id}" not found`)
+        const changes: string[] = []
+        if (opts.name) { b.name = opts.name; changes.push(`name="${opts.name}"`) }
+        if (opts.projects) {
+          const projects = String(opts.projects).split(",").map((s) => s.trim()).filter(Boolean)
+          if (projects.length === 0) throw new Error("--projects must include at least one path")
+          b.source = { ...(b.source || { type: "gitlab" }), type: "gitlab", projects }
+          changes.push(`projects=${projects.length}`)
+        }
+        if (opts.label !== undefined) {
+          if (opts.label === "-") { delete b.primaryToolLabel; changes.push("label cleared") }
+          else { b.primaryToolLabel = opts.label; changes.push(`label="${opts.label}"`) }
+        }
+        if (opts.days) { b.timeRangeDays = parseInt(opts.days, 10) || b.timeRangeDays; changes.push(`days=${b.timeRangeDays}`) }
+        if (opts.closedDays) { b.closedWindowDays = parseInt(opts.closedDays, 10) || b.closedWindowDays; changes.push(`closed-days=${b.closedWindowDays}`) }
+        if (changes.length === 0) throw new Error("no changes — pass at least one option")
+        return `board "${id}" updated (${changes.join(", ")})`
+      })
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+// agentx board column ... — manage a board's column flow
+const column = board
+  .command("column")
+  .description("manage a board's columns (add / remove / edit / list)")
+
+column
+  .command("list <boardId>")
+  .description("list columns on a board, in order")
+  .action((boardId: string) => {
+    try {
+      const cfg = JSON.parse(require("fs").readFileSync("agentx.json", "utf-8"))
+      const b = (cfg.boards || []).find((x: any) => x.id === boardId)
+      if (!b) throw new Error(`board "${boardId}" not found`)
+      const cols = b.columns || []
+      if (cols.length === 0) { console.log(chalk.dim(`  no columns (board falls back to GitLab default flow)`)); return }
+      for (const c of cols) {
+        const map = c.kind === "scoped-label" ? `scoped="${c.scopedLabel}"` :
+                    c.kind === "label" ? `label="${c.mapsToLabel || ""}"` :
+                    c.kind === "open-backlog" ? `prefix="${c.scopedPrefix}"` :
+                    c.kind
+        console.log(`  ${chalk.cyan(c.id.padEnd(12))} ${c.title.padEnd(14)} ${chalk.dim(map)}`)
+      }
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+column
+  .command("add <boardId> <columnId>")
+  .description("add a column to a board")
+  .requiredOption("--title <title>", "column title")
+  .option("--kind <kind>", "open-backlog | scoped-label | closed | label", "scoped-label")
+  .option("--scoped <label>", "for kind=scoped-label, the full label (e.g. 'Status::Doing')")
+  .option("--label <label>", "for kind=label, the label name to add/remove")
+  .option("--scoped-prefix <prefix>", "for kind=open-backlog/scoped-label", "Status")
+  .option("--accent <color>", "hex/CSS color for the column accent bar")
+  .action((boardId: string, columnId: string, opts) => {
+    try {
+      mutateConfig((cfg) => {
+        const list = Array.isArray(cfg.boards) ? cfg.boards : []
+        const b = list.find((x: any) => x.id === boardId)
+        if (!b) throw new Error(`board "${boardId}" not found`)
+        b.columns = b.columns || []
+        if (b.columns.find((c: any) => c.id === columnId)) {
+          throw new Error(`column "${columnId}" already exists on board "${boardId}"`)
+        }
+        const col: any = { id: columnId, title: opts.title, kind: opts.kind, scopedPrefix: opts.scopedPrefix }
+        if (opts.kind === "scoped-label") {
+          if (!opts.scoped) throw new Error("--scoped required for kind=scoped-label")
+          col.scopedLabel = opts.scoped
+        }
+        if (opts.kind === "label") {
+          if (!opts.label) throw new Error("--label required for kind=label")
+          col.mapsToLabel = opts.label
+        }
+        if (opts.accent) col.accent = opts.accent
+        b.columns.push(col)
+        return `column "${columnId}" added to board "${boardId}"`
+      })
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+column
+  .command("remove <boardId> <columnId>")
+  .alias("rm")
+  .description("remove a column from a board")
+  .action((boardId: string, columnId: string) => {
+    try {
+      mutateConfig((cfg) => {
+        const list = Array.isArray(cfg.boards) ? cfg.boards : []
+        const b = list.find((x: any) => x.id === boardId)
+        if (!b) throw new Error(`board "${boardId}" not found`)
+        const before = (b.columns || []).length
+        b.columns = (b.columns || []).filter((c: any) => c.id !== columnId)
+        if (b.columns.length === before) throw new Error(`column "${columnId}" not found`)
+        return `column "${columnId}" removed from board "${boardId}"`
+      })
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
 // agentx board remove — drop a board by id
 board
   .command("remove <id>")

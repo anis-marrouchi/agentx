@@ -106,7 +106,7 @@ agent
 
     // Install wiki skill
     const wikiSkillSrc = resolve(process.cwd(), "src/wiki/SKILL.md")
-    const wikiSkillDist = resolve(__dirname, "../wiki/SKILL.md")
+    const wikiSkillDist = resolve(import.meta.dirname, "../wiki/SKILL.md")
     const skillSrc = existsSync(wikiSkillSrc) ? wikiSkillSrc : wikiSkillDist
     if (existsSync(skillSrc)) {
       mkdirSync(resolve(ws, ".claude/skills/wiki"), { recursive: true })
@@ -137,6 +137,80 @@ agent
     delete config.agents[id]
     await saveConfig(config)
     console.log(chalk.green(`  Agent "${id}" removed from config (workspace preserved)`))
+  })
+
+// agentx agent capability — set intents / maxDelegationDepth / contextReferences /
+// contextStrategy without hand-editing agentx.json. These are the Phase 5/8 fields
+// the second-pass parity audit flagged as CLI-only-via-JSON.
+agent
+  .command("capability <id>")
+  .alias("caps")
+  .description("set agent capability flags (intents, maxDelegationDepth, contextReferences, contextStrategy)")
+  .option("--intents <csv>", "comma-separated intent allow-list (set to '-' to clear)")
+  .option("--max-delegation-depth <n>", "max distinct upstream agents on the same subject before refusal (0 disables)")
+  .option("--context-references <bool>", "render the deterministic [Verified References] block (true|false)")
+  .option("--context-strategy <name>", "per-agent override: layered | planner")
+  .option("--max-execution-minutes <n>", "wall-clock cap on a single Claude Code call (1–240)")
+  .option("--show", "just print the current capability fields")
+  .action(async (id: string, opts) => {
+    const config = loadConfig()
+    const a = config.agents?.[id]
+    if (!a) { console.log(chalk.red(`  Agent "${id}" not found`)); process.exit(1) }
+    if (opts.show) {
+      console.log()
+      console.log(chalk.bold(`  ${id}`))
+      console.log(`    intents             ${(a.intents && a.intents.length) ? (a.intents as string[]).join(", ") : chalk.dim("(any)")}`)
+      console.log(`    maxDelegationDepth  ${a.maxDelegationDepth ?? 5}`)
+      console.log(`    contextReferences   ${a.contextReferences ? "on" : chalk.dim("off")}`)
+      console.log(`    contextStrategy     ${a.contextStrategy || chalk.dim("(global default)")}`)
+      console.log(`    maxExecutionMinutes ${a.maxExecutionMinutes ?? 20}`)
+      console.log()
+      return
+    }
+    const changes: string[] = []
+    if (opts.intents !== undefined) {
+      if (opts.intents === "-" || opts.intents === "") {
+        a.intents = []
+        changes.push("intents cleared (permissive)")
+      } else {
+        a.intents = String(opts.intents).split(",").map((s) => s.trim()).filter(Boolean)
+        changes.push(`intents=[${a.intents.join(", ")}]`)
+      }
+    }
+    if (opts.maxDelegationDepth !== undefined) {
+      const n = parseInt(opts.maxDelegationDepth, 10)
+      if (!Number.isFinite(n) || n < 0 || n > 50) { console.log(chalk.red("  --max-delegation-depth must be 0..50")); process.exit(1) }
+      a.maxDelegationDepth = n
+      changes.push(`maxDelegationDepth=${n}`)
+    }
+    if (opts.contextReferences !== undefined) {
+      const v = String(opts.contextReferences).toLowerCase()
+      if (!["true", "false", "on", "off", "1", "0"].includes(v)) { console.log(chalk.red("  --context-references must be true|false")); process.exit(1) }
+      a.contextReferences = v === "true" || v === "on" || v === "1"
+      changes.push(`contextReferences=${a.contextReferences}`)
+    }
+    if (opts.contextStrategy !== undefined) {
+      if (opts.contextStrategy === "-" || opts.contextStrategy === "") {
+        delete (a as any).contextStrategy
+        changes.push("contextStrategy cleared (uses global default)")
+      } else if (!["layered", "planner"].includes(opts.contextStrategy)) {
+        console.log(chalk.red("  --context-strategy must be layered|planner (or '-' to clear)"))
+        process.exit(1)
+      } else {
+        a.contextStrategy = opts.contextStrategy
+        changes.push(`contextStrategy=${opts.contextStrategy}`)
+      }
+    }
+    if (opts.maxExecutionMinutes !== undefined) {
+      const n = parseInt(opts.maxExecutionMinutes, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 240) { console.log(chalk.red("  --max-execution-minutes must be 1..240")); process.exit(1) }
+      a.maxExecutionMinutes = n
+      changes.push(`maxExecutionMinutes=${n}`)
+    }
+    if (changes.length === 0) { console.log(chalk.yellow("  no changes — pass at least one flag, or use --show")); process.exit(1) }
+    await saveConfig(config)
+    console.log(chalk.green(`  ✓ ${id}: ${changes.join(", ")}`))
+    console.log(chalk.dim(`  Restart the daemon (or POST /reload) for the change to take effect.`))
   })
 
 // ==================== agentx channel ====================
@@ -548,6 +622,44 @@ mesh
     console.log(chalk.green(`  Peer "${name}" removed`))
   })
 
+// agentx mesh health — tune the per-peer health-check cadence (heartbeat
+// interval + timeout). Intentionally narrow knob: lower interval if
+// you need fast peer-down detection, raise it on flaky / battery-
+// constrained mobile peers to reduce wake noise.
+mesh
+  .command("health")
+  .description("tune mesh peer health checks (interval + timeout, in seconds)")
+  .option("--interval <s>", "seconds between health probes (default 60)")
+  .option("--timeout <s>", "per-probe timeout in seconds (default 10)")
+  .option("--show", "just print the current values")
+  .action(async (opts) => {
+    const config = loadConfig() as any
+    config.mesh = config.mesh || {}
+    config.mesh.healthCheck = config.mesh.healthCheck || {}
+    if (opts.show) {
+      console.log(`  interval ${config.mesh.healthCheck.interval ?? 60}s`)
+      console.log(`  timeout  ${config.mesh.healthCheck.timeout ?? 10}s`)
+      return
+    }
+    const changes: string[] = []
+    if (opts.interval !== undefined) {
+      const n = parseInt(opts.interval, 10)
+      if (!Number.isFinite(n) || n < 5 || n > 3600) { console.log(chalk.red("  --interval must be 5..3600 seconds")); process.exit(1) }
+      config.mesh.healthCheck.interval = n
+      changes.push(`interval=${n}s`)
+    }
+    if (opts.timeout !== undefined) {
+      const n = parseInt(opts.timeout, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 60) { console.log(chalk.red("  --timeout must be 1..60 seconds")); process.exit(1) }
+      config.mesh.healthCheck.timeout = n
+      changes.push(`timeout=${n}s`)
+    }
+    if (changes.length === 0) { console.log(chalk.yellow("  no changes — pass --interval and/or --timeout, or --show")); process.exit(1) }
+    await saveConfig(config)
+    console.log(chalk.green(`  ✓ mesh.healthCheck: ${changes.join(", ")}`))
+    console.log(chalk.dim("  Restart the daemon for the new cadence to take effect."))
+  })
+
 // ==================== agentx skill ====================
 
 export const skillCmd = new Command()
@@ -729,6 +841,274 @@ skillCmd
     if (opts.dryRun && (newN > 0 || updatedN > 0)) {
       console.log(chalk.dim("  Dry-run — rerun without --dry-run to write."))
     }
+    console.log()
+  })
+
+// --- skill audit ---
+// Lint every skill against the references registry: unresolved IDs, missing
+// delegate skills, raw infrastructure facts that should be cited from
+// references. Exits non-zero on any FAILING — wire it into CI.
+skillCmd
+  .command("audit")
+  .description("lint installed skills against the references registry; exits non-zero on FAILING")
+  .option("--cwd <cwd>", "where to load skills from", process.cwd())
+  .option(
+    "--references-cwd <cwd>",
+    "where to load references and recipes from (defaults to --cwd; useful when references live in the agentx repo and skills live under ~/.claude)",
+  )
+  .option("--json", "emit JSON instead of a human report")
+  .option("--workspace <id>", "audit a single agent workspace by id (skills + references; overrides --cwd)")
+  .option(
+    "--all-workspaces",
+    "audit every agent workspace in agentx.json; references default to the current cwd",
+  )
+  .action(async (opts) => {
+    const { loadLocalSkills } = await import("@/agent/skills/loader")
+    const { auditAll } = await import("@/agent/skills/audit")
+    const { loadReferences } = await import("@/agents/references/loader")
+    const { loadRecipes } = await import("@/agents/references/recipes")
+
+    const skillsRoots: string[] = []
+    if (opts.workspace) {
+      const config = loadConfig()
+      const agent = config.agents?.[opts.workspace]
+      if (!agent) {
+        console.log(chalk.red(`  Agent "${opts.workspace}" not found in agentx.json`))
+        process.exit(1)
+      }
+      skillsRoots.push(resolve(agent.workspace))
+    } else if (opts.allWorkspaces) {
+      const config = loadConfig()
+      for (const agent of Object.values(config.agents || {}) as any[]) {
+        if (agent?.workspace) skillsRoots.push(resolve(agent.workspace))
+      }
+    } else {
+      skillsRoots.push(resolve(opts.cwd))
+    }
+    const refsRoot = resolve(opts.referencesCwd || opts.cwd)
+
+    const skillBatches = await Promise.all(skillsRoots.map(r => loadLocalSkills(r)))
+    const skills = skillBatches.flat()
+    const [references, recipes] = await Promise.all([
+      loadReferences(refsRoot),
+      loadRecipes(refsRoot),
+    ])
+    const results = auditAll({ skills, references, recipes })
+
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          results.map(r => ({
+            name: r.name,
+            verdict: r.verdict,
+            reasons: r.reasons,
+            path: r.skill?.path,
+          })),
+          null,
+          2,
+        ),
+      )
+    } else {
+      const summary = { PASS: 0, REVIEW: 0, FAILING: 0 }
+      for (const r of results) summary[r.verdict]++
+      console.log()
+      for (const r of results) {
+        const tag =
+          r.verdict === "PASS"
+            ? chalk.green("PASS   ")
+            : r.verdict === "REVIEW"
+              ? chalk.yellow("REVIEW ")
+              : chalk.red("FAILING")
+        console.log(`  ${tag} ${chalk.bold(r.name)}${r.skill?.path ? chalk.dim(` (${r.skill.path})`) : ""}`)
+        for (const reason of r.reasons) console.log(`           ${chalk.dim("·")} ${reason}`)
+      }
+      console.log()
+      console.log(
+        `  ${chalk.green(`${summary.PASS} PASS`)}  ${chalk.yellow(`${summary.REVIEW} REVIEW`)}  ${chalk.red(`${summary.FAILING} FAILING`)}`,
+      )
+      console.log()
+    }
+
+    process.exit(results.some(r => r.verdict === "FAILING") ? 1 : 0)
+  })
+
+// ==================== agentx references ====================
+//
+// Operator-private fact registry. Generic to any project — Noqta runs KSI in
+// .agentx/references/ksi/, the next operator runs their own clients the same
+// way. The engine ships only the schema + a generic example template.
+
+export const references = new Command()
+  .name("references")
+  .alias("refs")
+  .description("manage the deterministic references registry — facts cited by skills and resolved into agent context")
+
+references
+  .command("init <namespace>")
+  .description("scaffold .agentx/references/<namespace>/ from the example template (operator-private)")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--force", "overwrite existing files")
+  .action((namespace: string, opts) => {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(namespace)) {
+      console.log(chalk.red(`  Invalid namespace "${namespace}". Use lowercase letters, digits, and hyphens.`))
+      process.exit(1)
+    }
+    const cwd = resolve(opts.cwd)
+    const exampleRoot = resolve(cwd, "references/example")
+    const exampleRecipe = resolve(cwd, "references/recipes/example.yaml")
+    if (!existsSync(exampleRoot)) {
+      console.log(chalk.red(`  Example template not found at ${exampleRoot}. Are you running this from the agentx repo root?`))
+      process.exit(1)
+    }
+    const targetRoot = resolve(cwd, ".agentx/references", namespace)
+    const targetRecipes = resolve(cwd, ".agentx/references/recipes")
+    mkdirSync(targetRoot, { recursive: true })
+    mkdirSync(targetRecipes, { recursive: true })
+
+    const exampleFiles = readdirSync(exampleRoot).filter(f => f.endsWith(".yaml") || f.endsWith(".yml"))
+    let copied = 0
+    let skipped = 0
+    for (const file of exampleFiles) {
+      const dest = join(targetRoot, file)
+      if (existsSync(dest) && !opts.force) {
+        console.log(chalk.dim(`  skip   ${dest} (exists; --force to overwrite)`))
+        skipped++
+        continue
+      }
+      // Re-namespace: replace `namespace: example.<x>` with `namespace: <ns>.<x>`
+      const src = readFileSync(join(exampleRoot, file), "utf-8")
+      const rewritten = src.replace(/^namespace:\s*example\./m, `namespace: ${namespace}.`)
+      writeFileSync(dest, rewritten)
+      console.log(chalk.green(`  +      ${dest}`))
+      copied++
+    }
+    const recipeDest = join(targetRecipes, `${namespace}.yaml`)
+    if (existsSync(recipeDest) && !opts.force) {
+      console.log(chalk.dim(`  skip   ${recipeDest} (exists; --force to overwrite)`))
+      skipped++
+    } else if (existsSync(exampleRecipe)) {
+      const src = readFileSync(exampleRecipe, "utf-8").replaceAll("example.", `${namespace}.`)
+      writeFileSync(recipeDest, src)
+      console.log(chalk.green(`  +      ${recipeDest}`))
+      copied++
+    }
+    console.log()
+    console.log(chalk.dim(`  ${copied} written, ${skipped} skipped. Edit the placeholders, then:`))
+    console.log(chalk.dim(`    1. set contextReferences: true on the relevant agents in agentx.json`))
+    console.log(chalk.dim(`    2. agentx skill audit  # verify references resolve`))
+    console.log(chalk.dim(`    3. systemctl restart agentx  # pick up the new registry`))
+    console.log()
+  })
+
+references
+  .command("discover <namespace>")
+  .description("scan installed skills and write detected facts to .agentx/references/<namespace>/")
+  .option("--cwd <cwd>", "where to scan for skills", process.cwd())
+  .option("--references-cwd <cwd>", "where to WRITE the YAML files (defaults to --cwd; useful when skills live under ~/.claude and references live in the agentx repo)")
+  .option("--from <skills>", "comma-separated skill name/tag substrings to filter by (default: namespace itself)")
+  .option("--gitlab-host <url>", "validate project URLs against this host (e.g. https://gitlab.noqta.tn)")
+  .option("--write", "write the YAML files (default: dry-run preview)")
+  .option("--force", "overwrite existing files when --write is set")
+  .action(async (namespace: string, opts) => {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(namespace)) {
+      console.log(chalk.red(`  Invalid namespace "${namespace}". Use lowercase letters, digits, and hyphens.`))
+      process.exit(1)
+    }
+    const { loadLocalSkills } = await import("@/agent/skills/loader")
+    const { discoverFromSkills, renderDiscovery } = await import("@/agents/references/discover")
+    const cwd = resolve(opts.cwd)
+    const filter = (opts.from
+      ? String(opts.from)
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [namespace])
+    const skills = await loadLocalSkills(cwd)
+    const result = discoverFromSkills(skills, {
+      namespace,
+      filter,
+      gitlabHost: opts.gitlabHost,
+    })
+
+    console.log()
+    if (result.scannedSkills.length === 0) {
+      console.log(chalk.yellow(`  No skills matched filter [${filter.join(", ")}] under ${cwd}`))
+      console.log(chalk.dim("  Tip: pass --from <skill-name>,<other> to widen the filter."))
+      console.log()
+      return
+    }
+    console.log(chalk.dim(`  Scanned skills: ${result.scannedSkills.join(", ")}`))
+    const counts = Object.fromEntries(
+      Object.entries(result.byKind).map(([k, v]) => [k, v.length]),
+    )
+    console.log(`  Discovered:  ssh=${counts.ssh}  gitlab=${counts.gitlab}  paths=${counts.path}  contacts=${counts.contact}`)
+
+    const files = renderDiscovery(result, namespace)
+    const writeRoot = resolve(opts.referencesCwd || opts.cwd)
+    const targetDir = resolve(writeRoot, ".agentx/references", namespace)
+
+    if (!opts.write) {
+      console.log()
+      console.log(chalk.dim(`  Dry-run — would write to ${targetDir}/`))
+      for (const [name, content] of Object.entries(files)) {
+        console.log(chalk.cyan(`\n  --- ${name} ---`))
+        console.log(content.split("\n").slice(0, 30).map(l => `    ${l}`).join("\n"))
+        if (content.split("\n").length > 30) console.log(chalk.dim(`    … (${content.split("\n").length - 30} more lines truncated in preview)`))
+      }
+      console.log()
+      console.log(chalk.dim(`  Re-run with --write to commit these to ${targetDir}/`))
+      console.log()
+      return
+    }
+
+    mkdirSync(targetDir, { recursive: true })
+    let written = 0
+    let skipped = 0
+    for (const [name, content] of Object.entries(files)) {
+      const dest = join(targetDir, name)
+      if (existsSync(dest) && !opts.force) {
+        console.log(chalk.dim(`  skip   ${dest} (exists; --force to overwrite)`))
+        skipped++
+        continue
+      }
+      writeFileSync(dest, content)
+      console.log(chalk.green(`  +      ${dest}`))
+      written++
+    }
+    console.log()
+    console.log(chalk.dim(`  ${written} written, ${skipped} skipped. Review every card — flagged ones (tags include "needs-review") are best-effort guesses.`))
+    console.log(chalk.dim(`  Then: agentx skill audit  →  set contextReferences: true on the relevant agents  →  systemctl restart agentx`))
+    console.log()
+  })
+
+references
+  .command("list")
+  .alias("ls")
+  .description("list every loaded reference (debug)")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--json", "emit JSON")
+  .action(async (opts) => {
+    const { loadReferences } = await import("@/agents/references/loader")
+    const idx = await loadReferences(resolve(opts.cwd))
+    const cards = [...idx.byId.values()].sort((a, b) => a.id.localeCompare(b.id))
+    if (opts.json) {
+      console.log(JSON.stringify(cards, null, 2))
+      return
+    }
+    console.log()
+    if (cards.length === 0) {
+      console.log(chalk.dim("  (no references loaded — try `agentx references init <namespace>`)"))
+      console.log()
+      return
+    }
+    for (const card of cards) {
+      const src = idx.sourceById.get(card.id)
+      console.log(`  ${chalk.cyan(card.id)} ${chalk.dim(`(${card.kind})`)}`)
+      console.log(`    ${card.summary}`)
+      if (src) console.log(chalk.dim(`    ${src}`))
+    }
+    console.log()
+    console.log(chalk.dim(`  ${cards.length} reference(s) loaded.`))
     console.log()
   })
 
@@ -1107,4 +1487,78 @@ configCmd
         console.log(chalk.dim("    Daemon hot-reloaded."))
       }
     }
+  })
+
+// --- agentx config governance ---
+//
+// Read-only view of the governance flags that admit dispatches into the
+// ledger pipeline. v1 is read-only because every flag is read once at
+// daemon startup; flipping in place would require restart anyway. The
+// view answers the question operators ask first when something doesn't
+// dispatch: "is governance even enabled, and at what level?"
+
+configCmd
+  .command("governance")
+  .description("show resolved governance flags (read-only; flags read once at startup)")
+  .option("-c, --config <path>", "path to agentx.json")
+  .option("--json", "emit JSON")
+  .action((opts) => {
+    let businessEnabled = false
+    let projectsCount = 0
+    let configError: string | undefined
+    try {
+      const cfg = loadDaemonConfig(opts.config)
+      businessEnabled = !!(cfg as any).business?.enabled
+      projectsCount = ((cfg as any).business?.projects ?? []).length
+    } catch (e: any) {
+      configError = e?.message ?? String(e)
+    }
+
+    const ledgerMode = (process.env.INTENT_LEDGER_MODE || "off").toLowerCase()
+    const pmGateRaw = (process.env.INTENT_PM_GATE_ENABLED || "").toLowerCase()
+    const pmGate = pmGateRaw === "true" || pmGateRaw === "1" || pmGateRaw === "yes"
+    const pmGateActive = pmGate && businessEnabled
+    const ledgerValid = ["off", "shadow", "authoritative"].includes(ledgerMode)
+
+    if (opts.json) {
+      console.log(JSON.stringify({
+        ledger: { mode: ledgerMode, valid: ledgerValid },
+        pmGate: {
+          envSet: pmGate,
+          businessEnabled,
+          active: pmGateActive,
+          projects: projectsCount,
+        },
+        configError,
+      }, null, 2))
+      return
+    }
+
+    console.log()
+    console.log(chalk.bold("  Governance flags"))
+    console.log()
+    if (configError) {
+      console.log(chalk.yellow(`  Note: agentx.json couldn't be loaded — ${configError}`))
+      console.log()
+    }
+
+    const modeColor = ledgerMode === "authoritative" ? chalk.green
+      : ledgerMode === "shadow" ? chalk.cyan
+      : ledgerMode === "off" ? chalk.dim
+      : chalk.red
+    console.log(`  INTENT_LEDGER_MODE        ${modeColor(ledgerMode)}${ledgerValid ? "" : chalk.red(" (invalid — must be off|shadow|authoritative)")}`)
+
+    const pmStatus = pmGateActive
+      ? chalk.green("active")
+      : pmGate
+        ? chalk.yellow("env=true but business.enabled=false → inactive")
+        : chalk.dim("disabled")
+    console.log(`  INTENT_PM_GATE_ENABLED    ${pmStatus}`)
+    console.log(chalk.dim(`    business.enabled        ${businessEnabled ? chalk.green("true") : chalk.dim("false")}`))
+    console.log(chalk.dim(`    business.projects[]     ${projectsCount}`))
+
+    console.log()
+    console.log(chalk.dim("  These flags are read once at daemon startup. Flipping requires a restart."))
+    console.log(chalk.dim("  See: https://github.com/anis-marrouchi/agentx/blob/master/docs/architecture/research-rescue-plan.md"))
+    console.log()
   })

@@ -131,6 +131,29 @@ export interface TaskUsage {
   cacheCreateTokens: number
 }
 
+/** Split a TaskUsage into tier1 and tier2 buckets using the same
+ *  CONTEXT_TIER_THRESHOLD that record() applies. Output inherits the
+ *  tier of its request. Returned as a flat object so callers can spread
+ *  it directly into bus payloads or DB writes. */
+export function splitTaskUsageByTier(u: TaskUsage): {
+  inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number
+  tier2InputTokens: number; tier2OutputTokens: number; tier2CacheReadTokens: number; tier2CacheCreateTokens: number
+} {
+  const totalInput = u.inputTokens + u.cacheReadTokens + u.cacheCreateTokens
+  if (totalInput > CONTEXT_TIER_THRESHOLD) {
+    return {
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+      tier2InputTokens: u.inputTokens, tier2OutputTokens: u.outputTokens,
+      tier2CacheReadTokens: u.cacheReadTokens, tier2CacheCreateTokens: u.cacheCreateTokens,
+    }
+  }
+  return {
+    inputTokens: u.inputTokens, outputTokens: u.outputTokens,
+    cacheReadTokens: u.cacheReadTokens, cacheCreateTokens: u.cacheCreateTokens,
+    tier2InputTokens: 0, tier2OutputTokens: 0, tier2CacheReadTokens: 0, tier2CacheCreateTokens: 0,
+  }
+}
+
 const SESSION_KEYS_MAX = 500
 const PRICING_OVERRIDE_PATH = ".agentx/pricing/custom.json"
 

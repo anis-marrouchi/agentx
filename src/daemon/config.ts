@@ -33,6 +33,12 @@ const providerConfigSchema = z.object({
   baseUrl: z.string().optional(),
 })
 
+const mcpServerSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()).default([]),
+  env: z.record(z.string(), z.string()).optional(),
+})
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -41,6 +47,40 @@ const agentConfigSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   mentions: z.array(z.string()).default([]),
+  /** Phase 5 — typed capabilities (drop-condition fallback). Free-form
+   *  list of intent strings this agent is allowed to handle. When set,
+   *  the org-chart `canHandle(agentId, project, intent)` check rejects
+   *  dispatches with intents not in this list. When empty/unset
+   *  (the default), the agent is permissive — handles any intent.
+   *  Intent matching is exact-string for now; a glob/prefix layer can
+   *  come later if it produces real rejections.
+   *  Example: ["issue.opened", "issue.commented", "merge_request.opened"]
+   *  Example: ["cron.fired", "message.received"]              */
+  intents: z.array(z.string()).default([]),
+  /** Phase 8 — capability-bounded security. Max distinct upstream
+   *  agents in the delegation chain on the same (project, subject)
+   *  before a dispatch to THIS agent is refused. The ledger itself
+   *  provides the chain — `decideAndCommit` walks recent decisions on
+   *  the subject and counts distinct agents. Default 5; set to 0 to
+   *  disable for an agent that's always called as the bottom of a
+   *  chain. The check prevents cascade loops where A → B → A → B → ...
+   *  blows past sane chain depth. */
+  maxDelegationDepth: z.number().int().min(0).max(50).default(5),
+  /** MCP servers this agent's Claude Code session should load. Synced
+   *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
+   *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
+  mcp: z.record(z.string(), mcpServerSchema).optional(),
+  /** Per-agent override for the global `session.contextStrategy`. Lets
+   *  one agent run `planner` (smaller upfront context, more tool-driven
+   *  exploration) while siblings stay on `layered`. Used for agents that
+   *  consistently bloat their cache via large workspace reads. */
+  contextStrategy: z.enum(["layered", "planner"]).optional(),
+  /** When true, the registry resolves references-recipes for this agent's
+   *  workspace and renders a deterministic [Verified References] block at
+   *  priority 4.7. Off by default — flip on per agent (pm-ksi, devops-agent,
+   *  etc.) once a `references/` registry exists in the agent's workspace
+   *  or repo root. See src/agents/references/. */
+  contextReferences: z.boolean().default(false),
   maxConcurrent: z.number().default(1),
   /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder
@@ -340,6 +380,11 @@ const graphConfigSchema = z.object({
    *  is driven by `autoApproveStructure` alone. Lower it to e.g. 0.7 if you
    *  also want high-confidence structural changes auto-approved. */
   autoApproveConfidence: z.number().min(0).max(1).default(1.0),
+  /** Anthropic model id used for the direct classifier call (Phase 2 of
+   *  classifier-retire). Default haiku — classification is metadata, not
+   *  work, so we use the cheapest fast model. Override only if Haiku is
+   *  rate-limited or you want to A/B test. */
+  classifierModel: z.string().default("claude-haiku-4-5-20251001"),
   /** Weights for the wiki hybrid retrieval score. Path-ancestry match vs
    *  BM25 over article text. Sum need not be 1. */
   retrievalWeights: z.object({
@@ -407,6 +452,23 @@ export const daemonConfigSchema = z.object({
     enabled: z.boolean().default(true),
     /** Route to a mesh peer instead of local execution. */
     node: z.string().optional(),
+    /** Per-event-type workflow routing. Keys are platform event-type
+     *  strings — the format the platform's HTTP header uses, optionally
+     *  joined with the action. Examples:
+     *    GitHub: "issues.opened", "pull_request.synchronize",
+     *            "push" (action-less events use the bare type)
+     *    GitLab: "Note Hook", "Merge Request Hook"
+     *  Values are workflow ids registered via `agentx workflow create`.
+     *  When the inbound event-type matches a key, the named workflow is
+     *  dispatched; if no key matches, the webhook falls through to
+     *  `defaultWorkflow` (or the agent itself). Closes the recurring
+     *  GitHub problem of multiple event types collapsing to a single
+     *  workflow. */
+    triggers: z.record(z.string(), z.string()).optional(),
+    /** Workflow id used when no `triggers` entry matches the event-type.
+     *  Backward-compatible: pre-existing webhooks without `triggers`
+     *  always hit this path. */
+    defaultWorkflow: z.string().optional(),
   })).default([]),
   /** Session cache-reuse policy. Controls when we drop a Claude `--resume`
    *  session and rebuild the prompt from scratch.
@@ -423,7 +485,7 @@ export const daemonConfigSchema = z.object({
   session: z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(45),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(15),
-    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
+    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(195_000),
     /** Context assembly strategy:
      *  - "layered" (default): the classic stacked layers — session history,
      *    memory, cross-chat, wiki hint all appended every turn.
@@ -443,6 +505,14 @@ export const daemonConfigSchema = z.object({
     maxClaudeCodeDispatchesPerHour: z.number().int().min(1).max(10_000).default(80),
     maxClaudeCodeDispatchesPer5h: z.number().int().min(1).max(50_000).default(180),
   }).default({}),
+  /** Move B — JS/TS plugins. Each entry is an installed npm package name
+   *  (e.g. `agentx-plugin-mattermost` or `@noqta/plugin-mattermost`); the
+   *  loader does a dynamic `import(name)` at boot, validates the manifest,
+   *  and calls plugin.setup(ctx). Plugins can register channel adapters
+   *  via ctx.addChannel() and subscribe to bus events via ctx.on(). Empty
+   *  default — installs that don't list plugins are unaffected. Plugin
+   *  authoring guide: docs/architecture/plugins.md. */
+  plugins: z.array(z.string()).default([]),
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>
@@ -468,6 +538,37 @@ export function expandEnvVars(obj: unknown): unknown {
     return result
   }
   return obj
+}
+
+/**
+ * Translate raw Zod issues into actionable, copy-pasteable fixes for the
+ * patterns we see in real first-run failures (missing tokens, missing
+ * required env vars, etc.). Falls through silently for unknown patterns —
+ * the raw `issues` block is always shown above this hint block.
+ */
+function friendlyConfigHints(issues: ReadonlyArray<z.ZodIssue>, configPath: string): string[] {
+  const hints: string[] = []
+  const seen = new Set<string>()
+  for (const issue of issues) {
+    const path = issue.path.join(".")
+    // Telegram account block exists but token is empty/missing — by far the
+    // most common first-run trip. Tell the operator exactly which two
+    // recoveries are valid, with the literal config path to edit.
+    const tgTokenMatch = /^channels\.telegram\.accounts\.([^.]+)\.token$/.exec(path)
+    if (tgTokenMatch && issue.message.toLowerCase().includes("required")) {
+      const account = tgTokenMatch[1]
+      const key = `tg:${account}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      hints.push(
+        `Hint: Telegram account "${account}" is enabled but has no bot token.\n` +
+        `  Either:\n` +
+        `    A) Open ${configPath} and set channels.telegram.accounts.${account}.token to your bot token (or "\${TG_${account.toUpperCase()}_BOT_TOKEN}" + the matching .env entry).\n` +
+        `    B) If you don't need Telegram on this instance, remove the entire "telegram" block under "channels" (or set channels.telegram.enabled to false AND drop accounts.${account}).`
+      )
+    }
+  }
+  return hints
 }
 
 /**
@@ -518,7 +619,9 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     const issues = result.error.issues
       .map((i) => `  ${i.path.join(".")}: ${i.message}`)
       .join("\n")
-    throw new Error(`Config validation failed (${foundPath}):\n${issues}`)
+    const hints = friendlyConfigHints(result.error.issues, foundPath)
+    const hintBlock = hints.length ? `\n\n${hints.join("\n\n")}` : ""
+    throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
   return result.data

@@ -1,6 +1,10 @@
 # Concepts
 
-AgentX is **infrastructure for AI agents** — closer to systemd than to another Python framework. If you already understand cron, message queues, and HTTP webhooks, you already understand most of AgentX.
+Run a team of AI agents on Telegram, WhatsApp, Slack, GitLab, and cron schedules — all from one place. The dashboard looks like Slack or Trello, but the cards are tasks your agents are working on, the channels are real chat apps, and the schedules fire prompts instead of meetings.
+
+This is for operators, project managers, and small teams running AI in production. You don't need to be a developer to use it — the dashboard covers the common settings — but you can drop into the CLI and `agentx.json` whenever you want full control. AgentX behaves more like an operating-system service (think `systemd`, `cron`, webhooks) than a Python framework: it doesn't try to think for you, it gives your agents a place to live, work, and talk to people.
+
+The rest of this page introduces the **seven primitives** every AgentX install is built from. You'll see these terms — *agent, channel, cron, mesh, wiki, intent graph, business layer* — throughout the docs. Read this once and the rest of the docs will make sense.
 
 ## The seven primitives
 
@@ -135,7 +139,7 @@ When a message lands while the agent is already working:
 - `agentx daemon watch` — color-coded live activity
 - `curl -N http://localhost:19900/events` — raw SSE stream
 - `agentx daemon logs -f` — daemon log tail
-- `agentx usage today` / `agentx usage serve` — token + cost dashboard
+- `agentx usage today` — terminal token-cost summary (the standalone `agentx usage serve` was folded into the dashboard's `/admin/cost` page in May 2026)
 - `AGENTX_DEBUG=webhook,cron,mesh` — verbose categories (`agent`, `channel`, `cron`, `mesh`, `context`, `memory`, `webhook`, `config`, `all`)
 
 ## Hot-reload

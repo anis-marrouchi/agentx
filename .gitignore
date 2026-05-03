@@ -8,6 +8,7 @@ node_modules/
 agentx.json
 agentx.json.*
 .env
+.env.*
 
 # Claude Code (project-local, not committed)
 .claude/
@@ -19,6 +20,7 @@ agentx.json.*
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
-
+docs/architecture
 
 src/web/workflow-editor/HANDOFF.md
+docs/prd

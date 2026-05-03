@@ -22,6 +22,10 @@ export interface ToolbarProps {
   onHelp: () => void
   onLayout: () => void
   workflowIdLabel: string
+  paletteOpen: boolean
+  setPaletteOpen: (v: boolean) => void
+  inspectorOpen: boolean
+  setInspectorOpen: (v: boolean) => void
 }
 
 export function Toolbar(p: ToolbarProps) {
@@ -48,6 +52,13 @@ export function Toolbar(p: ToolbarProps) {
         </div>
         <div className="tb__spacer" />
 
+        <button className={"btn btn--ghost-icon" + (p.paletteOpen ? " is-active" : "")}
+                title={p.paletteOpen ? "Hide palette" : "Show palette"}
+                onClick={() => p.setPaletteOpen(!p.paletteOpen)}><Icon.panelLeft /></button>
+        <button className={"btn btn--ghost-icon" + (p.inspectorOpen ? " is-active" : "")}
+                title={p.inspectorOpen ? "Hide inspector" : "Show inspector"}
+                onClick={() => p.setInspectorOpen(!p.inspectorOpen)}><Icon.panelRight /></button>
+        <span className="tb__sep" />
         <button className="btn btn--ghost-icon" title="Undo (⌘Z)" onClick={p.onUndo} disabled={!p.canUndo}><Icon.undo /></button>
         <button className="btn btn--ghost-icon" title="Redo (⌘⇧Z)" onClick={p.onRedo} disabled={!p.canRedo}><Icon.redo /></button>
         <button className="btn btn--ghost-icon" title="Auto layout" onClick={p.onLayout}><Icon.layout /></button>

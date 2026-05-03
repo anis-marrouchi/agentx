@@ -51,16 +51,13 @@ describe("buildAgentContext", () => {
     expect(ctx).toContain("Project: org/my-project")
   })
 
-  it("includes peers only on telegram", () => {
-    const peers = [{ name: "DevOps", handle: "@devops_bot", role: "infrastructure" }]
-
-    const tgCtx = buildAgentContext({ ...baseInput, channel: "telegram", peers })
-    expect(tgCtx).toContain("DevOps")
-    expect(tgCtx).toContain("@devops_bot")
-
-    const glCtx = buildAgentContext({ ...baseInput, channel: "gitlab", peers })
-    expect(glCtx).not.toContain("@devops_bot")
-  })
+  // (Deleted) "includes peers only on telegram" — the assertion was that
+  // `buildAgentContext` renders peers, but peers handling moved to
+  // src/agents/runtime.ts:131 where it lives on the AgentTask context
+  // path. The test was passing extra-property `peers` to ContextInput
+  // (which has no such field) and asserting behaviour that this layer
+  // never had after the move. Coverage for the runtime peers logic is
+  // a separate concern; tracked as a follow-up.
 
   it("extracts intent tags", () => {
     const ctx = buildAgentContext({ ...baseInput, message: "please deploy the latest build to staging" })

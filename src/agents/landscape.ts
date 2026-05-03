@@ -103,14 +103,21 @@ export class LandscapeBuilder {
     // on every flap. Health shows up in /health and /live, not here.
     const remotePeers = this.meshPeers.filter(p => p.skills.length > 0)
     if (remotePeers.length) {
-      lines.push("Remote:")
+      lines.push("")
+      lines.push("Remote agents (on mesh peers — address by id via /mesh/task or A2A):")
       // Stable ordering so the peer list doesn't shuffle between builds and
       // invalidate the cache even when the set is unchanged.
       const sortedPeers = [...remotePeers].sort((a, b) => a.peer.localeCompare(b.peer))
       for (const peer of sortedPeers) {
         const sortedSkills = [...peer.skills].sort((a, b) => a.id.localeCompare(b.id))
         for (const skill of sortedSkills) {
-          lines.push(`• ${skill.name} [${peer.peer}] — ${skill.description.slice(0, 60)}`)
+          // Surface the agent id (skill.id) — that's what /mesh/task and
+          // A2A endpoints take as the routing key. Render the friendly
+          // name in parens, then the description. Without the id, the
+          // calling agent has to guess the routing key from the name.
+          const desc = (skill.description || "").slice(0, 80)
+          const nameSuffix = skill.name && skill.name !== skill.id ? ` (${skill.name})` : ""
+          lines.push(`• ${skill.id}${nameSuffix} [${peer.peer}] — ${desc}`)
         }
       }
     }
@@ -144,6 +151,28 @@ export class LandscapeBuilder {
     lines.push('  gitlab: "group/project:issue:123" or "group/project:merge_request:45"')
     lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
     lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
+
+    // Conversation recall — short vs long memory model. Short memory
+    // (today, current chat) is the default and what 90% of recall calls
+    // need. Long memory (older windows, broader scope) is opt-in via
+    // explicit cues from the user message.
+    lines.push("")
+    lines.push("[Conversation Recall — short/long memory]")
+    lines.push("If a message references prior context you don't have (\"that\", \"it\", \"yes please\", \"continue\", \"correct me if I'm wrong\", \"as discussed\"), recall the actual prior turns BEFORE replying — do not guess, do not invent context from other tools, and do not ask the user to repeat themselves.")
+    lines.push("")
+    lines.push("ALWAYS pass `channel` and `chatId` from the [Current Conversation] block above so you scope to the right thread:")
+    lines.push(`  curl -s -X POST http://localhost:${port}/recall -H "Content-Type: application/json" -d '{"agent":"<your-agent-id>","channel":"<from prompt>","chatId":"<from prompt>","limit":10}'`)
+    lines.push("")
+    lines.push("Short memory (default — today only): omit `lookbackDays`. Returns last ~10 turns of THIS chat from today UTC.")
+    lines.push("Long memory (opt-in): set `lookbackDays` only when the user message has a clear long-memory cue:")
+    lines.push("  - \"yesterday\" / \"أمس\"           → lookbackDays: 2")
+    lines.push("  - \"few days ago\" / \"couple of days\"  → lookbackDays: 4")
+    lines.push("  - \"last week\" / \"week ago\"      → lookbackDays: 8")
+    lines.push("  - \"remember when …\" / \"we discussed …\" → lookbackDays: 3")
+    lines.push("If unsure, start short and paginate backward using `oldestTs` from the previous response as the next call's `before`.")
+    lines.push("")
+    lines.push("Other optional fields: `query` (substring filter, e.g. an issue number or name), `participants` (filter by sender username), `after`/`before` (ISO ts overrides). Response shape: { turns: [{ ts, role, senderName, content, channel, chatId }], oldestTs, hasMore, totalScanned }.")
+    lines.push("Scope rule: omit chatId to span all of YOUR chats on the channel; omit channel to span all channels. Store is per-agent — you cannot read another agent's chats.")
 
     // Background monitoring capability
     lines.push("")

@@ -1,20 +1,28 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
-import { SessionStore } from "./sessions"
+import { SessionStore, detectLongMemoryHint } from "./sessions"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
-import { TokenTracker } from "@/daemon/token-tracker"
+import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
 import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
+import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
+import { loadReferences, renderReferences } from "./references/loader"
+import { getDefaultLedger } from "@/intent/instance"
+import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
+import type { ReferenceIndex } from "./references/types"
+import { getEventBus } from "@/events/bus"
+import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
@@ -200,6 +208,12 @@ export class AgentRegistry {
   private sessions: SessionStore
   private wikiHub: WikiHub
   private memoryStore: MemoryStore
+  /** Structured per-agent memory (Claude-Code-style: user / feedback /
+   *  project / reference). Separate from the BM25 fact store above —
+   *  that's for short-lived facts extracted from conversations; this is
+   *  for long-lived behavioural memory that inlines into the system
+   *  prompt on every task. */
+  readonly agentMemory: AgentMemory = new AgentMemory()
   private patternStore: PatternStore
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
@@ -226,6 +240,11 @@ export class AgentRegistry {
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
   private sparklineCache: Map<string, { hourly: number[]; at: number }> = new Map()
+  /** Per-workspace references registry cache. Loaded lazily on first turn for
+   *  agents with `contextReferences: true`; reused for the daemon's lifetime
+   *  (operator-edited registries take effect on next daemon restart — same
+   *  policy as agentx.json). */
+  private referencesCache: Map<string, { refs: ReferenceIndex; recipes: RecipeIndex }> = new Map()
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -268,6 +287,7 @@ export class AgentRegistry {
         draftAgent,
         autoApproveStructure: config.graph.autoApproveStructure,
         autoApproveConfidence: config.graph.autoApproveConfidence,
+        classifierModel: config.graph.classifierModel,
         log: (...a) => log("[classifier]", ...a),
       })
     }
@@ -396,6 +416,57 @@ export class AgentRegistry {
   /** Wiki hub accessor. */
   getWikiHub(): WikiHub { return this.wikiHub }
   getGraphStore(): GraphStore | undefined { return this.graphStore }
+  /** Session-store accessor — used by the /recall HTTP endpoint to expose
+   *  conversation history to agents that need to rebuild context. */
+  getSessionStore(): SessionStore { return this.sessions }
+
+  /** Fire-and-forget pre-rotation memo capture. Spawns a one-shot Haiku
+   *  call against the about-to-be-dropped Claude session asking for the
+   *  facts/decisions worth carrying forward, persists the result into
+   *  MemoryStore. Runs asynchronously so the calling rotation path
+   *  doesn't pay the extraction latency — the next user turn dispatches
+   *  immediately on the fresh session, and the memo lands in time for
+   *  whichever turn arrives ~30s later (which is when atlas's bloated-
+   *  session WhatsApp conversations actually need it).
+   *
+   *  Errors are swallowed by design — memory continuity is best-effort,
+   *  it must never block or break the rotation it's hooked into. */
+  private async captureRotationMemoAsync(
+    agentId: string,
+    def: AgentDef,
+    resumeSessionId: string,
+    channel: string,
+    chatId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      const { extractRotationMemo } = await import("./rotation-memo")
+      const result = await extractRotationMemo(def, resumeSessionId)
+      if (!result.memo) {
+        this.log(
+          `[${agentId}] rotation memo skipped (${reason}, ${result.reason}, ${result.durationMs}ms)`,
+        )
+        return
+      }
+      // Pull a few keywords from the chatId / channel so the memo
+      // surfaces from MemoryStore.findRelevant when the same chat
+      // continues. Without keywords BM25 has nothing to score against
+      // and the memo only floats up via the recent-fallback branch.
+      const chatKeyword = chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
+      this.memoryStore.addMemory(agentId, {
+        agentId,
+        category: "fact",
+        content: `[Rotation memo · ${reason}] ${result.memo}`,
+        keywords: ["rotation-memo", channel, ...chatKeyword],
+        source: { channel, chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
+      })
+      this.log(
+        `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars)`,
+      )
+    } catch (e: any) {
+      this.log(`rotation memo error: ${e?.message || e}`)
+    }
+  }
 
   /**
    * Build peer list for context engine.
@@ -431,8 +502,54 @@ export class AgentRegistry {
 
   /**
    * Execute a task on an agent. Respects maxConcurrent limit.
+   *
+   * Wraps `executeInternal` to record an intent-ledger resolution
+   * after completion when `task.intentRef` is set. The resolution
+   * write clears the dispatched-but-unresolved slot in
+   * `intent_decisions` so Inv-ActiveTaskSafety lookups stop blocking
+   * subsequent dispatches to the same (project, subject). Without
+   * this, every dispatched decision sits in-flight forever and the
+   * active-task check becomes vacuously over-aggressive.
    */
   async execute(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
+    const startedAt = Date.now()
+    let response: AgentResponse
+    try {
+      response = await this.executeInternal(task, onDelta)
+    } catch (e: any) {
+      response = { content: "", error: e?.message ?? String(e) }
+    }
+    if (task.intentRef) {
+      try {
+        const status = response.error
+          ? (/timed out|timeout/i.test(response.error) ? "timed-out" : "failed")
+          : "completed"
+        getDefaultLedger().recordResolution({
+          decisionEventId: task.intentRef.eventId,
+          decisionDecidedBy: task.intentRef.decidedBy,
+          resolvedAt: Date.now(),
+          status: status as "completed" | "failed" | "timed-out",
+          durationMs: Date.now() - startedAt,
+          resultSummary: response.error
+            ? response.error.slice(0, 200)
+            : (response.content?.slice(0, 200) ?? null),
+        })
+      } catch (e: any) {
+        // Non-fatal — the ledger may have a unique-constraint hit (the
+        // resolution was already recorded by a prior call), or the
+        // ledger may have failed entirely. Either way, agent dispatch
+        // must succeed regardless.
+        this.log(`[ledger] resolution write failed for ${task.intentRef.eventId}/${task.intentRef.decidedBy}: ${e?.message ?? e}`)
+      }
+    }
+    return response
+  }
+
+  /**
+   * Internal dispatcher — the real body. See `execute` for the public
+   * wrapper that adds intent-ledger resolution recording.
+   */
+  private async executeInternal(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
     const state = this.agents.get(task.agentId)
     if (!state) {
       // Mesh fallback: the agent isn't local but a healthy peer may host
@@ -468,28 +585,50 @@ export class AgentRegistry {
     const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
 
     if (state.activeTasks >= state.def.maxConcurrent) {
-      // Agent is busy — try to queue the message instead of rejecting
-      const mode = (state.def.queueMode as QueueMode) || "collect"
-      const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
-        text: task.message,
-        sender: task.context?.sender || "User",
-        timestamp: Date.now(),
-        channel: qChannel,
-        chatId: qChatId,
-        originalContext: task.context as Record<string, unknown>,
-      })
+      // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
+      // a queued result — the queue's flush callback re-routes via channels,
+      // not back to the awaiting HTTP caller. Returning `error: __queued__`
+      // surfaces as HTTP 500 on the /task endpoint and triggers an "Error
+      // from peer" comment on whatever channel the upstream is bridged to.
+      // For these callers, BLOCK and wait for a slot (up to 25 min — slightly
+      // under mesh.sendTask's 30 min default cap) instead of queueing.
+      if (qChannel === "api") {
+        const start = Date.now()
+        const maxWaitMs = 25 * 60_000
+        const pollIntervalMs = 500
+        while (state.activeTasks >= state.def.maxConcurrent) {
+          if (Date.now() - start > maxWaitMs) {
+            return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+          }
+          await new Promise((r) => setTimeout(r, pollIntervalMs))
+        }
+        // Slot freed — fall through to normal execution path below.
+      } else {
+        // Channel callers (telegram/gitlab/whatsapp/...) already ack'd the
+        // user's message, so queueing is the right behavior — the flush
+        // callback will reply via the original channel when the slot frees.
+        const mode = (state.def.queueMode as QueueMode) || "collect"
+        const queued = this.messageQueue.enqueue(task.agentId, qChannel, qChatId, {
+          text: task.message,
+          sender: task.context?.sender || "User",
+          timestamp: Date.now(),
+          channel: qChannel,
+          chatId: qChatId,
+          originalContext: task.context as Record<string, unknown>,
+        })
 
-      if (queued === "drop") {
-        this.log(`[${task.agentId}] busy, message dropped (mode: drop)`)
-        return { content: "", error: `Agent "${task.agentId}" is busy — message dropped` }
-      }
+        if (queued === "drop") {
+          this.log(`[${task.agentId}] busy, message dropped (mode: drop)`)
+          return { content: "", error: `Agent "${task.agentId}" is busy — message dropped` }
+        }
 
-      if (queued) {
-        const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
-        this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
-        return {
-          content: "",
-          error: `__queued__:${queued}:${pending}`,
+        if (queued) {
+          const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+          this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
+          return {
+            content: "",
+            error: `__queued__:${queued}:${pending}`,
+          }
         }
       }
     }
@@ -565,8 +704,24 @@ export class AgentRegistry {
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
 
+    // Mirror the live channel before recording the new user message — on a
+    // cold-create (fresh chatId, new day after rotation), this calls the
+    // adapter's seedHistory and back-fills recent messages so the agent
+    // doesn't start blind. No-op for warm sessions, non-channel callers
+    // (cron/api/a2a), or channels without a seedHistory implementation.
+    await this.sessions.seedIfEmpty(task.agentId, channel, chatId)
+
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
+
+    const taskStartedAt = Date.now()
+    getEventBus().emit("task:started", {
+      agentId: task.agentId,
+      channel,
+      chatId,
+      messagePreview: (task.message || "").slice(0, 200),
+      at: new Date(taskStartedAt).toISOString(),
+    })
 
     // Classify the message through the intent graph when enabled. Skip for
     // a2a traffic — the classifier itself dispatches through /task, and
@@ -624,7 +779,13 @@ export class AgentRegistry {
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "stale")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "stale",
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -635,7 +796,14 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
       const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "tier-2",
+        lastTurnInputTokens: lastTokens,
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -646,7 +814,13 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTurns(task.agentId, channel, chatId)) {
       const turns = this.sessions.getTurnCount(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] max-turns rotation for ${channel}:${chatId} (${turns} turns ≥ ${this.sessions.getMaxTurnsPerSession()})`)
+      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "max-turns")
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "max-turns",
+        at: new Date().toISOString(),
+      })
       resumeSessionId = undefined
     }
 
@@ -684,6 +858,87 @@ export class AgentRegistry {
       ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
       : undefined
 
+    // Context-rebuild diagnostic. Fires under `--debug context` (or `all`).
+    // The amnesia-vs-misreasoning question — "did the agent see X in its
+    // prompt?" — was unanswerable from session JSONs alone (the rendered
+    // prompt prefix is never persisted). This log captures it per-turn:
+    //   - resume vs fresh (after rotation, this is "fresh")
+    //   - sessionHistory length when rendered (chars + line count)
+    //   - session.messages snapshot: count, first ts, last ts, first/last
+    //     name+content preview so we can tell what's actually in the file.
+    // Off by default — zero overhead unless the operator opted in.
+    if (debug && (debug as any).cat) {
+      try {
+        const sess = this.sessions.getSession(task.agentId, channel, chatId)
+        const msgs = sess.messages
+        const first = msgs[0]
+        const last = msgs[msgs.length - 1]
+        const fingerprint = sessionHistory === undefined
+          ? `resume=${resumeSessionId ? resumeSessionId.slice(0, 8) : "?"} (no rebuild)`
+          : `fresh history=${sessionHistory.length}c/${sessionHistory.split("\n").length}L`
+        const summary = `[${task.agentId}] ${channel}:${chatId} ${fingerprint} | session.messages=${msgs.length}` +
+          (msgs.length > 0
+            ? ` first=${first.timestamp.slice(11, 19)}(${first.role}:${(first.content || "").slice(0, 40).replace(/\n/g, " ")}) last=${last.timestamp.slice(11, 19)}(${last.role}:${(last.content || "").slice(0, 40).replace(/\n/g, " ")})`
+            : "")
+        debug.cat("context", summary)
+      } catch (e: any) {
+        // Diagnostic logging must never throw into the hot path.
+        debug.cat("context", `[${task.agentId}] context-diag error: ${e?.message ?? e}`)
+      }
+    }
+
+    // Verified deterministic references — opt-in per agent via
+    // `contextReferences: true`. Only injected when starting a FRESH Claude
+    // session: once a session is in progress, the agent already has any
+    // facts it learned in earlier turns, and re-rendering them on every
+    // resumed turn just bloats the per-turn user-message context. That
+    // bloat compounded with --resume's full-history replay was hitting the
+    // 180k tier-2 threshold in 5–10 turns and forcing constant rotation,
+    // which discarded the conversation Claude session — causing exactly
+    // the "I don't have prior context" symptom users observed.
+    // The resolver itself runs cheaply in-memory; we just gate the rendered
+    // block on `!resumeSessionId`.
+    let referencesBlock: string | undefined
+    if (state.def.contextReferences && !resumeSessionId) {
+      try {
+        const cacheKey = state.def.workspace
+        let cached = this.referencesCache.get(cacheKey)
+        if (!cached) {
+          const [refs, recipes] = await Promise.all([
+            loadReferences(state.def.workspace),
+            loadRecipes(state.def.workspace),
+          ])
+          if (refs.byId.size === 0 && recipes.recipes.length === 0) {
+            const [rootRefs, rootRecipes] = await Promise.all([
+              loadReferences(process.cwd()),
+              loadRecipes(process.cwd()),
+            ])
+            cached = { refs: rootRefs, recipes: rootRecipes }
+          } else {
+            cached = { refs, recipes }
+          }
+          this.referencesCache.set(cacheKey, cached)
+        }
+        const resolved = resolveRecipes(
+          {
+            agentId: task.agentId,
+            intentTags: intent?.path,
+            message: task.message,
+          },
+          cached.recipes,
+          cached.refs,
+        )
+        if (resolved.cards.length > 0) {
+          referencesBlock = renderReferences(resolved.cards, 500 * 4)
+        }
+        if (resolved.unresolvedIds.length > 0) {
+          this.log(`[${task.agentId}] references: unresolved ids: ${resolved.unresolvedIds.join(", ")}`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] references resolver failed (non-fatal): ${e?.message || e}`)
+      }
+    }
+
     // Bridge cross-chat amnesia: inject context from other chats (DM ↔ group).
     // Gated on the current message — we only ship the hint when the user
     // actually refers to another conversation, a peer agent, or earlier
@@ -692,16 +947,60 @@ export class AgentRegistry {
       task.agentId, channel, chatId, task.message,
     )
 
+    // Long-memory recall pre-fetch — when the current message has an
+    // explicit long-memory cue ("yesterday", "last week", "remember when…",
+    // "we discussed", Arabic equivalents), pull a wider window from the
+    // session store and inject as a context block so the agent doesn't have
+    // to call /recall itself in obvious cases. Without this, on a fresh
+    // claude session the agent would either fabricate context (the
+    // observed "Tarek Ksibi" gmail-search failure) or pester the user.
+    let longMemoryRecall: string | undefined
+    const lmHint = detectLongMemoryHint(task.message)
+    if (lmHint) {
+      try {
+        const recall = this.sessions.recallTurns({
+          agentId: task.agentId,
+          channel,
+          chatId,
+          lookbackDays: lmHint.lookbackDays,
+          limit: 12,
+        })
+        if (recall.turns.length > 0) {
+          const lines: string[] = [
+            `[Long-memory recall — last ${lmHint.lookbackDays}d on this chat (cue-triggered)]`,
+          ]
+          // Render oldest-first for natural reading flow
+          const ordered = [...recall.turns].sort((a, b) => a.ts.localeCompare(b.ts))
+          for (const t of ordered) {
+            const stamp = t.ts.slice(11, 16) + " " + t.day
+            const who = t.role === "user" ? (t.senderName || "User") : (t.senderName || "Agent")
+            lines.push(`${stamp} ${who}: ${t.content}`)
+          }
+          if (recall.hasMore) {
+            lines.push(`[…${recall.totalScanned - recall.turns.length}+ older turns available — call /recall with before=${recall.oldestTs} to walk further back]`)
+          }
+          lines.push("[End of long-memory recall — respond to the latest message above]")
+          longMemoryRecall = lines.join("\n")
+          this.log(`[${task.agentId}] long-memory recall fired: lookback=${lmHint.lookbackDays}d, turns=${recall.turns.length}, scanned=${recall.totalScanned}`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] long-memory recall failed (non-fatal): ${e.message}`)
+      }
+    }
+
     // Context strategy: "layered" (above) or "planner". Planner is a Haiku
     // pre-call that curates just the bits of history/memory/cross-chat the
     // current message needs, replacing the full-blob layered approach.
     // Per-task override (for benchmarks) wins over config default.
     // Fail-open: if the planner errors or times out, we fall through with
     // the layered values already computed above.
+    // Resolution order: per-task override (benchmarks) → per-agent
+    // override (def.contextStrategy) → global config default.
     const strategy: "layered" | "planner" =
-      task.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
+      task.contextStrategy ?? state.def.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
+    let plannerSucceeded = false
     if (strategy === "planner") {
       try {
         const { planContext } = await import("./context-planner")
@@ -714,22 +1013,28 @@ export class AgentRegistry {
           memoryStore: this.memoryStore,
         })
         if (plan) {
+          plannerSucceeded = true
           sessionHistoryOverride = plan.sessionHistory
           memoryContext = plan.memoryContext
           crossChatContext = plan.crossChatContext
           planDebug = plan.debug as unknown as Record<string, unknown>
           this.log(`[${task.agentId}] planner: turns=${plan.debug.recentTurns}, mem=${plan.debug.memoryIncluded ? "yes" : "no"}, xchat=${plan.debug.crossChatIncluded ? "yes" : "no"} (${plan.debug.planLatencyMs}ms) — ${plan.debug.reasoning ?? ""}`)
         } else {
-          this.log(`[${task.agentId}] planner returned null — falling back to layered`)
+          this.log(`[${task.agentId}] planner returned null — falling back to layered (keeping --resume for continuity)`)
         }
       } catch (e: any) {
-        this.log(`[${task.agentId}] planner failed (non-fatal): ${e.message} — falling back to layered`)
+        this.log(`[${task.agentId}] planner failed (non-fatal): ${e.message} — falling back to layered (keeping --resume for continuity)`)
       }
-      // Planner mode: force a fresh Claude session. --resume replay is what
-      // causes the bloat we're trying to avoid; the planner's whole point
-      // is a curated small prompt, which is incompatible with replaying
-      // the prior tool-result stream from --resume.
-      if (resumeSessionId) {
+      // Force a fresh Claude session ONLY when the planner produced a curated
+      // prompt — that's when --resume replay would conflict with the small
+      // curated context. If the planner failed, keep the existing session so
+      // claude's own --resume continues to provide conversation continuity.
+      // Without this guard, every failed planner call dropped the session AND
+      // skipped the layered sessionHistory rebuild (which was const-bound on
+      // the pre-rotation resumeSessionId state above), leaving the agent
+      // context-blind on every turn — the canonical "I don't have prior
+      // context" symptom on planner-strategy agents.
+      if (plannerSucceeded && resumeSessionId) {
         this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
         resumeSessionId = undefined
       }
@@ -765,13 +1070,21 @@ export class AgentRegistry {
     // bootstrap files follow. Soul-switching mid-session produces a new
     // append-text and a new Claude cache key; that's by design — the rare
     // switch is worth a one-time cache-create cost.
+    // AgentMemory — structured per-agent memory (user / feedback /
+    // project / reference). Inlined into the cacheable system prompt so
+    // it survives --resume and shows up on every turn. Empty when the
+    // agent has no memories yet — no prompt bloat for fresh agents.
+    const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId)
+
     const systemPromptAppend = [
       state.def.systemPrompt || "",
       bootstrapContextText || "",
+      agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
 
     const contextInput: ContextInput = {
       channel,
+      chatId,
       channelScope: task.context?.group ? "group" : (channel === "gitlab" ? "project" : "personal"),
       groupName: task.context?.group,
       agentId: task.agentId,
@@ -788,6 +1101,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: patternContext || undefined,
+      references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
       // Planner override takes precedence when set — falls back to the
@@ -796,6 +1110,7 @@ export class AgentRegistry {
       sessionHistory: sessionHistoryOverride ?? sessionHistory,
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
+      longMemoryRecall: longMemoryRecall || undefined,
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       intent: intent
@@ -824,60 +1139,96 @@ export class AgentRegistry {
       (historyContext?.length ?? 0) +
       (systemPromptAppend?.length ?? 0) +
       (task.message?.length ?? 0)
+    const sizeParts = {
+      history: historyContext?.length ?? 0,
+      sysPrompt: systemPromptAppend?.length ?? 0,
+      message: task.message?.length ?? 0,
+    }
+    // Record every dispatch for drift detection, warn when growing.
+    const sizeKey = promptSizeKey(task.agentId, channel, chatId)
+    recordPromptSize(sizeKey, agentxContextBytes, sizeParts)
+    const driftWarning = warnIfPromptGrowing(sizeKey)
+    if (driftWarning) this.log(`[${task.agentId}] ${driftWarning}`)
     if (agentxContextBytes > 16_000) {
-      this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${historyContext?.length ?? 0}, sysPrompt=${systemPromptAppend?.length ?? 0}, message=${task.message?.length ?? 0})`)
+      this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${sizeParts.history}, sysPrompt=${sizeParts.sysPrompt}, message=${sizeParts.message})`)
     }
 
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
     const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
 
-    // Pre-flight gates (claude-code tier only). Two separate heuristics that
-    // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
-    // subprocess to reproduce the same failure:
-    //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
-    //       at the org level. A cold dispatch's fresh cache-create spills
-    //       past the regular allotment and gets rejected.
-    //   (2) Quota gate — when our own dispatch-budget counters say the
-    //       fleet has burned through the hourly or 5-hour cap. Warm
-    //       sessions still pass; cold dispatches are deferred.
-    // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
-    // replay keeps them inside the regular allotment.
-    if (state.def.tier === "claude-code") {
-      const hasWarmSession = Boolean(resumeSessionId)
-      const gates = [
-        preflightOverageGate(hasWarmSession),
-        preflightQuotaGate(hasWarmSession),
-      ]
-      const abort = gates.find((g) => g && g.abort)
-      if (abort) {
-        state.errors++
-        this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
-        const preflightResponse: AgentResponse = {
-          content: "",
-          error: abort.message,
-          duration: 0,
-        }
-        if (!onDelta) {
-          output.buffer = `[error] ${abort.message}`
-          for (const sub of output.subscribers) {
-            try { sub(output.buffer) } catch { /* */ }
-          }
-        }
-        return preflightResponse
-      }
-      // Past the gates — commit the dispatch to the rolling budget and log
-      // a warning if we've crossed warnRatio so the operator sees pressure
-      // building before it turns into rejections.
-      recordClaudeCodeDispatch()
-      const warning = warnIfNearingCap()
-      if (warning) this.log(`[${task.agentId}] ${warning}`)
-    }
-
     let finalResponse: AgentResponse | undefined
     try {
+      // Pre-flight gates (claude-code tier only). Two separate heuristics that
+      // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
+      // subprocess to reproduce the same failure:
+      //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
+      //       at the org level. A cold dispatch's fresh cache-create spills
+      //       past the regular allotment and gets rejected.
+      //   (2) Quota gate — when our own dispatch-budget counters say the
+      //       fleet has burned through the hourly or 5-hour cap. Warm
+      //       sessions still pass; cold dispatches are deferred.
+      // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
+      // replay keeps them inside the regular allotment.
+      //
+      // Kept inside the try so the `finally` below still runs — otherwise a
+      // short-circuit return leaks runningTask bookkeeping.
+      if (state.def.tier === "claude-code") {
+        const hasWarmSession = Boolean(resumeSessionId)
+        const gates = [
+          preflightOverageGate(hasWarmSession),
+          preflightQuotaGate(hasWarmSession),
+        ]
+        const abort = gates.find((g) => g && g.abort)
+        if (abort) {
+          state.errors++
+          this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
+          const preflightResponse: AgentResponse = {
+            content: "",
+            error: abort.message,
+            duration: 0,
+          }
+          if (!onDelta) {
+            output.buffer = `[error] ${abort.message}`
+            for (const sub of output.subscribers) {
+              try { sub(output.buffer) } catch { /* */ }
+            }
+          }
+          finalResponse = preflightResponse
+          return preflightResponse
+        }
+        // Past the gates — commit the dispatch to the rolling budget and log
+        // a warning if we've crossed warnRatio so the operator sees pressure
+        // building before it turns into rejections.
+        recordClaudeCodeDispatch()
+        const warning = warnIfNearingCap()
+        if (warning) this.log(`[${task.agentId}] ${warning}`)
+      }
+
       const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
       finalResponse = response
+
+      // Split this request's tokens into tier1/tier2 buckets so subscribers
+      // (sqlite usage_daily, audit, dashboard) record both lanes. The same
+      // threshold that TokenTracker.record() applies — extracted as a
+      // helper so the two sites can never drift.
+      const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
+      getEventBus().emit("task:completed", {
+        agentId: task.agentId,
+        channel,
+        chatId,
+        durationMs: Date.now() - taskStartedAt,
+        error: response.error || undefined,
+        inputTokens: split?.inputTokens,
+        outputTokens: split?.outputTokens,
+        cacheReadTokens: split?.cacheReadTokens,
+        cacheCreateTokens: split?.cacheCreateTokens,
+        tier2InputTokens: split?.tier2InputTokens,
+        tier2OutputTokens: split?.tier2OutputTokens,
+        tier2CacheReadTokens: split?.tier2CacheReadTokens,
+        tier2CacheCreateTokens: split?.tier2CacheCreateTokens,
+        at: new Date().toISOString(),
+      })
 
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal
@@ -935,6 +1286,14 @@ export class AgentRegistry {
               source: channel,
               sourceContext: task.context?.group || task.context?.sender,
               content: `User: ${task.message}\n\nAgent: ${response.content}`,
+              // Stamp the classifier's path on the entry so `wiki absorb` can
+              // propagate it to the article's `graphPath` without
+              // reconstructing fingerprints from transformed content. Without
+              // this, articles never carry graphPath and the wiki retrieval
+              // scorer multiplies the graph weight (default 0.6) by 0.
+              meta: intent?.path?.length
+                ? { intentPath: intent.path, intentPathLabel: intent.pathLabel }
+                : undefined,
             })
           } catch {
             // Wiki export is best-effort
@@ -1072,6 +1431,14 @@ export class AgentRegistry {
   /**
    * List all agents and their status.
    */
+  /** Total active task count across all agents — used by the daemon's
+   *  graceful shutdown to drain in-flight runs before exit. */
+  getActiveTaskCount(): number {
+    let total = 0
+    for (const s of this.agents.values()) total += s.activeTasks
+    return total
+  }
+
   list(): Array<{
     id: string
     name: string

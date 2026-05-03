@@ -2,6 +2,7 @@ import { evaluateBranch, getByPath } from "../engine"
 import { renderParams, render } from "../template"
 import { formSchemaSchema, type FormSchema } from "../../forms/types"
 import { parseAssigneeRef } from "../../actors/types"
+import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 
 // --- Node handlers (Phase 1 set) ---
@@ -31,6 +32,23 @@ const agentHandler: NodeHandler = async (ctx) => {
 
   const prompt = render(promptTemplate, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
   const timeoutMinutes = typeof cfg.timeoutMinutes === "number" ? cfg.timeoutMinutes : undefined
+
+  // Optional per-node concurrency cap. When N runs of this workflow all
+  // arrive at the same hot node, the gate serializes execution past N
+  // active. Prevents the scenario where a burst of triggers fans out
+  // every concurrent run to the same agent and multiplies token spend.
+  const maxConcurrent = typeof cfg.maxConcurrent === "number" && cfg.maxConcurrent > 0
+    ? cfg.maxConcurrent
+    : null
+  const gateKey = maxConcurrent ? nodeKey(ctx.workflow.id, ctx.node.id) : null
+  if (gateKey && maxConcurrent) {
+    const before = nodeConcurrencyGate.stats(gateKey)
+    if (before.active >= maxConcurrent) {
+      ctx.log(`[node:${ctx.node.id}] gated: ${before.active} active (cap ${maxConcurrent}), ${before.waiting + 1} waiting`)
+    }
+    await nodeConcurrencyGate.acquire(gateKey, maxConcurrent)
+  }
+
   const start = Date.now()
   try {
     const resp = await ctx.agents.execute({
@@ -58,6 +76,8 @@ const agentHandler: NodeHandler = async (ctx) => {
   } catch (e: any) {
     ctx.log(`[node:${ctx.node.id}] agent "${agentId}" threw: ${e.message}`)
     return { error: e.message }
+  } finally {
+    if (gateKey) nodeConcurrencyGate.release(gateKey)
   }
 }
 
@@ -327,6 +347,37 @@ const callHTTPHandler: NodeHandler = async (ctx) => {
     }
   } catch (e: any) {
     return { error: `action.callHTTP failed: ${e.message}` }
+  }
+}
+
+/** Action.run: invoke a registered action from .agentx/actions/<id>.json
+ *  with templated inputs. Output is the full ActionRunResult so downstream
+ *  nodes can branch on `.ok`, `.status`, or read `.output` text. */
+const actionRunHandler: NodeHandler = async (ctx) => {
+  const rendered = renderParams(ctx.node.config, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
+  const actionId = String(rendered.actionId ?? rendered.id ?? "")
+  if (!actionId) return { error: `action.run "${ctx.node.id}" needs actionId` }
+  const inputs = (rendered.inputs && typeof rendered.inputs === "object")
+    ? rendered.inputs as Record<string, unknown>
+    : {}
+  const { ActionStore } = await import("../../actions/store")
+  const { runAction } = await import("../../actions/runner")
+  const action = new ActionStore().get(actionId)
+  if (!action) return { error: `action.run "${ctx.node.id}": no action "${actionId}" in registry` }
+  try {
+    const result = await runAction(action, inputs)
+    const output: Record<string, unknown> = {
+      ok: result.ok,
+      output: result.output,
+      status: result.status,
+      durationMs: result.durationMs,
+    }
+    if (result.errors !== undefined) output.errors = result.errors
+    return result.ok
+      ? { output }
+      : { output, error: `action "${actionId}" failed (status=${result.status})` }
+  } catch (e: any) {
+    return { error: `action.run failed: ${e.message}` }
   }
 }
 
@@ -643,6 +694,7 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "action.editMessage": editMessageHandler,
   "action.logTime":     logTimeHandler,
   "action.callHTTP":    callHTTPHandler,
+  "action.run":         actionRunHandler,
   "userTask":        userTaskHandler,
   "subProcess":      subProcessHandler,
   "signal.emit":     signalEmitHandler,

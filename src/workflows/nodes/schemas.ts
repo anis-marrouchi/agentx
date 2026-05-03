@@ -135,6 +135,14 @@ const ACTION_CALL_HTTP_OUTPUT: OutputField[] = [
   { path: "body", type: "any", description: "Parsed JSON body when the response was JSON; otherwise the raw text string." },
 ]
 
+const ACTION_RUN_OUTPUT: OutputField[] = [
+  { path: "ok", type: "bool", description: "`true` when the action exited 0 (shell) or returned 2xx (http)." },
+  { path: "status", type: "number", description: "Exit code (shell) or HTTP status (http)." },
+  { path: "output", type: "string", description: "stdout (shell) or response body text (http). Capped at 32KB." },
+  { path: "errors", type: "string", description: "stderr (shell) or transport error (http). Empty when none." },
+  { path: "durationMs", type: "number", description: "Wall time of the invocation, in milliseconds." },
+]
+
 const BRANCH_OUTPUT: OutputField[] = [
   { path: "port", type: "string", description: "Which outgoing port matched. Downstream edges with `fromPort` matching this value will fire." },
 ]
@@ -220,6 +228,7 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
   "action.editMessage": { summary: "Edited an existing message in place.", fields: ACTION_EDIT_MESSAGE_OUTPUT },
   "action.logTime":     { summary: "Logged time spent on a GitLab issue/MR.", fields: ACTION_LOG_TIME_OUTPUT },
   "action.callHTTP":    { summary: "Made an outbound HTTP request with templated params.", fields: ACTION_CALL_HTTP_OUTPUT },
+  "action.run":         { summary: "Invoked a registered action from the action registry. Output is the full ActionRunResult.", fields: ACTION_RUN_OUTPUT },
   "userTask":           { summary: "Paused for a human to submit a form. Resumes with the submission in this node's output.", fields: USER_TASK_OUTPUT },
   "subProcess":         { summary: "Spawned a child workflow and waited for its completion.", fields: SUB_PROCESS_OUTPUT },
   "signal.emit":        { summary: "Published a signal to the bus. Runs elsewhere can resume on it via `signal.wait`.", fields: SIGNAL_EMIT_OUTPUT },

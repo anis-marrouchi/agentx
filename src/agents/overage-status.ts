@@ -59,6 +59,42 @@ function readClaudeJson(): Record<string, unknown> | null {
 }
 
 /**
+ * Pure function — given the parsed contents of ~/.claude.json (or null if the
+ * file is missing), return the overage status. Split out from the IO path so
+ * tests can exercise the decision logic without staging a filesystem.
+ *
+ * Block only on `cachedExtraUsageDisabledReason === "org_level_disabled_until"`
+ * — that's what claude.ai writes when an operator has explicitly turned
+ * overage off at the account level. Other values (most commonly
+ * `out_of_credits`) are the CLI's latest-error snapshot from a failed API
+ * call and may recover on the next rotation; blocking on them deadlocks the
+ * fleet after a single transient rejection. For those, let the request
+ * through — the real Anthropic API response will be authoritative, surfaced
+ * via error-map's `overage_disabled` friendly classification.
+ *
+ * The grant-cache `info.available === false` signal was previously also used
+ * as a block condition but suffered the same stale-after-failure problem
+ * (the CLI writes it once, never refreshes on small calls), so it has been
+ * dropped from the gate. If you need a hard block, set the reason to
+ * `org_level_disabled_until` in ~/.claude.json manually.
+ */
+export function parseOverageStatus(
+  data: Record<string, unknown> | null,
+  now: number = Date.now(),
+): OverageStatus {
+  if (!data) return { available: true, checkedAt: now, unknown: true }
+  const disabledReason = typeof data.cachedExtraUsageDisabledReason === "string"
+    ? (data.cachedExtraUsageDisabledReason as string)
+    : undefined
+  const unavailable = disabledReason === "org_level_disabled_until"
+  return {
+    available: !unavailable,
+    reason: disabledReason,
+    checkedAt: now,
+  }
+}
+
+/**
  * Read the Claude CLI-cached overage state with a short TTL. Does not hit
  * the network — purely reads the CLI's own cache file that it updates after
  * each billing roundtrip.
@@ -66,29 +102,7 @@ function readClaudeJson(): Record<string, unknown> | null {
 export function getOverageStatus(forceRefresh = false): OverageStatus {
   const now = Date.now()
   if (!forceRefresh && cached && now - cached.checkedAt < TTL_MS) return cached
-
-  const data = readClaudeJson()
-  if (!data) {
-    cached = { available: true, checkedAt: now, unknown: true }
-    return cached
-  }
-
-  const disabledReason = typeof data.cachedExtraUsageDisabledReason === "string"
-    ? (data.cachedExtraUsageDisabledReason as string)
-    : undefined
-  const grantCache = data.overageCreditGrantCache as
-    | Record<string, { info?: { available?: boolean } }>
-    | undefined
-  const firstGrantInfo = grantCache ? Object.values(grantCache)[0]?.info : undefined
-  const explicitlyUnavailable = firstGrantInfo?.available === false
-
-  const unavailable = Boolean(disabledReason) || explicitlyUnavailable
-
-  cached = {
-    available: !unavailable,
-    reason: disabledReason || (explicitlyUnavailable ? "overage_grant_unavailable" : undefined),
-    checkedAt: now,
-  }
+  cached = parseOverageStatus(readClaudeJson(), now)
   return cached
 }
 

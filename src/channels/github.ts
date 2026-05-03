@@ -2,6 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
+import { markBody, detectAgentxMarker } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -313,25 +314,30 @@ export class GitHubAdapter implements ChannelAdapter {
     const agentLabel = msg.agentId || "unknown"
     const usingApp = !!this.appPrivateKey
     const agentHeader = usingApp ? "" : `> 🤖 **${agentLabel}** (via AgentX)\n\n`
-    const commentBody = `${agentHeader}${msg.text}\n\n<!-- agentx:${agentLabel} -->`
+    const commentBody = markBody(`${agentHeader}${msg.text}`, agentLabel)
 
-    // Forward to mesh peer if the agent lives remotely (same pattern as GitLab).
-    if (!agentToken && mapping?.node && this.sendCommentForwarder) {
+    // Resolve token: per-agent PAT > App installation token > global PAT.
+    // Prefer the App token over forwarding to a peer — the App posts as the
+    // bot identity (e.g. "noqta-agentx[bot]"), whereas a peer's PAT posts as
+    // its owner. Forwarding is only useful when this node has no way to post
+    // for the target repo (no App, no PAT).
+    const token = agentToken || await this.getTokenForRepo(repo)
+
+    // Fall back to forwarding to a peer (e.g. macbook's PAT) only when this
+    // node cannot post for the repo at all.
+    if (!token && mapping?.node && this.sendCommentForwarder) {
       try {
         const commentId = await this.sendCommentForwarder(mapping.node, repo, issueNumber, agentLabel, commentBody)
         if (commentId) {
           this.sentCommentIds.add(commentId)
           return commentId
         }
-        // Empty commentId means peer doesn't support this endpoint — fall through to local posting
-        this.log(`GitHub send forward to "${mapping.node}" returned empty — falling back to local token`)
+        this.log(`GitHub send forward to "${mapping.node}" returned empty — no local token available either`)
       } catch (e: any) {
-        this.log(`GitHub send forward to "${mapping.node}" failed: ${e.message} — falling back`)
+        this.log(`GitHub send forward to "${mapping.node}" failed: ${e.message}`)
       }
     }
 
-    // Resolve token: per-agent PAT > App installation token > global PAT
-    const token = agentToken || await this.getTokenForRepo(repo)
     if (!token) {
       this.log(`No GitHub token available for posting comment (agent: ${msg.agentId})`)
       return ""
@@ -421,16 +427,23 @@ export class GitHubAdapter implements ChannelAdapter {
   // --- Event handlers ---
 
   private async handleIssueComment(event: GitHubIssueCommentEvent): Promise<void> {
-    if (!this.handler || event.action !== "created") return
+    if (!this.handler) {
+      this.log(`[github] issue_comment dropped: no handler attached`)
+      return
+    }
+    if (event.action !== "created") {
+      this.log(`[github] issue_comment skipped: action="${event.action}" (only "created" routes)`)
+      return
+    }
 
     const comment = event.comment
     const repo = event.repository.full_name
     const user = comment.user
 
     // Cascade prevention: check for AgentX signature
-    const signatureMatch = comment.body.match(/<!-- agentx:(\S+) -->/)
-    if (signatureMatch) {
-      this.log(`AgentX comment from ${signatureMatch[1]}, skipping (comment ${comment.id})`)
+    const sourceAgent = detectAgentxMarker(comment.body)
+    if (sourceAgent) {
+      this.log(`AgentX comment from ${sourceAgent}, skipping (comment ${comment.id})`)
       return
     }
 
@@ -442,6 +455,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     const commentId = String(comment.id)
     if (this.sentCommentIds.has(commentId)) {
+      this.log(`[github] echo skip: comment ${commentId} matched our own post`)
       this.sentCommentIds.delete(commentId)
       return
     }
@@ -497,7 +511,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const channelMeta = await this.getChannelMeta(chatId)
 
     const incoming: IncomingMessage = {
-      id: `pr-${pr.number}-${event.action}`,
+      id: `pr-${repo}-${pr.number}`,
       channel: "github",
       accountId: "default",
       sender: {
@@ -559,7 +573,7 @@ export class GitHubAdapter implements ChannelAdapter {
     if (this.isBotUser(comment.user.login)) return
 
     // Skip AgentX-signed comments
-    if (comment.body.includes("<!-- agentx:")) return
+    if (detectAgentxMarker(comment.body)) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
@@ -600,7 +614,7 @@ export class GitHubAdapter implements ChannelAdapter {
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const incoming: IncomingMessage = {
-      id: `issue-${issue.number}-${event.action}`,
+      id: `issue-${repo}-${issue.number}`,
       channel: "github",
       accountId: "default",
       sender: {

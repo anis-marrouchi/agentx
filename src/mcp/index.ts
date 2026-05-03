@@ -187,7 +187,7 @@ const TOOLS = [
   {
     name: "agentx_send",
     description:
-      "Send a message to any channel (Telegram, WhatsApp, GitLab, Discord). Use for cross-channel notifications, proactive outbound messages, or relaying information between channels.",
+      "Low-level outbound send when you ALREADY have a channel-native chatId (Telegram numeric chat id, GitLab 'group/project:issue:123', WhatsApp '+phone@s.whatsapp.net'). For sending to another agent by name, use agentx_send_agent instead. For sending to a human contact by name, use agentx_send_contact instead.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -209,6 +209,87 @@ const TOOLS = [
         },
       },
       required: ["channel", "chatId", "text"],
+    },
+  },
+  {
+    name: "agentx_send_agent",
+    description:
+      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agentId: {
+          type: "string",
+          description: "Exact agentId of the target agent (e.g. 'clawd', 'atlas'). Must match an agent in this daemon's registry or in a healthy mesh peer's directory.",
+        },
+        text: {
+          type: "string",
+          description: "Message to send to the target agent",
+        },
+        senderAgentId: {
+          type: "string",
+          description: "Optional. The agentId on whose behalf this call is being made. Recorded in route_traces and (with A2A protocolVersion >= 2) validated by the receiving daemon.",
+        },
+      },
+      required: ["agentId", "text"],
+    },
+  },
+  {
+    name: "agentx_recent",
+    description:
+      "Read the most recent messages from a chat across ALL agents that have sessions for it. Returns inbound + each agent's replies in chronological order, so you can see what's actually been said in a Telegram chat / GitLab thread / WhatsApp DM regardless of which agent recorded it. Use this BEFORE speculating about what was sent — the cx/devops/marketing thread on 2026-04-29 about a Nadia/CX bot mixup would have been resolved in one call instead of three agents speculating. Bounded by sinceISO (default: last 24h) and limit (default: 30, max: 200).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        channel: {
+          type: "string",
+          description: "Channel name. Examples: telegram, whatsapp, gitlab, github, discord, cron, api, a2a.",
+        },
+        chatId: {
+          type: "string",
+          description: "Channel-native chat id. Telegram: numeric (e.g. \"1816212449\" for a DM, \"-1001234567890\" for a group). GitLab: \"group/project:issue:123\". WhatsApp: \"+phone@s.whatsapp.net\".",
+        },
+        sinceISO: {
+          type: "string",
+          description: "Optional ISO timestamp lower bound. Defaults to 24h ago.",
+        },
+        limit: {
+          type: "number",
+          description: "Optional cap on returned messages. Default 30, max 200.",
+        },
+      },
+      required: ["channel", "chatId"],
+    },
+  },
+  {
+    name: "agentx_send_contact",
+    description:
+      "Send a message to a HUMAN CONTACT by name. Resolves through .agentx/contacts.json (id → exact alias → fuzzy substring). Refuses fuzzy matches without confirmed:true so the agent must ask the user to disambiguate before sending. Refuses when the name also matches a registered agent (use agentx_send_agent for those). Use this when the target is a person, not a bot.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        contactName: {
+          type: "string",
+          description: "Free-form contact name. Tried as id first, then alias, then fuzzy substring.",
+        },
+        text: {
+          type: "string",
+          description: "Message to send to the contact",
+        },
+        channel: {
+          type: "string",
+          description: "Optional explicit channel (telegram | whatsapp | gitlab | discord). Defaults to the first channel configured for the contact.",
+        },
+        confirmed: {
+          type: "boolean",
+          description: "Pass true ONLY after the user has confirmed a fuzzy match. Without it, fuzzy matches return 409 with the candidate so you can ask the user.",
+        },
+        agentId: {
+          type: "string",
+          description: "Optional agent identity used for the outbound send (determines bot account / token).",
+        },
+      },
+      required: ["contactName", "text"],
     },
   },
   {
@@ -575,6 +656,84 @@ async function handleToolCall(
         return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
       }
       return { content: [{ type: "text", text: `Message sent. ID: ${data.messageId || "ok"}` }] }
+    }
+
+    case "agentx_send_agent": {
+      const agentId = args.agentId as string | undefined
+      const text = args.text as string | undefined
+      const senderAgentId = args.senderAgentId as string | undefined
+      if (!agentId || !text) {
+        return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/send/agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId, text, senderAgentId }),
+      })
+      const data = await res.json() as any
+      if (!res.ok) {
+        const known = Array.isArray(data?.known) ? ` Known agents: ${data.known.join(", ")}.` : ""
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}.${known}` }] }
+      }
+      const peerInfo = data.peer ? ` (via mesh peer ${data.peer})` : ""
+      return { content: [{ type: "text", text: `Message sent to agent ${agentId}${peerInfo}. ID: ${data.messageId || "ok"}` }] }
+    }
+
+    case "agentx_recent": {
+      const channel = args.channel as string | undefined
+      const chatId = args.chatId as string | undefined
+      const sinceISO = args.sinceISO as string | undefined
+      const limit = args.limit as number | undefined
+      if (!channel || !chatId) {
+        return { content: [{ type: "text", text: "Error: channel and chatId are required." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/chat/recent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, chatId, sinceISO, limit }),
+      })
+      const data = await res.json() as any
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      }
+      const messages = (data.messages || []) as Array<{ ts: string; role: string; senderName: string; content: string; agentId: string }>
+      if (messages.length === 0) {
+        return { content: [{ type: "text", text: `No messages in ${channel}/${chatId} within the requested window.` }] }
+      }
+      // Render as a readable transcript with agentId attribution so the
+      // caller can distinguish who said what.
+      const lines = messages.map((m) => {
+        const time = m.ts.slice(11, 16) // HH:MM
+        const day = m.ts.slice(0, 10)
+        const who = m.role === "agent" ? `${m.agentId}` : (m.senderName || "user")
+        return `[${day} ${time}] ${who}: ${m.content}`
+      })
+      return { content: [{ type: "text", text: lines.join("\n") }] }
+    }
+
+    case "agentx_send_contact": {
+      const contactName = args.contactName as string | undefined
+      const text = args.text as string | undefined
+      const channel = args.channel as string | undefined
+      const confirmed = args.confirmed === true
+      const agentId = args.agentId as string | undefined
+      if (!contactName || !text) {
+        return { content: [{ type: "text", text: "Error: contactName and text are required." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/send/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactName, text, channel, confirmed, agentId }),
+      })
+      const data = await res.json() as any
+      if (res.status === 409) {
+        // Surface the resolution result so the caller can ask the user to disambiguate.
+        return { content: [{ type: "text", text: `Refused: ${JSON.stringify(data, null, 2)}` }] }
+      }
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      }
+      return { content: [{ type: "text", text: `Message sent to contact ${data.contactId} via ${data.channel}. ID: ${data.messageId || "ok"}` }] }
     }
 
     case "agentx_task": {

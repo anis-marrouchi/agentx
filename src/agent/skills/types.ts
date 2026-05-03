@@ -20,6 +20,15 @@ export const skillFrontmatterSchema = z.object({
     .optional(),
   /** If true, skill is auto-injected into context when triggers match (per-turn) */
   autoInject: z.boolean().optional(),
+  /** Reference card ids cited by this skill (e.g. "ksi.gitlab.project.ksi-v2").
+   *  Audit lint flags FAILING when any id does not resolve. */
+  references: z.array(z.string()).optional(),
+  /** Skills this one delegates to (e.g. ksi-cx-email → [hotmail]). Audit lint
+   *  flags FAILING when a delegate has no SKILL.md. */
+  delegatesTo: z.array(z.string()).optional(),
+  /** Free-form category — used by recipes and audit rules. Common values:
+   *  deploy, ssh, email, gitlab, ops, content, marketing. */
+  category: z.string().optional(),
 })
 
 export type SkillFrontmatter = z.infer<typeof skillFrontmatterSchema>

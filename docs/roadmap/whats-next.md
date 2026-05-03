@@ -12,7 +12,7 @@ The backlog. No vision copy.
 
 **Classifier timeout resilience** — bumped 20s → 60s in [`2eba778`](https://github.com/anis-marrouchi/agentx/commit/2eba778); still aborts on cold-start. Next: retry-with-backoff, or bypass `POST /task` and call the LLM SDK directly.
 
-**A/B harness as a cron** — `wiki ab-test` works interactively; no standing run. Waiting on traffic volume to justify alerting.
+**A/B / online-eval harness** — `wiki ab-test` works interactively; no standing run, no production shadow mode. Promoted from "waiting on traffic" after a 4-layer-stack proposal review confirmed this is the only real production-grade gap (rest of the Google ADK/MCP/Vertex/A2A surface is already covered by `src/agents/`, `src/mcp/index.ts`, `src/a2a/`, `src/business/kpi.ts` + `token-tracker.ts`). Build: shadow-mode flag in `src/agents/registry.ts` that, for a sampled % of incoming tasks, runs the same input through a B-version (alt model / alt prompt / alt agent) in parallel, persists both outputs alongside the existing TaskRecord, and surfaces a side-by-side diff in the dashboard. ~2 days. Owned ~$0; alternative was Vertex AI Agent Engine which is vendor lock-in + ongoing bill for capabilities already built.
 
 ## Scoped, partial
 
@@ -24,7 +24,7 @@ The backlog. No vision copy.
 
 ## Parking lot
 
-Auto-prune rejected classifications · retrieval-weights audit (verify `graph.retrievalWeights` is actually wired) · classifier content-hash short-circuit for trivial messages ("thanks", "ok") · MCP client compatibility sweep (Cursor/Windsurf/Zed) · public procedure registry (after Procedures land) · graph taxonomy tree-viz.
+Auto-prune rejected classifications · retrieval-weights audit (verify `graph.retrievalWeights` is actually wired) · classifier content-hash short-circuit for trivial messages ("thanks", "ok") · MCP client compatibility sweep (Cursor/Windsurf/Zed) · **MCP-client wiring per agent** (centralize each agent's `.mcp.json` via an `mcp:` block in `agentx.json`, install at boot via the `installAgentMemorySurface()` pattern in `src/daemon/index.ts`; ~half a day) · public procedure registry (after Procedures land) · graph taxonomy tree-viz.
 
 ## Explicitly not doing
 

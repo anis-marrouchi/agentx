@@ -35,3 +35,10 @@ export * as correlator from "./correlator"
 export { TaskStore, userTaskRecordSchema, computeKpis, type UserTaskRecord, type TaskStatus, type ActorKpi, type WorkflowKpis } from "./task-store"
 export { TimerService, timerRecordSchema, type TimerRecord, type TimerCallback, type TimerServiceOptions } from "./timers"
 export { SignalBus, matchesSignal, type SignalEmission, type SignalHandler } from "./signals"
+export {
+  parseYamlWorkflow,
+  desugarFlow,
+  renderWorkflowYaml,
+  WorkflowYamlError,
+  type ParseYamlOptions,
+} from "./yaml"

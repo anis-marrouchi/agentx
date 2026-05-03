@@ -1,5 +1,6 @@
 import chalk from "chalk"
 import prompts from "prompts"
+import { spawn } from "child_process"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 import { setDotEnv } from "@/utils/dotenv-mutator"
 
@@ -34,7 +35,6 @@ export interface ConnectDiscordOpts {
 
 function openInBrowser(url: string): void {
   try {
-    const { spawn } = require("child_process")
     const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
     spawn(opener, [url], { stdio: "ignore", detached: true }).unref()
   } catch { /* non-fatal */ }

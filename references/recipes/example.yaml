@@ -1,0 +1,22 @@
+recipes:
+  - id: example-deploy
+    priority: 5
+    when:
+      agentIds: [devops-agent, coder-agent]
+      messageRegex:
+        - "deploy|ssh|server|restart"
+    references:
+      - example.ssh.prod
+      - example.ssh.jump
+      - example.gitlab.project.app
+    skills: []
+
+  - id: example-pm
+    priority: 5
+    when:
+      agentIds: [pm-agent]
+    references:
+      - example.gitlab.group
+      - example.gitlab.project.*
+      - example.contacts.*
+    skills: []

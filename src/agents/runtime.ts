@@ -1,6 +1,8 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
+import { StringDecoder } from "string_decoder"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
+import { buildAgentEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 
 // --- Agent execution runtime ---
@@ -8,6 +10,18 @@ import type { AgentDef } from "@/daemon/config"
 // - claude-code: spawns claude CLI (subscription, full features)
 // - sdk: uses Claude Agent SDK (API key, programmatic)
 // - orchestrator: uses agentx's own agentic loop (any provider)
+
+/** Message shown to operators when the `claude` CLI isn't on PATH. Hits both
+ *  the streaming and non-streaming paths — without this we used to surface
+ *  "Claude Code exited with code unknown" / "code ENOENT", neither of which
+ *  hints at the actual fix. */
+function claudeMissingMessage(): string {
+  return (
+    `Claude Code CLI not found on PATH. Install it before starting an agent: ` +
+    `https://docs.claude.com/en/docs/claude-code . On Linux/macOS:  npm i -g @anthropic-ai/claude-code  ` +
+    `then verify with  claude --version. If you don't intend to use the claude-code engine, set the agent's tier to "sdk" or "orchestrator" in agentx.json.`
+  )
+}
 
 export interface AgentPeer {
   id: string
@@ -40,6 +54,19 @@ export interface AgentTask {
    *  supports it. Workflow `agent` nodes pass this through from their
    *  config.timeoutMinutes. */
   timeoutMinutes?: number
+  /** Phase 1 / 6 — when set, identifies the intent-ledger decision row
+   *  this task corresponds to. The registry records a resolution row
+   *  on this decision when the task completes (success / error / mesh-
+   *  fallback). Active-task safety in `decideAndCommit` reads
+   *  intent_resolutions to clear in-flight slots; without resolution
+   *  writes, every dispatched decision sits in-flight forever and
+   *  Inv-ActiveTaskSafety becomes vacuously over-aggressive. Channel
+   *  adapters (gitlab, router) set this when their record*Dispatch
+   *  helper returns a dispatched decision. */
+  intentRef?: {
+    eventId: string
+    decidedBy: string
+  }
   context?: {
     channel?: string
     sender?: string
@@ -297,12 +324,13 @@ export async function executeClaudeCode(
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string }>((resolve, reject) => {
+      const childEnv = buildAgentEnv(agent.workspace)
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
         timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, HOME: process.env.HOME || "/home/" + (process.env.USER || "user") },
+        env: { ...childEnv, HOME: childEnv.HOME || "/home/" + (childEnv.USER || "user") },
       }, (error, stdout, stderr) => {
         // Always resolve — we handle errors ourselves based on stdout/stderr
         resolve({
@@ -324,6 +352,8 @@ export async function executeClaudeCode(
       let errMsg: string
       if (exitCode === 143) {
         errMsg = `Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else if (exitCode === "ENOENT" || /ENOENT|spawn claude/i.test(stderr || "")) {
+        errMsg = claudeMissingMessage()
       } else {
         errMsg = stderr?.trim() || `Claude Code exited with code ${exitCode}`
       }
@@ -401,19 +431,27 @@ export async function executeClaudeCodeStreaming(
       cwd: agent.workspace,
       timeout: streamTimeoutMs,
       reject: false,
-      env: process.env,
+      env: buildAgentEnv(agent.workspace),
       // Don't buffer — we'll read stdout line by line
       buffer: false,
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
       stdin: "ignore",
     })
 
-    // Parse stream-json output line by line
+    // Parse stream-json output line by line.
+    // StringDecoder buffers partial UTF-8 sequences across chunk
+    // boundaries; plain Buffer.toString() does not, so a chunk that
+    // ends mid-character (Arabic = 2 bytes, common emoji = 4 bytes)
+    // produced replacement chars or dropped letters in the agent's
+    // outbound text. The user reported "letters missing from words"
+    // on WhatsApp specifically — Arabic + emoji-heavy traffic is
+    // exactly the workload that exposes this. Hoisted out of the if
+    // block so the post-`await proc` flush can call decoder.end().
+    let lineBuffer = ""
+    const decoder = new StringDecoder("utf8")
     if (proc.stdout) {
-      let lineBuffer = ""
-
       proc.stdout.on("data", (chunk: Buffer) => {
-        lineBuffer += chunk.toString()
+        lineBuffer += decoder.write(chunk as Buffer)
         const lines = lineBuffer.split("\n")
         lineBuffer = lines.pop() || ""
 
@@ -478,9 +516,15 @@ export async function executeClaudeCodeStreaming(
             // System-init event (first thing the CLI emits) carries the model
             // it's about to invoke — capture early so we have it even if the
             // run errors before the terminal result.
+            //
+            // Do NOT capture session_id from init: when --resume <X> is
+            // passed, init's session_id echoes X back (the resumed-from ID),
+            // not the new ID Claude rolls into for THIS turn. Persisting X
+            // means the next turn re-resumes from before this turn's progress
+            // — exactly the "wrong-message resume" symptom. Only `result`
+            // carries the authoritative new session_id (line above).
             if (event.type === "system" && event.subtype === "init") {
               if (typeof event.model === "string") streamBilledModel = event.model
-              if (typeof event.session_id === "string") streamSessionId = event.session_id
             }
           } catch {
             // Not JSON — could be raw text output, append it
@@ -495,6 +539,13 @@ export async function executeClaudeCodeStreaming(
 
     const result = await proc
 
+    // Flush any partial UTF-8 sequence still buffered in the decoder.
+    // The stream-json output normally ends with a newline so this is a
+    // no-op, but it keeps the channel honest if the producer ever
+    // exits mid-character.
+    const tail = decoder.end()
+    if (tail) lineBuffer += tail
+
     // If we got no streaming content, fall back to stdout
     if (!fullText && result.stdout) {
       fullText = typeof result.stdout === "string" ? result.stdout : ""
@@ -506,12 +557,18 @@ export async function executeClaudeCodeStreaming(
       // surface that as a recognizable timeout message instead of leaking
       // "exited with code undefined" into the user's chat. Mirrors the
       // non-streaming path's exit-143 handling.
-      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean }
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; failed?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
       if (r.timedOut) {
         errMsg = `Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
       } else if (r.signal) {
         errMsg = stderr.trim() || `Claude Code killed by signal ${r.signal}`
+      } else if (r.code === "ENOENT" || /ENOENT|spawn claude/i.test((r.shortMessage || "") + " " + stderr)) {
+        // execa surfaces "binary not on PATH" as { failed: true, code: 'ENOENT',
+        // exitCode: undefined } — without an explicit branch this used to leak
+        // through as "Claude Code exited with code unknown", leaving operators
+        // with no clue that the issue is a missing CLI.
+        errMsg = claudeMissingMessage()
       } else {
         errMsg = stderr.trim() || `Claude Code exited with code ${r.exitCode ?? "unknown"}`
       }

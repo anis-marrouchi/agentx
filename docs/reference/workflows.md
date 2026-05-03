@@ -13,6 +13,59 @@ The same engine powers two ends of the spectrum:
 
 There's no separate engine for the two shapes. Authors pick the node types that match their problem.
 
+## A simple workflow, end-to-end
+
+Before the catalog: here's the smallest useful flow, in plain English.
+
+1. **Trigger fires** when a Telegram message contains the word "expense".
+2. **Agent extracts** the amount + category from the message.
+3. **If amount > $500**, route to a `userTask` form for the CFO; **else**, post directly to a Slack approvals channel.
+
+In YAML (each line annotated):
+
+```yaml
+id: expense-routing
+nodes:
+  - id: in                          # the trigger node
+    type: trigger.channel           # listen for channel messages
+    config:
+      channel: telegram             # only Telegram
+      match:
+        textContains: "expense"     # only messages with the word "expense"
+
+  - id: classify                    # ask an agent to read the message
+    type: agent
+    config:
+      agentId: finance-bot          # which agent runs
+      prompt: |
+        Extract amount (USD) and category from:
+        {{in.text}}                 # the user's text from the trigger
+      outputJson: true              # parse the reply as JSON
+
+  - id: route                       # branch on the parsed amount
+    type: branch
+    config:
+      on: "{{classify.json.amount}}"
+      cases:
+        - { gt: 500, port: cfo }    # >$500 → CFO branch
+        - { else: true, port: slack }
+
+  - id: cfo
+    type: userTask                  # pause until a human submits
+    config:
+      assignTo: actor:cfo
+      form: { fields: [approve, reject] }
+
+  - id: slack
+    type: action.send               # one-shot send, no wait
+    config:
+      channel: slack
+      chatId: "#approvals"
+      text: "Auto-approved: {{classify.json.amount}}"
+```
+
+That's it — five nodes, one branch, one human checkpoint. Below is the catalog of every node type you can use in a workflow. Each entry shows: what it does, the template fields it reads from the run state, and what it writes back. You probably won't need most of them on day one — start with `trigger`, `agent`, and `userTask`.
+
 ## Mental model
 
 A workflow **reflects a complete activity from start to end**. Each node is a step; each edge is a state transition. Transitions fire because a party *did something*, not because time passed — timers exist (SLAs, intermediate waits) but aren't the primary driver.
@@ -57,7 +110,22 @@ Four party kinds advance a run:
 
 ### Actions
 
-`action.send`, `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.react`, `action.editMessage`, `action.logTime`, `action.callHTTP`. Each verb is a thin wrapper over the matching channel adapter method.
+Built-in verbs (one method per channel adapter): `action.send`, `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.react`, `action.editMessage`, `action.logTime`, `action.callHTTP`.
+
+`action.run` invokes a registered action from the [action registry](./actions). Config takes an `actionId` plus a templated `inputs` map; output mirrors the registry's `ActionRunResult` so downstream nodes can branch.
+
+```json
+{
+  "id": "notify_lead",
+  "type": "action.run",
+  "config": {
+    "actionId": "slack-notify",
+    "inputs": { "text": "New lead from {{trigger.source}}: {{trigger.email}}" }
+  }
+}
+```
+
+Outputs: <code v-pre>{{ &lt;nodeId&gt;.ok / .status / .output / .errors / .durationMs }}</code>. Use `action.callHTTP` for one-off calls inside a single workflow, `action.run` when the same call shows up in three or more places (or in a CLI/cron) and deserves to be promoted to the registry.
 
 ### BPM
 
@@ -89,6 +157,8 @@ A `userTask` node's `assignTo` takes either an actor ref (`actor:alice`) or a ro
 
 ## Templates
 
+<div v-pre>
+
 Every node's config and every prompt can interpolate `{{nodeId.path}}` against the run context. Examples:
 
 - `{{trigger.values.amount}}` — value of a field submitted at the trigger form
@@ -97,6 +167,8 @@ Every node's config and every prompt can interpolate `{{nodeId.path}}` against t
 - `{{env.GITLAB_TOKEN}}` — env var (must be in the workflow's `envAllow`)
 
 Template rendering respects the allowlist on `workflow.envAllow` for any `{{env.*}}` lookups, so secrets never leak through unreviewed templates.
+
+</div>
 
 ## Sub-process composition
 

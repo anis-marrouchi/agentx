@@ -165,6 +165,7 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
     case "action.editMessage": return { channel: "gitlab", messageId: "", text: "" }
     case "action.logTime":     return { channel: "gitlab" }
     case "action.callHTTP":    return { url: "", method: "POST" }
+    case "action.run":         return { actionId: "", inputs: {} }
     case "end":                return { status: "completed" }
   }
   return {}
@@ -306,10 +307,14 @@ export function App() {
   const [theme, setThemeState] = useState<"dark" | "light">(() => (localStorage.getItem("wfe.theme") as "dark" | "light") ?? "dark")
   const [density, setDensity] = useState<"compact" | "cozy" | "roomy">(() => (localStorage.getItem("wfe.density") as "compact" | "cozy" | "roomy") ?? "cozy")
   const [hue, setHue] = useState<number>(() => Number(localStorage.getItem("wfe.hue") ?? 255))
+  const [paletteOpen, setPaletteOpen] = useState<boolean>(() => localStorage.getItem("wfe.paletteOpen") !== "0")
+  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => localStorage.getItem("wfe.inspectorOpen") !== "0")
   const [viewBox, setViewBox] = useState<ViewBox>({ zoom: 0.75, tx: 40, ty: 60 })
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("wfe.theme", theme) }, [theme])
   useEffect(() => { localStorage.setItem("wfe.density", density) }, [density])
   useEffect(() => { document.documentElement.style.setProperty("--accent-hue", String(hue)); localStorage.setItem("wfe.hue", String(hue)) }, [hue])
+  useEffect(() => { localStorage.setItem("wfe.paletteOpen", paletteOpen ? "1" : "0") }, [paletteOpen])
+  useEffect(() => { localStorage.setItem("wfe.inspectorOpen", inspectorOpen ? "1" : "0") }, [inspectorOpen])
   const setTheme = (t: "dark" | "light") => setThemeState(t)
 
   // --- Overlays -----------------------------------------------------------
@@ -497,7 +502,9 @@ export function App() {
   }
 
   return (
-    <div className="app" data-density={density}>
+    <div className="app" data-density={density}
+         data-palette={paletteOpen ? "open" : "closed"}
+         data-inspector={inspectorOpen ? "open" : "closed"}>
       <Toolbar
         title={meta.title}
         setTitle={(v) => dispatch({ type: "setTitle", title: v })}
@@ -512,8 +519,10 @@ export function App() {
         onHelp={() => setHelpOpen(true)}
         onLayout={() => dispatch({ type: "layout" })}
         workflowIdLabel={`/workflows/${meta.id}`}
+        paletteOpen={paletteOpen} setPaletteOpen={setPaletteOpen}
+        inspectorOpen={inspectorOpen} setInspectorOpen={setInspectorOpen}
       />
-      <Palette onLoadTemplate={onLoadTemplate} />
+      {paletteOpen && <Palette onLoadTemplate={onLoadTemplate} />}
       <Canvas
         nodes={nodes} edges={edges}
         selection={selection} setSelection={setSelection}
@@ -522,30 +531,29 @@ export function App() {
         runState={runState}
         viewBox={viewBox} setViewBox={setViewBox}
       />
-      <Inspector
-        selection={selection}
-        nodes={nodes} edges={edges}
-        patch={patchSelected}
-        patchData={patchSelectedData}
-        onDelete={onDelete}
-        onDuplicate={onDuplicate}
-        validation={selectedIssues}
-        runState={runState}
-        agents={agents}
-      />
+      {inspectorOpen && (
+        <Inspector
+          selection={selection}
+          nodes={nodes} edges={edges}
+          patch={patchSelected}
+          patchData={patchSelectedData}
+          onDelete={onDelete}
+          onDuplicate={onDuplicate}
+          validation={selectedIssues}
+          runState={runState}
+          agents={agents}
+          meta={meta}
+          patchMeta={(patch) => dispatch({ type: "patchMeta", patch })}
+          onDeleteWorkflow={onDeleteWorkflow}
+          isNew={isNew}
+        />
+      )}
       <RunPanel running={running || runCursor >= 0} script={runScript} cursor={runCursor} onStop={() => { stopRun(); setRunCursor(-1) }} />
       <Tweaks open={tweaksOpen} setOpen={setTweaksOpen}
               theme={theme} setTheme={setTheme}
               density={density} setDensity={setDensity}
               hue={hue} setHue={setHue} />
       <KbdOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
-      {!isNew && (
-        <button className="btn btn--ghost-icon"
-                style={{ position: "absolute", bottom: 14, right: 14, zIndex: 30, height: 28, padding: "0 10px", fontSize: 11 }}
-                onClick={onDeleteWorkflow}>
-          Delete workflow
-        </button>
-      )}
       <ChatWidget
         currentWorkflow={graphToWorkflow({ meta, nodes, edges }).workflow}
         onApplyWorkflow={(wf) => {

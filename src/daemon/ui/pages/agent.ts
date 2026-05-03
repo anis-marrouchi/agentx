@@ -131,6 +131,10 @@ const AGENT_PAGE_BODY = `
       Handovers
       <span class="ax-rail__count" id="rail-handovers-count">0</span>
     </a>
+    <a data-tab="capability">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      Capability
+    </a>
 
     <div class="ax-rail__sep"></div>
     <div class="ax-rail__label">Observe</div>
@@ -201,6 +205,9 @@ const AGENT_PAGE_BODY = `
               <option value="private">Private (only this node)</option>
               <option value="public">Public API</option>
             </select>
+            <div id="public-api-hint" style="display:none;margin-top:6px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;font-size:11px;color:var(--ax-muted)">
+              Public API enabled. External callers POST to <code id="public-api-url" style="font-family:'IBM Plex Mono',monospace"></code> with a token scoped <code>agent:<span id="public-api-scope"></span></code> or <code>agent:*</code>. Mint one in the <a href="/admin#tokens">Tokens tab</a>.
+            </div>
           </div>
         </div>
       </div>
@@ -449,6 +456,93 @@ const AGENT_PAGE_BODY = `
       <div class="ax-panel">
         <div class="ax-panel__head"><div><h2>Taken over from somewhere</h2><p class="ax-lead" style="margin:0">Chats other agents routed <i>to</i> this agent.</p></div></div>
         <div id="ho-incoming"></div>
+      </div>
+    </section>
+
+    <!-- Capability — mirrors agentx agent capability -->
+    <section id="tab-capability" class="ax-panel__tab">
+      <div class="ax-panel">
+        <div class="ax-panel__head">
+          <div>
+            <h2>Capability flags</h2>
+            <p class="ax-lead" style="margin:0">Phase 5 typed dispatch, Phase 8 delegation depth, and per-agent context-engine overrides. Mirrors <code>agentx agent capability</code>. <b>Restart the daemon</b> after changes for them to take effect.</p>
+          </div>
+        </div>
+        <div class="ax-panel__body">
+          <label class="ax-field">
+            <span class="ax-field__label">Allowed intents <span class="ax-hint">(comma-separated allow-list — leave blank for permissive default)</span></span>
+            <input id="cap-intents" type="text" placeholder="issue.opened, merge_request.opened" />
+            <span class="ax-hint">Set to limit this agent to specific intents. The org-chart canHandle() check rejects anything not on the list.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Max delegation depth <span class="ax-hint">(0..50; lower for agents at the bottom of a chain)</span></span>
+            <input id="cap-mdd" type="number" min="0" max="50" />
+            <span class="ax-hint">Caps cascade chains where A → B → A. Default 5.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Context references</span>
+            <select id="cap-cref">
+              <option value="false">off — skip the [Verified References] block</option>
+              <option value="true">on — render deterministic references in the prompt</option>
+            </select>
+            <span class="ax-hint">Turn on for agents (PMs, devops) that need cited facts. Requires a <code>references/</code> registry in the workspace.</span>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Context strategy <span class="ax-hint">(per-agent override; blank = global default)</span></span>
+            <select id="cap-cstrat">
+              <option value="">(global default)</option>
+              <option value="layered">layered — full context, larger prompt</option>
+              <option value="planner">planner — smaller prompt, more tool-driven exploration</option>
+            </select>
+          </label>
+          <label class="ax-field">
+            <span class="ax-field__label">Max execution minutes <span class="ax-hint">(1..240; SIGTERM after this)</span></span>
+            <input id="cap-mxm" type="number" min="1" max="240" />
+            <span class="ax-hint">Wall-clock cap on a single Claude Code invocation. Default 20m. Bump for devops/coder agents that do long investigations.</span>
+          </label>
+          <div class="ax-form-actions" style="margin-top:14px">
+            <button class="ax-btn ax-btn--primary" id="cap-save">Save capability</button>
+            <span id="cap-msg" class="ax-hint" style="margin-left:10px"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- MCP servers — synced to <workspace>/.mcp.json by agent-mcp.ts at boot -->
+      <div class="ax-panel" style="margin-top:14px">
+        <div class="ax-panel__head">
+          <div>
+            <h2>MCP servers</h2>
+            <p class="ax-lead" style="margin:0">Each entry becomes a server in the agent\'s <code>.mcp.json</code>. Operator-edited entries in that file are respected (the sync layer marks them operator-owned and skips them); this tab only writes to <code>agentx.json</code>.</p>
+          </div>
+        </div>
+        <div class="ax-panel__body">
+          <div id="mcp-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
+          <details>
+            <summary style="cursor:pointer;font-size:12px;color:var(--ax-accent,#3a7bd5)">+ Add or update server</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <label class="ax-field">
+                <span class="ax-field__label">Name <span class="ax-hint">(identifier; will key the entry in agent.mcp)</span></span>
+                <input id="mcp-name" type="text" placeholder="filesystem, gitlab, brave-search…" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Command</span>
+                <input id="mcp-command" type="text" placeholder="npx" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Args <span class="ax-hint">(comma-separated)</span></span>
+                <input id="mcp-args" type="text" placeholder="-y, @modelcontextprotocol/server-filesystem, /Users/me/code" />
+              </label>
+              <label class="ax-field">
+                <span class="ax-field__label">Env <span class="ax-hint">(KEY=value, comma-separated; optional)</span></span>
+                <input id="mcp-env" type="text" placeholder="GITLAB_TOKEN=glpat-…, GITLAB_HOST=https://gitlab.example.com" />
+              </label>
+              <div class="ax-form-actions">
+                <button class="ax-btn ax-btn--primary" id="mcp-save">Save MCP server</button>
+                <span id="mcp-msg" class="ax-hint" style="margin-left:10px"></span>
+              </div>
+            </div>
+          </details>
+        </div>
       </div>
     </section>
 
@@ -822,6 +916,23 @@ async function loadAgent(){
     $('f-tier').value = a.tier || 'claude-code';
     $('f-model').value = a.model || '';
     $('f-access').value = a.access || 'private';
+    // Public-API hint — show endpoint + scope when access is public.
+    const hintEl = document.getElementById('public-api-hint');
+    if (hintEl) {
+      const isPublic = a.access === 'public';
+      hintEl.style.display = isPublic ? '' : 'none';
+      if (isPublic) {
+        const daemonUrl = (state && state.daemonUrl) || (location.origin || '').replace(':4202', ':18800');
+        const urlEl = document.getElementById('public-api-url');
+        const scopeEl = document.getElementById('public-api-scope');
+        if (urlEl) urlEl.textContent = daemonUrl + '/api/public/agents/' + AGENT_ID + '/messages';
+        if (scopeEl) scopeEl.textContent = AGENT_ID;
+      }
+    }
+    // Also re-render when the operator flips the dropdown.
+    $('f-access').addEventListener('change', () => {
+      if (hintEl) hintEl.style.display = $('f-access').value === 'public' ? '' : 'none';
+    }, { once: true });
     setOpt('maxConcurrent', a.maxConcurrent ?? 1);
     setOpt('maxExecutionMinutes', a.maxExecutionMinutes ?? 20);
     setOpt('permissionMode', a.permissionMode || 'default');
@@ -833,8 +944,109 @@ async function loadAgent(){
     // Stats placeholders; loadActivity() fills real numbers once the tab is visited.
     const handling = (a.runningTasks?.length) || 0;
     $('stat-handling').textContent = String(handling);
+
+    // Capability tab — Phase 5/8 fields. Mirrors the agentx agent capability CLI.
+    const intentsEl = $('cap-intents');
+    if (intentsEl) {
+      intentsEl.value = Array.isArray(a.intents) ? a.intents.join(', ') : '';
+      $('cap-mdd').value = a.maxDelegationDepth ?? 5;
+      $('cap-cref').value = a.contextReferences ? 'true' : 'false';
+      $('cap-cstrat').value = a.contextStrategy || '';
+      $('cap-mxm').value = a.maxExecutionMinutes ?? 20;
+    }
+    // MCP servers list
+    const mcpListEl = document.getElementById('mcp-list');
+    if (mcpListEl) {
+      const mcp = a.mcp || {};
+      const names = Object.keys(mcp);
+      if (names.length === 0) {
+        mcpListEl.innerHTML = '<div style="font-size:11px;color:var(--ax-muted);font-style:italic;padding:8px;border:1px dashed var(--ax-border);border-radius:4px">no MCP servers configured</div>';
+      } else {
+        mcpListEl.innerHTML = names.map(function(n){
+          const s = mcp[n];
+          const args = (s.args || []).map(function(x){ return esc(x); }).join(' ');
+          const envCount = s.env ? Object.keys(s.env).length : 0;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--ax-border);border-radius:4px">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div><b>' + esc(n) + '</b> <code style="font-size:11px;color:var(--ax-muted);margin-left:4px">' + esc(s.command) + ' ' + args + '</code></div>' +
+              (envCount ? '<div style="font-size:11px;color:var(--ax-muted);margin-top:2px">env: ' + envCount + ' var(s)</div>' : '') +
+            '</div>' +
+            '<button class="ax-btn ax-btn--danger" data-mcp-rm="' + esc(n) + '">Remove</button>' +
+          '</div>';
+        }).join('');
+        mcpListEl.querySelectorAll('[data-mcp-rm]').forEach(function(b){
+          b.addEventListener('click', async function(){
+            const n = b.getAttribute('data-mcp-rm');
+            if (!confirm('Remove MCP server "' + n + '"?')) return;
+            try {
+              await req('DELETE', '/api/admin/agent/' + AGENT_ID + '/mcp', { name: n });
+              await loadAgent();
+            } catch (e) { showMsg('err', e.message); }
+          });
+        });
+      }
+    }
   } catch (e) { showMsg('err', e.message); }
 }
+
+// MCP save — adds or updates one server entry on the agent.
+(function(){
+  const btn = document.getElementById('mcp-save');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const name = document.getElementById('mcp-name').value.trim();
+    const command = document.getElementById('mcp-command').value.trim();
+    const argsRaw = document.getElementById('mcp-args').value.trim();
+    const envRaw = document.getElementById('mcp-env').value.trim();
+    const args = argsRaw ? argsRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    const env = {};
+    if (envRaw) {
+      envRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(pair){
+        const eq = pair.indexOf('=');
+        if (eq > 0) env[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+      });
+    }
+    const body = { name, command, args };
+    if (Object.keys(env).length > 0) body.env = env;
+    const msg = document.getElementById('mcp-msg');
+    try {
+      await req('POST', '/api/admin/agent/' + AGENT_ID + '/mcp', body);
+      if (msg) { msg.textContent = '✓ saved — agent picks it up at next daemon boot'; msg.style.color = 'var(--ax-success)'; }
+      ['mcp-name','mcp-command','mcp-args','mcp-env'].forEach(function(id){ document.getElementById(id).value = ''; });
+      await loadAgent();
+    } catch (e) {
+      if (msg) { msg.textContent = e.message; msg.style.color = 'var(--ax-err)'; }
+    }
+  });
+})();
+
+// Capability save — POST to the same agent-config write path the
+// CLI uses, so both surfaces persist identically. (See agentx agent
+// capability in the CLI for the cli mirror.)
+(function(){
+  const capSaveBtn = document.getElementById('cap-save');
+  if (!capSaveBtn) return;
+  capSaveBtn.addEventListener('click', async () => {
+    const intentsRaw = document.getElementById('cap-intents').value.trim();
+    const intents = intentsRaw ? intentsRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    const body = {
+      intents: intents,
+      maxDelegationDepth: parseInt(document.getElementById('cap-mdd').value, 10) || 5,
+      contextReferences: document.getElementById('cap-cref').value === 'true',
+      maxExecutionMinutes: parseInt(document.getElementById('cap-mxm').value, 10) || 20,
+    };
+    const cstrat = document.getElementById('cap-cstrat').value;
+    if (cstrat) body.contextStrategy = cstrat;
+    const msg = document.getElementById('cap-msg');
+    try {
+      await req('PATCH', '/api/admin/agent/' + AGENT_ID + '/capability', body);
+      if (msg) { msg.textContent = '✓ saved — restart the daemon for changes to take effect'; msg.style.color = 'var(--ax-success)'; }
+      await loadAgent();
+    } catch (e) {
+      if (msg) { msg.textContent = e.message; msg.style.color = 'var(--ax-err)'; }
+    }
+  });
+})();
 
 $('btn-save-meta').addEventListener('click', async () => {
   const body = {

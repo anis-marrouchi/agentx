@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { createHmac, timingSafeEqual } from "crypto"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
+import type { WorkflowDispatcher } from "@/workflows"
 
 // --- Webhook handler ---
 // Routes incoming webhooks from GitLab, GitHub, Stripe, Sentry, etc.
@@ -25,6 +27,7 @@ export class WebhookHandler {
   private mesh?: A2AMesh
   private webhookEntries: DaemonConfig["webhooks"]
   private log: (...args: unknown[]) => void
+  private workflowDispatcher?: WorkflowDispatcher
 
   constructor(
     registry: AgentRegistry,
@@ -38,6 +41,22 @@ export class WebhookHandler {
     this.log = log
     this.mesh = mesh
     this.webhookEntries = webhookEntries
+  }
+
+  /** Wired by the daemon after the workflow subsystem boots. When set,
+   *  webhook entries with a `triggers` map can dispatch a workflow per
+   *  inbound event-type instead of running the bound agent directly. */
+  setWorkflowDispatcher(d: WorkflowDispatcher): void {
+    this.workflowDispatcher = d
+  }
+
+  /** Hot-reload the webhook entry table. Called by the daemon's reload
+   *  handler when `webhooks[]` changes in agentx.json — adding a route,
+   *  rotating a secretEnv, flipping an entry from local to mesh-routed,
+   *  or editing a triggers map. Phase 4: closes the recurring complaint
+   *  that route changes require a full daemon restart. */
+  setWebhookEntries(entries: DaemonConfig["webhooks"]): void {
+    this.webhookEntries = entries
   }
 
   /**
@@ -55,16 +74,68 @@ export class WebhookHandler {
       return
     }
 
-    // Read body
-    const body = await this.readBody(req)
+    // Read raw body bytes BEFORE JSON parsing — HMAC signatures are over
+    // the wire bytes; parsing-then-reserializing breaks GitHub's, Stripe's,
+    // and most providers' signature schemes (key ordering, whitespace).
+    const { raw, parsed } = await this.readBody(req)
 
     // Detect source from headers if not in URL
     const source = sourceHint || this.detectSource(req.headers)
 
+    // Mandatory signature check when the matching webhook entry has
+    // `secretEnv` set. Silent no-op was the prior behavior — that's a
+    // security trap: an operator configures a secret expecting protection,
+    // gets none. Reject 401 instead.
+    const sigError = this.validateSignature(req.headers, raw, source, agentId)
+    if (sigError) {
+      this.log(`Webhook [${source}] -> ${agentId}: REJECTED (${sigError})`)
+      this.sendJson(res, 401, { error: sigError })
+      return
+    }
+
     // Parse the webhook payload into a human-readable message
-    const summary = this.buildSummary(source, body, req.headers)
+    const summary = this.buildSummary(source, parsed, req.headers)
 
     this.log(`Webhook [${source}] -> ${agentId}: ${summary.slice(0, 100)}`)
+
+    // Phase 3: per-event-type workflow routing. Each registered webhook
+    // entry can map specific event-types to workflow ids; on match we
+    // dispatch the workflow instead of running the bound agent directly.
+    // Falls through to the existing agent path if nothing matches and no
+    // defaultWorkflow is set — backward-compatible.
+    const eventType = this.extractEventType(source, parsed, req.headers)
+    const triggerEntry = this.webhookEntries.find(
+      w => w.enabled && w.agentId === agentId && w.source === source,
+    )
+    const workflowId =
+      (eventType && triggerEntry?.triggers?.[eventType]) ||
+      triggerEntry?.defaultWorkflow ||
+      null
+    if (workflowId && this.workflowDispatcher) {
+      try {
+        const result = await this.workflowDispatcher.dispatchWorkflow({
+          workflowId,
+          entityRef: { kind: "webhook", id: `${source}:${agentId}:${eventType ?? "—"}:${Date.now()}` } as any,
+          event: { kind: "webhook", source, eventType, payload: parsed } as any,
+          trigger: { source },
+        })
+        this.log(
+          `Webhook [${source}/${eventType ?? "—"}] -> workflow=${workflowId} (claimed=${result.claimed})`,
+        )
+        this.sendJson(res, 202, {
+          ok: true,
+          agent: agentId,
+          source,
+          eventType,
+          workflow: workflowId,
+          claimed: result.claimed,
+        })
+        return
+      } catch (e: any) {
+        this.log(`Workflow dispatch failed [${source}/${eventType}/${workflowId}]: ${e.message}`)
+        // Fall through to agent path on error so we don't drop the event entirely.
+      }
+    }
 
     // Check if there's a webhook entry with mesh routing
     const meshEntry = this.webhookEntries.find(
@@ -81,14 +152,23 @@ export class WebhookHandler {
         node: meshEntry.node,
         status: "accepted",
       })
-      this.mesh.sendTask(meshEntry.node, summary, agentId).then(
+      // Forward the same context shape the local execution path would use,
+      // so the receiving daemon's registry.execute keys the session by
+      // `webhook:${source}` instead of falling back to api/default and
+      // losing the source attribution.
+      this.mesh.sendTask(meshEntry.node, summary, agentId, {
+        context: {
+          channel: `webhook:${source}`,
+          sender: `webhook:${source}`,
+        },
+      }).then(
         (response) => this.log(`Mesh-forwarded webhook [${source}] -> ${meshEntry.node}/${agentId}: ${response?.slice(0, 100) || "ok"}`),
         (e: any) => this.log(`Mesh forward failed [${source}] -> ${meshEntry.node}/${agentId}: ${e.message}`),
       )
       return
     }
 
-    // Execute on the local agent
+    // Execute on the local agent — pass `parsed` instead of re-parsing
     try {
       const response = await this.registry.execute({
         message: summary,
@@ -110,6 +190,45 @@ export class WebhookHandler {
     } catch (e: any) {
       this.sendJson(res, 500, { error: e.message })
     }
+  }
+
+  /**
+   * Extract a canonical event-type string from inbound headers + body.
+   * Used by the per-event-type trigger map. Format conventions:
+   *   - GitHub: `<X-GitHub-Event>.<body.action>` when action exists,
+   *             else just `<X-GitHub-Event>` (e.g. "push", "ping").
+   *   - GitLab: `<X-Gitlab-Event>` (already includes a "Hook" suffix —
+   *             "Push Hook", "Note Hook", "Merge Request Hook").
+   *   - Stripe: `<body.type>` (e.g. "invoice.paid").
+   *   - Sentry: `<Sentry-Hook-Resource>` (e.g. "issue", "event_alert").
+   *   - Anything else: returns null and the dispatcher falls back to
+   *     `defaultWorkflow`.
+   */
+  private extractEventType(
+    source: string,
+    body: Record<string, unknown>,
+    headers: Record<string, string | string[] | undefined>,
+  ): string | undefined {
+    const header = (k: string): string | undefined => {
+      const v = headers[k.toLowerCase()]
+      return Array.isArray(v) ? v[0] : v
+    }
+    if (source === "github") {
+      const evt = header("x-github-event")
+      if (!evt) return undefined
+      const action = typeof body.action === "string" ? body.action : undefined
+      return action ? `${evt}.${action}` : evt
+    }
+    if (source === "gitlab") {
+      return header("x-gitlab-event") || (typeof body.object_kind === "string" ? body.object_kind : undefined)
+    }
+    if (source === "stripe") {
+      return typeof body.type === "string" ? body.type : undefined
+    }
+    if (source === "sentry") {
+      return header("sentry-hook-resource")
+    }
+    return undefined
   }
 
   /**
@@ -245,20 +364,100 @@ export class WebhookHandler {
     return lines.join("\n")
   }
 
-  private async readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  private async readBody(req: IncomingMessage): Promise<{ raw: string; parsed: Record<string, unknown> }> {
     return new Promise((resolve) => {
       let body = ""
       req.on("data", (chunk: Buffer) => (body += chunk.toString()))
       req.on("end", () => {
-        try { resolve(body ? JSON.parse(body) : {}) }
-        catch { resolve({ raw: body }) }
+        let parsed: Record<string, unknown>
+        try {
+          parsed = body ? JSON.parse(body) : {}
+        } catch {
+          parsed = { raw: body }
+        }
+        resolve({ raw: body, parsed })
       })
-      req.on("error", () => resolve({}))
+      req.on("error", () => resolve({ raw: "", parsed: {} }))
     })
+  }
+
+  /**
+   * Validate the inbound webhook signature against the configured secret
+   * for this (source, agentId). Returns a human-readable error string when
+   * the request must be rejected, or null when the request is allowed
+   * through.
+   *
+   * Per source:
+   *  - github: HMAC-SHA256 over the raw body, compared against
+   *    `X-Hub-Signature-256: sha256=<hex>`.
+   *  - gitlab: simple equality of `X-Gitlab-Token` against the secret.
+   *  - stripe: HMAC-SHA256 over `<timestamp>.<body>`, parsed from the
+   *    `Stripe-Signature: t=<ts>,v1=<sig>[,v0=...]` header.
+   *  - everything else: require `X-Webhook-Secret` to equal the secret.
+   *
+   * If no `secretEnv` is configured for the matching webhook entry, we let
+   * the request through. (Configuring a secret = opt-in to enforcement.)
+   */
+  private validateSignature(
+    headers: Record<string, string | string[] | undefined>,
+    raw: string,
+    source: string,
+    agentId: string,
+  ): string | null {
+    const entry = this.webhookEntries.find(
+      w => w.enabled && w.agentId === agentId && w.source === source,
+    )
+    if (!entry?.secretEnv) return null
+    const secret = process.env[entry.secretEnv]
+    if (!secret) {
+      return `webhook entry "${entry.id}" expects env ${entry.secretEnv} but it is unset`
+    }
+    const headerStr = (key: string): string | undefined => {
+      const v = headers[key.toLowerCase()]
+      return Array.isArray(v) ? v[0] : v
+    }
+
+    if (source === "github") {
+      const sig = headerStr("x-hub-signature-256")
+      if (!sig) return "missing X-Hub-Signature-256"
+      const expected = "sha256=" + createHmac("sha256", secret).update(raw).digest("hex")
+      return safeEqualOrReject(expected, sig)
+    }
+    if (source === "gitlab") {
+      const tok = headerStr("x-gitlab-token")
+      if (!tok) return "missing X-Gitlab-Token"
+      return safeEqualOrReject(secret, tok)
+    }
+    if (source === "stripe") {
+      const sigHeader = headerStr("stripe-signature")
+      if (!sigHeader) return "missing Stripe-Signature"
+      const parts = Object.fromEntries(
+        sigHeader.split(",").map(p => p.split("=")) as [string, string][],
+      )
+      if (!parts.t || !parts.v1) return "malformed Stripe-Signature"
+      const expected = createHmac("sha256", secret).update(`${parts.t}.${raw}`).digest("hex")
+      return safeEqualOrReject(expected, parts.v1)
+    }
+    // Generic / discord / slack / sentry / custom: a plain shared secret
+    // header is the simplest contract. Operators of these can override at
+    // their proxy if they need richer schemes.
+    const generic = headerStr("x-webhook-secret")
+    if (!generic) return "missing X-Webhook-Secret"
+    return safeEqualOrReject(secret, generic)
   }
 
   private sendJson(res: ServerResponse, status: number, data: unknown): void {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
   }
+}
+
+/** Constant-time compare of two hex/text strings of (potentially) equal
+ *  length. Returns null on match, a "signature mismatch" error string
+ *  otherwise. Different lengths fail without leaking the expected length. */
+function safeEqualOrReject(expected: string, actual: string): string | null {
+  if (expected.length !== actual.length) return "signature mismatch"
+  const a = Buffer.from(expected)
+  const b = Buffer.from(actual)
+  return timingSafeEqual(a, b) ? null : "signature mismatch"
 }
