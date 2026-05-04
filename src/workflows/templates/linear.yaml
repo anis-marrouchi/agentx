@@ -1,0 +1,37 @@
+# Linear workflow — the smallest workflow that actually runs.
+# Trigger → Agent → End. Use this as the starting point when you
+# don't know what shape you want yet.
+
+id: __ID__
+version: 2
+title: __TITLE__
+
+# Linear sequences are easier to read with `flow:` sugar — it expands
+# into edges so you don't have to write `from: a, to: b` for every step.
+# Branches and parallel gateways still need explicit `edges:`.
+flow:
+  - start
+  - reply
+  - done
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config: {}
+
+  - id: reply
+    type: agent
+    config:
+      # Replace with one of your registered agents (`agentx agent list`).
+      agentId: __AGENT__
+      # Templates pull from the run context — `{{trigger.payload.text}}`,
+      # `{{<previousNodeId>.<field>}}`. See the reference for the full
+      # path syntax.
+      prompt: |
+        The user said: {{trigger.payload.text}}
+        Reply concisely.
+
+  - id: done
+    type: end
+    config:
+      status: completed

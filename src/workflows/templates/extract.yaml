@@ -1,0 +1,59 @@
+# Structured extraction — pull typed fields from free-form text.
+#
+# Uses the `extract.structured` built-in via an `action.builtin` node.
+# The output is validated against an inline JSON-schema-ish shape so
+# downstream nodes can read `{{extract.data.<field>}}` with confidence.
+
+id: __ID__
+version: 2
+title: __TITLE__
+
+flow:
+  - start
+  - extract
+  - confirm
+  - done
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config: {}
+
+  - id: extract
+    type: action.builtin
+    config:
+      name: extract.structured
+      input:
+        # Replace with your model id; defaults to the agent provider's chosen one.
+        model: claude-sonnet-4-6
+        # Free-form text the model should pull fields from.
+        text: "{{trigger.payload.text}}"
+        # Schema is a Zod-validated shape descriptor (subset of JSON Schema).
+        # Required fields rejected if missing; optional fields default to null.
+        schema:
+          type: object
+          properties:
+            name:    { type: string }
+            email:   { type: string }
+            company: { type: string }
+            intent:  { type: string, enum: [sales, support, newsletter, other] }
+          required: [name, email, intent]
+      # Retry the extraction once if the model's first response doesn't fit
+      # the schema — typed errors come back via `errorKind`.
+    retry:
+      maxAttempts: 2
+      backoffMs: 500
+
+  - id: confirm
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Send a one-line confirmation:
+          name = {{extract.data.name}}
+          email = {{extract.data.email}}
+          intent = {{extract.data.intent}}
+
+  - id: done
+    type: end
+    config: { status: completed }

@@ -1,0 +1,123 @@
+# Lead capture — full end-to-end example.
+#
+# Channel-triggered (telegram), classifies the message, extracts the
+# lead's name + email, pushes them into a registered HubSpot action,
+# and replies on the same thread. Demonstrates:
+#
+#   - trigger.channel with a project/chat filter
+#   - agent classification + the `RESULT:` token parser
+#   - `branch` on the classified intent
+#   - `action.builtin` with extract.structured for typed JSON output
+#   - `action.run` invoking a registered HubSpot action (see actions ref)
+#   - per-node retry on the network-touching nodes
+#
+# Prerequisites:
+#   1. A registered action: `agentx actions add hubspot-create-contact ...`
+#      (see docs/reference/actions for the full recipe)
+#   2. Telegram channel enabled with the chat ids you want to capture from
+#   3. An agent capable enough to run the classifier (Sonnet+ recommended)
+
+id: lead-capture
+version: 2
+title: Lead capture from Telegram → HubSpot
+
+nodes:
+  - id: start
+    type: trigger.channel
+    config:
+      source: telegram-message
+      filter:
+        # Restrict to one chat or group, or remove `filter` entirely to
+        # listen on every Telegram message.
+        chatId: "-1001234567890"
+
+  - id: classify
+    type: agent
+    config:
+      agentId: lead-classifier
+      prompt: |
+        You are a sales classifier. Classify the message into one of:
+          - sales (someone asking about pricing/demo/buying)
+          - support (existing customer needing help)
+          - newsletter (signup intent only)
+          - other (everything else)
+
+        Reply on a single line: RESULT: <category>
+
+        Message: {{start.text}}
+    retry:
+      maxAttempts: 2
+      backoffMs: 500
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: classify.result, value: sales } }
+          to: extract
+      default: ack_only
+
+  - id: extract
+    type: action.builtin
+    config:
+      name: extract.structured
+      input:
+        model: claude-sonnet-4-6
+        text: "{{start.text}}"
+        schema:
+          type: object
+          properties:
+            name:    { type: string }
+            email:   { type: string }
+            company: { type: string }
+          required: [email]
+    retry:
+      maxAttempts: 2
+      backoffMs: 500
+
+  - id: push_to_hubspot
+    type: action.run
+    config:
+      actionId: hubspot-create-contact
+      inputs:
+        email:     "{{extract.data.email}}"
+        firstname: "{{extract.data.name}}"
+        company:   "{{extract.data.company}}"
+    retry:
+      maxAttempts: 3
+      backoffMs: 1000
+
+  - id: reply_sales
+    type: action.send
+    config:
+      channel: "{{start.channel}}"
+      chatId:  "{{start.chatId}}"
+      accountId: "{{start.accountId}}"
+      text: |
+        Thanks {{extract.data.name}} — we'll be in touch about
+        {{extract.data.company}} shortly.
+
+  - id: ack_only
+    type: action.send
+    config:
+      channel: "{{start.channel}}"
+      chatId:  "{{start.chatId}}"
+      accountId: "{{start.accountId}}"
+      text: "Thanks for reaching out — we'll get back to you."
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+edges:
+  - { from: start, to: classify }
+  - { from: classify, to: route }
+  - { from: route, fromPort: extract,  to: extract }
+  - { from: route, fromPort: ack_only, to: ack_only }
+  - { from: extract, to: push_to_hubspot }
+  - { from: push_to_hubspot, to: reply_sales }
+  - { from: reply_sales, to: done }
+  - { from: ack_only, to: done }
+
+# Allow {{env.HUBSPOT_TOKEN}} references inside templated configs.
+envAllow: [HUBSPOT_TOKEN]

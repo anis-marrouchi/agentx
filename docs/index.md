@@ -91,10 +91,19 @@ features:
       alt: Backlog and workflows
       width: 32
       height: 32
-    title: Backlog import + workflow YAML
-    details: Pull GitLab/GitHub issues into a structured backlog with two-way sync, or compose declarative state machines in YAML. Both feed the same work-pool and ledger.
+    title: Backlog import + sync
+    details: Pull GitLab/GitHub issues into a structured backlog with two-way sync. Mutations push back upstream, the work-pool and ledger track the rest.
     link: /playbooks/backlog-import-sync
     linkText: Import + sync upstream
+  - icon:
+      src: /icons/git-branch.svg
+      alt: Typed workflow DSL
+      width: 32
+      height: 32
+    title: Typed step-graphs in YAML
+    details: Author workflows with branching, structured-output extraction, retries, human-in-the-loop forms, and sub-processes. Five built-in templates, one-line scaffolding, watch-mode tracing.
+    link: /journey/13-typed-workflow
+    linkText: Author a workflow
   - icon:
       src: /icons/git-branch.svg
       alt: Plugins

@@ -355,6 +355,14 @@ Files land at `.agentx/procedures/<id>.md`. See [Journey 9](/journey/09-determin
 
 Declarative state machines that bind channel events to agents — at state X, run agent Y with prompt Z; transition to state W when condition C holds. Definitions live as one JSON or YAML file per workflow under `.agentx/workflows/`; runs persist as append-only jsonl on the home node. See [reference/workflows](/reference/workflows) for the full model + authoring guide.
 
+### Authoring
+
+| Command | Description |
+|---|---|
+| `agentx workflow init <id> [--template <name>] [--agent <id>] [--reviewer <id>] [--title <text>] [--json] [--force]` | Scaffold `.agentx/workflows/<id>.yaml` from a built-in template, validate it, and tell you what to edit next. Templates: `linear` (default), `branching`, `extract`, `human-in-the-loop`, `retry` |
+| `agentx workflow templates` | List the available templates with their one-line description |
+| `agentx workflow add <file>` | Import a YAML/JSON workflow file into `.agentx/workflows/` and `POST /reload` so the daemon picks it up without a restart. Skips reload with `--no-reload` |
+
 ### Read
 
 | Command | Description |
@@ -377,7 +385,8 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 
 | Command | Description |
 |---|---|
-| `agentx workflow run <id> [--input <json>] [--daemon <url>]` | Manually trigger a workflow whose trigger is `source: manual`. The daemon must be running — this is a POST to `/workflows/:id/run` on `--daemon` (default `http://127.0.0.1:18800`). `--input` is merged into the trigger event payload. |
+| `agentx workflow run <id-or-file> [--input <json>] [--watch] [--force] [--daemon <url>]` | Trigger a stored workflow by id, **or** load + register + run a YAML/JSON file path (saved as `_adhoc-…` so it doesn't shadow stored ids). `--watch` polls `/traces?workflowRunId=<id>` every 500ms and prints each step (node, status, tokens, duration) until the run finishes. `--force` fires non-`manual`-trigger workflows for testing |
+| `agentx workflow trace <runId-or-taskId> [--json] [--daemon <url>]` | Pretty-print the per-step execution trace for a run (or a single task). Surfaces the data behind `GET /traces[/:taskId]` as a terminal-friendly table — node id, model, tokens, duration, error |
 | `agentx workflow pause <runId> [--node <id>]` | Freeze a run. No new transitions will fire until `resume`. |
 | `agentx workflow resume <runId> [--node <id>]` | Un-pause a paused run. |
 | `agentx workflow cancel <runId> [--node <id>]` | End a run. No further transitions possible — terminal. |

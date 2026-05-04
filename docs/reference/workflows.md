@@ -214,22 +214,53 @@ Runs are append-only JSONL at `.agentx/workflows/_runs/<runId>.jsonl`. Tasks liv
 - `POST /api/workflows/signal/:name` — manually emit a signal (debugging, external webhooks)
 - `GET /api/workflows/kpis` — actor-level + total KPIs
 
+## Authoring (typed YAML)
+
+Five built-in templates cover the common shapes — `linear`, `branching`, `extract`, `human-in-the-loop`, `retry`. Walk a fresh workflow from blank file to first run in four commands:
+
+```bash
+agentx workflow init lead-capture --template branching --agent classifier
+# scaffolds .agentx/workflows/lead-capture.yaml from the template
+
+# edit the YAML — the file is heavily commented
+$EDITOR .agentx/workflows/lead-capture.yaml
+
+agentx workflow validate                  # schema + lint pass
+agentx workflow run lead-capture --watch  # registers + runs + tails traces
+```
+
+`run` accepts either a stored workflow id **or** a path to a YAML/JSON file — file paths get registered as `_adhoc-…` so iteration is fast. `--watch` polls `/traces?workflowRunId=<id>` every 500ms and prints each step (node id, status, tokens, duration) until the run finishes.
+
+`agentx workflow trace <runId-or-taskId>` prints the same data as a stand-alone table — useful for post-mortem inspection over SSH or in CI logs.
+
+`agentx workflow templates` lists every shipped template; `agentx workflow add <file>` imports an externally-authored YAML into `.agentx/workflows/` and hot-reloads the daemon.
+
+A worked end-to-end example lives at `examples/workflows/lead-capture.yaml` — channel-triggered, classifies the message with an `agent` node, extracts `{name, email}` via `action.builtin: extract.structured`, pushes the lead into HubSpot via a registered `action.run`, and replies on the same thread. Demonstrates branching, structured extraction, retries, and trace-friendly node ids in one file.
+
 ## CLI
 
 ```bash
-# inspect definitions
-agentx workflow list
-agentx workflow show <id>
-agentx workflow validate <id>
+# author
+agentx workflow init <id> [--template <name>] [--agent <id>] [--json]
+agentx workflow templates
+agentx workflow add <file>
+agentx workflow show <id> [--format yaml]
 
-# run a manual workflow
-agentx workflow run <id> --input '{"key":"value"}'
+# validate
+agentx workflow validate          # all workflows in .agentx/workflows
+agentx workflow validate <file>   # one file (YAML or JSON)
 
-# inspect runs
-agentx workflow runs --workflow <id> --limit 20
-agentx workflow run show <runId>
+# run + observe
+agentx workflow run <id-or-file> [--input '{"key":"value"}'] [--watch]
+agentx workflow trace <runId-or-taskId>
+agentx workflow runs [<id>] --limit 20
 
-# identity management
+# control
+agentx workflow pause   <runId>
+agentx workflow resume  <runId>
+agentx workflow cancel  <runId>
+
+# identity management (used by userTask + role assignments)
 agentx actor add / list / show / remove
 agentx role  create / grant / revoke / list / show
 ```

@@ -29,6 +29,7 @@ docs/architecture/*
 !docs/architecture/surface-contract.md
 !docs/architecture/workflows-yaml.md
 !docs/architecture/persistent-claude-process.md
+!docs/architecture/typed-workflow-dsl-plan.md
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd

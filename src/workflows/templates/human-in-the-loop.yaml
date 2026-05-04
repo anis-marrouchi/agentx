@@ -1,0 +1,56 @@
+# Human-in-the-loop — pause for a form submission, then continue.
+#
+# `userTask` renders a form to the assignee (Telegram/WhatsApp/Slack
+# DM or the `/inbox` web UI) and parks the run until they submit.
+# Resumes with `{{review.submission.<fieldKey>}}` available downstream.
+
+id: __ID__
+version: 2
+title: __TITLE__
+
+# Explicit edges — userTask has pause/resume semantics that `flow:`
+# sugar can't express, so the parser refuses to put it in a flow list.
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config: {}
+
+  - id: draft
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Draft a reply to: {{trigger.payload.text}}
+
+  - id: review
+    type: userTask
+    config:
+      # Replace with one of your actor or role ids (`agentx actor list`).
+      assignTo: actor:__REVIEWER__
+      title: Approve the draft
+      form:
+        title: Review the draft
+        fields:
+          - { key: approve, label: Approve and send?, type: boolean, required: true }
+          - { key: edits,   label: Edits before sending, type: long-text }
+        submitLabel: Submit
+
+  - id: send
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Approved: {{review.submission.approve}}
+        Edits: {{review.submission.edits}}
+        Now send the reply (or skip if not approved).
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+edges:
+  - { from: start,  to: draft }
+  - { from: draft,  to: review }
+  - { from: review, to: send }
+  - { from: send,   to: done }

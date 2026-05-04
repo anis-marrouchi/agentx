@@ -1,0 +1,75 @@
+# Branching workflow — classify, then route on the result.
+#
+# A `branch` node evaluates one of four condition kinds (equals,
+# contains, matches, exists) against the run context and selects an
+# outgoing edge by `fromPort`. The `default` port catches anything
+# that doesn't match any case.
+
+id: __ID__
+version: 2
+title: __TITLE__
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config: {}
+
+  - id: classify
+    type: agent
+    config:
+      agentId: __AGENT__
+      # Tell the agent to emit a structured RESULT token your workflow
+      # can branch on. The default `noqta-result-token` parser captures
+      # the line after `RESULT:` into `{{classify.result}}`.
+      prompt: |
+        Classify the message into one of: sales, support, newsletter, other.
+        Reply ONLY with: RESULT: <category>
+
+        Message: {{trigger.payload.text}}
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: classify.result, value: sales } }
+          to: sales_track
+        - when: { kind: equals, params: { path: classify.result, value: support } }
+          to: support_track
+      default: catchall
+
+  - id: sales_track
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Sales lead came in: {{trigger.payload.text}}
+        Draft a one-line acknowledgement.
+
+  - id: support_track
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Support request: {{trigger.payload.text}}
+        Reply with the next-step instruction.
+
+  - id: catchall
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Generic reply for: {{trigger.payload.text}}
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+edges:
+  - { from: start, to: classify }
+  - { from: classify, to: route }
+  - { from: route, fromPort: sales_track,   to: sales_track }
+  - { from: route, fromPort: support_track, to: support_track }
+  - { from: route, fromPort: catchall,      to: catchall }
+  - { from: sales_track,   to: done }
+  - { from: support_track, to: done }
+  - { from: catchall,      to: done }

@@ -1,0 +1,61 @@
+# Retry + fallback — defend against transient model errors.
+#
+# Per-node `retry: { maxAttempts, backoffMs }` re-runs hard failures
+# (returned `{ error }` or thrown exceptions) with exponential backoff.
+# Pause results (userTask, signalWait, timerWait) are NEVER retried —
+# pausing is a normal lifecycle transition, not a failure.
+
+id: __ID__
+version: 2
+title: __TITLE__
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config: {}
+
+  - id: classify
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Classify: {{trigger.payload.text}}
+        Reply ONLY with: RESULT: ok | RESULT: error
+    # Up to three attempts total; 1s, then 2s backoff.
+    retry:
+      maxAttempts: 3
+      backoffMs: 1000
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: classify.result, value: ok } }
+          to: ok_track
+      # Anything else (including post-retry failures) lands here.
+      default: error_track
+
+  - id: ok_track
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: "Acknowledge: {{trigger.payload.text}}"
+
+  - id: error_track
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Apologize for the issue and ask the user to rephrase: {{trigger.payload.text}}
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+edges:
+  - { from: start, to: classify }
+  - { from: classify, to: route }
+  - { from: route, fromPort: ok_track,    to: ok_track }
+  - { from: route, fromPort: error_track, to: error_track }
+  - { from: ok_track,    to: done }
+  - { from: error_track, to: done }
