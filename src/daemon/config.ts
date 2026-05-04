@@ -541,6 +541,26 @@ export const daemonConfigSchema = z.object({
    *  default — installs that don't list plugins are unaffected. Plugin
    *  authoring guide: docs/architecture/plugins.md. */
   plugins: z.array(z.string()).default([]),
+  /** Persistent-process pool eviction knobs (handoff #8). The pool keeps
+   *  one warm Claude subprocess per (agent, channel, chatId) so latency
+   *  stays low; without bounds, an idle process can serve traffic days
+   *  later with stale context. These knobs cap that risk. All values are
+   *  in seconds for operator-friendliness; the registry uses ms internally.
+   *
+   *  - `maxIdleSeconds`: a handle becomes eligible for cap-pressured
+   *    eviction this many seconds after its last turn. Default 30s
+   *    (matches the registry's pre-config behavior).
+   *  - `maxAgeSeconds`: a handle is killed unconditionally on the next
+   *    sweep once its total wall-clock idleness exceeds this. Default
+   *    2700s (45min) — matches the registry's pre-config staleTimeoutMs.
+   *  - `sweepIntervalSeconds`: how often the sweeper checks. Default 5s.
+   *
+   *  See `agents.<id>.persistentProcess` to opt an agent into the pool. */
+  processPool: z.object({
+    maxIdleSeconds: z.number().int().min(5).max(86_400).default(30),
+    maxAgeSeconds: z.number().int().min(60).max(86_400).default(2700),
+    sweepIntervalSeconds: z.number().int().min(1).max(300).default(5),
+  }).default({}),
 })
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>

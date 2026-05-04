@@ -250,9 +250,16 @@ export class AgentXDaemon {
     if (persistentAgents.length > 0) {
       try {
         const factory = new ClaudeProcessFactory({ log: (m) => this.log(`  ${m}`) })
+        // Operator-configurable pool eviction (handoff #8). Defaults match
+        // the registry's prior hardcoded behavior; agentx.json processPool.*
+        // overrides them.
+        const poolCfg = (this.config as any).processPool ?? {}
         const procReg = new ProcessRegistry({
           factory,
           log: (m) => this.log(`  ${m}`),
+          idleTimeoutMs: (poolCfg.maxIdleSeconds ?? 30) * 1000,
+          staleTimeoutMs: (poolCfg.maxAgeSeconds ?? 2700) * 1000,
+          sweepIntervalMs: (poolCfg.sweepIntervalSeconds ?? 5) * 1000,
           // Drift detection: re-read each handle's workspace CLAUDE.md
           // hash on every sweep. When the hash changes (user edited
           // an agent's prompt, daemon's auto-refresh ran, etc.), the
@@ -2131,6 +2138,59 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         return
       }
 
+      // Per-agent self-test canary (handoff #6). Runs a minimal prompt
+      // through the agent's full execution path — including any declared
+      // toolUseRequired — and reports the result. Used by:
+      //   - operators verifying a fresh deploy ("is the agent's API key
+      //     working? does it actually fire its required tools?")
+      //   - CI / boot-validation scripts (curl + jq, no daemon coupling)
+      //   - the dashboard's per-agent health badge (future)
+      // Always uses freshSession + a unique chatId so the canary never
+      // pollutes a live chat session.
+      const selftestMatch = req.method === "POST" && path.match(/^\/agents\/([^/]+)\/selftest$/)
+      if (selftestMatch) {
+        const agentId = selftestMatch[1]
+        const body = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        const probeMsg = (body as Record<string, unknown>).message
+        const probe = typeof probeMsg === "string" && probeMsg.trim()
+          ? probeMsg
+          : "Reply with the single word: OK"
+        const start = Date.now()
+        const response = await this.registry.execute({
+          agentId,
+          message: probe,
+          freshSession: true,
+          context: {
+            channel: "selftest",
+            chatId: `selftest:${start.toString(36)}`,
+            sender: "selftest",
+          },
+        }, () => {})
+        const durationMs = Date.now() - start
+        if (response.error) {
+          this.json(res, 200, {
+            ok: false,
+            agentId,
+            error: response.error,
+            errorKind: response.errorKind,
+            durationMs,
+            usage: response.usage,
+            tokens: response.usage ? { in: response.usage.inputTokens, out: response.usage.outputTokens } : undefined,
+          })
+          return
+        }
+        this.json(res, 200, {
+          ok: true,
+          agentId,
+          content: response.content,
+          durationMs,
+          usage: response.usage,
+          tokens: response.usage ? { in: response.usage.inputTokens, out: response.usage.outputTokens } : undefined,
+          billedModel: response.billedModel,
+        })
+        return
+      }
+
       // Persistent-process registry — operator surface (improvement plan #5,
       // persistent flavor). Returns 503 when no agent has persistentProcess
       // enabled (registry singleton not initialized). The path lives under
@@ -2825,7 +2885,19 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // clears the cached claudeSessionId AND kills any persistent-process
           // handle for this (agent, channel, chatId) before executing — used
           // by triage→sub-agent delegation paths to defend against warm-pool
-          // stickiness across visitors. Optional, defaults false.
+          // stickiness across visitors.
+          //
+          // Auto-default for A2A traffic: when senderAgentId is set (an agent
+          // calling another agent — typically a triage/router delegating to a
+          // worker), default freshSession to true so the worker doesn't inherit
+          // the previous visitor's conversation memory. Callers that DO want
+          // sticky cross-agent state can opt out with `freshSession: false`.
+          // Direct human-facing calls (CLI, dashboard, channels) keep the
+          // default-false behavior so chat threads remain warm across turns.
+          const explicitFresh = typeof body.freshSession === "boolean" ? body.freshSession : undefined
+          const freshSession = explicitFresh !== undefined
+            ? explicitFresh
+            : (senderAgentId ? true : undefined)
           const response = await this.registry.execute(
             {
               agentId,
@@ -2833,7 +2905,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               context: body.context as any,
               contextStrategy,
               intentRef,
-              freshSession: body.freshSession === true ? true : undefined,
+              freshSession,
             },
             () => {},
           )
@@ -3167,6 +3239,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",
               "POST /task { agent, message, context?, freshSession?: bool }",
               "GET  /agents/:id  — resolved agent config (permission, tier, model, persistentProcess, toolUseRequired)",
+              "POST /agents/:id/selftest { message? }  — canary probe; runs a fresh-session task and reports {ok, durationMs, tokens, billedModel}",
               "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
               "GET  /api/processes  — live persistent claude processes (JSON)",

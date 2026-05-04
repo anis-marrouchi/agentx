@@ -268,6 +268,13 @@ export class A2AMesh {
        *  caller is allowed to act for this agent. Optional during the
        *  log-warn rollout; missing values produce a server-side warning. */
       senderAgentId?: string
+      /** Force a fresh session on the receiving daemon (clears cached
+       *  claudeSessionId + kills any persistent-process handle keyed
+       *  on the receiver's (agent, channel, chatId) before exec).
+       *  Defaults undefined → receiver applies its own auto-default
+       *  (true when senderAgentId is set, otherwise false). Set
+       *  explicitly to override. */
+      freshSession?: boolean
       /** Origin context — channel, chatId, sender, channelMeta, etc. Forwarded
        *  to the receiving daemon's /task handler verbatim so the receiver's
        *  registry.execute() keys the session by the SAME (channel, chatId)
@@ -323,6 +330,9 @@ export class A2AMesh {
           // server's "missing senderAgentId" log-warn fires only when the
           // caller genuinely didn't pass one.
           ...(opts.senderAgentId ? { senderAgentId: opts.senderAgentId } : {}),
+          // freshSession: forwarded only when the caller passed an explicit
+          // value. Omitted → receiver applies its own auto-default for A2A.
+          ...(typeof opts.freshSession === "boolean" ? { freshSession: opts.freshSession } : {}),
           // Origin context (channel, chatId, channelMeta, sender, ...).
           // Optional for back-compat — older callers continue to work, with
           // the receiver defaulting channel/chatId as before.

@@ -615,7 +615,7 @@ Summary — full schemas in [Communication matrix](/reference/communication-matr
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/task` | H2A: send a task to a local agent |
+| `POST` | `/task` | H2A: send a task to a local agent. Body: `{ agent, message, context?, freshSession?: bool, senderAgentId? }`. When `senderAgentId` is set (an agent calling another agent), `freshSession` defaults to **true** so the worker doesn't inherit the previous visitor's session — pass `false` to opt out |
 | `POST` | `/send` | A2H initiate / cross-channel outbound |
 | `POST` | `/mesh/task` | Cross-mesh delegation |
 | `POST` | `/ask` | Short-form voice/Siri endpoint |
@@ -623,7 +623,52 @@ Summary — full schemas in [Communication matrix](/reference/communication-matr
 | `POST` | `/reload` | Re-read `agentx.json`; hot-swaps crons, flags sections that still need a restart. Fired automatically by `agentx config set` / `agentx schedule` / the `fs.watch` on `agentx.json` (disable with `AGENTX_AUTO_RELOAD=false`) |
 | `GET`  | `/events` | SSE event stream |
 | `GET`  | `/health` | Health check |
+| `GET`  | `/agents/:id` | Resolved agent config (permission, tier, model, persistentProcess, toolUseRequired) |
+| `POST` | `/agents/:id/selftest` | Canary probe — runs a fresh-session task against the agent and returns `{ ok, durationMs, tokens, billedModel, errorKind? }`. Body: `{ message? }` (defaults to a tiny "reply OK" prompt). Use for boot validation, CI, dashboard health badges |
+| `GET`  | `/traces`, `GET /traces/:taskId` | Per-task execution trace — steps, tokens, errors, model, session id. `/traces` accepts `agentId`/`channel`/`chatId`/`workflowRunId`/`status`/`since`/`until`/`limit` filters. Returns 503 when SQLite is unavailable |
+| `GET`  | `/api/processes` | Live persistent-claude pool snapshot |
+| `POST` | `/api/processes/kill` | Manually evict a pool slot. Body: `{ agentId, channel, chatId, reason? }` |
+| `GET`  | `/api/actions/builtin`, `POST /api/actions/builtin/:name` | List + invoke daemon-shipped built-in actions (`http.fetch`, `mesh.delegate`, `extract.structured`, `rag.lexical`, ...) |
 | `GET`  | `/.well-known/agent-card.json` | Agent card for mesh peers |
 | `GET`  | `/wiki/agents`, `/wiki/entries`, `/wiki/articles`, `/wiki/article` | Wiki read API |
 | `POST` | `/debug/on?categories=...`, `/debug/off` | Toggle debug categories at runtime |
 | `GET`  | `/business/work/list?agent=<id>`, `POST /business/work/claim`, `POST /business/work/report`, `POST /business/clock-out`, `GET /business/kpi/today`, `GET /business/kpi/week` | Business layer API |
+
+## Persistent processes — production recipe
+
+When `agents.<id>.persistentProcess: true`, a warm Claude subprocess per `(agent, channel, chatId)` slashes per-turn latency. Same warmth that helps a chat thread can leak conversation memory across visitors of a triage→worker pattern. The right knobs:
+
+| Use case | Recipe |
+|---|---|
+| Real chat threads (Telegram/WhatsApp/Slack) | Sticky `chatId` per conversation, no `freshSession` — the warm pool is the whole point |
+| Test harnesses, benchmarks | `freshSession: true` on every call + a unique per-request `chatId` for full isolation |
+| Triage → sub-agent delegation | Use the `mesh.delegate` built-in (defaults `freshSession: true`), or set `senderAgentId` on `POST /task` and accept the auto-default |
+| Stuck pool slot | `POST /api/processes/kill { agentId, channel, chatId }` |
+| Bound long-lived warmth | Set `processPool.maxAgeSeconds` (default 2700 = 45min) in `agentx.json`. See [Config schema → processPool](./config-schema#process-pool-eviction) |
+
+The latency / correctness tradeoff: full isolation (`freshSession: true` per call) is a cold spawn each time — measured ~+50s wall-clock vs warm pool on a 5-scenario benchmark. Warm pool is fast but only safe when the `chatId` truly identifies one conversation.
+
+### Observing what your agents did
+
+Every dispatched task records a trace row when SQLite is opened:
+
+```bash
+# List recent traces
+curl -s http://127.0.0.1:18800/traces?agentId=devops&limit=20 | jq
+
+# Pull one task's full step-by-step (tokens, tool calls, model, session id)
+curl -s http://127.0.0.1:18800/traces/<taskId> | jq
+```
+
+When `[storage/sqlite] not opened` shows at boot, traces silently no-op. Rebuild the native module (`pnpm rebuild better-sqlite3`) — see [agentx doctor](./doctor).
+
+### Smoke-testing an agent
+
+```bash
+curl -X POST http://127.0.0.1:18800/agents/lead/selftest \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Reply with the single word: OK"}' | jq
+# → { ok: true, agentId: "lead", durationMs: 8421, tokens: { in: 150, out: 4 }, billedModel: "claude-sonnet-4-6" }
+```
+
+`/selftest` always uses `freshSession: true` and a synthetic `chatId`, so it never pollutes a live thread. Failure paths return `errorKind` (e.g. `out_of_credits`) plus the friendly text — useful for boot validation and CI.

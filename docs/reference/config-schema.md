@@ -337,6 +337,20 @@ Array of installed npm package names. The loader does dynamic `import(name)` at 
 
 Plugins can register channel adapters via `ctx.addChannel()` and subscribe to bus events via `ctx.on()`.
 
+## Process-pool eviction
+
+When any agent has `persistentProcess: true`, the daemon keeps a warm Claude subprocess per `(agent, channel, chatId)`. The pool is bounded by these knobs:
+
+```jsonc
+"processPool": {
+  "maxIdleSeconds": 30,         // eligibility for cap-pressured eviction (LRU)
+  "maxAgeSeconds": 2700,        // unconditional kill on next sweep (45min default)
+  "sweepIntervalSeconds": 5     // how often the sweeper checks
+}
+```
+
+Increase `maxAgeSeconds` for chat workloads where the same conversation legitimately spans hours; decrease it (e.g. 1800) to eject any pool slot that's been idle longer than 30 minutes — useful when a triage→worker pattern would otherwise inherit stale visitor context. See [Persistent processes](./cli#persistent-processes-production-recipe) for the full operator recipe.
+
 ## Actions registry (separate files)
 
 Actions do **not** live in `agentx.json`. Each action is its own file at `.agentx/actions/<id>.json`. Schema (Zod, `src/actions/types.ts`):

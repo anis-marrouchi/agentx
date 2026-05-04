@@ -30,6 +30,13 @@ const meshDelegateInput = z.object({
    *  the receiving daemon for route-trace + (eventually) capability
    *  validation. Optional during the log-warn rollout. */
   senderAgentId: z.string().optional(),
+  /** Force a fresh session on the receiving agent. Defaults to TRUE
+   *  for cross-agent delegation — without this, a triage agent's
+   *  delegation reuses whatever conversation the worker pool last
+   *  served, leaking the previous visitor's context (run-3 / run-4
+   *  benchmark finding). Pass `false` only when you genuinely want
+   *  the worker to keep state across delegations. */
+  freshSession: z.boolean().default(true),
 })
 type MeshDelegateInput = z.infer<typeof meshDelegateInput>
 
@@ -56,6 +63,7 @@ export const meshDelegate: BuiltinAction<MeshDelegateInput, MeshDelegateOutput> 
     const response = await mesh.sendTask(input.peer, input.message, input.agent, {
       timeoutMs: input.timeoutMs,
       senderAgentId: input.senderAgentId,
+      freshSession: input.freshSession,
     })
     return {
       peer: input.peer,
