@@ -2819,6 +2819,12 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
           // awaits the final response — they don't see deltas, just the result.
+          //
+          // body.freshSession (improvement plan #8): when true, the dispatcher
+          // clears the cached claudeSessionId AND kills any persistent-process
+          // handle for this (agent, channel, chatId) before executing — used
+          // by triage→sub-agent delegation paths to defend against warm-pool
+          // stickiness across visitors. Optional, defaults false.
           const response = await this.registry.execute(
             {
               agentId,
@@ -2826,6 +2832,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               context: body.context as any,
               contextStrategy,
               intentRef,
+              freshSession: body.freshSession === true ? true : undefined,
             },
             () => {},
           )
@@ -3157,7 +3164,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               "GET  /graph/schema",
               "GET  /graph/nodes",
               "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",
-              "POST /task { agent, message, context? }",
+              "POST /task { agent, message, context?, freshSession?: bool }",
               "GET  /agents/:id  — resolved agent config (permission, tier, model, persistentProcess, toolUseRequired)",
               "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",

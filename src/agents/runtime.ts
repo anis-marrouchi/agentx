@@ -75,6 +75,21 @@ export interface AgentTask {
    *  parser can append rows under the same id. Optional — when unset,
    *  step capture is a no-op. */
   taskId?: string
+  /** Improvement plan #8 — when true, the dispatcher discards any
+   *  cached session for this (agent, channel, chatId) before
+   *  executing: the claudeSessionId is cleared (no --resume) and
+   *  any persistent-process handle is killed so the next dispatch
+   *  spawns fresh. Use from triage→sub-agent delegation paths where
+   *  the caller knows this is a NEW visitor on a chatId that may
+   *  collide with prior conversations.
+   *
+   *  Caught in benchmark Run 3 (2026-05-04): a triage agent
+   *  delegated to "lead" for a brand-new visitor; lead's warm
+   *  persistent process replied with the previous visitor's
+   *  confirmation message. freshSession: true defends against
+   *  that pattern without requiring callers to invent unique
+   *  chatIds. */
+  freshSession?: boolean
   context?: {
     channel?: string
     sender?: string
@@ -792,6 +807,15 @@ async function executeClaudeCodePersistent(
   const channel = task.context?.channel || "api"
   const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
   const key: ProcessKey = { agentId: task.agentId, channel, chatId }
+
+  // Improvement plan #8 — caller-driven session reset for the
+  // persistent path. Kill any existing handle BEFORE acquire so the
+  // next call spawns a brand-new subprocess instead of reusing the
+  // warm one. Awaiting the kill keeps acquire-after-kill race-free:
+  // the registry entry is removed inside kill() before resolution.
+  if (task.freshSession) {
+    try { await registry.kill(key, "freshSession=true") } catch { /* observability best-effort */ }
+  }
 
   let handle
   let wasFreshSpawn = false

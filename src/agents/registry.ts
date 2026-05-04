@@ -916,6 +916,26 @@ export class AgentRegistry {
       // Skill loading is optional
     }
 
+    // Improvement plan #8 — caller-driven session reset. Honoured here
+    // BEFORE the session lookup so the same code path that follows
+    // (rotation, --resume) sees a fresh slate. Use from triage→sub-
+    // agent delegation paths where the caller knows the chatId may
+    // collide with a prior conversation. Run-3 benchmark finding
+    // 2026-05-04: stickiness on "lead" agent's pool replayed S2's
+    // confirmation as the answer to a brand-new S5 visitor.
+    if (task.freshSession) {
+      this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+      this.log(`[${task.agentId}] freshSession=true → cleared claudeSessionId for ${channel}:${chatId}`)
+      // Persistent-process kill happens lower in the dispatch stack
+      // (executeClaudeCodePersistent reads task.freshSession too),
+      // so any warm subprocess is reaped before the next acquire.
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "stale",
+        at: new Date().toISOString(),
+      })
+    }
+
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)

@@ -129,6 +129,52 @@ Drift detection only fires on idle handles to avoid disturbing a
 running turn. A handle that's mid-turn during an edit picks up the new
 CLAUDE.md on its next idle transition.
 
+## Stickiness on cross-agent delegation (Run-3 finding)
+
+Found in benchmark Run 3 (2026-05-04): when a triage agent delegates a
+task to a sub-agent (e.g. triage → lead → "Welcome to Bean & Code, what's
+your name?"), the sub-agent's persistent process at `chatId=default`
+holds the **previous visitor's** conversation. The sub-agent replies
+with the prior turn's confirmation instead of greeting the new visitor.
+
+Two fixes, in priority order:
+
+### 1. Pass `freshSession: true` (defensive, recommended)
+
+Triage agents that delegate to sub-agents on a chatId that may collide
+with prior conversations should pass `freshSession: true` on the
+delegated `POST /task`. The dispatcher kills any warm handle for that
+key BEFORE acquire, so the next call spawns a fresh process with no
+state from prior visitors.
+
+```bash
+# From the triage agent's bash tool:
+curl -s -X POST http://localhost:18800/task \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"lead","message":"<visitor message>","freshSession":true}'
+```
+
+For workflow YAMLs that call sub-agents, future work will add
+`freshSession: true` as an `agent` node config field. Until then,
+agents that delegate via Bash should pass the flag explicitly.
+
+### 2. Use a unique chatId per visitor (caller-side convention)
+
+When the triage already knows a stable visitor identifier (e.g. the
+Telegram user_id, an email address, a session_uuid), pass it as the
+delegated chatId. Each visitor then has their own pool slot — no
+collision possible.
+
+```bash
+curl -s -X POST http://localhost:18800/task \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"lead","message":"hi","context":{"chatId":"visitor-12345"}}'
+```
+
+This is the cleanest pattern for high-volume sub-agent delegation
+because each visitor builds their own warm cache, and cleanup is the
+registry's idle-eviction sweep.
+
 ## Rollback procedure
 
 Three options, in increasing severity:
