@@ -246,7 +246,7 @@ const ADMIN_PAGE_BODY = `
     <div style="flex:1;overflow-y:auto;padding:16px 20px">
       <div class="rowf">
         <div><label>Name</label><input id="e-name" /></div>
-        <div><label>AI engine</label><select id="e-tier"><option value="claude-code">Claude Code</option><option value="sdk">Anthropic API (SDK)</option><option value="orchestrator">Orchestrator</option></select></div>
+        <div><label>AI engine</label><select id="e-tier"><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="sdk">Anthropic API (SDK)</option><option value="orchestrator">Orchestrator</option></select></div>
       </div>
       <label>Model<span class="hint">(optional)</span></label>
       <input id="e-model" />
@@ -308,7 +308,7 @@ const ADMIN_PAGE_BODY = `
       <label>Trigger words<span class="hint">(comma or space separated)</span></label>
       <input id="a-triggers" placeholder="@sales, sales" />
       <div class="rowf">
-        <div><label>AI engine</label><select id="a-tier"><option value="claude-code">Claude Code</option><option value="sdk">Anthropic API (SDK)</option></select></div>
+        <div><label>AI engine</label><select id="a-tier"><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="sdk">Anthropic API (SDK)</option></select></div>
         <div><label>Model<span class="hint">(optional)</span></label><input id="a-model" placeholder="claude-sonnet-4-6" /></div>
       </div>
       <label>Personality / instructions<span class="hint">(optional)</span></label>
@@ -3473,7 +3473,7 @@ const JV_HINTS = {
   'node.name': 'friendly name of this daemon',
   'node.id': 'stable identifier, used in logs',
   'agents[].id': 'lowercase handle, used in logs',
-  'agents[].tier': 'which AI engine runs this agent (claude-code / sdk / orchestrator)',
+  'agents[].tier': 'which AI engine runs this agent (claude-code / codex-cli / sdk / orchestrator)',
   'agents[].mentions': 'trigger words that wake this agent',
   'channels.telegram.accounts[].token': 'reference to an env-var, not the token itself',
   'channels.telegram.accounts[].agentBinding': 'which agent answers messages to this bot',

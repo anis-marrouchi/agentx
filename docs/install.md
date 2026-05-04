@@ -74,8 +74,8 @@ You'll be asked for:
 |---|---|
 | ID | Short slug, e.g. `support` |
 | Name | Display name, e.g. `Support Assistant` |
-| Workspace | Directory for this agent's `CLAUDE.md`, skills, MCP config. Defaults to `./agents/<id>` |
-| Tier | `claude-code` uses the `claude` CLI (subscription); `sdk` uses the Claude Agent SDK (API key); `orchestrator` uses AgentX's built-in loop with any LLM provider |
+| Workspace | Directory for this agent's instructions, skills, MCP config. Defaults to `./agents/<id>` |
+| Tier | `claude-code` uses the `claude` CLI; `codex-cli` uses the `codex` CLI; `sdk` uses the Claude Agent SDK; `orchestrator` uses AgentX's built-in loop with any LLM provider |
 | Model | e.g. `claude-sonnet-4-6`, `claude-haiku-4-5` |
 | Mentions | Handles that route to this agent, e.g. `@support_bot`, `@support` |
 

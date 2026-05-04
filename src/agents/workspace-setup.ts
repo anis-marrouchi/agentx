@@ -287,7 +287,7 @@ Always include:
 }
 
 /**
- * Set up an agent workspace with Claude Code best practices.
+ * Set up an agent workspace with CLI-agent best practices.
  * Only creates files that don't already exist (non-destructive).
  */
 export function setupWorkspace(
@@ -305,8 +305,8 @@ export function setupWorkspace(
     return { created, skipped }
   }
 
-  // Only set up claude-code tier agents
-  if (def.tier !== "claude-code") {
+  // Only set up CLI-backed tier agents.
+  if (def.tier !== "claude-code" && def.tier !== "codex-cli") {
     return { created, skipped }
   }
 
@@ -360,6 +360,13 @@ export function setupWorkspace(
     resolve(workspace, "AGENTS.md"),
     generateAgentsMd({ name: def.name, id: agentId, role: def.systemPrompt?.split("\n")[0], workspace, tier: def.tier }),
   )
+
+  if (def.tier === "codex-cli") {
+    if (created.length > 0) {
+      log(`[${agentId}] workspace setup: created ${created.length} file(s)`)
+    }
+    return { created, skipped }
+  }
 
   // CLAUDE.md — managed: silently refreshed when systemPrompt changes.
   writeManaged(
@@ -433,12 +440,12 @@ export function setupAllWorkspaces(
   let totalCreated = 0
   let totalPatched = 0
   for (const [id, def] of Object.entries(agents)) {
-    if (def.tier !== "claude-code") continue
+    if (def.tier !== "claude-code" && def.tier !== "codex-cli") continue
     const result = setupWorkspace(id, def, daemonPort, log)
     totalCreated += result.created.length
 
     // Patch existing settings with new features (agent teams, etc.)
-    if (patchSettings(def.workspace, {
+    if (def.tier === "claude-code" && patchSettings(def.workspace, {
       env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
     })) {
       totalPatched++

@@ -44,6 +44,7 @@ Three execution tiers:
 | Tier | Runs via | When |
 |---|---|---|
 | `claude-code` | spawns `claude -p ...` | You want full Claude Code (tools, skills, MCP). Uses your subscription. |
+| `codex-cli` | spawns `codex exec ...` | You want OpenAI Codex CLI behavior with workspace tools and model selection. |
 | `sdk` | Claude Agent SDK | You want programmatic control with an API key. |
 | `orchestrator` | AgentX's own loop | You want any LLM (OpenAI, Ollama, Mistral…). |
 

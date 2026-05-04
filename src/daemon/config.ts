@@ -42,7 +42,7 @@ const mcpServerSchema = z.object({
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
-  tier: z.enum(["claude-code", "sdk", "orchestrator"]).default("claude-code"),
+  tier: z.enum(["claude-code", "codex-cli", "sdk", "orchestrator"]).default("claude-code"),
   provider: z.string().optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -700,10 +700,10 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
     // Check provider availability
     const providerName = agent.provider || "claude"
     const providerConfig = config.providers[providerName]
-    if (agent.tier !== "claude-code" && (!providerConfig || !providerConfig.apiKey)) {
+    if (!["claude-code", "codex-cli"].includes(agent.tier) && (!providerConfig || !providerConfig.apiKey)) {
       warnings.push(
         `Agent "${id}": provider "${providerName}" has no API key configured. ` +
-          `Set providers.${providerName}.apiKey in config or use tier "claude-code" for subscription.`
+          `Set providers.${providerName}.apiKey in config or use a CLI-backed tier ("claude-code" or "codex-cli").`
       )
     }
   }

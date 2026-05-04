@@ -55,8 +55,8 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `name` | string | — | Display name |
-| `workspace` | string | — | Directory with `CLAUDE.md`, skills, MCP config |
-| `tier` | `claude-code` \| `sdk` \| `orchestrator` | `claude-code` | Execution strategy |
+| `workspace` | string | — | Directory with agent instructions, skills, MCP config |
+| `tier` | `claude-code` \| `codex-cli` \| `sdk` \| `orchestrator` | `claude-code` | Execution strategy |
 | `provider` | string | — | For `sdk`/`orchestrator`: which `providers[]` entry |
 | `model` | string | — | Model id |
 | `systemPrompt` | string | — | Inline override (normally lives in `CLAUDE.md`) |

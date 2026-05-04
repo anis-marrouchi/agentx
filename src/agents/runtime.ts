@@ -1,6 +1,9 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
 import { StringDecoder } from "string_decoder"
+import { mkdtempSync, readFileSync, rmSync } from "fs"
+import { join } from "path"
+import { tmpdir } from "os"
 import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
 
 /** Small helper: render a raw error string into both the operator-facing
@@ -19,6 +22,7 @@ import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
 // - claude-code: spawns claude CLI (subscription, full features)
+// - codex-cli: spawns codex CLI (OpenAI Codex, full CLI agent)
 // - sdk: uses Claude Agent SDK (API key, programmatic)
 // - orchestrator: uses agentx's own agentic loop (any provider)
 
@@ -31,6 +35,14 @@ function claudeMissingMessage(): string {
     `Claude Code CLI not found on PATH. Install it before starting an agent: ` +
     `https://docs.claude.com/en/docs/claude-code . On Linux/macOS:  npm i -g @anthropic-ai/claude-code  ` +
     `then verify with  claude --version. If you don't intend to use the claude-code engine, set the agent's tier to "sdk" or "orchestrator" in agentx.json.`
+  )
+}
+
+function codexMissingMessage(): string {
+  return (
+    `Codex CLI not found on PATH. Install it before starting an agent: ` +
+    `npm i -g @openai/codex then verify with  codex --version. ` +
+    `If you don't intend to use the codex-cli engine, set the agent's tier to "claude-code", "sdk", or "orchestrator" in agentx.json.`
   )
 }
 
@@ -286,6 +298,59 @@ function buildClaudeArgs(
   }
 
   return args
+}
+
+function buildCodexPrompt(prompt: string, systemPromptAppend?: string): string {
+  if (!systemPromptAppend || systemPromptAppend.trim().length === 0) return prompt
+  return `[System]\n${systemPromptAppend.trim()}\n\n[User]\n${prompt}`
+}
+
+function buildCodexArgs(
+  agent: AgentDef,
+  prompt: string,
+  streaming: boolean,
+  modelOverride?: string,
+  systemPromptAppend?: string,
+  outputFile?: string,
+): string[] {
+  const args: string[] = [
+    "exec",
+    "--skip-git-repo-check",
+    "--color", "never",
+  ]
+
+  const model = modelOverride || agent.model
+  if (model) args.push("--model", model)
+
+  if (agent.permissionMode === "bypassPermissions") {
+    args.push("--dangerously-bypass-approvals-and-sandbox")
+  } else {
+    args.push("--sandbox", "workspace-write", "--ask-for-approval", "never")
+  }
+
+  if (streaming) args.push("--json")
+  if (outputFile) args.push("--output-last-message", outputFile)
+
+  args.push(buildCodexPrompt(prompt, systemPromptAppend))
+  return args
+}
+
+function extractCodexTextFromEvent(event: any): string | undefined {
+  if (!event || typeof event !== "object") return undefined
+  if (typeof event.delta === "string") return event.delta
+  if (typeof event.text_delta === "string") return event.text_delta
+  if (typeof event.message === "string" && /message|delta/i.test(String(event.type || ""))) return event.message
+  if (typeof event.text === "string" && /message|delta|response/i.test(String(event.type || ""))) return event.text
+
+  const item = event.item || event.msg || event.message
+  const content = item?.content
+  if (Array.isArray(content)) {
+    const text = content
+      .map((block: any) => typeof block?.text === "string" ? block.text : "")
+      .join("")
+    if (text) return text
+  }
+  return undefined
 }
 
 /**
@@ -698,6 +763,136 @@ export async function executeClaudeCodeStreaming(
   }
 }
 
+export async function executeCodexCli(
+  agent: AgentDef,
+  task: AgentTask,
+  historyContext?: string,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  const prompt = buildPrompt(agent, task, historyContext)
+  const tmp = mkdtempSync(join(tmpdir(), "agentx-codex-"))
+  const outputFile = join(tmp, "last-message.txt")
+  const args = buildCodexArgs(agent, prompt, false, task.model, task.systemPromptAppend, outputFile)
+
+  try {
+    const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    const result = await execa("codex", args, {
+      cwd: agent.workspace,
+      timeout: timeoutMs,
+      reject: false,
+      env: buildAgentEnv(agent.workspace),
+      stdin: "ignore",
+    })
+
+    if (result.exitCode !== 0) {
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
+      let errMsg: string
+      if (r.timedOut) {
+        errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else if (r.signal) {
+        errMsg = result.stderr.trim() || `Codex CLI killed by signal ${r.signal}`
+      } else if (r.code === "ENOENT" || /ENOENT|spawn codex/i.test((r.shortMessage || "") + " " + result.stderr)) {
+        errMsg = codexMissingMessage()
+      } else {
+        errMsg = result.stderr.trim() || result.stdout.trim() || `Codex CLI exited with code ${r.exitCode ?? "unknown"}`
+      }
+      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start }
+    }
+
+    let content = ""
+    try { content = readFileSync(outputFile, "utf8").trim() } catch { /* fall back below */ }
+    if (!content) content = result.stdout.trim()
+    return { content, duration: Date.now() - start }
+  } catch (error: any) {
+    const raw = /ENOENT|spawn codex/i.test(error?.message || "") ? codexMissingMessage() : error?.message
+    return { content: "", ...buildErrorEnvelope(raw || "Codex CLI failed"), duration: Date.now() - start }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+export async function executeCodexCliStreaming(
+  agent: AgentDef,
+  task: AgentTask,
+  onDelta: StreamCallback,
+  historyContext?: string,
+  onEvent?: (event: any) => void,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  const prompt = buildPrompt(agent, task, historyContext)
+  const tmp = mkdtempSync(join(tmpdir(), "agentx-codex-"))
+  const outputFile = join(tmp, "last-message.txt")
+  const args = buildCodexArgs(agent, prompt, true, task.model, task.systemPromptAppend, outputFile)
+  let fullText = ""
+
+  try {
+    const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    const proc = execa("codex", args, {
+      cwd: agent.workspace,
+      timeout: timeoutMs,
+      reject: false,
+      env: buildAgentEnv(agent.workspace),
+      buffer: false,
+      stdin: "ignore",
+    })
+
+    let lineBuffer = ""
+    const decoder = new StringDecoder("utf8")
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      lineBuffer += decoder.write(chunk)
+      const lines = lineBuffer.split("\n")
+      lineBuffer = lines.pop() || ""
+      for (const line of lines) {
+        if (!line.trim()) continue
+        try {
+          const event = JSON.parse(line)
+          if (onEvent) {
+            try { onEvent(event) } catch { /* */ }
+          }
+          const text = extractCodexTextFromEvent(event)
+          if (text && text !== fullText) {
+            const delta = text.startsWith(fullText) ? text.slice(fullText.length) : text
+            fullText = text.startsWith(fullText) ? text : fullText + text
+            if (delta) onDelta(delta, fullText)
+          }
+        } catch {
+          fullText += line + "\n"
+          onDelta(line + "\n", fullText)
+        }
+      }
+    })
+
+    const result = await proc
+    const tail = decoder.end()
+    if (tail) lineBuffer += tail
+
+    if (result.exitCode !== 0 && !fullText) {
+      const stderr = typeof result.stderr === "string" ? result.stderr : ""
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
+      let errMsg: string
+      if (r.timedOut) errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      else if (r.signal) errMsg = stderr.trim() || `Codex CLI killed by signal ${r.signal}`
+      else if (r.code === "ENOENT" || /ENOENT|spawn codex/i.test((r.shortMessage || "") + " " + stderr)) errMsg = codexMissingMessage()
+      else errMsg = stderr.trim() || `Codex CLI exited with code ${r.exitCode ?? "unknown"}`
+      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start }
+    }
+
+    let finalText = ""
+    try { finalText = readFileSync(outputFile, "utf8").trim() } catch { /* */ }
+    if (finalText && finalText !== fullText) {
+      const delta = finalText.startsWith(fullText) ? finalText.slice(fullText.length) : finalText
+      fullText = finalText
+      if (delta) onDelta(delta, fullText)
+    }
+    return { content: fullText, duration: Date.now() - start }
+  } catch (error: any) {
+    const raw = /ENOENT|spawn codex/i.test(error?.message || "") ? codexMissingMessage() : error?.message
+    return { content: fullText, ...buildErrorEnvelope(raw || "Codex CLI failed"), duration: Date.now() - start }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
 /**
  * Execute a task using the Claude Agent SDK (tier: "sdk").
  */
@@ -952,6 +1147,12 @@ export async function executeTask(
         return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
       return executeClaudeCode(agent, task, historyContext, resumeSessionId)
+
+    case "codex-cli":
+      if (onDelta) {
+        return executeCodexCliStreaming(agent, task, onDelta, historyContext, onEvent)
+      }
+      return executeCodexCli(agent, task, historyContext)
 
     case "sdk": {
       const providerName = agent.provider || "claude"

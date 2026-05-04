@@ -33,7 +33,7 @@ export interface WizardPayload {
     id: string
     name: string
     triggerWords: string   // comma/space separated; we normalise on the server
-    tier: "claude-code" | "sdk"
+    tier: "claude-code" | "codex-cli" | "sdk"
     model?: string
     personality?: string   // short free text → CLAUDE.md
   }
@@ -83,8 +83,8 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   if (!payload.agent.name?.trim()) throw new Error("Agent name is required.")
   const mentions = splitMentions(payload.agent.triggerWords)
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
-  if (payload.agent.tier !== "claude-code" && payload.agent.tier !== "sdk") {
-    throw new Error("AI engine must be claude-code or sdk.")
+  if (payload.agent.tier !== "claude-code" && payload.agent.tier !== "codex-cli" && payload.agent.tier !== "sdk") {
+    throw new Error("AI engine must be claude-code, codex-cli, or sdk.")
   }
 
   const configPath = resolve(baseDir, "agentx.json")
@@ -146,6 +146,9 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   }
   if (payload.agent.tier === "claude-code") {
     nextSteps.push("Run  claude --version  to confirm Claude Code is installed (needed for the claude-code engine)")
+  }
+  if (payload.agent.tier === "codex-cli") {
+    nextSteps.push("Run  codex --version  to confirm Codex CLI is installed (needed for the codex-cli engine)")
   }
   nextSteps.push("Start the daemon:  agentx daemon start")
   nextSteps.push("Open the dashboard:  http://127.0.0.1:4202")
@@ -348,4 +351,3 @@ async function probe(baseUrl: string): Promise<boolean> {
     return r.status > 0 && r.status < 600
   } catch { return false }
 }
-

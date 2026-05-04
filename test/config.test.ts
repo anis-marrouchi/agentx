@@ -35,6 +35,20 @@ describe("daemonConfigSchema", () => {
     }
   })
 
+  it("validates codex-cli agent config", () => {
+    const result = daemonConfigSchema.safeParse({
+      node: { id: "test", name: "Test" },
+      agents: {
+        "codex-agent": {
+          name: "Codex Agent",
+          workspace: "/tmp/workspace",
+          tier: "codex-cli",
+        },
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
   it("validates telegram config", () => {
     const result = daemonConfigSchema.safeParse({
       node: { id: "test", name: "Test" },

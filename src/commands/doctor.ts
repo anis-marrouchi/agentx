@@ -103,6 +103,21 @@ async function runEnvChecks(checks: Check[]): Promise<void> {
       fix: "See https://docs.anthropic.com/en/docs/claude-code",
     })
   }
+
+  const codexPath = which("codex")
+  if (codexPath) {
+    let ver: string | undefined
+    try { ver = execFileSync("codex", ["--version"], { encoding: "utf-8", timeout: 3000 }).trim() } catch { /* */ }
+    checks.push({ severity: "ok", group: "Environment", title: `codex CLI ${ver || "installed"}`, detail: codexPath })
+  } else {
+    checks.push({
+      severity: "warn",
+      group: "Environment",
+      title: "codex CLI not on PATH",
+      detail: "Only required for agents on the codex-cli tier.",
+      fix: "Install with `npm i -g @openai/codex`.",
+    })
+  }
 }
 
 function runConfigChecks(checks: Check[]): any {
@@ -148,6 +163,21 @@ function runConfigChecks(checks: Check[]): any {
         title: `${claudeCodeAgents.length} agent(s) use claude-code tier but claude CLI is missing`,
         detail: claudeCodeAgents.map(([id]) => id).join(", "),
         fix: "Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) or switch these agents to tier=sdk.",
+      })
+    }
+  }
+  const codexCliAgents = Object.entries(cfg.agents || {}).filter(([, a]: [string, any]) => a.tier === "codex-cli")
+  if (codexCliAgents.length > 0) {
+    const hasCodex = (() => {
+      try { execFileSync(process.platform === "win32" ? "where" : "which", ["codex"], { stdio: "ignore" }); return true } catch { return false }
+    })()
+    if (!hasCodex) {
+      checks.push({
+        severity: "fail",
+        group: "Config",
+        title: `${codexCliAgents.length} agent(s) use codex-cli tier but codex CLI is missing`,
+        detail: codexCliAgents.map(([id]) => id).join(", "),
+        fix: "Install Codex CLI with `npm i -g @openai/codex` or switch these agents to tier=claude-code.",
       })
     }
   }

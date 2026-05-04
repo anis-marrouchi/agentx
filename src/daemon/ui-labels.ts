@@ -34,6 +34,7 @@ export const UI_LABELS = {
   // Friendly names per tier
   tierLabels: {
     "claude-code": "Claude Code",
+    "codex-cli": "Codex CLI",
     "sdk": "SDK",
     "orchestrator": "Orchestrator",
   } as Record<string, string>,
