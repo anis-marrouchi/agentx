@@ -86,6 +86,22 @@ export type Condition = z.infer<typeof conditionSchema>
 
 // --------------------------- Nodes + edges --------------------------------
 
+/** Improvement plan #9b — per-node retry policy. When a node's
+ *  handler returns `{ error }` (or throws), the dispatcher re-runs it
+ *  up to `maxAttempts - 1` more times with exponential backoff
+ *  (`backoffMs * 2^(attempt-1)`). Once all attempts are exhausted,
+ *  the LAST error is what gets recorded as the node's failure.
+ *  Defaults: maxAttempts=1 (no retry), backoffMs=1000.
+ *
+ *  Pause results (userTask, signalWait, timerWait) are NEVER retried —
+ *  pausing is a normal lifecycle transition, not a failure. Only
+ *  hard errors (`{error}` or thrown exceptions) trigger the retry. */
+export const retryPolicySchema = z.object({
+  maxAttempts: z.number().int().min(1).max(10).default(1),
+  backoffMs: z.number().int().min(0).max(60_000).default(1000),
+}).default({ maxAttempts: 1, backoffMs: 1000 })
+export type RetryPolicy = z.infer<typeof retryPolicySchema>
+
 export const workflowNodeSchema = z.object({
   id: z.string().min(1).regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/, "node id must be identifier-safe"),
   type: nodeTypeSchema,
@@ -93,6 +109,8 @@ export const workflowNodeSchema = z.object({
    *  at execution time via a local Zod schema; keeping the top-level schema
    *  permissive lets new node types ship without a round-trip through here. */
   config: z.record(z.unknown()).default({}),
+  /** Per-node retry on hard errors. See RetryPolicy. */
+  retry: retryPolicySchema,
   /** Optional UI position. Ignored by the engine; persisted to keep the
    *  editor layout alongside the workflow (no separate _layouts file). */
   position: z.object({ x: z.number(), y: z.number() }).optional(),

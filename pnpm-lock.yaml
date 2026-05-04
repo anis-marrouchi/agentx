@@ -50,6 +50,9 @@ importers:
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
       node-fetch:
         specifier: ^3.3.0
         version: 3.3.2

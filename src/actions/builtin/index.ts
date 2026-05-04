@@ -13,6 +13,7 @@ import { extractStructured } from "./extract"
 import { fileReadLines, fileWriteJsonl } from "./file"
 import { httpFetch, httpPost } from "./http"
 import { meshDelegate } from "./mesh"
+import { ragLexical } from "./rag"
 
 /**
  * Register every shipped built-in. Idempotent — re-registering the
@@ -27,6 +28,7 @@ export function registerAllBuiltins(): void {
   registerBuiltin(httpFetch)
   registerBuiltin(httpPost)
   registerBuiltin(meshDelegate)
+  registerBuiltin(ragLexical)
 }
 
 /** Test-only — clears the registry. Re-call registerAllBuiltins to repopulate. */

@@ -14,6 +14,8 @@ import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./typ
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordWorkflowDispatch } from "@/intent/sources/workflow"
+import { openDb } from "@/storage/sqlite"
+import { recordTraceStart, recordTraceEnd } from "@/storage/traces"
 
 // --- Dispatcher (V2) ---
 //
@@ -704,20 +706,81 @@ export class WorkflowDispatcher {
     // --- phase 2 (unguarded): actually run the handler, parallel-safe ---
     const { run, node, handler } = prelude
     const inputKeys = workflow.edges.filter((e) => e.to === nodeId).map((e) => e.from)
-    let result: NodeResult
-    try {
-      result = await handler({
-        workflow, run, node,
-        channels: this.channels,
-        agents: this.agents,
-        actors: this.actors,
-        tasks: this.tasks,
-        forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
-        log: this.log,
-      })
-    } catch (e: any) {
-      this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
-      result = { error: e.message }
+
+    // Improvement plan #9c — workflow steps populate task_traces so a
+    // single `agentx trace list --workflow <runId>` shows every step,
+    // joined by workflow_run_id. Agent nodes generate their own trace
+    // via registry.execute (with workflow context already plumbed via
+    // task.workflowRunId) so wrapping them here would double-count;
+    // every other node type gets a synthetic trace row keyed by node
+    // type so operators can answer "which transform / branch / signal
+    // / action.builtin step ran when, and how long?"
+    let workflowTraceTaskId: string | undefined
+    if (node.type !== "agent") {
+      const db = openDb()
+      if (db) {
+        try {
+          workflowTraceTaskId = recordTraceStart(db, {
+            agentId: `workflow:${node.type}`,
+            channel: "workflow",
+            chatId: `${workflow.id}:${nodeId}`,
+            workflowRunId: runId,
+            workflowId: workflow.id,
+            workflowNodeId: nodeId,
+            messagePreview: `${node.type} ${nodeId}`,
+          })
+        } catch { /* observability best-effort */ }
+      }
+    }
+
+    // Improvement plan #9b — per-node retry on hard errors. Pause
+    // results (userTask, signalWait, timerWait, subProcess) are
+    // intentionally NOT retried — pausing is a normal lifecycle
+    // transition. Only `{error}` results (handler returned an error
+    // or threw) consume a retry budget.
+    const retry = (node as { retry?: { maxAttempts: number; backoffMs: number } }).retry
+      ?? { maxAttempts: 1, backoffMs: 1000 }
+    let result: NodeResult = { error: "retry-loop did not run" }
+    let attempt = 0
+    while (attempt < retry.maxAttempts) {
+      attempt++
+      try {
+        result = await handler({
+          workflow, run, node,
+          channels: this.channels,
+          agents: this.agents,
+          actors: this.actors,
+          tasks: this.tasks,
+          forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
+          log: this.log,
+        })
+      } catch (e: any) {
+        this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
+        result = { error: e.message }
+      }
+      // Stop on success or pause; keep going only on hard error.
+      if (!result.error || result.paused) break
+      if (attempt < retry.maxAttempts) {
+        const wait = retry.backoffMs * Math.pow(2, attempt - 1)
+        this.log(`[workflow:${workflow.id}] node "${nodeId}" failed (attempt ${attempt}/${retry.maxAttempts}): ${result.error.slice(0, 120)} — retrying in ${wait}ms`)
+        await new Promise((r) => setTimeout(r, wait))
+      }
+    }
+
+    // Finalize the workflow-step trace row, regardless of result.
+    // Status mirrors the result shape: error → "error", paused → "ok"
+    // (the node ran successfully and is waiting on external input;
+    // pause is a normal lifecycle transition, not a failure), else "ok".
+    if (workflowTraceTaskId) {
+      const db = openDb()
+      if (db) {
+        try {
+          recordTraceEnd(db, workflowTraceTaskId, {
+            status: result.error ? "error" : "ok",
+            error: result.error ?? null,
+          })
+        } catch { /* */ }
+      }
     }
 
     // --- phase 3 (guarded): persist result + side effects ---
