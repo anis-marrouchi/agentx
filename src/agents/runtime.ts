@@ -1,7 +1,16 @@
 import { execa } from "execa"
 import { execFile, spawn } from "child_process"
 import { StringDecoder } from "string_decoder"
-import { friendlyModelError, renderFriendlyError } from "./error-map"
+import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
+
+/** Small helper: render a raw error string into both the operator-facing
+ *  one-line message and the typed kind discriminator. Call sites that hit
+ *  `renderFriendlyError(friendlyModelError(...))` should use this so the
+ *  kind survives onto the response (see AgentResponse.errorKind). */
+function buildErrorEnvelope(raw: string | undefined | null): { error: string; errorKind: FriendlyError["kind"] } {
+  const friendly = friendlyModelError(raw)
+  return { error: renderFriendlyError(friendly), errorKind: friendly.kind }
+}
 import { buildAgentEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import { getProcessRegistry } from "./process-registry-instance"
@@ -123,6 +132,12 @@ export interface AgentTask {
 export interface AgentResponse {
   content: string
   error?: string
+  /** Typed discriminator on `error`. Lets dispatchers and workflow nodes
+   *  branch on the failure cause without string-matching the friendly
+   *  message (which is operator-facing prose, not machine input). The
+   *  full FriendlyError taxonomy is in error-map.ts; common ones to
+   *  branch on: `out_of_credits`, `rate_limit`, `auth`, `timeout`. */
+  errorKind?: FriendlyError["kind"]
   tokensUsed?: number
   duration?: number
   claudeSessionId?: string
@@ -432,7 +447,7 @@ export async function executeClaudeCode(
       }
       return {
         content: "",
-        error: renderFriendlyError(friendlyModelError(errMsg)),
+        ...buildErrorEnvelope(errMsg),
         duration: Date.now() - start,
       }
     }
@@ -443,7 +458,7 @@ export async function executeClaudeCode(
     if (apiErrorInStdout) {
       return {
         content: "",
-        error: renderFriendlyError(friendlyModelError(apiErrorInStdout)),
+        ...buildErrorEnvelope(apiErrorInStdout),
         duration: Date.now() - start,
       }
     }
@@ -648,7 +663,7 @@ export async function executeClaudeCodeStreaming(
       }
       return {
         content: "",
-        error: renderFriendlyError(friendlyModelError(errMsg)),
+        ...buildErrorEnvelope(errMsg),
         duration: Date.now() - start,
       }
     }
@@ -656,7 +671,7 @@ export async function executeClaudeCodeStreaming(
     if (streamApiError) {
       return {
         content: "",
-        error: renderFriendlyError(friendlyModelError(streamApiError)),
+        ...buildErrorEnvelope(streamApiError),
         duration: Date.now() - start,
         usage: streamUsage,
         billedModel: streamBilledModel,
@@ -674,7 +689,7 @@ export async function executeClaudeCodeStreaming(
   } catch (error: any) {
     return {
       content: fullText || "",
-      error: renderFriendlyError(friendlyModelError(error.message)),
+      ...buildErrorEnvelope(error.message),
       duration: Date.now() - start,
       usage: streamUsage,
       billedModel: streamBilledModel,
@@ -726,7 +741,7 @@ export async function executeSdk(
   } catch (error: any) {
     return {
       content: "",
-      error: `SDK error: ${error.message}`,
+      ...buildErrorEnvelope(`SDK error: ${error.message}`),
       duration: Date.now() - start,
     }
   }
@@ -771,7 +786,7 @@ export async function executeOrchestrator(
   } catch (error: any) {
     return {
       content: "",
-      error: `Orchestrator error: ${error.message}`,
+      ...buildErrorEnvelope(`Orchestrator error: ${error.message}`),
       duration: Date.now() - start,
     }
   }
@@ -850,6 +865,7 @@ async function executeClaudeCodePersistent(
   // parseClaudeJsonOutput does for the spawn-per-task JSON envelope.
   let finalText = ""
   let finalError: string | undefined
+  let finalErrorKind: FriendlyError["kind"] | undefined
   let usage: TokenUsage | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
@@ -875,7 +891,9 @@ async function executeClaudeCodePersistent(
       if (evt.type === "result") {
         const r = evt.raw as any
         if (r.is_error) {
-          finalError = renderFriendlyError(friendlyModelError(typeof r.result === "string" ? r.result : "claude error"))
+          const env = buildErrorEnvelope(typeof r.result === "string" ? r.result : "claude error")
+          finalError = env.error
+          finalErrorKind = env.errorKind
         } else if (typeof r.result === "string" && r.result.length > 0) {
           // Final result text (sometimes more authoritative than the last
           // assistant snapshot, especially for very short responses).
@@ -895,12 +913,15 @@ async function executeClaudeCodePersistent(
       }
     }
   } catch (e: any) {
-    finalError = `persistent claude process error: ${e?.message || String(e)}`
+    const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
+    finalError = env.error
+    finalErrorKind = env.errorKind
   }
 
   return {
     content: finalText,
     error: finalError,
+    errorKind: finalErrorKind,
     duration: Date.now() - start,
     usage,
     billedModel,

@@ -1,5 +1,6 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
+import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint } from "./sessions"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
@@ -1538,7 +1539,12 @@ export class AgentRegistry {
     } catch (error: any) {
       state.errors++
       this.log(`[${task.agentId}] unexpected error: ${error.message}`)
-      finalResponse = { content: "", error: error.message }
+      const friendly = friendlyModelError(error.message)
+      finalResponse = {
+        content: "",
+        error: renderFriendlyError(friendly),
+        errorKind: friendly.kind,
+      }
       return finalResponse
     } finally {
       state.activeTasks--

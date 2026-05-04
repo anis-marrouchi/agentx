@@ -59,8 +59,12 @@ const agentHandler: NodeHandler = async (ctx) => {
     })
     const durationMs = Date.now() - start
     if (resp.error) {
-      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed: ${resp.error}`)
-      return { error: resp.error }
+      const kind = resp.errorKind ?? "unknown"
+      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed (${kind}): ${resp.error}`)
+      // Prefix the kind onto the run-level error string so the workflow
+      // execution log and dashboard surface a stable, parseable token.
+      // The friendly message follows verbatim for operators reading the log.
+      return { error: `[${kind}] ${resp.error}` }
     }
     const parser = String(cfg.resultParser ?? "noqta-result-token")
     const parsed = parser === "json" ? extractJsonBlock(resp.content) : parseResultToken(resp.content)

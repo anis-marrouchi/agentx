@@ -61,6 +61,35 @@ export function friendlyModelError(raw: string | undefined | null): FriendlyErro
     }
   }
 
+  // Plain-text Max-plan overage signal that may arrive without a JSON
+  // envelope (the structured parse below also catches it via errMessage).
+  // Order matters: this case must fire BEFORE the plain-text `out_of_credits`
+  // branch — "out of extra usage" matches both regexes, but `overage_disabled`
+  // is the more specific (and retryable) classification.
+  if (/out of extra usage/i.test(source)) {
+    return {
+      kind: "overage_disabled",
+      retryable: true,
+      message: "Claude Max-plan overage is unavailable (disabled or depleted at the org level).",
+      fix: "Enable overage / extra usage at https://claude.ai/settings/usage (this is the subscription account's toggle — not Anthropic API billing). Warm sessions can still succeed via prompt cache; cold dispatches will keep failing until overage is re-enabled.",
+      raw: source,
+    }
+  }
+
+  // Plain-text credit-balance signal (programmatic ANTHROPIC_API_KEY accounts)
+  // that may arrive without a JSON envelope — some CLI paths surface the API
+  // message verbatim. Matched here so we route to `out_of_credits` even when
+  // the structured parse below would otherwise fall through to `unknown`.
+  if (/credit balance (is )?too low|out of credit|credit(s)? exhausted|insufficient credit/i.test(source)) {
+    return {
+      kind: "out_of_credits",
+      retryable: false,
+      message: "The agent is out of Anthropic credits.",
+      fix: "Top up at https://console.anthropic.com/settings/billing (or claude.ai/settings/usage for Max subscribers), then retry.",
+      raw: source,
+    }
+  }
+
   // Look for the standard Anthropic JSON envelope anywhere in the string —
   // the CLI prefixes it with "API Error: <status>".
   const jsonMatch = source.match(/\{.*\}\s*$/s) || source.match(/\{[\s\S]*\}/)
@@ -93,7 +122,9 @@ export function friendlyModelError(raw: string | undefined | null): FriendlyErro
   }
 
   // Real API credit exhaustion (programmatic ANTHROPIC_API_KEY accounts).
-  if (errMessage && /out of (extra )?usage|out of credit|credit(s)? exhausted|insufficient credit/i.test(errMessage)) {
+  // "Credit balance is too low" is what Anthropic's API actually returns on
+  // depletion — earlier wording variants are kept for back-compat.
+  if (errMessage && /out of (extra )?usage|out of credit|credit(s)? exhausted|insufficient credit|credit balance (is )?too low|low credit balance/i.test(errMessage)) {
     return {
       kind: "out_of_credits",
       retryable: false,

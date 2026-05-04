@@ -70,6 +70,19 @@ describe("friendlyModelError", () => {
     expect(f.retryable).toBe(false)
   })
 
+  it("classifies the bare 'Credit balance is too low' phrasing (plain text, no JSON envelope)", () => {
+    const f = friendlyModelError("Credit balance is too low")
+    expect(f.kind).toBe("out_of_credits")
+    expect(f.retryable).toBe(false)
+    expect(f.fix).toMatch(/billing|claude\.ai\/settings\/usage/)
+  })
+
+  it("classifies 'Credit balance is too low' inside the standard API JSON envelope", () => {
+    const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}`
+    const f = friendlyModelError(raw)
+    expect(f.kind).toBe("out_of_credits")
+  })
+
   it("renders a single actionable line", () => {
     const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage"}}`
     const rendered = renderFriendlyError(friendlyModelError(raw))

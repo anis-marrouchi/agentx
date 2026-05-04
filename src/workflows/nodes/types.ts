@@ -25,6 +25,12 @@ export interface AgentExecuteRequest {
 export interface AgentExecuteResponse {
   content: string
   error?: string
+  /** Typed discriminator for `error`. Common values: `out_of_credits`,
+   *  `rate_limit`, `auth`, `timeout`, `overage_disabled`, `unknown`. Lets a
+   *  downstream `branch` node route on the failure cause without parsing
+   *  the friendly message. The full taxonomy lives in
+   *  src/agents/error-map.ts → FriendlyError.kind. */
+  errorKind?: string
   taskId?: string
   durationMs?: number
 }

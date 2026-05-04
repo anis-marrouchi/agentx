@@ -1376,6 +1376,7 @@ export class AgentXDaemon {
           return {
             content: resp.content ?? "",
             error: resp.error,
+            errorKind: resp.errorKind,
             taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
             durationMs: Date.now() - start,
           }
