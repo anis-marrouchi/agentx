@@ -15,12 +15,14 @@ agentx doctor --no-running # skip the live daemon probe
 - Node.js version (20+ required)
 - `npm` on PATH
 - `claude` CLI presence (advisory unless a `claude-code` agent references it)
+- `codex` CLI presence (advisory unless a `codex-cli` agent references it)
 
 **Config**
 
 - `agentx.json` exists + parses as JSON
 - Full schema validation via the same loader the daemon uses
-- Promotes the claude-CLI check to `fail` if any agent is `tier: claude-code`
+- Promotes the Claude CLI check to `fail` if any agent is `tier: claude-code`
+- Promotes the Codex CLI check to `fail` if any agent is `tier: codex-cli`
 
 **Secrets**
 

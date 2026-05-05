@@ -51,6 +51,34 @@ describe("SessionStore", () => {
     expect(id).toBe("abc-123-def")
   })
 
+  it("stores and retrieves Codex session IDs", () => {
+    store.setCodexSessionId("atlas", "telegram", "g1", "thread-123")
+    const id = store.getCodexSessionId("atlas", "telegram", "g1")
+    expect(id).toBe("thread-123")
+  })
+
+  it("clearSession removes AgentX history and Claude resume metadata", () => {
+    store.addUserMessage("lead", "api", "default", "Anis", "I want monthly subscription")
+    store.addAgentMessage("lead", "api", "default", "Thanks Anis")
+    store.setClaudeSessionId("lead", "api", "default", "claude-session")
+    store.setCodexSessionId("lead", "api", "default", "codex-session")
+    store.recordTurnUsage("lead", "api", "default", {
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 0,
+      cacheCreateTokens: 0,
+    })
+
+    store.clearSession("lead", "api", "default")
+
+    const session = store.getSession("lead", "api", "default")
+    expect(session.messages).toHaveLength(0)
+    expect(session.claudeSessionId).toBeUndefined()
+    expect(session.codexSessionId).toBeUndefined()
+    expect(session.turnCount).toBeUndefined()
+    expect(store.buildHistoryContext("lead", "api", "default")).toBe("")
+  })
+
   it("returns undefined for non-existent session ID", () => {
     const id = store.getClaudeSessionId("atlas", "telegram", "g1")
     expect(id).toBeUndefined()

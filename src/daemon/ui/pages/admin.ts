@@ -308,7 +308,7 @@ const ADMIN_PAGE_BODY = `
       <label>Trigger words<span class="hint">(comma or space separated)</span></label>
       <input id="a-triggers" placeholder="@sales, sales" />
       <div class="rowf">
-        <div><label>AI engine</label><select id="a-tier"><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="sdk">Anthropic API (SDK)</option></select></div>
+        <div><label>AI engine</label><select id="a-tier"><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="sdk">Anthropic API (SDK)</option><option value="orchestrator">Orchestrator</option></select></div>
         <div><label>Model<span class="hint">(optional)</span></label><input id="a-model" placeholder="claude-sonnet-4-6" /></div>
       </div>
       <label>Personality / instructions<span class="hint">(optional)</span></label>

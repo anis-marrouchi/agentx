@@ -1,5 +1,6 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
 import { markdownToTelegramHtml } from "./telegram-format"
+import { splitMessageText } from "./message-chunks"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { getCursorStore, type CursorStore } from "./cursor-store"
@@ -39,6 +40,14 @@ interface TelegramAccountConfig {
   allowFrom?: string[]
   /** When false, register the token for outbound send only (no long-poll). */
   pollInbound?: boolean
+}
+
+function describeError(e: any): string {
+  const parts = [e?.message || String(e)]
+  const cause = e?.cause
+  if (cause?.code) parts.push(`code=${cause.code}`)
+  if (cause?.message && cause.message !== e?.message) parts.push(`cause=${cause.message}`)
+  return parts.join(" ")
 }
 
 // --- Persistent group membership store ---
@@ -201,6 +210,7 @@ export class TelegramAdapter implements ChannelAdapter {
    *  or its token changes, so its pollLoop observes the stop and exits without
    *  affecting siblings. Keyed by accountId. */
   private accountPolling = new Map<string, boolean>()
+  private accountVerifyRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private log: (...args: unknown[]) => void
   /** Global allowlist fallback. When a per-account allowFrom is unset,
    *  this list applies. When BOTH are unset, everything is rejected
@@ -343,7 +353,20 @@ export class TelegramAdapter implements ChannelAdapter {
       this.pollLoop(accountId, config)
     } catch (e: any) {
       this.log(`Failed to verify bot for account "${accountId}" after retries: ${e.message}`)
+      this.scheduleVerifyRetry(accountId)
     }
+  }
+
+  private scheduleVerifyRetry(accountId: string): void {
+    if (!this.polling || this.accountVerifyRetryTimers.has(accountId)) return
+    const timer = setTimeout(() => {
+      this.accountVerifyRetryTimers.delete(accountId)
+      const cfg = this.accounts.get(accountId)
+      if (!cfg || !this.polling || this.accountPolling.get(accountId)) return
+      this.log(`Retrying Telegram account "${accountId}" after failed startup verification`)
+      void this.startAccount(accountId, cfg)
+    }, 30_000)
+    this.accountVerifyRetryTimers.set(accountId, timer)
   }
 
   /** Stop a single account's poll loop without touching siblings. Flips the
@@ -363,6 +386,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     this.polling = false
+    for (const timer of this.accountVerifyRetryTimers.values()) clearTimeout(timer)
+    this.accountVerifyRetryTimers.clear()
     // Cursors commit synchronously per-update now (FileCursorStore), so
     // there's nothing to flush here — every offset advance has already
     // landed on disk before the next getUpdates ack.
@@ -488,49 +513,52 @@ export class TelegramAdapter implements ChannelAdapter {
       return ""
     }
 
-    const maxLen = 4096
-    const text = msg.text.length > maxLen ? msg.text.slice(0, maxLen - 3) + "..." : msg.text
+    const chunks = splitMessageText(msg.text, 3900)
+    let firstMessageId = ""
 
-    // Convert markdown to Telegram MarkdownV2
-    const formatted = msg.parseMode === "markdown" || msg.parseMode === undefined
-      ? markdownToTelegramHtml(text)
-      : text
+    for (let i = 0; i < chunks.length; i++) {
+      const text = chunks[i]
+      const formatted = msg.parseMode === "markdown" || msg.parseMode === undefined
+        ? markdownToTelegramHtml(text)
+        : text
 
-    const params: Record<string, unknown> = {
-      chat_id: msg.chatId,
-      text: formatted,
-      parse_mode: "HTML",
-    }
+      const params: Record<string, unknown> = {
+        chat_id: msg.chatId,
+        text: formatted,
+        parse_mode: "HTML",
+      }
 
-    if (msg.replyTo) {
-      params.reply_to_message_id = parseInt(msg.replyTo, 10)
-    }
+      if (msg.replyTo && i === 0) {
+        params.reply_to_message_id = parseInt(msg.replyTo, 10)
+      }
 
-    if (msg.parseMode === "html") {
-      params.parse_mode = "HTML"
-      params.text = text
-    } else if (msg.parseMode === "plain") {
-      delete params.parse_mode
-      params.text = text
-    }
-
-    try {
-      const result = await this.apiCall(token, "sendMessage", params)
-      const messageId = String(result.result?.message_id || "")
-      this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
-      return messageId
-    } catch (e: any) {
-      // Retry without formatting if MarkdownV2 fails
-      if (params.parse_mode) {
+      if (msg.parseMode === "html") {
+        params.parse_mode = "HTML"
+        params.text = text
+      } else if (msg.parseMode === "plain") {
         delete params.parse_mode
         params.text = text
+      }
+
+      try {
         const result = await this.apiCall(token, "sendMessage", params)
         const messageId = String(result.result?.message_id || "")
+        if (!firstMessageId) firstMessageId = messageId
         this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
-        return messageId
+      } catch (e: any) {
+        if (params.parse_mode) {
+          delete params.parse_mode
+          params.text = text
+          const result = await this.apiCall(token, "sendMessage", params)
+          const messageId = String(result.result?.message_id || "")
+          if (!firstMessageId) firstMessageId = messageId
+          this.recordOutboundShadow(msg.chatId, messageId, text, msg.agentId, msg.accountId)
+          continue
+        }
+        throw e
       }
-      throw e
     }
+    return firstMessageId
   }
 
   /** Best-effort outbound shadow log. Captures every successful send into
@@ -582,8 +610,7 @@ export class TelegramAdapter implements ChannelAdapter {
     const token = this.resolveToken(args.chatId, args.accountId)
     if (!token) { this.log("No telegram token found for sending"); return "" }
 
-    const maxLen = 4096
-    const text = args.text.length > maxLen ? args.text.slice(0, maxLen - 3) + "..." : args.text
+    const text = splitMessageText(args.text, 3900)[0]
     const formatted = args.parseMode === "markdown" || args.parseMode === undefined
       ? markdownToTelegramHtml(text)
       : text
@@ -619,8 +646,7 @@ export class TelegramAdapter implements ChannelAdapter {
     const token = this.resolveToken(chatId, accountId)
     if (!token) return false
 
-    const maxLen = 4096
-    const trimmed = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text
+    const trimmed = splitMessageText(text, 3900)[0]
 
     const formatted = parseMode !== "html" && parseMode !== "plain"
       ? markdownToTelegramHtml(trimmed)
@@ -652,8 +678,12 @@ export class TelegramAdapter implements ChannelAdapter {
         try {
           await this.apiCall(token, "editMessageText", params)
           return true
-        } catch { return false }
+        } catch (retryError: any) {
+          this.log(`editMessageText failed for ${chatId}/${messageId}: ${describeError(retryError)}`)
+          return false
+        }
       }
+      this.log(`editMessageText failed for ${chatId}/${messageId}: ${describeError(e)}`)
       return false
     }
   }
@@ -963,7 +993,7 @@ export class TelegramAdapter implements ChannelAdapter {
       } catch (e: any) {
         consecutiveErrors++
         const backoff = Math.min(5000 * Math.pow(2, consecutiveErrors - 1), 60000)
-        this.log(`Poll error (${accountId}): ${e.message} [retry in ${backoff / 1000}s, errors: ${consecutiveErrors}]`)
+        this.log(`Poll error (${accountId}): ${describeError(e)} [retry in ${backoff / 1000}s, errors: ${consecutiveErrors}]`)
         await new Promise((r) => setTimeout(r, backoff))
       }
     }

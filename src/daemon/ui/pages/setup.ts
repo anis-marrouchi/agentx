@@ -70,6 +70,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
           { value: "claude-code", label: "Claude Code (recommended)", selected: true },
           { value: "codex-cli", label: "Codex CLI" },
           { value: "sdk", label: "Anthropic API (BYO key)" },
+          { value: "orchestrator", label: "Orchestrator (any provider)" },
         ],
       }),
       field({

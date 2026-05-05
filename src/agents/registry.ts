@@ -844,13 +844,29 @@ export class AgentRegistry {
     const channel = task.context?.channel || "api"
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
+    const isCodexCli = state.def.tier === "codex-cli"
+
+    // Improvement plan #8 — caller-driven session reset. Honour it before
+    // seeding or recording the current inbound message; otherwise the fresh
+    // reset can erase the very message that started the task.
+    if (task.freshSession) {
+      this.sessions.clearSession(task.agentId, channel, chatId)
+      this.log(`[${task.agentId}] freshSession=true → cleared session history for ${channel}:${chatId}`)
+      getEventBus().emit("session:rotated", {
+        agentId: task.agentId, channel, chatId,
+        reason: "stale",
+        at: new Date().toISOString(),
+      })
+    }
 
     // Mirror the live channel before recording the new user message — on a
     // cold-create (fresh chatId, new day after rotation), this calls the
     // adapter's seedHistory and back-fills recent messages so the agent
     // doesn't start blind. No-op for warm sessions, non-channel callers
     // (cron/api/a2a), or channels without a seedHistory implementation.
-    await this.sessions.seedIfEmpty(task.agentId, channel, chatId)
+    if (!task.freshSession) {
+      await this.sessions.seedIfEmpty(task.agentId, channel, chatId)
+    }
 
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
@@ -875,7 +891,7 @@ export class AgentRegistry {
     // failure (bad LLM output, schema rejection, network error) must never
     // propagate — the main task still has to run.
     let intent: ClassifyResult | undefined
-    if (this.classifier && channel !== "a2a") {
+    if (this.classifier && channel !== "a2a" && !isCodexCli) {
       try {
         intent = (await this.classifier.classify({
           text: task.message,
@@ -898,7 +914,7 @@ export class AgentRegistry {
     const wikiContext = buildWikiQueryHint(agentWiki, task.agentId)
 
     // Load persistent agent memory (cross-session facts)
-    const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, 8)
+    const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, isCodexCli ? 3 : 8)
     // `let`, not `const`, because the planner strategy (below) may overwrite
     // this with its own curated memory bundle when enabled.
     let memoryContext = this.memoryStore.buildContext(relevantMemories)
@@ -909,43 +925,29 @@ export class AgentRegistry {
 
     // Auto-inject skills matched to current message
     let skillInjection = ""
-    try {
-      const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
-      const skills = await loadLocalSkills(state.def.workspace)
-      skillInjection = getAutoInjectSkills(skills, task.message)
-    } catch {
-      // Skill loading is optional
-    }
-
-    // Improvement plan #8 — caller-driven session reset. Honoured here
-    // BEFORE the session lookup so the same code path that follows
-    // (rotation, --resume) sees a fresh slate. Use from triage→sub-
-    // agent delegation paths where the caller knows the chatId may
-    // collide with a prior conversation. Run-3 benchmark finding
-    // 2026-05-04: stickiness on "lead" agent's pool replayed S2's
-    // confirmation as the answer to a brand-new S5 visitor.
-    if (task.freshSession) {
-      this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
-      this.log(`[${task.agentId}] freshSession=true → cleared claudeSessionId for ${channel}:${chatId}`)
-      // Persistent-process kill happens lower in the dispatch stack
-      // (executeClaudeCodePersistent reads task.freshSession too),
-      // so any warm subprocess is reaped before the next acquire.
-      getEventBus().emit("session:rotated", {
-        agentId: task.agentId, channel, chatId,
-        reason: "stale",
-        at: new Date().toISOString(),
-      })
+    if (!isCodexCli) {
+      try {
+        const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
+        const skills = await loadLocalSkills(state.def.workspace)
+        skillInjection = getAutoInjectSkills(skills, task.message)
+      } catch {
+        // Skill loading is optional
+      }
     }
 
     // Decide whether to resume or start fresh
     let resumeSessionId = state.def.tier === "claude-code"
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
-      : undefined
+      : state.def.tier === "codex-cli"
+        ? this.sessions.getCodexSessionId(task.agentId, channel, chatId)
+        : undefined
 
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
-      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "stale")
+      if (state.def.tier === "claude-code") {
+        void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "stale")
+      }
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
@@ -962,7 +964,9 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
       const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
-      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
+      if (state.def.tier === "claude-code") {
+        void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
+      }
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
@@ -980,7 +984,9 @@ export class AgentRegistry {
     if (resumeSessionId && this.sessions.shouldRotateByTurns(task.agentId, channel, chatId)) {
       const turns = this.sessions.getTurnCount(task.agentId, channel, chatId)
       this.log(`[${task.agentId}] max-turns rotation for ${channel}:${chatId} (${turns} turns ≥ ${this.sessions.getMaxTurnsPerSession()})`)
-      void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "max-turns")
+      if (state.def.tier === "claude-code") {
+        void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "max-turns")
+      }
       this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
       getEventBus().emit("session:rotated", {
         agentId: task.agentId, channel, chatId,
@@ -1021,7 +1027,12 @@ export class AgentRegistry {
     }
 
     const sessionHistory = !resumeSessionId
-      ? this.sessions.buildHistoryContext(task.agentId, channel, chatId)
+      ? this.sessions.buildHistoryContext(
+          task.agentId,
+          channel,
+          chatId,
+          isCodexCli ? { maxMessages: 8, maxChars: 2400 } : undefined,
+        )
       : undefined
 
     // Context-rebuild diagnostic. Fires under `--debug context` (or `all`).
@@ -1162,8 +1173,9 @@ export class AgentRegistry {
     // the layered values already computed above.
     // Resolution order: per-task override (benchmarks) → per-agent
     // override (def.contextStrategy) → global config default.
-    const strategy: "layered" | "planner" =
-      task.contextStrategy ?? state.def.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
+    const strategy: "layered" | "planner" = isCodexCli
+      ? "layered"
+      : task.contextStrategy ?? state.def.contextStrategy ?? this.config.session.contextStrategy ?? "layered"
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
     let plannerSucceeded = false
@@ -1260,13 +1272,13 @@ export class AgentRegistry {
       sender: senderName,
       senderId: task.context?.senderId,
       senderUsername: task.context?.senderUsername,
-      landscape: this.landscape?.getForAgent(task.agentId),
+      landscape: isCodexCli ? undefined : this.landscape?.getForAgent(task.agentId),
       channelMeta: task.context?.channelMeta,
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
       replyToText: task.context?.replyToText,
       // bootstrapContext intentionally omitted — delivered via system prompt.
-      patternContext: patternContext || undefined,
+      patternContext: isCodexCli ? undefined : patternContext || undefined,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
@@ -1277,7 +1289,7 @@ export class AgentRegistry {
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       longMemoryRecall: longMemoryRecall || undefined,
-      wikiContext,
+      wikiContext: isCodexCli ? undefined : wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       intent: intent
         ? {
@@ -1292,7 +1304,27 @@ export class AgentRegistry {
       message: task.message,
     }
 
-    const historyContext = buildAgentContext(contextInput)
+    const historyContext = buildAgentContext(
+      contextInput,
+      isCodexCli
+        ? {
+            totalBudget: 1800,
+            layerBudgets: {
+              channel: 180,
+              scope: 100,
+              identity: 120,
+              references: 250,
+              intent: 80,
+              artifacts: 250,
+              memory: 250,
+              history: 450,
+              "cross-chat": 200,
+              "long-memory": 350,
+              handover: 120,
+            },
+          }
+        : undefined,
+    )
 
     // Context-size telemetry. Bytes we control: the layered context string +
     // the cacheable system-prompt append + the current message. Bytes we
@@ -1434,16 +1466,19 @@ export class AgentRegistry {
         // Record agent response in session
         this.sessions.addAgentMessage(task.agentId, channel, chatId, response.content)
 
-        // Store Claude session ID for future --resume
+        // Store native CLI session IDs for future resume.
         if (response.claudeSessionId) {
           this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId)
+        }
+        if (response.codexSessionId) {
+          this.sessions.setCodexSessionId(task.agentId, channel, chatId, response.codexSessionId)
         }
 
         // Record this turn's usage so next task can decide whether to rotate:
         // tracks turnCount + lastTurnInputTokens (input + cacheRead + cacheCreate).
         // Only meaningful when we kept a claude session — skip otherwise so the
         // counter isn't incremented for tiers that don't use --resume.
-        if (response.claudeSessionId && response.usage) {
+        if ((response.claudeSessionId || response.codexSessionId) && response.usage) {
           this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage)
         }
 

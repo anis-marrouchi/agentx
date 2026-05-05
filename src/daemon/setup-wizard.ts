@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs"
-import { resolve } from "path"
+import { dirname, resolve } from "path"
+import { fileURLToPath } from "url"
 import { hostname } from "os"
 import { spawn } from "child_process"
 import type { IncomingMessage, ServerResponse } from "http"
@@ -33,7 +34,7 @@ export interface WizardPayload {
     id: string
     name: string
     triggerWords: string   // comma/space separated; we normalise on the server
-    tier: "claude-code" | "codex-cli" | "sdk"
+    tier: "claude-code" | "codex-cli" | "sdk" | "orchestrator"
     model?: string
     personality?: string   // short free text → CLAUDE.md
   }
@@ -83,8 +84,13 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   if (!payload.agent.name?.trim()) throw new Error("Agent name is required.")
   const mentions = splitMentions(payload.agent.triggerWords)
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
-  if (payload.agent.tier !== "claude-code" && payload.agent.tier !== "codex-cli" && payload.agent.tier !== "sdk") {
-    throw new Error("AI engine must be claude-code, codex-cli, or sdk.")
+  if (
+    payload.agent.tier !== "claude-code" &&
+    payload.agent.tier !== "codex-cli" &&
+    payload.agent.tier !== "sdk" &&
+    payload.agent.tier !== "orchestrator"
+  ) {
+    throw new Error("AI engine must be claude-code, codex-cli, sdk, or orchestrator.")
   }
 
   const configPath = resolve(baseDir, "agentx.json")
@@ -311,7 +317,7 @@ export async function handleStartDaemonPost(_req: IncomingMessage, res: ServerRe
   // dist/cli.js sits beside this file's compiled chunk. Use process.argv[1]
   // when available — that's the entrypoint the user invoked, which works for
   // both `agentx setup` (resolves to dist/cli.js) and `tsx src/cli.ts` in dev.
-  const cli = process.argv[1] || resolve(import.meta.dirname, "cli.js")
+  const cli = process.argv[1] || resolve(dirname(fileURLToPath(import.meta.url)), "cli.js")
   try {
     const child = spawn(process.execPath, [cli, "daemon", "start"], {
       detached: true,

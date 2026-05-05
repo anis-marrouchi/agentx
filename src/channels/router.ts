@@ -7,6 +7,7 @@ import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { HandoverStore, type HandoverOverride } from "./handover-store"
 import { BlockStream } from "./block-stream"
+import { splitMessageText } from "./message-chunks"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
@@ -152,6 +153,7 @@ export class MessageRouter {
    * file is pruned to only live TTL entries before each write.
    */
   private recentMessageIds: Map<string, number> = new Map()
+  private activeMessageKeys: Set<string> = new Set()
   private readonly MESSAGE_ID_TTL_MS = 5 * 60 * 1000
   private readonly MESSAGE_ID_MAX_ENTRIES = 2000
   private readonly DEDUP_STORE_PATH = ".agentx/router/dedup.json"
@@ -411,8 +413,8 @@ export class MessageRouter {
    * Stamps the key when false. Size-bounded GC avoids unbounded growth.
    */
   private isDuplicateMessage(msg: IncomingMessage): boolean {
-    if (!msg.id) return false
-    const key = `${msg.channel}:${msg.accountId || "default"}:${msg.id}`
+    const key = this.messageKey(msg)
+    if (!key) return false
     const now = Date.now()
     if (this.recentMessageIds.size >= this.MESSAGE_ID_MAX_ENTRIES) {
       for (const [k, t] of this.recentMessageIds) {
@@ -424,6 +426,11 @@ export class MessageRouter {
     this.recentMessageIds.set(key, now)
     this.scheduleDedupSave()
     return false
+  }
+
+  private messageKey(msg: Pick<IncomingMessage, "channel" | "accountId" | "id">): string | undefined {
+    if (!msg.id) return undefined
+    return `${msg.channel}:${msg.accountId || "default"}:${msg.id}`
   }
 
   /**
@@ -595,6 +602,16 @@ export class MessageRouter {
 
     const chatId = msg.group?.id || msg.sender.id
 
+    const activeKey = this.messageKey(msg)
+    if (activeKey && this.activeMessageKeys.has(activeKey)) {
+      this.log(`Duplicate in-flight ${msg.channel} message dropped: ${msg.accountId || "default"}/${msg.id}`)
+      this.recordRouterDecisionInLedger(msg, {
+        agentId: null, outcome: "deduped", reason: "in-flight duplicate",
+      })
+      return
+    }
+    if (activeKey) this.activeMessageKeys.add(activeKey)
+
     // From here on we're committed to processing this message. Write a `start`
     // entry to the inflight log so a crash between now and the task's
     // completion gets the replay treatment on next boot. `done` is always
@@ -614,7 +631,10 @@ export class MessageRouter {
     })
 
     try { return await this.processResolvedMessage(adapter, msg, agentId, chatId) }
-    finally { this.inflight.done(msg.id) }
+    finally {
+      if (activeKey) this.activeMessageKeys.delete(activeKey)
+      this.inflight.done(msg.id)
+    }
   }
 
   /** The actual processing body — split out so handleMessage can wrap it in
@@ -697,11 +717,20 @@ export class MessageRouter {
                   replyTo: msg.id,
                   accountId: replyAccountId,
                 })
-              } catch { /* retry next block */ }
+              } catch (e: any) {
+                this.log(`Stream preview send failed for ${msg.channel}:${chatId}: ${e?.message || e}`)
+                /* retry next block */
+              }
             } else {
               try {
-                await this.adapterEdit(adapter, chatId, sentMessageId, fullStreamText, undefined, replyAccountId)
-              } catch { /* retry next block */ }
+                const edited = await this.adapterEdit(adapter, chatId, sentMessageId, fullStreamText, undefined, replyAccountId)
+                if (!edited) {
+                  this.log(`Stream preview edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}`)
+                }
+              } catch (e: any) {
+                this.log(`Stream preview edit failed for ${msg.channel}:${chatId} message ${sentMessageId}: ${e?.message || e}`)
+                /* retry next block */
+              }
             }
           },
           undefined,
@@ -781,7 +810,18 @@ export class MessageRouter {
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`
       if (sentMessageId) {
-        await this.adapterEdit(adapter, chatId, sentMessageId, errorText, "plain", replyAccountId)
+        const edited = await this.adapterEdit(adapter, chatId, sentMessageId, errorText, "plain", replyAccountId)
+        if (!edited) {
+          this.log(`Error response edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}; sending fallback`)
+          await this.adapterSend(adapter, {
+            channel: msg.channel,
+            chatId,
+            text: errorText,
+            replyTo: msg.id,
+            parseMode: "plain",
+            accountId: replyAccountId,
+          })
+        }
       } else {
         await this.adapterSend(adapter, {
           channel: msg.channel,
@@ -837,8 +877,30 @@ export class MessageRouter {
     let sentResponseId: string | undefined
     if (responseText) {
       if (sentMessageId) {
-        await this.adapterEdit(adapter, chatId, sentMessageId, responseText, undefined, replyAccountId)
-        sentResponseId = sentMessageId
+        const chunks = adapter.name === "telegram" ? splitMessageText(responseText, 3900) : [responseText]
+        const edited = await this.adapterEdit(adapter, chatId, sentMessageId, chunks[0], undefined, replyAccountId)
+        if (edited) {
+          sentResponseId = sentMessageId
+        } else {
+          this.log(`Final response edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}; sending fallback`)
+          sentResponseId = await this.adapterSend(adapter, {
+            channel: msg.channel,
+            chatId,
+            text: chunks[0],
+            replyTo: msg.id,
+            accountId: replyAccountId,
+            agentId,
+          })
+        }
+        for (const chunk of chunks.slice(1)) {
+          await this.adapterSend(adapter, {
+            channel: msg.channel,
+            chatId,
+            text: chunk,
+            accountId: replyAccountId,
+            agentId,
+          })
+        }
       } else {
         sentResponseId = await this.adapterSend(adapter, {
           channel: msg.channel,

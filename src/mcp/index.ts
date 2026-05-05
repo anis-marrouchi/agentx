@@ -307,6 +307,18 @@ const TOOLS = [
           type: "string",
           description: "Task message for the agent",
         },
+        senderAgentId: {
+          type: "string",
+          description: "Optional caller agent id. Defaults to AGENTX_AGENT_ID when the MCP server was launched by an AgentX runtime.",
+        },
+        freshSession: {
+          type: "boolean",
+          description: "Start the target agent with a clean AgentX-side conversation. Defaults to true for agent-to-agent delegation.",
+        },
+        chatId: {
+          type: "string",
+          description: "Optional stable chat/session id for this delegated task. Omit for a one-off isolated delegation.",
+        },
       },
       required: ["agent", "message"],
     },
@@ -739,6 +751,10 @@ async function handleToolCall(
     case "agentx_task": {
       let agent = args.agent as string | undefined
       let message = args.message as string | undefined
+      const senderAgentId = (args.senderAgentId as string | undefined) || process.env.AGENTX_AGENT_ID
+      const explicitFresh = typeof args.freshSession === "boolean" ? args.freshSession as boolean : undefined
+      const freshSession = explicitFresh !== undefined ? explicitFresh : (senderAgentId ? true : undefined)
+      const explicitChatId = args.chatId as string | undefined
 
       // Elicit missing params
       if (!agent || !message) {
@@ -761,10 +777,19 @@ async function handleToolCall(
         message = response.message as string
       }
 
+      const chatId = explicitChatId || (senderAgentId
+        ? `mcp:${senderAgentId}:${agent}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+        : undefined)
+      const context = chatId ? {
+        channel: "mcp",
+        sender: senderAgentId ? `agent:${senderAgentId}` : "mcp",
+        chatId,
+      } : undefined
+
       const res = await fetch(`${DAEMON_URL}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, message }),
+        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context }),
       })
       const data = await res.json() as any
       if (data.error) {

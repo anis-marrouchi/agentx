@@ -22,6 +22,10 @@ describe("markdownToTelegramHtml", () => {
     expect(markdownToTelegramHtml("`code`")).toBe("<code>code</code>")
   })
 
+  it("does not apply emphasis inside inline code", () => {
+    expect(markdownToTelegramHtml("`*main*` and **bold**")).toBe("<code>*main*</code> and <b>bold</b>")
+  })
+
   it("converts code blocks", () => {
     const md = "```js\nconst x = 1\n```"
     const html = markdownToTelegramHtml(md)
@@ -37,6 +41,11 @@ describe("markdownToTelegramHtml", () => {
   it("converts links", () => {
     const result = markdownToTelegramHtml("[click](https://example.com)")
     expect(result).toBe('<a href="https://example.com">click</a>')
+  })
+
+  it("escapes links without applying emphasis inside the URL", () => {
+    const result = markdownToTelegramHtml("[*docs*](https://example.com/a_b?x=1&y=2)")
+    expect(result).toBe('<a href="https://example.com/a_b?x=1&amp;y=2">*docs*</a>')
   })
 
   it("converts unordered lists", () => {

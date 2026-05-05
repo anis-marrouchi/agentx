@@ -2,7 +2,8 @@ import { Command } from "commander"
 import chalk from "chalk"
 import prompts from "prompts"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "fs"
-import { resolve, join } from "path"
+import { resolve, join, dirname } from "path"
+import { fileURLToPath } from "url"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import { applyConfigMutation } from "@/daemon/config-mutator"
 
@@ -106,7 +107,7 @@ agent
 
     // Install wiki skill
     const wikiSkillSrc = resolve(process.cwd(), "src/wiki/SKILL.md")
-    const wikiSkillDist = resolve(import.meta.dirname, "../wiki/SKILL.md")
+    const wikiSkillDist = resolve(dirname(fileURLToPath(import.meta.url)), "../wiki/SKILL.md")
     const skillSrc = existsSync(wikiSkillSrc) ? wikiSkillSrc : wikiSkillDist
     if (existsSync(skillSrc)) {
       mkdirSync(resolve(ws, ".claude/skills/wiki"), { recursive: true })

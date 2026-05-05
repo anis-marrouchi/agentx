@@ -5,7 +5,7 @@ import { debug } from "@/observability/debug"
 
 // --- Conversation session store ---
 // One session per agent + channel + chatId + day.
-// For claude-code tier: stores the Claude session ID so we can --resume it.
+// For CLI-backed tiers: stores native session IDs so we can resume them.
 // For other tiers: stores message history as text, prepended to each prompt.
 
 export interface SessionMessage {
@@ -31,6 +31,7 @@ export interface Session {
   chatId: string
   day: string          // YYYY-MM-DD
   claudeSessionId?: string  // Claude Code native session ID (for --resume)
+  codexSessionId?: string   // Codex CLI thread/session ID (for exec resume)
   messages: SessionMessage[]
   createdAt: string
   updatedAt: string
@@ -382,14 +383,42 @@ export class SessionStore {
     this.save(session)
   }
 
+  getCodexSessionId(agentId: string, channel: string, chatId: string): string | undefined {
+    const session = this.getSession(agentId, channel, chatId)
+    return session.codexSessionId
+  }
+
+  setCodexSessionId(agentId: string, channel: string, chatId: string, codexSessionId: string): void {
+    const session = this.getSession(agentId, channel, chatId)
+    session.codexSessionId = codexSessionId
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
+  }
+
   /**
    * Build conversation history string to prepend to the prompt.
    * Returns empty string if no history.
    * Used for non-claude-code tiers that don't have native sessions.
    */
-  buildHistoryContext(agentId: string, channel: string, chatId: string): string {
+  buildHistoryContext(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    opts: { maxMessages?: number; maxChars?: number } = {},
+  ): string {
     const session = this.getSession(agentId, channel, chatId)
     if (session.messages.length === 0) return ""
+    const maxMessages = Math.max(1, opts.maxMessages ?? MAX_MESSAGES)
+    const maxChars = Math.max(200, opts.maxChars ?? MAX_HISTORY_CHARS)
+    const messages: SessionMessage[] = []
+    let chars = 0
+    for (let i = session.messages.length - 1; i >= 0 && messages.length < maxMessages; i--) {
+      const msg = session.messages[i]
+      chars += msg.content.length
+      messages.push(msg)
+      if (chars >= maxChars) break
+    }
+    messages.reverse()
 
     const lines: string[] = [
       `[Conversation history for today (${session.day})]`,
@@ -400,7 +429,7 @@ export class SessionStore {
     // adds a never-seen timestamp near the tail). A bucket header changes
     // only every 15 min, so most turns within the window preserve cache.
     let currentBucket = ""
-    for (const msg of session.messages) {
+    for (const msg of messages) {
       const bucket = bucketLabel(msg.timestamp)
       if (bucket !== currentBucket) {
         lines.push(`— ${bucket} —`)
@@ -655,12 +684,12 @@ export class SessionStore {
   }
 
   /**
-   * Check if a Claude session is stale (idle too long for --resume to be useful).
+   * Check if a native CLI session is stale (idle too long for resume to be useful).
    * When stale, the resumed context will be too far behind — better to start fresh.
    */
   isSessionStale(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId) return false
     const elapsed = Date.now() - new Date(session.updatedAt).getTime()
     return elapsed > this.staleMinutes * 60 * 1000
   }
@@ -752,7 +781,7 @@ export class SessionStore {
     session.messages = applyCompaction(session.messages, result)
     session.updatedAt = new Date().toISOString()
 
-    // We deliberately KEEP claudeSessionId, turnCount, and lastTurnInputTokens.
+    // We deliberately KEEP native session IDs, turnCount, and lastTurnInputTokens.
     //
     // Why: AgentX's `session.messages` is a stored copy used to seed a fresh
     // Claude session whenever one legitimately rotates (tier-2, max-turns,
@@ -787,13 +816,31 @@ export class SessionStore {
   }
 
   /**
-   * Clear the stored Claude session ID so next invocation starts fresh.
+   * Clear stored native CLI session IDs so next invocation starts fresh.
    * Also resets the per-session turn counter and last-turn input size —
-   * those are only meaningful relative to the current claudeSessionId.
+   * those are only meaningful relative to the current native session.
    */
   clearClaudeSessionId(agentId: string, channel: string, chatId: string): void {
     const session = this.getSession(agentId, channel, chatId)
     delete session.claudeSessionId
+    delete session.codexSessionId
+    delete session.turnCount
+    delete session.lastTurnInputTokens
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
+  }
+
+  /**
+   * Reset the entire AgentX-side conversation for a delegated fresh session.
+   * Claude needs the native session id cleared; Codex and other non-native
+   * runtimes also need the rendered message history removed or they will see
+   * stale turns through buildHistoryContext().
+   */
+  clearSession(agentId: string, channel: string, chatId: string): void {
+    const session = this.getSession(agentId, channel, chatId)
+    session.messages = []
+    delete session.claudeSessionId
+    delete session.codexSessionId
     delete session.turnCount
     delete session.lastTurnInputTokens
     session.updatedAt = new Date().toISOString()
@@ -806,7 +853,7 @@ export class SessionStore {
    */
   shouldRotateByTurns(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId) return false
     return (session.turnCount ?? 0) >= this.maxTurnsPerSession
   }
 
@@ -817,13 +864,13 @@ export class SessionStore {
    */
   shouldRotateByTierTwo(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId) return false
     return (session.lastTurnInputTokens ?? 0) >= this.tierTwoThresholdTokens
   }
 
   /**
    * Record a completed turn's token usage and bump the turn counter.
-   * Called after a successful Claude response returns with usage info.
+   * Called after a successful native CLI response returns with usage info.
    */
   recordTurnUsage(
     agentId: string,

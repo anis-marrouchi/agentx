@@ -153,6 +153,7 @@ export interface AgentResponse {
   tokensUsed?: number
   duration?: number
   claudeSessionId?: string
+  codexSessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
   /** The model Claude actually billed for (from the CLI's init event). When
    *  absent, cost reporting should fall back to the model override / agent
@@ -305,6 +306,18 @@ function buildCodexPrompt(prompt: string, systemPromptAppend?: string): string {
   return `[System]\n${systemPromptAppend.trim()}\n\n[User]\n${prompt}`
 }
 
+function tomlString(value: string): string {
+  return JSON.stringify(value)
+}
+
+function buildCodexAgentxMcpArgs(): string[] {
+  const cli = process.argv[1] || "dist/cli.js"
+  return [
+    "-c", `mcp_servers.agentx.command=${tomlString(process.execPath)}`,
+    "-c", `mcp_servers.agentx.args=[${[cli, "serve", "--stdio", "--cwd", process.cwd()].map(tomlString).join(",")}]`,
+  ]
+}
+
 function buildCodexArgs(
   agent: AgentDef,
   prompt: string,
@@ -312,27 +325,52 @@ function buildCodexArgs(
   modelOverride?: string,
   systemPromptAppend?: string,
   outputFile?: string,
+  resumeSessionId?: string,
 ): string[] {
-  const args: string[] = [
-    "exec",
+  const args: string[] = resumeSessionId
+    ? ["exec", "resume"]
+    : ["exec"]
+
+  args.push(
+    "--ignore-user-config",
     "--skip-git-repo-check",
-    "--color", "never",
-  ]
+    ...buildCodexAgentxMcpArgs(),
+  )
+
+  if (!resumeSessionId) args.push("--color", "never")
 
   const model = modelOverride || agent.model
   if (model) args.push("--model", model)
 
   if (agent.permissionMode === "bypassPermissions") {
     args.push("--dangerously-bypass-approvals-and-sandbox")
-  } else {
-    args.push("--sandbox", "workspace-write", "--ask-for-approval", "never")
+  } else if (!resumeSessionId) {
+    args.push("--sandbox", "workspace-write")
   }
 
-  if (streaming) args.push("--json")
+  if (streaming || resumeSessionId || outputFile) args.push("--json")
   if (outputFile) args.push("--output-last-message", outputFile)
 
+  if (resumeSessionId) args.push(resumeSessionId)
   args.push(buildCodexPrompt(prompt, systemPromptAppend))
   return args
+}
+
+function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
+  const env = buildAgentEnv(agent.workspace)
+  const home = env.HOME || process.env.HOME
+  const pathParts = [
+    env.PATH || "",
+    home ? `${home}/.bun/bin` : "",
+    home ? `${home}/.local/bin` : "",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ].filter(Boolean)
+  env.PATH = Array.from(new Set(pathParts.flatMap((p) => p.split(":")).filter(Boolean))).join(":")
+  env.AGENTX_AGENT_ID = task.agentId
+  if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
+  if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
+  return env
 }
 
 function extractCodexTextFromEvent(event: any): string | undefined {
@@ -351,6 +389,78 @@ function extractCodexTextFromEvent(event: any): string | undefined {
     if (text) return text
   }
   return undefined
+}
+
+function firstNumber(...values: unknown[]): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value
+  }
+  return 0
+}
+
+function extractCodexUsage(value: any, depth = 0): TokenUsage | undefined {
+  if (!value || typeof value !== "object" || depth > 4) return undefined
+  const candidate = value.usage || value.token_usage || value.tokenUsage || value.metrics?.usage
+  if (candidate && typeof candidate === "object") {
+    return {
+      inputTokens: firstNumber(candidate.input_tokens, candidate.inputTokens, candidate.prompt_tokens, candidate.promptTokens),
+      outputTokens: firstNumber(candidate.output_tokens, candidate.outputTokens, candidate.completion_tokens, candidate.completionTokens),
+      cacheReadTokens: firstNumber(candidate.cache_read_input_tokens, candidate.cached_input_tokens, candidate.cacheReadTokens, candidate.cachedInputTokens),
+      cacheCreateTokens: firstNumber(candidate.cache_creation_input_tokens, candidate.cacheCreateTokens),
+    }
+  }
+  for (const nested of [value.msg, value.message, value.response, value.result, value.item]) {
+    const usage = extractCodexUsage(nested, depth + 1)
+    if (usage) return usage
+  }
+  return undefined
+}
+
+function extractCodexBilledModel(event: any): string | undefined {
+  if (!event || typeof event !== "object") return undefined
+  return (
+    (typeof event.model === "string" && event.model) ||
+    (typeof event.msg?.model === "string" && event.msg.model) ||
+    (typeof event.message?.model === "string" && event.message.model) ||
+    (typeof event.response?.model === "string" && event.response.model) ||
+    undefined
+  )
+}
+
+function extractCodexSessionId(value: any, depth = 0): string | undefined {
+  if (!value || typeof value !== "object" || depth > 4) return undefined
+  for (const key of ["thread_id", "threadId", "session_id", "sessionId", "conversation_id", "conversationId"]) {
+    const candidate = value[key]
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim()
+  }
+  for (const nested of [value.msg, value.message, value.response, value.result, value.item]) {
+    const sessionId = extractCodexSessionId(nested, depth + 1)
+    if (sessionId) return sessionId
+  }
+  return undefined
+}
+
+function collectCodexRunMetadata(stdout: string | Buffer | undefined): {
+  usage?: TokenUsage
+  billedModel?: string
+  sessionId?: string
+} {
+  const text = typeof stdout === "string" ? stdout : stdout?.toString("utf8") || ""
+  let usage: TokenUsage | undefined
+  let billedModel: string | undefined
+  let sessionId: string | undefined
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue
+    try {
+      const event = JSON.parse(line)
+      usage = extractCodexUsage(event) || usage
+      billedModel = extractCodexBilledModel(event) || billedModel
+      sessionId = extractCodexSessionId(event) || sessionId
+    } catch {
+      // Non-JSON output is handled by the caller as content fallback.
+    }
+  }
+  return { usage, billedModel, sessionId }
 }
 
 /**
@@ -767,12 +877,13 @@ export async function executeCodexCli(
   agent: AgentDef,
   task: AgentTask,
   historyContext?: string,
+  resumeSessionId?: string,
 ): Promise<AgentResponse> {
   const start = Date.now()
   const prompt = buildPrompt(agent, task, historyContext)
   const tmp = mkdtempSync(join(tmpdir(), "agentx-codex-"))
   const outputFile = join(tmp, "last-message.txt")
-  const args = buildCodexArgs(agent, prompt, false, task.model, task.systemPromptAppend, outputFile)
+  const args = buildCodexArgs(agent, prompt, false, task.model, task.systemPromptAppend, outputFile, resumeSessionId)
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -780,7 +891,7 @@ export async function executeCodexCli(
       cwd: agent.workspace,
       timeout: timeoutMs,
       reject: false,
-      env: buildAgentEnv(agent.workspace),
+      env: buildRuntimeEnv(agent, task),
       stdin: "ignore",
     })
 
@@ -799,10 +910,17 @@ export async function executeCodexCli(
       return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start }
     }
 
+    const metadata = collectCodexRunMetadata(result.stdout)
     let content = ""
     try { content = readFileSync(outputFile, "utf8").trim() } catch { /* fall back below */ }
     if (!content) content = result.stdout.trim()
-    return { content, duration: Date.now() - start }
+    return {
+      content,
+      duration: Date.now() - start,
+      usage: metadata.usage,
+      billedModel: metadata.billedModel,
+      codexSessionId: metadata.sessionId || resumeSessionId,
+    }
   } catch (error: any) {
     const raw = /ENOENT|spawn codex/i.test(error?.message || "") ? codexMissingMessage() : error?.message
     return { content: "", ...buildErrorEnvelope(raw || "Codex CLI failed"), duration: Date.now() - start }
@@ -816,14 +934,18 @@ export async function executeCodexCliStreaming(
   task: AgentTask,
   onDelta: StreamCallback,
   historyContext?: string,
+  resumeSessionId?: string,
   onEvent?: (event: any) => void,
 ): Promise<AgentResponse> {
   const start = Date.now()
   const prompt = buildPrompt(agent, task, historyContext)
   const tmp = mkdtempSync(join(tmpdir(), "agentx-codex-"))
   const outputFile = join(tmp, "last-message.txt")
-  const args = buildCodexArgs(agent, prompt, true, task.model, task.systemPromptAppend, outputFile)
+  const args = buildCodexArgs(agent, prompt, true, task.model, task.systemPromptAppend, outputFile, resumeSessionId)
   let fullText = ""
+  let streamUsage: TokenUsage | undefined
+  let streamBilledModel: string | undefined
+  let streamSessionId: string | undefined
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -831,14 +953,36 @@ export async function executeCodexCliStreaming(
       cwd: agent.workspace,
       timeout: timeoutMs,
       reject: false,
-      env: buildAgentEnv(agent.workspace),
+      env: buildRuntimeEnv(agent, task),
       buffer: false,
       stdin: "ignore",
     })
 
     let lineBuffer = ""
+    let stderrText = ""
+    let idleTimedOut = false
     const decoder = new StringDecoder("utf8")
+    const stderrDecoder = new StringDecoder("utf8")
+    const idleTimeoutMs = Math.min(
+      timeoutMs,
+      Math.max(30_000, Number(process.env.AGENTX_CODEX_IDLE_TIMEOUT_MS || 180_000)),
+    )
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    const resetIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true
+        ;(proc as any).kill("SIGTERM", { forceKillAfterTimeout: 5_000 })
+      }, idleTimeoutMs)
+    }
+    resetIdleTimer()
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      resetIdleTimer()
+      stderrText += stderrDecoder.write(chunk)
+      if (stderrText.length > 16_000) stderrText = stderrText.slice(-16_000)
+    })
     proc.stdout?.on("data", (chunk: Buffer) => {
+      resetIdleTimer()
       lineBuffer += decoder.write(chunk)
       const lines = lineBuffer.split("\n")
       lineBuffer = lines.pop() || ""
@@ -849,6 +993,9 @@ export async function executeCodexCliStreaming(
           if (onEvent) {
             try { onEvent(event) } catch { /* */ }
           }
+          streamUsage = extractCodexUsage(event) || streamUsage
+          streamBilledModel = extractCodexBilledModel(event) || streamBilledModel
+          streamSessionId = extractCodexSessionId(event) || streamSessionId
           const text = extractCodexTextFromEvent(event)
           if (text && text !== fullText) {
             const delta = text.startsWith(fullText) ? text.slice(fullText.length) : text
@@ -863,14 +1010,18 @@ export async function executeCodexCliStreaming(
     })
 
     const result = await proc
+    if (idleTimer) clearTimeout(idleTimer)
     const tail = decoder.end()
     if (tail) lineBuffer += tail
+    const stderrTail = stderrDecoder.end()
+    if (stderrTail) stderrText += stderrTail
 
     if (result.exitCode !== 0 && !fullText) {
-      const stderr = typeof result.stderr === "string" ? result.stderr : ""
+      const stderr = stderrText || (typeof result.stderr === "string" ? result.stderr : "")
       const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
-      if (r.timedOut) errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      if (idleTimedOut) errMsg = `Codex CLI produced no output for ${Math.round(idleTimeoutMs / 1000)}s and was stopped. AgentX sent a smaller prompt; retry the task or set AGENTX_CODEX_IDLE_TIMEOUT_MS if this turn needs longer.`
+      else if (r.timedOut) errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
       else if (r.signal) errMsg = stderr.trim() || `Codex CLI killed by signal ${r.signal}`
       else if (r.code === "ENOENT" || /ENOENT|spawn codex/i.test((r.shortMessage || "") + " " + stderr)) errMsg = codexMissingMessage()
       else errMsg = stderr.trim() || `Codex CLI exited with code ${r.exitCode ?? "unknown"}`
@@ -884,10 +1035,16 @@ export async function executeCodexCliStreaming(
       fullText = finalText
       if (delta) onDelta(delta, fullText)
     }
-    return { content: fullText, duration: Date.now() - start }
+    return {
+      content: fullText,
+      duration: Date.now() - start,
+      usage: streamUsage,
+      billedModel: streamBilledModel,
+      codexSessionId: streamSessionId || resumeSessionId,
+    }
   } catch (error: any) {
     const raw = /ENOENT|spawn codex/i.test(error?.message || "") ? codexMissingMessage() : error?.message
-    return { content: fullText, ...buildErrorEnvelope(raw || "Codex CLI failed"), duration: Date.now() - start }
+    return { content: fullText, ...buildErrorEnvelope(raw || "Codex CLI failed"), duration: Date.now() - start, usage: streamUsage, billedModel: streamBilledModel, codexSessionId: streamSessionId || resumeSessionId }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
@@ -1150,9 +1307,9 @@ export async function executeTask(
 
     case "codex-cli":
       if (onDelta) {
-        return executeCodexCliStreaming(agent, task, onDelta, historyContext, onEvent)
+        return executeCodexCliStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
-      return executeCodexCli(agent, task, historyContext)
+      return executeCodexCli(agent, task, historyContext, resumeSessionId)
 
     case "sdk": {
       const providerName = agent.provider || "claude"

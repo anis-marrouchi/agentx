@@ -1,4 +1,5 @@
-import Database from "better-sqlite3"
+import type Database from "better-sqlite3"
+import { createRequire } from "module"
 import { existsSync, mkdirSync } from "fs"
 import { dirname, resolve } from "path"
 
@@ -21,7 +22,33 @@ import { dirname, resolve } from "path"
 // event loop is the single writer; multiple readers (dashboard) use WAL
 // mode for concurrent read while we write.
 
+type DatabaseConstructor = typeof Database
+
+const require = createRequire(import.meta.url)
 let _db: Database.Database | undefined
+let _Database: DatabaseConstructor | undefined
+
+function betterSqlite3Fix(error: any): string {
+  const msg = String(error?.message ?? error)
+  const abi = process.versions.modules
+  const node = process.version
+  const hint = `Run "pnpm rebuild better-sqlite3" with the same Node used by the daemon (${node}, modules ${abi}).`
+  if (/NODE_MODULE_VERSION|was compiled against|Module version mismatch|invalid ELF|mach-o/i.test(msg)) {
+    return `${msg} ${hint}`
+  }
+  return `${msg} ${hint}`
+}
+
+function loadDatabaseCtor(): DatabaseConstructor | null {
+  if (_Database) return _Database
+  try {
+    _Database = require("better-sqlite3") as DatabaseConstructor
+    return _Database
+  } catch (e: any) {
+    console.error(`[storage/sqlite] better-sqlite3 native binding failed to load: ${betterSqlite3Fix(e)}`)
+    return null
+  }
+}
 
 export interface OpenOptions {
   /** Resolved relative to cwd. Default: .agentx/db.sqlite */
@@ -43,6 +70,8 @@ export function openDb(opts: OpenOptions = {}): Database.Database | null {
   if (opts.disabled) return null
   if (_db) return _db
   const path = resolve(process.cwd(), opts.path ?? ".agentx/db.sqlite")
+  const Database = loadDatabaseCtor()
+  if (!Database) return null
   try {
     mkdirSync(dirname(path), { recursive: true })
     const db = new Database(path)
@@ -60,7 +89,7 @@ export function openDb(opts: OpenOptions = {}): Database.Database | null {
     // Native binding missing, file unwritable, etc. Surface always — the
     // alternative was a silent no-op, which makes the "SQLite not opened"
     // message in the daemon log impossible to debug.
-    console.error(`[storage/sqlite] openDb failed at ${path}: ${e.message}`)
+    console.error(`[storage/sqlite] openDb failed at ${path}: ${betterSqlite3Fix(e)}`)
     return null
   }
 }

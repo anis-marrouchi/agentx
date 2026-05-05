@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { execFileSync } from "child_process"
 import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { resolve } from "path"
+import { createRequire } from "module"
 import { loadDaemonConfig } from "@/daemon/config"
 
 // --- agentx doctor ---
@@ -116,6 +117,24 @@ async function runEnvChecks(checks: Check[]): Promise<void> {
       title: "codex CLI not on PATH",
       detail: "Only required for agents on the codex-cli tier.",
       fix: "Install with `npm i -g @openai/codex`.",
+    })
+  }
+
+  try {
+    createRequire(import.meta.url)("better-sqlite3")
+    checks.push({
+      severity: "ok",
+      group: "Environment",
+      title: `better-sqlite3 loads for Node ${process.version}`,
+      detail: `NODE_MODULE_VERSION ${process.versions.modules}`,
+    })
+  } catch (e: any) {
+    checks.push({
+      severity: "fail",
+      group: "Environment",
+      title: "better-sqlite3 native binding does not load",
+      detail: e?.message ?? String(e),
+      fix: `Run "pnpm rebuild better-sqlite3" with the same Node used by the daemon (${process.version}, modules ${process.versions.modules}).`,
     })
   }
 }

@@ -1,5 +1,6 @@
 import path from "path"
 import fs from "fs-extra"
+import { fileURLToPath } from "url"
 import { type PackageJson } from "type-fest"
 
 /**
@@ -17,15 +18,14 @@ export function getPackageInfo(): PackageJson {
   const candidates: string[] = []
 
   // npm / tsup bundled output puts cli.js in dist/; package.json is one dir up.
-  // import.meta.dirname is dist/ at runtime, so resolve relative to that.
   // Bundle is ESM (tsup format: ["esm"]) — CommonJS __dirname is not defined.
   try {
-    const here = import.meta.dirname
+    const here = path.dirname(fileURLToPath(import.meta.url))
     if (here) {
       candidates.push(path.resolve(here, "..", "package.json"))
       candidates.push(path.resolve(here, "package.json"))
     }
-  } catch { /* import.meta.dirname may be undefined in exotic setups */ }
+  } catch { /* import.meta.url may be unavailable in exotic setups */ }
 
   candidates.push(path.resolve(process.cwd(), "package.json"))
 

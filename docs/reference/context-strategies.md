@@ -200,4 +200,4 @@ Not at the agent level today. Use per-task override (`contextStrategy` in `POST 
 `planContext` returns `null` and the registry falls back to the layered path for that turn. Set `AGENTX_PLANNER_DEBUG=1` to log the underlying error.
 
 **Do the session rotation knobs affect other providers?**
-They apply only to `claude-code` tier (Claude CLI `--resume`). Other tiers don't use `--resume` and aren't affected.
+They apply to native-session CLI tiers: `claude-code` (`claudeSessionId`) and `codex-cli` (`codexSessionId`). `sdk` and `orchestrator` use AgentX-rendered bounded history instead of a native CLI resume id, so the stale/max-turn/tier-2 native-session rotation knobs do not apply to them.

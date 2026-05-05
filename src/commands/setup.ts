@@ -2,7 +2,8 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { spawn } from "child_process"
 import { existsSync } from "fs"
-import { resolve } from "path"
+import { dirname, resolve } from "path"
+import { fileURLToPath } from "url"
 import { wizardState } from "@/daemon/setup-wizard"
 import { loadDaemonConfig } from "@/daemon/config"
 
@@ -61,10 +62,10 @@ function resolveDashboardPort(): number {
 }
 
 function resolveCliEntry(): string {
-  // When installed via npm, import.meta.dirname points at dist/; cli.js sits
-  // beside it. The bundle is ESM, so CommonJS __dirname is not defined.
+  // When installed via npm, this module runs from dist/; cli.js sits beside it.
+  // The bundle is ESM, so CommonJS __dirname is not defined.
   // In dev, we fall back to the current script so `tsx` works too.
-  const candidate = resolve(import.meta.dirname, "cli.js")
+  const candidate = resolve(dirname(fileURLToPath(import.meta.url)), "cli.js")
   return existsSync(candidate) ? candidate : (process.argv[1] || candidate)
 }
 

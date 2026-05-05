@@ -92,7 +92,7 @@ export const GLOSSARY: Array<{ term: string; alias?: string; definition: string 
   {
     term: "AI engine",
     alias: "tier",
-    definition: "Which backend answers: Claude Code (reasoning + tools + files), an SDK provider (OpenAI, Anthropic API, Ollama), or an Orchestrator that coordinates sub-agents.",
+    definition: "Which backend answers: Claude Code, Codex CLI, Anthropic Agent SDK, or AgentX's provider-agnostic orchestrator.",
   },
   {
     term: "Agent folder",

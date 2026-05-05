@@ -185,16 +185,26 @@ export function markdownToTelegramHtml(md: string): string {
  * Convert inline markdown to HTML tags.
  */
 function convertInline(text: string): string {
-  let result = escapeHtml(text)
+  const protectedSpans: string[] = []
+  const protect = (html: string): string => {
+    const token = `\u0000TG${protectedSpans.length}\u0000`
+    protectedSpans.push(html)
+    return token
+  }
 
-  // Inline code (first, to protect content from further processing)
-  result = result.replace(/`([^`]+)`/g, "<code>$1</code>")
+  let result = text
 
-  // Links: [text](url) — must come before bold/italic to preserve URLs
+  // Links and inline code are terminal Telegram entities. Protect them before
+  // applying emphasis so characters inside labels, hrefs, or code do not
+  // create nested tags that Telegram rejects and forces a plain-text retry.
   result = result.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    (_m, label, url) => `<a href="${escapeHtml(url)}">${label}</a>`,
+    /\[([^\]]+)\]\(([^)\s]+)\)/g,
+    (_m, label, url) => protect(`<a href="${escapeHtmlAttr(url)}">${escapeHtml(label)}</a>`),
   )
+
+  result = result.replace(/`([^`]+)`/g, (_m, code) => protect(`<code>${escapeHtml(code)}</code>`))
+
+  result = escapeHtml(result)
 
   // Bold+italic: ***text***
   result = result.replace(/\*\*\*(.+?)\*\*\*/g, "<b><i>$1</i></b>")
@@ -211,7 +221,14 @@ function convertInline(text: string): string {
   // Spoiler: ||text||
   result = result.replace(/\|\|(.+?)\|\|/g, "<tg-spoiler>$1</tg-spoiler>")
 
-  return result
+  return protectedSpans.reduce(
+    (out, html, index) => out.replaceAll(escapeHtml(`\u0000TG${index}\u0000`), html),
+    result,
+  )
+}
+
+function escapeHtmlAttr(text: string): string {
+  return escapeHtml(text).replace(/"/g, "&quot;")
 }
 
 /**

@@ -39,14 +39,16 @@ agents/support/
 └── .mcp.json             # MCP servers
 ```
 
-Three execution tiers:
+Four execution tiers:
 
 | Tier | Runs via | When |
 |---|---|---|
-| `claude-code` | spawns `claude -p ...` | You want full Claude Code (tools, skills, MCP). Uses your subscription. |
-| `codex-cli` | spawns `codex exec ...` | You want OpenAI Codex CLI behavior with workspace tools and model selection. |
-| `sdk` | Claude Agent SDK | You want programmatic control with an API key. |
-| `orchestrator` | AgentX's own loop | You want any LLM (OpenAI, Ollama, Mistral…). |
+| `claude-code` | `claude` CLI | You want full Claude Code behavior: native sessions, workspace tools, skills, MCP. |
+| `codex-cli` | `codex exec` / `codex exec resume` | You want OpenAI Codex CLI behavior with native Codex thread reuse and workspace tools. |
+| `sdk` | Anthropic Agent SDK | You want Anthropic's programmatic agent runtime with an API key instead of the CLI. |
+| `orchestrator` | AgentX's own `generate()` loop | You want AgentX's provider-agnostic path for OpenAI/Ollama/Mistral/etc. |
+
+All tiers pass through the same AgentX registry first: channel routing, queueing, session reset, context assembly, task history, traces, and final delivery are tier-independent. The tier only chooses the execution backend. See [Agent execution tiers](/reference/tiers) for the exact contract and current parity gaps.
 
 ### 2. Channel
 

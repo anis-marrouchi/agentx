@@ -46,7 +46,7 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 
 | Field | Type | Purpose |
 |---|---|---|
-| `apiKey` | string | Used by `sdk` and `orchestrator` tiers |
+| `apiKey` | string | Used by API-backed tiers (`sdk`, `orchestrator`) |
 | `defaultModel` | string | Model id if the agent doesn't specify one |
 | `baseUrl` | string | Override endpoint (Ollama, proxies) |
 
@@ -75,6 +75,17 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | `heartbeat.intervalMinutes` | number | `30` | |
 | `heartbeat.prompt` | string | stock prompt | |
 | `heartbeat.channel` | string | `heartbeat` | Virtual channel tag |
+
+### Execution tiers
+
+| Tier | Backend | Continuity | Notes |
+|---|---|---|---|
+| `claude-code` | Claude Code CLI | `claudeSessionId`, optional persistent process | Best-supported tool-using path. Uses workspace `.claude/`, MCP, skills/hooks where present |
+| `codex-cli` | Codex CLI | `codexSessionId` from Codex `thread_id` | Uses `codex exec` for fresh runs and `codex exec resume` for warm runs. AgentX sends a compact context budget to avoid prompt bloat |
+| `sdk` | Anthropic Agent SDK | AgentX-rendered bounded history | API-key path for Anthropic Agent SDK; less native-session/usage metadata than CLI tiers today |
+| `orchestrator` | AgentX `generate()` loop | AgentX-rendered bounded history | Provider-agnostic path for supported non-CLI providers |
+
+Every tier goes through the same AgentX registry: routing, queueing, context assembly, `freshSession`, task history, traces, and final channel delivery are tier-independent. See [Agent execution tiers](/reference/tiers) for the detailed behavior contract and current implementation plan.
 
 ## `channels.telegram`
 

@@ -1,4 +1,5 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
+import { splitMessageText } from "./message-chunks"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
 import { resolve, join } from "path"
 import { randomUUID } from "crypto"
@@ -536,7 +537,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
             content = { document: source, ...mediaPayload }
         }
       } else {
-        content = { text: msg.text }
+        const chunks = splitMessageText(msg.text, 3900)
+        let firstId = ""
+        for (const chunk of chunks) {
+          const sent = await this.sock.sendMessage(jid, { text: chunk })
+          const sentId = sent?.key?.id || ""
+          if (sentId) this.sentMessageIds.add(sentId)
+          if (!firstId) firstId = sentId
+        }
+        return firstId
       }
 
       const sent = await this.sock.sendMessage(jid, content)

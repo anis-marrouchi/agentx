@@ -9,9 +9,9 @@ The setup wizard is a server-side state machine that walks new operators through
 A multi-step form, one screen at a time, with a progress strip at the top. The steps adapt to what's already configured:
 
 1. **Team & node identity.** Sets `node.id`, `node.name`, `dashboard.daemonUrl`.
-2. **First agent.** Asks for an agent id, display name, and tier (`claude-code`, `sdk`, `orchestrator`). Scaffolds the workspace and `CLAUDE.md`.
+2. **First agent.** Asks for an agent id, display name, and tier (`claude-code`, `codex-cli`, `sdk`, `orchestrator`). Scaffolds the workspace and `CLAUDE.md`.
 3. **Channel (optional).** Telegram is offered first because it's the lowest-friction; the form embeds the BotFather link and verifies the token via `getMe` before writing it.
-4. **Provider key (optional).** Only asked if the agent is `sdk`/`orchestrator`. Stored in `.env` as `ANTHROPIC_API_KEY` (or the matching var) and referenced from `agentx.json` as `${ANTHROPIC_API_KEY}`.
+4. **Provider key (optional).** Only asked if the agent is API-backed (`sdk`/`orchestrator`). Stored in `.env` as `ANTHROPIC_API_KEY` (or the matching var) and referenced from `agentx.json` as `${ANTHROPIC_API_KEY}`.
 5. **Done.** Shows the next step: dashboard tour, send a test message, link to the journey for the chosen channel.
 
 ## Behaviour on existing installs

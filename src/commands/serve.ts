@@ -3,6 +3,7 @@ import { logger } from "@/utils/logger"
 import { startMcpServer } from "@/mcp"
 import chalk from "chalk"
 import { Command } from "commander"
+import { resolve } from "path"
 
 // --- `agentx serve` — run as MCP server for AI editors ---
 
@@ -17,6 +18,7 @@ export const serve = new Command()
   )
   .action(async (opts) => {
     try {
+      process.chdir(resolve(opts.cwd))
       if (opts.stdio !== false) {
         // stdio mode — all logging goes to stderr, stdout is JSON-RPC
         await startMcpServer()
