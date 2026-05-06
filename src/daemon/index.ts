@@ -1924,7 +1924,30 @@ export class AgentXDaemon {
         if (path === "/api/workflows/runs") {
           const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 50)))
           const workflowId = url.searchParams.get("workflowId") || undefined
-          this.json(res, 200, { runs: this.workflowRuns.list({ workflowId, limit }) })
+          // summary=1 strips the heavy per-run context (full webhook payloads
+          // + per-node outputs — routinely 10-50KB each) and trims history to
+          // the last 5 entries. Honored by the dashboard's mesh-aggregation
+          // handler when fanning out to peer daemons (see board-dashboard.ts).
+          const summary = url.searchParams.get("summary") === "1" || url.searchParams.get("summary") === "true"
+          const runs = this.workflowRuns.list({ workflowId, limit })
+          if (!summary) { this.json(res, 200, { runs }); return }
+          const slim = runs.map((r) => ({
+            id: r.id,
+            workflowId: r.workflowId,
+            workflowVersion: r.workflowVersion,
+            homeNode: r.homeNode,
+            status: r.status,
+            pending: r.pending,
+            entityRef: r.entityRef,
+            history: (r.history || []).slice(-5),
+            parentRunId: r.parentRunId,
+            parentNodeId: r.parentNodeId,
+            rootRunId: r.rootRunId,
+            depth: r.depth,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          }))
+          this.json(res, 200, { runs: slim })
           return
         }
         const runMatch = path.match(/^\/api\/workflows\/runs\/([^\/]+)$/)

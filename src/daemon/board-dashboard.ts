@@ -589,11 +589,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       const url = new URL(req.url || "/", "http://localhost")
       const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 50)))
       const workflowId = url.searchParams.get("workflowId") || undefined
+      // summary=1 strips the per-run context blob (full webhook payloads,
+      // per-node outputs — routinely 10-50KB each) and trims history to
+      // the last 5 entries. Cuts a 100-run mesh-aggregated response from
+      // multi-MB / 30s+ down to ~100KB / 1s. Run-detail (GET /runs/:id)
+      // and SSE stream still return the full shape unchanged.
+      const summary = url.searchParams.get("summary") === "1" || url.searchParams.get("summary") === "true"
       const local = ctx.workflowRuns.list({ limit, workflowId })
-      const qs = `?limit=${limit}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}`
+      const qs = `?limit=${limit}${workflowId ? `&workflowId=${encodeURIComponent(workflowId)}` : ""}${summary ? "&summary=1" : ""}`
       // Fan out to every configured peer daemon in parallel. Primary
       // (dashboard.daemonUrl) gets the dashboard.token; entries in
-      // dashboard.daemons use their own per-peer token.
+      // dashboard.daemons use their own per-peer token. The summary flag
+      // is forwarded so peer daemons also slim their responses (the daemon
+      // handler in src/daemon/index.ts honors the same query param).
       const targets: Array<{ url: string; token?: string }> = [
         { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
         ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
@@ -602,17 +610,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         const headers: Record<string, string> = {}
         if (t.token) headers["Authorization"] = `Bearer ${t.token}`
         try {
-          const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs${qs}`, { headers })
-          if (!r.ok) return []
-          const data = await r.json() as { runs?: WorkflowRun[] }
-          return Array.isArray(data.runs) ? data.runs : []
+          // 5s timeout per peer — a slow/unhealthy mesh node must not pin
+          // the dashboard's first paint forever. AbortController keeps the
+          // existing fetch ergonomics; on timeout we just skip this peer's
+          // contribution and merge whatever we have.
+          const ctrl = new AbortController()
+          const timer = setTimeout(() => ctrl.abort(), 5000)
+          try {
+            const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs${qs}`, { headers, signal: ctrl.signal })
+            if (!r.ok) return []
+            const data = await r.json() as { runs?: WorkflowRun[] }
+            return Array.isArray(data.runs) ? data.runs : []
+          } finally {
+            clearTimeout(timer)
+          }
         } catch { return [] }
       }))
       const byId = new Map<string, WorkflowRun>()
       for (const r of local) byId.set(r.id, r)
       for (const list of remoteLists) for (const r of list) byId.set(r.id, r)
       const merged = Array.from(byId.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, limit)
-      sendJson(res, 200, { runs: merged })
+      // Ensure the local runs the listing returns are also slimmed; the
+      // handleWorkflowsApi path further down does this for its branch but
+      // we never reach it because this handler returns first.
+      const out = summary ? merged.map((r) => slimRun(r)) : merged
+      sendJson(res, 200, { runs: out })
     } catch (e: any) {
       sendJson(res, 502, { error: "runs fetch failed", message: e.message || String(e) })
     }
@@ -971,6 +993,31 @@ async function applyTransition(
 }
 
 // --- WorkSource construction ---
+
+/** Trim a WorkflowRun to just the fields the listing UI needs. Drops the
+ *  per-run `context` (full webhook payload + per-node outputs, often 10-50KB
+ *  each) and clips `history` to the last 5 entries. Both the dashboard's
+ *  mesh-aggregation handler and workflows-api.ts call this for `summary=1`
+ *  responses; the shape MUST match between the two so the page doesn't see
+ *  divergent fields per code path. */
+function slimRun(r: WorkflowRun): Partial<WorkflowRun> {
+  return {
+    id: r.id,
+    workflowId: r.workflowId,
+    workflowVersion: r.workflowVersion,
+    homeNode: r.homeNode,
+    status: r.status,
+    pending: r.pending,
+    entityRef: r.entityRef,
+    history: (r.history || []).slice(-5),
+    parentRunId: r.parentRunId,
+    parentNodeId: r.parentNodeId,
+    rootRunId: r.rootRunId,
+    depth: r.depth,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }
+}
 
 function buildWorkSource(board: BoardConfig, daemon: DaemonConfig): WorkSource {
   if (board.source.type === "gitlab") {

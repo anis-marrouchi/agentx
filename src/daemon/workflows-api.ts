@@ -442,7 +442,33 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
   if (trail === "" || trail.startsWith("?")) {
     const limit = Math.max(1, Math.min(500, Number(q.get("limit") || 50)))
     const workflowId = q.get("workflowId") || undefined
-    return sendJson(res, 200, { runs: deps.runs.list({ workflowId, limit }) })
+    const summary = q.get("summary") === "1" || q.get("summary") === "true"
+    const runs = deps.runs.list({ workflowId, limit })
+    if (!summary) return sendJson(res, 200, { runs })
+    // Drop the heavyweight `context` (per-node outputs + the full trigger
+    // event payload — webhook bodies routinely run 10–50KB each). The list
+    // UI on /workflows only uses metadata + the last history entry, so the
+    // payload would otherwise gate first paint on the slowest serialization
+    // path. Run-detail (GET /runs/:id) returns the full shape unchanged.
+    const slim = runs.map((r) => ({
+      id: r.id,
+      workflowId: r.workflowId,
+      workflowVersion: r.workflowVersion,
+      homeNode: r.homeNode,
+      status: r.status,
+      pending: r.pending,
+      entityRef: r.entityRef,
+      // Trim history to last 5 entries — that's enough for the timeline
+      // preview without dragging full agent outputs into the listing.
+      history: (r.history || []).slice(-5),
+      parentRunId: r.parentRunId,
+      parentNodeId: r.parentNodeId,
+      rootRunId: r.rootRunId,
+      depth: r.depth,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }))
+    return sendJson(res, 200, { runs: slim })
   }
   // POST /api/workflows/runs/<id>/status  body: { status: "paused"|"running"|"canceled" }
   // Mirrors `agentx workflow pause/resume/cancel <runId>`.

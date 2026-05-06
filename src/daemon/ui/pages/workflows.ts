@@ -704,9 +704,13 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
   async function refresh() {
     try {
+      // summary=1 strips the heavy per-run context (webhook payloads can be
+      // 10-50KB each — at limit=100 the listing was multi-MB and gating
+      // first paint behind the slowest serialization path). Run-detail
+      // and SSE stream still return the full shape unchanged.
       const [workflows, runs, drafts] = await Promise.all([
         fetchJSON("/api/workflows"),
-        fetchJSON("/api/workflows/runs?limit=100"),
+        fetchJSON("/api/workflows/runs?limit=100&summary=1"),
         fetchJSON("/api/workflows/drafts"),
       ])
       state.workflows = workflows.workflows || workflows
