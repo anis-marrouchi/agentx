@@ -23,6 +23,7 @@ import { newEventId } from "@/intent/ulid"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
+import { getProcessRegistry } from "./process-registry-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -1433,7 +1434,13 @@ export class AgentRegistry {
       // Kept inside the try so the `finally` below still runs — otherwise a
       // short-circuit return leaks runningTask bookkeeping.
       if (state.def.tier === "claude-code") {
-        const hasWarmSession = Boolean(resumeSessionId)
+        // A persistent-process handle counts as "warm" — its subprocess already
+        // has the system prompt cached, so no fresh cache-create is needed even
+        // when there's no --resume session ID stored for this chatId yet.
+        const procReg = state.def.persistentProcess ? getProcessRegistry() : null
+        const hasLiveProcess = procReg != null
+          && procReg.hasLive({ agentId: task.agentId, channel, chatId })
+        const hasWarmSession = Boolean(resumeSessionId) || hasLiveProcess
         const gates = [
           preflightOverageGate(hasWarmSession),
           preflightQuotaGate(hasWarmSession),

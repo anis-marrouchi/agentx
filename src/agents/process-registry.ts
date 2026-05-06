@@ -285,6 +285,15 @@ export class ProcessRegistry {
     return Array.from(this.handles.values()).map((h) => h.snapshot())
   }
 
+  /** True when a non-dead handle exists for this key. Used by the preflight
+   *  overage gate so persistent-process agents aren't treated as cold even
+   *  when no --resume session ID is stored for a given chatId. */
+  hasLive(key: ProcessKey): boolean {
+    const ks = processKeyToString(key)
+    const h = this.handles.get(ks)
+    return h != null && h.state() !== "dead"
+  }
+
   /** Force-kill one handle, removing it from the registry. */
   async kill(key: ProcessKey, reason = "operator"): Promise<void> {
     const ks = processKeyToString(key)
