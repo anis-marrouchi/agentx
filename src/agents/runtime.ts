@@ -446,11 +446,13 @@ function collectCodexRunMetadata(stdout: string | Buffer | undefined): {
   usage?: TokenUsage
   billedModel?: string
   sessionId?: string
+  apiError?: string
 } {
   const text = typeof stdout === "string" ? stdout : stdout?.toString("utf8") || ""
   let usage: TokenUsage | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
+  let apiError: string | undefined
   for (const line of text.split("\n")) {
     if (!line.trim()) continue
     try {
@@ -458,11 +460,49 @@ function collectCodexRunMetadata(stdout: string | Buffer | undefined): {
       usage = extractCodexUsage(event) || usage
       billedModel = extractCodexBilledModel(event) || billedModel
       sessionId = extractCodexSessionId(event) || sessionId
+      apiError = extractCodexErrorMessage(event) || apiError
     } catch {
       // Non-JSON output is handled by the caller as content fallback.
     }
   }
-  return { usage, billedModel, sessionId }
+  return { usage, billedModel, sessionId, apiError }
+}
+
+/** Extract the human-readable failure message from a codex event.
+ *  Codex emits failures on stdout as JSON, NOT on stderr — so when our
+ *  runtime fell back to stderr.trim() it was returning the benign
+ *  "Reading additional input from stdin..." log line as if it were the
+ *  error. This walks the two known shapes:
+ *    {"type":"error","message":"…"}
+ *    {"type":"turn.failed","error":{"message":"…"}}
+ *  …and unwraps any nested provider JSON inside the message so the
+ *  surfaced text is the actual reason ("model X not supported when
+ *  using Codex with a ChatGPT account") instead of envelope noise. */
+function extractCodexErrorMessage(event: any): string | undefined {
+  if (!event || typeof event !== "object") return undefined
+  if (event.type === "error" && typeof event.message === "string") {
+    return unwrapCodexErrorMessage(event.message)
+  }
+  if (event.type === "turn.failed") {
+    const msg = event.error?.message ?? event.error
+    if (typeof msg === "string") return unwrapCodexErrorMessage(msg)
+  }
+  return undefined
+}
+
+/** Codex sometimes nests a provider JSON envelope inside the message
+ *  string: `{"type":"error","status":400,"error":{"message":"…"}}`.
+ *  Try to peel one layer; fall back to the raw string. */
+function unwrapCodexErrorMessage(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("{")) {
+    try {
+      const inner = JSON.parse(trimmed)
+      const nested = inner?.error?.message ?? inner?.message
+      if (typeof nested === "string" && nested.trim()) return nested.trim()
+    } catch { /* leave as-is */ }
+  }
+  return trimmed
 }
 
 /**
@@ -897,11 +937,22 @@ export async function executeCodexCli(
       stdin: "ignore",
     })
 
-    if (result.exitCode !== 0) {
+    // Parse the JSON event stream first so we can prefer the real API
+    // error (carried on stdout) over codex's benign stderr log lines.
+    const metadata = collectCodexRunMetadata(result.stdout)
+
+    // Treat a recorded API error as a failure even when codex itself
+    // exits 0 — auth/model/quota errors come back as "turn.failed"
+    // events but don't always set a non-zero exit.
+    if (result.exitCode !== 0 || metadata.apiError) {
       const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
       if (r.timedOut) {
         errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      } else if (metadata.apiError) {
+        // Real API failure surfaced from the JSON event stream — beats
+        // stderr noise like "Reading additional input from stdin...".
+        errMsg = metadata.apiError
       } else if (r.signal) {
         errMsg = result.stderr.trim() || `Codex CLI killed by signal ${r.signal}`
       } else if (r.code === "ENOENT" || /ENOENT|spawn codex/i.test((r.shortMessage || "") + " " + result.stderr)) {
@@ -909,10 +960,16 @@ export async function executeCodexCli(
       } else {
         errMsg = result.stderr.trim() || result.stdout.trim() || `Codex CLI exited with code ${r.exitCode ?? "unknown"}`
       }
-      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start }
+      return {
+        content: "",
+        ...buildErrorEnvelope(errMsg),
+        duration: Date.now() - start,
+        usage: metadata.usage,
+        billedModel: metadata.billedModel,
+        codexSessionId: metadata.sessionId || resumeSessionId,
+      }
     }
 
-    const metadata = collectCodexRunMetadata(result.stdout)
     let content = ""
     try { content = readFileSync(outputFile, "utf8").trim() } catch { /* fall back below */ }
     if (!content) content = result.stdout.trim()
@@ -948,6 +1005,7 @@ export async function executeCodexCliStreaming(
   let streamUsage: TokenUsage | undefined
   let streamBilledModel: string | undefined
   let streamSessionId: string | undefined
+  let streamApiError: string | undefined
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
@@ -1007,6 +1065,7 @@ export async function executeCodexCliStreaming(
           streamUsage = extractCodexUsage(event) || streamUsage
           streamBilledModel = extractCodexBilledModel(event) || streamBilledModel
           streamSessionId = extractCodexSessionId(event) || streamSessionId
+          streamApiError = extractCodexErrorMessage(event) || streamApiError
           const text = extractCodexTextFromEvent(event)
           if (text && text !== fullText) {
             const delta = text.startsWith(fullText) ? text.slice(fullText.length) : text
@@ -1027,16 +1086,27 @@ export async function executeCodexCliStreaming(
     const stderrTail = stderrDecoder.end()
     if (stderrTail) stderrText += stderrTail
 
-    if (result.exitCode !== 0 && !fullText) {
+    // A recorded API error from the JSON event stream wins even when
+    // the run produced some incidental text or codex exited 0 — the
+    // turn failed and the user wants to know why, not see partial output.
+    if ((result.exitCode !== 0 && !fullText) || streamApiError) {
       const stderr = stderrText || (typeof result.stderr === "string" ? result.stderr : "")
       const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
       let errMsg: string
       if (idleTimedOut) errMsg = `Codex CLI produced no output for ${Math.round(idleTimeoutMs / 1000)}s and was stopped. AgentX sent a smaller prompt; retry the task or set AGENTX_CODEX_IDLE_TIMEOUT_MS if this turn needs longer.`
       else if (r.timedOut) errMsg = `Codex CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      else if (streamApiError) errMsg = streamApiError
       else if (r.signal) errMsg = stderr.trim() || `Codex CLI killed by signal ${r.signal}`
       else if (r.code === "ENOENT" || /ENOENT|spawn codex/i.test((r.shortMessage || "") + " " + stderr)) errMsg = codexMissingMessage()
       else errMsg = stderr.trim() || `Codex CLI exited with code ${r.exitCode ?? "unknown"}`
-      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start }
+      return {
+        content: "",
+        ...buildErrorEnvelope(errMsg),
+        duration: Date.now() - start,
+        usage: streamUsage,
+        billedModel: streamBilledModel,
+        codexSessionId: streamSessionId || resumeSessionId,
+      }
     }
 
     let finalText = ""
