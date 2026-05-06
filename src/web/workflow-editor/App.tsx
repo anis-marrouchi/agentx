@@ -5,7 +5,7 @@ import { Palette } from "./Palette"
 import { KbdOverlay, RunPanel, Toolbar, Tweaks, type RunStep, type SaveStatus } from "./Toolbar"
 import { ChatWidget } from "./ChatWidget"
 import { blankGraph, graphToWorkflow, type GraphEdge, type GraphModel, type GraphNode, workflowToGraph, TRIGGER_NODE_ID } from "./graph"
-import { deleteWorkflow, fetchAgents, fetchLayout, fetchWorkflow, saveLayout, saveWorkflow, validate, type AgentSummary } from "./api"
+import { deleteWorkflow, fetchAgents, fetchDraft, fetchLayout, fetchWorkflow, promoteDraft, saveDraft, saveLayout, saveWorkflow, validate, type AgentSummary } from "./api"
 import { MOCK_AGENTS, type AgentInfo, type PaletteItem, type TemplateCard } from "./data"
 import type { Workflow } from "./types"
 
@@ -300,8 +300,17 @@ export function App() {
   })
   const { meta, nodes, edges, selection, isNew } = state
 
+  // True when the editor is mounted on a draft (`?draft=<id>`). Drafts read
+  // from /api/workflows/drafts/:id and write to PUT /api/workflows/drafts/:id;
+  // they never go through the active-store endpoints. Set once at load and
+  // cleared after a successful promote (the workflow is then in the active
+  // store and the editor URL is rewritten to `?id=<id>`).
+  const [isDraft, setIsDraft] = useState(false)
+
   const stateRef = useRef(state)
   useEffect(() => { stateRef.current = state }, [state])
+  const isDraftRef = useRef(isDraft)
+  useEffect(() => { isDraftRef.current = isDraft }, [isDraft])
 
   // --- Persisted UI prefs -------------------------------------------------
   const [theme, setThemeState] = useState<"dark" | "light">(() => (localStorage.getItem("wfe.theme") as "dark" | "light") ?? "dark")
@@ -348,20 +357,35 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const isNewParam = params.get("new") === "1"
-    const id = params.get("id") || "new-workflow"
+    const draftId = params.get("draft")
+    const id = params.get("id") || draftId || "new-workflow"
 
     if (isNewParam) {
       forceReset(graphToState(blankGraph(id), true))
+      setIsDraft(false)
       return
     }
     ;(async () => {
       try {
+        // Drafts have no layout (they're not in the active store yet — the
+        // layout endpoint would 404). The graph engine falls back to auto-
+        // layout when layout is null, so this just means a fresh layout pass
+        // on first edit.
+        if (draftId) {
+          const wf = await fetchDraft(draftId)
+          const graph = workflowToGraph(wf, null)
+          forceReset(graphToState(graph, false))
+          setIsDraft(true)
+          return
+        }
         const [wf, layout] = await Promise.all([fetchWorkflow(id), fetchLayout(id)])
         const graph = workflowToGraph(wf, layout)
         forceReset(graphToState(graph, false))
+        setIsDraft(false)
       } catch (e: any) {
         showToast(`Failed to load "${id}": ${e.message}`, "err")
         forceReset(graphToState(blankGraph(id), true))
+        setIsDraft(false)
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -372,21 +396,34 @@ export function App() {
 
   const save = useCallback(async () => {
     const snap = stateRef.current
+    const draftMode = isDraftRef.current
     const { workflow, layout } = graphToWorkflow({ meta: snap.meta, nodes: snap.nodes, edges: snap.edges })
     setStatus("is-validating")
-    const v = await validate(workflow)
-    if (!v.ok) {
-      setStatus("is-dirty")
-      showToast(`${v.issues.length} validation issue${v.issues.length === 1 ? "" : "s"}`, "err")
-      return
+    // Drafts skip the validate roundtrip — the PUT endpoint validates server-
+    // side and returns issues in the same shape on 400. Active workflows still
+    // hit /:id/validate first because that endpoint doesn't 400 on lint warnings,
+    // letting the user save anyway.
+    if (!draftMode) {
+      const v = await validate(workflow)
+      if (!v.ok) {
+        setStatus("is-dirty")
+        showToast(`${v.issues.length} validation issue${v.issues.length === 1 ? "" : "s"}`, "err")
+        return
+      }
     }
-    const res = await saveWorkflow(workflow, { create: snap.isNew })
+    const res = draftMode
+      ? await saveDraft(workflow.id, workflow)
+      : await saveWorkflow(workflow, { create: snap.isNew })
     if (!res.ok) {
       setStatus("is-dirty")
       showToast(res.issues?.[0]?.message ?? "Save failed", "err")
       return
     }
-    try { await saveLayout(workflow.id, layout) } catch { /* non-fatal */ }
+    // Drafts don't have a layout endpoint — the layout is regenerated on next
+    // open since `_drafts/` only stores the workflow YAML.
+    if (!draftMode) {
+      try { await saveLayout(workflow.id, layout) } catch { /* non-fatal */ }
+    }
     setStatus("is-saved")
     showToast("Saved", "ok")
     if (snap.isNew) {
@@ -401,6 +438,34 @@ export function App() {
       forceReset({ ...snap, isNew: false })
     }
   }, [dispatch, forceReset])
+
+  /** Promote the current draft into the active workflow store. After this
+   *  the editor is no longer in draft mode — we rewrite the URL to
+   *  `?id=<id>` and clear isDraft so subsequent saves go through the
+   *  active-store endpoint. The draft file is removed by the server. */
+  const promote = useCallback(async () => {
+    const snap = stateRef.current
+    if (!isDraftRef.current) return
+    if (status === "is-dirty") {
+      showToast("Save changes before promoting", "err")
+      return
+    }
+    if (!confirm(`Promote draft "${snap.meta.id}" into the active workflow store?`)) return
+    setStatus("is-validating")
+    const res = await promoteDraft(snap.meta.id)
+    if (!res.ok) {
+      setStatus("is-saved")
+      showToast(res.error ?? "Promote failed", "err")
+      return
+    }
+    setIsDraft(false)
+    const u = new URL(location.href)
+    u.searchParams.delete("draft")
+    u.searchParams.set("id", res.activeId ?? snap.meta.id)
+    history.replaceState(null, "", u.toString())
+    setStatus("is-saved")
+    showToast("Promoted to active workflow", "ok")
+  }, [status])
 
   const onDelete = useCallback((sel: Selection) => dispatch({ type: "delete", selection: sel }), [dispatch])
   const onDuplicate = useCallback((sel: Selection) => dispatch({ type: "duplicate", selection: sel }), [dispatch])
@@ -518,9 +583,11 @@ export function App() {
         tweaksOpen={tweaksOpen} setTweaksOpen={setTweaksOpen}
         onHelp={() => setHelpOpen(true)}
         onLayout={() => dispatch({ type: "layout" })}
-        workflowIdLabel={`/workflows/${meta.id}`}
+        workflowIdLabel={isDraft ? `/workflows/_drafts/${meta.id}` : `/workflows/${meta.id}`}
         paletteOpen={paletteOpen} setPaletteOpen={setPaletteOpen}
         inspectorOpen={inspectorOpen} setInspectorOpen={setInspectorOpen}
+        isDraft={isDraft}
+        onPromote={() => void promote()}
       />
       {paletteOpen && <Palette onLoadTemplate={onLoadTemplate} />}
       <Canvas

@@ -576,6 +576,7 @@ const WORKFLOWS_PAGE_SCRIPT = `
         <span class="hint">\${esc(draft.id)} · status=\${esc(wf.status || "draft")} · state=\${esc(wf.state || "disabled")} · confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
       </div>
       <div class="ax-wf__detail-actions ax-wf__draft-actions">
+        <a class="ax-wf__btn" href="/workflows/editor?draft=\${encodeURIComponent(draft.id)}" title="Open this draft in the visual editor">✎ Edit visually</a>
         <button class="ax-wf__btn" id="wf-draft-validate" type="button">Validate</button>
         <button class="ax-wf__btn" id="wf-draft-save" type="button">Save</button>
         <button class="ax-wf__btn" id="wf-draft-replay" type="button">Save &amp; Replay</button>

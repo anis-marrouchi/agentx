@@ -27,6 +27,49 @@ export async function fetchWorkflow(id: string): Promise<Workflow> {
   return body.workflow
 }
 
+/** Load a workflow draft (status=draft, state=disabled). Drafts live under
+ *  `.agentx/workflows/_drafts/` and are served from a separate endpoint than
+ *  the active store. The editor opens a draft when the URL has `?draft=<id>`
+ *  instead of `?id=<wf>`. */
+export async function fetchDraft(id: string): Promise<Workflow> {
+  const r = await fetch("/api/workflows/drafts/" + encodeURIComponent(id), { headers: headers() })
+  if (!r.ok) throw new Error("fetch draft " + id + ": " + r.status)
+  const body = (await r.json()) as { draft: { workflow: Workflow } }
+  return body.draft.workflow
+}
+
+/** Save edits to an existing draft. The server re-validates against
+ *  workflowSchema before writing — on schema failure the response is 400
+ *  with structured `issues`. The draft is always written as YAML on disk. */
+export async function saveDraft(id: string, wf: Workflow): Promise<{ ok: boolean; issues?: ValidationIssue[] }> {
+  const r = await fetch("/api/workflows/drafts/" + encodeURIComponent(id), {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ workflow: wf }),
+  })
+  if (r.ok) return { ok: true }
+  const err = await r.json().catch(() => ({}))
+  return {
+    ok: false,
+    issues: (err.issues as string[] | ValidationIssue[] | undefined)?.map((i) =>
+      typeof i === "string" ? { path: "", message: i } : i,
+    ) || [{ path: "", message: err.error || "HTTP " + r.status }],
+  }
+}
+
+/** Promote a draft into the active workflow store. After this the draft
+ *  file is removed from `_drafts/` and the active workflow id matches. */
+export async function promoteDraft(id: string): Promise<{ ok: boolean; activeId?: string; error?: string }> {
+  const r = await fetch("/api/workflows/drafts/" + encodeURIComponent(id) + "/promote", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ format: "yaml" }),
+  })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) return { ok: false, error: body.error || "HTTP " + r.status }
+  return { ok: true, activeId: body.workflow?.id ?? id }
+}
+
 export async function fetchLayout(id: string): Promise<WorkflowLayout | null> {
   const r = await fetch("/api/workflows/" + encodeURIComponent(id) + "/layout", { headers: headers() })
   if (!r.ok) return null
