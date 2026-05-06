@@ -40,11 +40,14 @@ import {
   WorkflowDispatcher,
   WorkflowStore,
   startWorkflowTriggers,
+  workflowSchema,
   type AgentExecuteRequest,
   type AgentExecuteResponse,
   type MeshForwarder as WorkflowMeshForwarder,
 } from "@/workflows"
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
+import { getWorkflowDraft } from "@/workflows/absorb"
+import { renderWorkflowYaml } from "@/workflows/yaml"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
@@ -1874,6 +1877,17 @@ export class AgentXDaemon {
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
+        return
+      }
+
+      // POST /api/workflows/drafts/:id/replay — fire a draft as an ad-hoc
+      // workflow. Looks up an input from the draft's sourceTaskIds (first
+      // entry by default; caller can override via `taskId`). Lives on the
+      // daemon (not in workflows-api.ts) because it needs the dispatcher
+      // and the trace store, neither of which the dashboard process has.
+      const draftReplay = req.method === "POST" && path.match(/^\/api\/workflows\/drafts\/([^/]+)\/replay$/)
+      if (draftReplay) {
+        await this.handleWorkflowDraftReplay(req, res, decodeURIComponent(draftReplay[1]))
         return
       }
 
@@ -3779,6 +3793,108 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
     }
 
     this.json(res, 200, { channel, source: sources.join(", ") || "none", chats })
+  }
+
+  /** Replay a draft as an ad-hoc workflow. The draft itself stays in
+   *  `_drafts/`; we register a copy as `_adhoc-replay-<draftId>-<ts>.yaml`
+   *  in the active store, hot-reload, and fire it through the dispatcher.
+   *  Input is sourced from a trace pulled out of the draft's
+   *  `sourceTaskIds` — caller can override which trace via `taskId` in the
+   *  body, or supply a payload directly via `input`. */
+  private async handleWorkflowDraftReplay(req: IncomingMessage, res: ServerResponse, draftId: string): Promise<void> {
+    if (!this.workflowDispatcher || !this.workflowStore) {
+      this.json(res, 503, { error: "workflow engine not enabled on this node" })
+      return
+    }
+    const cfg = this.config.workflows
+    if (!cfg?.enabled) {
+      this.json(res, 503, { error: "workflows disabled in config" })
+      return
+    }
+
+    let body: any
+    try { body = await readJsonBody(req) } catch { body = {} }
+
+    const draft = getWorkflowDraft(draftId, process.cwd(), { workflowDir: this.workflowStore.baseDir })
+    if (!draft) { this.json(res, 404, { error: `draft not found: ${draftId}` }); return }
+
+    // Parse + lint the draft so we don't ship a broken replay workflow into
+    // the active store. workflowSchema.parse normalises defaults; the
+    // ad-hoc copy gets its own id so promotion stays explicit.
+    let draftWorkflow
+    try {
+      draftWorkflow = workflowSchema.parse(draft.workflow)
+    } catch (e: any) {
+      this.json(res, 400, { error: `draft is invalid: ${e?.message || e}` }); return
+    }
+
+    // Resolve trigger payload. Priority: explicit `input` > taskId-derived >
+    // first sourceTaskId-derived. We always include a `taskId` in the
+    // payload so downstream nodes can correlate replay vs original.
+    let payload: Record<string, unknown> = body?.input && typeof body.input === "object" ? body.input : {}
+    let resolvedTaskId: string | undefined = typeof body?.taskId === "string" ? body.taskId : undefined
+    if (!resolvedTaskId && Array.isArray(draftWorkflow.sourceTaskIds) && draftWorkflow.sourceTaskIds.length) {
+      resolvedTaskId = draftWorkflow.sourceTaskIds[0]
+    }
+    if (!body?.input && resolvedTaskId && this.db) {
+      const trace = getTrace(this.db, resolvedTaskId)
+      if (trace) {
+        payload = {
+          message: trace.task.messagePreview || "",
+          taskId: resolvedTaskId,
+          originalAgentId: trace.task.agentId,
+          originalChannel: trace.task.channel,
+          originalChatId: trace.task.chatId,
+          replayOf: draftId,
+        }
+      }
+    }
+
+    // The workflow id regex only allows [a-z0-9] as the first char, so the
+    // canonical `_adhoc-...` prefix used by the replay-task CLI fails Zod
+    // validation when re-parsed. Drop the leading underscore here — the
+    // `adhoc-replay-` prefix still keeps adhoc copies easy to spot in
+    // listings and disk-grep.
+    const replayId = `adhoc-replay-${draftWorkflow.id}-${Date.now().toString(36)}`
+    const replayWorkflow = workflowSchema.parse({ ...draftWorkflow, id: replayId, state: "active", status: "review" })
+    const dest = resolve(this.workflowStore.baseDir, `${replayId}.yaml`)
+    try {
+      writeFileSync(dest, renderWorkflowYaml(replayWorkflow))
+    } catch (e: any) {
+      this.json(res, 500, { error: `failed to write replay workflow: ${e?.message || e}` })
+      return
+    }
+    // WorkflowStore re-reads from disk on every list()/get() call, so the
+    // newly-written file is visible to the dispatcher immediately. The
+    // existing fs.watch-based reload picks up the same file asynchronously
+    // for the cron + trigger registry, but we don't need to wait for it.
+
+    const entityRef = { backend: "manual", id: resolvedTaskId || `replay-${Date.now().toString(36)}` }
+    const eventId = `replay:${draftId}:${Date.now()}`
+
+    // Use dispatchWorkflow (not dispatch) so we bypass matchByTrigger.
+    // The replay copy has the trigger.manual node from the draft, and
+    // matchByTrigger requires a strict cfg.source === t.source match;
+    // trigger.manual nodes have no cfg.source, so matchByTrigger always
+    // misses. dispatchWorkflow fires the workflow by id directly.
+    try {
+      const result = await this.workflowDispatcher.dispatchWorkflow({
+        workflowId: replayId,
+        entityRef,
+        event: { id: eventId, payload },
+        trigger: { source: "manual" },
+      })
+      const runId = result.run?.id
+      this.json(res, runId ? 200 : 202, {
+        ok: true,
+        runId,
+        replayWorkflowId: replayId,
+        sourceTaskId: resolvedTaskId,
+      })
+    } catch (e: any) {
+      this.log(`[workflows] draft replay "${draftId}" failed: ${e.message}`)
+      this.json(res, 500, { error: e.message })
+    }
   }
 
   /** Manual run endpoint used by `agentx workflow run <id>`. Only workflows

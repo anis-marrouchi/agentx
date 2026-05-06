@@ -268,6 +268,24 @@ const WORKFLOWS_PAGE_CSS = `
   padding: 10px 12px; max-height: 280px; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
 }
+/* Editable draft textarea — same look as the JSON pre, just typeable.
+ * tab-size keeps indentation legible and resize: vertical lets reviewers
+ * grow the panel without leaving the page. */
+.ax-wf__editor {
+  display: block; width: 100%;
+  font-family: var(--ax-mono); font-size: 12px;
+  line-height: 1.45; tab-size: 2;
+  background: var(--ax-bg); color: var(--ax-text);
+  border: 1px solid var(--ax-border); border-radius: 4px;
+  padding: 10px 12px;
+  min-height: 320px; max-height: 70vh;
+  resize: vertical; overflow: auto;
+  white-space: pre; word-break: normal;
+  outline: none;
+}
+.ax-wf__editor:focus {
+  border-color: var(--ax-accent, #6366f1);
+}
 
 /* run detail drawer */
 .ax-wf__run-panel {
@@ -559,6 +577,8 @@ const WORKFLOWS_PAGE_SCRIPT = `
       </div>
       <div class="ax-wf__detail-actions ax-wf__draft-actions">
         <button class="ax-wf__btn" id="wf-draft-validate" type="button">Validate</button>
+        <button class="ax-wf__btn" id="wf-draft-save" type="button">Save</button>
+        <button class="ax-wf__btn" id="wf-draft-replay" type="button">Save &amp; Replay</button>
         <button class="ax-wf__btn primary" id="wf-draft-promote" type="button">Promote</button>
         <button class="ax-wf__btn danger" id="wf-draft-reject" type="button">Reject</button>
       </div>\`
@@ -592,11 +612,13 @@ const WORKFLOWS_PAGE_SCRIPT = `
         \${issueHtml}
       </div>
       <div class="ax-wf__panel ax-wf__panel--full">
-        <h3>Definition</h3>
-        <pre class="ax-wf__json">\${esc(JSON.stringify(wf, null, 2))}</pre>
+        <h3>Definition <span class="hint">(JSON; saved as YAML on disk)</span></h3>
+        <textarea id="wf-draft-editor" class="ax-wf__editor" spellcheck="false">\${esc(JSON.stringify(wf, null, 2))}</textarea>
       </div>\`
 
     $("#wf-draft-validate").addEventListener("click", () => validateDraft(draft.id))
+    $("#wf-draft-save").addEventListener("click", () => saveDraft(draft.id))
+    $("#wf-draft-replay").addEventListener("click", () => replayDraft(draft.id))
     $("#wf-draft-promote").addEventListener("click", () => promoteDraft(draft.id))
     $("#wf-draft-reject").addEventListener("click", () => rejectDraft(draft.id))
   }
@@ -700,7 +722,12 @@ const WORKFLOWS_PAGE_SCRIPT = `
       }
       renderList()
       renderDraftList()
-      renderDetail()
+      // Don't re-render the detail panel when the user is actively editing
+      // a draft — the periodic 15s refresh would otherwise reset their
+      // unsaved textarea on every tick. Resume rendering as soon as focus
+      // leaves the editor.
+      const editing = state.selectedDraftId && document.activeElement && document.activeElement.id === "wf-draft-editor"
+      if (!editing) renderDetail()
     } catch (e) {
       toast("Failed to load workflows: " + e.message)
     }
@@ -739,6 +766,64 @@ const WORKFLOWS_PAGE_SCRIPT = `
       await refresh()
     } catch (e) {
       toast("reject failed: " + e.message)
+    }
+  }
+
+  /** Read the textarea, parse as JSON (the editor is JSON; the server
+   *  re-serialises to YAML on disk), and PUT to the drafts endpoint. */
+  async function persistDraftFromEditor(id) {
+    const el = $("#wf-draft-editor")
+    if (!el) throw new Error("editor not mounted")
+    let workflow
+    try {
+      workflow = JSON.parse(el.value)
+    } catch (e) {
+      throw new Error("editor JSON is invalid: " + e.message)
+    }
+    const res = await fetch("/api/workflows/drafts/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers() },
+      credentials: "same-origin",
+      body: JSON.stringify({ workflow }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const issues = Array.isArray(data.issues) ? "\\n  - " + data.issues.join("\\n  - ") : ""
+      throw new Error((data.error || "save failed") + issues)
+    }
+    return data
+  }
+
+  async function saveDraft(id) {
+    try {
+      const res = await persistDraftFromEditor(id)
+      const lint = Array.isArray(res.issues) && res.issues.length ? \` (\${res.issues.length} lint warning\${res.issues.length === 1 ? "" : "s"})\` : ""
+      toast("draft saved" + lint)
+      await refresh()
+      state.selectedDraftId = id
+      renderDetail()
+    } catch (e) {
+      toast("save failed: " + e.message)
+    }
+  }
+
+  async function replayDraft(id) {
+    try {
+      await persistDraftFromEditor(id)
+    } catch (e) {
+      toast("save failed: " + e.message)
+      return
+    }
+    try {
+      const res = await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/replay", {})
+      toast("replay started: " + (res.runId || "?").slice(0, 8))
+      if (res.runId) {
+        await openRun(res.runId)
+      } else {
+        await refresh()
+      }
+    } catch (e) {
+      toast("replay failed: " + e.message)
     }
   }
 

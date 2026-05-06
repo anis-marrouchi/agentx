@@ -14,6 +14,7 @@ import {
   promoteWorkflowDraft,
   rejectWorkflowDraft,
   validateWorkflowDraft,
+  writeWorkflowDraft,
 } from "@/workflows/absorb"
 import type { WorkflowDispatcher } from "@/workflows/dispatcher"
 import type { TaskStore } from "@/workflows/task-store"
@@ -297,6 +298,37 @@ function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: Workflows
     const draft = getWorkflowDraft(id, process.cwd(), { workflowDir })
     if (!draft) return sendJson(res, 404, { error: "draft not found" })
     return sendJson(res, 200, { draft, issues: validateWorkflowDraft(draft.workflow) })
+  }
+
+  // PUT /api/workflows/drafts/:id — overwrite the draft with an edited
+  // version. Body shape: { workflow: Workflow }. The id in the body must
+  // match the URL id (drafts are keyed by filename). Validation is run
+  // before writing; on validation failure we 400 with issues so the editor
+  // can highlight them. The draft is always written as YAML to keep
+  // human review tractable.
+  if (!action && method === "PUT") {
+    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+    return withBody(req, res, (body) => {
+      try {
+        const incoming = (body as any)?.workflow ?? body
+        if (!incoming || typeof incoming !== "object") return sendJson(res, 400, { error: "missing workflow body" })
+        if (incoming.id && incoming.id !== id) {
+          return sendJson(res, 400, { error: `draft id mismatch: body=${incoming.id}, url=${id}` })
+        }
+        const parsed = workflowSchema.safeParse({ ...incoming, id })
+        if (!parsed.success) {
+          return sendJson(res, 400, {
+            error: "draft schema invalid",
+            issues: parsed.error.issues.map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`),
+          })
+        }
+        const lintIssues = lintWorkflow(parsed.data)
+        const path = writeWorkflowDraft(parsed.data, { format: "yaml", workflowDir, force: true })
+        return sendJson(res, 200, { ok: true, id, path, issues: lintIssues, workflow: parsed.data })
+      } catch (e: any) {
+        return sendJson(res, 500, { error: e?.message || String(e) })
+      }
+    })
   }
 
   if (action === "/validate") {
