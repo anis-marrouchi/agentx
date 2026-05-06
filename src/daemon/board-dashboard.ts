@@ -665,6 +665,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Active-workflow manual run — proxies the daemon's POST /workflows/:id/run
+  // endpoint. The /workflows page on the dashboard fires this for the "▶ Run"
+  // button. Body shape passed through unchanged: { payload?: object, force?: bool }.
+  // The daemon already enforces the trigger.manual constraint and returns
+  // 409 when force is needed, which the page surfaces as a toast.
+  const runMatch = method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
+  if (runMatch) {
+    try {
+      const body = await readJson(req).catch(() => ({}))
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const r = await fetch(`${daemonUrl}/workflows/${encodeURIComponent(runMatch[1])}/run`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body ?? {}),
+      })
+      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      sendJson(res, r.status, data)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
+    return
+  }
+
   // Draft replay — fires an ad-hoc workflow run on the daemon. Lives on
   // the daemon (not in workflows-api.ts) because it needs the dispatcher
   // and the trace store. The dashboard saves drafts directly to disk via

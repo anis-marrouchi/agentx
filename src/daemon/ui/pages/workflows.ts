@@ -286,6 +286,22 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__editor:focus {
   border-color: var(--ax-accent, #6366f1);
 }
+.ax-wf__editor--small {
+  min-height: 110px; max-height: 220px;
+}
+/* Run form lives in the detail header, below the row of buttons */
+.ax-wf__run-form {
+  grid-column: 1 / -1;
+  margin-top: 10px; padding: 12px;
+  background: var(--ax-panel, var(--ax-bg)); border: 1px solid var(--ax-border);
+  border-radius: 6px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ax-wf__run-form label { font-size: 11px; color: var(--ax-muted); }
+.ax-wf__run-form code { font-family: var(--ax-mono); font-size: 11px; }
+.ax-wf__inline { display: flex; align-items: flex-start; gap: 6px; }
+.ax-wf__inline input[type="checkbox"] { margin-top: 3px; }
+.ax-wf__run-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* run detail drawer */
 .ax-wf__run-panel {
@@ -491,6 +507,7 @@ const WORKFLOWS_PAGE_SCRIPT = `
     const trigFilter = [filter.project, filter.repo, filter.chat].filter(Boolean).join(" / ")
     const triggerSource = triggerNode ? (triggerCfg.source || triggerNode.type.replace("trigger.", "")) : "?"
 
+    const isManual = triggerNode && triggerNode.type === "trigger.manual"
     $("#wf-detail-head").innerHTML = \`
       <div class="ax-wf__detail-title">
         <h2>\${esc(wf.title || wf.id)}</h2>
@@ -498,6 +515,19 @@ const WORKFLOWS_PAGE_SCRIPT = `
       </div>
       <div class="ax-wf__detail-actions">
         <a class="ax-wf__btn" href="/workflows/editor?id=\${encodeURIComponent(wf.id)}" title="Open in visual editor">✎ Edit</a>
+        <button class="ax-wf__btn primary" id="wf-run-toggle" type="button" title="Trigger this workflow with a JSON payload">▶ Run</button>
+      </div>
+      <div id="wf-run-form" class="ax-wf__run-form" hidden>
+        <label>Payload (JSON)</label>
+        <textarea id="wf-run-payload" class="ax-wf__editor ax-wf__editor--small" spellcheck="false">{}</textarea>
+        <label class="ax-wf__inline">
+          <input type="checkbox" id="wf-run-force" \${isManual ? "" : "checked"} />
+          <span>Force (synthesize trigger event — required when trigger is not <code>trigger.manual</code>)</span>
+        </label>
+        <div class="ax-wf__run-form-actions">
+          <button class="ax-wf__btn" id="wf-run-cancel" type="button">Cancel</button>
+          <button class="ax-wf__btn primary" id="wf-run-go" type="button">Run now</button>
+        </div>
       </div>\`
 
     // V2: list nodes (with brief type + any agent id) and edges. No more
@@ -558,6 +588,54 @@ const WORKFLOWS_PAGE_SCRIPT = `
     $$(".ax-wf__run-row").forEach(el => {
       el.addEventListener("click", () => openRun(el.dataset.runid))
     })
+
+    // Run button — toggles the inline payload form. Cancel hides it; Run
+    // now POSTs to /workflows/<id>/run (proxied by the dashboard) and opens
+    // the run drawer on the new runId.
+    const runToggle = $("#wf-run-toggle")
+    if (runToggle) runToggle.addEventListener("click", () => {
+      const form = $("#wf-run-form")
+      const showing = !form.hasAttribute("hidden")
+      if (showing) form.setAttribute("hidden", "")
+      else form.removeAttribute("hidden")
+    })
+    const runCancel = $("#wf-run-cancel")
+    if (runCancel) runCancel.addEventListener("click", () => $("#wf-run-form").setAttribute("hidden", ""))
+    const runGo = $("#wf-run-go")
+    if (runGo) runGo.addEventListener("click", () => runWorkflow(wf.id))
+  }
+
+  async function runWorkflow(workflowId) {
+    const payloadEl = $("#wf-run-payload")
+    const forceEl = $("#wf-run-force")
+    let payload = {}
+    try {
+      const txt = (payloadEl && payloadEl.value || "{}").trim()
+      if (txt) payload = JSON.parse(txt)
+    } catch (e) {
+      toast("Payload is not valid JSON: " + e.message)
+      return
+    }
+    const force = !!(forceEl && forceEl.checked)
+    try {
+      const res = await postJSON("/workflows/" + encodeURIComponent(workflowId) + "/run", { payload, force })
+      if (res.runId) {
+        toast("run started: " + res.runId.slice(0, 8))
+        $("#wf-run-form").setAttribute("hidden", "")
+        await openRun(res.runId)
+      } else {
+        toast("run accepted (no runId returned — check /traces)")
+      }
+    } catch (e) {
+      // 409 from the daemon means non-manual trigger without force=true.
+      // Hint the operator to flip the checkbox.
+      const msg = String(e.message || e)
+      if (msg.indexOf("409") >= 0 || msg.toLowerCase().indexOf("trigger is") >= 0) {
+        toast("non-manual trigger — tick Force to fire anyway")
+      } else {
+        toast("run failed: " + msg)
+      }
+    }
   }
 
   function renderDraftDetail() {
