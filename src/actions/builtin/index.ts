@@ -9,6 +9,7 @@
 // human review.
 
 import { registerBuiltin, _resetBuiltinsForTesting as _registryReset } from "./registry"
+import { agentCall } from "./agent"
 import { extractStructured } from "./extract"
 import { fileReadLines, fileWriteJsonl } from "./file"
 import { httpFetch, httpPost } from "./http"
@@ -22,6 +23,7 @@ import { ragLexical } from "./rag"
  * the in-memory registry's current state.
  */
 export function registerAllBuiltins(): void {
+  registerBuiltin(agentCall)
   registerBuiltin(extractStructured)
   registerBuiltin(fileReadLines)
   registerBuiltin(fileWriteJsonl)

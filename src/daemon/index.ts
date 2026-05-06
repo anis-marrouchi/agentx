@@ -3,6 +3,7 @@ import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, 
 import { resolve, dirname } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
+import { setAgentRegistry } from "@/agents/registry-instance"
 import { resolvePermission } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { MessageRouter } from "@/channels/router"
@@ -143,6 +144,7 @@ export class AgentXDaemon {
     // Initialize agent registry
     this.registry = new AgentRegistry(this.config, this.log)
     setGlobalRegistry(this.registry)
+    setAgentRegistry(this.registry)
     this.registry.setLandscape(this.landscape)
 
     // Initialize heartbeat manager

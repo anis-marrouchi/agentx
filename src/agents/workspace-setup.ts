@@ -141,6 +141,41 @@ export function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: str
   lines.push('Channels: telegram, whatsapp, gitlab, discord')
   lines.push("")
 
+  // Typed actions catalog — prefer these over free-form Bash/Read/Write/curl
+  // when applicable. Each action's call lands in /traces as a structured
+  // step (action: <name>, input: …, output: …) which is how observability
+  // works in this codebase. Free-form Bash gets recorded as opaque shell
+  // text, which is harder to debug and harder to compose into workflows.
+  lines.push("## Typed actions — prefer these over free-form Bash")
+  lines.push("")
+  lines.push("Daemon-shipped typed actions cover the common needs. Each call appears in `/traces` as a structured step (input + output schema), unlike opaque `Bash`/`curl`/`Read` calls.")
+  lines.push("")
+  lines.push("```bash")
+  lines.push("# List available actions + their schemas")
+  lines.push(`agentx actions builtin                 # → catalog`)
+  lines.push(`agentx actions builtin <name> --schema # → input/output schema`)
+  lines.push("")
+  lines.push("# Invoke an action with typed JSON input")
+  lines.push(`agentx actions builtin http.fetch        --input '{"url":"https://example.com/data"}'`)
+  lines.push(`agentx actions builtin http.post         --input '{"url":"https://x.tld/hook","body":{"k":"v"}}'`)
+  lines.push(`agentx actions builtin file.read_lines   --input '{"path":"data/prices.json"}'`)
+  lines.push(`agentx actions builtin file.write_jsonl  --input '{"path":"leads.jsonl","record":{"name":"…","email":"…"}}'`)
+  lines.push(`agentx actions builtin extract.structured --input '{"prompt":"<text>","schema":{"type":"object",…}}'`)
+  lines.push(`agentx actions builtin rag.lexical       --input '{"agentId":"${agentId}","query":"…","limit":5}'`)
+  lines.push(`agentx actions builtin agent.call        --input '{"agentId":"<local-agent>","message":"…"}'`)
+  lines.push(`agentx actions builtin mesh.delegate     --input '{"peer":"<peer-name>","agent":"<peer-agent>","message":"…"}'`)
+  lines.push("```")
+  lines.push("")
+  lines.push("Rule of thumb:")
+  lines.push("- HTTP fetch/POST → `http.fetch` / `http.post` (not `Bash curl`)")
+  lines.push("- Reading a file you'll parse → `file.read_lines` (not `Bash cat`)")
+  lines.push("- Appending a structured record → `file.write_jsonl` (not `Bash echo >>` or `Write` with model-formatted JSON)")
+  lines.push("- Extracting fields from text into a typed object → `extract.structured` (not asking the model to format JSON in its reply)")
+  lines.push("- Searching a doc corpus → `rag.lexical` (not `Read` over every file)")
+  lines.push("- Calling another agent on this daemon → `agent.call` (fresh session by default; not composing `Bash curl` to /task)")
+  lines.push("- Calling an agent on a peer mesh node → `mesh.delegate` (cross-machine; same fresh-session default)")
+  lines.push("")
+
   return lines.join("\n")
 }
 

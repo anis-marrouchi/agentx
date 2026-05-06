@@ -56,6 +56,7 @@ interface TierRule {
 const DOCUMENTED_SEAMS: RegExp[] = [
   /^@\/a2a\/mesh-instance$/,
   /^@\/agents\/process-registry-instance$/,
+  /^@\/agents\/registry-instance$/,
 ]
 
 const RULES: TierRule[] = [

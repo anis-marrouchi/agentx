@@ -179,6 +179,115 @@ actions
     }
   })
 
+// --- Typed built-in actions (separate registry from custom shell/http) ---
+//
+// Built-in actions are TypeScript modules under src/actions/builtin/ that
+// register at daemon boot. They expose strict input/output Zod schemas and
+// are the preferred way for agents to do typed work (HTTP, file I/O, RAG,
+// extract.structured, mesh.delegate). Operators don't author them — they
+// ship as part of the binary and appear at GET /api/actions/builtin.
+//
+// This subcommand exists so agents can invoke a built-in via Bash and
+// have the call land as a structured action step in /traces (vs an opaque
+// curl invocation). The CLI just POSTs to the daemon's existing endpoint.
+
+actions
+  .command("builtin [name]")
+  .description("list registered built-in actions, or run one with --input")
+  .option("--input <json>", "JSON input matching the action's inputSchema")
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .option("--json", "raw JSON output (omit chrome)")
+  .option("--schema", "show the action's input/output schema instead of running it")
+  .action(async (name: string | undefined, opts) => {
+    const base = String(opts.daemon).replace(/\/+$/, "")
+
+    // No name → list all built-ins.
+    if (!name) {
+      try {
+        const res = await fetch(`${base}/api/actions/builtin`)
+        if (!res.ok) {
+          console.log(chalk.red(`  list failed (${res.status}): ${(await res.text()).slice(0, 200)}`))
+          process.exit(1)
+        }
+        const body = await res.json() as { actions?: Array<{ name: string; description?: string; timeoutMs?: number }> }
+        const list = body.actions || []
+        if (opts.json) { console.log(JSON.stringify(list, null, 2)); return }
+        if (list.length === 0) {
+          console.log(chalk.dim("  No built-in actions registered. Daemon may not be running, or registerAllBuiltins() didn't fire at boot."))
+          return
+        }
+        console.log()
+        console.log(chalk.bold("  Built-in typed actions"))
+        console.log(chalk.dim("  Invoke: agentx actions builtin <name> --input '<json>'"))
+        console.log()
+        for (const a of list) {
+          const t = a.timeoutMs ? chalk.dim(` (timeout=${Math.round(a.timeoutMs / 1000)}s)`) : ""
+          console.log(`  ${chalk.cyan(a.name.padEnd(22))} ${a.description || ""}${t}`)
+        }
+        console.log()
+      } catch (e: any) {
+        console.log(chalk.red(`  daemon unreachable: ${e.message || e}`))
+        process.exit(1)
+      }
+      return
+    }
+
+    // --schema mode: print the input/output schema without running.
+    if (opts.schema) {
+      try {
+        const res = await fetch(`${base}/api/actions/builtin`)
+        const body = await res.json() as { actions?: Array<{ name: string; inputSchema?: unknown; outputSchema?: unknown; description?: string }> }
+        const a = (body.actions || []).find((x) => x.name === name)
+        if (!a) { console.log(chalk.red(`  unknown action: ${name}`)); process.exit(1) }
+        if (opts.json) { console.log(JSON.stringify(a, null, 2)); return }
+        console.log()
+        console.log(chalk.bold(`  ${a.name}`))
+        if (a.description) console.log(chalk.dim(`  ${a.description}`))
+        console.log()
+        console.log(chalk.dim("  --- input schema ---"))
+        console.log(JSON.stringify(a.inputSchema ?? {}, null, 2))
+        if (a.outputSchema) {
+          console.log()
+          console.log(chalk.dim("  --- output schema ---"))
+          console.log(JSON.stringify(a.outputSchema, null, 2))
+        }
+        console.log()
+      } catch (e: any) {
+        console.log(chalk.red(`  schema fetch failed: ${e.message || e}`))
+        process.exit(1)
+      }
+      return
+    }
+
+    // Run mode: POST to the daemon's typed-action endpoint with --input.
+    let input: unknown = {}
+    if (opts.input) {
+      try { input = JSON.parse(opts.input) } catch (e: any) {
+        console.log(chalk.red(`  --input must be valid JSON: ${e.message}`))
+        process.exit(1)
+      }
+    }
+    try {
+      const res = await fetch(`${base}/api/actions/builtin/${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (opts.json) { console.log(JSON.stringify(body, null, 2)); process.exit(1) }
+        console.log(chalk.red(`  action failed (${res.status}): ${(body as any).error || JSON.stringify(body).slice(0, 300)}`))
+        process.exit(1)
+      }
+      if (opts.json) { console.log(JSON.stringify(body, null, 2)); return }
+      // Default human-friendly output: print the structured result.
+      console.log(JSON.stringify(body, null, 2))
+    } catch (e: any) {
+      console.log(chalk.red(`  daemon unreachable: ${e.message || e}`))
+      process.exit(1)
+    }
+  })
+
 /** Parse the --inputs CSV: name:type[!],name:type. `!` marks required. */
 function parseInputsCsv(csv: string | undefined): Action["inputs"] {
   if (!csv) return []
