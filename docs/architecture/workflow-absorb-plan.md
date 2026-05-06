@@ -19,12 +19,15 @@
 
 ## Pending
 
-- Replace deterministic trace-to-draft generation with an LLM-assisted workflow architect that can infer richer DAGs while preserving schema validation.
 - Add a workflow index once active workflows exceed roughly 100 definitions.
-- Add dashboard review UI for drafts, promotion, rejection, source traces, and replay comparison.
-- Wire `workflows.matching.mode: "auto"` to the workflow dispatcher so high-confidence matches can run workflows directly.
 - Persist replay comparison metrics: original vs replay duration, usage, model, status, and output summary.
 - Add richer clustering signals: intent graph path, action sequence similarity, file/action targets, and outcome category.
+
+## Shipped recently
+
+- LLM-assisted workflow architect (`src/workflows/architect.ts`) — when `--model <id>` is passed to `agentx workflow draft-from-task` or `agentx workflow absorb`, the trace + step list is sent through the Anthropic API with a forced `emit_workflow` tool_use. The model decomposes the procedure into `action.run`, `transform`, `branch`, etc. nodes; the result is validated against `workflowSchema` (with one retry on schema failure); deterministic single-node fallback runs on any LLM error. Requires `ANTHROPIC_API_KEY` set in the daemon's environment.
+- Dashboard edit-then-replay loop — drafts are editable in the workflow detail panel; "Save" persists to disk, "Save & Replay" fires an ad-hoc replay against the first source trace's input.
+- `workflows.matching.mode: "auto"` fires matched workflows directly via `dispatcher.dispatchWorkflow`; high-confidence matches return an empty `AgentResponse` with `metadata.handledByWorkflow` so the agent doesn't double-reply.
 
 ## Recommended cron
 

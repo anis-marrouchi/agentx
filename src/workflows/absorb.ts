@@ -230,6 +230,45 @@ export function buildWorkflowDraftFromTrace(
   })
 }
 
+/** Async wrapper around buildWorkflowDraftFromTrace that uses the LLM
+ *  architect when `opts.model` is provided. Falls back to the deterministic
+ *  single-agent-node draft on any architect failure (missing API key, API
+ *  error, schema-invalid output after retry). The fallback is silent in
+ *  the result but emitted to `opts.log` so operators see what happened. */
+export async function architectOrBuildDraft(
+  trace: TraceRecord,
+  steps: TraceStepRecord[] = [],
+  opts: {
+    id?: string
+    sourceTaskIds?: string[]
+    confidence?: number
+    generatedFrom?: string
+    model?: string
+    log?: (msg: string) => void
+  } = {},
+): Promise<{ workflow: Workflow; usedLlm: boolean; model?: string; error?: string }> {
+  const inferred = inferWorkflowName(trace, steps)
+  const id = opts.id || buildWorkflowId(inferred, trace)
+  const sourceTaskIds = opts.sourceTaskIds?.length ? opts.sourceTaskIds : [trace.taskId]
+  const confidence = opts.confidence ?? 0.55
+  if (opts.model) {
+    try {
+      const { architectWorkflowFromTrace } = await import("./architect")
+      const result = await architectWorkflowFromTrace(trace, steps, id, sourceTaskIds, confidence, { model: opts.model })
+      return { workflow: result.workflow, usedLlm: true, model: result.model }
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      opts.log?.(`[architect] LLM path failed for ${trace.taskId.slice(0, 8)}, falling back to deterministic: ${msg}`)
+      return {
+        workflow: buildWorkflowDraftFromTrace(trace, steps, opts),
+        usedLlm: false,
+        error: msg,
+      }
+    }
+  }
+  return { workflow: buildWorkflowDraftFromTrace(trace, steps, opts), usedLlm: false }
+}
+
 export function validateWorkflowDraft(workflow: Workflow): string[] {
   const parsed = workflowSchema.safeParse(workflow)
   if (!parsed.success) {
@@ -438,6 +477,39 @@ export function buildDraftsFromClusters(
       sourceTaskIds,
       confidence: cluster.confidence,
       reason: `${cluster.traces.length} similar successful task traces`,
+    })
+  }
+  return out
+}
+
+/** Async clusters → drafts pipeline with optional LLM architect. When
+ *  `opts.model` is set, each cluster's representative trace is passed
+ *  through the architect; deterministic fallback runs on any LLM
+ *  failure so the absorb command never hard-fails the cron. */
+export async function buildDraftsFromClustersAsync(
+  db: Database.Database,
+  clusters: Array<{ key: string; traces: TraceRecord[]; confidence: number }>,
+  opts: { model?: string; log?: (msg: string) => void } = {},
+): Promise<Array<WorkflowDraftCandidate & { usedLlm: boolean }>> {
+  const out: Array<WorkflowDraftCandidate & { usedLlm: boolean }> = []
+  for (const cluster of clusters) {
+    const representative = cluster.traces[0]
+    const full = getTrace(db, representative.taskId)
+    const sourceTaskIds = cluster.traces.map((t) => t.taskId)
+    const result = await architectOrBuildDraft(representative, full?.steps ?? [], {
+      sourceTaskIds,
+      confidence: cluster.confidence,
+      generatedFrom: opts.model ? "llm-architect" : "workflow-absorb",
+      model: opts.model,
+      log: opts.log,
+    })
+    out.push({
+      id: result.workflow.id,
+      workflow: result.workflow,
+      sourceTaskIds,
+      confidence: cluster.confidence,
+      reason: `${cluster.traces.length} similar successful task traces${result.usedLlm ? " (LLM-architected)" : ""}`,
+      usedLlm: result.usedLlm,
     })
   }
   return out

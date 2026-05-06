@@ -7,7 +7,9 @@ import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflo
 import { TEMPLATES, readTemplate, type TemplateName } from "@/workflows/templates"
 import { getTrace } from "@/storage/traces"
 import {
+  architectOrBuildDraft,
   buildDraftsFromClusters,
+  buildDraftsFromClustersAsync,
   buildWorkflowDraftFromTrace,
   clusterWorkflowCandidates,
   getWorkflowDraft,
@@ -375,8 +377,8 @@ workflow
   .option("--commit", "write to .agentx/workflows/_drafts", false)
   .option("--print", "print the generated draft", false)
   .option("--allow-failed", "allow generating from non-ok traces", false)
-  .option("--model <model>", "reserved for LLM-backed extraction; v1 uses deterministic extraction")
-  .action((taskId: string, opts) => {
+  .option("--model <model>", "use the LLM architect to emit a multi-node DAG (e.g. claude-sonnet-4-6); falls back to deterministic single-node draft on failure")
+  .action(async (taskId: string, opts) => {
     const db = openTraceDb(opts.path)
     const trace = getTrace(db, taskId)
     if (!trace) {
@@ -387,7 +389,16 @@ workflow
       console.log(chalk.red(`  task ${taskId} status=${trace.task.status}; pass --allow-failed to draft anyway`))
       process.exit(1)
     }
-    const workflow = buildWorkflowDraftFromTrace(trace.task, trace.steps)
+    const result = await architectOrBuildDraft(trace.task, trace.steps, {
+      model: opts.model,
+      log: (m) => console.log(chalk.dim(`  ${m}`)),
+    })
+    const workflow = result.workflow
+    if (result.usedLlm) {
+      console.log(chalk.dim(`  ✦ LLM-architected via ${result.model || opts.model}`))
+    } else if (opts.model) {
+      console.log(chalk.yellow(`  ⚠ LLM architect failed, used deterministic fallback`))
+    }
     const issues = validateWorkflowDraft(workflow)
     if (issues.length) {
       console.log(chalk.red(`  generated draft failed validation:`))
@@ -413,8 +424,8 @@ workflow
   .option("--max <n>", "maximum drafts to generate", "10")
   .option("--dry-run", "preview candidates without writing", false)
   .option("--commit", "write generated drafts", false)
-  .option("--model <model>", "reserved for LLM-backed extraction; v1 uses deterministic extraction")
-  .action((opts) => {
+  .option("--model <model>", "use the LLM architect to emit multi-node DAGs (e.g. claude-sonnet-4-6); falls back to deterministic per-cluster on failure")
+  .action(async (opts) => {
     const db = openTraceDb(opts.path)
     const traces = loadSuccessfulTraces(db, {
       since: parseSince(opts.since),
@@ -434,9 +445,13 @@ workflow
       console.log(chalk.dim(`  ${traces.length} trace(s), but no cluster met min size ${opts.minClusterSize}`))
       return
     }
-    const drafts = buildDraftsFromClusters(db, clusters)
+    const drafts = await buildDraftsFromClustersAsync(db, clusters, {
+      model: opts.model,
+      log: (m) => console.log(chalk.dim(`  ${m}`)),
+    })
     for (const draft of drafts) {
-      console.log(`  ${chalk.cyan(draft.id)}  ${chalk.bold(`${draft.sourceTaskIds.length} traces`)}  confidence=${draft.confidence.toFixed(2)}`)
+      const tag = draft.usedLlm ? chalk.magenta("✦ llm") : chalk.dim("det.")
+      console.log(`  ${chalk.cyan(draft.id)}  ${chalk.bold(`${draft.sourceTaskIds.length} traces`)}  confidence=${draft.confidence.toFixed(2)}  ${tag}`)
       console.log(chalk.dim(`    ${draft.reason}`))
       const issues = validateWorkflowDraft(draft.workflow)
       if (issues.length) {

@@ -46,6 +46,7 @@ export {
 } from "./yaml"
 export {
   buildWorkflowDraftFromTrace,
+  architectOrBuildDraft,
   validateWorkflowDraft,
   writeWorkflowDraft,
   listWorkflowDrafts,
@@ -56,9 +57,11 @@ export {
   loadSuccessfulTraces,
   clusterWorkflowCandidates,
   buildDraftsFromClusters,
+  buildDraftsFromClustersAsync,
   draftPath,
   draftsDir,
   type WorkflowDraftCandidate,
   type WorkflowDraftRecord,
 } from "./absorb"
+export { architectWorkflowFromTrace, type ArchitectOptions } from "./architect"
 export { matchWorkflow, type WorkflowMatch, type WorkflowMatchInput } from "./matcher"
