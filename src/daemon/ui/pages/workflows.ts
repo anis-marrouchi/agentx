@@ -302,6 +302,19 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__inline { display: flex; align-items: flex-start; gap: 6px; }
 .ax-wf__inline input[type="checkbox"] { margin-top: 3px; }
 .ax-wf__run-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Tiny re-run button on the run rows */
+.ax-wf__btn--xs {
+  padding: 2px 6px; font-size: 12px; line-height: 1;
+  background: transparent; border: 1px solid var(--ax-border);
+  border-radius: 3px; cursor: pointer; color: var(--ax-text);
+}
+.ax-wf__btn--xs:hover { background: var(--ax-panel, var(--ax-bg)); border-color: var(--ax-accent, #6366f1); }
+/* Last-run status colors on the workflow card */
+.ax-wf__card-meta .tag.tag--completed { color: var(--ax-ok, #4ade80); }
+.ax-wf__card-meta .tag.tag--failed    { color: var(--ax-err, #ef4444); }
+.ax-wf__card-meta .tag.tag--running   { color: var(--ax-accent, #6366f1); }
+.ax-wf__card-meta .tag.tag--paused    { color: var(--ax-warn, #facc15); }
+.ax-wf__card-meta .tag.tag--canceled  { color: var(--ax-muted); opacity: 0.7; }
 
 /* run detail drawer */
 .ax-wf__run-panel {
@@ -455,7 +468,9 @@ const WORKFLOWS_PAGE_SCRIPT = `
           <div class="ax-wf__card-meta">
             <span class="tag">\${esc(triggerSource)}</span>
             \${live > 0 ? \`<span class="tag live">\${live} running</span>\` : ""}
-            \${lastRun ? \`<span class="tag">last: \${esc(lastRun.status)}</span>\` : \`<span class="tag">no runs</span>\`}
+            \${lastRun
+              ? \`<span class="tag tag--\${esc(lastRun.status)}" title="\${esc(lastRun.id)} · \${esc(new Date(lastRun.updatedAt).toLocaleString())}">last: \${esc(lastRun.status)} · \${relTime(lastRun.updatedAt)}</span>\`
+              : \`<span class="tag">no runs</span>\`}
           </div>
         </li>\`
     }).join("")
@@ -558,11 +573,21 @@ const WORKFLOWS_PAGE_SCRIPT = `
         ? r.pending[0] + " (next)"
         : last ? last.nodeId + " (" + last.status + ")"
         : "—"
+      // Re-run button shows for terminal statuses only (running/paused
+      // re-runs would race with the in-flight execution). The button
+      // refetches the run's stored payload from /api/workflows/runs/:id
+      // (slim listing strips context, full detail keeps it) and POSTs
+      // the same payload back to /workflows/<id>/run.
+      const canRerun = r.status === "completed" || r.status === "failed" || r.status === "canceled"
+      const rerunBtn = canRerun
+        ? \`<button class="ax-wf__btn ax-wf__btn--xs" data-rerun="\${esc(r.id)}" title="Re-run with the same payload">↻</button>\`
+        : \`<span style="width:18px"></span>\`
       return \`<div class="ax-wf__run-row" data-runid="\${r.id}">
         <span class="id">\${r.id.slice(0,8)}</span>
         <span>\${esc(position)} <span class="hint">· \${esc(r.entityRef.id)}</span></span>
         <span class="hint">\${relTime(r.updatedAt)}</span>
         <span class="status \${r.status}">\${r.status}</span>
+        \${rerunBtn}
         <span>›</span>
       </div>\`
     }).join("") : \`<span class="hint">No runs yet for this workflow.</span>\`
@@ -586,7 +611,19 @@ const WORKFLOWS_PAGE_SCRIPT = `
       </div>\`
 
     $$(".ax-wf__run-row").forEach(el => {
-      el.addEventListener("click", () => openRun(el.dataset.runid))
+      el.addEventListener("click", (ev) => {
+        // Re-run button shouldn't open the run drawer for the OLD run.
+        // The actual rerun handler attaches separately below.
+        const t = ev.target
+        if (t && t.tagName === "BUTTON" && t.dataset.rerun) return
+        openRun(el.dataset.runid)
+      })
+    })
+    $$("[data-rerun]").forEach(el => {
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        rerunFrom(el.dataset.rerun, wf.id, triggerNode ? triggerNode.id : null)
+      })
     })
 
     // Run button — toggles the inline payload form. Cancel hides it; Run
@@ -603,6 +640,51 @@ const WORKFLOWS_PAGE_SCRIPT = `
     if (runCancel) runCancel.addEventListener("click", () => $("#wf-run-form").setAttribute("hidden", ""))
     const runGo = $("#wf-run-go")
     if (runGo) runGo.addEventListener("click", () => runWorkflow(wf.id))
+  }
+
+  /** Re-run a completed run with the same payload it was originally
+   *  triggered with. Fetches the full run (the listing /runs?summary=1
+   *  strips context) to recover the original trigger payload, then
+   *  POSTs to /workflows/<id>/run. Force is set if we synthesized
+   *  a non-manual trigger event the first time around. The dispatcher
+   *  stores the trigger node's output bundle in run.context keyed by
+   *  the node id — so we look up via triggerNodeId, not the literal
+   *  string "trigger" (which is just the conventional id). */
+  async function rerunFrom(runId, workflowId, triggerNodeId) {
+    if (!runId || !workflowId) return
+    let payload = {}
+    let force = false
+    try {
+      const detail = await fetchJSON("/api/workflows/runs/" + encodeURIComponent(runId))
+      const run = detail.run || detail
+      const ctx = run && run.context || {}
+      // First preference: index context by the trigger node's id. Falls
+      // back to context.trigger for older runs (gitlab-sdlc-loop, etc.).
+      const triggerOutput = (triggerNodeId && ctx[triggerNodeId]) || ctx.trigger
+      if (triggerOutput && typeof triggerOutput === "object") {
+        // Some triggers wrap the input under event.payload; most are flat.
+        payload = triggerOutput.event && triggerOutput.event.payload
+          ? triggerOutput.event.payload
+          : triggerOutput
+      }
+      // entityRef.backend "channel" means the original was a synthesized
+      // event (force-fired). Mirror force=true so the rerun isn't blocked
+      // by the daemon's 409 guard for non-manual triggers.
+      force = !!(run && run.entityRef && run.entityRef.backend === "channel")
+    } catch (e) {
+      toast("Couldn't load original run payload: " + e.message + " — re-running with empty payload")
+    }
+    try {
+      const res = await postJSON("/workflows/" + encodeURIComponent(workflowId) + "/run", { payload, force })
+      if (res.runId) {
+        toast("re-run started: " + res.runId.slice(0, 8))
+        await openRun(res.runId)
+      } else {
+        toast("re-run accepted (no runId returned)")
+      }
+    } catch (e) {
+      toast("re-run failed: " + e.message)
+    }
   }
 
   async function runWorkflow(workflowId) {
