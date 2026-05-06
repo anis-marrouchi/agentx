@@ -33,6 +33,99 @@ function cap(input: string | null | undefined, max = 900): string {
   return text.length > max ? `${text.slice(0, max)}...` : text
 }
 
+/** Maps platform-specific noteable kinds to short, stable labels in workflow
+ *  ids (so a GitHub PR and a GitLab merge_request both end up as `mr`). */
+const KIND_ALIASES: Record<string, string> = {
+  merge_request: "mr",
+  pull_request: "pr",
+  pr: "pr",
+  push: "push",
+  issue: "issue",
+  issues: "issue",
+}
+
+const ENV_KEYWORDS: Array<[string, RegExp]> = [
+  ["prod", /\b(prod(?:uction)?|live)\b/],
+  ["staging", /\b(stag(?:ing|e)?|qa|preprod|pre-prod)\b/],
+  ["dev", /\b(dev|development|local)\b/],
+]
+
+const INTENT_KEYWORDS: Array<[string, RegExp]> = [
+  ["rollback", /\b(rollback|revert|undo)\b/],
+  ["deploy", /\b(deploy|deployment|rollout|release|ship)\b/],
+  ["fix", /\b(fix|repair|patch|resolve|hotfix)\b/],
+  ["migrate", /\b(migration|migrate)\b/],
+  ["review", /\b(review|inspect|audit|approve)\b/],
+  ["triage", /\b(triage|classify|categorize|label)\b/],
+  ["implement", /\b(implement|add|build|create|introduce)\b/],
+  ["refactor", /\b(refactor|rename|restructure|cleanup)\b/],
+  ["test", /\b(test|verify|validate|qa)\b/],
+  ["update", /\b(update|upgrade|bump)\b/],
+]
+
+interface InferredName {
+  project?: string
+  kind?: string
+  intent?: string
+  environment?: string
+  variation?: string
+}
+
+/** Pull a workflow name out of a trace. Names should describe the work, not
+ *  the worker — so we drop the agent id entirely and lean on the entity
+ *  (project + kind from the chatId composite) plus an intent verb mined from
+ *  the message. Stable across agents: a GitLab MR triaged by `coder-agent`
+ *  and the same MR deployed by `devops-agent` cluster on the same project. */
+export function inferWorkflowName(trace: TraceRecord, _steps: TraceStepRecord[] = []): InferredName {
+  const out: InferredName = {}
+
+  // Extract project + kind from the chatId composite. Today's known shapes:
+  //   GitLab issue:        "<group>/<project>:issue:<iid>"
+  //   GitLab merge_request:"<group>/<project>:merge_request:<iid>"
+  //   GitHub push:         "<owner>/<repo>:push:refs/heads/<branch>"
+  //   GitHub PR:           "<owner>/<repo>:pull_request:<n>"
+  //   Telegram numeric:    "<chat-id>" (no colons → no project mining)
+  const chatId = trace.chatId || ""
+  const parts = chatId.split(":")
+  if (parts.length >= 2 && parts[0].includes("/")) {
+    const repoSlug = parts[0]
+    const repoName = repoSlug.split("/").pop() || repoSlug
+    out.project = slugify(repoName, "project")
+    out.kind = slugify(KIND_ALIASES[parts[1]] || parts[1], "task")
+  }
+
+  // Mine the message for verbs / environment, but ONLY when project+kind didn't
+  // already give us strong identity. For notification-style events (GitHub
+  // push, GitLab MR) the work IS the kind — looking for verbs in commit
+  // messages or MR descriptions splits a coherent workflow into accidental
+  // sub-clusters (`agentx-push-implement` vs `agentx-push-draft`). When we
+  // have a project+kind, only environment is still useful (one project may
+  // have separate staging vs prod procedures).
+  const msg = String(trace.messagePreview || "").toLowerCase()
+  const hasStrongIdentity = Boolean(out.project && out.kind)
+  if (!hasStrongIdentity) {
+    for (const [verb, pattern] of INTENT_KEYWORDS) {
+      if (pattern.test(msg)) { out.intent = verb; break }
+    }
+  }
+  for (const [env, pattern] of ENV_KEYWORDS) {
+    if (pattern.test(msg)) { out.environment = env; break }
+  }
+
+  return out
+}
+
+/** Build a workflow id from inferred parts. Falls back to a hash of the
+ *  message when nothing structured can be extracted (telegram one-offs). */
+function buildWorkflowId(name: InferredName, trace: TraceRecord): string {
+  const parts = [name.project, name.kind, name.intent, name.environment, name.variation].filter(Boolean)
+  if (parts.length >= 2) return parts.map((p) => slugify(p as string)).join("-") + "-draft"
+  // Fallback: short slug of the message + taskId tail to disambiguate.
+  const msgSlug = slugify(trace.messagePreview || "", "task").slice(0, 32)
+  const tail = trace.taskId.slice(-6).toLowerCase()
+  return `${msgSlug || "task"}-${tail}-draft`
+}
+
 function traceTags(trace: TraceRecord, steps: TraceStepRecord[] = []): string[] {
   const tags = new Set<string>()
   if (trace.channel) tags.add(trace.channel)
@@ -66,8 +159,8 @@ export function buildWorkflowDraftFromTrace(
     generatedFrom?: string
   } = {},
 ): Workflow {
-  const base = slugify(`${trace.agentId}-${trace.messagePreview || trace.taskId}`, `task-${trace.taskId.slice(0, 8).toLowerCase()}`)
-  const id = opts.id || `${base}-draft`
+  const inferred = inferWorkflowName(trace, steps)
+  const id = opts.id || buildWorkflowId(inferred, trace)
   const sourceTaskIds = opts.sourceTaskIds?.length ? opts.sourceTaskIds : [trace.taskId]
   const titleSeed = cap(trace.messagePreview, 72) || `Task ${trace.taskId.slice(0, 8)}`
   const prompt = [
@@ -246,19 +339,36 @@ export function rejectWorkflowDraft(id: string, baseDir = process.cwd(), opts: {
   return dest
 }
 
+/** Default minimum chars on `messagePreview` for a trace to be eligible for
+ *  workflow absorb. Filters out trivial chatter ("yes", "ok", short Q&A)
+ *  that produces low-value drafts. Operators can override with --min-message-length. */
+export const DEFAULT_MIN_MESSAGE_LENGTH = 30
+
 export function loadSuccessfulTraces(
   db: Database.Database,
-  opts: { since?: number; agentId?: string; limit?: number } = {},
+  opts: { since?: number; agentId?: string; limit?: number; minMessageLength?: number } = {},
 ): TraceRecord[] {
+  const min = opts.minMessageLength ?? DEFAULT_MIN_MESSAGE_LENGTH
   return listTraces(db, {
     agentId: opts.agentId,
     status: "ok",
     since: opts.since,
     limit: opts.limit ?? 1000,
-  }).filter((t) => !t.workflowRunId)
+  })
+    .filter((t) => !t.workflowRunId)
+    .filter((t) => (t.messagePreview || "").trim().length >= min)
 }
 
+/** Cluster key — describes WHAT the work is, not WHO did it. We deliberately
+ *  drop the agentId so a procedure run by `coder-agent` and the same procedure
+ *  later run by `devops-agent` cluster together. Falls back to message words
+ *  when no project/kind/intent can be mined. */
 function clusterKey(trace: TraceRecord): string {
+  const inferred = inferWorkflowName(trace)
+  if (inferred.project && inferred.kind) {
+    const segs = [inferred.project, inferred.kind, inferred.intent, inferred.environment].filter(Boolean)
+    return segs.join(":")
+  }
   const words = (trace.messagePreview || "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
@@ -266,7 +376,7 @@ function clusterKey(trace: TraceRecord): string {
     .filter((w) => w.length > 3)
     .slice(0, 6)
     .join("-")
-  return [trace.agentId, trace.channel || "unknown", words || "task"].join(":")
+  return [trace.channel || "unknown", words || "task"].join(":")
 }
 
 export function clusterWorkflowCandidates(
@@ -282,11 +392,23 @@ export function clusterWorkflowCandidates(
   }
   const min = Math.max(1, opts.minClusterSize ?? 3)
   return Array.from(groups.entries())
-    .map(([key, grouped]) => ({
-      key,
-      traces: grouped.sort((a, b) => b.startedAt - a.startedAt),
-      confidence: Math.min(0.9, 0.45 + grouped.length * 0.1),
-    }))
+    .map(([key, grouped]) => {
+      // Confidence boosts for clusters with a real project+kind+intent
+      // (vs. message-word fallbacks). A "mtgl-mr-deploy" cluster of 3 traces
+      // is more reusable than a 3-trace "telegram-yes-task" cluster.
+      const inferred = inferWorkflowName(grouped[0])
+      const namingBoost =
+        (inferred.project ? 0.05 : 0) +
+        (inferred.kind ? 0.05 : 0) +
+        (inferred.intent ? 0.1 : 0) +
+        (inferred.environment ? 0.05 : 0)
+      const sizeScore = 0.45 + grouped.length * 0.1
+      return {
+        key,
+        traces: grouped.sort((a, b) => b.startedAt - a.startedAt),
+        confidence: Math.min(0.95, sizeScore + namingBoost),
+      }
+    })
     .filter((c) => c.traces.length >= min)
     .sort((a, b) => b.confidence - a.confidence || b.traces.length - a.traces.length)
     .slice(0, Math.max(1, opts.max ?? 10))
@@ -301,8 +423,11 @@ export function buildDraftsFromClusters(
     const representative = cluster.traces[0]
     const full = getTrace(db, representative.taskId)
     const sourceTaskIds = cluster.traces.map((t) => t.taskId)
+    // Don't pass an explicit id here — buildWorkflowDraftFromTrace runs
+    // inferWorkflowName() against the representative trace and gets a clean
+    // <project>-<kind>-<intent>[-<env>] name. Falling back to slugifying the
+    // cluster key would just re-introduce the problem we're solving.
     const workflow = buildWorkflowDraftFromTrace(representative, full?.steps ?? [], {
-      id: `${slugify(cluster.key.replace(/:/g, "-"))}-draft`,
       sourceTaskIds,
       confidence: cluster.confidence,
       generatedFrom: "workflow-absorb",

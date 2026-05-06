@@ -409,6 +409,7 @@ workflow
   .option("--since <duration>", "trace window, e.g. 24h, 7d, or ms epoch", "24h")
   .option("--agent <id>", "only absorb traces for one agent")
   .option("--min-cluster-size <n>", "minimum similar traces per draft", "3")
+  .option("--min-message-length <n>", "minimum messagePreview chars to consider a trace (default 30)", "30")
   .option("--max <n>", "maximum drafts to generate", "10")
   .option("--dry-run", "preview candidates without writing", false)
   .option("--commit", "write generated drafts", false)
@@ -419,6 +420,7 @@ workflow
       since: parseSince(opts.since),
       agentId: opts.agent,
       limit: 1000,
+      minMessageLength: Number(opts.minMessageLength) || 30,
     })
     if (traces.length === 0) {
       console.log(chalk.dim("  no successful free-form traces found in window"))
