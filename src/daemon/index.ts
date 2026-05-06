@@ -311,6 +311,15 @@ export class AgentXDaemon {
             //      list (when non-empty) must include the dispatched
             //      intent. When the list is empty (default), handles all.
             canHandle: (agentId, project, intent) => {
+              // Synthetic dispatch identifiers (workflow runs, mesh
+              // forwards) aren't real agents — they're handles for an
+              // already-decided dispatch. Capability and org-chart
+              // checks were applied before the synthetic ID was minted
+              // (or are simply N/A for the run handle), so the ledger's
+              // canHandle veto here is structurally a no-op for them.
+              // Phase 1 soak finding: gating on these produced 290+
+              // false-positive divergences across both nodes.
+              if (/^(workflow-run|mesh-fwd):/.test(agentId)) return true
               if (!org.canHandle(agentId, project, intent)) return false
               return agentCanHandleIntent(agents[agentId], intent)
             },

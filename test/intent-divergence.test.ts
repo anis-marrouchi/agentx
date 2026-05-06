@@ -91,6 +91,41 @@ describe("decisionsAgree", () => {
     )
     expect(decisionsAgree(decision, { outcome: "halted", agentId: null })).toBe(true)
   })
+
+  it("normalizes synthetic agent ids — workflow-run:<uuid> instances agree on prefix", () => {
+    const dispatchPolicy: DispatchPolicy = {
+      decidedBy: "test:workflow",
+      decide: () => ({ agentId: "workflow-run:abc-123-def", outcome: "dispatched", reason: null }),
+    }
+    const decision = decideAndCommit(
+      ledger,
+      eventInput({ sourceEventId: "wf-evt" }),
+      dispatchPolicy,
+      () => 1,
+    )
+    // Two workflow runs with different UUIDs but the same dispatch
+    // semantics agree — the run-id portion is per-call freshness, not
+    // part of the decision being recorded.
+    expect(decisionsAgree(decision, { outcome: "dispatched", agentId: "workflow-run:zzz-999-yyy" })).toBe(true)
+    expect(decisionsAgree(decision, { outcome: "dispatched", agentId: "workflow-run:abc-123-def" })).toBe(true)
+    // But a different prefix or non-prefixed agent still disagrees.
+    expect(decisionsAgree(decision, { outcome: "dispatched", agentId: "mesh-fwd:peer-1" })).toBe(false)
+    expect(decisionsAgree(decision, { outcome: "dispatched", agentId: "real-agent" })).toBe(false)
+  })
+
+  it("normalizes mesh-fwd:<id> the same way", () => {
+    const dispatchPolicy: DispatchPolicy = {
+      decidedBy: "test:mesh",
+      decide: () => ({ agentId: "mesh-fwd:peer-x", outcome: "dispatched", reason: null }),
+    }
+    const decision = decideAndCommit(
+      ledger,
+      eventInput({ sourceEventId: "mesh-evt" }),
+      dispatchPolicy,
+      () => 1,
+    )
+    expect(decisionsAgree(decision, { outcome: "dispatched", agentId: "mesh-fwd:peer-y" })).toBe(true)
+  })
 })
 
 describe("reportDivergence", () => {

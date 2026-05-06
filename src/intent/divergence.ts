@@ -86,13 +86,26 @@ export function reportDivergence(
 }
 
 /** Two outcomes agree iff they pick the same target with the same outcome
- *  kind. Reasons (free-form) are not part of agreement. */
+ *  kind. Reasons (free-form) are not part of agreement.
+ *
+ *  AgentIds that wrap a fresh-per-call instance id (workflow-run:<uuid>,
+ *  mesh-fwd:<id>) are normalized to the prefix before comparison — both
+ *  paths legitimately dispatch the same kind of work but with different
+ *  instance handles, and treating those as divergences buries the real
+ *  semantic mismatches in noise (Phase 1 soak finding: ~290 false
+ *  positives across both nodes pre-fix). */
 export function decisionsAgree(
   ledgerDecision: IntentDecision,
   legacy: LegacyOutcome,
 ): boolean {
   return (
     ledgerDecision.outcome === legacy.outcome &&
-    ledgerDecision.agentId === legacy.agentId
+    normalizeSyntheticAgentId(ledgerDecision.agentId) === normalizeSyntheticAgentId(legacy.agentId)
   )
+}
+
+function normalizeSyntheticAgentId(id: string | null): string | null {
+  if (!id) return null
+  const m = id.match(/^(workflow-run|mesh-fwd):/)
+  return m ? `${m[1]}:*` : id
 }
