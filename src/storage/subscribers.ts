@@ -204,7 +204,11 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
       try {
         stmts.upsertUsageDaily.run({
           agent_id: p.agentId,
-          model,
+          // Prefer per-task billedModel (set by the registry from the
+          // runtime's reply / agent config) so codex-cli / sdk traffic
+          // gets priced correctly. Fall back to the constructor default
+          // for legacy emitters that don't supply it.
+          model: p.billedModel || model,
           day,
           input_tokens: p.inputTokens ?? 0,
           output_tokens: p.outputTokens ?? 0,

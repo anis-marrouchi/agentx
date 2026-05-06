@@ -8,16 +8,26 @@ import type { TopbarPeer } from "./topbar"
 // Anthropic public per-million-token rates. Same numbers
 // src/observability/tracker.ts uses; duplicated here so this module stays
 // independent of the in-process token tracker.
+//
+// "external" is a pricing-attribution stub for models we don't bill against
+// the Anthropic spend — codex-cli routes through OpenAI, sdk agents may
+// route through OpenAI / Bedrock / Vertex. Showing them at $0 here is the
+// honest answer: this dashboard tracks Anthropic spend; cross-provider
+// rollups belong on a separate surface that knows the OpenAI keys / bill.
 const RATE_PER_M: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
-  opus:    { input: 15,  output: 75,  cacheRead: 1.5,  cacheCreate: 18.75 },
-  sonnet:  { input: 3,   output: 15,  cacheRead: 0.3,  cacheCreate: 3.75 },
-  haiku:   { input: 0.25, output: 1.25, cacheRead: 0.025, cacheCreate: 0.3125 },
+  opus:     { input: 15,  output: 75,   cacheRead: 1.5,  cacheCreate: 18.75 },
+  sonnet:   { input: 3,   output: 15,   cacheRead: 0.3,  cacheCreate: 3.75 },
+  haiku:    { input: 0.25, output: 1.25, cacheRead: 0.025, cacheCreate: 0.3125 },
+  external: { input: 0,   output: 0,    cacheRead: 0,    cacheCreate: 0 },
 }
-function modelFamily(model: string): "opus" | "sonnet" | "haiku" {
+function modelFamily(model: string): "opus" | "sonnet" | "haiku" | "external" {
   const m = (model || "").toLowerCase()
   if (m.includes("opus")) return "opus"
   if (m.includes("haiku")) return "haiku"
-  return "sonnet"
+  if (m.includes("sonnet") || m.includes("claude")) return "sonnet"
+  // Anything else — gpt-*, codex, gemini, llama, … — routed to the external
+  // bucket so it doesn't masquerade as Sonnet spend on the dashboard.
+  return "external"
 }
 function rowCost(row: {
   model: string;

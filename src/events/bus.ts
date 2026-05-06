@@ -139,6 +139,13 @@ export interface AgentXEvents {
      *  so `replay --diff` can show original vs current output side-by-side.
      *  Optional for back-compat. */
     finalResponse?: string
+    /** Model the upstream API actually billed (claude-opus-4-7, gpt-5.5, …)
+     *  so per-agent / per-tier traffic is priced at its real rate instead
+     *  of the daemon-wide default. Producers prefer `response.billedModel`
+     *  (parsed from the runtime's reply) and fall back to the agent's
+     *  configured `model`. Subscribers fall back to the constant default
+     *  passed to attachSqliteSubscribers when this is absent. */
+    billedModel?: string
     at: string
   }
 
