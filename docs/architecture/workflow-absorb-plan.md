@@ -26,6 +26,26 @@
 - Persist replay comparison metrics: original vs replay duration, usage, model, status, and output summary.
 - Add richer clustering signals: intent graph path, action sequence similarity, file/action targets, and outcome category.
 
+## Recommended cron
+
+Operators wire scheduled workflow mining via `crons` in `agentx.json`. The cron only
+generates drafts — promotion stays explicit:
+
+```yaml
+crons:
+  workflow-absorb-nightly:
+    enabled: false
+    schedule: "0 2 * * *"
+    agent: workflow-architect
+    timeout: 900
+    prompt: >
+      Run agentx workflow absorb --since 24h --min-cluster-size 3 --max 10 --commit.
+      Report generated drafts, skipped clusters, and validation failures.
+```
+
+Flip `enabled: true` once an agent is configured for the role and the operator has
+reviewed the first hand-run drafts.
+
 ## Decisions
 
 - Workflow DSL is the canonical representation for reusable task execution.

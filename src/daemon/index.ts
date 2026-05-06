@@ -1578,6 +1578,26 @@ export class AgentXDaemon {
     // unchanged from prior versions.
     this.webhooks.setWorkflowDispatcher(dispatcher)
 
+    // Wire the workflow auto-runner so AgentRegistry can fire matched
+    // workflows directly when `workflows.matching.mode === "auto"`. We
+    // synthesize a manual trigger event (source: "manual") so the
+    // dispatcher's filter passes regardless of the workflow's declared
+    // trigger source — the runtime contract for auto-matched runs is
+    // "the workflow gets the message as input, owns the reply via its own
+    // action.send / agent nodes."
+    this.registry.setWorkflowAutoRunner(async ({ workflowId, channel, chatId, payload }) => {
+      const wf = store.get(workflowId)
+      if (!wf) throw new Error(`auto-run target workflow not found: ${workflowId}`)
+      const entityRef = { backend: "manual", id: chatId || `auto-${Date.now().toString(36)}` }
+      const eventId = `auto:${workflowId}:${chatId}:${Date.now()}`
+      const updated = await dispatcher.dispatch({
+        trigger: { source: "manual" },
+        entityRef,
+        event: { id: eventId, payload: { ...payload, channel, chatId } },
+      })
+      return { runId: updated.runs[0]?.id }
+    })
+
     // Phase 3: wire trigger.cron timers + trigger.hook subscribers for
     // workflows that declare them. Channel-triggered workflows (gitlab-issue,
     // whatsapp-message, ...) are already wired via the hooks registered

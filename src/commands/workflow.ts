@@ -602,8 +602,8 @@ workflow
     console.log(chalk.dim(`    workflow: ${replayId}`))
     const originalSummary = traceSummary(trace.steps)
     console.log(chalk.dim(`    original: ${originalSummary.totalTokens || 0}t  ${originalSummary.durationMs || 0}ms  model=${originalSummary.models.join(",") || trace.task.model || "—"}`))
-    if (body.runId && opts.watch) {
-      const replayTraces = await tailTraces({ daemonUrl: base, runId: body.runId })
+    if (body.runId) {
+      const replayTraces = await tailTraces({ daemonUrl: base, runId: body.runId, quiet: !opts.watch })
       printReplayComparison(originalSummary, traceSummary(replayTraces))
     }
   })
@@ -705,7 +705,7 @@ workflow
  *  longer "running", printing each new step row as it appears. The
  *  trace store keys per node, so we only need to track which nodeIds
  *  we've already printed. */
-async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<any[]> {
+async function tailTraces(args: { daemonUrl: string; runId: string; quiet?: boolean }): Promise<any[]> {
   const seen = new Set<string>()
   const collected = new Map<string, any>()
   const startedAt = Date.now()
@@ -726,6 +726,7 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<a
       if (!t.taskId || seen.has(t.taskId)) continue
       seen.add(t.taskId)
       collected.set(t.taskId, t)
+      if (args.quiet) continue
       const status = t.status || "running"
       const color = status === "ok" ? chalk.green : status === "error" ? chalk.red : chalk.cyan
       const tokens = t.totalTokens != null ? chalk.dim(`${t.totalTokens}t`) : ""
@@ -742,9 +743,11 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<a
         const body = await r.json() as { run?: { status?: string } }
         const run = body.run
         if (run && run.status && run.status !== "running") {
-          console.log()
-          console.log(`  ${chalk.dim("run finished:")} ${run.status}`)
-          console.log(chalk.dim(`  full traces: ${args.daemonUrl}/traces?workflowRunId=${args.runId}`))
+          if (!args.quiet) {
+            console.log()
+            console.log(`  ${chalk.dim("run finished:")} ${run.status}`)
+            console.log(chalk.dim(`  full traces: ${args.daemonUrl}/traces?workflowRunId=${args.runId}`))
+          }
           return Array.from(collected.values())
         }
       }
@@ -752,7 +755,7 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<a
 
     await new Promise((r) => setTimeout(r, 500))
   }
-  console.log(chalk.yellow(`  watch timed out after 15min. Run is still active — check /traces`))
+  if (!args.quiet) console.log(chalk.yellow(`  watch timed out after 15min. Run is still active — check /traces`))
   return Array.from(collected.values())
 }
 

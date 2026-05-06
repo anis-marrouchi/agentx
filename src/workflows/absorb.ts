@@ -91,7 +91,7 @@ export function buildWorkflowDraftFromTrace(
     state: "disabled",
     tags: traceTags(trace, steps),
     entity: trace.chatId || undefined,
-    generatedFrom: "task-trace",
+    generatedFrom: opts.generatedFrom ?? "task-trace",
     sourceTaskIds,
     confidence: opts.confidence ?? 0.55,
     workflowVersion: "draft-1",

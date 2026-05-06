@@ -378,6 +378,20 @@ export class AgentRegistry {
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
+  /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
+   *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
+   *  daemon after the workflow dispatcher is constructed. Returns the runId of
+   *  the started workflow run; the workflow itself owns posting any reply via
+   *  its `action.send` / `agent` nodes. Duck-typed to avoid a circular import
+   *  on WorkflowDispatcher. */
+  private workflowAutoRunner?: (input: {
+    workflowId: string
+    agentId: string
+    channel: string
+    chatId: string
+    message: string
+    payload: Record<string, unknown>
+  }) => Promise<{ runId?: string }>
   private messageQueue: MessageQueue
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
@@ -468,6 +482,13 @@ export class AgentRegistry {
    *  Pass `undefined` to disable fallback (testing, mesh disabled). */
   setMeshFallback(mesh: NonNullable<AgentRegistry["meshFallback"]>): void {
     this.meshFallback = mesh
+  }
+
+  /** Wire the workflow auto-runner — see field doc above. Daemon calls this
+   *  after WorkflowDispatcher boot. Pass undefined to detach (e.g. during
+   *  reload). */
+  setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
+    this.workflowAutoRunner = runner
   }
 
   /** Hot-swap the provider map. Daemon reload calls this after agentx.json
@@ -943,6 +964,10 @@ export class AgentRegistry {
     }
 
     const wfMatching = this.config.workflows?.matching
+    // Decision-only here: compute whether auto-run should fire. We don't fire
+    // the workflow yet — that happens inside the outer try/finally so
+    // runningTask + activeTasks bookkeeping always cleans up.
+    let pendingAutoRun: { workflowId: string; confidence: number } | undefined
     if (this.config.workflows?.enabled && wfMatching?.enabled) {
       try {
         const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
@@ -958,7 +983,11 @@ export class AgentRegistry {
             `mode=${wfMatching.mode} reasons=${match.reasons.join(",") || "n/a"}`,
           )
           if (wfMatching.mode === "auto" && match.confidence >= wfMatching.autoRunThreshold) {
-            this.log(`[${task.agentId}] workflow auto-run is configured but deferred in v1; falling back to agent execution`)
+            if (this.workflowAutoRunner) {
+              pendingAutoRun = { workflowId: match.workflow.id, confidence: match.confidence }
+            } else {
+              this.log(`[${task.agentId}] workflow auto-run requested but no runner wired; falling back to agent`)
+            }
           }
         }
       } catch (e: any) {
@@ -1419,6 +1448,52 @@ export class AgentRegistry {
 
     let finalResponse: AgentResponse | undefined
     try {
+      // Workflow auto-run short-circuit. When the matcher upstream picked a
+      // workflow at >= autoRunThreshold AND `workflows.matching.mode == "auto"`,
+      // fire that workflow now and return. The workflow owns posting any
+      // reply via its action.send / agent nodes; we return an empty content
+      // with a metadata marker so the caller knows not to send a redundant
+      // agent reply. On runner failure, we log and fall through to normal
+      // agent execution — auto-run is best-effort, never a footgun.
+      if (pendingAutoRun && this.workflowAutoRunner) {
+        try {
+          const result = await this.workflowAutoRunner({
+            workflowId: pendingAutoRun.workflowId,
+            agentId: task.agentId,
+            channel,
+            chatId,
+            message: task.message,
+            payload: {
+              message: task.message,
+              agentId: task.agentId,
+              channel,
+              chatId,
+              senderId: task.context?.senderId,
+              senderUsername: task.context?.senderUsername,
+              intentPath: intent?.path,
+              matchedWorkflowId: pendingAutoRun.workflowId,
+              matchConfidence: pendingAutoRun.confidence,
+            },
+          })
+          this.log(
+            `[${task.agentId}] workflow auto-run started ${pendingAutoRun.workflowId} run=${result.runId || "?"}; ` +
+            `agent execution skipped — workflow owns the reply`,
+          )
+          finalResponse = {
+            content: "",
+            duration: 0,
+            metadata: {
+              handledByWorkflow: pendingAutoRun.workflowId,
+              workflowRunId: result.runId,
+              workflowMatchConfidence: pendingAutoRun.confidence,
+            },
+          } as AgentResponse
+          return finalResponse
+        } catch (e: any) {
+          this.log(`[${task.agentId}] workflow auto-run failed; falling back to agent: ${e?.message || e}`)
+        }
+      }
+
       // Pre-flight gates (claude-code tier only). Two separate heuristics that
       // short-circuit doomed cold dispatches BEFORE we burn a Claude CLI
       // subprocess to reproduce the same failure:
