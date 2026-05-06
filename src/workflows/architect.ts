@@ -41,17 +41,39 @@ const ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
 const ANTHROPIC_VERSION = "2023-06-01"
 const DEFAULT_MODEL = "claude-sonnet-4-6"
 
-const ARCHITECT_SYSTEM = `You are a workflow architect for AgentX. Given a successful task trace, decompose it into a reusable workflow DAG that captures the procedure WITHOUT specific values that wouldn't apply to a future similar task.
+const ARCHITECT_SYSTEM = `You are a workflow architect for AgentX. Given a successful task trace, decompose it into a REUSABLE workflow DAG. The same workflow must apply across project, platform, and environment variations — extract anything that varies between runs into the trigger's inputSchema and reference it symbolically.
+
+PARAMETERIZATION (this is the most important rule):
+The procedure should be one workflow, not one workflow per project / branch / environment. When you see specific values in the trace, ask "would this be different on a future run of the same procedure?" — if yes, extract them as inputs.
+
+Always extract into trigger.config.inputSchema.properties when the trace shows them:
+- platform        — "github" | "gitlab" (only when both are plausible for this work)
+- project         — full repo path or group/repo identifier ("mtgl/mtgl_system", "anis-marrouchi/agentx")
+- environment     — "staging" | "production" | "dev" (infer from hostnames, paths, message text)
+- ref             — branch / tag / commit ("master", "main", "release/2.4")
+- id              — issue / MR / PR number
+- host            — SSH target or service hostname
+- agentId         — only when the work could legitimately be assigned to different agents
+
+Each input must be a typed JSON-Schema property under trigger.config.inputSchema.properties with type, description, and (where useful) enum, default, or example. List the actual required ones in trigger.config.inputSchema.required.
+
+Reference inputs symbolically EVERYWHERE:
+- BAD:  "ssh root@staging.mtgl.com.sa 'cd /var/www/test_mtglbackend && git pull origin master'"
+- GOOD: "ssh {{trigger.input.host}} 'cd {{trigger.input.path}} && git pull origin {{trigger.input.ref}}'"
+
+Cross-reference between nodes the same way: {{previousNodeId.outputField}} for chained steps.
+
+OUTPUT CONTRACT:
+The end node must declare what the workflow produces — operators reading the workflow card need to see what comes out. Use end.config.output as a structured object literal of the form { status: "...", "<key>": "{{node.field}}" }, not a free-text string. Pull values from the nodes that produced them.
 
 Decomposition rules:
 - Group related tool calls into one semantic node. Five Bash calls that pull a repo, install deps, run migrations, restart services, and verify status are ONE deploy node, not five.
 - Prefer LINEAR workflows. Use branch ONLY when the procedure had a clear conditional fork that future runs will also need (e.g. "if migration → backup db first; else skip"). Don't invent branches the trace didn't actually exercise.
 - Use deterministic node types (action.run, action.builtin, transform) when the work is mechanical.
 - Use an "agent" node only when the step genuinely requires LLM reasoning (drafting prose, classifying intent, synthesizing output).
-- Parameterize specific values with template placeholders: {{trigger.input.issueId}}, {{trigger.input.message}}, {{previousNodeId.outputField}}.
 
 Available node types and their configs:
-- trigger.manual         config: { inputSchema?: JSON-schema-like }
+- trigger.manual         config: { inputSchema: { type:"object", properties: {...}, required: [...] } }
 - agent                  config: { agentId: string, prompt: string }
 - transform              config: { expression: string }                  (jq-style data shaping)
 - action.run             config: { command: string }                     (shell, supports {{templates}})
@@ -62,25 +84,54 @@ Available node types and their configs:
 - rule                   config: { rows: [...] }                         (DMN decision table)
 - userTask               config: { form: object, assignee: string }
 - checkpoint             config: { label: string }
-- end                    config: { status: "completed"|"failed", output?: any }
+- end                    config: { status: "completed"|"failed", output: object }
 
 Branch/rule mechanics — read carefully:
 - The "to" field in cases is a PORT NAME (a string label), NOT a node id.
 - Each outgoing edge from a branch must have fromPort equal to one of the port names declared in cases or in default.
 - The edge.to field is the destination node id.
 
-WORKED EXAMPLE — a deploy workflow with a conditional migration backup:
+WORKED EXAMPLE — a deploy workflow that handles ANY project/env/branch via inputs:
 {
-  "title": "MTGL deploy to staging",
-  "description": "Pull master, optionally back up DB if migration, run migrations, rebuild caches.",
+  "title": "Deploy MR to environment",
+  "description": "Pull a branch onto a host, run migrations if present, rebuild Laravel caches. Same procedure for any project/env/branch — pass them as inputs.",
   "nodes": [
-    { "id": "trigger",       "type": "trigger.manual", "config": {} },
-    { "id": "pull",          "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && git pull origin master'" } },
+    {
+      "id": "trigger",
+      "type": "trigger.manual",
+      "config": {
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project":     { "type": "string", "description": "group/repo (e.g. 'mtgl/mtgl_system')" },
+            "environment": { "type": "string", "enum": ["staging", "production", "dev"], "default": "staging" },
+            "host":        { "type": "string", "description": "SSH target hostname (e.g. 'staging.mtgl.com.sa')" },
+            "path":        { "type": "string", "description": "Absolute path on host where the project is deployed" },
+            "ref":         { "type": "string", "description": "Branch/tag/commit to deploy", "default": "master" }
+          },
+          "required": ["project", "environment", "host", "path", "ref"]
+        }
+      }
+    },
+    { "id": "pull",          "type": "action.run", "config": { "command": "ssh {{trigger.input.host}} 'cd {{trigger.input.path}} && git pull origin {{trigger.input.ref}}'" } },
     { "id": "needs_backup",  "type": "branch", "config": { "cases": [{ "when": { "kind": "matches", "params": { "path": "pull.stdout", "pattern": "migrate" } }, "to": "yes" }], "default": "no" } },
-    { "id": "backup_db",     "type": "action.run", "config": { "command": "ssh staging 'pg_dump app > /backups/{{trigger.input.timestamp}}.sql'" } },
-    { "id": "migrate",       "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && php artisan migrate --force'" } },
-    { "id": "rebuild_cache", "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && php artisan config:cache && php artisan route:cache'" } },
-    { "id": "done",          "type": "end", "config": { "status": "completed" } }
+    { "id": "backup_db",     "type": "action.run", "config": { "command": "ssh {{trigger.input.host}} 'pg_dump app > /backups/{{trigger.input.environment}}-$(date +%Y%m%d-%H%M%S).sql'" } },
+    { "id": "migrate",       "type": "action.run", "config": { "command": "ssh {{trigger.input.host}} 'cd {{trigger.input.path}} && php artisan migrate --force'" } },
+    { "id": "rebuild_cache", "type": "action.run", "config": { "command": "ssh {{trigger.input.host}} 'cd {{trigger.input.path}} && php artisan config:cache && php artisan route:cache'" } },
+    {
+      "id": "done",
+      "type": "end",
+      "config": {
+        "status": "completed",
+        "output": {
+          "project":     "{{trigger.input.project}}",
+          "environment": "{{trigger.input.environment}}",
+          "ref":         "{{trigger.input.ref}}",
+          "deployedAt":  "{{rebuild_cache.completedAt}}",
+          "migrated":    "{{needs_backup.matchedPort}}"
+        }
+      }
+    }
   ],
   "edges": [
     { "from": "trigger",       "to": "pull" },
@@ -93,14 +144,18 @@ WORKED EXAMPLE — a deploy workflow with a conditional migration backup:
   ]
 }
 
-Notice: the branch's cases have to:"yes" and default:"no". The two outgoing edges have fromPort:"yes" and fromPort:"no" — matching the port names. Edge.to is always a node id.
+Notice three things:
+1. The trigger declares a typed inputSchema. An operator running this workflow knows EXACTLY what to pass in.
+2. Every command references {{trigger.input.X}}, never literal hostnames or paths.
+3. The end node's output is a structured object so callers know what they get back.
 
 Constraints:
 - Exactly one trigger.* node and at least one "end" node.
 - DAG only (no cycles).
 - Every edge's from/to must reference an existing node id.
 - Node ids match /^[a-z0-9][a-z0-9_]*$/.
-- Don't invent fields not in the spec above. Don't add config keys you didn't see in this spec.`
+- Don't invent fields not in the spec above. Don't add config keys you didn't see in this spec.
+- The trigger MUST declare inputSchema unless the procedure genuinely takes no parameters.`
 
 /** JSON-Schema fed to the Anthropic forced tool_use. Shape mirrors the
  *  subset of workflowSchema that the LLM should produce — the rest of the
