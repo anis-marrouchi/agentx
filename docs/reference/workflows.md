@@ -273,11 +273,115 @@ agentx actor add / list / show / remove
 agentx role  create / grant / revoke / list / show
 ```
 
-## Workflow absorb and replay
+## Workflow absorb pipeline
 
-Workflow absorb mines successful task traces into reviewable workflow drafts, following the same pattern as wiki absorb: raw execution evidence becomes a structured reusable artifact.
+Workflow absorb mines successful task traces into **reusable parameterized workflows** — raw execution evidence becomes a structured artifact authors can review, edit, and promote. This is the system's self-improvement loop:
 
-Generated workflows are saved under `.agentx/workflows/_drafts/` with `status: draft` and `state: disabled`, so they validate but never auto-trigger until promoted. Scheduled mining should call `agentx workflow absorb ... --commit`; it still only creates drafts. See [Workflow absorb and task replay](../architecture/workflow-absorb-plan) for the implementation tracker.
+```
+Successful free-form tasks  →  cluster by project + kind
+                            →  LLM architect emits a parameterized DAG
+                            →  Operator reviews / edits / replays
+                            →  Promote into the active store
+                            →  Future matching tasks auto-fire the workflow
+```
+
+Generated drafts land under `.agentx/workflows/_drafts/` with `status: draft, state: disabled` — they validate but never auto-trigger until promoted.
+
+### Cluster + draft
+
+The cluster key is `<project>:<kind>:<intent>:<environment>` (parsed from `chatId` composites + message keywords) — projects with the same kind of work cluster together regardless of which agent ran the task. A 3-trace cluster of "MR deploy on mtgl/mtgl_system" + a 4-trace cluster of "MR deploy on ksi/int.ksi.tn" become **one workflow** with `project` as a typed input.
+
+Two filters run before clustering: traces shorter than 30 chars are dropped (chatter like "yes" / "ok"); traces whose `chatId` starts with `architect-` are dropped (architect-self-recursion).
+
+The CLI:
+```bash
+# Mine clusters of similar past tasks → drafts (deterministic, single-node)
+agentx workflow absorb --since 24h --min-cluster-size 3 --max 10 --commit
+
+# Mine + use the LLM architect for multi-node DAGs (preferred)
+agentx workflow absorb --since 24h --via graph-agent --commit
+
+# Single-task → draft
+agentx workflow draft-from-task <taskId> --via graph-agent --commit
+```
+
+### LLM architect (`--via <agentId>` or `--model <id>`)
+
+By default, absorb produces a 3-node deterministic shell: `trigger → agent (procedure embedded as prompt) → end`. With `--via graph-agent` (or any local agent configured for JSON-only output), the trace + step list are routed through the agent registry so the LLM **decomposes the procedure into a real DAG**: `action.run` for shell, `action.builtin` for typed steps, `branch` for conditional forks, `agent` only when LLM reasoning is genuinely needed.
+
+The architect's system prompt enforces three rules:
+
+1. **Parameterize**. Project, environment, host, path, ref, id — anything that varies between runs becomes a typed `inputSchema` property. The same workflow then handles MTGL or KSI or any other project by passing different inputs.
+2. **Reference symbolically**. `ssh {{trigger.input.host}}` not `ssh staging.mtgl.com.sa`. `git pull origin {{trigger.input.ref}}` not `git pull origin master`.
+3. **Declare structured outputs**. The `end` node's `output` field is a typed object literal (`{ project, environment, deployedAt, … }`) pulling from `{{trigger.input.X}}` and `{{node.field}}`, not a free-text reply.
+
+**Two backends** for the LLM call:
+- `--via <agentId>` (default for the cron) — routes through the agent registry; uses the agent's own session token; no raw API key needed; ~30-60s per cluster
+- `--model claude-sonnet-4-6` — direct Anthropic API; needs `ANTHROPIC_API_KEY` in the daemon env; ~2-5s per cluster
+
+Both fall back to deterministic on any failure (missing key, API error, schema-invalid output after retry). The fallback is logged but never breaks the cron.
+
+### Review + edit + replay
+
+Drafts surface on `/workflows` (left rail). Each draft has a runbook view (When / In / How / Out / Who) and an editable JSON textarea, plus action buttons:
+
+- **Validate** — re-runs schema + lint
+- **Save** — persists the textarea back to `_drafts/<id>.yaml`
+- **Save & Replay** — saves, then fires the draft as `adhoc-replay-<id>-<ts>` against the first `sourceTaskId`'s recorded input; opens the run drawer streaming live
+- **✎ Edit visually** — opens the React Flow editor at `?draft=<id>`; in-canvas Save and Promote buttons
+- **Promote** — moves to `.agentx/workflows/<id>.yaml` (active store)
+- **Reject** — archives to `_drafts/_rejected/<ts>-<id>.yaml`
+
+CLI counterparts:
+```bash
+agentx workflow drafts                  # list drafts pending review
+agentx workflow promote <draftId>       # → active store
+agentx workflow reject  <draftId>       # → _rejected/
+agentx workflow replay-task <taskId> --watch   # replay any task as an ad-hoc workflow
+```
+
+### Trivial-shape filter
+
+The absorb pipeline rejects drafts with no `agent`/`action`/`transform`/`branch`/`userTask`/`subProcess` step (e.g. trigger → end shapes from notification-only traces). Operators can still hand-write minimal workflows; the filter only gates `--commit` from auto-absorb.
+
+### Scheduled mining
+
+The recommended cron (one is set up by `agentx init` if `crons.workflow-absorb-nightly` doesn't exist):
+```yaml
+crons:
+  workflow-absorb-nightly:
+    enabled: true
+    schedule: "0 2 * * *"
+    timezone: Africa/Tunis
+    agent: coo-agent
+    timeout: 1800
+    prompt: >
+      Run shell command: node dist/cli.js workflow absorb --since 24h
+      --min-cluster-size 2 --max 10 --via graph-agent --commit.
+      Then run: node dist/cli.js workflow drafts --json. Report a one-line
+      summary of newly written drafts (id, source-task count, confidence,
+      via). Do not promote or reject anything; review is a human step.
+```
+
+The cron only **creates drafts**. Promotion stays explicit.
+
+## Auto-match input resolution
+
+When `workflows.matching.mode === "auto"` and a workflow has a typed `inputSchema`, the auto-runner resolves inputs in three layers before dispatching:
+
+1. **Passthrough** — copies matcher bundle fields the schema declares (`message`, `agentId`, `channel`, `chatId`, `senderId`, `senderUsername`)
+2. **chatId parse** — known channel composites yield typed fields:
+   - `<group>/<project>:issue:<id>` → `{ project, id, mrId, ... }`
+   - `<group>/<project>:merge_request:<id>` → same
+   - `<group>/<project>:pull_request:<id>` → `{ project, id, prId }`
+   - `<group>/<project>:push:refs/heads/<ref>` → `{ project, ref }`
+3. **Schema defaults** — any remaining gaps fall back to the inputSchema's `default` fields
+
+Required-field check: if any `required` field is still empty after layers 1-3, the auto-runner throws a typed error (`inputSchema requires host, path — chatId+defaults filled […]; auto-run skipped`) and the registry falls back to normal agent execution. The match is logged as a suggestion but the workflow doesn't fire blind.
+
+Operators can still kick the workflow with the missing fields filled in via the `▶ Run` button on `/workflows`.
+
+See: [Workflow absorb plan](../architecture/workflow-absorb-plan) for the implementation tracker; [Three-tier model](../architecture/three-tier) for where workflows fit in the System / Process / Procedure hierarchy.
 
 ## Example: grant application
 

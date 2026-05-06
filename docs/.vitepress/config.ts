@@ -75,6 +75,7 @@ export default withMermaid(defineConfig({
             { text: "Boards (Kanban)", link: "/reference/dashboard/boards" },
             { text: "Workflows", link: "/reference/dashboard/workflows" },
             { text: "Inbox", link: "/reference/dashboard/inbox" },
+            { text: "Procedures", link: "/reference/dashboard/procedures" },
             { text: "Processes", link: "/reference/dashboard/processes" },
             { text: "Intent graph", link: "/reference/dashboard/graph" },
             { text: "Per-agent page", link: "/reference/dashboard/agent" },
@@ -110,8 +111,11 @@ export default withMermaid(defineConfig({
         {
           text: "Architecture",
           items: [
+            { text: "Three-tier model", link: "/architecture/three-tier" },
             { text: "Plugins", link: "/architecture/plugins" },
             { text: "Workflows YAML", link: "/architecture/workflows-yaml" },
+            { text: "Workflow absorb plan", link: "/architecture/workflow-absorb-plan" },
+            { text: "Typed workflow DSL plan", link: "/architecture/typed-workflow-dsl-plan" },
           ],
         },
         {

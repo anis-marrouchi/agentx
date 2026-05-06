@@ -1,6 +1,135 @@
 # Actions registry
 
-Reusable, parameterized invocations the agentx daemon can run on demand. Two kinds in v1:
+Two complementary registries:
+
+1. **Typed built-in actions** (Tier-3 procedures, see below) — TypeScript modules registered at daemon boot with strict Zod input/output schemas. Eight ship today: `agent.call`, `mesh.delegate`, `extract.structured`, `rag.lexical`, `file.read_lines`, `file.write_jsonl`, `http.fetch`, `http.post`. Adding a new built-in is a code change.
+2. **Operator-defined actions** (described after the built-ins section) — file-stored `shell` or `http` invocations with template parameters. Storage is `.agentx/actions/<id>.json`.
+
+Use built-ins when there's an exact match (HTTP fetch, file read, agent delegation, etc.); use operator-defined actions when a custom shell or HTTP recipe is needed.
+
+## Typed built-in actions
+
+The shipped catalog (8 actions, registered at boot via `registerAllBuiltins()`):
+
+| Action | Purpose | Notes |
+|---|---|---|
+| `http.fetch` | GET a URL | 1MB cap, http/https only, returns `{status, statusText, headers, body, truncated, url}` |
+| `http.post` | POST a JSON body | Same response shape |
+| `file.read_lines` | Read text file as `string[]` | UTF-8, 8MB cap, scoped to `AGENTX_BUILTIN_FILE_ROOTS` (defaults to `cwd`) |
+| `file.write_jsonl` | Append one record as NDJSON | Same scoping; typed schema enforces record shape |
+| `extract.structured` | Single-call typed extraction via forced tool_use | Uses `ANTHROPIC_API_KEY`; `model` defaults to `claude-haiku-4-5` |
+| `rag.lexical` | BM25 search over an agent's pre-built index | No embedding key required; build via `agentx rag add <agent> <globs>` |
+| `agent.call` | Dispatch a task to a **local** agent on this daemon | `freshSession: true` by default; same-node sibling of `mesh.delegate` |
+| `mesh.delegate` | Send a task to a **remote** mesh peer's agent | Same fresh-session default; uses configured peer auth |
+
+### Three ways to invoke a typed action
+
+**1. From an agent's Bash tool** (the catalog is auto-injected into every agent's CLAUDE.md):
+
+```bash
+agentx actions builtin http.fetch        --input '{"url":"https://wttr.in/Tunis?format=j1"}'
+agentx actions builtin file.read_lines   --input '{"path":"prices.json"}'
+agentx actions builtin file.write_jsonl  --input '{"path":"leads.jsonl","record":{"name":"...","email":"..."}}'
+agentx actions builtin extract.structured --input '{"prompt":"...","schema":{"type":"object",...}}'
+agentx actions builtin rag.lexical       --input '{"agentId":"info","query":"...","limit":5}'
+agentx actions builtin agent.call        --input '{"agentId":"<local-agent>","message":"..."}'
+agentx actions builtin mesh.delegate     --input '{"peer":"<peer-name>","agent":"<peer-agent>","message":"..."}'
+```
+
+Each call lands in `/traces` as a structured step — input + output + status — so debugging beats opaque shell text.
+
+**2. From a workflow** via `action.builtin`:
+
+```yaml
+- id: pull
+  type: action.builtin
+  config:
+    name: http.fetch
+    input:
+      url: "https://api.github.com/repos/{{trigger.input.repo}}"
+```
+
+**3. From the HTTP API** (used by the dashboard's `/procedures` page and by operator scripts):
+
+```bash
+# List the catalog
+curl http://127.0.0.1:18800/api/actions/builtin
+
+# Run one with typed input
+curl -X POST http://127.0.0.1:18800/api/actions/builtin/http.fetch \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://wttr.in/Tunis?format=3"}'
+```
+
+### CLI
+
+```bash
+agentx actions builtin                      # list all built-ins
+agentx actions builtin <name> --schema      # show the input/output schema
+agentx actions builtin <name> --input '<json>'    # run with typed input
+```
+
+Default output is the structured `output` block as JSON. Add `--json` for the full envelope (input, output, durationMs, error if any).
+
+### CLAUDE.md catalog injection
+
+`workspace-setup.ts` auto-appends a "Typed actions — prefer these over free-form Bash" section to every agent's `CLAUDE.md` listing each action with a copy-paste invocation and rule-of-thumb mapping (HTTP fetch → `http.fetch`, file read → `file.read_lines`, append record → `file.write_jsonl`, extract fields → `extract.structured`, search corpus → `rag.lexical`, call local agent → `agent.call`, call peer agent → `mesh.delegate`). The catalog refreshes silently on next daemon restart via the managed-marker hash whenever the workspace template changes.
+
+### `agent.call` vs `mesh.delegate`
+
+Same shape, different scope:
+
+| | `agent.call` | `mesh.delegate` |
+|---|---|---|
+| Target | Local agent on this daemon | Remote agent on a mesh peer |
+| Transport | In-process registry call | HTTP over Tailscale / WAN |
+| `freshSession` default | `true` | `true` |
+| Latency | ~ same as direct task | + network roundtrip |
+| Use when | Triage / router patterns on one machine | Cross-node delegation |
+
+Both replace the legacy "compose `Bash curl` to /task" pattern, which (a) couldn't carry `freshSession`, (b) showed up in `/traces` as opaque shell text, (c) needed the model to format JSON correctly.
+
+### Adding a new built-in
+
+1. Create `src/actions/builtin/<name>.ts` exporting a `BuiltinAction<I, O>`:
+
+```ts
+import { z } from "zod"
+import type { BuiltinAction } from "./types"
+
+const inputSchema = z.object({ ... })
+const outputSchema = z.object({ ... })
+
+export const myAction: BuiltinAction<z.infer<typeof inputSchema>, z.infer<typeof outputSchema>> = {
+  name: "domain.myaction",
+  description: "<one-line description>",
+  inputSchema,
+  outputSchema,
+  timeoutMs: 30_000,
+  handler: async (input) => { /* ... */ },
+}
+```
+
+2. Import + register in `src/actions/builtin/index.ts`:
+
+```ts
+import { myAction } from "./myaction"
+// ...
+export function registerAllBuiltins(): void {
+  // ...
+  registerBuiltin(myAction)
+}
+```
+
+3. Restart the daemon — the catalog refreshes. CLAUDE.md picks up the new entry on next workspace setup.
+
+**Tier-discipline rule:** Procedures (`src/actions/builtin/`) must NOT import process/system runtime modules — see [Three-tier model](../architecture/three-tier) and `test/tier-discipline.test.ts`. Documented seams (singleton accessors like `getAgentRegistry()`, `getMesh()`) are explicitly whitelisted.
+
+---
+
+## Operator-defined actions
+
+In addition to the typed built-ins, operators can register their own reusable invocations. Two kinds:
 
 - **`shell`** — exec a templated command on the daemon host
 - **`http`** — fetch a URL with templated method/headers/body

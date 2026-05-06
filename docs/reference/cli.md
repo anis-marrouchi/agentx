@@ -206,6 +206,36 @@ Read-only triage CLI for the intent ledger at `.agentx/intent/ledger.sqlite` —
 
 `--since` accepts durations like `1h`, `30m`, `7d`, or an absolute ms epoch. Mode is controlled by `INTENT_LEDGER_MODE` (`off`, `shadow`, `authoritative`) — default `shadow` once the daemon is running with the feature on.
 
+## Trace
+
+Read-only triage CLI for the per-task execution traces persisted at `.agentx/db.sqlite`. Pairs with the `GET /traces` HTTP endpoints — same store, two access surfaces. Operators in a hurry tail this; dashboard consumers hit the HTTP routes. Use `--path` to point at an alternate db (e.g. one rsync'd from a remote daemon).
+
+| Command | Description |
+|---|---|
+| `agentx trace list [--cwd <c>] [--path <p>] [--agent <id>] [--channel <name>] [--chat <id>] [--workflow <runId>] [--status <s>] [--since <d>] [--limit <n>] [--json]` | List recent traces (newest first). Status filters: `in-flight`, `ok`, `error`, `timeout` |
+| `agentx trace show <taskId> [--cwd <c>] [--path <p>] [--json]` | Show one trace with its full ordered step log (input/output summaries, tokens, model, session id) |
+| `agentx trace replay <taskId> [--diff] [--daemon <url>] [--cwd <c>] [--path <p>] [--no-fresh]` | Re-run a recorded task against the current agent config. POSTs the original input to `/task` with a fresh session and a per-replay chatId. With `--diff`, prints input + original output + current output side-by-side so you can answer "did my prompt change fix it?" without rerunning by hand |
+
+`--since` accepts durations like `1h`, `24h`, `7d`, or an absolute ms epoch.
+
+**Replay caveats:**
+
+- Pre-migration-v8 rows store only a 200-char `messagePreview` (no `originalMessage`/`finalResponse`). Replay falls back to the preview with a warning; the diff view notes the original output as not captured. Migration v8 backfills are forward-only — old rows stay in their truncated shape.
+- Replay always uses `freshSession: true` and a synthetic `chatId` (`replay-<taskId-suffix>-<ts>`) to avoid polluting the live conversation. Pass `--no-fresh` if you specifically need to inherit the original session.
+
+**Examples:**
+
+```bash
+# Find the trace you want
+agentx trace list --agent devops --status error --since 24h
+
+# Inspect the failure
+agentx trace show abc12345
+
+# Replay against the current config to see if a fix worked
+agentx trace replay abc12345 --diff
+```
+
 ## Backlog
 
 Manage the structured backlog at `.agentx/backlog.json` used when `business.workSource.type=backlog`. Items can be imported from GitLab/GitHub with a stable source link; mutations push back upstream automatically.
@@ -424,6 +454,13 @@ When a workflow has a `userTask` node, it pauses until a human fills the form. T
 
 The action registry — named, parameterized shell or HTTP calls operators register once and invoke from CLI, dashboard, or workflows. Replaces hand-rolled `curl`/`exec` snippets sprinkled across crons and prompts. Storage: one JSON file per action under `.agentx/actions/<id>.json`. See the dedicated [Actions reference](./actions) for the integration cookbook.
 
+Two flavors:
+
+- **Operator-defined actions** — what you author with `agentx actions add` (shell or http), per project. Sections below.
+- **Built-in typed actions** — TypeScript modules shipped with the daemon (`http.fetch`, `http.post`, `file.read_lines`, `file.write_jsonl`, `extract.structured`, `rag.lexical`, `agent.call`, `mesh.delegate`). Strict Zod input/output schemas; auto-injected into every agent's CLAUDE.md catalog. Inspect + invoke via `agentx actions builtin` (below) or via `GET /api/actions/builtin` / `POST /api/actions/builtin/:name`. Compose into workflows with `type: action.builtin`.
+
+### Operator-defined actions
+
 | Command | Description |
 |---|---|
 | `agentx actions list [--json]` | List registered actions with kind + first input summary |
@@ -431,6 +468,32 @@ The action registry — named, parameterized shell or HTTP calls operators regis
 | `agentx actions add <id> --kind <shell\|http> --title <text> [...]` | Register or replace an action non-interactively. See flags below |
 | `agentx actions remove <id>` (alias `rm`) | Delete an action |
 | `agentx actions run <id> [--input k=v ...] [--json]` | Invoke the action and print stdout/stderr (shell) or response body (http) |
+
+### Built-in typed actions
+
+| Command | Description |
+|---|---|
+| `agentx actions builtin [--daemon <url>] [--json]` | List every registered built-in action with its description + timeout |
+| `agentx actions builtin <name> --schema [--json]` | Print the action's input + output Zod schemas (JSON-Schema shape) without running it |
+| `agentx actions builtin <name> --input '<json>' [--json] [--daemon <url>]` | Invoke the action via `POST /api/actions/builtin/:name`. `--input` must be valid JSON matching the action's `inputSchema` |
+
+Examples:
+
+```bash
+# Catalog
+agentx actions builtin
+
+# Inspect an action's contract before calling it
+agentx actions builtin extract.structured --schema
+
+# Fire it
+agentx actions builtin http.fetch \
+  --input '{"url":"https://api.github.com/repos/anthropics/claude-code"}'
+
+# Delegate to a remote mesh peer's agent (fresh-session by default)
+agentx actions builtin mesh.delegate \
+  --input '{"peer":"clawd","agent":"devops","message":"daemon status"}'
+```
 
 Common flags for `add`:
 
