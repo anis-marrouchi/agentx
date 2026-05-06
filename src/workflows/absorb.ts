@@ -37,8 +37,8 @@ function cap(input: string | null | undefined, max = 900): string {
  *  ids (so a GitHub PR and a GitLab merge_request both end up as `mr`). */
 const KIND_ALIASES: Record<string, string> = {
   merge_request: "mr",
-  pull_request: "pr",
-  pr: "pr",
+  pull_request: "mr",
+  pr: "mr",
   push: "push",
   issue: "issue",
   issues: "issue",

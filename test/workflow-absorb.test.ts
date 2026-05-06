@@ -8,7 +8,9 @@ import {
   buildDraftsFromClusters,
   buildWorkflowDraftFromTrace,
   clusterWorkflowCandidates,
+  inferWorkflowName,
   listWorkflowDrafts,
+  loadSuccessfulTraces,
   matchWorkflow,
   promoteWorkflowDraft,
   rejectWorkflowDraft,
@@ -111,6 +113,63 @@ describe("workflow draft generation", () => {
 })
 
 describe("workflow absorb clustering", () => {
+  it("infers project and normalized kind from GitHub and GitLab chat ids", () => {
+    const gitlabMr = {
+      taskId: "trace-gitlab",
+      agentId: "coder-agent",
+      channel: "gitlab",
+      chatId: "noqta/mtgl:merge_request:42",
+      messagePreview: "review this merge request",
+      status: "ok",
+      startedAt: 1,
+    } as any
+    const githubPr = {
+      ...gitlabMr,
+      taskId: "trace-github",
+      channel: "github",
+      chatId: "anis-marrouchi/agentx:pull_request:12",
+    }
+    const githubPush = {
+      ...gitlabMr,
+      taskId: "trace-push",
+      channel: "github",
+      chatId: "anis-marrouchi/agentx:push:refs/heads/master",
+      messagePreview: "feat(workflows): add draft management",
+    }
+
+    expect(inferWorkflowName(gitlabMr)).toMatchObject({ project: "mtgl", kind: "mr" })
+    expect(inferWorkflowName(githubPr)).toMatchObject({ project: "agentx", kind: "mr" })
+    expect(inferWorkflowName(githubPush)).toEqual({ project: "agentx", kind: "push" })
+  })
+
+  it("clusters structured traces without agent id or commit-message verbs", () => {
+    const traces = ["coder-agent", "devops-agent", "coder-agent"].map((agentId, i) => ({
+      taskId: `trace-${i}`,
+      agentId,
+      channel: "github",
+      chatId: "anis-marrouchi/agentx:push:refs/heads/master",
+      messagePreview: i === 0 ? "feat(workflows): add draft management" : "fix(workflows): respect configured draft directory",
+      status: "ok",
+      startedAt: i,
+    })) as any
+
+    const clusters = clusterWorkflowCandidates(traces, { minClusterSize: 3 })
+
+    expect(clusters).toHaveLength(1)
+    expect(clusters[0].key).toBe("agentx:push")
+  })
+
+  it("filters short successful traces before absorb clustering", () => {
+    const db = openTmpDb()
+    recordTraceEnd(db, recordTraceStart(db, { agentId: "coder", messagePreview: "ok" }), { status: "ok" })
+    const longTaskId = recordTraceStart(db, { agentId: "coder", messagePreview: "fix github workflow draft naming behavior" })
+    recordTraceEnd(db, longTaskId, { status: "ok" })
+
+    const traces = loadSuccessfulTraces(db)
+
+    expect(traces.map((t) => t.taskId)).toEqual([longTaskId])
+  })
+
   it("clusters repeated successful free-form traces and builds drafts", () => {
     const db = openTmpDb()
     for (let i = 0; i < 3; i++) {

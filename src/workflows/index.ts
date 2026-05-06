@@ -52,6 +52,7 @@ export {
   getWorkflowDraft,
   promoteWorkflowDraft,
   rejectWorkflowDraft,
+  inferWorkflowName,
   loadSuccessfulTraces,
   clusterWorkflowCandidates,
   buildDraftsFromClusters,
