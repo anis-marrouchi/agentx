@@ -315,6 +315,23 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__card-meta .tag.tag--running   { color: var(--ax-accent, #6366f1); }
 .ax-wf__card-meta .tag.tag--paused    { color: var(--ax-warn, #facc15); }
 .ax-wf__card-meta .tag.tag--canceled  { color: var(--ax-muted); opacity: 0.7; }
+/* Runbook framing — tables in WHEN / IN / OUT panels */
+.ax-wf__io { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.ax-wf__io th { text-align: left; font-weight: 500; color: var(--ax-muted); font-size: 10px;
+  letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 8px;
+  border-bottom: 1px solid var(--ax-border); }
+.ax-wf__io td { padding: 6px 8px; border-bottom: 1px solid var(--ax-border); vertical-align: top; }
+.ax-wf__io td.ax-wf__io-name { font-family: var(--ax-mono); color: var(--ax-text); font-weight: 500; white-space: nowrap; }
+.ax-wf__io td.ax-wf__io-type { font-family: var(--ax-mono); font-size: 11px; color: var(--ax-text-2); }
+.ax-wf__pill { display: inline-block; padding: 1px 7px; font-size: 10px; font-family: var(--ax-mono);
+  border: 1px solid var(--ax-border); border-radius: 3px; color: var(--ax-text-2); background: var(--ax-surface); }
+.ax-wf__pill--req { color: var(--ax-warn, #f59e0b); border-color: color-mix(in oklch, var(--ax-warn, #f59e0b) 40%, var(--ax-border)); }
+.ax-wf__hkbd { font-size: 10px; font-family: var(--ax-mono); color: var(--ax-muted);
+  font-weight: 400; letter-spacing: 0.04em; padding-left: 8px; }
+details.ax-wf__panel { padding: 0; }
+details.ax-wf__panel summary { padding: 12px 14px; cursor: pointer; user-select: none; font-weight: 500; }
+details.ax-wf__panel[open] summary { border-bottom: 1px solid var(--ax-border); }
+details.ax-wf__panel pre { margin: 0; padding: 10px 14px; }
 
 /* run detail drawer */
 .ax-wf__run-panel {
@@ -592,23 +609,89 @@ const WORKFLOWS_PAGE_SCRIPT = `
       </div>\`
     }).join("") : \`<span class="hint">No runs yet for this workflow.</span>\`
 
+    // --- Runbook framing (see docs/architecture/three-tier.md) -------------
+    // Each workflow renders as a runbook: WHEN, WHAT comes in, HOW, WHAT
+    // comes out, WHO owns it. Nodes/Edges/Definition stay visible but as
+    // collapsed details — the operator doesn't need to read JSON to
+    // understand what the workflow does.
+    const inputProps = (triggerCfg.inputSchema && triggerCfg.inputSchema.properties) || {}
+    const inputRequired = new Set(Array.isArray(triggerCfg.inputSchema && triggerCfg.inputSchema.required) ? triggerCfg.inputSchema.required : [])
+    const inputRows = Object.keys(inputProps).map(k => {
+      const p = inputProps[k] || {}
+      const enumStr = Array.isArray(p.enum) ? \` <span class="hint">[\${p.enum.map(esc).join(" | ")}]</span>\` : ""
+      const def = p.default !== undefined ? \` <span class="hint">default=\${esc(JSON.stringify(p.default))}</span>\` : ""
+      const req = inputRequired.has(k) ? \`<span class="ax-wf__pill ax-wf__pill--req">required</span>\` : \`<span class="ax-wf__pill">optional</span>\`
+      return \`<tr>
+        <td class="ax-wf__io-name">\${esc(k)}</td>
+        <td class="ax-wf__io-type">\${esc(String(p.type || "any"))}\${enumStr}\${def}</td>
+        <td>\${req}</td>
+        <td class="hint">\${esc(p.description || "")}</td>
+      </tr>\`
+    }).join("")
+    const inputsBlock = inputRows
+      ? \`<table class="ax-wf__io"><thead><tr><th>field</th><th>type</th><th></th><th>description</th></tr></thead><tbody>\${inputRows}</tbody></table>\`
+      : \`<span class="hint">No declared inputSchema. The matcher's payload (message, channel, chatId, agentId) is passed through as-is.</span>\`
+
+    // WHAT comes out — read the end node's output template. Surface the
+    // keys + values so operators see what the run resolves to.
+    const endNode = (wf.nodes || []).find(n => n && n.type === "end")
+    const endOutput = (endNode && endNode.config && endNode.config.output) || null
+    let outputBlock
+    if (endOutput && typeof endOutput === "object") {
+      const outRows = Object.keys(endOutput).map(k => \`<tr><td class="ax-wf__io-name">\${esc(k)}</td><td class="ax-wf__io-type">\${esc(String(endOutput[k]))}</td></tr>\`).join("")
+      outputBlock = \`<table class="ax-wf__io"><tbody>\${outRows}</tbody></table>\`
+    } else if (typeof endOutput === "string") {
+      outputBlock = \`<div class="hint">\${esc(endOutput)}</div>\`
+    } else {
+      outputBlock = \`<span class="hint">No structured output declared on the end node.</span>\`
+    }
+
+    // WHEN — trigger summary + last-fired info from the runs we already have.
+    const lastRunForWhen = state.runs.find(r => r.workflowId === wf.id)
+    const whenLine = triggerNode
+      ? \`<strong>\${esc(triggerNode.type)}</strong>\${triggerCfg.source ? \` · source: <code>\${esc(triggerCfg.source)}</code>\` : ""}\${trigFilter ? \` · filter: <code>\${esc(trigFilter)}</code>\` : ""}\`
+      : \`<span class="hint">No trigger node — workflow is unreachable.</span>\`
+    const lastFiredLine = lastRunForWhen
+      ? \`<span class="hint">last fired \${relTime(lastRunForWhen.updatedAt)} (\${esc(lastRunForWhen.status)}) — \${runs.length} run\${runs.length === 1 ? "" : "s"} on record</span>\`
+      : \`<span class="hint">No runs on record yet.</span>\`
+
+    // WHO — ownership + provenance metadata.
+    const tagsHtml = (wf.tags || []).map(t => \`<span class="ax-wf__pill">\${esc(t)}</span>\`).join(" ") || \`<span class="hint">(no tags)</span>\`
+    const sources = Array.isArray(wf.sourceTaskIds) ? wf.sourceTaskIds : []
+
     $("#wf-detail-body").innerHTML = \`
-      <div class="ax-wf__panel">
-        <h3>Nodes (\${nodeCount})</h3>
-        <div class="ax-wf__states">\${nodeEntries}</div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>WHEN <span class="ax-wf__hkbd">trigger</span></h3>
+        <div>\${whenLine}</div>
+        <div style="margin-top:6px">\${lastFiredLine}</div>
+      </div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>WHAT comes in <span class="ax-wf__hkbd">inputSchema</span></h3>
+        \${inputsBlock}
       </div>
       <div class="ax-wf__panel">
-        <h3>Edges (\${edgeCount})</h3>
-        <div class="ax-wf__trans">\${edgesHtml}</div>
+        <h3>HOW <span class="ax-wf__hkbd">\${nodeCount} nodes · \${edgeCount} edges</span></h3>
+        <div class="ax-wf__states">\${nodeEntries}</div>
+        <div class="ax-wf__trans" style="margin-top:8px">\${edgesHtml}</div>
+      </div>
+      <div class="ax-wf__panel">
+        <h3>WHAT comes out <span class="ax-wf__hkbd">end.output</span></h3>
+        \${outputBlock}
+      </div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>WHO <span class="ax-wf__hkbd">ownership</span></h3>
+        <div>owner agent: <strong>\${esc(wf.ownerAgent || "(unowned)")}</strong>\${wf.generatedFrom ? \` · generated from: <code>\${esc(wf.generatedFrom)}</code>\` : ""}\${wf.confidence != null ? \` · confidence: \${Number(wf.confidence).toFixed(2)}\` : ""}</div>
+        <div style="margin-top:6px">tags: \${tagsHtml}</div>
+        \${sources.length ? \`<div style="margin-top:6px" class="hint">absorbed from \${sources.length} task trace\${sources.length === 1 ? "" : "s"}: \${sources.slice(0, 4).map(esc).join(", ")}\${sources.length > 4 ? "..." : ""}</div>\` : ""}
       </div>
       <div class="ax-wf__panel ax-wf__panel--full">
         <h3>Recent runs (\${runs.length})</h3>
         <div class="ax-wf__runs">\${runsHtml}</div>
       </div>
-      <div class="ax-wf__panel ax-wf__panel--full">
-        <h3>Definition</h3>
+      <details class="ax-wf__panel ax-wf__panel--full">
+        <summary>Definition (raw JSON)</summary>
         <pre class="ax-wf__json">\${esc(JSON.stringify(wf, null, 2))}</pre>
-      </div>\`
+      </details>\`
 
     $$(".ax-wf__run-row").forEach(el => {
       el.addEventListener("click", (ev) => {

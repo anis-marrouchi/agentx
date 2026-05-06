@@ -24,6 +24,7 @@ import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
 import { renderInboxPage } from "./ui/pages/inbox"
+import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
@@ -169,6 +170,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     const actor = url.searchParams.get("actor") || undefined
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderInboxPage({ actor }))
+    return
+  }
+  if (method === "GET" && path === "/procedures") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderProceduresPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/processes") {
@@ -662,6 +668,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       } catch { /* try next */ }
     }
     sendJson(res, 404, { error: "run not found on any configured peer" })
+    return
+  }
+
+  // /api/actions/builtin — proxy GET to the daemon. The /procedures page
+  // reads the live built-in catalog from this endpoint; daemon owns the
+  // typed registry, dashboard runs in a separate process.
+  if (method === "GET" && path === "/api/actions/builtin") {
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const r = await fetch(`${daemonUrl}/api/actions/builtin`, { headers })
+      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      sendJson(res, r.status, data)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
     return
   }
 

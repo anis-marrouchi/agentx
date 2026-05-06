@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -63,9 +63,17 @@ export const TOPBAR_CSS = `
 .ax-brand__name{font-size:14px}
 .ax-brand__subtitle{font-size:11px;color:var(--ax-muted);
   border-left:1px solid var(--ax-border);padding-left:12px;margin-left:4px}
-.ax-topbar__tabs{display:flex;gap:2px;min-width:0;overflow-x:auto}
+.ax-topbar__tabs{display:flex;gap:14px;min-width:0;overflow-x:auto;align-items:center}
+/* Tier groups (System / Processes / Procedures) — visual separators
+ * mirror the docs/architecture/three-tier.md hierarchy. */
+.ax-topbar__group{display:flex;align-items:center;gap:0;padding:0 4px;
+  border-left:1px solid var(--ax-border);position:relative}
+.ax-topbar__group:first-child{border-left:none;padding-left:0}
+.ax-topbar__group-label{font:inherit;font-family:var(--ax-mono);font-size:9px;
+  letter-spacing:0.08em;text-transform:uppercase;color:var(--ax-muted);
+  padding:0 8px;white-space:nowrap;opacity:0.7}
 .ax-topbar__tab{background:transparent;border:none;color:var(--ax-text-2);
-  padding:8px 14px;font:inherit;cursor:pointer;font-size:12px;text-decoration:none;
+  padding:8px 12px;font:inherit;cursor:pointer;font-size:12px;text-decoration:none;
   border-bottom:2px solid transparent;letter-spacing:-0.005em;white-space:nowrap}
 .ax-topbar__tab:hover{color:var(--ax-text)}
 .ax-topbar__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent)}
@@ -289,35 +297,59 @@ export function renderTopbar(opts: TopbarOpts): string {
     <div class="ax-mesh-menu" role="menu">${meshMenu}</div>
   </div>`
 
-  // Graph tab is intentionally not listed — the page is still reachable at
-  // /admin/graph for debugging the classifier, but we don't promote it in the
-  // main nav until it earns its keep (wiki absorb writing graphPath, or
-  // graph-based routing).
+  // Tabs are grouped by the three operational tiers (System / Process /
+  // Procedure — see docs/architecture/three-tier.md). The grouping is
+  // visual only; each tab still routes to the same URL. Order within a
+  // group is by frequency-of-use, descending.
   //
-  // Health = SRE/platform-health (routing rules, rotations, errors-with-stack).
-  //   Renamed from "Observability" — that name suggested business-flow but
-  //   the page only ever covered platform health.
-  // Cost = top-level page (was a tab inside Observability + a standalone
-  //   `agentx usage serve` on port 4201). Both folded here.
-  // Wiki = embedded view over the running wiki server (`agentx wiki serve`,
-  //   default port 4200). One-stop nav; the wiki server is still where the
-  //   actual rendering happens.
-  const tabs = [
-    { id: "live", label: "Live", href: "/live", external: false },
-    { id: "boards", label: "Boards", href: "/", external: false },
-    { id: "workflows", label: "Workflows", href: "/workflows", external: false },
-    { id: "graph", label: "Activity Graph", href: "/admin/activity-graph", external: false },
-    { id: "graph", label: "Ledger", href: "/admin/ledger", external: false },
-    { id: "health", label: "Health", href: "/admin/health", external: false },
-    { id: "cost", label: "Cost", href: "/admin/cost", external: false },
-    { id: "wiki", label: "Wiki", href: "/admin/wiki", external: false },
-    { id: "admin", label: "Settings", href: "/admin", external: false },
-    { id: "glossary", label: "Glossary", href: "/glossary", external: false },
-  ].map((t) => {
-    const cls = t.id === opts.activeTab ? "ax-topbar__tab is-active" : "ax-topbar__tab"
-    const extAttrs = t.external ? ` target="_blank" rel="noopener"` : ""
-    const extGlyph = t.external ? ' <span style="font-size:9px;opacity:0.6">↗</span>' : ""
-    return `<a href="${t.href}" class="${cls}"${extAttrs}>${t.label}${extGlyph}</a>`
+  // System    — what exists, observable infrastructure
+  // Processes — named SOPs, work-in-flight, kanban + inbox
+  // Procedures — reusable building blocks (typed actions, templates, wiki)
+  //
+  // Graph tab (/admin/graph) is intentionally not promoted in the main nav
+  // until it earns its keep (wiki absorb writing graphPath, or graph-based
+  // routing). It's still reachable directly. Health = SRE/platform-health
+  // (renamed from "Observability"). Wiki is an embedded view over
+  // `agentx wiki serve` on port 4200.
+  type Tab = { id: TopbarTab; label: string; href: string; external?: boolean }
+  const groups: Array<{ name: string; tabs: Tab[] }> = [
+    {
+      name: "System",
+      tabs: [
+        { id: "live", label: "Live", href: "/live" },
+        { id: "health", label: "Health", href: "/admin/health" },
+        { id: "graph", label: "Activity", href: "/admin/activity-graph" },
+        { id: "graph", label: "Ledger", href: "/admin/ledger" },
+        { id: "cost", label: "Cost", href: "/admin/cost" },
+        { id: "admin", label: "Settings", href: "/admin" },
+      ],
+    },
+    {
+      name: "Processes",
+      tabs: [
+        { id: "workflows", label: "Workflows", href: "/workflows" },
+        { id: "boards", label: "Boards", href: "/" },
+        { id: "inbox", label: "Inbox", href: "/inbox" },
+      ],
+    },
+    {
+      name: "Procedures",
+      tabs: [
+        { id: "procedures", label: "Procedures", href: "/procedures" },
+        { id: "wiki", label: "Wiki", href: "/admin/wiki" },
+        { id: "glossary", label: "Glossary", href: "/glossary" },
+      ],
+    },
+  ]
+
+  const tabs = groups.map((g) => {
+    const inner = g.tabs.map((t) => {
+      const cls = t.id === opts.activeTab ? "ax-topbar__tab is-active" : "ax-topbar__tab"
+      const extAttrs = t.external ? ` target="_blank" rel="noopener"` : ""
+      const extGlyph = t.external ? ' <span style="font-size:9px;opacity:0.6">↗</span>' : ""
+      return `<a href="${t.href}" class="${cls}"${extAttrs}>${t.label}${extGlyph}</a>`
+    }).join("")
+    return `<div class="ax-topbar__group" title="${esc(g.name)} tier"><span class="ax-topbar__group-label">${esc(g.name)}</span>${inner}</div>`
   }).join("")
 
   const header = `<header class="ax-topbar">
