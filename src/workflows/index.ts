@@ -47,6 +47,7 @@ export {
 export {
   buildWorkflowDraftFromTrace,
   architectOrBuildDraft,
+  isMeaningfulDraft,
   validateWorkflowDraft,
   writeWorkflowDraft,
   listWorkflowDrafts,

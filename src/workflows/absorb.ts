@@ -301,6 +301,29 @@ export function validateWorkflowDraft(workflow: Workflow): string[] {
   return lintWorkflow(parsed.data)
 }
 
+/** Node types that count as "real work" — i.e. not just routing or
+ *  signalling. A draft made entirely of trigger + end (or trigger +
+ *  checkpoint + end) is not actionable; it's noise from absorbing a
+ *  notification trace that had no procedure to capture. */
+const MEANINGFUL_NODE_TYPES = new Set<string>([
+  "agent", "action.run", "action.send", "action.builtin", "action.callHTTP",
+  "action.createIssue", "action.setLabel", "action.readLabel", "action.react",
+  "action.editMessage", "action.logTime",
+  "transform", "extract.structured",
+  "branch", "rule",
+  "userTask", "subProcess",
+])
+
+/** True if a draft captures an actual procedure worth keeping. Rejects
+ *  trigger→end and trigger→checkpoint→end shapes which usually come from
+ *  notification-only traces (e.g. GitHub push events with no follow-up
+ *  agent action). Operators can still hand-write workflows that are
+ *  legitimately minimal — this only gates the auto-absorb path. */
+export function isMeaningfulDraft(workflow: Workflow): boolean {
+  const work = workflow.nodes.filter((n) => MEANINGFUL_NODE_TYPES.has(n.type))
+  return work.length > 0 && workflow.nodes.length >= 3
+}
+
 export function draftsDir(baseDir = process.cwd()): string {
   return resolve(baseDir, ".agentx/workflows/_drafts")
 }
@@ -420,6 +443,11 @@ export function loadSuccessfulTraces(
   })
     .filter((t) => !t.workflowRunId)
     .filter((t) => (t.messagePreview || "").trim().length >= min)
+    // Drop architect-self-recursion: the LLM architect dispatches via
+    // /task with chatId="architect-<taskId>"; those tasks are recorded
+    // as their own traces and would re-cluster as "workflow architect"
+    // drafts on the next absorb run. Skip anything in that namespace.
+    .filter((t) => !(t.chatId || "").startsWith("architect-"))
 }
 
 /** Cluster key — describes WHAT the work is, not WHO did it. We deliberately

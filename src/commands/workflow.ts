@@ -13,6 +13,7 @@ import {
   buildWorkflowDraftFromTrace,
   clusterWorkflowCandidates,
   getWorkflowDraft,
+  isMeaningfulDraft,
   listWorkflowDrafts,
   loadSuccessfulTraces,
   promoteWorkflowDraft,
@@ -464,6 +465,13 @@ workflow
       const issues = validateWorkflowDraft(draft.workflow)
       if (issues.length) {
         console.log(chalk.red(`    validation failed: ${issues.join("; ")}`))
+        continue
+      }
+      // Reject drafts with no actual work (e.g. trigger → end shapes from
+      // notification-only traces). Operators can still hand-write minimal
+      // workflows; this gates the auto-absorb path only.
+      if (!isMeaningfulDraft(draft.workflow)) {
+        console.log(chalk.yellow(`    skipped: draft has no agent/action/branch step (${draft.workflow.nodes.length} nodes — likely a notification trace)`))
         continue
       }
       if (opts.commit && !opts.dryRun) {

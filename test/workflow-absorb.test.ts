@@ -9,6 +9,7 @@ import {
   buildWorkflowDraftFromTrace,
   clusterWorkflowCandidates,
   inferWorkflowName,
+  isMeaningfulDraft,
   listWorkflowDrafts,
   loadSuccessfulTraces,
   matchWorkflow,
@@ -214,5 +215,73 @@ describe("workflow matching", () => {
 
     expect(match?.workflow.id).toBe("telegram-formatting")
     expect(match?.confidence).toBeGreaterThanOrEqual(0.65)
+  })
+})
+
+describe("isMeaningfulDraft", () => {
+  it("rejects trigger → end shapes (no work captured)", () => {
+    const wf = workflowSchema.parse({
+      id: "empty-draft",
+      version: 2,
+      title: "Empty",
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "done" }],
+    })
+    expect(isMeaningfulDraft(wf)).toBe(false)
+  })
+
+  it("accepts a 3-node trigger → agent → end shape", () => {
+    const wf = workflowSchema.parse({
+      id: "single-agent-draft",
+      version: 2,
+      title: "Triage",
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "do_it", type: "agent", config: { agentId: "coder", prompt: "do" } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "do_it" }, { from: "do_it", to: "done" }],
+    })
+    expect(isMeaningfulDraft(wf)).toBe(true)
+  })
+
+  it("rejects 3 nodes when middle is just a checkpoint (no real work)", () => {
+    const wf = workflowSchema.parse({
+      id: "checkpoint-only",
+      version: 2,
+      title: "Checkpoint only",
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "wait", type: "checkpoint", config: { name: "wait", waitFor: { source: "manual" } } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "wait" }, { from: "wait", to: "done" }],
+    })
+    // checkpoint isn't in the meaningful set; userTask + subProcess are.
+    // userTask + subProcess require a human or sub-workflow respectively
+    // and represent real procedure capture; pure checkpoints are routing.
+    expect(isMeaningfulDraft(wf)).toBe(false)
+  })
+})
+
+describe("loadSuccessfulTraces architect-recursion filter", () => {
+  it("skips traces with chatId starting with 'architect-'", () => {
+    const db = openTmpDb()
+    const real = recordTraceStart(db, {
+      agentId: "coder", channel: "api", chatId: "real-chat-123",
+      messagePreview: "Implement this GitLab issue: extend invoices module",
+    })
+    recordTraceEnd(db, real, { status: "ok" })
+    const recursion = recordTraceStart(db, {
+      agentId: "graph-agent", channel: "api", chatId: "architect-01TASK000000000000000000",
+      messagePreview: "You are a workflow architect for AgentX. Given a task trace decompose…",
+    })
+    recordTraceEnd(db, recursion, { status: "ok" })
+
+    const traces = loadSuccessfulTraces(db)
+    expect(traces.map((t) => t.taskId)).toEqual([real])
   })
 })
