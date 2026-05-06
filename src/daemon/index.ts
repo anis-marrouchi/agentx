@@ -48,6 +48,7 @@ import {
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
 import { getWorkflowDraft } from "@/workflows/absorb"
 import { renderWorkflowYaml } from "@/workflows/yaml"
+import { resolveAutoRunInputs } from "@/workflows/inputs"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
@@ -1584,23 +1585,52 @@ export class AgentXDaemon {
     // Wire the workflow auto-runner so AgentRegistry can fire matched
     // workflows directly when `workflows.matching.mode === "auto"`. The
     // runtime contract for auto-matched runs is: "the workflow gets the
-    // message as input, owns the reply via its own action.send / agent
-    // nodes."
+    // typed inputs it declared in trigger.config.inputSchema, owns the
+    // reply via its own action.send / agent nodes."
     //
     // Use dispatchWorkflow (not dispatch) so matched-by-id workflows fire
     // regardless of their trigger node's source. Drafts emitted by absorb
     // use trigger.manual without a cfg.source — dispatch's matchByTrigger
     // requires strict cfg.source === t.source which would silently drop
     // every absorbed workflow.
+    //
+    // Input resolution: parse chatId for project/id/ref, fill schema
+    // defaults, check required. If a required field is still missing,
+    // throw a typed error — the registry catches it and falls back to
+    // normal agent execution (suggest mode behaviour). Operators can
+    // still fill the gaps via a manual run from the dashboard.
     this.registry.setWorkflowAutoRunner(async ({ workflowId, channel, chatId, payload }) => {
       const wf = store.get(workflowId)
       if (!wf) throw new Error(`auto-run target workflow not found: ${workflowId}`)
+
+      const resolution = resolveAutoRunInputs(wf, {
+        chatId,
+        channel,
+        message: typeof payload.message === "string" ? payload.message : undefined,
+        agentId: typeof payload.agentId === "string" ? payload.agentId : undefined,
+        senderId: typeof payload.senderId === "string" ? payload.senderId : undefined,
+        senderUsername: typeof payload.senderUsername === "string" ? payload.senderUsername : undefined,
+      })
+      if (resolution.missing.length > 0) {
+        throw new Error(
+          `inputSchema requires ${resolution.missing.join(", ")} — chatId+defaults filled ` +
+          `[chatId: ${resolution.filledFrom.chatId.join(",") || "—"} | defaults: ${resolution.filledFrom.defaults.join(",") || "—"}]; ` +
+          `auto-run skipped (operator can fill manually or extend the inputSchema).`
+        )
+      }
+      this.log(
+        `[workflows] auto-run input resolution for ${workflowId}: ` +
+        `passthrough=[${resolution.filledFrom.passthrough.join(",")}] ` +
+        `chatId=[${resolution.filledFrom.chatId.join(",")}] ` +
+        `defaults=[${resolution.filledFrom.defaults.join(",")}]`
+      )
+
       const entityRef = { backend: "manual", id: chatId || `auto-${Date.now().toString(36)}` }
       const eventId = `auto:${workflowId}:${chatId}:${Date.now()}`
       const result = await dispatcher.dispatchWorkflow({
         workflowId,
         entityRef,
-        event: { id: eventId, payload: { ...payload, channel, chatId } },
+        event: { id: eventId, payload: resolution.inputs },
         trigger: { source: "manual" },
       })
       return { runId: result.run?.id }

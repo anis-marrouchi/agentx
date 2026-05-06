@@ -66,3 +66,14 @@ export {
 } from "./absorb"
 export { architectWorkflowFromTrace, type ArchitectOptions } from "./architect"
 export { matchWorkflow, type WorkflowMatch, type WorkflowMatchInput } from "./matcher"
+export {
+  resolveAutoRunInputs,
+  fillFromChatId,
+  applyDefaults,
+  missingRequired,
+  getInputSchema,
+  type InputSchemaShape,
+  type InputSchemaProperty,
+  type ResolveContext,
+  type ResolveResult,
+} from "./inputs"
