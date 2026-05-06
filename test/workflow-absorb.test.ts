@@ -91,6 +91,23 @@ describe("workflow draft generation", () => {
     expect(rejected).toContain("_rejected")
     expect(listWorkflowDrafts(tmp)).toHaveLength(0)
   })
+
+  it("keeps drafts beside a configured workflow directory", () => {
+    const db = openTmpDb()
+    const workflowsDir = path.join(tmp, "custom-workflows")
+    const taskId = recordTraceStart(db, { agentId: "ops", messagePreview: "rotate api key" })
+    recordTraceEnd(db, taskId, { status: "ok" })
+    const trace = getTrace(db, taskId)!
+    const wf = buildWorkflowDraftFromTrace(trace.task, trace.steps, { id: "rotate-api-key-draft" })
+
+    const draftPath = writeWorkflowDraft(wf, { workflowDir: workflowsDir })
+    expect(draftPath).toBe(path.join(workflowsDir, "_drafts", "rotate-api-key-draft.yaml"))
+    expect(listWorkflowDrafts(tmp, { workflowDir: workflowsDir }).map((d) => d.id)).toEqual(["rotate-api-key-draft"])
+
+    const promoted = promoteWorkflowDraft("rotate-api-key-draft", { workflowDir: workflowsDir })
+    expect(promoted.to).toBe(path.join(workflowsDir, "rotate-api-key-draft.yaml"))
+    expect(listWorkflowDrafts(tmp, { workflowDir: workflowsDir })).toHaveLength(0)
+  })
 })
 
 describe("workflow absorb clustering", () => {

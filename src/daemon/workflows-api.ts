@@ -273,11 +273,12 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
 function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: WorkflowsApiDeps, url: string): boolean {
   const method = req.method || "GET"
   const trail = url.replace(/^\/api\/workflows\/drafts/, "")
+  const workflowDir = deps.store.baseDir
 
   if (trail === "" || trail.startsWith("?")) {
     if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
     if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-    const drafts = listWorkflowDrafts().map((d) => ({
+    const drafts = listWorkflowDrafts(process.cwd(), { workflowDir }).map((d) => ({
       id: d.id,
       path: d.path,
       workflow: d.workflow,
@@ -293,7 +294,7 @@ function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: Workflows
 
   if (!action && method === "GET") {
     if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-    const draft = getWorkflowDraft(id)
+    const draft = getWorkflowDraft(id, process.cwd(), { workflowDir })
     if (!draft) return sendJson(res, 404, { error: "draft not found" })
     return sendJson(res, 200, { draft, issues: validateWorkflowDraft(draft.workflow) })
   }
@@ -301,7 +302,7 @@ function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: Workflows
   if (action === "/validate") {
     if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
     if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-    const draft = getWorkflowDraft(id)
+    const draft = getWorkflowDraft(id, process.cwd(), { workflowDir })
     if (!draft) return sendJson(res, 404, { error: "draft not found" })
     const issues = validateWorkflowDraft(draft.workflow)
     return sendJson(res, 200, { ok: issues.length === 0, issues, draft })
@@ -314,7 +315,7 @@ function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: Workflows
       try {
         const replace = !!(body as any)?.replace
         const format = (body as any)?.format === "json" ? "json" : "yaml"
-        const result = promoteWorkflowDraft(id, { replace, format })
+        const result = promoteWorkflowDraft(id, { replace, format, workflowDir })
         deps.layouts.sync(result.workflow.id, result.workflow.nodes.map((n) => n.id))
         return sendJson(res, 200, { ok: true, ...result })
       } catch (e: any) {
@@ -327,7 +328,7 @@ function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: Workflows
     if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
     if (!deps.requireScope(req, res, ["dashboard:write"])) return true
     try {
-      const archived = rejectWorkflowDraft(id)
+      const archived = rejectWorkflowDraft(id, process.cwd(), { workflowDir })
       return sendJson(res, 200, { ok: true, id, archived })
     } catch (e: any) {
       return sendJson(res, 400, { error: e?.message || String(e) })

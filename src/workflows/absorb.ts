@@ -149,22 +149,36 @@ export function draftsDir(baseDir = process.cwd()): string {
   return resolve(baseDir, ".agentx/workflows/_drafts")
 }
 
+export function draftsDirForWorkflowDir(workflowDir: string): string {
+  return resolve(workflowDir, "_drafts")
+}
+
 export function rejectedDraftsDir(baseDir = process.cwd()): string {
   return resolve(baseDir, ".agentx/workflows/_drafts/_rejected")
+}
+
+export function rejectedDraftsDirForWorkflowDir(workflowDir: string): string {
+  return resolve(draftsDirForWorkflowDir(workflowDir), "_rejected")
 }
 
 export function draftPath(id: string, format: "yaml" | "json" = "yaml", baseDir = process.cwd()): string {
   return resolve(draftsDir(baseDir), `${id}.${format}`)
 }
 
+export function draftPathForWorkflowDir(id: string, workflowDir: string, format: "yaml" | "json" = "yaml"): string {
+  return resolve(draftsDirForWorkflowDir(workflowDir), `${id}.${format}`)
+}
+
 export function writeWorkflowDraft(
   workflow: Workflow,
-  opts: { format?: "yaml" | "json"; baseDir?: string; force?: boolean } = {},
+  opts: { format?: "yaml" | "json"; baseDir?: string; workflowDir?: string; force?: boolean } = {},
 ): string {
   const format = opts.format ?? "yaml"
-  const dir = draftsDir(opts.baseDir)
+  const dir = opts.workflowDir ? draftsDirForWorkflowDir(opts.workflowDir) : draftsDir(opts.baseDir)
   mkdirSync(dir, { recursive: true })
-  const path = draftPath(workflow.id, format, opts.baseDir)
+  const path = opts.workflowDir
+    ? draftPathForWorkflowDir(workflow.id, opts.workflowDir, format)
+    : draftPath(workflow.id, format, opts.baseDir)
   if (!opts.force && existsSync(path)) throw new Error(`draft already exists: ${path}`)
   const text = format === "json" ? JSON.stringify(workflow, null, 2) + "\n" : renderWorkflowYaml(workflow)
   writeFileSync(path, text)
@@ -177,8 +191,8 @@ function readWorkflowFile(path: string): Workflow {
   return workflowSchema.parse(raw)
 }
 
-export function listWorkflowDrafts(baseDir = process.cwd()): WorkflowDraftRecord[] {
-  const dir = draftsDir(baseDir)
+export function listWorkflowDrafts(baseDir = process.cwd(), opts: { workflowDir?: string } = {}): WorkflowDraftRecord[] {
+  const dir = opts.workflowDir ? draftsDirForWorkflowDir(opts.workflowDir) : draftsDir(baseDir)
   if (!existsSync(dir)) return []
   return readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isFile() && /\.(json|ya?ml)$/i.test(e.name))
@@ -189,9 +203,10 @@ export function listWorkflowDrafts(baseDir = process.cwd()): WorkflowDraftRecord
     .sort((a, b) => a.id.localeCompare(b.id))
 }
 
-export function getWorkflowDraft(id: string, baseDir = process.cwd()): WorkflowDraftRecord | null {
+export function getWorkflowDraft(id: string, baseDir = process.cwd(), opts: { workflowDir?: string } = {}): WorkflowDraftRecord | null {
+  const dir = opts.workflowDir ? draftsDirForWorkflowDir(opts.workflowDir) : draftsDir(baseDir)
   for (const ext of ["yaml", "yml", "json"]) {
-    const path = resolve(draftsDir(baseDir), `${id}.${ext}`)
+    const path = resolve(dir, `${id}.${ext}`)
     if (existsSync(path)) return { id, path, workflow: readWorkflowFile(path) }
   }
   return null
@@ -199,9 +214,9 @@ export function getWorkflowDraft(id: string, baseDir = process.cwd()): WorkflowD
 
 export function promoteWorkflowDraft(
   id: string,
-  opts: { baseDir?: string; replace?: boolean; format?: "yaml" | "json" } = {},
+  opts: { baseDir?: string; workflowDir?: string; replace?: boolean; format?: "yaml" | "json" } = {},
 ): { workflow: Workflow; from: string; to: string } {
-  const draft = getWorkflowDraft(id, opts.baseDir)
+  const draft = getWorkflowDraft(id, opts.baseDir, { workflowDir: opts.workflowDir })
   if (!draft) throw new Error(`draft not found: ${id}`)
   const format = opts.format ?? (draft.path.endsWith(".json") ? "json" : "yaml")
   const workflow = workflowSchema.parse({
@@ -212,18 +227,19 @@ export function promoteWorkflowDraft(
   })
   const issues = validateWorkflowDraft(workflow)
   if (issues.length) throw new Error(`draft is invalid: ${issues.join("; ")}`)
-  const dest = resolve(opts.baseDir ?? process.cwd(), ".agentx/workflows", `${workflow.id}.${format}`)
+  const workflowsDir = opts.workflowDir ?? resolve(opts.baseDir ?? process.cwd(), ".agentx/workflows")
+  const dest = resolve(workflowsDir, `${workflow.id}.${format}`)
   if (!opts.replace && existsSync(dest)) throw new Error(`workflow already exists: ${dest}`)
-  mkdirSync(resolve(opts.baseDir ?? process.cwd(), ".agentx/workflows"), { recursive: true })
+  mkdirSync(workflowsDir, { recursive: true })
   writeFileSync(dest, format === "json" ? JSON.stringify(workflow, null, 2) + "\n" : renderWorkflowYaml(workflow))
   unlinkSync(draft.path)
   return { workflow, from: draft.path, to: dest }
 }
 
-export function rejectWorkflowDraft(id: string, baseDir = process.cwd()): string {
-  const draft = getWorkflowDraft(id, baseDir)
+export function rejectWorkflowDraft(id: string, baseDir = process.cwd(), opts: { workflowDir?: string } = {}): string {
+  const draft = getWorkflowDraft(id, baseDir, { workflowDir: opts.workflowDir })
   if (!draft) throw new Error(`draft not found: ${id}`)
-  const dir = rejectedDraftsDir(baseDir)
+  const dir = opts.workflowDir ? rejectedDraftsDirForWorkflowDir(opts.workflowDir) : rejectedDraftsDir(baseDir)
   mkdirSync(dir, { recursive: true })
   const dest = resolve(dir, `${Date.now().toString(36)}-${basename(draft.path)}`)
   renameSync(draft.path, dest)

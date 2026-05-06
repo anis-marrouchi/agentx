@@ -147,7 +147,7 @@ process.exit(0);
     expect(r.error).toBeUndefined()
     expect(r.content).toBe("hello")
     expect(deltas.join("")).toBe("hello")
-    expect(events.map((e) => e.type)).toEqual(["agent_message_delta", "agent_message_delta", "turn_complete"])
+    expect(events.map((e) => e.type)).toEqual(["codex.spawned", "agent_message_delta", "agent_message_delta", "turn_complete"])
     expect(r.billedModel).toBe("gpt-5.2")
     expect(r.codexSessionId).toBe("codex-thread-stream")
     expect(r.usage).toEqual({ inputTokens: 31, outputTokens: 7, cacheReadTokens: 3, cacheCreateTokens: 2 })
