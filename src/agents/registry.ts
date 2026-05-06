@@ -27,6 +27,7 @@ import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDisp
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { WorkflowStore, matchWorkflow } from "@/workflows"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -258,9 +259,45 @@ export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, e
 
 function makeStreamEventFormatter(): (event: any) => string {
   let textSeen = ""
+  let codexTextSeen = ""
   return (event: any): string => {
     if (!event || typeof event !== "object") return ""
     const t = event.type
+    if (t === "codex.spawned") {
+      const model = event.model ? ` model=${event.model}` : ""
+      const resume = event.resumeSessionId ? ` resume=${String(event.resumeSessionId).slice(0, 8)}` : ""
+      return `. codex started${model}${resume}\n`
+    }
+    if (t === "thread.started") {
+      const tid = event.thread_id ? ` thread=${String(event.thread_id).slice(0, 8)}` : ""
+      return `. codex thread started${tid}\n`
+    }
+    if (t === "turn.started") return ". codex turn started\n"
+    if (t === "turn.completed") {
+      const usage = event.usage || {}
+      const input = usage.input_tokens ?? usage.inputTokens
+      const output = usage.output_tokens ?? usage.outputTokens
+      const tokens = input || output ? ` input=${input || 0} output=${output || 0}` : ""
+      return `. codex turn completed${tokens}\n`
+    }
+    if (t === "item.started" || t === "item.completed") {
+      const item = event.item || {}
+      if (item.type === "agent_message" && typeof item.text === "string") {
+        const text = item.text
+        const delta = text.startsWith(codexTextSeen) ? text.slice(codexTextSeen.length) : text
+        codexTextSeen = text.startsWith(codexTextSeen) ? text : codexTextSeen + text
+        return delta
+      }
+      const label = item.type || "item"
+      const name = item.name || item.command || item.tool_name || item.id || ""
+      if (t === "item.started") return `\n> codex ${label}${name ? ` ${name}` : ""}\n`
+      const summary = item.output || item.result || item.text || item.error || ""
+      return `< codex ${label}${name ? ` ${name}` : ""}${summary ? `: ${clip(String(summary), 800)}` : ""}\n`
+    }
+    if (t === "error" || t === "turn.failed") {
+      const msg = event.message || event.error || event.reason || JSON.stringify(event)
+      return `[error] ${clip(String(msg), 800)}\n`
+    }
     if (t === "system" && event.subtype === "init") {
       const m = event.model ? ` model=${event.model}` : ""
       const sid = event.session_id ? ` session=${event.session_id.slice(0, 8)}` : ""
@@ -901,6 +938,30 @@ export class AgentRegistry {
         })) || undefined
       } catch (e: any) {
         this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
+      }
+    }
+
+    const wfMatching = this.config.workflows?.matching
+    if (this.config.workflows?.enabled && wfMatching?.enabled) {
+      try {
+        const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
+        const match = matchWorkflow({
+          agentId: task.agentId,
+          channel,
+          message: task.message,
+          intentPath: intent?.path,
+        }, store.list())
+        if (match && match.confidence >= wfMatching.suggestThreshold) {
+          this.log(
+            `[${task.agentId}] workflow match ${match.workflow.id} confidence=${match.confidence.toFixed(2)} ` +
+            `mode=${wfMatching.mode} reasons=${match.reasons.join(",") || "n/a"}`,
+          )
+          if (wfMatching.mode === "auto" && match.confidence >= wfMatching.autoRunThreshold) {
+            this.log(`[${task.agentId}] workflow auto-run is configured but deferred in v1; falling back to agent execution`)
+          }
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] workflow matcher failed (non-fatal): ${e?.message || e}`)
       }
     }
 

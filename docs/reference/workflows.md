@@ -260,10 +260,24 @@ agentx workflow pause   <runId>
 agentx workflow resume  <runId>
 agentx workflow cancel  <runId>
 
+# absorb + replay
+agentx workflow draft-from-task <taskId> --commit
+agentx workflow absorb --since 24h --min-cluster-size 3 --commit
+agentx workflow drafts
+agentx workflow replay-task <taskId> --watch
+agentx workflow promote <draftId>
+agentx workflow reject <draftId>
+
 # identity management (used by userTask + role assignments)
 agentx actor add / list / show / remove
 agentx role  create / grant / revoke / list / show
 ```
+
+## Workflow absorb and replay
+
+Workflow absorb mines successful task traces into reviewable workflow drafts, following the same pattern as wiki absorb: raw execution evidence becomes a structured reusable artifact.
+
+Generated workflows are saved under `.agentx/workflows/_drafts/` with `status: draft` and `state: disabled`, so they validate but never auto-trigger until promoted. Scheduled mining should call `agentx workflow absorb ... --commit`; it still only creates drafts. See [Workflow absorb and task replay](../architecture/workflow-absorb-plan) for the implementation tracker.
 
 ## Example: grant application
 

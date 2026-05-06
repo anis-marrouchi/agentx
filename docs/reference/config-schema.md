@@ -321,6 +321,12 @@ Declarative state machines. See [Workflows](/reference/workflows).
 | `enabled` | bool | `false` | |
 | `dir` | string | `.agentx/workflows` | Where definitions live (one JSON or YAML file per workflow) |
 | `editor` | `disabled` \| `readonly` \| `edit` | `edit` | Whether the dashboard exposes the visual editor (and at what level) |
+| `matching.enabled` | bool | `false` | Enables the workflow matcher seam before free-form agent execution |
+| `matching.mode` | `suggest` \| `auto` | `suggest` | `suggest` logs candidate workflows; `auto` is reserved for dispatcher-backed auto-run and currently falls back |
+| `matching.autoRunThreshold` | number (0–1) | `0.85` | Confidence target for future auto-run |
+| `matching.suggestThreshold` | number (0–1) | `0.65` | Minimum confidence to log a workflow suggestion |
+
+Workflow definitions also accept generated-workflow metadata: `status` (`draft`, `review`, `active`, `deprecated`), `tags`, `entity`, `intentPath`, `generatedFrom`, `sourceTaskIds`, `confidence`, `workflowVersion`, `ownerAgent`, `lastMatchedAt`, and `matchCount`. Generated drafts are written with `status: draft` and `state: disabled`.
 
 ## `webhooks[]`
 

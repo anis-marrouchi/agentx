@@ -370,6 +370,11 @@ Declarative state machines that bind channel events to agents — at state X, ru
 | `agentx workflow list` | List every workflow in `.agentx/workflows/` with id, title, trigger source, and state chain. |
 | `agentx workflow show <id> [--format yaml\|json]` | Print the full definition for one workflow. |
 | `agentx workflow validate [file]` | Schema + lint check. With no arg, validates every file in the workflows dir. With a file path, validates that one. Exits non-zero on any failure — CI-friendly. |
+| `agentx workflow draft-from-task <taskId> [--commit] [--print] [--format yaml\|json]` | Generate a disabled workflow draft from a successful task trace |
+| `agentx workflow absorb [--since 24h] [--agent <id>] [--min-cluster-size 3] [--max 10] [--dry-run] [--commit]` | Mine repeated successful free-form task traces into workflow drafts |
+| `agentx workflow drafts [--json]` | List workflow drafts under `.agentx/workflows/_drafts/` |
+| `agentx workflow promote <draftId> [--replace]` | Promote a draft into the active workflow store and reload the daemon |
+| `agentx workflow reject <draftId>` | Archive a draft under `_drafts/_rejected/` |
 
 ### Runs (read)
 
@@ -387,6 +392,7 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 |---|---|
 | `agentx workflow run <id-or-file> [--input <json>] [--watch] [--force] [--daemon <url>]` | Trigger a stored workflow by id, **or** load + register + run a YAML/JSON file path (saved as `_adhoc-…` so it doesn't shadow stored ids). `--watch` polls `/traces?workflowRunId=<id>` every 500ms and prints each step (node, status, tokens, duration) until the run finishes. `--force` fires non-`manual`-trigger workflows for testing |
 | `agentx workflow trace <runId-or-taskId> [--json] [--daemon <url>]` | Pretty-print the per-step execution trace for a run (or a single task). Surfaces the data behind `GET /traces[/:taskId]` as a terminal-friendly table — node id, model, tokens, duration, error |
+| `agentx workflow replay-task <taskId> [--workflow <id>] [--input <json>] [--agent <id>] [--model <id>] [--validate-only] [--dry-run] [--watch]` | Replay a task through its linked draft or an ad-hoc workflow generated from the trace |
 | `agentx workflow pause <runId> [--node <id>]` | Freeze a run. No new transitions will fire until `resume`. |
 | `agentx workflow resume <runId> [--node <id>]` | Un-pause a paused run. |
 | `agentx workflow cancel <runId> [--node <id>]` | End a run. No further transitions possible — terminal. |

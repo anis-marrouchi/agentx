@@ -8,6 +8,13 @@ import {
   type WorkflowLayout,
   type WorkflowRun,
 } from "@/workflows"
+import {
+  getWorkflowDraft,
+  listWorkflowDrafts,
+  promoteWorkflowDraft,
+  rejectWorkflowDraft,
+  validateWorkflowDraft,
+} from "@/workflows/absorb"
 import type { WorkflowDispatcher } from "@/workflows/dispatcher"
 import type { TaskStore } from "@/workflows/task-store"
 import type { ActorStore } from "@/actors/store"
@@ -34,6 +41,11 @@ import { formSubmissionSchema } from "@/forms/types"
 //   GET  /api/workflows/runs?limit=N           — recent runs across all workflows
 //   GET  /api/workflows/runs/:id               — single run detail
 //   GET  /api/workflows/runs/:id/stream        — SSE stream of that run's latest snapshot
+//   GET  /api/workflows/drafts                 — reviewable generated workflow drafts
+//   GET  /api/workflows/drafts/:id             — one draft
+//   POST /api/workflows/drafts/:id/validate    — validate one draft
+//   POST /api/workflows/drafts/:id/promote     — promote one draft into active workflow store
+//   POST /api/workflows/drafts/:id/reject      — archive one draft
 //
 // The server is forgiving on authoring errors: save endpoints return a
 // structured `{ error, issues: [...] }` body so the editor can highlight
@@ -77,6 +89,13 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
       if (!deps.requireScope(req, res, ["dashboard:write"])) return true
       return withBody(req, res, (body) => handleSave(res, deps, body, { mode: "create" }))
     }
+  }
+
+  // /api/workflows/drafts[...]              (generated workflow review)
+  // Must run before the generic /api/workflows/:id matcher below, otherwise
+  // "drafts" would be treated as a workflow id.
+  if (url === "/api/workflows/drafts" || url.startsWith("/api/workflows/drafts?") || url.startsWith("/api/workflows/drafts/")) {
+    return handleDrafts(req, res, deps, url)
   }
 
   // /api/workflows/runs[...]                (list / one / stream / status-mutation)
@@ -249,6 +268,73 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
   }
 
   return sendJson(res, 404, { error: "unknown workflows endpoint", path: url })
+}
+
+function handleDrafts(req: IncomingMessage, res: ServerResponse, deps: WorkflowsApiDeps, url: string): boolean {
+  const method = req.method || "GET"
+  const trail = url.replace(/^\/api\/workflows\/drafts/, "")
+
+  if (trail === "" || trail.startsWith("?")) {
+    if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+    const drafts = listWorkflowDrafts().map((d) => ({
+      id: d.id,
+      path: d.path,
+      workflow: d.workflow,
+      issues: validateWorkflowDraft(d.workflow),
+    }))
+    return sendJson(res, 200, { drafts })
+  }
+
+  const match = trail.match(/^\/([^\/?]+)(\/validate|\/promote|\/reject)?$/)
+  if (!match) return sendJson(res, 404, { error: "unknown drafts endpoint" })
+  const id = decodeURIComponent(match[1])
+  const action = match[2]
+
+  if (!action && method === "GET") {
+    if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+    const draft = getWorkflowDraft(id)
+    if (!draft) return sendJson(res, 404, { error: "draft not found" })
+    return sendJson(res, 200, { draft, issues: validateWorkflowDraft(draft.workflow) })
+  }
+
+  if (action === "/validate") {
+    if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:read"])) return true
+    const draft = getWorkflowDraft(id)
+    if (!draft) return sendJson(res, 404, { error: "draft not found" })
+    const issues = validateWorkflowDraft(draft.workflow)
+    return sendJson(res, 200, { ok: issues.length === 0, issues, draft })
+  }
+
+  if (action === "/promote") {
+    if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+    return withBody(req, res, (body) => {
+      try {
+        const replace = !!(body as any)?.replace
+        const format = (body as any)?.format === "json" ? "json" : "yaml"
+        const result = promoteWorkflowDraft(id, { replace, format })
+        deps.layouts.sync(result.workflow.id, result.workflow.nodes.map((n) => n.id))
+        return sendJson(res, 200, { ok: true, ...result })
+      } catch (e: any) {
+        return sendJson(res, 400, { error: e?.message || String(e) })
+      }
+    })
+  }
+
+  if (action === "/reject") {
+    if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
+    if (!deps.requireScope(req, res, ["dashboard:write"])) return true
+    try {
+      const archived = rejectWorkflowDraft(id)
+      return sendJson(res, 200, { ok: true, id, archived })
+    } catch (e: any) {
+      return sendJson(res, 400, { error: e?.message || String(e) })
+    }
+  }
+
+  return sendJson(res, 405, { error: "method not allowed" })
 }
 
 // -------------------- save (create/update) --------------------

@@ -44,3 +44,20 @@ export {
   WorkflowYamlError,
   type ParseYamlOptions,
 } from "./yaml"
+export {
+  buildWorkflowDraftFromTrace,
+  validateWorkflowDraft,
+  writeWorkflowDraft,
+  listWorkflowDrafts,
+  getWorkflowDraft,
+  promoteWorkflowDraft,
+  rejectWorkflowDraft,
+  loadSuccessfulTraces,
+  clusterWorkflowCandidates,
+  buildDraftsFromClusters,
+  draftPath,
+  draftsDir,
+  type WorkflowDraftCandidate,
+  type WorkflowDraftRecord,
+} from "./absorb"
+export { matchWorkflow, type WorkflowMatch, type WorkflowMatchInput } from "./matcher"

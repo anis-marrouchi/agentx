@@ -463,6 +463,12 @@ export const daemonConfigSchema = z.object({
   workflows: z.object({
     enabled: z.boolean().default(false),
     dir: z.string().default(".agentx/workflows"),
+    matching: z.object({
+      enabled: z.boolean().default(false),
+      mode: z.enum(["suggest", "auto"]).default("suggest"),
+      autoRunThreshold: z.number().min(0).max(1).default(0.85),
+      suggestThreshold: z.number().min(0).max(1).default(0.65),
+    }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
      *  page. "disabled" hides the tab entirely. */

@@ -30,6 +30,7 @@ docs/architecture/*
 !docs/architecture/workflows-yaml.md
 !docs/architecture/persistent-claude-process.md
 !docs/architecture/typed-workflow-dsl-plan.md
+!docs/architecture/workflow-absorb-plan.md
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd

@@ -381,6 +381,8 @@ function extractCodexTextFromEvent(event: any): string | undefined {
   if (typeof event.text === "string" && /message|delta|response/i.test(String(event.type || ""))) return event.text
 
   const item = event.item || event.msg || event.message
+  if (item?.type === "agent_message" && typeof item.text === "string") return item.text
+  if (typeof item?.text === "string" && /message|delta|response|item/i.test(String(event.type || ""))) return item.text
   const content = item?.content
   if (Array.isArray(content)) {
     const text = content
@@ -957,6 +959,15 @@ export async function executeCodexCliStreaming(
       buffer: false,
       stdin: "ignore",
     })
+    if (onEvent) {
+      try {
+        onEvent({
+          type: "codex.spawned",
+          model: task.model || agent.model,
+          resumeSessionId,
+        })
+      } catch { /* */ }
+    }
 
     let lineBuffer = ""
     let stderrText = ""

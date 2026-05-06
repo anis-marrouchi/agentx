@@ -1725,7 +1725,21 @@ export class AgentXDaemon {
       if (closed) return
       try { res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`) } catch { closed = true }
     }
-    const sub = this.registry.subscribeToTaskOutput(taskId, (chunk) => send("chunk", { text: chunk }))
+    // Heartbeat so proxies don't kill idle SSE connections.
+    const heartbeat = setInterval(() => { if (!closed) try { res.write(": ping\n\n") } catch { /* */ } }, 15000)
+    let sub: { initial: string; done: boolean; unsubscribe: () => void } | null = null
+    const finish = (reason: string) => {
+      if (closed) return
+      send("end", { reason })
+      closed = true
+      clearInterval(heartbeat)
+      try { sub?.unsubscribe() } catch { /* */ }
+      try { res.end() } catch { /* */ }
+    }
+    sub = this.registry.subscribeToTaskOutput(taskId, (chunk) => {
+      send("chunk", { text: chunk })
+      if (chunk === "\n[task finished]\n") finish("completed")
+    })
     if (!sub) {
       send("error", { message: "task not found or already evicted" })
       res.end()
@@ -1737,12 +1751,10 @@ export class AgentXDaemon {
       res.end()
       return
     }
-    // Heartbeat so proxies don't kill idle SSE connections.
-    const heartbeat = setInterval(() => { if (!closed) try { res.write(": ping\n\n") } catch { /* */ } }, 15000)
     req.on("close", () => {
       closed = true
       clearInterval(heartbeat)
-      sub.unsubscribe()
+      sub?.unsubscribe()
     })
   }
 

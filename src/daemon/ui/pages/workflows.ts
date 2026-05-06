@@ -38,6 +38,13 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
       <p>No workflows defined.</p>
       <p class="hint">Add a definition under <code>.agentx/workflows/*.json</code>, validate with <code>agentx workflow validate</code>, and reload.</p>
     </div>
+    <section class="ax-wf__drafts">
+      <header>
+        <h3>Drafts</h3>
+        <span id="wf-draft-count" class="hint">0</span>
+      </header>
+      <ul id="wf-draft-list" class="ax-wf__draft-list" aria-live="polite"></ul>
+    </section>
   </aside>
 
   <section class="ax-wf__detail">
@@ -130,7 +137,7 @@ const WORKFLOWS_PAGE_CSS = `
 }
 .ax-wf__cards {
   list-style: none; margin: 0; padding: 8px 0;
-  overflow-y: auto; flex: 1;
+  overflow-y: auto; flex: 1 1 auto; min-height: 140px;
 }
 .ax-wf__card {
   padding: 10px 18px; border-bottom: 1px solid var(--ax-border);
@@ -158,6 +165,39 @@ const WORKFLOWS_PAGE_CSS = `
   color: var(--ax-accent);
   border-color: color-mix(in oklch, var(--ax-accent) 50%, transparent);
 }
+.ax-wf__drafts {
+  border-top: 1px solid var(--ax-border);
+  flex: 0 0 min(34vh, 260px);
+  display: flex; flex-direction: column;
+  background: color-mix(in oklch, var(--ax-bg-elev) 92%, var(--ax-bg));
+}
+.ax-wf__drafts > header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 18px 8px;
+}
+.ax-wf__drafts h3 {
+  margin: 0; font-size: 11px; font-weight: 650;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--ax-muted);
+}
+.ax-wf__draft-list {
+  list-style: none; margin: 0; padding: 0 0 8px;
+  overflow: auto;
+}
+.ax-wf__draft {
+  padding: 9px 18px; cursor: pointer;
+  border-top: 1px solid color-mix(in oklch, var(--ax-border) 55%, transparent);
+}
+.ax-wf__draft:hover { background: var(--ax-surface); }
+.ax-wf__draft.is-active { background: var(--ax-surface); box-shadow: inset 3px 0 0 var(--ax-warn); }
+.ax-wf__draft-title { font-size: 12px; font-weight: 600; color: var(--ax-text); margin-bottom: 2px; }
+.ax-wf__draft-meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  font-family: var(--ax-mono); font-size: 10px; color: var(--ax-muted);
+}
+.ax-wf__draft-empty { padding: 10px 18px 16px; color: var(--ax-muted); font-size: 11px; }
+.ax-wf__draft-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ax-wf__btn.danger:hover { background: color-mix(in oklch, var(--ax-err) 13%, transparent); border-color: var(--ax-err); color: var(--ax-err); }
+.ax-wf__btn.primary { border-color: color-mix(in oklch, var(--ax-accent) 55%, var(--ax-border)); color: var(--ax-accent); }
 
 .ax-wf__detail {
   display: flex; flex-direction: column;
@@ -319,8 +359,10 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
   const state = {
     workflows: [],
+    drafts: [],
     runs: [],
     selectedId: null,
+    selectedDraftId: null,
     filter: "",
     sse: null,
   }
@@ -332,6 +374,18 @@ const WORKFLOWS_PAGE_SCRIPT = `
     const res = await fetch(url, { headers: headers() })
     if (!res.ok) throw new Error(url + ": " + res.status)
     return res.json()
+  }
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers() },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {}),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || (url + ": " + res.status))
+    return data
   }
 
   // --- Rendering -------------------------------------------------------
@@ -377,7 +431,35 @@ const WORKFLOWS_PAGE_SCRIPT = `
     })
   }
 
+  function renderDraftList() {
+    $("#wf-draft-count").textContent = String(state.drafts.length)
+    if (!state.drafts.length) {
+      $("#wf-draft-list").innerHTML = \`<li class="ax-wf__draft-empty">No drafts pending review.</li>\`
+      return
+    }
+    $("#wf-draft-list").innerHTML = state.drafts.map(d => {
+      const wf = d.workflow || {}
+      const isActive = state.selectedDraftId === d.id
+      const issues = Array.isArray(d.issues) ? d.issues.length : 0
+      return \`<li class="ax-wf__draft \${isActive ? "is-active" : ""}" data-draft="\${esc(d.id)}">
+        <div class="ax-wf__draft-title">\${esc(wf.title || d.id)}</div>
+        <div class="ax-wf__draft-meta">
+          <span>\${esc(d.id)}</span>
+          <span>confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
+          <span>\${issues ? issues + " issue" + (issues === 1 ? "" : "s") : "valid"}</span>
+        </div>
+      </li>\`
+    }).join("")
+    $$(".ax-wf__draft").forEach(el => {
+      el.addEventListener("click", () => selectDraft(el.dataset.draft))
+    })
+  }
+
   function renderDetail() {
+    if (state.selectedDraftId) {
+      renderDraftDetail()
+      return
+    }
     const wf = state.workflows.find(w => w.id === state.selectedId)
     if (!wf) {
       $("#wf-detail-head").innerHTML = \`<span class="hint">Select a workflow to inspect.</span>\`
@@ -460,6 +542,65 @@ const WORKFLOWS_PAGE_SCRIPT = `
     })
   }
 
+  function renderDraftDetail() {
+    const draft = state.drafts.find(d => d.id === state.selectedDraftId)
+    if (!draft) {
+      $("#wf-detail-head").innerHTML = \`<span class="hint">Select a workflow to inspect.</span>\`
+      $("#wf-detail-body").innerHTML = ""
+      return
+    }
+    const wf = draft.workflow || {}
+    const issues = Array.isArray(draft.issues) ? draft.issues : []
+    const sourceIds = Array.isArray(wf.sourceTaskIds) ? wf.sourceTaskIds : []
+    $("#wf-detail-head").innerHTML = \`
+      <div class="ax-wf__detail-title">
+        <h2>\${esc(wf.title || draft.id)}</h2>
+        <span class="hint">\${esc(draft.id)} · status=\${esc(wf.status || "draft")} · state=\${esc(wf.state || "disabled")} · confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
+      </div>
+      <div class="ax-wf__detail-actions ax-wf__draft-actions">
+        <button class="ax-wf__btn" id="wf-draft-validate" type="button">Validate</button>
+        <button class="ax-wf__btn primary" id="wf-draft-promote" type="button">Promote</button>
+        <button class="ax-wf__btn danger" id="wf-draft-reject" type="button">Reject</button>
+      </div>\`
+
+    const issueHtml = issues.length
+      ? issues.map(i => \`<div class="ax-wf__trans"><span class="cond">\${esc(i)}</span></div>\`).join("")
+      : \`<span class="hint">Draft validates against the workflow schema and lint rules.</span>\`
+    const tags = Array.isArray(wf.tags) ? wf.tags : []
+    $("#wf-detail-body").innerHTML = \`
+      <div class="ax-wf__panel">
+        <h3>Review state</h3>
+        <div class="ax-wf__trans">
+          <div>owner: \${esc(wf.ownerAgent || "—")}</div>
+          <div>entity: \${esc(wf.entity || "—")}</div>
+          <div>generatedFrom: \${esc(wf.generatedFrom || "—")}</div>
+          <div>path: \${esc(draft.path || "—")}</div>
+        </div>
+      </div>
+      <div class="ax-wf__panel">
+        <h3>Signals</h3>
+        <div class="ax-wf__states">
+          \${tags.length ? tags.map(t => \`<span class="ax-wf__state">\${esc(t)}</span>\`).join("") : \`<span class="hint">No tags.</span>\`}
+        </div>
+      </div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>Source task ids (\${sourceIds.length})</h3>
+        <div class="ax-wf__trans">\${sourceIds.length ? sourceIds.slice(0, 25).map(esc).join("<br>") : \`<span class="hint">No source task ids.</span>\`}</div>
+      </div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>Validation</h3>
+        \${issueHtml}
+      </div>
+      <div class="ax-wf__panel ax-wf__panel--full">
+        <h3>Definition</h3>
+        <pre class="ax-wf__json">\${esc(JSON.stringify(wf, null, 2))}</pre>
+      </div>\`
+
+    $("#wf-draft-validate").addEventListener("click", () => validateDraft(draft.id))
+    $("#wf-draft-promote").addEventListener("click", () => promoteDraft(draft.id))
+    $("#wf-draft-reject").addEventListener("click", () => rejectDraft(draft.id))
+  }
+
   // --- Run drawer ------------------------------------------------------
 
   async function openRun(runId) {
@@ -520,33 +661,84 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
   async function select(id) {
     state.selectedId = id
+    state.selectedDraftId = null
     // Keep URL hash in sync so refreshes and editor deep-links stay on the
     // same workflow. Use replaceState so the browser's back button doesn't
     // accumulate selection history.
     try { history.replaceState(null, "", "#" + encodeURIComponent(id)) } catch (_) { /* */ }
     renderList()
+    renderDraftList()
+    renderDetail()
+  }
+
+  async function selectDraft(id) {
+    state.selectedDraftId = id
+    state.selectedId = null
+    try { history.replaceState(null, "", "#draft:" + encodeURIComponent(id)) } catch (_) { /* */ }
+    renderList()
+    renderDraftList()
     renderDetail()
   }
 
   async function refresh() {
     try {
-      const [workflows, runs] = await Promise.all([
+      const [workflows, runs, drafts] = await Promise.all([
         fetchJSON("/api/workflows"),
         fetchJSON("/api/workflows/runs?limit=100"),
+        fetchJSON("/api/workflows/drafts"),
       ])
       state.workflows = workflows.workflows || workflows
       state.runs = runs.runs || runs
+      state.drafts = drafts.drafts || drafts
       // If the URL hash names a workflow (e.g. /workflows#my-workflow)
       // and nothing is selected yet, auto-select it. Editor's "History"
       // button links here with the hash, so users land on the right detail.
       if (!state.selectedId && location.hash) {
         const fromHash = decodeURIComponent(location.hash.slice(1))
-        if (state.workflows.some(w => w.id === fromHash)) state.selectedId = fromHash
+        if (fromHash.startsWith("draft:") && state.drafts.some(d => d.id === fromHash.slice(6))) state.selectedDraftId = fromHash.slice(6)
+        else if (state.workflows.some(w => w.id === fromHash)) state.selectedId = fromHash
       }
       renderList()
+      renderDraftList()
       renderDetail()
     } catch (e) {
       toast("Failed to load workflows: " + e.message)
+    }
+  }
+
+  async function validateDraft(id) {
+    try {
+      const res = await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/validate")
+      toast(res.ok ? "draft is valid" : "draft has validation issues")
+      await refresh()
+      state.selectedDraftId = id
+      renderDetail()
+    } catch (e) {
+      toast("validate failed: " + e.message)
+    }
+  }
+
+  async function promoteDraft(id) {
+    if (!confirm("Promote this draft into the active workflow store?")) return
+    try {
+      await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/promote", { format: "yaml" })
+      toast("draft promoted")
+      state.selectedDraftId = null
+      await refresh()
+    } catch (e) {
+      toast("promote failed: " + e.message)
+    }
+  }
+
+  async function rejectDraft(id) {
+    if (!confirm("Reject and archive this draft?")) return
+    try {
+      await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/reject")
+      toast("draft rejected")
+      state.selectedDraftId = null
+      await refresh()
+    } catch (e) {
+      toast("reject failed: " + e.message)
     }
   }
 

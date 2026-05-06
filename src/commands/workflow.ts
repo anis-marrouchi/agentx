@@ -1,9 +1,23 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { resolve, basename } from "path"
-import { existsSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import Database from "better-sqlite3"
 import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflow, renderWorkflowYaml, WorkflowYamlError } from "@/workflows"
 import { TEMPLATES, readTemplate, type TemplateName } from "@/workflows/templates"
+import { getTrace } from "@/storage/traces"
+import {
+  buildDraftsFromClusters,
+  buildWorkflowDraftFromTrace,
+  clusterWorkflowCandidates,
+  getWorkflowDraft,
+  listWorkflowDrafts,
+  loadSuccessfulTraces,
+  promoteWorkflowDraft,
+  rejectWorkflowDraft,
+  validateWorkflowDraft,
+  writeWorkflowDraft,
+} from "@/workflows/absorb"
 
 // --- agentx workflow — declarative state machines for channel events ---
 //
@@ -14,6 +28,65 @@ import { TEMPLATES, readTemplate, type TemplateName } from "@/workflows/template
 export const workflow = new Command()
   .name("workflow")
   .description("workflow definitions — list, show, validate, manage runs")
+
+function durationToMs(input: string): number | null {
+  const m = /^(\d+)\s*([smhd])$/.exec(input.trim())
+  if (!m) return null
+  const n = Number(m[1])
+  const unit = m[2]
+  return n * (unit === "s" ? 1000 : unit === "m" ? 60_000 : unit === "h" ? 3600_000 : 86_400_000)
+}
+
+function parseSince(input: string | undefined): number | undefined {
+  if (!input) return undefined
+  const ms = durationToMs(input)
+  if (ms === null) {
+    const n = Number(input)
+    if (Number.isFinite(n) && n > 0) return n
+    console.log(chalk.red(`  Invalid --since "${input}". Use "1h", "30m", "7d", or an ms epoch.`))
+    process.exit(1)
+  }
+  return Date.now() - ms
+}
+
+function openTraceDb(path = ".agentx/db.sqlite"): Database.Database {
+  const dbPath = resolve(process.cwd(), path)
+  if (!existsSync(dbPath)) {
+    console.log(chalk.red(`  No db at ${dbPath}`))
+    process.exit(1)
+  }
+  return new Database(dbPath, { readonly: true })
+}
+
+function printWorkflowDraft(workflow: unknown, format: "yaml" | "json"): void {
+  if (format === "json") console.log(JSON.stringify(workflow, null, 2))
+  else console.log(renderWorkflowYaml(workflow))
+}
+
+function traceSummary(records: any[]): { durationMs: number; totalTokens: number; models: string[]; status: string; result: string } {
+  const models = Array.from(new Set(records.map((r) => r.model).filter(Boolean).map(String)))
+  const durationMs = records.reduce((sum, r) => sum + (Number(r.durationMs) || 0), 0)
+  const totalTokens = records.reduce((sum, r) => sum + (Number(r.totalTokens) || 0), 0)
+  const last = records.at(-1)
+  return {
+    durationMs,
+    totalTokens,
+    models,
+    status: records.some((r) => r.status === "error") ? "error" : (last?.status || "ok"),
+    result: String(last?.outputSummary || last?.error || "").slice(0, 160),
+  }
+}
+
+function printReplayComparison(original: ReturnType<typeof traceSummary>, replay: ReturnType<typeof traceSummary>): void {
+  const deltaMs = replay.durationMs - original.durationMs
+  const deltaTokens = replay.totalTokens - original.totalTokens
+  console.log()
+  console.log(chalk.bold("  replay comparison"))
+  console.log(`    original: ${original.status}  ${original.totalTokens || 0}t  ${original.durationMs || 0}ms  model=${original.models.join(",") || "—"}`)
+  console.log(`    replay:   ${replay.status}  ${replay.totalTokens || 0}t  ${replay.durationMs || 0}ms  model=${replay.models.join(",") || "—"}`)
+  console.log(`    delta:    ${deltaTokens >= 0 ? "+" : ""}${deltaTokens}t  ${deltaMs >= 0 ? "+" : ""}${deltaMs}ms`)
+  if (replay.result) console.log(`    result:   ${replay.result}`)
+}
 
 workflow
   .command("list")
@@ -30,7 +103,7 @@ workflow
       const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
       const cfg = (trigger?.config ?? {}) as { source?: string; filter?: { project?: string; repo?: string; chat?: string } }
       const filterParts = [cfg.filter?.project, cfg.filter?.repo, cfg.filter?.chat].filter(Boolean).join(" / ")
-      console.log(`  ${chalk.cyan(wf.id)}  ${chalk.bold(wf.title)} ${chalk.dim(`v${wf.version}`)}`)
+      console.log(`  ${chalk.cyan(wf.id)}  ${chalk.bold(wf.title)} ${chalk.dim(`v${wf.version} state=${wf.state} status=${wf.status}`)}`)
       console.log(`    ${chalk.dim("trigger:")} ${cfg.source ?? "?"}${filterParts ? `  ${chalk.dim(filterParts)}` : ""}`)
       console.log(`    ${chalk.dim("nodes:  ")} ${wf.nodes.length} (${wf.nodes.map((n) => n.type).join(", ")})`)
     }
@@ -295,6 +368,247 @@ workflow
   })
 
 workflow
+  .command("draft-from-task <taskId>")
+  .description("generate a reviewable workflow draft from a successful task trace")
+  .option("--path <path>", "SQLite db path", ".agentx/db.sqlite")
+  .option("--format <fmt>", "yaml (default) or json", "yaml")
+  .option("--commit", "write to .agentx/workflows/_drafts", false)
+  .option("--print", "print the generated draft", false)
+  .option("--allow-failed", "allow generating from non-ok traces", false)
+  .option("--model <model>", "reserved for LLM-backed extraction; v1 uses deterministic extraction")
+  .action((taskId: string, opts) => {
+    const db = openTraceDb(opts.path)
+    const trace = getTrace(db, taskId)
+    if (!trace) {
+      console.log(chalk.red(`  task trace not found: ${taskId}`))
+      process.exit(1)
+    }
+    if (trace.task.status !== "ok" && !opts.allowFailed) {
+      console.log(chalk.red(`  task ${taskId} status=${trace.task.status}; pass --allow-failed to draft anyway`))
+      process.exit(1)
+    }
+    const workflow = buildWorkflowDraftFromTrace(trace.task, trace.steps)
+    const issues = validateWorkflowDraft(workflow)
+    if (issues.length) {
+      console.log(chalk.red(`  generated draft failed validation:`))
+      for (const issue of issues) console.log(`    ${issue}`)
+      process.exit(1)
+    }
+    const format = String(opts.format).toLowerCase() === "json" ? "json" : "yaml"
+    if (opts.commit) {
+      const path = writeWorkflowDraft(workflow, { format })
+      console.log(chalk.green(`  ✓ draft written: ${path}`))
+    }
+    if (opts.print || !opts.commit) printWorkflowDraft(workflow, format)
+  })
+
+workflow
+  .command("absorb")
+  .description("mine successful task traces into reviewable workflow drafts")
+  .option("--path <path>", "SQLite db path", ".agentx/db.sqlite")
+  .option("--since <duration>", "trace window, e.g. 24h, 7d, or ms epoch", "24h")
+  .option("--agent <id>", "only absorb traces for one agent")
+  .option("--min-cluster-size <n>", "minimum similar traces per draft", "3")
+  .option("--max <n>", "maximum drafts to generate", "10")
+  .option("--dry-run", "preview candidates without writing", false)
+  .option("--commit", "write generated drafts", false)
+  .option("--model <model>", "reserved for LLM-backed extraction; v1 uses deterministic extraction")
+  .action((opts) => {
+    const db = openTraceDb(opts.path)
+    const traces = loadSuccessfulTraces(db, {
+      since: parseSince(opts.since),
+      agentId: opts.agent,
+      limit: 1000,
+    })
+    if (traces.length === 0) {
+      console.log(chalk.dim("  no successful free-form traces found in window"))
+      return
+    }
+    const clusters = clusterWorkflowCandidates(traces, {
+      minClusterSize: Number(opts.minClusterSize) || 3,
+      max: Number(opts.max) || 10,
+    })
+    if (clusters.length === 0) {
+      console.log(chalk.dim(`  ${traces.length} trace(s), but no cluster met min size ${opts.minClusterSize}`))
+      return
+    }
+    const drafts = buildDraftsFromClusters(db, clusters)
+    for (const draft of drafts) {
+      console.log(`  ${chalk.cyan(draft.id)}  ${chalk.bold(`${draft.sourceTaskIds.length} traces`)}  confidence=${draft.confidence.toFixed(2)}`)
+      console.log(chalk.dim(`    ${draft.reason}`))
+      const issues = validateWorkflowDraft(draft.workflow)
+      if (issues.length) {
+        console.log(chalk.red(`    validation failed: ${issues.join("; ")}`))
+        continue
+      }
+      if (opts.commit && !opts.dryRun) {
+        try {
+          const path = writeWorkflowDraft(draft.workflow, { format: "yaml" })
+          console.log(chalk.green(`    written: ${path}`))
+        } catch (e: any) {
+          console.log(chalk.yellow(`    skipped: ${e.message}`))
+        }
+      }
+    }
+    if (!opts.commit || opts.dryRun) console.log(chalk.dim("  dry run only; pass --commit to write drafts"))
+  })
+
+workflow
+  .command("drafts")
+  .description("list workflow drafts pending review")
+  .option("--json", "emit JSON", false)
+  .action((opts) => {
+    const drafts = listWorkflowDrafts()
+    if (opts.json) {
+      console.log(JSON.stringify(drafts.map((d) => ({ id: d.id, path: d.path, workflow: d.workflow })), null, 2))
+      return
+    }
+    if (drafts.length === 0) {
+      console.log(chalk.dim("  no workflow drafts"))
+      return
+    }
+    for (const d of drafts) {
+      const wf = d.workflow
+      console.log(`  ${chalk.cyan(d.id)}  ${chalk.bold(wf.title)}  ${chalk.dim(`status=${wf.status} state=${wf.state}`)}`)
+      if (wf.sourceTaskIds.length) console.log(chalk.dim(`    sources: ${wf.sourceTaskIds.slice(0, 5).join(", ")}${wf.sourceTaskIds.length > 5 ? "..." : ""}`))
+      if (wf.confidence != null) console.log(chalk.dim(`    confidence: ${wf.confidence.toFixed(2)}  path: ${d.path}`))
+    }
+  })
+
+workflow
+  .command("promote <draftId>")
+  .description("promote a workflow draft into the active workflow store")
+  .option("--replace", "replace an existing workflow file with the same id", false)
+  .option("--format <fmt>", "yaml (default) or json", "yaml")
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .action(async (draftId: string, opts) => {
+    try {
+      const format = String(opts.format).toLowerCase() === "json" ? "json" : "yaml"
+      const result = promoteWorkflowDraft(draftId, { replace: !!opts.replace, format })
+      console.log(chalk.green(`  ✓ promoted ${draftId}`))
+      console.log(chalk.dim(`    ${result.from} -> ${result.to}`))
+      try { await fetch(`${String(opts.daemon).replace(/\/$/, "")}/reload`, { method: "POST" }) } catch { /* daemon optional */ }
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+workflow
+  .command("reject <draftId>")
+  .description("archive a workflow draft without activating it")
+  .action((draftId: string) => {
+    try {
+      const dest = rejectWorkflowDraft(draftId)
+      console.log(chalk.green(`  ✓ rejected ${draftId}`))
+      console.log(chalk.dim(`    archived: ${dest}`))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+workflow
+  .command("replay-task <taskId>")
+  .description("replay a task through its generated workflow draft or an ad-hoc draft")
+  .option("--path <path>", "SQLite db path", ".agentx/db.sqlite")
+  .option("--workflow <id>", "workflow or draft id to replay instead of auto-discovery")
+  .option("--input <json>", "override workflow trigger input")
+  .option("--agent <id>", "override agent id for generated draft agent nodes")
+  .option("--model <id>", "override model id for generated draft agent nodes")
+  .option("--timeout <minutes>", "override timeout hint in trigger input")
+  .option("--validate-only", "validate the replay workflow without running it", false)
+  .option("--dry-run", "print the replay workflow and input without running", false)
+  .option("--watch", "tail workflow traces while the replay runs", false)
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .action(async (taskId: string, opts) => {
+    const db = openTraceDb(opts.path)
+    const trace = getTrace(db, taskId)
+    if (!trace) {
+      console.log(chalk.red(`  task trace not found: ${taskId}`))
+      process.exit(1)
+    }
+
+    let workflowDef = opts.workflow ? getWorkflowDraft(opts.workflow)?.workflow : undefined
+    if (!workflowDef && opts.workflow) {
+      workflowDef = new WorkflowStore().get(opts.workflow) || undefined
+    }
+    if (!workflowDef) {
+      workflowDef = listWorkflowDrafts().find((d) => d.workflow.sourceTaskIds.includes(taskId))?.workflow
+    }
+    if (!workflowDef) workflowDef = buildWorkflowDraftFromTrace(trace.task, trace.steps, { id: `_adhoc-replay-${taskId.toLowerCase().slice(0, 8)}` })
+
+    if (opts.agent || opts.model) {
+      workflowDef = workflowSchema.parse({
+        ...workflowDef,
+        nodes: workflowDef.nodes.map((n) => n.type === "agent"
+          ? {
+              ...n,
+              config: {
+                ...n.config,
+                ...(opts.agent ? { agentId: String(opts.agent) } : {}),
+                ...(opts.model ? { model: String(opts.model) } : {}),
+              },
+            }
+          : n),
+      })
+    }
+
+    const issues = validateWorkflowDraft(workflowDef)
+    if (issues.length) {
+      console.log(chalk.red(`  replay workflow failed validation:`))
+      for (const issue of issues) console.log(`    ${issue}`)
+      process.exit(1)
+    }
+
+    let payload: Record<string, unknown> = {
+      input: {
+        message: trace.task.messagePreview || "",
+        taskId,
+        originalAgentId: trace.task.agentId,
+        timeoutMinutes: opts.timeout ? Number(opts.timeout) : undefined,
+      },
+    }
+    if (opts.input) {
+      try { payload = JSON.parse(opts.input) } catch { console.log(chalk.red("  --input must be valid JSON")); process.exit(1) }
+    }
+
+    if (opts.validateOnly || opts.dryRun) {
+      printWorkflowDraft(workflowDef, "yaml")
+      console.log(chalk.dim("  input:"))
+      console.log(JSON.stringify(payload, null, 2))
+      return
+    }
+
+    const store = new WorkflowStore()
+    mkdirSync(store.baseDir, { recursive: true })
+    const replayId = workflowDef.id.startsWith("_adhoc-") ? workflowDef.id : `_adhoc-replay-${workflowDef.id}-${Date.now().toString(36)}`
+    const replayWorkflow = workflowSchema.parse({ ...workflowDef, id: replayId, state: "active", status: "review" })
+    const dest = resolve(store.baseDir, `${replayId}.yaml`)
+    writeFileSync(dest, renderWorkflowYaml(replayWorkflow))
+    const base = String(opts.daemon).replace(/\/$/, "")
+    try { await fetch(`${base}/reload`, { method: "POST" }) } catch { /* daemon may not support reload */ }
+    const res = await fetch(`${base}/workflows/${encodeURIComponent(replayId)}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload, force: true }),
+    })
+    if (!res.ok) {
+      console.log(chalk.red(`  replay failed (${res.status}): ${(await res.text()).slice(0, 300)}`))
+      process.exit(1)
+    }
+    const body = await res.json() as { runId?: string }
+    console.log(chalk.green(`  ✓ replay started: ${body.runId || "(unknown run)"}`))
+    console.log(chalk.dim(`    workflow: ${replayId}`))
+    const originalSummary = traceSummary(trace.steps)
+    console.log(chalk.dim(`    original: ${originalSummary.totalTokens || 0}t  ${originalSummary.durationMs || 0}ms  model=${originalSummary.models.join(",") || trace.task.model || "—"}`))
+    if (body.runId && opts.watch) {
+      const replayTraces = await tailTraces({ daemonUrl: base, runId: body.runId })
+      printReplayComparison(originalSummary, traceSummary(replayTraces))
+    }
+  })
+
+workflow
   .command("run <id-or-file>")
   .description("manually trigger a workflow by id, or load + register + run a YAML/JSON file")
   .option("--input <json>", "JSON object merged into the trigger event payload")
@@ -391,8 +705,9 @@ workflow
  *  longer "running", printing each new step row as it appears. The
  *  trace store keys per node, so we only need to track which nodeIds
  *  we've already printed. */
-async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<void> {
+async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<any[]> {
   const seen = new Set<string>()
+  const collected = new Map<string, any>()
   const startedAt = Date.now()
   // Hard cap so a stuck run doesn't pin the terminal forever.
   const maxMs = 15 * 60 * 1000
@@ -410,6 +725,7 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<v
     for (const t of traces) {
       if (!t.taskId || seen.has(t.taskId)) continue
       seen.add(t.taskId)
+      collected.set(t.taskId, t)
       const status = t.status || "running"
       const color = status === "ok" ? chalk.green : status === "error" ? chalk.red : chalk.cyan
       const tokens = t.totalTokens != null ? chalk.dim(`${t.totalTokens}t`) : ""
@@ -429,7 +745,7 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<v
           console.log()
           console.log(`  ${chalk.dim("run finished:")} ${run.status}`)
           console.log(chalk.dim(`  full traces: ${args.daemonUrl}/traces?workflowRunId=${args.runId}`))
-          return
+          return Array.from(collected.values())
         }
       }
     } catch { /* try again next tick */ }
@@ -437,6 +753,7 @@ async function tailTraces(args: { daemonUrl: string; runId: string }): Promise<v
     await new Promise((r) => setTimeout(r, 500))
   }
   console.log(chalk.yellow(`  watch timed out after 15min. Run is still active — check /traces`))
+  return Array.from(collected.values())
 }
 
 workflow
