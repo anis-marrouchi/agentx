@@ -159,7 +159,21 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
       return true
     }
     if (slug === "cost") {
-      sendJson(res, 200, buildCost(opened.db))
+      const url = new URL(req.url || "/", "http://_")
+      const range = parseRange(url.searchParams.get("range"))
+      sendJson(res, 200, buildCost(opened.db, range))
+      return true
+    }
+    if (slug === "cost.csv") {
+      const url = new URL(req.url || "/", "http://_")
+      const range = parseRange(url.searchParams.get("range"))
+      const data = buildCost(opened.db, range)
+      const csv = toCostCsv(data.days)
+      res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="agentx-cost-${range || "all"}d-${Date.now()}.csv"`,
+      })
+      res.end(csv)
       return true
     }
     sendJson(res, 404, { error: "unknown observability slice", rows: [] })
@@ -324,34 +338,59 @@ function buildActivity(db: Database.Database, opts: { agent?: string }) {
 
 // --- Cost (Cost tab) --------------------------------------------------------
 
-function buildCost(db: Database.Database) {
+/** Parse `range` query: 7|14|30|90 days, or "all" → 0 (no cutoff). */
+function parseRange(raw: string | null): number {
+  if (!raw) return 30
+  if (raw === "all" || raw === "0") return 0
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return 30
+  return Math.min(n, 365)
+}
+
+interface CostAgentDay {
+  tasks: number; cost: number;
+  input: number; output: number; cacheRead: number; cacheCreate: number;
+  tier2: number; model?: string;
+}
+interface CostDay {
+  date: string;
+  tasks: number;
+  input: number; output: number; cacheRead: number; cacheCreate: number;
+  cost: number; tier2: number;
+  agents: Record<string, CostAgentDay>;
+}
+
+function buildCost(db: Database.Database, range: number) {
+  // range=0 means "all" — no cutoff. Otherwise day ≥ today − range.
+  const where = range > 0 ? `WHERE day >= date('now', '-${range} day')` : ""
   const usageAll = db.prepare(`
     SELECT day, agent_id, model,
            input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
            tier2_input_tokens, tier2_output_tokens, tier2_cache_read_tokens, tier2_cache_create_tokens,
            tasks
     FROM usage_daily
-    WHERE day >= date('now', '-30 day')
+    ${where}
     ORDER BY day
   `).all() as any[]
 
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
   const last7Cutoff = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)
+  const last14Cutoff = new Date(Date.now() - 14 * 86400_000).toISOString().slice(0, 10)
 
+  // KPI accumulators (always over the full 30-day window for comparable
+  // top-of-page numbers; the per-day chart respects the user's range).
   let spendToday = 0, spendYesterday = 0, spend7d = 0, spend30d = 0
   let tier2Today = 0, tier2_7d = 0
-  const byDay: Record<string, number> = {}
-  const byAgent: Record<string, { spend: number; tasks: number; tier2: number }> = {}
+  let tasks7d = 0, tasksPrev7d = 0, spendPrev7d = 0
+
+  // Per-day, per-agent rollup over the requested range — drives every
+  // panel below the KPI strip (hero chart, mix, leaderboard, gauge, table).
+  const dayMap: Record<string, CostDay> = {}
+  const byAgentRange: Record<string, CostAgentDay> = {}
 
   for (const r of usageAll) {
     const c = rowCost(r)
-    spend30d += c
-    if (r.day >= last7Cutoff) spend7d += c
-    if (r.day === today) spendToday += c
-    if (r.day === yesterday) spendYesterday += c
-    byDay[r.day] = (byDay[r.day] || 0) + c
-
     const family = modelFamily(r.model)
     const rate = RATE_PER_M[family]
     const tier2Surcharge =
@@ -359,34 +398,104 @@ function buildCost(db: Database.Database) {
       ((r.tier2_output_tokens || 0) / 1e6) * rate.output * 0.5 +
       ((r.tier2_cache_read_tokens || 0) / 1e6) * rate.cacheRead * 0.5 +
       ((r.tier2_cache_create_tokens || 0) / 1e6) * rate.cacheCreate * 0.5
+
+    // Tier-2 token columns on usage_daily are SUBSETS of the base columns
+    // (same tokens, just billed at the higher rate). The dashboard surfaces
+    // total tokens processed so display sums tier1 + tier2 here.
+    const inTok  = (r.input_tokens || 0)         + (r.tier2_input_tokens || 0)
+    const outTok = (r.output_tokens || 0)        + (r.tier2_output_tokens || 0)
+    const crTok  = (r.cache_read_tokens || 0)    + (r.tier2_cache_read_tokens || 0)
+    const cwTok  = (r.cache_create_tokens || 0)  + (r.tier2_cache_create_tokens || 0)
+
+    spend30d += c
+    if (r.day >= last7Cutoff) { spend7d += c; tasks7d += r.tasks || 0 }
+    if (r.day >= last14Cutoff && r.day < last7Cutoff) {
+      spendPrev7d += c
+      tasksPrev7d += r.tasks || 0
+    }
+    if (r.day === today) spendToday += c
+    if (r.day === yesterday) spendYesterday += c
     if (r.day === today) tier2Today += tier2Surcharge
     if (r.day >= last7Cutoff) tier2_7d += tier2Surcharge
 
-    const a = byAgent[r.agent_id] || (byAgent[r.agent_id] = { spend: 0, tasks: 0, tier2: 0 })
-    a.spend += c
+    const d = dayMap[r.day] || (dayMap[r.day] = {
+      date: r.day, tasks: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0,
+      cost: 0, tier2: 0, agents: {},
+    })
+    d.tasks += r.tasks || 0
+    d.input += inTok; d.output += outTok
+    d.cacheRead += crTok; d.cacheCreate += cwTok
+    d.cost += c; d.tier2 += tier2Surcharge
+
+    const a = d.agents[r.agent_id] || (d.agents[r.agent_id] = {
+      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, model: r.model,
+    })
     a.tasks += r.tasks || 0
-    a.tier2 += tier2Surcharge
+    a.cost += c; a.tier2 += tier2Surcharge
+    a.input += inTok; a.output += outTok
+    a.cacheRead += crTok; a.cacheCreate += cwTok
+    if (r.model) a.model = r.model
+
+    const agg = byAgentRange[r.agent_id] || (byAgentRange[r.agent_id] = {
+      tasks: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, tier2: 0, model: r.model,
+    })
+    agg.tasks += r.tasks || 0
+    agg.cost += c; agg.tier2 += tier2Surcharge
+    agg.input += inTok; agg.output += outTok
+    agg.cacheRead += crTok; agg.cacheCreate += cwTok
+    if (r.model) agg.model = r.model
   }
 
-  const perAgent = Object.entries(byAgent)
-    .map(([agent_id, v]) => ({ agent_id, spend: v.spend, tasks: v.tasks, tier2: v.tier2 }))
-    .sort((a, b) => b.spend - a.spend)
+  const days: CostDay[] = Object.values(dayMap).sort((a, b) => (a.date < b.date ? -1 : 1))
 
-  const trend = Object.entries(byDay)
-    .map(([day, spend]) => ({ day, spend }))
-    .sort((a, b) => (a.day < b.day ? -1 : 1))
+  // Range-wide totals for KPIs that follow the user's range pick.
+  let tasksRange = 0, inputRange = 0, outputRange = 0, cacheReadRange = 0, cacheCreateRange = 0, costRange = 0
+  for (const d of days) {
+    tasksRange += d.tasks
+    inputRange += d.input; outputRange += d.output
+    cacheReadRange += d.cacheRead; cacheCreateRange += d.cacheCreate
+    costRange += d.cost
+  }
+
+  const perAgent = Object.entries(byAgentRange)
+    .map(([agent_id, v]) => ({
+      agent_id, ...v,
+      tokens: v.input + v.output + v.cacheRead + v.cacheCreate,
+    }))
+    .sort((a, b) => b.cost - a.cost)
 
   return {
+    range,
+    generatedAt: new Date().toISOString(),
     kpis: {
-      spendToday,
-      spendYesterday,
-      spend7d,
-      spend30d,
-      tier2Today,
-      tier2_7d,
+      spendToday, spendYesterday, spend7d, spend30d,
+      tier2Today, tier2_7d,
       tier2PctToday: spendToday > 0 ? tier2Today / spendToday : 0,
+      // Range-pinned numbers used by the new 6-KPI strip.
+      spendRange: costRange,
+      avgDailyRange: days.length ? costRange / days.length : 0,
+      tasksRange,
+      tokensRange: inputRange + outputRange + cacheReadRange + cacheCreateRange,
+      cacheHitRange: (cacheReadRange + inputRange) > 0
+        ? cacheReadRange / (cacheReadRange + inputRange)
+        : 0,
+      costPerTaskRange: tasksRange > 0 ? costRange / tasksRange : 0,
+      // Week-over-week deltas (always 7d-vs-prev-7d, independent of range).
+      spendDeltaWoW: spendPrev7d > 0 ? (spend7d - spendPrev7d) / spendPrev7d : 0,
+      tasksDeltaWoW: tasksPrev7d > 0 ? (tasks7d - tasksPrev7d) / tasksPrev7d : 0,
     },
-    trend,
+    days,
     perAgent,
   }
+}
+
+/** CSV export for `/api/admin/observability/cost.csv` — same column order as
+ *  the legacy `/api/usage.csv`, picking the top-spend agent of each day. */
+function toCostCsv(days: CostDay[]): string {
+  const header = "date,tasks,input,output,cache_read,cache_create,cost_usd,top_agent"
+  const rows = days.map((d) => {
+    const top = Object.entries(d.agents).sort(([, a], [, b]) => b.cost - a.cost)[0]
+    return [d.date, d.tasks, d.input, d.output, d.cacheRead, d.cacheCreate, d.cost.toFixed(6), top ? top[0] : ""].join(",")
+  })
+  return header + "\n" + rows.join("\n") + "\n"
 }
