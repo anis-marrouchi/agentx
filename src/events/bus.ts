@@ -73,6 +73,11 @@ export interface AgentXEvents {
     channel: string
     chatId: string
     messagePreview: string // first ~200 chars
+    /** Full untruncated message — used by SQLite subscriber to populate
+     *  task_traces.original_message so `agentx trace replay <taskId>` can
+     *  re-fire the exact original task. Optional for back-compat with
+     *  older emitters that only carried the preview. */
+    fullMessage?: string
     at: string
     taskId?: string
   }
@@ -130,6 +135,10 @@ export interface AgentXEvents {
     tier2OutputTokens?: number
     tier2CacheReadTokens?: number
     tier2CacheCreateTokens?: number
+    /** Agent's final reply text — recorded into task_traces.final_response
+     *  so `replay --diff` can show original vs current output side-by-side.
+     *  Optional for back-compat. */
+    finalResponse?: string
     at: string
   }
 

@@ -940,6 +940,7 @@ export class AgentRegistry {
       channel,
       chatId,
       messagePreview: (task.message || "").slice(0, 200),
+      fullMessage: task.message || "",
       at: new Date(taskStartedAt).toISOString(),
       taskId: traceTaskId,
     })
@@ -1588,6 +1589,7 @@ export class AgentRegistry {
         tier2OutputTokens: split?.tier2OutputTokens,
         tier2CacheReadTokens: split?.tier2CacheReadTokens,
         tier2CacheCreateTokens: split?.tier2CacheCreateTokens,
+        finalResponse: response.content || undefined,
         at: new Date().toISOString(),
       })
 

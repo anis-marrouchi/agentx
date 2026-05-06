@@ -208,3 +208,140 @@ function printTrace(t: TraceRecord, steps: TraceStepRecord[]): void {
     if (s.error) console.log(`      ${chalk.red("error:")} ${s.error}`)
   }
 }
+
+// --- agentx trace replay <taskId> [--diff] ----------------------------------
+//
+// Handoff item #11. Loads a recorded task by id, re-fires it via the daemon's
+// POST /task with the same agent + a fresh session, and prints the new run's
+// reply. With --diff, shows a side-by-side comparison of original input,
+// original output (if captured), and the new output — directly answers
+// "did my prompt change fix it?" without rerunning by hand.
+//
+// Replay reads the trace from a local SQLite db (or one rsync'd from a
+// remote daemon via --path). Old rows pre-migration-v8 fall back to
+// messagePreview (capped 200 chars), with a warning that the input
+// may be truncated relative to the original.
+
+trace
+  .command("replay <taskId>")
+  .description("re-run a recorded task against the current agent config (handoff item #11)")
+  .option("--cwd <dir>", "project root", process.cwd())
+  .option("--path <p>", "sqlite db path (relative to --cwd)", ".agentx/db.sqlite")
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .option("--diff", "show original input + output vs new output side-by-side")
+  .option("--no-fresh", "do NOT freshSession (default is fresh — required for clean replay)")
+  .action(async (taskId: string, opts) => {
+    const db = openReadOnly(opts)
+    const trace = getTrace(db, taskId)
+    if (!trace) {
+      console.log(chalk.red(`  task not found: ${taskId}`))
+      console.log(chalk.dim(`  agentx trace list   — see what's available`))
+      process.exit(1)
+    }
+    const t = trace.task
+    const message = t.originalMessage ?? t.messagePreview
+    if (!message) {
+      console.log(chalk.red(`  task ${taskId} has no recorded input message — cannot replay`))
+      process.exit(1)
+    }
+    const truncated = !t.originalMessage && t.messagePreview != null
+    if (truncated) {
+      console.log(chalk.yellow(`  ⚠ pre-migration-v8 row: input message was capped at 200 chars; replay uses the preview`))
+    }
+
+    console.log()
+    console.log(chalk.bold(`  replay ${chalk.cyan(taskId)}`))
+    console.log(chalk.dim(`  agent=${t.agentId} channel=${t.channel ?? "—"} chatId=${t.chatId ?? "—"}`))
+    console.log(chalk.dim(`  original status=${t.status} duration=${t.durationMs ?? "?"}ms tokens=in:${t.inputTokens ?? 0}/out:${t.outputTokens ?? 0}`))
+    console.log()
+
+    const base = String(opts.daemon).replace(/\/+$/, "")
+    const body = {
+      agent: t.agentId,
+      message,
+      freshSession: opts.fresh !== false,
+      context: {
+        channel: t.channel ?? "api",
+        // Per-replay chatId so the new run doesn't pollute (or get polluted by)
+        // the original conversation's session. Operators can pin to the original
+        // chatId via --no-fresh + a different invocation if they want continuity.
+        chatId: `replay-${taskId.toLowerCase().slice(-8)}-${Date.now().toString(36)}`,
+      },
+    }
+    const startedAt = Date.now()
+    let res: Response
+    try {
+      res = await fetch(`${base}/task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    } catch (e: any) {
+      console.log(chalk.red(`  daemon unreachable at ${base}: ${e.message || e}`))
+      process.exit(1)
+    }
+    const reply = await res.json().catch(() => ({})) as {
+      content?: string
+      error?: string
+      duration?: number
+      usage?: { inputTokens?: number; outputTokens?: number }
+    }
+    const durationMs = Date.now() - startedAt
+
+    if (!res.ok) {
+      console.log(chalk.red(`  replay failed (${res.status}): ${reply.error || "unknown error"}`))
+      process.exit(1)
+    }
+
+    if (opts.diff) {
+      console.log(chalk.bold("  INPUT (replayed verbatim)"))
+      console.log()
+      printBlock(message)
+      console.log()
+      console.log(chalk.bold(`  ORIGINAL OUTPUT  ${chalk.dim(`status=${t.status} ${t.durationMs ?? "?"}ms`)}`))
+      console.log()
+      if (t.finalResponse) {
+        printBlock(t.finalResponse)
+      } else {
+        console.log(chalk.yellow(`  (not captured — pre-migration-v8 row, or response was empty)`))
+      }
+      console.log()
+      console.log(chalk.bold(`  CURRENT OUTPUT  ${chalk.dim(`status=${reply.error ? "error" : "ok"} ${durationMs}ms tokens=in:${reply.usage?.inputTokens ?? 0}/out:${reply.usage?.outputTokens ?? 0}`)}`))
+      console.log()
+      printBlock(reply.content ?? "(empty reply)")
+      if (reply.error) console.log(chalk.red(`  error: ${reply.error}`))
+      console.log()
+      // Quick literal-diff signal — true when the two strings differ.
+      // This is intentionally simple (no character-level diff) — operators
+      // skim for "did anything change?" before deep-reading both blocks.
+      const same = (t.finalResponse ?? "").trim() === (reply.content ?? "").trim()
+      if (t.finalResponse) {
+        console.log(same
+          ? chalk.dim("  outputs are identical")
+          : chalk.yellow("  outputs differ — read both blocks to see what changed"))
+        console.log()
+      }
+    } else {
+      console.log(chalk.green(`  ✓ replayed in ${durationMs}ms`))
+      console.log()
+      printBlock(reply.content ?? "(empty reply)")
+      if (reply.error) console.log(chalk.red(`\n  error: ${reply.error}`))
+      console.log()
+      console.log(chalk.dim(`  agentx trace replay ${taskId} --diff   to compare against the original output`))
+      console.log()
+    }
+  })
+
+/** Print a multi-line block with consistent indent + a left bar so the block
+ *  visually separates from surrounding chrome. Caps very long blocks at 60
+ *  lines with a "…+N more" footer; the full content is still in the trace
+ *  store for those who need it. */
+function printBlock(text: string): void {
+  const lines = text.split("\n")
+  const max = 60
+  const shown = lines.slice(0, max)
+  for (const l of shown) console.log(`  ${chalk.dim("│")} ${l}`)
+  if (lines.length > max) {
+    console.log(`  ${chalk.dim("│")} ${chalk.dim(`…+${lines.length - max} more lines`)}`)
+  }
+}

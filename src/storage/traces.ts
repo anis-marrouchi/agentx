@@ -38,6 +38,11 @@ export interface TraceStartInput {
   channel?: string | null
   chatId?: string | null
   messagePreview?: string | null
+  /** Full untruncated user message — used by `agentx trace replay <taskId>`
+   *  to re-fire a recorded task against the current agent config. NULL on
+   *  rows from before migration v8, in which case replay falls back to
+   *  messagePreview (which is capped at 200 chars). */
+  originalMessage?: string | null
   workflowRunId?: string | null
   workflowId?: string | null
   workflowNodeId?: string | null
@@ -55,6 +60,11 @@ export interface TraceEndInput {
   cacheReadTokens?: number | null
   cacheCreateTokens?: number | null
   error?: string | null
+  /** The agent's final reply text. Stored verbatim so `replay --diff`
+   *  can compare original output vs the new run's output without
+   *  reconstructing it from the step ledger. NULL when the response
+   *  wasn't captured (older rows or non-text outputs). */
+  finalResponse?: string | null
 }
 
 export interface TraceStepInput {
@@ -97,6 +107,12 @@ export interface TraceRecord {
   cacheCreateTokens: number | null
   error: string | null
   messagePreview: string | null
+  /** Full untruncated user message — populated for traces from migration v8
+   *  onward. NULL on older rows; consumers should fall back to messagePreview. */
+  originalMessage: string | null
+  /** Agent's final reply text — populated for traces from migration v8
+   *  onward when the executor records it on end. */
+  finalResponse: string | null
 }
 
 export interface TraceStepRecord {
@@ -144,8 +160,8 @@ export function recordTraceStart(
     INSERT INTO task_traces (
       task_id, agent_id, channel, chat_id, workflow_run_id, workflow_id,
       workflow_node_id, intent_event_id, intent_decided_by, resume_session_id,
-      model, status, started_at, message_preview
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?)
+      model, status, started_at, message_preview, original_message
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?)
   `).run(
     taskId,
     input.agentId,
@@ -160,6 +176,7 @@ export function recordTraceStart(
     input.model ?? null,
     Date.now(),
     input.messagePreview ?? null,
+    input.originalMessage ?? null,
   )
   return taskId
 }
@@ -182,6 +199,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       cache_read_tokens = ?,
       cache_create_tokens = ?,
       error = ?,
+      final_response = COALESCE(?, final_response),
       finished_at = ?,
       duration_ms = ? - started_at
     WHERE task_id = ?
@@ -193,6 +211,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.cacheReadTokens ?? null,
     input.cacheCreateTokens ?? null,
     input.error ?? null,
+    input.finalResponse ?? null,
     finishedAt,
     finishedAt,
     taskId,
@@ -256,6 +275,8 @@ function rowToTrace(row: Record<string, unknown>): TraceRecord {
     cacheCreateTokens: (row.cache_create_tokens as number) ?? null,
     error: (row.error as string) ?? null,
     messagePreview: (row.message_preview as string) ?? null,
+    originalMessage: (row.original_message as string) ?? null,
+    finalResponse: (row.final_response as string) ?? null,
   }
 }
 

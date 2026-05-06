@@ -126,6 +126,11 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           channel: p.channel,
           chatId: p.chatId,
           messagePreview: p.messagePreview,
+          // Migration v8 — full untruncated message persisted so
+          // `agentx trace replay <taskId>` can re-fire the exact request.
+          // Falls back to messagePreview on the storage-write side when
+          // not present (older emitters); this branch is the new path.
+          originalMessage: p.fullMessage ?? p.messagePreview,
           workflowRunId,
         },
         p.taskId,
@@ -160,6 +165,10 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           cacheReadTokens: p.cacheReadTokens ?? null,
           cacheCreateTokens: p.cacheCreateTokens ?? null,
           error: p.error ?? null,
+          // Migration v8 — final response captured so `replay --diff` can
+          // show original vs current output without reconstructing from
+          // step events.
+          finalResponse: p.finalResponse ?? null,
         })
       } catch { /* */ }
     }

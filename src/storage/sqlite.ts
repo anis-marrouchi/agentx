@@ -277,6 +277,20 @@ function runMigrations(db: Database.Database): void {
         CREATE INDEX idx_trace_steps_name ON task_trace_steps(name, started_at);
       `,
     },
+    {
+      // task replay support (handoff item #11). Capture the full original
+      // user message AND the agent's final response so 'agentx trace replay
+      // <taskId> --diff' can show side-by-side without reconstructing from
+      // the step ledger. message_preview stays for cheap listing UX (200
+      // chars); original_message holds the untruncated input. final_response
+      // mirrors the agent's reply text. Both NULLABLE — old rows have NULL
+      // and the replay command falls back to the preview gracefully.
+      v: 8,
+      sql: `
+        ALTER TABLE task_traces ADD COLUMN original_message TEXT;
+        ALTER TABLE task_traces ADD COLUMN final_response   TEXT;
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {
