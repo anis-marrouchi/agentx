@@ -377,7 +377,9 @@ workflow
   .option("--commit", "write to .agentx/workflows/_drafts", false)
   .option("--print", "print the generated draft", false)
   .option("--allow-failed", "allow generating from non-ok traces", false)
-  .option("--model <model>", "use the LLM architect to emit a multi-node DAG (e.g. claude-sonnet-4-6); falls back to deterministic single-node draft on failure")
+  .option("--model <model>", "direct Anthropic API path (e.g. claude-sonnet-4-6) — needs ANTHROPIC_API_KEY in daemon env")
+  .option("--via <agentId>", "route the LLM call through an agent (e.g. coo-agent) — uses the agent's own session, no raw API key needed")
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
   .action(async (taskId: string, opts) => {
     const db = openTraceDb(opts.path)
     const trace = getTrace(db, taskId)
@@ -391,12 +393,14 @@ workflow
     }
     const result = await architectOrBuildDraft(trace.task, trace.steps, {
       model: opts.model,
+      viaAgent: opts.via,
+      daemonUrl: opts.daemon,
       log: (m) => console.log(chalk.dim(`  ${m}`)),
     })
     const workflow = result.workflow
     if (result.usedLlm) {
-      console.log(chalk.dim(`  ✦ LLM-architected via ${result.model || opts.model}`))
-    } else if (opts.model) {
+      console.log(chalk.dim(`  ✦ LLM-architected via ${result.via || opts.model || opts.via}`))
+    } else if (opts.model || opts.via) {
       console.log(chalk.yellow(`  ⚠ LLM architect failed, used deterministic fallback`))
     }
     const issues = validateWorkflowDraft(workflow)
@@ -424,7 +428,9 @@ workflow
   .option("--max <n>", "maximum drafts to generate", "10")
   .option("--dry-run", "preview candidates without writing", false)
   .option("--commit", "write generated drafts", false)
-  .option("--model <model>", "use the LLM architect to emit multi-node DAGs (e.g. claude-sonnet-4-6); falls back to deterministic per-cluster on failure")
+  .option("--model <model>", "direct Anthropic API architect (e.g. claude-sonnet-4-6) — needs ANTHROPIC_API_KEY")
+  .option("--via <agentId>", "route the LLM call through an agent (e.g. coo-agent) — uses the agent's own session")
+  .option("--daemon <url>", "daemon API base URL for --via", "http://127.0.0.1:18800")
   .action(async (opts) => {
     const db = openTraceDb(opts.path)
     const traces = loadSuccessfulTraces(db, {
@@ -447,6 +453,8 @@ workflow
     }
     const drafts = await buildDraftsFromClustersAsync(db, clusters, {
       model: opts.model,
+      viaAgent: opts.via,
+      daemonUrl: opts.daemon,
       log: (m) => console.log(chalk.dim(`  ${m}`)),
     })
     for (const draft of drafts) {

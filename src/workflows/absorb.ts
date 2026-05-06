@@ -230,11 +230,15 @@ export function buildWorkflowDraftFromTrace(
   })
 }
 
-/** Async wrapper around buildWorkflowDraftFromTrace that uses the LLM
- *  architect when `opts.model` is provided. Falls back to the deterministic
- *  single-agent-node draft on any architect failure (missing API key, API
- *  error, schema-invalid output after retry). The fallback is silent in
- *  the result but emitted to `opts.log` so operators see what happened. */
+/** Async wrapper around buildWorkflowDraftFromTrace. Two architect backends:
+ *  - `opts.model`: direct Anthropic API (needs ANTHROPIC_API_KEY)
+ *  - `opts.viaAgent`: route through the agent registry (uses the agent's own
+ *    Claude Code / Codex session — no raw API key needed, mirrors the wiki
+ *    cron pattern). Trade-off: slower (~5-10s) but operationally simpler.
+ *
+ *  If both are set, `viaAgent` wins. Falls back to the deterministic
+ *  single-agent-node draft on any architect failure. The fallback is silent
+ *  in the return value but emitted to `opts.log`. */
 export async function architectOrBuildDraft(
   trace: TraceRecord,
   steps: TraceStepRecord[] = [],
@@ -244,21 +248,41 @@ export async function architectOrBuildDraft(
     confidence?: number
     generatedFrom?: string
     model?: string
+    viaAgent?: string
+    daemonUrl?: string
     log?: (msg: string) => void
   } = {},
-): Promise<{ workflow: Workflow; usedLlm: boolean; model?: string; error?: string }> {
+): Promise<{ workflow: Workflow; usedLlm: boolean; via?: string; error?: string }> {
   const inferred = inferWorkflowName(trace, steps)
   const id = opts.id || buildWorkflowId(inferred, trace)
   const sourceTaskIds = opts.sourceTaskIds?.length ? opts.sourceTaskIds : [trace.taskId]
   const confidence = opts.confidence ?? 0.55
+  if (opts.viaAgent) {
+    try {
+      const { architectWorkflowViaAgent } = await import("./architect")
+      const result = await architectWorkflowViaAgent(trace, steps, id, sourceTaskIds, confidence, {
+        agentId: opts.viaAgent,
+        daemonUrl: opts.daemonUrl,
+      })
+      return { workflow: result.workflow, usedLlm: true, via: result.via }
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      opts.log?.(`[architect] agent path (${opts.viaAgent}) failed for ${trace.taskId.slice(0, 8)}, falling back to deterministic: ${msg}`)
+      return {
+        workflow: buildWorkflowDraftFromTrace(trace, steps, opts),
+        usedLlm: false,
+        error: msg,
+      }
+    }
+  }
   if (opts.model) {
     try {
       const { architectWorkflowFromTrace } = await import("./architect")
       const result = await architectWorkflowFromTrace(trace, steps, id, sourceTaskIds, confidence, { model: opts.model })
-      return { workflow: result.workflow, usedLlm: true, model: result.model }
+      return { workflow: result.workflow, usedLlm: true, via: `direct:${result.model}` }
     } catch (e: any) {
       const msg = e?.message || String(e)
-      opts.log?.(`[architect] LLM path failed for ${trace.taskId.slice(0, 8)}, falling back to deterministic: ${msg}`)
+      opts.log?.(`[architect] direct API failed for ${trace.taskId.slice(0, 8)}, falling back to deterministic: ${msg}`)
       return {
         workflow: buildWorkflowDraftFromTrace(trace, steps, opts),
         usedLlm: false,
@@ -482,16 +506,16 @@ export function buildDraftsFromClusters(
   return out
 }
 
-/** Async clusters → drafts pipeline with optional LLM architect. When
- *  `opts.model` is set, each cluster's representative trace is passed
- *  through the architect; deterministic fallback runs on any LLM
- *  failure so the absorb command never hard-fails the cron. */
+/** Async clusters → drafts pipeline with optional LLM architect. Pass
+ *  `opts.viaAgent` to route through an agent (preferred — no raw API key)
+ *  or `opts.model` for the direct Anthropic API path. Either way the
+ *  deterministic fallback runs on any failure so the cron never hard-fails. */
 export async function buildDraftsFromClustersAsync(
   db: Database.Database,
   clusters: Array<{ key: string; traces: TraceRecord[]; confidence: number }>,
-  opts: { model?: string; log?: (msg: string) => void } = {},
-): Promise<Array<WorkflowDraftCandidate & { usedLlm: boolean }>> {
-  const out: Array<WorkflowDraftCandidate & { usedLlm: boolean }> = []
+  opts: { model?: string; viaAgent?: string; daemonUrl?: string; log?: (msg: string) => void } = {},
+): Promise<Array<WorkflowDraftCandidate & { usedLlm: boolean; via?: string }>> {
+  const out: Array<WorkflowDraftCandidate & { usedLlm: boolean; via?: string }> = []
   for (const cluster of clusters) {
     const representative = cluster.traces[0]
     const full = getTrace(db, representative.taskId)
@@ -499,8 +523,10 @@ export async function buildDraftsFromClustersAsync(
     const result = await architectOrBuildDraft(representative, full?.steps ?? [], {
       sourceTaskIds,
       confidence: cluster.confidence,
-      generatedFrom: opts.model ? "llm-architect" : "workflow-absorb",
+      generatedFrom: opts.viaAgent || opts.model ? "llm-architect" : "workflow-absorb",
       model: opts.model,
+      viaAgent: opts.viaAgent,
+      daemonUrl: opts.daemonUrl,
       log: opts.log,
     })
     out.push({
@@ -508,8 +534,9 @@ export async function buildDraftsFromClustersAsync(
       workflow: result.workflow,
       sourceTaskIds,
       confidence: cluster.confidence,
-      reason: `${cluster.traces.length} similar successful task traces${result.usedLlm ? " (LLM-architected)" : ""}`,
+      reason: `${cluster.traces.length} similar successful task traces${result.usedLlm ? ` (LLM-architected via ${result.via})` : ""}`,
       usedLlm: result.usedLlm,
+      via: result.via,
     })
   }
   return out

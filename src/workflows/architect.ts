@@ -45,31 +45,62 @@ const ARCHITECT_SYSTEM = `You are a workflow architect for AgentX. Given a succe
 
 Decomposition rules:
 - Group related tool calls into one semantic node. Five Bash calls that pull a repo, install deps, run migrations, restart services, and verify status are ONE deploy node, not five.
-- Use deterministic node types (action.run, action.builtin, transform, branch) when the work is mechanical.
+- Prefer LINEAR workflows. Use branch ONLY when the procedure had a clear conditional fork that future runs will also need (e.g. "if migration → backup db first; else skip"). Don't invent branches the trace didn't actually exercise.
+- Use deterministic node types (action.run, action.builtin, transform) when the work is mechanical.
 - Use an "agent" node only when the step genuinely requires LLM reasoning (drafting prose, classifying intent, synthesizing output).
-- Identify branching points: was there a conditional path the agent took based on the previous result? Model with a "branch" node and edges with fromPort labels.
 - Parameterize specific values with template placeholders: {{trigger.input.issueId}}, {{trigger.input.message}}, {{previousNodeId.outputField}}.
 
-Available node types:
-- trigger.manual    config: { inputSchema: JSON-Schema-like }
-- agent             config: { agentId, prompt }
-- transform         config: { expression }            (jq-style)
-- branch            config: { cases: [{ when, port }] }
-- rule              config: { rows: [...] }           (DMN decision table)
-- action.run        config: { command }               (shell)
-- action.send       config: { channel, chatId, text }
-- action.builtin    config: { name, input }           (typed built-in actions)
-- extract.structured config: { prompt, schema }
-- userTask          config: { form, assignee }
-- checkpoint        config: { label }
-- end               config: { status, output }
+Available node types and their configs:
+- trigger.manual         config: { inputSchema?: JSON-schema-like }
+- agent                  config: { agentId: string, prompt: string }
+- transform              config: { expression: string }                  (jq-style data shaping)
+- action.run             config: { command: string }                     (shell, supports {{templates}})
+- action.send            config: { channel: string, chatId: string, text: string }
+- action.builtin         config: { name: string, input: object }         (e.g. name: "http.fetch")
+- extract.structured     config: { prompt: string, schema: object }
+- branch                 config: { cases: [{ when: <Condition>, to: <port-name> }, ...], default?: <port-name> }
+- rule                   config: { rows: [...] }                         (DMN decision table)
+- userTask               config: { form: object, assignee: string }
+- checkpoint             config: { label: string }
+- end                    config: { status: "completed"|"failed", output?: any }
 
-Edges connect nodes. Use fromPort for branch/rule outputs. Node ids must match /^[a-z0-9_]+$/.
+Branch/rule mechanics — read carefully:
+- The "to" field in cases is a PORT NAME (a string label), NOT a node id.
+- Each outgoing edge from a branch must have fromPort equal to one of the port names declared in cases or in default.
+- The edge.to field is the destination node id.
+
+WORKED EXAMPLE — a deploy workflow with a conditional migration backup:
+{
+  "title": "MTGL deploy to staging",
+  "description": "Pull master, optionally back up DB if migration, run migrations, rebuild caches.",
+  "nodes": [
+    { "id": "trigger",       "type": "trigger.manual", "config": {} },
+    { "id": "pull",          "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && git pull origin master'" } },
+    { "id": "needs_backup",  "type": "branch", "config": { "cases": [{ "when": { "kind": "matches", "params": { "path": "pull.stdout", "pattern": "migrate" } }, "to": "yes" }], "default": "no" } },
+    { "id": "backup_db",     "type": "action.run", "config": { "command": "ssh staging 'pg_dump app > /backups/{{trigger.input.timestamp}}.sql'" } },
+    { "id": "migrate",       "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && php artisan migrate --force'" } },
+    { "id": "rebuild_cache", "type": "action.run", "config": { "command": "ssh staging 'cd /var/www && php artisan config:cache && php artisan route:cache'" } },
+    { "id": "done",          "type": "end", "config": { "status": "completed" } }
+  ],
+  "edges": [
+    { "from": "trigger",       "to": "pull" },
+    { "from": "pull",          "to": "needs_backup" },
+    { "from": "needs_backup",  "to": "backup_db",     "fromPort": "yes" },
+    { "from": "needs_backup",  "to": "migrate",       "fromPort": "no"  },
+    { "from": "backup_db",     "to": "migrate" },
+    { "from": "migrate",       "to": "rebuild_cache" },
+    { "from": "rebuild_cache", "to": "done" }
+  ]
+}
+
+Notice: the branch's cases have to:"yes" and default:"no". The two outgoing edges have fromPort:"yes" and fromPort:"no" — matching the port names. Edge.to is always a node id.
 
 Constraints:
-- Exactly one trigger.* node, at least one "end" node, and the graph must be a DAG (no cycles).
+- Exactly one trigger.* node and at least one "end" node.
+- DAG only (no cycles).
 - Every edge's from/to must reference an existing node id.
-- Don't invent fields not in the spec above.`
+- Node ids match /^[a-z0-9][a-z0-9_]*$/.
+- Don't invent fields not in the spec above. Don't add config keys you didn't see in this spec.`
 
 /** JSON-Schema fed to the Anthropic forced tool_use. Shape mirrors the
  *  subset of workflowSchema that the LLM should produce — the rest of the
@@ -263,6 +294,185 @@ function assembleWorkflow(
     retention: { maxRuns: 500, maxDays: 90 },
     maxChildDepth: 5,
   })
+}
+
+/** Pull the first balanced JSON object out of free-form agent reply text.
+ *  Agents tend to wrap JSON in fenced code blocks, prose preambles, or both.
+ *  We scan for `{` and walk forward counting braces, ignoring braces inside
+ *  string literals. Returns null if no balanced object is found. */
+function extractFirstJsonObject(text: string): string | null {
+  // Strip code fences first — they're the common case and the brace walker
+  // doesn't need to handle them, but they're free to remove.
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const haystack = fenced ? fenced[1] : text
+  const start = haystack.indexOf("{")
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < haystack.length; i++) {
+    const ch = haystack[i]
+    if (escape) { escape = false; continue }
+    if (ch === "\\" && inString) { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === "{") depth++
+    else if (ch === "}") {
+      depth--
+      if (depth === 0) return haystack.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+/** Dispatch a task to the agent registry over HTTP, ask the agent to emit
+ *  workflow JSON, parse + validate. Same fallback semantics as the direct
+ *  API path: throw on any failure so the caller can fall back to the
+ *  deterministic single-node draft. Uses the daemon's POST /task endpoint
+ *  rather than registry.execute() directly because the architect runs from
+ *  the CLI process which doesn't have the registry in scope. */
+async function callAgent(
+  agentId: string,
+  systemPrompt: string,
+  userMessage: string,
+  feedback: string | null,
+  chatId: string,
+  opts: { daemonUrl: string; timeoutMs: number; fetchImpl: typeof fetch },
+): Promise<{ data: ArchitectDraftShape; usage: { inputTokens: number; outputTokens: number } }> {
+  // First-attempt: full system + spec + trace. Retry: short corrective
+  // message — the agent already has its own prior reply in context via
+  // claude --resume, so we don't need to repeat the spec. Stable chatId
+  // (passed in from the caller) keeps both calls in the same session.
+  const fullMessage = feedback
+    ? [
+        `Your previous response failed workflow-schema validation with these issues:`,
+        feedback,
+        ``,
+        `Re-emit the corrected workflow as a single JSON object — same shape as before, but fix the listed issues. No prose, no code fences.`,
+      ].join("\n")
+    : [
+        systemPrompt,
+        "",
+        "---",
+        "",
+        "Task trace to architect:",
+        "",
+        userMessage,
+        "",
+        "---",
+        "",
+        `Reply with ONLY a JSON object matching this shape (no prose, no fenced code block, no commentary):`,
+        `{`,
+        `  "title": "<short title>",`,
+        `  "description": "<short description>",`,
+        `  "nodes": [{ "id": "...", "type": "...", "config": {} }, ...],`,
+        `  "edges": [{ "from": "...", "to": "...", "fromPort": "..." (optional), "label": "..." (optional) }, ...]`,
+        `}`,
+      ].join("\n")
+
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs)
+  let res: Response
+  try {
+    res = await opts.fetchImpl(`${opts.daemonUrl.replace(/\/+$/, "")}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: agentId,
+        message: fullMessage,
+        // Only the first call uses freshSession — the retry needs to see
+        // the agent's prior reply (via --resume replay) so it can fix
+        // its own output rather than start over from scratch.
+        freshSession: feedback === null,
+        context: { channel: "api", chatId },
+      }),
+      signal: ctrl.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "")
+    throw new Error(`agent /task ${res.status}: ${errBody.slice(0, 500)}`)
+  }
+  const body: any = await res.json()
+  const content = String(body.content ?? "").trim()
+  if (body.error) throw new Error(`agent reported error: ${body.error}`)
+  if (!content) throw new Error("agent returned empty content")
+
+  const jsonStr = extractFirstJsonObject(content)
+  if (!jsonStr) throw new Error(`agent reply has no JSON object (first 200 chars: ${content.slice(0, 200)})`)
+  let parsed: unknown
+  try { parsed = JSON.parse(jsonStr) } catch (e: any) {
+    throw new Error(`agent reply JSON is unparseable: ${e.message}`)
+  }
+  if (!parsed || typeof parsed !== "object") throw new Error("agent reply is not a JSON object")
+  const data = parsed as ArchitectDraftShape
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+    throw new Error("agent reply missing nodes/edges arrays")
+  }
+
+  const usage = body.usage ?? {}
+  return {
+    data,
+    usage: {
+      inputTokens: typeof usage.inputTokens === "number" ? usage.inputTokens : 0,
+      outputTokens: typeof usage.outputTokens === "number" ? usage.outputTokens : 0,
+    },
+  }
+}
+
+/** Architect a workflow via the agent registry instead of direct Anthropic
+ *  API. Mirrors `architectWorkflowFromTrace` but routes the LLM call through
+ *  POST /task → registry.execute → claude-code subprocess (or codex-cli).
+ *  Operators don't need a raw ANTHROPIC_API_KEY — the agent's own session
+ *  token handles auth. Trade-off: ~5-10s per call vs ~2s for direct API,
+ *  fine for cron use. */
+export async function architectWorkflowViaAgent(
+  trace: TraceRecord,
+  steps: TraceStepRecord[],
+  inferredId: string,
+  sourceTaskIds: string[],
+  confidence: number,
+  opts: { agentId: string; daemonUrl?: string; timeoutMs?: number; fetchImpl?: typeof fetch } = { agentId: "" },
+): Promise<{ workflow: Workflow; usage: { inputTokens: number; outputTokens: number }; via: string }> {
+  if (!opts.agentId) throw new Error("architectWorkflowViaAgent: agentId is required")
+  const daemonUrl = opts.daemonUrl || "http://127.0.0.1:18800"
+  const fetchImpl = opts.fetchImpl || fetch
+  const callOpts = {
+    daemonUrl,
+    timeoutMs: opts.timeoutMs ?? 180_000, // 3 min — agent dispatch is slower than direct API
+    fetchImpl,
+  }
+  const userMessage = summarizeTraceForPrompt(trace, steps)
+  // Stable per-trace chatId so the retry's --resume replay surfaces the
+  // agent's first reply. SessionStore keys on (agentId, channel, chatId);
+  // sessions persist past the call but the unique-per-trace shape means
+  // unrelated absorbs don't share context.
+  const chatId = `architect-${trace.taskId.toLowerCase()}`
+
+  const first = await callAgent(opts.agentId, ARCHITECT_SYSTEM, userMessage, null, chatId, callOpts)
+  let usage = first.usage
+  let raw = first.data
+
+  let workflow: Workflow
+  try {
+    workflow = assembleWorkflow(raw, trace, steps, inferredId, sourceTaskIds, confidence)
+    const lintIssues = lintWorkflow(workflow)
+    if (lintIssues.length) throw new Error(`lint: ${lintIssues.join("; ")}`)
+    return { workflow, usage, via: `agent:${opts.agentId}` }
+  } catch (err: any) {
+    const retry = await callAgent(opts.agentId, ARCHITECT_SYSTEM, userMessage, err.message, chatId, callOpts)
+    raw = retry.data
+    usage = {
+      inputTokens: usage.inputTokens + retry.usage.inputTokens,
+      outputTokens: usage.outputTokens + retry.usage.outputTokens,
+    }
+    workflow = assembleWorkflow(raw, trace, steps, inferredId, sourceTaskIds, confidence)
+    const lintIssues = lintWorkflow(workflow)
+    if (lintIssues.length) throw new Error(`agent architect retry still invalid: ${lintIssues.join("; ")}`)
+    return { workflow, usage, via: `agent:${opts.agentId}` }
+  }
 }
 
 /** Architect a workflow from a task trace using an LLM. Throws on any
