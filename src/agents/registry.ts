@@ -32,6 +32,17 @@ import { WorkflowStore, matchWorkflow } from "@/workflows"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
+/**
+ * Context Surgery — coding-channel detector. A `claude-code` or `codex-cli`
+ * tier agent triggered by a github/gitlab webhook is doing focused code work
+ * on one issue/PR. The mesh-peer landscape and full session-history aren't
+ * useful in that context and bias the agent on noise.
+ */
+function isCodingChannelContext(channel: string, tier: string): boolean {
+  if (tier !== "claude-code" && tier !== "codex-cli") return false
+  return channel === "github" || channel === "gitlab"
+}
+
 /** Global singleton for sub-agent spawning from tools */
 let globalRegistry: AgentRegistry | undefined
 
@@ -1118,12 +1129,25 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] compaction failed (non-fatal): ${e.message}`)
     }
 
+    // Context Surgery — Fix 1: cap session history for coding-channel
+    // contexts. Long github/gitlab issue threads anchor the agent on
+    // accumulated assumptions (the diagnosis from ksi-v2 review). Tighter
+    // cap forces code-first investigation; thread remains accessible via
+    // `gh`/`glab` if the agent explicitly fetches it. Gated behind
+    // AGENTX_CONTEXT_SURGERY=1 for one-week soak before unconditional rollout.
+    const surgeryEnabled = process.env.AGENTX_CONTEXT_SURGERY === "1"
+    const historyCap = isCodexCli
+      ? { maxMessages: 8, maxChars: 2400 }
+      : (surgeryEnabled && isCodingChannelContext(channel, state.def.tier))
+        ? { maxMessages: 6, maxChars: 1800 }
+        : undefined
+
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(
           task.agentId,
           channel,
           chatId,
-          isCodexCli ? { maxMessages: 8, maxChars: 2400 } : undefined,
+          historyCap,
         )
       : undefined
 
@@ -1346,8 +1370,39 @@ export class AgentRegistry {
     // agent has no memories yet — no prompt bloat for fresh agents.
     const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId)
 
+    // Context Surgery — Fix 4: code-first operating principle for coding-tier
+    // agents. Cacheable (lives in the system-prompt prefix). Empty for non-
+    // coding tiers so chat/orchestrator agents are unaffected.
+    const codeFirstInstruction =
+      (state.def.tier === "claude-code" || state.def.tier === "codex-cli")
+        ? "[Operating principle]\nAlways investigate the codebase before relying on issue history or comments. The code is the source of truth — start by reading relevant files (CLAUDE.md, then code), and consult conversation context only to clarify intent. Issue threads may contain wrong hypotheses; verify against the source."
+        : ""
+
+    // Context Surgery — Fix 3: per-workspace CLAUDE.md auto-injection. Read
+    // once at task-setup, cap at 4KB to bound prompt size, silent fallback so
+    // a missing/unreadable file is a no-op. Lives in the cacheable system
+    // prompt prefix; project-specific patterns reach the agent before any
+    // task context.
+    let projectClaudeMd = ""
+    if (state.def.workspace) {
+      const claudeMdPath = resolve(state.def.workspace, "CLAUDE.md")
+      if (existsSync(claudeMdPath)) {
+        try {
+          const content = readFileSync(claudeMdPath, "utf-8")
+          const trimmed = content.length > 4000
+            ? content.slice(0, 4000) + "\n\n[CLAUDE.md truncated to 4KB]"
+            : content
+          projectClaudeMd = `[Project CLAUDE.md]\n${trimmed}`
+        } catch {
+          // silent — the agent works fine without it
+        }
+      }
+    }
+
     const systemPromptAppend = [
       state.def.systemPrompt || "",
+      codeFirstInstruction,
+      projectClaudeMd,
       bootstrapContextText || "",
       agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
@@ -1364,7 +1419,14 @@ export class AgentRegistry {
       sender: senderName,
       senderId: task.context?.senderId,
       senderUsername: task.context?.senderUsername,
-      landscape: isCodexCli ? undefined : this.landscape?.getForAgent(task.agentId),
+      // Context Surgery — Fix 2: skip landscape for coding-tier agents in
+      // github/gitlab contexts. The mesh-peer summary (~1-2K tokens of cross-
+      // team agents) is irrelevant for focused code work on one issue/PR and
+      // anchors the agent on context it shouldn't be using. Chat/orchestrator
+      // agents still get the landscape — that's where peer discovery matters.
+      landscape: (isCodexCli || isCodingChannelContext(channel, state.def.tier))
+        ? undefined
+        : this.landscape?.getForAgent(task.agentId),
       channelMeta: task.context?.channelMeta,
       mediaPath: task.context?.mediaPath,
       mediaType: task.context?.mediaType,
