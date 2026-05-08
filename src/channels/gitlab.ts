@@ -156,6 +156,10 @@ export class GitLabAdapter implements ChannelAdapter {
   private readonly DISPATCH_TTL_MS = 5 * 60 * 1000
   private log: (...args: unknown[]) => void
   private hooks?: HookRegistry
+  /** Per-project rules — when set, gates webhook dispatch by action/labels/
+   *  state/author and resolves a runbook path for the agent. Optional;
+   *  unset = legacy behaviour (no filtering, no runbook injection). */
+  private rules?: import("@/projects/rules").ProjectRulesStore
   private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
   private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
@@ -186,6 +190,11 @@ export class GitLabAdapter implements ChannelAdapter {
 
   setSetLabelsForwarder(fn: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>): void {
     this.setLabelsForwarder = fn
+  }
+
+  /** Inject the project rules store. Called once at daemon boot. */
+  setProjectRules(rules: import("@/projects/rules").ProjectRulesStore): void {
+    this.rules = rules
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -505,6 +514,21 @@ export class GitLabAdapter implements ChannelAdapter {
       noteableTitle = event.merge_request.title
     }
 
+    // Project-rule note filter — runs AFTER cascade-prevention so we don't
+    // log "rule dropped" for our own bot replies, but BEFORE expensive
+    // resolveAgent + downstream dispatch. Drops comments whose noteable
+    // type isn't in `onlyOn`, comments from excluded authors, and comments
+    // missing every required `triggers` (mention/keyword) match.
+    const noteRuleDecision = this.rules?.shouldFireGitlabNote(project, {
+      noteableType,
+      text: note,
+      authorUsername: user.username,
+    })
+    if (noteRuleDecision && !noteRuleDecision.allow) {
+      this.log(`Note ${noteId} on ${project} ${noteableType}#${noteableIid} dropped by rule: ${noteRuleDecision.reason}`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
     debug.webhook("gitlab", "handleNote", `noteId=${noteId} mentions=[${mentions.join(",")}] user=${user.username}`)
 
@@ -592,6 +616,8 @@ export class GitLabAdapter implements ChannelAdapter {
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
       media: imageAttachment,
       intentRef,
+      runbookPath: this.rules?.find(project)?.runbook,
+      runbookFiles: this.rules?.find(project)?.runbookFiles,
     }
 
     this.handler(incoming).catch((e) => {
@@ -613,6 +639,30 @@ export class GitLabAdapter implements ChannelAdapter {
     const project = event.project.path_with_namespace
     const defaultAgentId = this.resolveAgent(project)
 
+    // Project rules — earliest filter. If a rule exists for this project and
+    // its issue clause rejects (action/labels/state/author), drop the event
+    // entirely: no hook fires, no default dispatch, no agent task runs.
+    // This is what stops triage feedback loops (re-fire on every label
+    // change) and prevents agents from intervening on closed issues, etc.
+    // GitLab payloads carry labels at object_attributes.labels (array of
+    // {title} or strings) or top-level event.labels — typed schema doesn't
+    // declare either field; the runtime payload does.
+    const attrsLabelsRaw = (attrs as any).labels
+    const eventLabelsRaw = (event as any).labels
+    const ruleLabels = Array.isArray(attrsLabelsRaw)
+      ? attrsLabelsRaw.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
+      : (Array.isArray(eventLabelsRaw) ? eventLabelsRaw.map((l: any) => l?.title).filter(Boolean) : [])
+    const ruleDecision = this.rules?.shouldFireGitlabIssue(project, {
+      action: attrs.action,
+      state: attrs.state,
+      labels: ruleLabels,
+      authorUsername: event.user.username,
+    })
+    if (ruleDecision && !ruleDecision.allow) {
+      this.log(`Issue #${attrs.iid} dropped by rule: ${ruleDecision.reason}`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
     // Bot-authored issue events (label changes, assignments by agents) skip
     // the DEFAULT agent dispatch path to prevent cascade loops — but still
     // fire the `on:gitlab-issue` hook below so workflow subscribers and
@@ -623,6 +673,14 @@ export class GitLabAdapter implements ChannelAdapter {
     if (authoredByBot) {
       this.log(`Issue #${attrs.iid} authored by bot "${event.user.username}" — default dispatch suppressed (hooks still fire)`)
     }
+
+    // Resolve the per-project runbook hint once — stamped onto every
+    // IncomingMessage emitted from this handler so the registry can read
+    // CLAUDE.md / AGENTS.md / DEPLOY.md from the project root rather than
+    // the agent's generic workspace.
+    const projectRule = this.rules?.find(project)
+    const runbookPath = projectRule?.runbook
+    const runbookFiles = projectRule?.runbookFiles
 
     // Fire `on:gitlab-issue` hook so projects can customize routing — e.g.
     // trigger a specific agent on assignment rather than the project default.
@@ -724,6 +782,8 @@ export class GitLabAdapter implements ChannelAdapter {
             issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
           intentRef,
+          runbookPath,
+          runbookFiles,
         }
         this.log(`Issue #${attrs.iid} hook dispatch -> agent "${d.agentId}"${d.preferNode || mapping?.node ? ` (remote: ${d.preferNode || mapping?.node})` : ""}`)
         this.handler(incoming).catch((e) => this.log(`Error handling hook dispatch: ${e.message}`))
@@ -864,6 +924,8 @@ export class GitLabAdapter implements ChannelAdapter {
             issue: { type: "issue", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
           intentRef,
+          runbookPath,
+          runbookFiles,
         }
 
         this.log(`Issue #${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
@@ -1045,6 +1107,8 @@ export class GitLabAdapter implements ChannelAdapter {
             issue: { type: "merge_request", iid: String(attrs.iid), title: attrs.title },
           } : undefined,
           intentRef,
+          runbookPath: this.rules?.find(project)?.runbook,
+          runbookFiles: this.rules?.find(project)?.runbookFiles,
         }
 
         this.log(`MR !${attrs.iid} -> agent "${t.agentId}" (trigger: ${t.trigger})`)
@@ -1108,6 +1172,15 @@ export class GitLabAdapter implements ChannelAdapter {
     const project = event.project.path_with_namespace
     const terminalStatuses = ["success", "failed", "canceled"]
 
+    // Project rule — drop the entire pipeline event when the project's
+    // pipeline.actions whitelist excludes this status. Skips both the hook
+    // fire and the failure-routing default below.
+    const pipeRuleDecision = this.rules?.shouldFireGitlabPipeline(project, { status: attrs.status })
+    if (pipeRuleDecision && !pipeRuleDecision.allow) {
+      this.log(`Pipeline ${attrs.id} on ${project} dropped by rule: ${pipeRuleDecision.reason}`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
     // Fire on:gitlab-pipeline hook for all terminal pipelines (side-effect hooks, e.g. time logging)
     if (terminalStatuses.includes(attrs.status) && this.hooks?.has("on:gitlab-pipeline" as any)) {
       this.hooks.execute("on:gitlab-pipeline" as any, {
@@ -1145,6 +1218,8 @@ export class GitLabAdapter implements ChannelAdapter {
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
+      runbookPath: this.rules?.find(project)?.runbook,
+      runbookFiles: this.rules?.find(project)?.runbookFiles,
     }
 
     this.handler(incoming).catch((e) => this.log(`Error handling pipeline: ${e.message}`))

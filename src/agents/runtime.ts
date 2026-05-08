@@ -138,6 +138,13 @@ export interface AgentTask {
       issue?: { type: string; iid: string; title: string }
       facts?: string[]
     }
+    /** Path to the project root whose runbook (CLAUDE.md / AGENTS.md / etc.)
+     *  should be injected into the agent's system prefix for this task.
+     *  Set by the gitlab/github adapters when a project rule resolves a
+     *  `runbook:` path. Optional. */
+    runbookPath?: string
+    /** Override list of files to read from runbookPath. Optional. */
+    runbookFiles?: string[]
   }
 }
 

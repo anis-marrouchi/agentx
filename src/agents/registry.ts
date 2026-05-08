@@ -1399,10 +1399,47 @@ export class AgentRegistry {
       }
     }
 
+    // Per-channel-event runbook injection — when a project rule resolves a
+    // runbook path (gitlab/github adapters stamp it onto IncomingMessage),
+    // pull the canonical file set (CLAUDE.md / AGENTS.md / DEPLOY.md /
+    // RUNBOOK.md, overridable per-project) and append to the system prefix.
+    // This is what carries the *target* project's deploy steps and server
+    // mapping into the agent's context — without it the agent falls back to
+    // its workspace's CLAUDE.md, which doesn't know about ./cache_clear.sh
+    // or which host runs the deploy. Each file capped at 4KB; the whole
+    // bundle capped at 16KB to keep the cacheable prefix bounded.
+    const runbookPath = task.context?.runbookPath
+    const runbookBlocks: string[] = []
+    if (runbookPath && existsSync(runbookPath)) {
+      const filesToTry = task.context?.runbookFiles && task.context.runbookFiles.length > 0
+        ? task.context.runbookFiles
+        : ["CLAUDE.md", "AGENTS.md", "DEPLOY.md", "RUNBOOK.md"]
+      let totalBytes = 0
+      const PER_FILE_CAP = 4000
+      const TOTAL_CAP = 16000
+      for (const filename of filesToTry) {
+        if (totalBytes >= TOTAL_CAP) break
+        const filePath = resolve(runbookPath, filename)
+        if (!existsSync(filePath)) continue
+        try {
+          const content = readFileSync(filePath, "utf-8")
+          const trimmed = content.length > PER_FILE_CAP
+            ? content.slice(0, PER_FILE_CAP) + `\n\n[${filename} truncated to ${PER_FILE_CAP} bytes]`
+            : content
+          runbookBlocks.push(`[Project Runbook — ${filename} from ${runbookPath}]\n${trimmed}`)
+          totalBytes += trimmed.length
+        } catch {
+          // silent — missing readability is a no-op
+        }
+      }
+    }
+    const projectRunbook = runbookBlocks.length > 0 ? runbookBlocks.join("\n\n") : ""
+
     const systemPromptAppend = [
       state.def.systemPrompt || "",
       codeFirstInstruction,
       projectClaudeMd,
+      projectRunbook,
       bootstrapContextText || "",
       agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined

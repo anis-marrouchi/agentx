@@ -65,6 +65,17 @@ export interface IncomingMessage {
     eventId: string
     decidedBy: string
   }
+  /** Path to the project root whose runbook (CLAUDE.md / AGENTS.md / etc.)
+   *  the agent should consult for this task. Set by the gitlab/github
+   *  adapters when a project rule resolves a `runbook:` path. The agent
+   *  registry reads the file set into the cacheable system prefix.
+   *  Undefined when no rule matched — agent uses its own workspace's
+   *  CLAUDE.md as before. */
+  runbookPath?: string
+  /** Override list of files the registry should read from runbookPath.
+   *  Carried alongside the path so per-project customisation applies
+   *  without the registry re-reading the rule. */
+  runbookFiles?: string[]
 }
 
 export interface OutgoingMessage {

@@ -783,6 +783,8 @@ export class MessageRouter {
           mediaType: msg.media?.type,
           replyToText: msg.replyToText,
           channelMeta: msg.channelMeta,
+          runbookPath: msg.runbookPath,
+          runbookFiles: msg.runbookFiles,
         },
       },
       onDelta,
@@ -1237,6 +1239,8 @@ export class MessageRouter {
       mediaType: msg.media?.type,
       replyToText: msg.replyToText,
       channelMeta: msg.channelMeta,
+      runbookPath: msg.runbookPath,
+      runbookFiles: msg.runbookFiles,
     }
   }
 

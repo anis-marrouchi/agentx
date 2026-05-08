@@ -169,6 +169,10 @@ export class GitHubAdapter implements ChannelAdapter {
   private sentCommentIds: Set<string> = new Set()
   private log: (...args: unknown[]) => void
   private sendCommentForwarder?: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>
+  /** Per-project rules — when set, gates webhook dispatch by action/labels/
+   *  state/author and resolves a runbook path for the agent. Optional;
+   *  unset = legacy hardcoded actionable arrays. */
+  private rules?: import("@/projects/rules").ProjectRulesStore
   // GitHub App auth state
   private appPrivateKey?: string
   private installationTokens: Map<string, { token: string; expiresAt: number }> = new Map()
@@ -180,6 +184,11 @@ export class GitHubAdapter implements ChannelAdapter {
 
   setSendCommentForwarder(fn: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>): void {
     this.sendCommentForwarder = fn
+  }
+
+  /** Inject the project rules store. Called once at daemon boot. */
+  setProjectRules(rules: import("@/projects/rules").ProjectRulesStore): void {
+    this.rules = rules
   }
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
@@ -468,6 +477,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     const channelMeta = await this.getChannelMeta(chatId)
 
+    const projectRuleForComment = this.rules?.find(repo)
     const incoming: IncomingMessage = {
       id: commentId,
       channel: "github",
@@ -483,6 +493,8 @@ export class GitHubAdapter implements ChannelAdapter {
       resolvedAgent: agentId,
       preferNode: mapping?.node,
       channelMeta,
+      runbookPath: projectRuleForComment?.runbook,
+      runbookFiles: projectRuleForComment?.runbookFiles,
     }
 
     // React with 👀
@@ -500,15 +512,33 @@ export class GitHubAdapter implements ChannelAdapter {
     // Skip bot PRs
     if (this.isBotUser(pr.user.login)) return
 
-    // Only handle actionable events
-    const actionable = ["opened", "reopened", "ready_for_review"]
-    if (!actionable.includes(event.action)) return
+    // Project-rule gate. When a rule exists, it owns the actionable allowlist
+    // (actions / requireLabels / excludeLabels / excludeStates / excludeAuthors).
+    // Without a rule, fall back to the legacy hardcoded allowlist so existing
+    // projects without a rule file keep working.
+    const labels = (((pr as any).labels ?? []) as any[]).map((l: any) => l?.name).filter(Boolean)
+    const ruleDecision = this.rules?.shouldFireGithubPR(repo, {
+      action: event.action,
+      state: pr.state,
+      labels,
+      authorUsername: pr.user.login,
+    })
+    if (ruleDecision) {
+      if (!ruleDecision.allow) {
+        this.log(`PR #${pr.number} on ${repo} dropped by rule: ${ruleDecision.reason}`)
+        return
+      }
+    } else {
+      const actionable = ["opened", "reopened", "ready_for_review"]
+      if (!actionable.includes(event.action)) return
+    }
 
     const chatId = `${repo}:pull:${pr.number}`
     const agentId = this.resolveAgent(repo)
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
 
     const channelMeta = await this.getChannelMeta(chatId)
+    const projectRule = this.rules?.find(repo)
 
     const incoming: IncomingMessage = {
       id: `pr-${repo}-${pr.number}`,
@@ -525,6 +555,8 @@ export class GitHubAdapter implements ChannelAdapter {
       resolvedAgent: agentId,
       preferNode: mapping?.node,
       channelMeta,
+      runbookPath: projectRule?.runbook,
+      runbookFiles: projectRule?.runbookFiles,
     }
 
     this.handler(incoming).catch(e => this.log(`Error handling PR: ${e.message}`))
@@ -606,12 +638,29 @@ export class GitHubAdapter implements ChannelAdapter {
 
     if (this.isBotUser(issue.user.login)) return
 
-    const actionable = ["opened", "assigned", "reopened"]
-    if (!actionable.includes(event.action)) return
+    // Project-rule gate. Same shape as handlePR — rule wins, otherwise
+    // legacy hardcoded allowlist applies.
+    const labels = (((issue as any).labels ?? []) as any[]).map((l: any) => l?.name ?? l).filter(Boolean)
+    const ruleDecision = this.rules?.shouldFireGithubIssue(repo, {
+      action: event.action,
+      state: issue.state,
+      labels,
+      authorUsername: issue.user.login,
+    })
+    if (ruleDecision) {
+      if (!ruleDecision.allow) {
+        this.log(`Issue #${issue.number} on ${repo} dropped by rule: ${ruleDecision.reason}`)
+        return
+      }
+    } else {
+      const actionable = ["opened", "assigned", "reopened"]
+      if (!actionable.includes(event.action)) return
+    }
 
     const chatId = `${repo}:issue:${issue.number}`
     const agentId = this.resolveAgent(repo)
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
+    const projectRule = this.rules?.find(repo)
 
     const incoming: IncomingMessage = {
       id: `issue-${repo}-${issue.number}`,
@@ -627,6 +676,8 @@ export class GitHubAdapter implements ChannelAdapter {
       raw: event,
       resolvedAgent: agentId,
       preferNode: mapping?.node,
+      runbookPath: projectRule?.runbook,
+      runbookFiles: projectRule?.runbookFiles,
     }
 
     this.handler(incoming).catch(e => this.log(`Error handling issue: ${e.message}`))

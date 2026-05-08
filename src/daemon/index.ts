@@ -17,6 +17,7 @@ import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
+import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
@@ -73,6 +74,10 @@ export class AgentXDaemon {
   private registry: AgentRegistry
   private router: MessageRouter
   private cron: CronScheduler
+  /** Per-project webhook rules. Hot-reloaded from .agentx/projects/.
+   *  Wired into the gitlab/github adapters at startup so they can gate
+   *  events and resolve runbook paths. */
+  private projectRules: ProjectRulesStore
   private mesh?: A2AMesh
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
@@ -162,6 +167,24 @@ export class AgentXDaemon {
     if (Object.keys(this.config.services).length > 0) {
       const serviceMatcher = new ServiceMatcher(this.config.services, this.log)
       this.router.setServiceMatcher(serviceMatcher)
+    }
+
+    // Per-project webhook rules — load from .agentx/projects/ before any
+    // adapter starts so the very first webhook honours them. Watch the
+    // directory for changes (debounced inside the store). Constructed
+    // unconditionally — empty directory = empty store = legacy behaviour
+    // for every project.
+    this.projectRules = new ProjectRulesStore(
+      resolve(process.cwd(), ".agentx/projects"),
+      (...args) => this.log("[projects]", ...args),
+    )
+    {
+      const result = this.projectRules.load()
+      this.log(`Loaded ${result.count} project rule(s) from .agentx/projects/${result.errors > 0 ? ` (${result.errors} validation error(s))` : ""}`)
+      this.projectRules.startWatching(() => {
+        // No need to re-wire adapters: they hold a reference to the store
+        // and lookups are dynamic on each event.
+      })
     }
 
     // Initialize cron scheduler with failure notifications
@@ -633,6 +656,10 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping crons (saving last run times)...")
       await this.cron.stop()
+    } catch {}
+
+    try {
+      this.projectRules.stop()
     } catch {}
 
     try {
@@ -1203,6 +1230,7 @@ export class AgentXDaemon {
           }
         })
       }
+      gitlab.setProjectRules(this.projectRules)
       this.router.addChannel(gitlab)
       this.log(`  GitLab: enabled (${this.config.channels.gitlab.routes.length} project routes, webhook :${this.config.channels.gitlab.webhookPort})`)
     }
@@ -1247,6 +1275,7 @@ export class AgentXDaemon {
           }
         })
       }
+      this.github.setProjectRules(this.projectRules)
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
@@ -2377,7 +2406,8 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       }
 
       switch (`${req.method} ${path}`) {
-        case "GET /health":
+        case "GET /health": {
+          const ruleHealth = this.projectRules.health()
           this.json(res, 200, {
             status: "ok",
             node: this.config.node,
@@ -2385,9 +2415,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
+            projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
             usage: this.resolveTodayUsage(),
           })
           break
+        }
 
         case "GET /usage":
           this.json(res, 200, this.registry.getUsage(7))
