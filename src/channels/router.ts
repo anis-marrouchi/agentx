@@ -154,6 +154,11 @@ export class MessageRouter {
    */
   private recentMessageIds: Map<string, number> = new Map()
   private activeMessageKeys: Set<string> = new Set()
+  /** Outbound idempotency table — opt-in via sendOutbound(opts.idempotencyKey).
+   *  Key: `channel|chatId|hash-or-key`. Value: { postedAt epochMs, messageId }.
+   *  Bounded growth — coarse "drop oldest 10%" sweep when over the cap. */
+  private sendDedupeMap: Map<string, { postedAt: number; messageId: string | null }> = new Map()
+  private readonly SEND_DEDUPE_MAX = 5_000
   private readonly MESSAGE_ID_TTL_MS = 5 * 60 * 1000
   private readonly MESSAGE_ID_MAX_ENTRIES = 2000
   private readonly DEDUP_STORE_PATH = ".agentx/router/dedup.json"
@@ -296,11 +301,40 @@ export class MessageRouter {
    * Used for agent-initiated messages, cron notifications, cross-channel routing.
    *
    * If accountId is not provided for Telegram, auto-resolves from agentId binding.
+   *
+   * `opts.idempotencyKey` — when set, the router caches the (channel,chatId,key)
+   *  tuple for `dedupeWindowMs` (default 60s) and returns the cached messageId
+   *  for repeat calls within the window. The default key is a sha256 of the
+   *  body so an agent that re-runs the same `channel.reply` tool call doesn't
+   *  produce duplicate comments — the canonical fix for the raw-curl-twice
+   *  scenario diagnosed on MR #236 (2026-05-08).
+   *
+   *  Why here and not in the adapter: the router is the single funnel for
+   *  agent + cron + API + cross-channel sends. Workflow `action.send` lives
+   *  at a different abstraction (explicit, scripted, retry semantics owned
+   *  by the engine) so it intentionally stays on the direct adapter path.
    */
-  async sendOutbound(msg: OutgoingMessage & { accountId?: string }): Promise<string | void> {
+  async sendOutbound(
+    msg: OutgoingMessage & { accountId?: string },
+    opts?: { idempotencyKey?: string; dedupeWindowMs?: number },
+  ): Promise<string | void> {
     const adapter = this.channels.get(msg.channel)
     if (!adapter) {
       throw new Error(`Unknown channel: "${msg.channel}". Available: ${[...this.channels.keys()].join(", ")}`)
+    }
+
+    // Idempotency check — only when the caller opts in. Default-off keeps
+    // every legacy /send + cron path working unchanged.
+    const dedupeKey = opts?.idempotencyKey !== undefined
+      ? this.sendDedupeKey(msg.channel, msg.chatId, msg.text, opts.idempotencyKey)
+      : undefined
+    if (dedupeKey) {
+      const window = opts?.dedupeWindowMs ?? 60_000
+      const cached = this.sendDedupeGet(dedupeKey, window)
+      if (cached !== undefined) {
+        this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: dedup hit (suppressed within ${window}ms window)`)
+        return cached ?? undefined
+      }
     }
 
     // Auto-resolve Telegram accountId from agentId if not provided
@@ -316,6 +350,12 @@ export class MessageRouter {
       messageId = await this.adapterSend(adapter, { ...msg, accountId })
     } else {
       messageId = await adapter.send(msg)
+    }
+
+    // Record into dedupe table after the send so a future repeat within the
+    // window returns the same id even when the first send produced a void.
+    if (dedupeKey) {
+      this.sendDedupeStore(dedupeKey, typeof messageId === "string" ? messageId : null)
     }
 
     // Record outbound into the recipient agent's channel session so cron/api/
@@ -872,6 +912,22 @@ export class MessageRouter {
       responseText = `*${agentName}*\n\n${responseText}`
     }
 
+    // Auto-reply gate — channels.<name>.autoReplyLegacy controls whether
+    // the agent's `response.content` gets posted automatically as a comment.
+    // When false, the agent must have explicitly called `channel.reply`
+    // during the task; response.content is then treated as conversational
+    // narrative for trace logs, NOT something to relay back to the channel.
+    // This is the canonical fix for the "agent posts its own self-narrative
+    // as a comment" bug — turning the flag off makes the agent's reasoning
+    // text invisible to the channel by design.
+    const channelCfg = (this.config.channels as Record<string, { autoReplyLegacy?: boolean } | undefined>)?.[msg.channel]
+    const autoReplyLegacy = channelCfg?.autoReplyLegacy !== false  // default true if absent
+    if (!autoReplyLegacy && responseText && (msg.channel === "gitlab" || msg.channel === "github")) {
+      this.log(`Auto-reply suppressed for ${msg.channel}:${chatId} — channel.autoReplyLegacy=false (agent must call channel.reply)`)
+      // Still log into the group conversation log below, just don't post.
+      responseText = ""
+    }
+
     // Final message:
     //   1. Stream landed → editMessageText to replace the streamed preview
     //      with the canonical post-hook responseText.
@@ -1092,6 +1148,41 @@ export class MessageRouter {
 
       break // Route to first mentioned agent per level
     }
+  }
+
+  // --- Outbound idempotency helpers ---
+
+  private sendDedupeKey(channel: string, chatId: string, body: string, idempotencyKey: string): string {
+    if (idempotencyKey) return `${channel}|${chatId}|key:${idempotencyKey}`
+    // Empty-string idempotencyKey means "use body hash". Imported here lazily
+    // to avoid pulling crypto into the router's hot import graph.
+    const { createHash } = require("crypto")
+    const hash = (createHash("sha256").update(body).digest("hex") as string).slice(0, 16)
+    return `${channel}|${chatId}|h:${hash}`
+  }
+
+  private sendDedupeGet(key: string, windowMs: number): string | null | undefined {
+    const entry = this.sendDedupeMap.get(key)
+    if (!entry) return undefined
+    if (Date.now() - entry.postedAt > windowMs) {
+      this.sendDedupeMap.delete(key)
+      return undefined
+    }
+    return entry.messageId
+  }
+
+  private sendDedupeStore(key: string, messageId: string | null): void {
+    if (this.sendDedupeMap.size >= this.SEND_DEDUPE_MAX) {
+      // Coarse eviction — drop the oldest 10% of entries.
+      const target = Math.floor(this.SEND_DEDUPE_MAX * 0.9)
+      const sorted = Array.from(this.sendDedupeMap.entries()).sort(
+        (a, b) => a[1].postedAt - b[1].postedAt,
+      )
+      for (let i = 0; i < sorted.length - target; i++) {
+        this.sendDedupeMap.delete(sorted[i][0])
+      }
+    }
+    this.sendDedupeMap.set(key, { postedAt: Date.now(), messageId })
   }
 
   // --- Adapter helpers that pass accountId for Telegram ---

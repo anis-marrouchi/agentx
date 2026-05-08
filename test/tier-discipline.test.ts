@@ -57,6 +57,11 @@ const DOCUMENTED_SEAMS: RegExp[] = [
   /^@\/a2a\/mesh-instance$/,
   /^@\/agents\/process-registry-instance$/,
   /^@\/agents\/registry-instance$/,
+  // The channel.reply / channel.label built-in actions need the live
+  // MessageRouter to post through the canonical send path (marker, dedupe,
+  // identity, ledger). Documented seam: tier-3 procedure reaches into the
+  // tier-1 channel layer via the explicit getMessageRouter() singleton.
+  /^@\/channels\/router-instance$/,
 ]
 
 const RULES: TierRule[] = [

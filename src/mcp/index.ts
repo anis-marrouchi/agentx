@@ -185,6 +185,63 @@ const TOOLS = [
   // --- Daemon tools (require running daemon) ---
 
   {
+    name: "agentx_channel_reply",
+    description:
+      "Reply to a channel (GitLab issue/MR comment, GitHub issue/PR comment, Telegram/WhatsApp message). PREFER THIS over raw curl/glab/HTTP — it auto-applies agent identity from agentMappings, the cascade-prevention marker, intent-ledger audit, and a 60s body-hash dedupe so an accidental retry within the window is a no-op. Returns the posted message id. For agent-to-agent delegation use agentx_send_agent. For arbitrary outbound sends use agentx_send.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        channel: {
+          type: "string",
+          description: "Channel name. gitlab | github | telegram | whatsapp | discord | slack",
+        },
+        chatId: {
+          type: "string",
+          description: "Stable chat id you received in this task's context. GitLab: 'org/repo:issue:123' or 'org/repo:merge_request:123'. GitHub: 'org/repo:issue:123' or 'org/repo:pull:123'. Telegram: numeric. WhatsApp: '+phone@s.whatsapp.net'.",
+        },
+        text: {
+          type: "string",
+          description: "Reply body. Markdown for gitlab/github/discord; plain for sms/whatsapp.",
+        },
+        agentId: {
+          type: "string",
+          description: "Optional posting identity. Defaults to channel-adapter resolution from agentMappings.",
+        },
+        accountId: {
+          type: "string",
+          description: "Multi-account adapters (telegram) need this when the chat is reachable from more than one bot.",
+        },
+        replyTo: {
+          type: "string",
+          description: "Optional reply-to message id for threaded channels.",
+        },
+        idempotencyKey: {
+          type: "string",
+          description: "Optional explicit dedupe key. When omitted, a body hash is used. Use a stable key for 'overwrite my last status update' patterns.",
+        },
+      },
+      required: ["channel", "chatId", "text"],
+    },
+  },
+  {
+    name: "agentx_channel_label",
+    description:
+      "Add and/or remove labels on a GitLab issue or merge_request through the canonical adapter (per-agent token, ledger). Use this instead of curl when changing labels on the entity that triggered the current task.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        channel: { type: "string", description: "Currently 'gitlab'.", default: "gitlab" },
+        project: { type: "string", description: "GitLab project path — 'org/repo'." },
+        kind: { type: "string", description: "'issue' or 'merge_request'." },
+        iid: { type: "string", description: "Numeric iid as a string." },
+        add: { type: "array", items: { type: "string" }, description: "Labels to add." },
+        remove: { type: "array", items: { type: "string" }, description: "Labels to remove." },
+        agentId: { type: "string", description: "Optional posting identity." },
+      },
+      required: ["project", "kind", "iid"],
+    },
+  },
+  {
     name: "agentx_send",
     description:
       "Low-level outbound send when you ALREADY have a channel-native chatId (Telegram numeric chat id, GitLab 'group/project:issue:123', WhatsApp '+phone@s.whatsapp.net'). For sending to another agent by name, use agentx_send_agent instead. For sending to a human contact by name, use agentx_send_contact instead.",
@@ -629,6 +686,58 @@ async function handleToolCall(
     }
 
     // --- Daemon tools ---
+
+    case "agentx_channel_reply": {
+      const channel = args.channel as string | undefined
+      const chatId = args.chatId as string | undefined
+      const text = args.text as string | undefined
+      if (!channel || !chatId || !text) {
+        return { content: [{ type: "text", text: "Error: channel, chatId, and text are required." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/api/actions/builtin/channel.reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel, chatId, text,
+          agentId: args.agentId,
+          accountId: args.accountId,
+          replyTo: args.replyTo,
+          idempotencyKey: args.idempotencyKey,
+        }),
+      })
+      const data = await res.json() as any
+      if (!res.ok || data.error) {
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      }
+      const messageId = data?.output?.messageId ?? data?.messageId ?? null
+      return { content: [{ type: "text", text: messageId ? `Reply posted. messageId=${messageId}` : "Reply suppressed by dedupe (same body within 60s window)." }] }
+    }
+
+    case "agentx_channel_label": {
+      const channel = (args.channel as string | undefined) ?? "gitlab"
+      const project = args.project as string | undefined
+      const kind = args.kind as string | undefined
+      const iid = args.iid as string | undefined
+      if (!project || !kind || !iid) {
+        return { content: [{ type: "text", text: "Error: project, kind, and iid are required." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/api/actions/builtin/channel.label`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel, project, kind, iid,
+          add: Array.isArray(args.add) ? args.add : [],
+          remove: Array.isArray(args.remove) ? args.remove : [],
+          agentId: args.agentId,
+        }),
+      })
+      const data = await res.json() as any
+      if (!res.ok || data.error) {
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      }
+      const labels = data?.output?.labels ?? []
+      return { content: [{ type: "text", text: `Labels updated. Current: ${Array.isArray(labels) ? labels.join(", ") : "(unknown)"}` }] }
+    }
 
     case "agentx_send": {
       let channel = args.channel as string | undefined

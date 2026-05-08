@@ -224,6 +224,13 @@ const channelsConfigSchema = z.object({
     webhookSecret: z.string().optional(),
     host: z.string().default("https://gitlab.com"),
     token: z.string().optional(),
+    /** Legacy auto-reply: when true (default), the router posts the agent's
+     *  `response.content` as a comment automatically. When false, the agent
+     *  must call the `channel.reply` action explicitly to reply — agent
+     *  reasoning text is logged but not posted. Flip to false once the
+     *  project's agents have migrated their gitlab skill to use channel.reply.
+     *  Default true preserves today's behaviour for unmigrated projects. */
+    autoReplyLegacy: z.boolean().default(true),
     routes: z.array(z.object({
       project: z.string(),
       agent: z.string(),
@@ -242,6 +249,9 @@ const channelsConfigSchema = z.object({
   }).default({}),
   github: z.object({
     enabled: z.boolean().default(false),
+    /** Legacy auto-reply — same semantics as gitlab.autoReplyLegacy.
+     *  Defaults true; set false once agent skills use channel.reply. */
+    autoReplyLegacy: z.boolean().default(true),
     /** GitHub PAT or env var (${GITHUB_TOKEN}) for posting comments back. */
     token: z.string().optional(),
     /** Path to file containing the token (first line read at startup). */

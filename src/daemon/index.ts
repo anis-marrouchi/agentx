@@ -7,6 +7,7 @@ import { setAgentRegistry } from "@/agents/registry-instance"
 import { resolvePermission } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { MessageRouter } from "@/channels/router"
+import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { DiscordAdapter } from "@/channels/discord"
@@ -162,6 +163,10 @@ export class AgentXDaemon {
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
+    // Publish the singleton so tier-3 actions (channel.reply, etc.) and the
+    // MCP tool layer can post outbound messages through the canonical send
+    // path without re-implementing dedupe / marker / identity / ledger.
+    setMessageRouter(this.router)
 
     // Initialize service matcher (automated client services)
     if (Object.keys(this.config.services).length > 0) {
