@@ -519,11 +519,17 @@ export class GitLabAdapter implements ChannelAdapter {
     // resolveAgent + downstream dispatch. Drops comments whose noteable
     // type isn't in `onlyOn`, comments from excluded authors, and comments
     // missing every required `triggers` (mention/keyword) match.
+    // Build the @-handle list once for the `triggers: [auto]` sentinel.
+    // usernameToAgent is populated at startup from each agent's GitLab
+    // token (the actual `/user.username` API value), so this stays
+    // authoritative even if config drifts from reality. Adding "@"
+    // prefix mirrors how mentions appear in raw comment text.
+    const knownAgentMentions = Array.from(this.usernameToAgent.keys()).map((u) => `@${u}`)
     const noteRuleDecision = this.rules?.shouldFireGitlabNote(project, {
       noteableType,
       text: note,
       authorUsername: user.username,
-    })
+    }, { knownAgentMentions })
     if (noteRuleDecision && !noteRuleDecision.allow) {
       this.log(`Note ${noteId} on ${project} ${noteableType}#${noteableIid} dropped by rule: ${noteRuleDecision.reason}`)
       res.writeHead(200); res.end("ok"); return

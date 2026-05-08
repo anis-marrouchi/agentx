@@ -111,6 +111,70 @@ gitlab:
     expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "anis" }).allow).toBe(true)
   })
 
+  it("triggers: [auto] resolves any known agent mention without enumeration", () => {
+    writeRule("mtgl/system-v2.yaml", `
+project: mtgl/system-v2
+gitlab:
+  note:
+    triggers:
+      - auto
+      - keyword: "merge and deploy"
+`)
+    store = new ProjectRulesStore(tmp, () => {})
+    store.load()
+    const knownAgentMentions = ["@coding-mtgl-v2", "@pm-mtgl", "@devops-noqta"]
+
+    // Mention a known agent — auto matches without manual enumeration.
+    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+      { text: "@coding-mtgl-v2 what changed?" },
+      { knownAgentMentions }).allow).toBe(true)
+
+    // Keyword falls back to the explicit object trigger.
+    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+      { text: "looks good, merge and deploy" },
+      { knownAgentMentions }).allow).toBe(true)
+
+    // Unknown @mention with no keyword — still rejected.
+    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+      { text: "@random-user any update?" },
+      { knownAgentMentions }).allow).toBe(false)
+  })
+
+  it("triggers: [auto] without knownAgentMentions falls through (no-op)", () => {
+    writeRule("mtgl/system-v2.yaml", `
+project: mtgl/system-v2
+gitlab:
+  note:
+    triggers:
+      - auto
+      - keyword: "ship it"
+`)
+    store = new ProjectRulesStore(tmp, () => {})
+    store.load()
+    // No knownAgentMentions supplied — auto entry can't match. Mention-only
+    // text falls through to "no trigger matched" → reject.
+    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+      { text: "@coding-mtgl-v2 hi" }).allow).toBe(false)
+    // Keyword still works.
+    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+      { text: "ship it now" }).allow).toBe(true)
+  })
+
+  it("triggers: [auto] is case-insensitive on the mention", () => {
+    writeRule("acme/api.yaml", `
+project: acme/api
+gitlab:
+  note:
+    triggers: [auto]
+`)
+    store = new ProjectRulesStore(tmp, () => {})
+    store.load()
+    const knownAgentMentions = ["@coder"]
+    expect(store.shouldFireGitlabNote("acme/api",
+      { text: "@CODER fix this" },
+      { knownAgentMentions }).allow).toBe(true)
+  })
+
   it("note rule requires a trigger to match (mention OR keyword)", () => {
     writeRule("acme/api.yaml", `
 project: acme/api

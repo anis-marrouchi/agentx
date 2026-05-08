@@ -64,11 +64,23 @@ export interface NoteTrigger {
   keyword?: string
 }
 
+/** Sentinel string that tells the matcher to accept any @-mention that
+ *  resolves to a configured agent (per `channels.gitlab.agentMappings`).
+ *  Lets a project rule say "fire on any agent mention" without manually
+ *  enumerating every handle — the canonical list lives in agentMappings.
+ *  Use it as a string entry in `triggers`:
+ *      triggers: [auto, { keyword: "merge and deploy" }]
+ *  When the channel adapter doesn't supply `knownAgentMentions`, an
+ *  `auto` entry is treated as a no-op (it does not block the rule). */
+export type NoteTriggerEntry = NoteTrigger | "auto"
+
 export interface NoteRule {
   /** Restrict to certain noteable types — gitlab: issue|merge_request|commit|snippet. */
   onlyOn?: string[]
-  /** At least one trigger must match the comment text for the event to fire. */
-  triggers?: NoteTrigger[]
+  /** At least one trigger must match the comment text for the event to fire.
+   *  Mix explicit objects with the `"auto"` sentinel to delegate mention
+   *  enumeration to the channel's agentMappings. */
+  triggers?: NoteTriggerEntry[]
   /** Username substrings/equals that always block. */
   excludeAuthors?: string[]
 }
@@ -203,15 +215,20 @@ export class ProjectRulesStore {
     return matchIssueRule(rule, payload, "gitlab")
   }
 
-  /** Should a GitLab MR-or-issue note event reach an agent? */
+  /** Should a GitLab MR-or-issue note event reach an agent?
+   *  `opts.knownAgentMentions` carries the @-handle list resolved by the
+   *  channel adapter from `agentMappings.gitlabUsernames`. When the rule
+   *  has an `"auto"` trigger entry, the matcher accepts any of these
+   *  mentions found in the comment text — single source of truth, no
+   *  manual sync required between rule files and agentMappings. */
   shouldFireGitlabNote(project: string, payload: {
     noteableType?: string
     text?: string
     authorUsername?: string
-  }): FilterDecision {
+  }, opts?: { knownAgentMentions?: string[] }): FilterDecision {
     const rule = this.find(project)?.gitlab?.note
     if (!rule) return { allow: true }
-    return matchNoteRule(rule, payload)
+    return matchNoteRule(rule, payload, opts?.knownAgentMentions)
   }
 
   /** Should a GitLab pipeline event reach an agent? */
@@ -325,7 +342,7 @@ function matchNoteRule(rule: NoteRule, payload: {
   noteableType?: string
   text?: string
   authorUsername?: string
-}): FilterDecision {
+}, knownAgentMentions?: string[]): FilterDecision {
   const text = (payload.text ?? "").toLowerCase()
   const author = payload.authorUsername ?? ""
   if (rule.onlyOn && rule.onlyOn.length > 0) {
@@ -341,6 +358,14 @@ function matchNoteRule(rule: NoteRule, payload: {
   }
   if (rule.triggers && rule.triggers.length > 0) {
     const matched = rule.triggers.some((t) => {
+      // "auto" sentinel — matches any of the agent mentions resolved by the
+      // adapter from agentMappings.gitlabUsernames. When the adapter doesn't
+      // supply the list (or it's empty), `auto` neither matches nor blocks
+      // — fall through to the next trigger entry.
+      if (t === "auto") {
+        if (!knownAgentMentions || knownAgentMentions.length === 0) return false
+        return knownAgentMentions.some((m) => text.includes(m.toLowerCase()))
+      }
       if (t.mention) {
         const m = t.mention.toLowerCase()
         if (text.includes(m)) return true
