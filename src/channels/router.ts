@@ -13,6 +13,7 @@ import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs"
 import { resolve, dirname } from "path"
+import { createHash } from "crypto"
 import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
 import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
@@ -1154,10 +1155,8 @@ export class MessageRouter {
 
   private sendDedupeKey(channel: string, chatId: string, body: string, idempotencyKey: string): string {
     if (idempotencyKey) return `${channel}|${chatId}|key:${idempotencyKey}`
-    // Empty-string idempotencyKey means "use body hash". Imported here lazily
-    // to avoid pulling crypto into the router's hot import graph.
-    const { createHash } = require("crypto")
-    const hash = (createHash("sha256").update(body).digest("hex") as string).slice(0, 16)
+    // Empty-string idempotencyKey means "use body hash".
+    const hash = createHash("sha256").update(body).digest("hex").slice(0, 16)
     return `${channel}|${chatId}|h:${hash}`
   }
 
