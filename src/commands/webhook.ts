@@ -111,11 +111,14 @@ webhook
   .option("--agent <agentId>", "agent that receives the webhook")
   .option("--secret-env <name>", "env var holding the signing secret (recommended)")
   .option("--description <text>", "free-text description")
+  .option("--node <peer>", "forward to a mesh peer (skips local agent check; validates against mesh.peers)")
   .option("--no-prompt", "fail instead of prompting for missing values")
   .action(async (idArg, opts) => {
     const cfg = loadConfig()
     const knownAgents = Object.keys(cfg.agents || {})
-    if (!knownAgents.length) throw new Error("No agents configured. Add one with: agentx agent add")
+    const meshPeers: string[] = (cfg.mesh?.peers || []).map((p: any) => p.name).filter(Boolean)
+    const node = String(opts.node || "").trim()
+    if (!knownAgents.length && !node) throw new Error("No local agents configured. Add one with: agentx agent add — or use --node <peer> to forward to a mesh peer.")
 
     let id = (idArg || "").trim()
     let source = String(opts.source || "").trim() as WebhookSource
@@ -155,16 +158,33 @@ webhook
     }
 
     if (!agentId && interactive) {
-      const r = await prompts({
-        type: "select",
-        name: "agentId",
-        message: "Agent",
-        choices: knownAgents.map((a) => ({ title: a, value: a })),
-      })
-      agentId = r.agentId
+      // When --node is set, ask for a free-text agent id (the agent lives
+      // on the remote peer; we don't have its definition locally).
+      if (node) {
+        const r = await prompts({
+          type: "text",
+          name: "agentId",
+          message: `Agent on remote peer "${node}"`,
+        })
+        agentId = (r.agentId || "").trim()
+      } else {
+        const r = await prompts({
+          type: "select",
+          name: "agentId",
+          message: "Agent",
+          choices: knownAgents.map((a) => ({ title: a, value: a })),
+        })
+        agentId = r.agentId
+      }
     }
     if (!agentId) throw new Error("Agent is required.")
-    if (!cfg.agents?.[agentId]) throw new Error(`Unknown agent "${agentId}".`)
+    if (node) {
+      if (!meshPeers.includes(node)) {
+        throw new Error(`Mesh peer "${node}" not found in mesh.peers. Add the peer first or omit --node.`)
+      }
+    } else if (!cfg.agents?.[agentId]) {
+      throw new Error(`Unknown agent "${agentId}". Add it locally, or use --node <peer> to forward to a mesh peer.`)
+    }
 
     if (!secretEnv && interactive && source !== "custom") {
       const r = await prompts({
@@ -189,11 +209,12 @@ webhook
       const entry: any = { id, source, agentId, enabled: true }
       if (secretEnv) entry.secretEnv = secretEnv
       if (description) entry.description = description
+      if (node) entry.node = node
       c.webhooks.push(entry)
     })
     if (!result.success) throw new Error(result.error)
 
-    console.log(chalk.green(`✓ added webhook "${id}" (${source} → ${agentId})`))
+    console.log(chalk.green(`✓ added webhook "${id}" (${source} → ${agentId}${node ? ` @ ${node}` : ""})`))
     if (result.reloaded) console.log(chalk.dim("  daemon hot-reloaded"))
     if (!secretEnv && source !== "custom") {
       console.log(chalk.yellow(`  ⚠ no signing secret set — payloads will be accepted unsigned. Add one with --secret-env`))

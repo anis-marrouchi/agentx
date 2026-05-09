@@ -804,18 +804,30 @@ function addWebhook(body: any) {
   const agentId = String(body?.agentId || "").trim()
   const secretEnv = String(body?.secretEnv || "").trim()
   const description = String(body?.description || "").trim()
+  const node = String(body?.node || "").trim()
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Webhook id must be lowercase (letters, digits, -, _).")
   if (!WEBHOOK_SOURCES.includes(source as any)) throw new Error(`Unknown source: ${source}`)
   if (!agentId) throw new Error("Pick an agent to bind the webhook to.")
   const { summary } = mutateAgentxConfig((cfg) => {
-    if (!cfg.agents?.[agentId]) throw new Error(`Unknown agent "${agentId}".`)
+    // Mesh-routed entries point at an agent on a remote peer; the local
+    // daemon doesn't need to know about that agent. We still validate the
+    // peer exists in mesh.peers so a typo doesn't silently 404 forever.
+    if (node) {
+      const peers = cfg.mesh?.peers || []
+      if (!peers.find((p: any) => p.name === node)) {
+        throw new Error(`Mesh peer "${node}" not found in mesh.peers. Add the peer first or remove the node field.`)
+      }
+    } else if (!cfg.agents?.[agentId]) {
+      throw new Error(`Unknown agent "${agentId}". Add it locally, or set --node <peer> to forward to a mesh peer.`)
+    }
     cfg.webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks : []
     if (cfg.webhooks.find((w: any) => w.id === id)) throw new Error(`Webhook "${id}" already exists.`)
     const entry: any = { id, source, agentId, enabled: true }
     if (secretEnv) entry.secretEnv = secretEnv
     if (description) entry.description = description
+    if (node) entry.node = node
     cfg.webhooks.push(entry)
-    return `added webhook "${id}" (${source} → ${agentId})`
+    return `added webhook "${id}" (${source} → ${agentId}${node ? ` @ ${node}` : ""})`
   })
   return { summary }
 }

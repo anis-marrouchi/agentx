@@ -581,7 +581,12 @@ export const daemonConfigSchema = z.object({
    *  actual inbound URL is always POST /webhook/<agentId>/<source>. */
   webhooks: z.array(z.object({
     id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "webhook id must be lowercase slug"),
-    source: z.enum(["gitlab", "github", "sentry", "stripe", "discord", "slack", "custom"]),
+    // Open-string source — runtime + admin-panel + CLI all share a
+    // canonical list (kept in sync via WEBHOOK_SOURCES). Loosened from a
+    // strict enum so adding a new first-class service (the 5-step recipe)
+    // doesn't require a schema bump in three places. Doctor + admin
+    // validator still gate writes on the canonical list.
+    source: z.string().min(1),
     agentId: z.string(),
     secretEnv: z.string().optional(),
     description: z.string().optional(),
