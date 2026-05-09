@@ -496,7 +496,7 @@ const ADMIN_PAGE_BODY = `
       <h3>Add a webhook</h3>
       <div class="rowf">
         <div><label>Webhook id<span class="hint">(lowercase)</span></label><input id="w-id" placeholder="mtgl-gitlab" /></div>
-        <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab</option><option value="github">GitHub</option><option value="sentry">Sentry</option><option value="stripe">Stripe</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
+        <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab ✓</option><option value="github">GitHub ✓</option><option value="sentry">Sentry ✓</option><option value="stripe">Stripe ✓</option><option value="vercel">Vercel ✓</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
       </div>
       <div class="rowf">
         <div><label>Agent</label><select id="w-agent"></select></div>
@@ -1109,13 +1109,14 @@ function renderWebhooks() {
   const list = $('webhook-list');
   const daemonUrl = (state.daemonUrl || '').replace(/\\/+$/, '');
   const sources = {
-    gitlab: { logoBg: '#FC6D26', label: 'GitLab', init: 'GL', hint: 'In GitLab → Settings → Webhooks; tick Push/Issue/Pipeline events.' },
-    github: { logoBg: '#24292e', label: 'GitHub', init: 'GH', hint: 'In GitHub → Repo Settings → Webhooks; pick individual events.' },
-    sentry: { logoBg: '#362D59', label: 'Sentry', init: 'SE', hint: 'In Sentry → Project Settings → Alerts → Webhooks.' },
-    stripe: { logoBg: '#635BFF', label: 'Stripe', init: 'ST', hint: 'In Stripe Dashboard → Developers → Webhooks.' },
-    discord: { logoBg: '#5865F2', label: 'Discord', init: 'DC', hint: 'In Discord → Channel Settings → Integrations → Webhooks.' },
-    slack: { logoBg: '#4A154B', label: 'Slack', init: 'SL', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.' },
-    custom: { logoBg: 'var(--ax-surface-3)', label: 'Custom', init: '?', hint: 'Any service that can POST JSON — payload is forwarded as-is.' },
+    gitlab: { logoBg: '#FC6D26', label: 'GitLab', init: 'GL', hint: 'In GitLab → Settings → Webhooks; tick Push/Issue/Pipeline events.', wired: true, eventTypes: ['Push Hook', 'Issue Hook', 'Note Hook', 'Merge Request Hook', 'Pipeline Hook', 'Tag Push Hook'] },
+    github: { logoBg: '#24292e', label: 'GitHub', init: 'GH', hint: 'In GitHub → Repo Settings → Webhooks; pick individual events.', wired: true, eventTypes: ['issues.opened', 'issues.closed', 'issues.reopened', 'issue_comment.created', 'pull_request.opened', 'pull_request.closed', 'pull_request.reopened', 'pull_request_review.submitted', 'push', 'release.published'] },
+    sentry: { logoBg: '#362D59', label: 'Sentry', init: 'SE', hint: 'In Sentry → Project Settings → Alerts → Webhooks.', wired: true, eventTypes: ['issue', 'event_alert', 'metric_alert'] },
+    stripe: { logoBg: '#635BFF', label: 'Stripe', init: 'ST', hint: 'In Stripe Dashboard → Developers → Webhooks.', wired: true, eventTypes: ['invoice.paid', 'invoice.payment_failed', 'customer.subscription.created', 'customer.subscription.deleted', 'customer.subscription.updated', 'charge.succeeded', 'charge.refunded', 'checkout.session.completed', 'payment_intent.succeeded'] },
+    vercel: { logoBg: '#000000', label: 'Vercel', init: 'VR', hint: 'In Vercel → Project Settings → Webhooks.', wired: true, eventTypes: ['deployment.created', 'deployment.ready', 'deployment.error', 'deployment.canceled'] },
+    discord: { logoBg: '#5865F2', label: 'Discord', init: 'DC', hint: 'In Discord → Channel Settings → Integrations → Webhooks.', wired: false, eventTypes: [] },
+    slack: { logoBg: '#4A154B', label: 'Slack', init: 'SL', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.', wired: false, eventTypes: [] },
+    custom: { logoBg: 'var(--ax-surface-3)', label: 'Custom', init: '?', hint: 'Any service that can POST JSON — payload is forwarded as-is.', wired: false, eventTypes: [] },
   };
   if (!state.webhooks.length) {
     list.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)"><h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">No webhooks yet</h3><p style="margin:0;font-size:13px">Register one below and paste the URL into the external service.</p></div>';
@@ -1160,19 +1161,26 @@ function renderWebhooks() {
       // Triggers + defaultWorkflow editor — collapsed by default. Maps a
       // platform event-type (e.g. "issues.opened") to a workflow id; the
       // defaultWorkflow runs when no specific trigger matches.
+      // Autocomplete the event-type input from the source's known events.
       const triggers = (w.triggers && typeof w.triggers === 'object') ? w.triggers : {};
       const triggerRows = Object.keys(triggers).map(function(evt){
         return '<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><code style="flex:1;font-size:11px">' + escapeHtml(evt) + ' → ' + escapeHtml(triggers[evt]) + '</code><a href="#" data-act="wh-trig-rm" data-id="' + escapeHtml(w.id) + '" data-event="' + escapeHtml(evt) + '" style="color:var(--ax-muted);font-size:11px">×</a></div>';
       }).join('');
+      const datalistId = 'wh-events-' + escapeHtml(w.id);
+      const eventOptions = (meta.eventTypes || []).map(function(e){ return '<option value="' + escapeHtml(e) + '"></option>'; }).join('');
+      const wiredBadge = meta.wired
+        ? '<span style="font-size:10px;color:var(--ax-ok,#27ae60);margin-left:6px">✓ emits on:' + escapeHtml(w.source) + '-* hook events</span>'
+        : '<span style="font-size:10px;color:var(--ax-muted);margin-left:6px">⚠ inbound-only — no on:* hook events emitted</span>';
       const trigBlock = document.createElement('details');
       trigBlock.style.marginTop = '8px';
       trigBlock.innerHTML =
-        '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">Routing — event-type triggers + default workflow</summary>' +
+        '<summary style="font-size:11px;cursor:pointer;color:var(--ax-accent,#3a7bd5)">Routing — event-type triggers + default workflow' + wiredBadge + '</summary>' +
         '<div style="margin-top:8px;padding:8px 10px;background:var(--ax-surface);border-radius:4px">' +
-          '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Event-type → workflow id (e.g. <code>issues.opened</code> → <code>triage-bug</code>):</div>' +
+          '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:4px">Event-type → workflow id' + (meta.eventTypes && meta.eventTypes.length ? ' (start typing for ' + meta.label + ' events)' : '') + ':</div>' +
           (triggerRows || '<div style="font-size:11px;color:var(--ax-muted);font-style:italic">no triggers — every event uses the default workflow below</div>') +
+          '<datalist id="' + datalistId + '">' + eventOptions + '</datalist>' +
           '<div style="display:flex;gap:6px;margin-top:6px">' +
-            '<input data-wh-trig-event placeholder="event-type" style="flex:1;font-size:11px" />' +
+            '<input data-wh-trig-event list="' + datalistId + '" placeholder="event-type" style="flex:1;font-size:11px" />' +
             '<input data-wh-trig-wf placeholder="workflow id" style="flex:1;font-size:11px" />' +
             '<button data-act="wh-trig-add" data-id="' + escapeHtml(w.id) + '" class="ax-btn" style="padding:3px 9px;font-size:11px">Add</button>' +
           '</div>' +

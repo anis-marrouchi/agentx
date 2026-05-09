@@ -26,6 +26,16 @@ export const HOOK_EVENTS = [
   "on:gitlab-issue",
   "on:gitlab-mr",
   "on:gitlab-note",
+  // GitHub events — fired by the generic webhook handler after signature
+  // verification. Workflow `trigger.hook` subscribers can subscribe.
+  "on:github-issue",
+  "on:github-pr",
+  "on:github-push",
+  // External-service events — fired by the generic webhook handler after
+  // signature verification. Workflows subscribe via trigger.hook.
+  "on:stripe-event",
+  "on:sentry-issue",
+  "on:vercel-deployment",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]

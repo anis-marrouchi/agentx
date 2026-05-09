@@ -317,66 +317,199 @@ type FormProps = {
 
 // --- Triggers ---
 
-const CHANNEL_SOURCES_WIRED = new Set(["whatsapp-message", "telegram-message", "gitlab-issue", "gitlab-pipeline"])
+// Catalog of channel-trigger sources. One source of truth for: dropdown
+// options, "fires when" descriptions, wired/schema-only badges, and which
+// filter fields apply. Adding a new source means adding one entry here.
+type ChannelSourceKey =
+  | "whatsapp-message"
+  | "telegram-message"
+  | "discord-message"
+  | "slack-message"
+  | "gitlab-issue"
+  | "gitlab-mr"
+  | "gitlab-note"
+  | "gitlab-pipeline"
+  | "github-issue"
+  | "github-pr"
+  | "stripe-event"
+  | "sentry-issue"
+  | "vercel-deployment"
+
+interface ChannelSourceMeta {
+  /** Short label for the dropdown option. */
+  label: string
+  /** One-line "fires when" description shown under the source select. */
+  fires: string
+  /** True if there's a backend subscriber actually firing this. */
+  wired: boolean
+  /** Which filter group to render. */
+  group: "channel-msg" | "gitlab" | "github" | "external-webhook"
+  /** Whether this source supports the labels[] filter. */
+  hasLabels: boolean
+}
+
+const CHANNEL_SOURCES: Record<ChannelSourceKey, ChannelSourceMeta> = {
+  "whatsapp-message": {
+    label: "WhatsApp — Incoming message",
+    fires: "Fires when a contact or group sends a WhatsApp message to the paired account.",
+    wired: true,
+    group: "channel-msg",
+    hasLabels: false,
+  },
+  "telegram-message": {
+    label: "Telegram — Incoming message",
+    fires: "Fires when a Telegram user or group sends a message to the bot.",
+    wired: true,
+    group: "channel-msg",
+    hasLabels: false,
+  },
+  "discord-message": {
+    label: "Discord — Incoming message",
+    fires: "Fires when a Discord user posts a message in a watched channel or DM.",
+    wired: false,
+    group: "channel-msg",
+    hasLabels: false,
+  },
+  "slack-message": {
+    label: "Slack — Incoming message",
+    fires: "Fires when a Slack user posts a message in a watched channel or DM.",
+    wired: false,
+    group: "channel-msg",
+    hasLabels: false,
+  },
+  "gitlab-issue": {
+    label: "GitLab — Issue event",
+    fires: "Fires when a GitLab issue is opened, updated, reopened, or closed.",
+    wired: true,
+    group: "gitlab",
+    hasLabels: true,
+  },
+  "gitlab-mr": {
+    label: "GitLab — Merge request event",
+    fires: "Fires when a GitLab merge request is opened, updated, approved, merged, or closed.",
+    wired: true,
+    group: "gitlab",
+    hasLabels: true,
+  },
+  "gitlab-note": {
+    label: "GitLab — Comment on issue or MR",
+    fires: "Fires when a comment is posted on a GitLab issue or merge request.",
+    wired: true,
+    group: "gitlab",
+    hasLabels: false,
+  },
+  "gitlab-pipeline": {
+    label: "GitLab — Pipeline status change",
+    fires: "Fires when a CI/CD pipeline transitions state (running, success, failed).",
+    wired: true,
+    group: "gitlab",
+    hasLabels: false,
+  },
+  "github-issue": {
+    label: "GitHub — Issue event",
+    fires: "Fires when a GitHub issue is opened, updated, or closed (after webhook signature verification).",
+    wired: true,
+    group: "github",
+    hasLabels: true,
+  },
+  "github-pr": {
+    label: "GitHub — Pull request event",
+    fires: "Fires when a GitHub pull request is opened, updated, reviewed, merged, or closed.",
+    wired: true,
+    group: "github",
+    hasLabels: true,
+  },
+  "stripe-event": {
+    label: "Stripe — Webhook event",
+    fires: "Fires on any Stripe webhook (invoice.paid, customer.subscription.deleted, charge.refunded, etc.). Filter by event type in the workflow body.",
+    wired: true,
+    group: "external-webhook",
+    hasLabels: false,
+  },
+  "sentry-issue": {
+    label: "Sentry — Issue alert",
+    fires: "Fires when Sentry triggers an issue alert (new issue, regression, threshold breach).",
+    wired: true,
+    group: "external-webhook",
+    hasLabels: false,
+  },
+  "vercel-deployment": {
+    label: "Vercel — Deployment event",
+    fires: "Fires when Vercel reports a deployment state change (created, ready, error).",
+    wired: true,
+    group: "external-webhook",
+    hasLabels: false,
+  },
+}
+
+const CHANNEL_SOURCE_OPTIONS: Array<{ value: string; label: string }> = (Object.entries(CHANNEL_SOURCES) as Array<[ChannelSourceKey, ChannelSourceMeta]>)
+  .map(([value, meta]) => ({
+    value,
+    label: meta.wired ? `${meta.label}  ✓` : `${meta.label}  ⚠ schema-only`,
+  }))
 
 function TriggerChannelForm({ node, patchData }: FormProps) {
   const cfg = node.config as { source?: string; filter?: Record<string, unknown>; passthrough?: boolean }
   const filter = (cfg.filter ?? {}) as Record<string, unknown>
   const patchFilter = (p: Record<string, unknown>) => patchData({ filter: { ...filter, ...p } })
-  const src = String(cfg.source ?? "whatsapp-message")
-  const wired = CHANNEL_SOURCES_WIRED.has(src)
-  const isChannelMsg = src === "whatsapp-message" || src === "telegram-message" || src === "discord-message" || src === "slack-message"
-  const isGitLab = src === "gitlab-issue" || src === "gitlab-pipeline"
-  const isGitHub = src === "github-issue" || src === "github-pr"
-  const supportsLabelFilter = isGitLab || isGitHub
+  const src = String(cfg.source ?? "whatsapp-message") as ChannelSourceKey
+  const meta = CHANNEL_SOURCES[src] ?? CHANNEL_SOURCES["whatsapp-message"]
+  const isChannelMsg = meta.group === "channel-msg"
+  const isGitLab = meta.group === "gitlab"
+  const isGitHub = meta.group === "github"
+  const hasFilters = isChannelMsg || isGitLab || isGitHub
 
   return (
     <>
       <Section title="Source">
-        <Field label="Channel event" hint={wired ? "✓ wired end-to-end" : "schema-only — no hook subscriber yet"}>
+        <Field
+          label="Event"
+          hint={meta.wired ? "✓ wired end-to-end" : "⚠ schema-only — no webhook subscriber configured for this source yet"}
+        >
           <Select
             value={src}
             onChange={(v) => patchData({ source: v, filter: {} })}
-            options={[
-              { value: "whatsapp-message", label: "WhatsApp message ✓" },
-              { value: "telegram-message", label: "Telegram message ✓" },
-              { value: "gitlab-issue", label: "GitLab issue ✓" },
-              { value: "gitlab-pipeline", label: "GitLab pipeline ✓" },
-              { value: "github-issue", label: "GitHub issue (not wired)" },
-              { value: "github-pr", label: "GitHub PR (not wired)" },
-              { value: "discord-message", label: "Discord message" },
-              { value: "slack-message", label: "Slack message" },
-            ]}
+            options={CHANNEL_SOURCE_OPTIONS}
           />
         </Field>
-        {isGitLab && (
-          <Field label="Project" hint={`GitLab path (e.g. "noqta/web") or "*" for any`}>
-            <Input mono value={String(filter.project ?? "")} onChange={(v) => patchFilter({ project: v })} placeholder="noqta/web" />
-          </Field>
-        )}
-        {isGitHub && (
-          <Field label="Repo" hint={`"owner/repo" or "*" for any`}>
-            <Input mono value={String(filter.repo ?? "")} onChange={(v) => patchFilter({ repo: v })} placeholder="owner/repo" />
-          </Field>
-        )}
-        {isChannelMsg && (
-          <Field
-            label="Chat"
-            hint={src === "whatsapp-message"
-              ? `Contact number or JID (formats like "+216 24 309 128", "21624309128", "...@s.whatsapp.net" all match). "*" for any.`
-              : src === "telegram-message"
-                ? `Telegram chat id (e.g. "1816212449" for a DM, "-1003861455814" for a group). "*" for any.`
-                : `Exact chat id. "*" matches any.`}
-          >
-            <Input mono value={String(filter.chat ?? "")} onChange={(v) => patchFilter({ chat: v })} placeholder="*" />
-          </Field>
-        )}
-        {supportsLabelFilter && (
-          <Field label="Label filter (any of)" hint="Fires only when at least one of these labels is present on the issue/MR">
-            <ListInput mono value={Array.isArray(filter.labels) ? (filter.labels as string[]) : []} onChange={(v) => patchFilter({ labels: v })} placeholder="bug, needs-review" />
-          </Field>
-        )}
+        <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: -6, marginBottom: 12 }}>
+          {meta.fires}
+        </div>
       </Section>
+      {hasFilters && (
+        <Section title="Match criteria">
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>
+            Limit when this trigger fires. Leave empty or use <span className="mono">*</span> to match anything.
+          </div>
+          {isGitLab && (
+            <Field label="Project" hint={`GitLab project path. Empty or "*" matches any.`}>
+              <Input mono value={String(filter.project ?? "")} onChange={(v) => patchFilter({ project: v })} placeholder="* (any) or noqta/web" />
+            </Field>
+          )}
+          {isGitHub && (
+            <Field label="Repo" hint={`GitHub "owner/repo". Empty or "*" matches any.`}>
+              <Input mono value={String(filter.repo ?? "")} onChange={(v) => patchFilter({ repo: v })} placeholder="* (any) or owner/repo" />
+            </Field>
+          )}
+          {isChannelMsg && (
+            <Field
+              label="Chat"
+              hint={src === "whatsapp-message"
+                ? `Contact number or JID (e.g. "+216 24 309 128", "21624309128@s.whatsapp.net"). Empty or "*" matches any.`
+                : src === "telegram-message"
+                  ? `Telegram chat id ("1816212449" for a DM, "-1003861455814" for a group). Empty or "*" matches any.`
+                  : `Exact chat id. Empty or "*" matches any.`}
+            >
+              <Input mono value={String(filter.chat ?? "")} onChange={(v) => patchFilter({ chat: v })} placeholder="* (any)" />
+            </Field>
+          )}
+          {meta.hasLabels && (
+            <Field label="Labels (any of)" hint="Fires only when at least one of these labels is present on the issue/MR. Empty = no label filter.">
+              <ListInput mono value={Array.isArray(filter.labels) ? (filter.labels as string[]) : []} onChange={(v) => patchFilter({ labels: v })} placeholder="bug, needs-review" />
+            </Field>
+          )}
+        </Section>
+      )}
       {isChannelMsg && (
         <Section title="Routing" defaultOpen={false}>
           <Field
@@ -395,23 +528,118 @@ function TriggerCronForm({ node, patchData }: FormProps) {
   const cfg = node.config as { spec?: string; timezone?: string }
   return (
     <Section title="Schedule">
-      <Field label="Cron spec" hint="Standard 5-field cron (minute hour day month weekday)">
+      <Field label="Cron spec" hint="5 fields: minute hour day month weekday. E.g. '0 9 * * 1-5' = 9am Mon–Fri.">
         <Input mono value={String(cfg.spec ?? "0 * * * *")} onChange={(v) => patchData({ spec: v })} placeholder="0 9 * * *" />
       </Field>
-      <Field label="Timezone" hint="IANA timezone string — defaults to UTC">
+      <Field label="Timezone" hint="IANA timezone (e.g. Africa/Tunis, America/New_York). Defaults to UTC.">
         <Input mono value={String(cfg.timezone ?? "UTC")} onChange={(v) => patchData({ timezone: v })} placeholder="Africa/Tunis" />
       </Field>
+      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 4 }}>
+        Fires the workflow on the schedule. The trigger payload is empty — downstream nodes won't have <span className="mono">{"{{start.*}}"}</span> data unless you wire it.
+      </div>
     </Section>
   )
 }
 
+// Catalog of `on:*` hook events that workflow subscribers can listen to.
+// One source of truth for the hook-trigger autocomplete + per-event help.
+// Adding a new hook event means adding one entry here.
+const HOOK_EVENTS: Array<{ value: string; label: string; fires: string }> = [
+  {
+    value: "on:gitlab-issue",
+    label: "on:gitlab-issue",
+    fires: "Fires when a GitLab issue is opened, updated, reopened, or closed (after the channel adapter dispatched it).",
+  },
+  {
+    value: "on:gitlab-mr",
+    label: "on:gitlab-mr",
+    fires: "Fires when a GitLab merge request is opened, updated, approved, merged, or closed.",
+  },
+  {
+    value: "on:gitlab-note",
+    label: "on:gitlab-note",
+    fires: "Fires when a comment is posted on a GitLab issue or merge request.",
+  },
+  {
+    value: "on:gitlab-pipeline",
+    label: "on:gitlab-pipeline",
+    fires: "Fires when a GitLab CI/CD pipeline transitions state.",
+  },
+  {
+    value: "on:github-issue",
+    label: "on:github-issue",
+    fires: "Fires when a GitHub issue is opened, updated, or closed (signature-verified webhook).",
+  },
+  {
+    value: "on:github-pr",
+    label: "on:github-pr",
+    fires: "Fires when a GitHub pull request is opened, reviewed, merged, or closed.",
+  },
+  {
+    value: "on:github-push",
+    label: "on:github-push",
+    fires: "Fires on any GitHub push event (branch updates).",
+  },
+  {
+    value: "on:stripe-event",
+    label: "on:stripe-event",
+    fires: "Fires on any Stripe webhook (invoice.paid, charge.refunded, subscription.deleted, etc.). Filter by event type inside the workflow.",
+  },
+  {
+    value: "on:sentry-issue",
+    label: "on:sentry-issue",
+    fires: "Fires when a Sentry issue alert lands (new issue, regression, error threshold).",
+  },
+  {
+    value: "on:vercel-deployment",
+    label: "on:vercel-deployment",
+    fires: "Fires when a Vercel deployment changes state.",
+  },
+  {
+    value: "on:error",
+    label: "on:error",
+    fires: "Fires when an agent task fails. Useful for incident-routing workflows.",
+  },
+]
+
 function TriggerHookForm({ node, patchData }: FormProps) {
   const cfg = node.config as { event?: string }
+  const ev = String(cfg.event ?? "on:")
+  const known = HOOK_EVENTS.find(h => h.value === ev)
+  const fires = known?.fires
+    ?? (ev.startsWith("on:") && ev !== "on:"
+      ? "Custom hook event. Fires whenever code in your agentx setup emits this event via the bus. Subscribe responsibly."
+      : `Hook event names must start with "on:" — e.g. on:gitlab-issue.`)
+
   return (
     <Section title="Hook subscription">
-      <Field label="Event" hint={`Any "on:*" hook event fired elsewhere in agentx`}>
-        <Input mono value={String(cfg.event ?? "on:")} onChange={(v) => patchData({ event: v })} placeholder="on:gitlab-issue" />
+      <Field label="Event" hint="Pick a known event or type your own (must start with on:)">
+        <Input
+          mono
+          value={ev}
+          onChange={(v) => patchData({ event: v })}
+          placeholder="on:gitlab-issue"
+          list="hook-events-list"
+        />
+        <datalist id="hook-events-list">
+          {HOOK_EVENTS.map(h => (
+            <option key={h.value} value={h.value}>{h.fires}</option>
+          ))}
+        </datalist>
       </Field>
+      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: -6, marginBottom: 4 }}>
+        {fires}
+      </div>
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--muted)" }}>Available hook events</summary>
+        <ul style={{ fontSize: 11, color: "var(--muted)", paddingLeft: 16, marginTop: 6 }}>
+          {HOOK_EVENTS.map(h => (
+            <li key={h.value} style={{ marginBottom: 4 }}>
+              <span className="mono">{h.value}</span> — {h.fires}
+            </li>
+          ))}
+        </ul>
+      </details>
     </Section>
   )
 }

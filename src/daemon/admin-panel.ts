@@ -671,7 +671,7 @@ function removeSkillForAgent(body: any) {
   return { summary: `removed skill "${slug}"`, ...r }
 }
 
-const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "discord", "slack", "custom"] as const
+const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "discord", "slack", "custom"] as const
 
 function addWebhook(body: any) {
   const id = String(body?.id || "").trim()

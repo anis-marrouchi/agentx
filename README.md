@@ -31,8 +31,8 @@
 - Each agent has its own persona, knowledge, and tools in plain Markdown — `CLAUDE.md`, `.claude/skills/`, optional `references/`.
 - **Bring your own AI** — Claude Code (subscription, full features), Anthropic / OpenAI API, Ollama, or anything in between.
 
-**Workflows & procedures**
-- **Declarative state machines in YAML or JSON** under `.agentx/workflows/`, with a visual editor in the dashboard. Triggers from any channel; user-task forms render to Telegram/WhatsApp/Slack/web.
+**Workflows & procedures** ([when to reach for them](docs/llm-workflows.md))
+- **Declarative state machines in YAML or JSON** under `.agentx/workflows/`, with a visual editor in the dashboard. Triggers from any channel; user-task forms render to Telegram/WhatsApp/Slack/web. *Use when you need pause-resume across days, cross-agent state that survives restarts, or an operator-visible diagram. Otherwise — write an agent prompt.*
 - **Procedures** — versioned SOPs (`.agentx/procedures/<id>.md`) agents reference at runtime.
 - **Deterministic services** — fixed-prompt handlers for known patterns (no LLM call when the answer is canonical).
 
@@ -51,7 +51,8 @@
 - **MCP server** — `agentx serve --stdio` exposes the daemon to Claude Code, Cursor, Windsurf as a tool surface.
 
 **Knowledge**
-- **Wiki memory** — conversations compound into a shared, citable knowledge base each agent draws from. Agentic query at read time, daily absorb at write time.
+- **Wiki memory** — conversations compound into a shared, citable knowledge base each agent draws from. Agentic query at read time, daily absorb at write time. Typed article spine (`person / project / place / concept / event / decision / pattern`), `[[wikilinks]]` graph navigation, immutable `_versions/` snapshots, multi-agent permissions (`public / shared / private`).
+- **MCP-exposed query** — Cursor, Claude Code, and Windsurf reach the wiki directly via the `agentx_wiki_query` tool. Agentic graph walk, not bag-of-words search.
 - **Intent knowledge graph** — fixed-axis taxonomy fed by an LLM classifier with operator triage queue.
 
 ## Install

@@ -4,6 +4,8 @@ import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
 import type { WorkflowDispatcher } from "@/workflows"
+import type { HookRegistry } from "@/hooks"
+import type { HookEvent } from "@/hooks/types"
 
 // --- Webhook handler ---
 // Routes incoming webhooks from GitLab, GitHub, Stripe, Sentry, etc.
@@ -28,6 +30,7 @@ export class WebhookHandler {
   private webhookEntries: DaemonConfig["webhooks"]
   private log: (...args: unknown[]) => void
   private workflowDispatcher?: WorkflowDispatcher
+  private hooks?: HookRegistry
 
   constructor(
     registry: AgentRegistry,
@@ -35,12 +38,63 @@ export class WebhookHandler {
     log: (...args: unknown[]) => void = console.error.bind(console, "[webhook]"),
     mesh?: A2AMesh,
     webhookEntries: DaemonConfig["webhooks"] = [],
+    hooks?: HookRegistry,
   ) {
     this.registry = registry
     this.config = config
     this.log = log
     this.mesh = mesh
     this.webhookEntries = webhookEntries
+    this.hooks = hooks
+  }
+
+  /**
+   * Map a webhook source + eventType to an `on:*` hook event name. Used to
+   * fire bus events that workflow `trigger.hook` subscribers consume.
+   * Returns null when no hook event is mapped (e.g. unknown source).
+   */
+  private hookEventFor(source: string, eventType: string | undefined): HookEvent | null {
+    if (source === "stripe") return "on:stripe-event"
+    if (source === "sentry") return "on:sentry-issue"
+    if (source === "vercel") return "on:vercel-deployment"
+    if (source === "github") {
+      // GitHub eventType is "<x-github-event>.<action>" or just "<event>".
+      const head = (eventType ?? "").split(".")[0]
+      if (head === "issues" || head === "issue_comment") return "on:github-issue"
+      if (head === "pull_request" || head === "pull_request_review") return "on:github-pr"
+      if (head === "push") return "on:github-push"
+      return null
+    }
+    // gitlab events are emitted by src/channels/gitlab.ts already; don't
+    // double-fire from here.
+    return null
+  }
+
+  /**
+   * Best-effort fire of a hook event for the given webhook. Errors are
+   * caught and logged — never block the inbound webhook on subscriber
+   * failures.
+   */
+  private async fireHookSafe(
+    source: string,
+    eventType: string | undefined,
+    agentId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const event = this.hookEventFor(source, eventType)
+    if (!event || !this.hooks) return
+    if (!this.hooks.has(event)) return
+    try {
+      await this.hooks.execute(event, {
+        event,
+        source,
+        eventType,
+        agentId,
+        payload,
+      } as any)
+    } catch (e: any) {
+      this.log(`${event} hook error (non-fatal): ${e?.message ?? e}`)
+    }
   }
 
   /** Wired by the daemon after the workflow subsystem boots. When set,
@@ -111,6 +165,11 @@ export class WebhookHandler {
       (eventType && triggerEntry?.triggers?.[eventType]) ||
       triggerEntry?.defaultWorkflow ||
       null
+    // Fire the on:* hook event so workflows with `trigger.hook` can
+    // subscribe (parallel to the per-event-type workflow routing below).
+    // Best-effort, never blocks the inbound webhook.
+    await this.fireHookSafe(source, eventType, agentId, parsed)
+
     if (workflowId && this.workflowDispatcher) {
       try {
         const result = await this.workflowDispatcher.dispatchWorkflow({
