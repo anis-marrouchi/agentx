@@ -63,6 +63,13 @@ export interface ProjectAggregateRow {
   runbook?: string
   /** Path to the source rule YAML for diagnostics. */
   rulePath?: string
+  /** Raw rule clauses (gitlab.* and github.*) — surfaced so the
+   *  channel-clause editor can pre-populate its form fields without a
+   *  second round-trip. Both keys absent when the rule has none. */
+  clauses?: {
+    gitlab?: ProjectRule["gitlab"]
+    github?: ProjectRule["github"]
+  }
 }
 
 export interface ProjectsApiResponse {
@@ -240,6 +247,10 @@ export function computeProjectsAggregate(ctx: ProjectsApiContext): ProjectsApiRe
       }
     }
 
+    const clauses: ProjectAggregateRow["clauses"] = {}
+    if (rule?.gitlab) clauses.gitlab = rule.gitlab
+    if (rule?.github) clauses.github = rule.github
+
     rows.push({
       project: key,
       kind: rule ? ProjectRulesStore.inferKind(rule) : "other",
@@ -251,6 +262,7 @@ export function computeProjectsAggregate(ctx: ProjectsApiContext): ProjectsApiRe
       contacts: Array.from(contactsMap.values()),
       runbook: rule?.runbook,
       rulePath: rule?._path,
+      clauses: (clauses.gitlab || clauses.github) ? clauses : undefined,
     })
   }
 

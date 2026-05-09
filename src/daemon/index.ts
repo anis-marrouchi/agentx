@@ -2487,6 +2487,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         }
 
         case "POST /api/admin/projects/header":
+        case "POST /api/admin/projects/clauses":
         case "POST /api/admin/projects/contacts/link":
         case "POST /api/admin/projects/contacts/unlink":
         case "POST /api/admin/projects/create":
@@ -2510,6 +2511,16 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             const url = req.url || ""
             if (url.endsWith("/header")) {
               this.json(res, 200, mut.patchProjectHeader({ projectKey, cwd, patch: body.patch || {} }))
+            } else if (url.endsWith("/clauses")) {
+              // body.gitlab / body.github come in as untyped JSON. Trust
+              // the form shape — the mutator validates by re-parsing the
+              // resulting YAML before write. Cast through unknown so
+              // TypeScript doesn't reject the boundary read.
+              this.json(res, 200, mut.setProjectClauses({
+                projectKey, cwd,
+                gitlab: body.gitlab as unknown as undefined,
+                github: body.github as unknown as undefined,
+              }))
             } else if (url.endsWith("/contacts/link")) {
               const cid = String(body.contactId || "").trim()
               if (!cid) { this.json(res, 400, { error: "contactId required" }); break }

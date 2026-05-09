@@ -136,6 +136,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // Header (kind/displayName/homeUrl/runbook/agent), contact list,
       // create, delete — all daemon-side mutations on the rule YAML.
       "POST /api/admin/projects/header":           () => proxyDaemonPostJson("/api/admin/projects/header", body),
+      "POST /api/admin/projects/clauses":          () => proxyDaemonPostJson("/api/admin/projects/clauses", body),
       "POST /api/admin/projects/contacts/link":    () => proxyDaemonPostJson("/api/admin/projects/contacts/link", body),
       "POST /api/admin/projects/contacts/unlink":  () => proxyDaemonPostJson("/api/admin/projects/contacts/unlink", body),
       "POST /api/admin/projects/create":           () => proxyDaemonPostJson("/api/admin/projects/create", body),
@@ -795,7 +796,7 @@ function editIntegration(body: any) {
   return { summary }
 }
 
-const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "odoo", "discord", "slack", "custom"] as const
+const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "odoo", "hubspot", "discord", "slack", "custom"] as const
 
 function addWebhook(body: any) {
   const id = String(body?.id || "").trim()

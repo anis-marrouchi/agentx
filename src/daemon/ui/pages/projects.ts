@@ -208,6 +208,25 @@ const PROJECTS_PAGE_CSS = `
 .ax-pj__btn--primary:hover { opacity: 0.9; }
 .ax-pj__btn--danger { color: var(--ax-err, #ef4444); border-color: var(--ax-err, #ef4444); }
 .ax-pj__btn--danger:hover { background: var(--ax-err, #ef4444); color: white; }
+.ax-pj__fld textarea {
+  font: inherit; font-family: var(--ax-mono, monospace); font-size: 12px;
+  padding: 6px 10px; border: 1px solid var(--ax-border);
+  border-radius: 4px; background: var(--ax-bg); color: var(--ax-fg);
+  resize: vertical;
+}
+.ax-pj__clause {
+  border: 1px solid var(--ax-border); border-radius: 4px;
+  padding: 12px; margin-bottom: 12px; background: var(--ax-bg);
+}
+.ax-pj__clause h4 {
+  margin: 0 0 10px 0; font-size: 12px;
+  font-family: var(--ax-mono, monospace);
+  color: var(--ax-accent); text-transform: lowercase;
+}
+.ax-pj__form details summary {
+  cursor: pointer; padding: 6px 0; font-weight: 500;
+  border-bottom: 1px solid var(--ax-border); margin-bottom: 12px;
+}
 .ax-pj__detail-body { padding: 24px; overflow-y: auto; flex: 1; }
 .ax-pj__section {
   margin-bottom: 28px;
@@ -315,9 +334,16 @@ const PROJECTS_PAGE_SCRIPT = `
     let html = "";
 
     // Channels
-    html += '<section class="ax-pj__section"><h3>Channels (' + p.channels.length + ')</h3>';
-    if (p.channels.length === 0) html += '<div class="ax-pj__hint">No channel route configured. Add a route under <code>channels.gitlab.routes</code> or <code>channels.github.routes</code>.</div>';
-    else html += p.channels.map(c => '<div class="ax-pj__row"><span class="name">' + esc(c) + '</span></div>').join("");
+    html += '<section class="ax-pj__section">'
+      + '<h3>Channels (' + p.channels.length + ')'
+      +   (p.rulePath ? '   <button class="ax-pj__btn" data-action="edit-clauses" data-project="' + esc(p.project) + '" title="Edit channel-clause filters (actions / labels / states / authors)">Edit clauses</button>' : '')
+      + '</h3>';
+    if (p.channels.length === 0) html += '<div class="ax-pj__hint">No channel route configured. ' + (p.rulePath ? 'Click <strong>Edit clauses</strong> above to add a gitlab or github clause, or' : 'A') + ' add a route under <code>channels.gitlab.routes</code> or <code>channels.github.routes</code>.</div>';
+    else html += p.channels.map(c => {
+      const cl = p.clauses && p.clauses[c];
+      const summary = cl ? Object.keys(cl).join(", ") : "no rules";
+      return '<div class="ax-pj__row"><span class="name">' + esc(c) + '</span><span class="meta">' + esc(summary) + '</span></div>';
+    }).join("");
     html += '</section>';
 
     // Agents
@@ -574,7 +600,7 @@ const PROJECTS_PAGE_SCRIPT = `
       const data = await r.json();
       agents = Array.isArray(data) ? data : (data.agents || []);
     } catch (e) { alert("Could not load agents: " + e.message); return; }
-    const id = prompt("Agent id to set as default for '" + projectKey + "':\n\n"
+    const id = prompt("Agent id to set as default for '" + projectKey + "':\\n\\n"
       + "Available: " + agents.map(a => a.id).join(", "));
     if (!id) return;
     try {
@@ -593,7 +619,7 @@ const PROJECTS_PAGE_SCRIPT = `
 
   // ── Contact add/remove ───────────────────────────────────────────
   async function addContact(projectKey) {
-    const cid = prompt("Contact id to link to '" + projectKey + "':\n\n"
+    const cid = prompt("Contact id to link to '" + projectKey + "':\\n\\n"
       + "Use the id from .agentx/contacts.json (e.g. 'anis', 'omar').");
     if (!cid) return;
     try {
@@ -608,6 +634,181 @@ const PROJECTS_PAGE_SCRIPT = `
       await postJson("/api/admin/projects/contacts/unlink", { projectKey, contactId });
       await load();
     } catch (e) { alert("Unlink contact failed: " + e.message); }
+  }
+
+  // ── Channel-clause editor modal ───────────────────────────────────
+  //
+  // Renders one section per clause (gitlab.issue, gitlab.merge_request,
+  // gitlab.note, gitlab.pipeline, github.issues, github.pull_request).
+  // Each list field is a <textarea> where one line = one entry. On
+  // save we parse back into the shape the rule expects and POST the
+  // entire gitlab + github block. Operator can clear a clause by
+  // emptying ALL its textareas (the prune step on the server side
+  // drops empty objects).
+  //
+  // Triggers field on note clauses uses a mini DSL — one line each:
+  //     auto                     → { auto-resolve from agentMappings }
+  //     @username                → { mention: "@username" }
+  //     keyword: phrase          → { keyword: "phrase" }
+  // Empty lines ignored. Format is line-oriented to keep the textarea
+  // usable; structured editors can land later.
+
+  const CLAUSE_FIELDS = {
+    issue:         ["actions", "requireLabels", "excludeLabels", "excludeStates", "excludeAuthors"],
+    merge_request: ["actions", "requireLabels", "excludeLabels", "excludeStates", "excludeAuthors"],
+    pipeline:      ["actions"],
+    issues:        ["actions", "requireLabels", "excludeLabels", "excludeStates", "excludeAuthors"],
+    pull_request:  ["actions", "requireLabels", "excludeLabels", "excludeStates", "excludeAuthors"],
+  };
+
+  function listToText(arr) { return Array.isArray(arr) ? arr.join("\\n") : ""; }
+  function textToList(s) {
+    return String(s || "").split("\\n").map(x => x.trim()).filter(x => x.length > 0);
+  }
+  function triggersToText(trigs) {
+    if (!Array.isArray(trigs)) return "";
+    return trigs.map(t => {
+      if (t === "auto" || (t && t.auto)) return "auto";
+      if (t && t.mention) return t.mention;
+      if (t && t.keyword) return "keyword: " + t.keyword;
+      return "";
+    }).filter(Boolean).join("\\n");
+  }
+  function textToTriggers(s) {
+    const out = [];
+    for (const line of String(s || "").split("\\n").map(l => l.trim()).filter(Boolean)) {
+      if (line === "auto") out.push("auto");
+      else if (line.toLowerCase().startsWith("keyword:")) out.push({ keyword: line.slice(8).trim() });
+      else if (line.startsWith("@")) out.push({ mention: line });
+      else out.push({ keyword: line }); // fallback
+    }
+    return out;
+  }
+
+  function clauseForm(channel, clauseName, current) {
+    const cur = current || {};
+    let html = '<div class="ax-pj__clause" data-clause="' + esc(channel + "." + clauseName) + '">'
+      + '<h4>' + esc(channel) + '.' + esc(clauseName) + '</h4>';
+    if (clauseName === "note") {
+      html += listFld("Only on (one per line: issue / merge_request / commit / snippet)", "onlyOn", listToText(cur.onlyOn));
+      html += listFld("Triggers (auto, @user, or 'keyword: phrase' — one per line)", "triggers", triggersToText(cur.triggers));
+      html += listFld("Exclude authors (substring match — one per line)", "excludeAuthors", listToText(cur.excludeAuthors));
+    } else {
+      const fields = CLAUSE_FIELDS[clauseName] || [];
+      for (const f of fields) {
+        const labels = {
+          actions: "Actions (one per line: open, reopen, update, close, …)",
+          requireLabels: "Require labels (at least one must match — one per line)",
+          excludeLabels: "Exclude labels (any present blocks — one per line)",
+          excludeStates: "Exclude states (one per line: closed, opened, merged, …)",
+          excludeAuthors: "Exclude authors (substring match — one per line)",
+        };
+        html += listFld(labels[f] || f, f, listToText(cur[f]));
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+  function listFld(label, name, value) {
+    return '<label class="ax-pj__fld">'
+      + '<span class="ax-pj__fld-label">' + esc(label) + '</span>'
+      + '<textarea name="' + esc(name) + '" rows="3">' + esc(value) + '</textarea>'
+      + '</label>';
+  }
+
+  function readClauseFromForm(scopeEl, clauseName) {
+    const out = {};
+    const fieldNames = clauseName === "note"
+      ? ["onlyOn", "triggers", "excludeAuthors"]
+      : CLAUSE_FIELDS[clauseName] || [];
+    for (const f of fieldNames) {
+      const ta = scopeEl.querySelector('textarea[name="' + f + '"]');
+      if (!ta) continue;
+      const v = ta.value;
+      if (f === "triggers") {
+        const t = textToTriggers(v);
+        if (t.length > 0) out[f] = t;
+      } else {
+        const list = textToList(v);
+        if (list.length > 0) out[f] = list;
+      }
+    }
+    return out;
+  }
+
+  function openClauseEditor(projectKey) {
+    const p = state.rows.find(r => r.project === projectKey);
+    if (!p) return;
+    const cur = p.clauses || {};
+    const gl = cur.gitlab || {};
+    const gh = cur.github || {};
+
+    const bg = document.createElement("div");
+    bg.className = "ax-pj__modal-bg";
+    bg.innerHTML =
+      '<div class="ax-pj__modal" style="min-width:640px" role="dialog" aria-label="Edit channel clauses">'
+      + '<div class="ax-pj__modal-head">'
+      +   '<h3>Channel clauses · <code>' + esc(projectKey) + '</code></h3>'
+      +   '<button class="ax-pj__icon" data-pj-close>×</button>'
+      + '</div>'
+      + '<div class="ax-pj__modal-body">'
+      +   '<form id="pj-clauses-form" class="ax-pj__form">'
+      +     '<details open><summary>GitLab</summary>'
+      +       clauseForm("gitlab", "issue", gl.issue)
+      +       clauseForm("gitlab", "merge_request", gl.merge_request)
+      +       clauseForm("gitlab", "note", gl.note)
+      +       clauseForm("gitlab", "pipeline", gl.pipeline)
+      +     '</details>'
+      +     '<details><summary>GitHub</summary>'
+      +       clauseForm("github", "issues", gh.issues)
+      +       clauseForm("github", "pull_request", gh.pull_request)
+      +     '</details>'
+      +     '<div class="ax-pj__form-actions">'
+      +       '<button type="submit" class="ax-pj__btn ax-pj__btn--primary">Save clauses</button>'
+      +       '<button type="button" class="ax-pj__btn" data-pj-close>Cancel</button>'
+      +     '</div>'
+      +   '</form>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg) closeModal(); });
+    bg.querySelectorAll("[data-pj-close]").forEach(b => b.addEventListener("click", closeModal));
+    bg.querySelector("#pj-clauses-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      // Read each clause section back into the shape the rule expects.
+      // Empty clauses (every textarea blank) drop out via pruneEmpty on
+      // the server, so the YAML stays clean.
+      const gitlabOut = {
+        issue:         readClauseFromForm(bg.querySelector('[data-clause="gitlab.issue"]'), "issue"),
+        merge_request: readClauseFromForm(bg.querySelector('[data-clause="gitlab.merge_request"]'), "merge_request"),
+        note:          readClauseFromForm(bg.querySelector('[data-clause="gitlab.note"]'), "note"),
+        pipeline:      readClauseFromForm(bg.querySelector('[data-clause="gitlab.pipeline"]'), "pipeline"),
+      };
+      const githubOut = {
+        issues:       readClauseFromForm(bg.querySelector('[data-clause="github.issues"]'), "issues"),
+        pull_request: readClauseFromForm(bg.querySelector('[data-clause="github.pull_request"]'), "pull_request"),
+      };
+      // Strip empty inner objects so the rule doesn't end up with
+      // ghost-clauses (e.g. issue:{} when no fields were set).
+      const cleanInner = (o) => {
+        const r = {};
+        for (const [k, v] of Object.entries(o)) {
+          if (v && typeof v === "object" && Object.keys(v).length > 0) r[k] = v;
+        }
+        return r;
+      };
+      const cleanGl = cleanInner(gitlabOut);
+      const cleanGh = cleanInner(githubOut);
+      try {
+        await postJson("/api/admin/projects/clauses", {
+          projectKey,
+          gitlab: Object.keys(cleanGl).length > 0 ? cleanGl : null,
+          github: Object.keys(cleanGh).length > 0 ? cleanGh : null,
+        });
+        closeModal();
+        await load();
+      } catch (err) { alert("Save clauses failed: " + err.message); }
+    });
   }
 
   // ── New project modal ─────────────────────────────────────────────
@@ -678,6 +879,8 @@ const PROJECTS_PAGE_SCRIPT = `
     }
     const editBtn = t.closest("[data-action='edit-project']");
     if (editBtn) { e.preventDefault(); openHeaderEditModal(editBtn.dataset.project); return; }
+    const editClausesBtn = t.closest("[data-action='edit-clauses']");
+    if (editClausesBtn) { e.preventDefault(); openClauseEditor(editClausesBtn.dataset.project); return; }
     const setAgentBtn = t.closest("[data-action='set-agent']");
     if (setAgentBtn) { e.preventDefault(); setDefaultAgent(setAgentBtn.dataset.project); return; }
     const unbindAgentBtn = t.closest("[data-action='unbind-agent']");

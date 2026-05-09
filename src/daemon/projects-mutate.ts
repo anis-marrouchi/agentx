@@ -319,6 +319,47 @@ export function unlinkContact(opts: { projectKey: string; cwd: string; contactId
   })
 }
 
+// ── Channel-clause replacement ────────────────────────────────────
+//
+// The Channels section of a rule (gitlab.issue/merge_request/note/
+// pipeline + github.issues/pull_request) is the most form-heavy edit
+// surface. Rather than per-clause partial merges (which hide the
+// final shape from the operator), we accept the FULL channel object
+// from the UI and replace the rule's gitlab / github top-level keys
+// in one shot. The form UI is responsible for sending what the
+// operator wants the rule to look like; we trust + validate.
+//
+// Empty objects / arrays are pruned by the generic pruneEmpty so a
+// "remove this clause" intent can be expressed by sending {} for it.
+
+export interface SetProjectClausesOpts {
+  projectKey: string
+  cwd: string
+  /** When provided, REPLACES the rule's top-level `gitlab` block in
+   *  full. Pass `null` to remove the entire gitlab section. Omit
+   *  (undefined) to leave it untouched. Same semantics for github. */
+  gitlab?: ProjectRule["gitlab"] | null
+  github?: ProjectRule["github"] | null
+}
+
+export function setProjectClauses(opts: SetProjectClausesOpts): MutateProjectRuleResult {
+  return mutateProjectRule({
+    projectKey: opts.projectKey,
+    cwd: opts.cwd,
+    mutator: (rule) => {
+      if (opts.gitlab !== undefined) {
+        if (opts.gitlab === null) delete rule.gitlab
+        else rule.gitlab = opts.gitlab
+      }
+      if (opts.github !== undefined) {
+        if (opts.github === null) delete rule.github
+        else rule.github = opts.github
+      }
+      return rule
+    },
+  })
+}
+
 // ── Create / delete project rule files ────────────────────────────
 
 export interface CreateProjectOpts {
