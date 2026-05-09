@@ -130,6 +130,13 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // pattern; daemon owns the on-disk write.
       "POST /api/admin/projects/workflows/link":   () => proxyDaemonPostJson("/api/admin/projects/workflows/link", body),
       "POST /api/admin/projects/workflows/unlink": () => proxyDaemonPostJson("/api/admin/projects/workflows/unlink", body),
+      // Header (kind/displayName/homeUrl/runbook/agent), contact list,
+      // create, delete — all daemon-side mutations on the rule YAML.
+      "POST /api/admin/projects/header":           () => proxyDaemonPostJson("/api/admin/projects/header", body),
+      "POST /api/admin/projects/contacts/link":    () => proxyDaemonPostJson("/api/admin/projects/contacts/link", body),
+      "POST /api/admin/projects/contacts/unlink":  () => proxyDaemonPostJson("/api/admin/projects/contacts/unlink", body),
+      "POST /api/admin/projects/create":           () => proxyDaemonPostJson("/api/admin/projects/create", body),
+      "POST /api/admin/projects/delete":           () => proxyDaemonPostJson("/api/admin/projects/delete", body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]

@@ -23,9 +23,10 @@
 //     stateless and re-reads on each call, so the next /api/workflows
 //     request picks up the new value automatically.
 
-import { existsSync, readFileSync, writeFileSync, renameSync, copyFileSync } from "fs"
-import { resolve } from "path"
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync, renameSync, copyFileSync } from "fs"
+import { dirname, extname, join, resolve } from "path"
 import yaml from "js-yaml"
+import type { ProjectRule, ProjectKind } from "@/projects/rules"
 
 export interface SetWorkflowProjectOpts {
   workflowId: string
@@ -136,6 +137,231 @@ function atomicWrite(path: string, content: string): void {
   const tmp = `${path}.tmp.${process.pid}.${Date.now()}`
   writeFileSync(tmp, content, "utf-8")
   renameSync(tmp, path)
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Project rule file mutations
+// ────────────────────────────────────────────────────────────────────────
+//
+// Walks .agentx/projects/ to find the YAML for a given project key,
+// runs the operator's mutator on the parsed rule, validates that the
+// result still parses as YAML, then atomic-writes with a backup.
+//
+// Round-tripping: js-yaml's load/dump pair drops comments and may
+// re-order keys. For the operator-edit workflow we prefer that —
+// edits become canonical, predictable. The original is preserved in
+// the .bak.<unix-ms> sidecar, so anyone who hand-authored comments
+// has a recovery path.
+
+const RULES_DIR_REL = ".agentx/projects"
+
+function findRulePath(projectKey: string, cwd: string): string | null {
+  const root = resolve(cwd, RULES_DIR_REL)
+  if (!existsSync(root)) return null
+  // Walk the tree — rule files live at any depth (org/repo/...).
+  const stack: string[] = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()!
+    let entries: string[]
+    try { entries = readdirSync(dir) } catch { continue }
+    for (const name of entries) {
+      const full = join(dir, name)
+      let s
+      try { s = statSync(full) } catch { continue }
+      if (s.isDirectory()) { stack.push(full); continue }
+      const ext = extname(name).toLowerCase()
+      if (ext !== ".yaml" && ext !== ".yml") continue
+      try {
+        const raw = yaml.load(readFileSync(full, "utf-8")) as { project?: string } | null
+        if (raw?.project === projectKey) return full
+      } catch { /* skip malformed */ }
+    }
+  }
+  return null
+}
+
+function pathForNewRule(projectKey: string, cwd: string): string {
+  // Layout matches the existing seeds: <root>/<org>/<repo>.yaml.
+  // For non-VCS projects (jira / linear) the operator might pick a slug
+  // without a slash; we still write under <root>/<slug>.yaml in that case.
+  const root = resolve(cwd, RULES_DIR_REL)
+  const safe = projectKey.replace(/[^a-zA-Z0-9._/-]/g, "_")
+  return resolve(root, safe + ".yaml")
+}
+
+export interface MutateProjectRuleOpts {
+  projectKey: string
+  cwd: string
+  mutator: (rule: ProjectRule) => ProjectRule
+}
+
+export interface MutateProjectRuleResult {
+  projectKey: string
+  path: string
+  backup: string
+  changed: boolean
+}
+
+export function mutateProjectRule(opts: MutateProjectRuleOpts): MutateProjectRuleResult {
+  const path = findRulePath(opts.projectKey, opts.cwd)
+  if (!path) {
+    throw new Error(`project rule for "${opts.projectKey}" not found under ${RULES_DIR_REL}`)
+  }
+  const before = readFileSync(path, "utf-8")
+  const rule = (yaml.load(before) ?? {}) as ProjectRule
+  if (rule.project !== opts.projectKey) {
+    // Defensive — finder matched on .project so this should be impossible.
+    throw new Error(`rule file at ${path} project=${rule.project} does not match requested ${opts.projectKey}`)
+  }
+  const mutated = opts.mutator(structuredClone(rule))
+
+  // Strip empty/undefined fields so the output stays clean. Operators
+  // expect "set field to empty string" to mean "remove the field" —
+  // matches the pattern across agentx config (cron prompts, channel
+  // tokens, etc.).
+  const cleaned = pruneEmpty(mutated)
+
+  const after = yaml.dump(cleaned, { lineWidth: 100, noRefs: true, sortKeys: false })
+  if (after === before) {
+    return { projectKey: opts.projectKey, path, backup: "", changed: false }
+  }
+  // Validate the post-mutation YAML round-trips cleanly.
+  try { yaml.load(after) } catch (e: any) {
+    throw new Error(`refusing to write — YAML parse failed after mutation: ${e?.message ?? e}`)
+  }
+  const backup = `${path}.bak.${Date.now()}`
+  copyFileSync(path, backup)
+  atomicWrite(path, after)
+  return { projectKey: opts.projectKey, path, backup, changed: true }
+}
+
+/** Strip undefined / null / empty-string / empty-array values recursively
+ *  so the YAML output stays compact. Empty objects become undefined and
+ *  the parent strips them on the next pass. */
+function pruneEmpty(input: unknown): unknown {
+  if (input === null || input === undefined) return undefined
+  if (typeof input === "string") return input === "" ? undefined : input
+  if (Array.isArray(input)) {
+    const out = input.map(pruneEmpty).filter((v) => v !== undefined)
+    return out.length > 0 ? out : undefined
+  }
+  if (typeof input === "object") {
+    const out: Record<string, unknown> = {}
+    let kept = 0
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      const cleaned = pruneEmpty(v)
+      if (cleaned !== undefined) { out[k] = cleaned; kept++ }
+    }
+    return kept > 0 ? out : undefined
+  }
+  return input
+}
+
+// ── Header-only mutations: shallow merge into the rule's top-level
+// scalar fields. The Project page's edit modal uses this — sending
+// only the fields the operator actually changed. Empty string =
+// remove field.
+const HEADER_FIELDS = ["displayName", "homeUrl", "kind", "runbook", "agent"] as const
+type HeaderField = typeof HEADER_FIELDS[number]
+
+export function patchProjectHeader(opts: { projectKey: string; cwd: string; patch: Partial<Record<HeaderField, string | null>> }): MutateProjectRuleResult {
+  return mutateProjectRule({
+    projectKey: opts.projectKey,
+    cwd: opts.cwd,
+    mutator: (rule) => {
+      for (const k of HEADER_FIELDS) {
+        if (!(k in opts.patch)) continue
+        const v = opts.patch[k]
+        if (v === "" || v === null) {
+          delete (rule as unknown as Record<string, unknown>)[k]
+        } else if (typeof v === "string") {
+          if (k === "kind") {
+            const allowed: ProjectKind[] = ["gitlab", "github", "jira", "linear", "other"]
+            if (!allowed.includes(v as ProjectKind)) {
+              throw new Error(`invalid kind="${v}" — allowed: ${allowed.join(", ")}`)
+            }
+            rule.kind = v as ProjectKind
+          } else {
+            (rule as unknown as Record<string, unknown>)[k] = v
+          }
+        }
+      }
+      return rule
+    },
+  })
+}
+
+// ── Contact link/unlink: array surgery on rule.contacts. ──────────
+
+export function linkContact(opts: { projectKey: string; cwd: string; contactId: string }): MutateProjectRuleResult {
+  return mutateProjectRule({
+    projectKey: opts.projectKey,
+    cwd: opts.cwd,
+    mutator: (rule) => {
+      const list = Array.isArray(rule.contacts) ? rule.contacts.slice() : []
+      if (!list.includes(opts.contactId)) list.push(opts.contactId)
+      rule.contacts = list
+      return rule
+    },
+  })
+}
+
+export function unlinkContact(opts: { projectKey: string; cwd: string; contactId: string }): MutateProjectRuleResult {
+  return mutateProjectRule({
+    projectKey: opts.projectKey,
+    cwd: opts.cwd,
+    mutator: (rule) => {
+      const list = Array.isArray(rule.contacts) ? rule.contacts.filter((c) => c !== opts.contactId) : []
+      if (list.length > 0) rule.contacts = list
+      else delete (rule as { contacts?: unknown }).contacts
+      return rule
+    },
+  })
+}
+
+// ── Create / delete project rule files ────────────────────────────
+
+export interface CreateProjectOpts {
+  projectKey: string
+  cwd: string
+  kind: ProjectKind
+  displayName?: string
+  homeUrl?: string
+  runbook?: string
+  agent?: string
+}
+
+export function createProjectRule(opts: CreateProjectOpts): { path: string } {
+  if (!/^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(opts.projectKey)) {
+    throw new Error("project key must be alphanumeric with optional / separators")
+  }
+  if (findRulePath(opts.projectKey, opts.cwd)) {
+    throw new Error(`project "${opts.projectKey}" already exists`)
+  }
+  const path = pathForNewRule(opts.projectKey, opts.cwd)
+  mkdirSync(dirname(path), { recursive: true })
+  const rule: Partial<ProjectRule> = {
+    project: opts.projectKey,
+    kind: opts.kind,
+  }
+  if (opts.displayName) rule.displayName = opts.displayName
+  if (opts.homeUrl) rule.homeUrl = opts.homeUrl
+  if (opts.runbook) rule.runbook = opts.runbook
+  if (opts.agent) rule.agent = opts.agent
+  const yamlText = yaml.dump(rule, { lineWidth: 100, noRefs: true, sortKeys: false })
+  atomicWrite(path, yamlText)
+  return { path }
+}
+
+export function deleteProjectRule(opts: { projectKey: string; cwd: string }): { path: string; backup: string } {
+  const path = findRulePath(opts.projectKey, opts.cwd)
+  if (!path) {
+    throw new Error(`project "${opts.projectKey}" not found`)
+  }
+  const backup = `${path}.bak.${Date.now()}`
+  copyFileSync(path, backup)
+  unlinkSync(path)
+  return { path, backup }
 }
 
 export function setWorkflowProject(opts: SetWorkflowProjectOpts): SetWorkflowProjectResult {

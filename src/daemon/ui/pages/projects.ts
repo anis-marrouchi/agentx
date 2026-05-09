@@ -25,7 +25,10 @@ export function renderProjectsPage(opts: ProjectsPageOpts = {}): string {
   <aside class="ax-pj__list">
     <header>
       <h2>Projects</h2>
-      <button id="pj-refresh" class="ax-pj__icon" title="Refresh (r)">↻</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button id="pj-new" class="ax-pj__icon" title="New project">+</button>
+        <button id="pj-refresh" class="ax-pj__icon" title="Refresh (r)">↻</button>
+      </div>
     </header>
     <div class="ax-pj__search">
       <input id="pj-filter" type="search" placeholder="Filter by project key…" autocomplete="off" />
@@ -183,6 +186,28 @@ const PROJECTS_PAGE_CSS = `
   font-size: 11px; padding: 1px 6px; border-radius: 3px;
   background: var(--ax-warn, #facc15); color: #1a1a1a;
 }
+/* Form fields */
+.ax-pj__form { display: flex; flex-direction: column; gap: 12px; }
+.ax-pj__fld { display: flex; flex-direction: column; gap: 4px; }
+.ax-pj__fld-label { font-size: 12px; font-weight: 500; color: var(--ax-fg-muted, var(--ax-fg)); }
+.ax-pj__fld input, .ax-pj__fld select {
+  font: inherit; font-size: 13px;
+  padding: 6px 10px; border: 1px solid var(--ax-border);
+  border-radius: 4px; background: var(--ax-bg); color: var(--ax-fg);
+}
+.ax-pj__fld-hint { font-size: 11px; color: var(--ax-fg-muted, var(--ax-fg)); }
+.ax-pj__form-actions {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 8px; padding-top: 14px;
+  border-top: 1px solid var(--ax-border);
+}
+.ax-pj__btn--primary {
+  background: var(--ax-accent, #6366f1); color: white;
+  border-color: var(--ax-accent, #6366f1);
+}
+.ax-pj__btn--primary:hover { opacity: 0.9; }
+.ax-pj__btn--danger { color: var(--ax-err, #ef4444); border-color: var(--ax-err, #ef4444); }
+.ax-pj__btn--danger:hover { background: var(--ax-err, #ef4444); color: white; }
 .ax-pj__detail-body { padding: 24px; overflow-y: auto; flex: 1; }
 .ax-pj__section {
   margin-bottom: 28px;
@@ -274,7 +299,14 @@ const PROJECTS_PAGE_SCRIPT = `
     const kindBadge = '<span class="ax-pj__kind ax-pj__kind--' + esc(p.kind || 'other') + '">' + esc(p.kind || 'other') + '</span>';
     const homeLink = p.homeUrl ? ' <a href="' + esc(p.homeUrl) + '" target="_blank" rel="noopener" class="ax-pj__home" title="Open project home">↗</a>' : '';
     const heading = p.displayName ? esc(p.displayName) + ' <span class="ax-pj__keyhint">' + esc(p.project) + '</span>' : esc(p.project);
-    head.innerHTML = '<h2>' + kindBadge + ' ' + heading + homeLink + '</h2>'
+    const canEdit = !!p.rulePath;  // only rule-backed projects are mutable
+    const editBtn = canEdit
+      ? '<button class="ax-pj__btn" data-action="edit-project" data-project="' + esc(p.project) + '" style="margin-left:auto">Edit</button>'
+      : '<span class="ax-pj__hint" style="margin-left:auto">no rule file</span>';
+    head.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%">'
+      + '<h2>' + kindBadge + ' ' + heading + homeLink + '</h2>'
+      + editBtn
+      + '</div>'
       + '<div class="ax-pj__hint">'
       +   (p.runbook ? 'runbook: <code>' + esc(p.runbook) + '</code>' : '<em>no runbook</em>')
       +   (p.rulePath ? ' · rule: <code>' + esc(p.rulePath.split('/').slice(-3).join('/')) + '</code>' : '')
@@ -289,13 +321,19 @@ const PROJECTS_PAGE_SCRIPT = `
     html += '</section>';
 
     // Agents
-    html += '<section class="ax-pj__section"><h3>Agents (' + p.agents.length + ')</h3>';
-    if (p.agents.length === 0) html += '<div class="ax-pj__hint">No agents bound. Set <code>agent</code> on the project rule or add a route.</div>';
-    else html += p.agents.map(a =>
-      '<div class="ax-pj__row">'
-      + '<span class="name"><a href="/admin/agents/' + esc(a.agentId) + '">' + esc(a.agentId) + '</a></span>'
-      + '<span class="meta">' + esc(a.channel) + (a.gitlabUsername ? ' · @' + esc(a.gitlabUsername) : '') + ' · via ' + esc(a.via) + '</span>'
-      + '</div>').join("");
+    html += '<section class="ax-pj__section">'
+      + '<h3>Agents (' + p.agents.length + ')'
+      +   (p.rulePath ? '   <button class="ax-pj__btn" data-action="set-agent" data-project="' + esc(p.project) + '" title="Bind a default agent (writes rule.agent)">Set default agent</button>' : '')
+      + '</h3>';
+    if (p.agents.length === 0) html += '<div class="ax-pj__hint">No agents bound. Click <strong>Set default agent</strong> above, or add a channel route in agentx.json.</div>';
+    else html += p.agents.map(a => {
+      const canUnbind = a.via === "rule.agent" && p.rulePath;
+      return '<div class="ax-pj__row">'
+        + '<span class="name"><a href="/admin/agents/' + esc(a.agentId) + '">' + esc(a.agentId) + '</a></span>'
+        + '<span class="meta">' + esc(a.channel) + (a.gitlabUsername ? ' · @' + esc(a.gitlabUsername) : '') + ' · via ' + esc(a.via) + '</span>'
+        + (canUnbind ? '<button class="ax-pj__unlink" data-action="unbind-agent" data-project="' + esc(p.project) + '" title="Clear rule.agent">×</button>' : '')
+        + '</div>';
+    }).join("");
     html += '</section>';
 
     // Workflows
@@ -313,12 +351,16 @@ const PROJECTS_PAGE_SCRIPT = `
     html += '</section>';
 
     // Contacts
-    html += '<section class="ax-pj__section"><h3>Contacts (' + p.contacts.length + ')</h3>';
-    if (p.contacts.length === 0) html += '<div class="ax-pj__hint">No contacts associated. Tag entries in <code>.agentx/contacts.json</code> with <code>"project": "' + esc(p.project) + '"</code>.</div>';
+    html += '<section class="ax-pj__section">'
+      + '<h3>Contacts (' + p.contacts.length + ')'
+      +   (p.rulePath ? '   <button class="ax-pj__btn" data-action="add-contact" data-project="' + esc(p.project) + '" title="Link a contact id to this project">+ Add contact</button>' : '')
+      + '</h3>';
+    if (p.contacts.length === 0) html += '<div class="ax-pj__hint">No contacts associated. Click <strong>+ Add contact</strong> above, or set <code>"project": "' + esc(p.project) + '"</code> on a contact in <code>.agentx/contacts.json</code>.</div>';
     else html += p.contacts.map(c =>
       '<div class="ax-pj__row">'
       + '<span class="name">' + esc(c.name) + '</span>'
       + '<span class="meta">' + esc(c.id) + (c.channels.length ? ' · ' + esc(c.channels.join(", ")) : '') + '</span>'
+      + (p.rulePath ? '<button class="ax-pj__unlink" data-action="unlink-contact" data-project="' + esc(p.project) + '" data-contact-id="' + esc(c.id) + '" title="Remove from rule.contacts">×</button>' : '')
       + '</div>').join("");
     html += '</section>';
 
@@ -432,6 +474,192 @@ const PROJECTS_PAGE_SCRIPT = `
     });
   }
 
+  // ── POST helper used by every mutation. Returns parsed json or
+  //    throws with the server-side error message.
+  async function postJson(path, body) {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    return data;
+  }
+
+  // ── Header edit modal ─────────────────────────────────────────────
+  function openHeaderEditModal(projectKey) {
+    const p = state.rows.find(r => r.project === projectKey);
+    if (!p) return;
+    const bg = document.createElement("div");
+    bg.className = "ax-pj__modal-bg";
+    bg.innerHTML =
+      '<div class="ax-pj__modal" role="dialog" aria-label="Edit project header">'
+      + '<div class="ax-pj__modal-head">'
+      +   '<h3>Edit <code>' + esc(projectKey) + '</code></h3>'
+      +   '<button class="ax-pj__icon" data-pj-close>×</button>'
+      + '</div>'
+      + '<div class="ax-pj__modal-body">'
+      +   '<form id="pj-edit-form" class="ax-pj__form">'
+      +     fld("Display name", "displayName", p.displayName || "", "Friendly name shown on this page")
+      +     fld("Home URL", "homeUrl", p.homeUrl || "", "External link to repo / board")
+      +     selFld("Kind", "kind", p.kind || "other", ["gitlab","github","jira","linear","other"])
+      +     fld("Runbook path", "runbook", p.runbook || "", "Filesystem path; injected into agent system prefix")
+      +     fld("Default agent", "agent", "", "agentId — leave blank to keep / clear field")
+      +     '<div class="ax-pj__form-actions">'
+      +       '<button type="submit" class="ax-pj__btn ax-pj__btn--primary">Save</button>'
+      +       '<button type="button" class="ax-pj__btn" data-pj-close>Cancel</button>'
+      +       '<button type="button" class="ax-pj__btn ax-pj__btn--danger" data-pj-delete style="margin-left:auto">Delete project</button>'
+      +     '</div>'
+      +   '</form>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg) closeModal(); });
+    bg.querySelectorAll("[data-pj-close]").forEach(b => b.addEventListener("click", closeModal));
+    bg.querySelector("#pj-edit-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const patch = {};
+      for (const k of ["displayName", "homeUrl", "kind", "runbook", "agent"]) {
+        const v = (f.get(k) || "").toString();
+        // Only include fields the operator actually filled — preserves
+        // current values on the server when the input was left blank.
+        // Exception: when the field had a value before and is now empty,
+        // we DO send "" to clear it. We can't distinguish those two
+        // cases with FormData alone, so the convention here is: blank
+        // submit means clear. Operator wanting to keep a value should
+        // close the modal without saving. Documented in the help text
+        // above each field.
+        patch[k] = v;
+      }
+      try {
+        await postJson("/api/admin/projects/header", { projectKey, patch });
+        closeModal();
+        await load();
+      } catch (err) { alert("Save failed: " + err.message); }
+    });
+    bg.querySelector("[data-pj-delete]").addEventListener("click", async () => {
+      if (!confirm("Delete project '" + projectKey + "'? Rule file will be backed up.")) return;
+      try {
+        await postJson("/api/admin/projects/delete", { projectKey });
+        closeModal();
+        state.selectedKey = null;
+        await load();
+      } catch (err) { alert("Delete failed: " + err.message); }
+    });
+  }
+
+  function fld(label, name, value, hint) {
+    return '<label class="ax-pj__fld">'
+      + '<span class="ax-pj__fld-label">' + esc(label) + '</span>'
+      + '<input type="text" name="' + esc(name) + '" value="' + esc(value) + '" />'
+      + (hint ? '<span class="ax-pj__fld-hint">' + esc(hint) + '</span>' : '')
+      + '</label>';
+  }
+  function selFld(label, name, value, options) {
+    const opts = options.map(o => '<option value="' + esc(o) + '"' + (o === value ? ' selected' : '') + '>' + esc(o) + '</option>').join("");
+    return '<label class="ax-pj__fld">'
+      + '<span class="ax-pj__fld-label">' + esc(label) + '</span>'
+      + '<select name="' + esc(name) + '">' + opts + '</select>'
+      + '</label>';
+  }
+
+  // ── Set/unbind default agent ──────────────────────────────────────
+  async function setDefaultAgent(projectKey) {
+    // Pull agents from the SELECTED node (mesh-aware /api/agents).
+    let agents = [];
+    try {
+      const r = await fetch("/api/agents");
+      const data = await r.json();
+      agents = Array.isArray(data) ? data : (data.agents || []);
+    } catch (e) { alert("Could not load agents: " + e.message); return; }
+    const id = prompt("Agent id to set as default for '" + projectKey + "':\n\n"
+      + "Available: " + agents.map(a => a.id).join(", "));
+    if (!id) return;
+    try {
+      await postJson("/api/admin/projects/header", { projectKey, patch: { agent: id } });
+      await load();
+    } catch (e) { alert("Set agent failed: " + e.message); }
+  }
+
+  async function unbindAgent(projectKey) {
+    if (!confirm("Clear default agent on '" + projectKey + "'?")) return;
+    try {
+      await postJson("/api/admin/projects/header", { projectKey, patch: { agent: "" } });
+      await load();
+    } catch (e) { alert("Unbind failed: " + e.message); }
+  }
+
+  // ── Contact add/remove ───────────────────────────────────────────
+  async function addContact(projectKey) {
+    const cid = prompt("Contact id to link to '" + projectKey + "':\n\n"
+      + "Use the id from .agentx/contacts.json (e.g. 'anis', 'omar').");
+    if (!cid) return;
+    try {
+      await postJson("/api/admin/projects/contacts/link", { projectKey, contactId: cid.trim() });
+      await load();
+    } catch (e) { alert("Link contact failed: " + e.message); }
+  }
+
+  async function unlinkContactAction(projectKey, contactId) {
+    if (!confirm("Unlink '" + contactId + "' from '" + projectKey + "'?")) return;
+    try {
+      await postJson("/api/admin/projects/contacts/unlink", { projectKey, contactId });
+      await load();
+    } catch (e) { alert("Unlink contact failed: " + e.message); }
+  }
+
+  // ── New project modal ─────────────────────────────────────────────
+  function openNewProjectModal() {
+    const bg = document.createElement("div");
+    bg.className = "ax-pj__modal-bg";
+    bg.innerHTML =
+      '<div class="ax-pj__modal" role="dialog" aria-label="New project">'
+      + '<div class="ax-pj__modal-head">'
+      +   '<h3>New project</h3>'
+      +   '<button class="ax-pj__icon" data-pj-close>×</button>'
+      + '</div>'
+      + '<div class="ax-pj__modal-body">'
+      +   '<form id="pj-new-form" class="ax-pj__form">'
+      +     fld("Project key", "projectKey", "", "org/repo for VCS, or any slug for jira/linear/other")
+      +     selFld("Kind", "kind", "gitlab", ["gitlab","github","jira","linear","other"])
+      +     fld("Display name", "displayName", "", "Optional human-friendly title")
+      +     fld("Home URL", "homeUrl", "", "Optional link to repo / board")
+      +     fld("Runbook path", "runbook", "", "Optional filesystem path")
+      +     fld("Default agent", "agent", "", "Optional agentId")
+      +     '<div class="ax-pj__form-actions">'
+      +       '<button type="submit" class="ax-pj__btn ax-pj__btn--primary">Create</button>'
+      +       '<button type="button" class="ax-pj__btn" data-pj-close>Cancel</button>'
+      +     '</div>'
+      +   '</form>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg) closeModal(); });
+    bg.querySelectorAll("[data-pj-close]").forEach(b => b.addEventListener("click", closeModal));
+    bg.querySelector("#pj-new-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const projectKey = (f.get("projectKey") || "").toString().trim();
+      if (!projectKey) { alert("project key required"); return; }
+      const body = {
+        projectKey,
+        kind: (f.get("kind") || "other").toString(),
+        displayName: (f.get("displayName") || "").toString() || undefined,
+        homeUrl: (f.get("homeUrl") || "").toString() || undefined,
+        runbook: (f.get("runbook") || "").toString() || undefined,
+        agent: (f.get("agent") || "").toString() || undefined,
+      };
+      try {
+        await postJson("/api/admin/projects/create", body);
+        closeModal();
+        state.selectedKey = projectKey;
+        await load();
+      } catch (err) { alert("Create failed: " + err.message); }
+    });
+  }
+
   // Delegate clicks for unlink + add buttons since detail re-renders.
   document.addEventListener("click", (e) => {
     const t = e.target;
@@ -448,10 +676,21 @@ const PROJECTS_PAGE_SCRIPT = `
       openWorkflowPicker(addBtn.dataset.project);
       return;
     }
+    const editBtn = t.closest("[data-action='edit-project']");
+    if (editBtn) { e.preventDefault(); openHeaderEditModal(editBtn.dataset.project); return; }
+    const setAgentBtn = t.closest("[data-action='set-agent']");
+    if (setAgentBtn) { e.preventDefault(); setDefaultAgent(setAgentBtn.dataset.project); return; }
+    const unbindAgentBtn = t.closest("[data-action='unbind-agent']");
+    if (unbindAgentBtn) { e.preventDefault(); unbindAgent(unbindAgentBtn.dataset.project); return; }
+    const addContactBtn = t.closest("[data-action='add-contact']");
+    if (addContactBtn) { e.preventDefault(); addContact(addContactBtn.dataset.project); return; }
+    const unlinkContactBtn = t.closest("[data-action='unlink-contact']");
+    if (unlinkContactBtn) { e.preventDefault(); unlinkContactAction(unlinkContactBtn.dataset.project, unlinkContactBtn.dataset.contactId); return; }
   });
 
   document.addEventListener("DOMContentLoaded", () => {
     $("#pj-refresh").addEventListener("click", load);
+    $("#pj-new").addEventListener("click", openNewProjectModal);
     $("#pj-filter").addEventListener("input", (e) => { state.filter = e.target.value; renderList(); });
     document.addEventListener("keydown", (e) => {
       if (e.key === "r" && !e.metaKey && document.activeElement?.tagName !== "INPUT") load();

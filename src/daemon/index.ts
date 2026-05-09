@@ -2486,6 +2486,56 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           break
         }
 
+        case "POST /api/admin/projects/header":
+        case "POST /api/admin/projects/contacts/link":
+        case "POST /api/admin/projects/contacts/unlink":
+        case "POST /api/admin/projects/create":
+        case "POST /api/admin/projects/delete": {
+          // Project rule mutations — header (PATCH-style partial),
+          // contacts list, create, delete. Body always carries
+          // projectKey; specific endpoints add their own fields.
+          const body = await readBody(req)
+          const projectKey = String(body.projectKey || "").trim()
+          if (!projectKey) {
+            this.json(res, 400, { error: "projectKey required" })
+            break
+          }
+          if (!/^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(projectKey)) {
+            this.json(res, 400, { error: "invalid projectKey" })
+            break
+          }
+          const mut = await import("./projects-mutate")
+          try {
+            const cwd = process.cwd()
+            const url = req.url || ""
+            if (url.endsWith("/header")) {
+              this.json(res, 200, mut.patchProjectHeader({ projectKey, cwd, patch: body.patch || {} }))
+            } else if (url.endsWith("/contacts/link")) {
+              const cid = String(body.contactId || "").trim()
+              if (!cid) { this.json(res, 400, { error: "contactId required" }); break }
+              this.json(res, 200, mut.linkContact({ projectKey, cwd, contactId: cid }))
+            } else if (url.endsWith("/contacts/unlink")) {
+              const cid = String(body.contactId || "").trim()
+              if (!cid) { this.json(res, 400, { error: "contactId required" }); break }
+              this.json(res, 200, mut.unlinkContact({ projectKey, cwd, contactId: cid }))
+            } else if (url.endsWith("/create")) {
+              const kind = String(body.kind || "other") as any
+              this.json(res, 200, mut.createProjectRule({
+                projectKey, cwd, kind,
+                displayName: typeof body.displayName === "string" ? body.displayName : undefined,
+                homeUrl: typeof body.homeUrl === "string" ? body.homeUrl : undefined,
+                runbook: typeof body.runbook === "string" ? body.runbook : undefined,
+                agent: typeof body.agent === "string" ? body.agent : undefined,
+              }))
+            } else if (url.endsWith("/delete")) {
+              this.json(res, 200, mut.deleteProjectRule({ projectKey, cwd }))
+            }
+          } catch (e: any) {
+            this.json(res, 400, { error: e?.message || "mutation failed" })
+          }
+          break
+        }
+
         case "GET /whatsapp/state": {
           const { getWhatsAppState } = await import("./whatsapp-state")
           this.json(res, 200, getWhatsAppState())
