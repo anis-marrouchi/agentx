@@ -33,6 +33,11 @@ export interface GraphModel {
      *  user save flips `mesh.allowRemote` back to its schema default and
      *  silently breaks any cross-mesh trigger fan-out. */
     mesh?: Workflow["mesh"]
+    /** Project association — same round-trip rationale as mesh: the
+     *  editor doesn't surface a control for it yet, but we preserve
+     *  whatever's on disk so save-without-edit doesn't silently strip
+     *  the project tag set by the Projects-page link/unlink action. */
+    project?: string
   }
   nodes: WorkflowNode[]
   /** `id` is derived by workflowToGraph and optional on incoming models so
@@ -61,6 +66,10 @@ export function workflowToGraph(wf: Workflow, layout?: WorkflowLayout | null): G
       envAllow: wf.envAllow,
       retention: wf.retention,
       mesh: wf.mesh,
+      // Preserve the workflow→project association across edit cycles.
+      // Without this, opening a tagged workflow in the editor and saving
+      // would silently strip its `project:` field.
+      project: wf.project,
     },
     nodes,
     edges,
@@ -90,6 +99,7 @@ export function graphToWorkflow(g: GraphModel): { workflow: Workflow; layout: Wo
     // Default mirrors the Zod schema default — kept explicit so a bare
     // GraphModel from `blankGraph` still produces a valid Workflow.
     mesh: g.meta.mesh ?? { allowRemote: false },
+    project: g.meta.project,
   }
   const layout: WorkflowLayout = {
     version: 1,

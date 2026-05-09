@@ -70,6 +70,10 @@ export interface Workflow {
   /** Mesh integration. Optional in the editor — populated by the server
    *  schema with a default of { allowRemote: false }. */
   mesh?: { allowRemote: boolean; peers?: string[] }
+  /** Project association — set by the Projects page's link/unlink
+   *  control. Editor preserves it on round-trip so a save without an
+   *  intentional re-tag doesn't strip the field. */
+  project?: string
   created?: string
   updated?: string
 }

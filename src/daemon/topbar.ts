@@ -270,7 +270,16 @@ export const TOPBAR_SCRIPT = `<script>
       window.EventSource.CLOSED = OrigES.CLOSED;
     }
   }
-  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); wirePeerProxy(); }
+  // wirePeerProxy() is synchronous and DOM-independent — it just wraps
+  // window.fetch + window.EventSource. Fire it IMMEDIATELY (before
+  // DOMContentLoaded) so deferred page bundles that issue their first
+  // fetch on bundle-parse (e.g. the workflow editor's React useEffect)
+  // see the wrapped fetch and pick up the X-Agentx-Peer header. Without
+  // this, the workflow editor's load on Mac:4202 hit local /api/workflows
+  // (instead of proxying to the selected peer), got a 404, and silently
+  // fell back to blank-graph state — looking like a "new workflow".
+  wirePeerProxy();
+  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); /* wirePeerProxy already ran */ }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', wire);
   } else { wire(); }
