@@ -305,6 +305,40 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__inline { display: flex; align-items: flex-start; gap: 6px; }
 .ax-wf__inline input[type="checkbox"] { margin-top: 3px; }
 .ax-wf__run-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ax-wf__run-fields-grid {
+  display: grid; grid-template-columns: 1fr; gap: 10px;
+}
+.ax-wf__run-fld {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px;
+}
+.ax-wf__run-label {
+  display: flex; align-items: center; gap: 6px;
+  font-weight: 500; color: var(--ax-text);
+}
+.ax-wf__run-label code {
+  background: var(--ax-panel, var(--ax-bg));
+  padding: 1px 5px; border-radius: 3px;
+}
+.ax-wf__run-req { color: var(--ax-err, #ef4444); font-weight: bold; }
+.ax-wf__run-fld input[type="text"],
+.ax-wf__run-fld input[type="number"],
+.ax-wf__run-fld select,
+.ax-wf__run-fld textarea {
+  font: inherit; font-size: 12px;
+  padding: 5px 8px; border: 1px solid var(--ax-border);
+  border-radius: 4px; background: var(--ax-bg); color: var(--ax-text);
+}
+.ax-wf__run-fld textarea {
+  font-family: var(--ax-mono); resize: vertical;
+}
+.ax-wf__run-hint { font-size: 11px; color: var(--ax-muted); }
+.ax-wf__run-raw { margin-top: 4px; }
+.ax-wf__run-raw summary {
+  font-size: 11px; color: var(--ax-muted);
+  cursor: pointer; padding: 4px 0;
+}
+.ax-wf__run-raw[open] summary { color: var(--ax-text); }
 /* Tiny re-run button on the run rows */
 .ax-wf__btn--xs {
   padding: 2px 6px; font-size: 12px; line-height: 1;
@@ -607,8 +641,11 @@ const WORKFLOWS_PAGE_SCRIPT = `
         <button class="ax-wf__btn primary" id="wf-run-toggle" type="button" title="Trigger this workflow with a JSON payload">▶ Run</button>
       </div>
       <div id="wf-run-form" class="ax-wf__run-form" hidden>
-        <label>Payload (JSON)</label>
-        <textarea id="wf-run-payload" class="ax-wf__editor ax-wf__editor--small" spellcheck="false">{}</textarea>
+        <div id="wf-run-fields"></div>
+        <details class="ax-wf__run-raw">
+          <summary>Or edit the raw JSON payload</summary>
+          <textarea id="wf-run-payload" class="ax-wf__editor ax-wf__editor--small" spellcheck="false">{}</textarea>
+        </details>
         <label class="ax-wf__inline">
           <input type="checkbox" id="wf-run-force" \${isManual ? "" : "checked"} />
           <span>Force (synthesize trigger event — required when trigger is not <code>trigger.manual</code>)</span>
@@ -768,18 +805,140 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
     // Run button — toggles the inline payload form. Cancel hides it; Run
     // now POSTs to /workflows/<id>/run (proxied by the dashboard) and opens
-    // the run drawer on the new runId.
+    // the run drawer on the new runId. The form is built lazily on first
+    // open so we have the trigger config + inputSchema in scope.
     const runToggle = $("#wf-run-toggle")
     if (runToggle) runToggle.addEventListener("click", () => {
       const form = $("#wf-run-form")
       const showing = !form.hasAttribute("hidden")
       if (showing) form.setAttribute("hidden", "")
-      else form.removeAttribute("hidden")
+      else {
+        form.removeAttribute("hidden")
+        if (!form.dataset.built) {
+          buildRunForm(triggerNode, triggerCfg)
+          form.dataset.built = "1"
+        }
+      }
     })
     const runCancel = $("#wf-run-cancel")
     if (runCancel) runCancel.addEventListener("click", () => $("#wf-run-form").setAttribute("hidden", ""))
     const runGo = $("#wf-run-go")
     if (runGo) runGo.addEventListener("click", () => runWorkflow(wf.id))
+  }
+
+  // Friendly run-form builder: derives input fields from the trigger's
+  // inputSchema (if declared) or from a hook-event preset, falling back
+  // to the raw JSON textarea when neither path is available. The "Or
+  // edit the raw JSON payload" details element is the always-available
+  // power-user escape hatch.
+  function buildRunForm(triggerNode, triggerCfg) {
+    const fieldsEl = $("#wf-run-fields")
+    if (!fieldsEl) return
+    const schema = pickTriggerSchema(triggerNode, triggerCfg)
+    if (!schema) {
+      fieldsEl.innerHTML = '<div class="ax-wf__run-hint">No declared inputSchema. Use the raw JSON below to send the payload your trigger expects.</div>'
+      return
+    }
+    const props = schema.properties || {}
+    const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+    const rows = Object.keys(props).map(k => renderRunField(k, props[k], required.has(k))).join("")
+    fieldsEl.innerHTML = '<div class="ax-wf__run-fields-grid">' + rows + '</div>'
+  }
+
+  // Pick an inputSchema for the run form: trigger.config.inputSchema
+  // wins, then per-hook-event presets for trigger.hook, otherwise null.
+  function pickTriggerSchema(triggerNode, triggerCfg) {
+    if (triggerCfg && triggerCfg.inputSchema && triggerCfg.inputSchema.properties) {
+      return triggerCfg.inputSchema
+    }
+    if (triggerNode && triggerNode.type === "trigger.hook" && triggerCfg && triggerCfg.event) {
+      return HOOK_EVENT_PRESETS[triggerCfg.event] || null
+    }
+    return null
+  }
+
+  function renderRunField(key, prop, isRequired) {
+    const desc = (prop && prop.description) || ""
+    const t = (prop && prop.type) || "string"
+    const def = prop && prop.default
+    const placeholder = def !== undefined ? esc(JSON.stringify(def)) : ""
+    let control = ""
+    if (Array.isArray(prop && prop.enum)) {
+      const opts = prop.enum.map(v => '<option value="' + esc(String(v)) + '">' + esc(String(v)) + '</option>').join("")
+      control = '<select data-run-key="' + esc(key) + '" data-run-type="enum">' + (isRequired ? "" : '<option value=""></option>') + opts + '</select>'
+    } else if (t === "boolean") {
+      control = '<input type="checkbox" data-run-key="' + esc(key) + '" data-run-type="boolean" ' + (def === true ? "checked" : "") + ' />'
+    } else if (t === "number" || t === "integer") {
+      control = '<input type="number" data-run-key="' + esc(key) + '" data-run-type="number" placeholder="' + placeholder + '" />'
+    } else if (t === "array") {
+      control = '<input type="text" data-run-key="' + esc(key) + '" data-run-type="list" placeholder="comma,separated,values" />'
+    } else if (t === "object") {
+      control = '<textarea data-run-key="' + esc(key) + '" data-run-type="json" rows="2" spellcheck="false">{}</textarea>'
+    } else {
+      control = '<input type="text" data-run-key="' + esc(key) + '" data-run-type="string" placeholder="' + placeholder + '" />'
+    }
+    const reqMark = isRequired ? '<span class="ax-wf__run-req" title="required">*</span>' : ""
+    return '<label class="ax-wf__run-fld">'
+      + '<span class="ax-wf__run-label"><code>' + esc(key) + '</code>' + reqMark + ' <span class="hint">' + esc(t) + '</span></span>'
+      + control
+      + (desc ? '<span class="ax-wf__run-hint">' + esc(desc) + '</span>' : '')
+      + '</label>'
+  }
+
+  // Hook-event payload presets — when a workflow's trigger.hook fires
+  // off on:gitlab-issue (etc.), the payload it sees is hook-specific.
+  // Encoding the shape here lets the run form render typed fields even
+  // though the workflow author didn't declare a custom inputSchema.
+  // Add new entries as new on:* hooks land in src/workflows/hooks.ts.
+  const HOOK_EVENT_PRESETS = {
+    "on:gitlab-issue": {
+      properties: {
+        iid:         { type: "number",  description: "Issue iid" },
+        title:       { type: "string",  description: "Issue title" },
+        description: { type: "string",  description: "Issue body markdown" },
+        action:      { type: "string",  enum: ["open", "reopen", "update", "close"] },
+        labels:      { type: "array",   description: "Current labels (array of strings)" },
+        author:      { type: "string",  description: "Reporter's username" },
+        url:         { type: "string",  description: "GitLab URL of the issue" },
+        project:     { type: "string",  description: "org/repo path" },
+      },
+      required: ["iid", "project", "action"],
+    },
+    "on:gitlab-mr": {
+      properties: {
+        iid:           { type: "number",  description: "MR iid" },
+        title:         { type: "string",  description: "MR title" },
+        description:   { type: "string",  description: "MR body" },
+        action:        { type: "string",  enum: ["open", "reopen", "update", "approved", "merge", "close"] },
+        state:         { type: "string",  enum: ["opened", "merged", "closed"] },
+        source_branch: { type: "string" },
+        target_branch: { type: "string" },
+        labels:        { type: "array" },
+        url:           { type: "string" },
+        project:       { type: "string" },
+      },
+      required: ["iid", "project", "action"],
+    },
+    "on:gitlab-note": {
+      properties: {
+        noteId:        { type: "string" },
+        noteableType:  { type: "string", enum: ["merge_request", "issue"] },
+        noteableIid:   { type: "string" },
+        text:          { type: "string", description: "Comment body" },
+        author:        { type: "string" },
+        project:       { type: "string" },
+      },
+      required: ["noteableType", "noteableIid", "text"],
+    },
+    "on:gitlab-pipeline": {
+      properties: {
+        pipelineId: { type: "number" },
+        status:     { type: "string", enum: ["success", "failed", "canceled", "running", "pending"] },
+        ref:        { type: "string", description: "Branch or tag" },
+        project:    { type: "string" },
+      },
+      required: ["status", "project"],
+    },
   }
 
   /** Re-run a completed run with the same payload it was originally
@@ -831,11 +990,56 @@ const WORKFLOWS_PAGE_SCRIPT = `
     const payloadEl = $("#wf-run-payload")
     const forceEl = $("#wf-run-force")
     let payload = {}
+    // Field-form path: collect values from the structured inputs first.
+    // Empty values are dropped so the server's default-handling stays
+    // intact (don't overwrite a default with "").
+    const fieldEls = document.querySelectorAll("[data-run-key]")
+    if (fieldEls.length > 0) {
+      fieldEls.forEach(el => {
+        const k = el.getAttribute("data-run-key")
+        const t = el.getAttribute("data-run-type")
+        let v
+        if (t === "boolean") v = el.checked
+        else if (t === "number") {
+          const raw = el.value
+          if (raw === "") return
+          v = Number(raw)
+        }
+        else if (t === "list") {
+          const raw = (el.value || "").trim()
+          if (!raw) return
+          v = raw.split(",").map(s => s.trim()).filter(Boolean)
+        }
+        else if (t === "json") {
+          try {
+            const raw = (el.value || "").trim()
+            if (!raw) return
+            v = JSON.parse(raw)
+          } catch (e) {
+            toast("Field '" + k + "' is not valid JSON: " + e.message)
+            throw e
+          }
+        }
+        else {
+          const raw = (el.value || "").trim()
+          if (!raw) return
+          v = raw
+        }
+        if (v !== undefined) payload[k] = v
+      })
+    }
+    // Raw JSON textarea overrides field values when the operator typed
+    // anything substantive — power-user escape hatch.
     try {
       const txt = (payloadEl && payloadEl.value || "{}").trim()
-      if (txt) payload = JSON.parse(txt)
+      if (txt && txt !== "{}") {
+        const fromTextarea = JSON.parse(txt)
+        if (fromTextarea && typeof fromTextarea === "object") {
+          payload = { ...payload, ...fromTextarea }
+        }
+      }
     } catch (e) {
-      toast("Payload is not valid JSON: " + e.message)
+      toast("Raw JSON is not valid: " + e.message)
       return
     }
     const force = !!(forceEl && forceEl.checked)
