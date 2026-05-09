@@ -76,7 +76,9 @@ wiki
   .option("--dir <path>", "wiki directory")
   .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "lint a specific agent's wiki")
-  .action((opts) => {
+  .option("--semantic", "also run the contradiction linter (LLM-backed; costs a few cents/agent)")
+  .option("--model <name>", "model for --semantic (default: claude-haiku-4-5)")
+  .action(async (opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     let totalIssues = 0
@@ -87,12 +89,37 @@ wiki
       const issues = store.lint()
       totalIssues += issues.length
 
+      if (opts.semantic) {
+        const { lintContradictions } = await import("@/wiki/lint-contradictions")
+        const contradictions = await lintContradictions(store, {
+          model: opts.model,
+          log: (msg: string) => console.log(chalk.dim(`    ${msg}`)),
+        })
+        for (const c of contradictions) {
+          totalIssues += 1
+          // Surface as the same issue shape the existing renderer prints below.
+          // Multi-article path becomes "a.md ⟷ b.md" so the agent column is
+          // still a single string.
+          ;(issues as Array<{ type: string; article: string; message: string }>).push({
+            type: "contradiction",
+            article: c.articles.join(" ⟷ "),
+            message: c.confidence ? `[${c.confidence}] ${c.message}` : c.message,
+          })
+        }
+      }
+
       if (issues.length === 0) {
         console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("healthy")}`)
       } else {
         console.log(`  ${chalk.cyan(agentId)}: ${chalk.yellow(`${issues.length} issues`)}`)
         for (const issue of issues) {
-          const icon = issue.type === "broken-link" ? "x" : issue.type === "orphan" ? "?" : "!"
+          const icon = issue.type === "broken-link"
+            ? "x"
+            : issue.type === "orphan"
+              ? "?"
+              : issue.type === "contradiction"
+                ? "≠"
+                : "!"
           console.log(`    [${icon}] ${chalk.dim(issue.type)} ${issue.article}: ${issue.message}`)
         }
       }

@@ -160,6 +160,62 @@ export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Part
       return {}
     },
 
+    // GitLab note events — comments on issues / MRs / commits. Mirrors
+    // on:gitlab-mr; the gitlab adapter fires this in handleNote AFTER the
+    // project rule's note clause has approved the event AND cascade-
+    // prevention checks (AgentX marker, sentNoteIds, isBotUser) have
+    // passed. Workflow subscribers can branch off mentions / noteableType
+    // (e.g. mr-fix-loop fires on noteableType=merge_request when a
+    // reviewer's comment matches a request-changes pattern).
+    "on:gitlab-note": async (ctx) => {
+      const project = ctx.project as string | undefined
+      const noteId = ctx.noteId as string | undefined
+      const noteableType = ctx.noteableType as string | undefined
+      const noteableIid = ctx.noteableIid as string | undefined
+      const text = ctx.text as string | undefined
+      const author = ctx.authorUsername as string | undefined
+      const mentions = (ctx.mentions ?? []) as string[]
+      if (!project || !noteId || !noteableType || !noteableIid) return {}
+
+      const entityRef: EntityRef =
+        noteableType === "merge_request"
+          ? { backend: "gitlab", id: `${project}!${noteableIid}` }
+          : { backend: "gitlab", id: `${project}#${noteableIid}` }
+
+      await dispatcher.dispatch({
+        // The trigger field carries only structural matchers; per-event
+        // payload (mentions, etc.) lives in `event.payload`. Workflows
+        // that need to filter on mentions look at `{{trigger.mentions}}`
+        // resolved from the payload, not from this trigger object.
+        trigger: { source: "gitlab-note", project },
+        entityRef,
+        event: {
+          id: `gitlab-note:${project}:${noteableType}:${noteableIid}:${noteId}`,
+          payload: {
+            note: {
+              id: noteId,
+              text,
+              author,
+              mentions,
+              noteableType,
+              noteableIid,
+              noteableTitle: ctx.noteableTitle,
+            },
+            project,
+            channel: "gitlab",
+            chatId: `${project}:${noteableType}:${noteableIid}`,
+            noteId,
+            noteableType,
+            noteableIid,
+            text,
+            author,
+            mentions,
+          },
+        },
+      })
+      return {}
+    },
+
     // GitLab pipeline events (success / failed / canceled). Scoped to
     // MR-linked pipelines — pushes to branches without an MR don't enter
     // the workflow dispatcher.

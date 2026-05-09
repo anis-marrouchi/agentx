@@ -25,6 +25,7 @@ export const HOOK_EVENTS = [
   "on:gitlab-pipeline",
   "on:gitlab-issue",
   "on:gitlab-mr",
+  "on:gitlab-note",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]

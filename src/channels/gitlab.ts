@@ -535,6 +535,30 @@ export class GitLabAdapter implements ChannelAdapter {
       res.writeHead(200); res.end("ok"); return
     }
 
+    // Fire `on:gitlab-note` hook so workflow subscribers (mr-fix-loop) can
+    // route off note transitions in a structured way. Same fail-soft shape
+    // as on:gitlab-mr — hook errors don't block the legacy default-target
+    // dispatch below. Hook fires AFTER the project rule's note clause has
+    // approved the event so workflows see a pre-filtered event stream.
+    if (this.hooks?.has("on:gitlab-note" as any)) {
+      try {
+        await this.hooks.execute("on:gitlab-note" as any, {
+          event: "on:gitlab-note" as any,
+          noteEvent: event,
+          project,
+          noteId,
+          noteableType,
+          noteableIid,
+          noteableTitle,
+          text: note,
+          authorUsername: user.username,
+          mentions,
+        })
+      } catch (e: any) {
+        this.log(`on:gitlab-note hook error: ${e.message}`)
+      }
+    }
+
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
     debug.webhook("gitlab", "handleNote", `noteId=${noteId} mentions=[${mentions.join(",")}] user=${user.username}`)
 
