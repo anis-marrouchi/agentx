@@ -237,7 +237,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // dashboard.daemons[] entry. Only meaningful for the activity-graph
   // snapshot endpoint right now; other endpoints fall through to local
   // until they grow merge semantics.
-  if (path.startsWith("/api/admin/")) {
+  // /api/workflows lives outside /api/admin/ for legacy reasons but is part
+  // of the admin surface and follows the same peer-selector contract. Treat
+  // it the same as /api/admin/* so the workflows page can proxy to clawd
+  // when the mesh selector picks a non-primary peer.
+  if (path.startsWith("/api/admin/") || path.startsWith("/api/workflows")) {
     const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
     if (peerId === "fleet") {
       if (path === "/api/admin/activity-graph") {

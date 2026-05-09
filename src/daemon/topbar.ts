@@ -216,13 +216,25 @@ export const TOPBAR_SCRIPT = `<script>
    */
   function wirePeerProxy(){
     if (window.__axPeerWired) return; window.__axPeerWired = true;
+    // Path-prefix allowlist for the peer-proxy interceptor. Extend here
+    // when a new admin-side surface needs to follow the mesh selector.
+    // /api/workflows is the workflow dashboard's read/write API — it
+    // lives outside /api/admin for legacy reasons, but the page is part
+    // of the admin surface and should proxy when a non-primary peer is
+    // selected (otherwise the workflows page on Mac shows local-only
+    // YAMLs while the runtime lives on clawd).
+    function shouldProxy(url){
+      if (!url) return false;
+      return url.indexOf('/api/admin/') >= 0
+          || url.indexOf('/api/workflows') >= 0;
+    }
     var origFetch = window.fetch.bind(window);
     window.fetch = function(input, init){
       try {
         var peer = currentPeer();
         if (peer && peer !== 'primary') {
           var url = typeof input === 'string' ? input : (input && input.url) || '';
-          if (url.indexOf('/api/admin/') === 0 || url.indexOf('/api/admin/') > 0) {
+          if (shouldProxy(url)) {
             init = init || {};
             init.headers = new Headers(init.headers || {});
             init.headers.set('X-Agentx-Peer', peer);
@@ -236,7 +248,7 @@ export const TOPBAR_SCRIPT = `<script>
       window.EventSource = function(url, cfg){
         try {
           var peer = currentPeer();
-          if (peer && peer !== 'primary' && typeof url === 'string' && url.indexOf('/api/admin/') >= 0) {
+          if (peer && peer !== 'primary' && typeof url === 'string' && shouldProxy(url)) {
             url += (url.indexOf('?') >= 0 ? '&' : '?') + 'peer=' + encodeURIComponent(peer);
           }
         } catch (e) {}
