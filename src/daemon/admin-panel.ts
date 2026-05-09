@@ -120,6 +120,11 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
       // Mesh health-check cadence — mirrors `agentx mesh health`.
       "POST /api/admin/mesh/health":     () => updateMeshHealth(body),
+      // Projects aggregator — read-side join over project rules,
+      // workflows, channel routes, contacts. Implementation lives on
+      // the daemon (needs ProjectRulesStore + workflowStore); the
+      // dashboard simply forwards.
+      "GET /api/admin/projects":         () => proxyDaemonJson("/api/admin/projects"),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
