@@ -32,6 +32,9 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     </header>
     <div class="ax-wf__search">
       <input id="wf-filter" type="search" placeholder="Filter by id or title…" autocomplete="off" />
+      <select id="wf-project-filter" class="ax-wf__project-filter" title="Filter by project">
+        <option value="">All projects</option>
+      </select>
     </div>
     <ul id="wf-list" class="ax-wf__cards" aria-live="polite"></ul>
     <div id="wf-empty" class="ax-wf__empty" hidden>
@@ -315,6 +318,23 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__card-meta .tag.tag--running   { color: var(--ax-accent, #6366f1); }
 .ax-wf__card-meta .tag.tag--paused    { color: var(--ax-warn, #facc15); }
 .ax-wf__card-meta .tag.tag--canceled  { color: var(--ax-muted); opacity: 0.7; }
+.ax-wf__card-meta .tag.tag--project {
+  color: var(--ax-accent, #6366f1);
+  background: color-mix(in srgb, var(--ax-accent, #6366f1) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ax-accent, #6366f1) 30%, transparent);
+  font-weight: 500;
+}
+.ax-wf__project-filter {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--ax-border);
+  border-radius: 4px;
+  background: var(--ax-bg);
+  color: var(--ax-fg);
+  margin-top: 6px;
+  width: 100%;
+}
 /* Runbook framing — tables in WHEN / IN / OUT panels */
 .ax-wf__io { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .ax-wf__io th { text-align: left; font-weight: 500; color: var(--ax-muted); font-size: 10px;
@@ -428,6 +448,11 @@ const WORKFLOWS_PAGE_SCRIPT = `
     selectedId: null,
     selectedDraftId: null,
     filter: "",
+    /** Project filter — "" = all (incl. workflows without project),
+     *  "__none__" = only workflows missing the project field,
+     *  "<org/repo>" = only that project's workflows.
+     *  Populated dynamically from the loaded workflows. */
+    projectFilter: "",
     sse: null,
   }
 
@@ -454,10 +479,41 @@ const WORKFLOWS_PAGE_SCRIPT = `
 
   // --- Rendering -------------------------------------------------------
 
+  function renderProjectFilter() {
+    const sel = $("#wf-project-filter")
+    if (!sel) return
+    // Collect distinct projects from currently loaded workflows. Sorted
+    // alphabetically; "(no project)" entry only shown when at least one
+    // workflow lacks the field, so the dropdown stays clean for fully-
+    // tagged setups.
+    const projects = new Set()
+    let hasGlobal = false
+    for (const wf of state.workflows) {
+      if (wf.project) projects.add(wf.project)
+      else hasGlobal = true
+    }
+    const sorted = Array.from(projects).sort()
+    const current = state.projectFilter || ""
+    sel.innerHTML = '<option value="">All projects</option>'
+      + sorted.map(p => '<option value="' + esc(p) + '"' + (p === current ? ' selected' : '') + '>' + esc(p) + '</option>').join("")
+      + (hasGlobal ? '<option value="__none__"' + (current === "__none__" ? ' selected' : '') + '>(no project)</option>' : "")
+  }
+
   function renderList() {
+    renderProjectFilter()
     const needle = state.filter.toLowerCase()
-    const filtered = state.workflows.filter(wf =>
-      !needle || wf.id.toLowerCase().includes(needle) || (wf.title || "").toLowerCase().includes(needle))
+    const projectFilter = state.projectFilter || ""
+    const filtered = state.workflows.filter(wf => {
+      const matchesText = !needle || wf.id.toLowerCase().includes(needle) || (wf.title || "").toLowerCase().includes(needle)
+      // projectFilter values:
+      //   ""           — no filter (all projects + global)
+      //   "__none__"   — only workflows without a project field
+      //   "<org/repo>" — only workflows whose project field equals this
+      let matchesProject = true
+      if (projectFilter === "__none__") matchesProject = !wf.project
+      else if (projectFilter) matchesProject = wf.project === projectFilter
+      return matchesText && matchesProject
+    })
 
     const runsByWorkflow = state.runs.reduce((acc, r) => {
       (acc[r.workflowId] ||= []).push(r); return acc
@@ -483,6 +539,7 @@ const WORKFLOWS_PAGE_SCRIPT = `
           <div class="ax-wf__card-title">\${esc(wf.title || wf.id)}</div>
           <div class="ax-wf__card-id">\${esc(wf.id)} · v\${wf.version}</div>
           <div class="ax-wf__card-meta">
+            \${wf.project ? \`<span class="tag tag--project" title="Project">\${esc(wf.project)}</span>\` : ""}
             <span class="tag">\${esc(triggerSource)}</span>
             \${live > 0 ? \`<span class="tag live">\${live} running</span>\` : ""}
             \${lastRun
@@ -1143,6 +1200,13 @@ const WORKFLOWS_PAGE_SCRIPT = `
       state.filter = e.target.value
       renderList()
     })
+    const projSel = $("#wf-project-filter")
+    if (projSel) {
+      projSel.addEventListener("change", (e) => {
+        state.projectFilter = e.target.value
+        renderList()
+      })
+    }
     document.querySelectorAll('#wf-run-actions [data-run-action]').forEach((b) => {
       b.addEventListener('click', () => runAction(b.getAttribute('data-run-action')))
     })

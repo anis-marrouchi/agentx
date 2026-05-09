@@ -2434,6 +2434,26 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           this.json(res, 200, this.registry.list())
           break
 
+        case "GET /api/admin/projects": {
+          // Aggregated per-project view: rule files + workflows + channel
+          // routes + contacts. Powers the /admin/projects dashboard page.
+          // Pure read — no mutations exposed yet (controls land in a
+          // follow-up once the read view has settled).
+          const { computeProjectsAggregate } = await import("./projects-api")
+          if (!this.workflowStore) {
+            this.json(res, 503, { error: "workflow store not initialized" })
+            break
+          }
+          const result = computeProjectsAggregate({
+            config: this.config,
+            rules: this.projectRules,
+            workflowStore: this.workflowStore,
+            cwd: process.cwd(),
+          })
+          this.json(res, 200, result)
+          break
+        }
+
         case "GET /whatsapp/state": {
           const { getWhatsAppState } = await import("./whatsapp-state")
           this.json(res, 200, getWhatsAppState())

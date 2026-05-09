@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox"
+export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -225,8 +225,18 @@ export const TOPBAR_SCRIPT = `<script>
     // YAMLs while the runtime lives on clawd).
     function shouldProxy(url){
       if (!url) return false;
+      // Admin-side surfaces that follow the mesh selector. Each entry
+      // is a path-prefix match. Extend when a new admin surface lands
+      // outside /api/admin/* but should still proxy when the operator
+      // picks a non-primary peer.
+      //   /api/admin/   — original admin surface (activity, ledger, …)
+      //   /api/workflows — workflow editor + observability page
+      //   /api/agents   — agent dropdowns inside the workflow editor +
+      //                   anywhere else the page asks "which agents
+      //                   exist on the selected node?"
       return url.indexOf('/api/admin/') >= 0
-          || url.indexOf('/api/workflows') >= 0;
+          || url.indexOf('/api/workflows') >= 0
+          || url.indexOf('/api/agents') >= 0;
     }
     var origFetch = window.fetch.bind(window);
     window.fetch = function(input, init){
@@ -339,6 +349,7 @@ export function renderTopbar(opts: TopbarOpts): string {
     {
       name: "Processes",
       tabs: [
+        { id: "projects", label: "Projects", href: "/admin/projects" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
         { id: "boards", label: "Boards", href: "/" },
         { id: "inbox", label: "Inbox", href: "/inbox" },

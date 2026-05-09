@@ -15,6 +15,7 @@ import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
+import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
@@ -237,11 +238,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // dashboard.daemons[] entry. Only meaningful for the activity-graph
   // snapshot endpoint right now; other endpoints fall through to local
   // until they grow merge semantics.
-  // /api/workflows lives outside /api/admin/ for legacy reasons but is part
-  // of the admin surface and follows the same peer-selector contract. Treat
-  // it the same as /api/admin/* so the workflows page can proxy to clawd
-  // when the mesh selector picks a non-primary peer.
-  if (path.startsWith("/api/admin/") || path.startsWith("/api/workflows")) {
+  // /api/workflows + /api/agents live outside /api/admin/ for legacy
+  // reasons but are part of the admin surface and follow the same
+  // peer-selector contract. Mirror of the shouldProxy() allowlist on
+  // the client side (topbar.ts). Treat them the same as /api/admin/*
+  // so admin pages proxy to the chosen peer when the selector is set.
+  if (path.startsWith("/api/admin/") || path.startsWith("/api/workflows") || path.startsWith("/api/agents")) {
     const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
     if (peerId === "fleet") {
       if (path === "/api/admin/activity-graph") {
@@ -332,6 +334,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/admin/cost") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderCostPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // /admin/projects — aggregated per-project view. Data via
+  // GET /api/admin/projects on the daemon, proxied by the existing
+  // /api/admin/* path-prefix proxy so the mesh selector works.
+  if (method === "GET" && path === "/admin/projects") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderProjectsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   // /admin/wiki/* — wiki UI mounted natively into the dashboard. Same

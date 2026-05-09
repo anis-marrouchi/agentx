@@ -146,6 +146,17 @@ export const workflowSchema = z.object({
    *  until an operator promotes them. */
   status: z.enum(["draft", "review", "active", "deprecated"]).default("active"),
   tags: z.array(z.string()).default([]),
+  /** Project this workflow is scoped to, in `<org>/<repo>` form for
+   *  GitLab/GitHub or any operator-defined slug for non-VCS workflows.
+   *  Optional — workflows without a project field show up as "Global"
+   *  in the UI. When set, the Projects page groups workflows under
+   *  this project; the Workflows page renders a project badge per row.
+   *  This is metadata only — the dispatcher does NOT use it for gating
+   *  (project rules in .agentx/projects/ already do that, at the
+   *  webhook layer). The field exists so operators have one place to
+   *  see "what does this project do" across agents/workflows/contacts/
+   *  channels per-project view. */
+  project: z.string().optional(),
   entity: z.string().optional(),
   intentPath: z.array(z.string()).default([]),
   generatedFrom: z.string().optional(),
