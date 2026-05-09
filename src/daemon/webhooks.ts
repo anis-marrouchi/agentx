@@ -57,6 +57,7 @@ export class WebhookHandler {
     if (source === "stripe") return "on:stripe-event"
     if (source === "sentry") return "on:sentry-issue"
     if (source === "vercel") return "on:vercel-deployment"
+    if (source === "hubspot") return "on:hubspot-event"
     if (source === "odoo") return "on:odoo-event"
     if (source === "github") {
       // GitHub eventType is "<x-github-event>.<action>" or just "<event>".
@@ -288,6 +289,21 @@ export class WebhookHandler {
     if (source === "sentry") {
       return header("sentry-hook-resource")
     }
+    if (source === "hubspot") {
+      // HubSpot v3 webhooks send an ARRAY of events as the top-level JSON
+      // body. JSON.parse keeps it as an array; we type it loosely here. Pull
+      // the first event's `subscriptionType` (e.g. "contact.creation",
+      // "deal.propertyChange") — per-event-type routing keys on this value.
+      // Older subscriptions ship a singleton event object; handle both.
+      if (Array.isArray(body) && body.length > 0) {
+        const first = (body as unknown[])[0] as { subscriptionType?: unknown } | undefined
+        if (first && typeof first.subscriptionType === "string") return first.subscriptionType
+      }
+      if (typeof (body as { subscriptionType?: unknown }).subscriptionType === "string") {
+        return (body as { subscriptionType: string }).subscriptionType
+      }
+      return undefined
+    }
     if (source === "odoo") {
       // Common Odoo webhook payload shapes. Order matters — `event` is the
       // most explicit when present (paid Odoo Apps connectors), otherwise
@@ -312,6 +328,9 @@ export class WebhookHandler {
     if (headers["stripe-signature"]) return "stripe"
     if (headers["sentry-hook-resource"]) return "sentry"
     if (headers["x-vercel-signature"]) return "vercel"
+    // HubSpot v3 webhooks always include both signature + timestamp headers
+    // and announce themselves via X-HubSpot-Signature-Version: v3.
+    if (headers["x-hubspot-signature-v3"] || headers["x-hubspot-signature-version"]) return "hubspot"
     // Odoo doesn't have a universal header across modules; common signals
     // are `x-odoo-database` (set by Odoo Online on outgoing webhooks) or
     // `x-odoo-signature` (HMAC-signing modules). When neither is present,
@@ -430,6 +449,29 @@ export class WebhookHandler {
         break
       }
 
+      case "hubspot": {
+        // HubSpot ships an array of events; surface up to the first 3.
+        const arr = Array.isArray(body) ? (body as unknown[]) : null
+        const events = arr ? (arr as Array<Record<string, unknown>>) : null
+        if (events && events.length) {
+          lines.push(`Events: ${events.length}`)
+          for (const e of events.slice(0, 3)) {
+            const sub = e.subscriptionType ?? "?"
+            const oid = e.objectId ?? "?"
+            const flag = e.changeFlag ?? e.changeSource ?? ""
+            lines.push(`  - ${sub} (object ${oid}${flag ? `, ${flag}` : ""})`)
+          }
+        } else {
+          // Singleton event payload (older HubSpot subscriptions).
+          const sub = (body as any).subscriptionType ?? "event"
+          const oid = (body as any).objectId ?? "?"
+          lines.push(`Event: ${sub} (object ${oid})`)
+        }
+        const portalId = (events?.[0]?.portalId) ?? (body as any).portalId
+        if (portalId != null) lines.push(`Portal: ${portalId}`)
+        break
+      }
+
       case "odoo": {
         // Odoo modules emit varying shapes — we surface what's commonly
         // present without assuming any specific connector.
@@ -536,6 +578,43 @@ export class WebhookHandler {
       if (!parts.t || !parts.v1) return "malformed Stripe-Signature"
       const expected = createHmac("sha256", secret).update(`${parts.t}.${raw}`).digest("hex")
       return safeEqualOrReject(expected, parts.v1)
+    }
+    if (source === "hubspot") {
+      // HubSpot v3 signature scheme — base64(HMAC-SHA256(secret, METHOD+URI+body+timestamp))
+      // sent in `X-HubSpot-Signature-v3`. Timestamp is in `X-HubSpot-Request-Timestamp`
+      // (milliseconds since epoch). HubSpot recommends rejecting webhooks
+      // older than 5 minutes to mitigate replay attacks.
+      const sig = headerStr("x-hubspot-signature-v3")
+      const ts = headerStr("x-hubspot-request-timestamp")
+      if (!sig) return "missing X-HubSpot-Signature-v3"
+      if (!ts) return "missing X-HubSpot-Request-Timestamp"
+      const tsNum = parseInt(ts, 10)
+      if (!Number.isFinite(tsNum)) return "malformed X-HubSpot-Request-Timestamp"
+      const ageMs = Date.now() - tsNum
+      if (ageMs > 5 * 60_000) return `HubSpot webhook is ${Math.floor(ageMs / 1000)}s old (>5min replay window)`
+      // HubSpot signs METHOD + URI + body + timestamp. The URI is the FULL
+      // public URL the webhook hit, including scheme + host + path. We don't
+      // have that on the inbound side without trusting headers like
+      // X-Forwarded-Host; HubSpot's docs let you sign just the path component
+      // when configured. Try both — full URI from headers, then path-only —
+      // and accept whichever matches.
+      const method = "POST"
+      const path = (headers["x-original-uri"] as string) || (headers["x-forwarded-path"] as string) || ""
+      const host = (headers["x-forwarded-host"] as string) || (headers["host"] as string) || ""
+      const proto = (headers["x-forwarded-proto"] as string) || "https"
+      const fullUri = host ? `${proto}://${host}${path}` : path
+      const candidates = new Set<string>()
+      if (fullUri) candidates.add(fullUri)
+      if (path) candidates.add(path)
+      // Last fallback: empty URI (some HubSpot setups sign just method + body + ts).
+      candidates.add("")
+      for (const uri of candidates) {
+        const expected = createHmac("sha256", secret).update(`${method}${uri}${raw}${ts}`).digest("base64")
+        if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+          return null
+        }
+      }
+      return "signature mismatch"
     }
     if (source === "odoo") {
       // Odoo's signing scheme varies by module (`webhook` / `automated_actions`

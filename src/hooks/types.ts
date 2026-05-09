@@ -37,6 +37,7 @@ export const HOOK_EVENTS = [
   "on:sentry-issue",
   "on:vercel-deployment",
   "on:odoo-event",
+  "on:hubspot-event",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]

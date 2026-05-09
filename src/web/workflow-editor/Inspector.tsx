@@ -335,6 +335,7 @@ type ChannelSourceKey =
   | "sentry-issue"
   | "vercel-deployment"
   | "odoo-event"
+  | "hubspot-event"
 
 interface ChannelSourceMeta {
   /** Short label for the dropdown option. */
@@ -444,6 +445,13 @@ const CHANNEL_SOURCES: Record<ChannelSourceKey, ChannelSourceMeta> = {
   "odoo-event": {
     label: "Odoo — ERP/CRM event",
     fires: "Fires on any Odoo webhook (contact create, lead won, sale confirmed, invoice paid, project task updated, etc.). Filter by event/model in the workflow body.",
+    wired: true,
+    group: "external-webhook",
+    hasLabels: false,
+  },
+  "hubspot-event": {
+    label: "HubSpot — CRM event",
+    fires: "Fires on any HubSpot v3 webhook (contact.creation, deal.propertyChange, conversation.newMessage, etc.). Filter by subscriptionType in the workflow body.",
     wired: true,
     group: "external-webhook",
     hasLabels: false,
@@ -607,6 +615,11 @@ const HOOK_EVENTS: Array<{ value: string; label: string; fires: string }> = [
     value: "on:odoo-event",
     label: "on:odoo-event",
     fires: "Fires on any Odoo webhook (res.partner.create, sale.order.action_confirm, account.move.paid, etc.). Filter by event/model inside the workflow.",
+  },
+  {
+    value: "on:hubspot-event",
+    label: "on:hubspot-event",
+    fires: "Fires on any HubSpot v3 webhook (contact.creation, deal.propertyChange, conversation.newMessage, etc.). Filter by subscriptionType inside the workflow.",
   },
   {
     value: "on:error",
