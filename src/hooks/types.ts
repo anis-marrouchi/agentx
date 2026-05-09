@@ -24,6 +24,7 @@ export const HOOK_EVENTS = [
   // agent(s) to run for this event).
   "on:gitlab-pipeline",
   "on:gitlab-issue",
+  "on:gitlab-mr",
 ] as const
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]

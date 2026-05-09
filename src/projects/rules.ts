@@ -105,6 +105,13 @@ export interface ProjectRule {
   runbookFiles?: string[]
   gitlab?: {
     issue?: IssueRule
+    /** Same matcher shape as issue — actions/requireLabels/excludeLabels/
+     *  excludeStates/excludeAuthors. GitLab MR `action` values: open,
+     *  reopen, update, close, approved, unapproved, approval, unapproval,
+     *  merge. Most W3-style review automations want `[open, reopen, update]`
+     *  only, with `excludeAuthors: [bot, noqta-]` to ignore agent-driven
+     *  MR updates. */
+    merge_request?: IssueRule
     note?: NoteRule
     pipeline?: PipelineRule
   }
@@ -229,6 +236,19 @@ export class ProjectRulesStore {
     const rule = this.find(project)?.gitlab?.note
     if (!rule) return { allow: true }
     return matchNoteRule(rule, payload, opts?.knownAgentMentions)
+  }
+
+  /** Should a GitLab MR event reach an agent? Same matcher as issue —
+   *  filter on action / labels / state / author. */
+  shouldFireGitlabMR(project: string, payload: {
+    action?: string
+    state?: string
+    labels?: string[]
+    authorUsername?: string
+  }): FilterDecision {
+    const rule = this.find(project)?.gitlab?.merge_request
+    if (!rule) return { allow: true }
+    return matchIssueRule(rule, payload, "gitlab")
   }
 
   /** Should a GitLab pipeline event reach an agent? */

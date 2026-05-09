@@ -1034,6 +1034,53 @@ export class GitLabAdapter implements ChannelAdapter {
     const project = event.project.path_with_namespace
     const defaultAgentId = this.resolveAgent(project)
 
+    // Project-rule gate — same shape as handleIssue. When a rule exists
+    // and rejects the MR action/labels/state/author, drop the event before
+    // both the on:gitlab-mr hook and the default target dispatch fire.
+    // This is what stops "every MR update re-fires the review workflow"
+    // in the same way the issue rule stopped triage cascades.
+    const mrLabelsRaw = (attrs as any).labels
+    const mrEventLabels = (event as any).labels
+    const mrLabels = Array.isArray(mrLabelsRaw)
+      ? mrLabelsRaw.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
+      : (Array.isArray(mrEventLabels) ? mrEventLabels.map((l: any) => l?.title).filter(Boolean) : [])
+    const mrRuleDecision = this.rules?.shouldFireGitlabMR(project, {
+      action: attrs.action,
+      state: attrs.state,
+      labels: mrLabels,
+      authorUsername: event.user.username,
+    })
+    if (mrRuleDecision && !mrRuleDecision.allow) {
+      this.log(`MR !${attrs.iid} on ${project} dropped by rule: ${mrRuleDecision.reason}`)
+      res.writeHead(200); res.end("ok"); return
+    }
+
+    // Fire `on:gitlab-mr` hook so workflow subscribers (mr-review-fire,
+    // merge-deploy, etc.) can route off MR transitions. Mirror of the
+    // on:gitlab-issue contract — fail-soft: hook errors don't block the
+    // legacy default-target dispatch below.
+    if (this.hooks?.has("on:gitlab-mr" as any)) {
+      try {
+        await this.hooks.execute("on:gitlab-mr" as any, {
+          event: "on:gitlab-mr" as any,
+          mrEvent: event,
+          project,
+          iid: attrs.iid,
+          title: attrs.title,
+          description: attrs.description || "",
+          url: attrs.url,
+          action: attrs.action,
+          state: attrs.state,
+          source_branch: attrs.source_branch,
+          target_branch: attrs.target_branch,
+          labels: mrLabels,
+          defaultAgentId: defaultAgentId || null,
+        })
+      } catch (e: any) {
+        this.log(`on:gitlab-mr hook error: ${e.message}`)
+      }
+    }
+
     // Same target-resolution model as handleIssue: mentions ∪ assignees ∪
     // reviewers ∪ default route, deduped per-agent.
     const targets = this.computeMRTargets(event, defaultAgentId)

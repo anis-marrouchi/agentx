@@ -102,6 +102,64 @@ export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Part
       return {}
     },
 
+    // GitLab MR events — open, reopen, update, approved, merge, close.
+    // Mirrors on:gitlab-issue; the gitlab adapter fires this in handleMR
+    // after the project rule's merge_request clause has approved the
+    // event. Workflow subscribers see the typed mr payload and can route
+    // off attrs.action (e.g. fire a review on `open`, fire deploy on
+    // `merge`).
+    "on:gitlab-mr": async (ctx) => {
+      const project = ctx.project as string | undefined
+      const iid = ctx.iid as string | number | undefined
+      const mrEvent = ctx.mrEvent as any
+      if (!project || iid === undefined) return {}
+
+      const labels: string[] = Array.isArray(ctx.labels)
+        ? (ctx.labels as string[])
+        : (Array.isArray(mrEvent?.object_attributes?.labels)
+            ? mrEvent.object_attributes.labels.map((l: any) => typeof l === "string" ? l : l?.title).filter(Boolean)
+            : [])
+      const assignees = mrEvent?.assignees ?? mrEvent?.object_attributes?.assignee_ids ?? []
+      const reviewers = mrEvent?.reviewers ?? []
+
+      const entityRef: EntityRef = { backend: "gitlab", id: `${project}!${iid}` }
+      await dispatcher.dispatch({
+        trigger: { source: "gitlab-mr", project, labels },
+        entityRef,
+        event: {
+          id: `gitlab-mr:${project}:${iid}:${mrEvent?.object_attributes?.updated_at || mrEvent?.object_attributes?.action || "evt"}`,
+          payload: {
+            mr: {
+              iid,
+              title: ctx.title,
+              description: ctx.description,
+              url: ctx.url,
+              action: ctx.action,
+              state: ctx.state,
+              source_branch: ctx.source_branch,
+              target_branch: ctx.target_branch,
+              labels,
+              assignees,
+              reviewers,
+            },
+            project,
+            channel: "gitlab",
+            chatId: `${project}:merge_request:${iid}`,
+            iid,
+            title: ctx.title,
+            description: ctx.description,
+            url: ctx.url,
+            action: ctx.action,
+            state: ctx.state,
+            source_branch: ctx.source_branch,
+            target_branch: ctx.target_branch,
+            labels,
+          },
+        },
+      })
+      return {}
+    },
+
     // GitLab pipeline events (success / failed / canceled). Scoped to
     // MR-linked pipelines — pushes to branches without an MR don't enter
     // the workflow dispatcher.

@@ -206,6 +206,34 @@ gitlab:
     expect(store.shouldFireGitlabPipeline("acme/api", { status: "failed" }).allow).toBe(true)
   })
 
+  it("gitlab merge_request rule filters by action / labels / authors", () => {
+    writeRule("mtgl/system-v2.yaml", `
+project: mtgl/system-v2
+gitlab:
+  merge_request:
+    actions: ["open", "reopen", "update"]
+    excludeStates: ["closed", "merged"]
+    excludeAuthors: ["bot", "noqta-"]
+`)
+    store = new ProjectRulesStore(tmp, () => {})
+    const r = store.load()
+    expect(r.errors).toBe(0)
+    expect(store.find("mtgl/system-v2")?.gitlab?.merge_request?.excludeStates).toEqual(["closed", "merged"])
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open" }).allow).toBe(true)
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "approval" }).allow).toBe(false)
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", state: "closed" }).allow).toBe(false)
+    // excludeAuthors uses substring match against the configured entries.
+    // "noqta-pm-mtgl" matches "noqta-"; "renovate-bot" matches "bot".
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "noqta-pm-mtgl" }).allow).toBe(false)
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "renovate-bot" }).allow).toBe(false)
+    // Coding agent's username doesn't match either entry — allowed (cascade
+    // prevention for internal agents lives in the adapter's isBotUser check).
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "coding-mtgl-v2" }).allow).toBe(true)
+    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "marrouchi" }).allow).toBe(true)
+    // Project without an MR rule — default-allow.
+    expect(store.shouldFireGitlabMR("other/repo", { action: "merge" }).allow).toBe(true)
+  })
+
   it("github PR rule mirrors gitlab issue semantics", () => {
     writeRule("acme/api.yaml", `
 project: acme/api
