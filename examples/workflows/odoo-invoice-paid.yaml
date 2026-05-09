@@ -1,0 +1,85 @@
+# Odoo: invoice paid → Slack thanks + CRM note.
+#
+# End-to-end Odoo example. Uses the first-class `odoo-event` channel trigger
+# (fires on any Odoo webhook), branches by event type, and writes a thank-you
+# back into Odoo as a chatter note via action.run.
+#
+# Prerequisites:
+#   1. Register the webhook (CLI):
+#        agentx webhook add odoo-prod --source odoo --agent crm-bot \
+#          --secret-env ODOO_WEBHOOK_SECRET --description "Odoo CRM events"
+#   2. Set ODOO_WEBHOOK_SECRET in the daemon environment.
+#   3. In Odoo → Settings → Technical → Automation → Webhooks, point at
+#        https://daemon.example.com/webhook/crm-bot/odoo
+#      and configure HMAC-SHA256 in `X-Odoo-Signature` (or token equality
+#      in `X-Odoo-Webhook-Token` for older modules — both supported).
+#   4. Register an `odoo-post-message` action that calls Odoo's mail.message
+#      create endpoint via your authentication of choice (api key/oauth).
+
+id: odoo-invoice-paid
+version: 1
+title: Odoo invoice paid → thank-you on Slack and chatter note
+
+nodes:
+  - id: start
+    type: trigger.channel
+    config:
+      source: odoo-event
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: start.event, value: account.move.paid } }
+          to: thanks
+        - when: { kind: equals, params: { path: start.event, value: sale.order.action_confirm } }
+          to: confirmed
+      default: ignore
+
+  - id: thanks
+    type: action.send
+    config:
+      channel: slack
+      chatId: "C0123-revenue"
+      text: |
+        :money_with_wings: Invoice {{start.record.name}} paid for
+        *{{start.record.partner_id.1}}* — {{start.record.amount_total}} {{start.record.currency_id.1}}.
+
+  - id: chatter
+    type: action.run
+    config:
+      actionId: odoo-post-message
+      inputs:
+        model: account.move
+        recordId: "{{start.record.id}}"
+        body: |
+          Thanks for the payment. Receipt sent automatically by AgentX.
+    retry:
+      maxAttempts: 3
+      backoffMs: 1000
+
+  - id: confirmed
+    type: action.send
+    config:
+      channel: slack
+      chatId: "C0123-ops"
+      text: |
+        :white_check_mark: Sale {{start.record.name}} confirmed for
+        *{{start.record.partner_id.1}}* — kicking off fulfilment.
+
+  - id: ignore
+    type: end
+    config: { status: completed }
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+edges:
+  - { from: start, to: route }
+  - { from: route, fromPort: thanks, to: thanks }
+  - { from: route, fromPort: confirmed, to: confirmed }
+  - { from: route, fromPort: ignore, to: ignore }
+  - { from: thanks, to: chatter }
+  - { from: chatter, to: done }
+  - { from: confirmed, to: done }

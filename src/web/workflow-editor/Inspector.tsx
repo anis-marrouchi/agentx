@@ -334,6 +334,7 @@ type ChannelSourceKey =
   | "stripe-event"
   | "sentry-issue"
   | "vercel-deployment"
+  | "odoo-event"
 
 interface ChannelSourceMeta {
   /** Short label for the dropdown option. */
@@ -436,6 +437,13 @@ const CHANNEL_SOURCES: Record<ChannelSourceKey, ChannelSourceMeta> = {
   "vercel-deployment": {
     label: "Vercel — Deployment event",
     fires: "Fires when Vercel reports a deployment state change (created, ready, error).",
+    wired: true,
+    group: "external-webhook",
+    hasLabels: false,
+  },
+  "odoo-event": {
+    label: "Odoo — ERP/CRM event",
+    fires: "Fires on any Odoo webhook (contact create, lead won, sale confirmed, invoice paid, project task updated, etc.). Filter by event/model in the workflow body.",
     wired: true,
     group: "external-webhook",
     hasLabels: false,
@@ -594,6 +602,11 @@ const HOOK_EVENTS: Array<{ value: string; label: string; fires: string }> = [
     value: "on:vercel-deployment",
     label: "on:vercel-deployment",
     fires: "Fires when a Vercel deployment changes state.",
+  },
+  {
+    value: "on:odoo-event",
+    label: "on:odoo-event",
+    fires: "Fires on any Odoo webhook (res.partner.create, sale.order.action_confirm, account.move.paid, etc.). Filter by event/model inside the workflow.",
   },
   {
     value: "on:error",

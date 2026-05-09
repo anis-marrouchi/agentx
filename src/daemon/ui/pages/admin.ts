@@ -496,7 +496,7 @@ const ADMIN_PAGE_BODY = `
       <h3>Add a webhook</h3>
       <div class="rowf">
         <div><label>Webhook id<span class="hint">(lowercase)</span></label><input id="w-id" placeholder="mtgl-gitlab" /></div>
-        <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab ✓</option><option value="github">GitHub ✓</option><option value="sentry">Sentry ✓</option><option value="stripe">Stripe ✓</option><option value="vercel">Vercel ✓</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
+        <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab ✓</option><option value="github">GitHub ✓</option><option value="sentry">Sentry ✓</option><option value="stripe">Stripe ✓</option><option value="vercel">Vercel ✓</option><option value="odoo">Odoo ✓</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
       </div>
       <div class="rowf">
         <div><label>Agent</label><select id="w-agent"></select></div>
@@ -1114,6 +1114,7 @@ function renderWebhooks() {
     sentry: { logoBg: '#362D59', label: 'Sentry', init: 'SE', hint: 'In Sentry → Project Settings → Alerts → Webhooks.', wired: true, eventTypes: ['issue', 'event_alert', 'metric_alert'] },
     stripe: { logoBg: '#635BFF', label: 'Stripe', init: 'ST', hint: 'In Stripe Dashboard → Developers → Webhooks.', wired: true, eventTypes: ['invoice.paid', 'invoice.payment_failed', 'customer.subscription.created', 'customer.subscription.deleted', 'customer.subscription.updated', 'charge.succeeded', 'charge.refunded', 'checkout.session.completed', 'payment_intent.succeeded'] },
     vercel: { logoBg: '#000000', label: 'Vercel', init: 'VR', hint: 'In Vercel → Project Settings → Webhooks.', wired: true, eventTypes: ['deployment.created', 'deployment.ready', 'deployment.error', 'deployment.canceled'] },
+    odoo: { logoBg: '#714B67', label: 'Odoo', init: 'OD', hint: 'In Odoo → Settings → Technical → Automation → Webhooks (or your installed webhook module). Use the URL below as target.', wired: true, eventTypes: ['res.partner.create', 'res.partner.write', 'crm.lead.create', 'crm.lead.write', 'sale.order.create', 'sale.order.action_confirm', 'account.move.posted', 'account.move.paid', 'project.task.create', 'project.task.write', 'stock.picking.done', 'hr.employee.create'] },
     discord: { logoBg: '#5865F2', label: 'Discord', init: 'DC', hint: 'In Discord → Channel Settings → Integrations → Webhooks.', wired: false, eventTypes: [] },
     slack: { logoBg: '#4A154B', label: 'Slack', init: 'SL', hint: 'Slack Outgoing Webhooks / Events API — point at the URL below.', wired: false, eventTypes: [] },
     custom: { logoBg: 'var(--ax-surface-3)', label: 'Custom', init: '?', hint: 'Any service that can POST JSON — payload is forwarded as-is.', wired: false, eventTypes: [] },

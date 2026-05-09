@@ -179,6 +179,71 @@ These are the canonical references — read the diffs to see the recipe applied:
 | Stripe | `stripe` | `on:stripe-event` | `src/daemon/webhooks.ts` |
 | Sentry | `sentry` | `on:sentry-issue` | `src/daemon/webhooks.ts` |
 | Vercel | `vercel` | `on:vercel-deployment` | `src/daemon/webhooks.ts` |
+| Odoo | `odoo` | `on:odoo-event` | `src/daemon/webhooks.ts` (5-step recipe applied end-to-end) |
+
+### Worked example: Odoo as a first-class source
+
+Applies all 5 steps. End-to-end demo workflow at `examples/workflows/odoo-invoice-paid.yaml`.
+
+**Step 1 (detectSource)** — header sniffing in `src/daemon/webhooks.ts`:
+```ts
+if (headers["x-odoo-database"] || headers["x-odoo-signature"]) return "odoo"
+```
+Falls back to URL hint (`/webhook/:agent/odoo`) when neither header is set, since Odoo's outgoing-webhook modules vary widely.
+
+**Step 2 (validateSignature)** — accepts both common patterns:
+```ts
+if (source === "odoo") {
+  const sig = headerStr("x-odoo-signature")
+  if (sig) {
+    const expected = createHmac("sha256", secret).update(raw).digest("hex")
+    const sigHex = sig.startsWith("sha256=") ? sig.slice("sha256=".length) : sig
+    return safeEqualOrReject(expected, sigHex)
+  }
+  const tok = headerStr("x-odoo-webhook-token") ?? headerStr("x-webhook-secret")
+  if (!tok) return "missing X-Odoo-Signature or X-Odoo-Webhook-Token"
+  return safeEqualOrReject(secret, tok)
+}
+```
+HMAC-SHA256 over raw body for newer modules; shared-secret token for older / community setups.
+
+**Step 3 (extractEventType)** — covers the three common payload shapes:
+```ts
+if (source === "odoo") {
+  if (typeof body.event === "string") return body.event
+  if (typeof body.subscriptionType === "string") return body.subscriptionType
+  if (typeof body.model === "string") {
+    return typeof body.action === "string" ? `${body.model}.${body.action}` : body.model
+  }
+  return undefined
+}
+```
+Examples that resolve: `account.move.paid`, `crm.lead.create`, `sale.order.action_confirm`.
+
+**Step 4 (hookEventFor + HOOK_EVENTS)** — single bus event:
+```ts
+if (source === "odoo") return "on:odoo-event"
+```
+And `"on:odoo-event"` added to the `HOOK_EVENTS` list in `src/hooks/types.ts`. Workflows subscribe via `trigger.hook(event: "on:odoo-event")` and filter by `start.event` inside.
+
+**Step 5 (UI catalogs)** —
+- `CHANNEL_SOURCES` in `src/web/workflow-editor/Inspector.tsx` adds `odoo-event` with the "ERP/CRM event" label.
+- `HOOK_EVENTS` in the same file adds the autocomplete entry for `on:odoo-event`.
+- `WEBHOOK_SOURCES` in `src/daemon/admin-panel.ts` validator accepts `odoo`.
+- `VALID_SOURCES` + `WIRED_SOURCES` + `SOURCE_HINTS` in `src/commands/webhook.ts` so the CLI exposes it.
+- Admin Webhooks tab dropdown in `src/daemon/ui/pages/admin.ts` plus `eventTypes` array for the trigger-map autocomplete (12 common Odoo event types pre-populated).
+
+**Operator flow after this lands**:
+```
+agentx webhook add odoo-prod --source odoo --agent crm-bot \
+  --secret-env ODOO_WEBHOOK_SECRET --description "Odoo CRM events"
+agentx webhook triggers set odoo-prod account.move.paid odoo-invoice-paid
+agentx workflow run odoo-invoice-paid --watch     # smoke test
+```
+
+Plus: in Odoo → Settings → Technical → Automation → Webhooks, point at `http://daemon:18800/webhook/crm-bot/odoo`. Done.
+
+The same recipe (with different signature schemes) applies to **HubSpot**, **Linear**, **Notion**, **Calendly**, **Plausible**, **Segment**, **Salesforce** — each lands in <50 LOC of edits.
 
 ## When to use a channel adapter instead
 

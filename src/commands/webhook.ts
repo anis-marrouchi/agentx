@@ -21,10 +21,10 @@ import { applyConfigMutation } from "@/daemon/config-mutator"
 //   triggers remove <id> <event>          — remove a trigger map entry
 //   triggers default <id> <workflow>      — set default workflow (no event match)
 
-const VALID_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "discord", "slack", "custom"] as const
+const VALID_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "odoo", "discord", "slack", "custom"] as const
 type WebhookSource = (typeof VALID_SOURCES)[number]
 
-const WIRED_SOURCES = new Set<WebhookSource>(["gitlab", "github", "sentry", "stripe", "vercel"])
+const WIRED_SOURCES = new Set<WebhookSource>(["gitlab", "github", "sentry", "stripe", "vercel", "odoo"])
 
 const SOURCE_HINTS: Record<WebhookSource, string> = {
   gitlab: "GitLab → Settings → Webhooks (tick Push/Issue/Pipeline events)",
@@ -32,9 +32,10 @@ const SOURCE_HINTS: Record<WebhookSource, string> = {
   sentry: "Sentry → Project Settings → Alerts → Webhooks",
   stripe: "Stripe Dashboard → Developers → Webhooks",
   vercel: "Vercel → Project Settings → Webhooks",
+  odoo: "Odoo → Settings → Technical → Automation → Webhooks (or your installed `webhook` module)",
   discord: "Discord channel → Integrations → Webhooks (inbound-only, no on:* events)",
   slack: "Slack Outgoing Webhooks / Events API (inbound-only, no on:* events)",
-  custom: "Any service that POSTs JSON — e.g. Odoo, HubSpot, Linear, Calendly, Notion (inbound-only)",
+  custom: "Any service that POSTs JSON — HubSpot, Linear, Calendly, Notion, etc. (inbound-only)",
 }
 
 function loadConfig(): any {

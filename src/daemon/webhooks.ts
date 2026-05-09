@@ -57,6 +57,7 @@ export class WebhookHandler {
     if (source === "stripe") return "on:stripe-event"
     if (source === "sentry") return "on:sentry-issue"
     if (source === "vercel") return "on:vercel-deployment"
+    if (source === "odoo") return "on:odoo-event"
     if (source === "github") {
       // GitHub eventType is "<x-github-event>.<action>" or just "<event>".
       const head = (eventType ?? "").split(".")[0]
@@ -287,6 +288,18 @@ export class WebhookHandler {
     if (source === "sentry") {
       return header("sentry-hook-resource")
     }
+    if (source === "odoo") {
+      // Common Odoo webhook payload shapes. Order matters — `event` is the
+      // most explicit when present (paid Odoo Apps connectors), otherwise
+      // fall back to `model` + `action` (standard `webhook`/`automated_actions`
+      // modules), then `model` alone, then `subscriptionType` for Odoo SaaS.
+      if (typeof body.event === "string") return body.event
+      if (typeof body.subscriptionType === "string") return body.subscriptionType
+      if (typeof body.model === "string") {
+        return typeof body.action === "string" ? `${body.model}.${body.action}` : body.model
+      }
+      return undefined
+    }
     return undefined
   }
 
@@ -299,6 +312,11 @@ export class WebhookHandler {
     if (headers["stripe-signature"]) return "stripe"
     if (headers["sentry-hook-resource"]) return "sentry"
     if (headers["x-vercel-signature"]) return "vercel"
+    // Odoo doesn't have a universal header across modules; common signals
+    // are `x-odoo-database` (set by Odoo Online on outgoing webhooks) or
+    // `x-odoo-signature` (HMAC-signing modules). When neither is present,
+    // operators should pin the source via /webhook/:agent/odoo URL hint.
+    if (headers["x-odoo-database"] || headers["x-odoo-signature"]) return "odoo"
     if (headers["x-hub-signature-256"]) return "github"
     return "unknown"
   }
@@ -412,6 +430,28 @@ export class WebhookHandler {
         break
       }
 
+      case "odoo": {
+        // Odoo modules emit varying shapes — we surface what's commonly
+        // present without assuming any specific connector.
+        const event =
+          (typeof body.event === "string" && body.event) ||
+          (typeof body.subscriptionType === "string" && body.subscriptionType) ||
+          (typeof body.model === "string" &&
+            (typeof body.action === "string" ? `${body.model}.${body.action}` : body.model)) ||
+          "event"
+        lines.push(`Event: ${event}`)
+        const db = (headers["x-odoo-database"] as string) || (typeof body.database === "string" ? body.database : "")
+        if (db) lines.push(`Database: ${db}`)
+        const rec = (body.record as any) || body
+        if (rec?.id) lines.push(`Record id: ${rec.id}`)
+        if (rec?.name) lines.push(`Name: ${String(rec.name).slice(0, 200)}`)
+        if (rec?.partner_id?.[1]) lines.push(`Partner: ${rec.partner_id[1]}`)
+        if (rec?.email) lines.push(`Email: ${rec.email}`)
+        if (rec?.amount_total != null) lines.push(`Amount: ${rec.amount_total}`)
+        if (rec?.state) lines.push(`State: ${rec.state}`)
+        break
+      }
+
       default:
         lines.push(`Headers: ${JSON.stringify(Object.keys(headers).filter(k => k.startsWith("x-")).slice(0, 5))}`)
         lines.push(`Payload keys: ${Object.keys(body).slice(0, 10).join(", ")}`)
@@ -496,6 +536,24 @@ export class WebhookHandler {
       if (!parts.t || !parts.v1) return "malformed Stripe-Signature"
       const expected = createHmac("sha256", secret).update(`${parts.t}.${raw}`).digest("hex")
       return safeEqualOrReject(expected, parts.v1)
+    }
+    if (source === "odoo") {
+      // Odoo's signing scheme varies by module (`webhook` / `automated_actions`
+      // / paid Odoo Apps connectors). Two patterns dominate:
+      //   1) HMAC-SHA256 over the raw body, sent in `X-Odoo-Signature`
+      //      (hex digest, sometimes prefixed `sha256=`).
+      //   2) A shared secret token in `X-Odoo-Webhook-Token` (or the generic
+      //      `X-Webhook-Secret` fallback) — common in older / community setups.
+      // Accept either; reject only if neither header is present.
+      const sig = headerStr("x-odoo-signature")
+      if (sig) {
+        const expected = createHmac("sha256", secret).update(raw).digest("hex")
+        const sigHex = sig.startsWith("sha256=") ? sig.slice("sha256=".length) : sig
+        return safeEqualOrReject(expected, sigHex)
+      }
+      const tok = headerStr("x-odoo-webhook-token") ?? headerStr("x-webhook-secret")
+      if (!tok) return "missing X-Odoo-Signature or X-Odoo-Webhook-Token"
+      return safeEqualOrReject(secret, tok)
     }
     // Generic / discord / slack / sentry / custom: a plain shared secret
     // header is the simplest contract. Operators of these can override at
