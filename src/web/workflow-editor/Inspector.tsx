@@ -103,6 +103,181 @@ function ListInput({ value, onChange, placeholder, mono }: { value: string[]; on
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// KeyValueEditor — replaces the JSON-textarea pattern for object fields
+// (HTTP headers, inputs, payloads, match filters, etc.). Each row is
+// one key + one typed value; the operator can pick string / number /
+// boolean / list / json per row. Output is a Record<string, unknown>.
+//
+// Strings flow through `ExprField` so {{nodeId.path}} autocomplete
+// keeps working on values. Lists become string[]. JSON falls back to
+// a textarea for compound values that don't fit a row.
+// ─────────────────────────────────────────────────────────────────────
+
+type KvType = "string" | "number" | "boolean" | "list" | "json"
+type KvAllowed = readonly KvType[]
+
+function inferKvType(v: unknown): KvType {
+  if (typeof v === "boolean") return "boolean"
+  if (typeof v === "number") return "number"
+  if (Array.isArray(v)) return "list"
+  if (v && typeof v === "object") return "json"
+  return "string"
+}
+
+function KeyValueEditor({
+  value,
+  onChange,
+  keyPlaceholder = "key",
+  valuePlaceholder = "value",
+  allowedTypes = ["string", "number", "boolean", "list", "json"],
+  emptyHint,
+}: {
+  value: Record<string, unknown> | undefined
+  onChange: (next: Record<string, unknown>) => void
+  keyPlaceholder?: string
+  valuePlaceholder?: string
+  allowedTypes?: KvAllowed
+  emptyHint?: string
+}) {
+  const entries: Array<[string, unknown]> = Object.entries(value || {})
+
+  const setEntries = (next: Array<[string, unknown]>) => {
+    // Drop blank-key rows on commit so the saved object stays clean.
+    // We DON'T drop while typing — the row is still in the live `entries`
+    // array so React keeps focus.
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of next) {
+      if (!k) continue
+      out[k] = v
+    }
+    onChange(out)
+  }
+
+  return (
+    <div className="kv-editor">
+      {entries.length === 0 && emptyHint && (
+        <div className="kv-editor__empty">{emptyHint}</div>
+      )}
+      {entries.map(([k, v], i) => (
+        <KvRow
+          key={i}
+          k={k}
+          v={v}
+          allowedTypes={allowedTypes}
+          keyPlaceholder={keyPlaceholder}
+          valuePlaceholder={valuePlaceholder}
+          onKey={(nextKey) => {
+            const copy = entries.slice()
+            copy[i] = [nextKey, copy[i][1]]
+            setEntries(copy)
+          }}
+          onValue={(nextVal) => {
+            const copy = entries.slice()
+            copy[i] = [copy[i][0], nextVal]
+            setEntries(copy)
+          }}
+          onRemove={() => {
+            const copy = entries.slice()
+            copy.splice(i, 1)
+            setEntries(copy)
+          }}
+        />
+      ))}
+      <button
+        type="button"
+        className="kv-editor__add"
+        onClick={() => setEntries([...entries, ["", ""]])}
+      >
+        + Add field
+      </button>
+    </div>
+  )
+}
+
+function KvRow({
+  k, v, allowedTypes, keyPlaceholder, valuePlaceholder,
+  onKey, onValue, onRemove,
+}: {
+  k: string
+  v: unknown
+  allowedTypes: KvAllowed
+  keyPlaceholder: string
+  valuePlaceholder: string
+  onKey: (k: string) => void
+  onValue: (v: unknown) => void
+  onRemove: () => void
+}) {
+  const [type, setType] = useState<KvType>(inferKvType(v))
+  // Allow operator to switch type explicitly. Re-cast value when the
+  // type changes so the value input has something sensible to display.
+  const switchType = (t: KvType) => {
+    setType(t)
+    if (t === "boolean") onValue(typeof v === "boolean" ? v : false)
+    else if (t === "number") onValue(typeof v === "number" ? v : Number(v) || 0)
+    else if (t === "list")   onValue(Array.isArray(v) ? v : (typeof v === "string" && v ? v.split(",").map(s => s.trim()) : []))
+    else if (t === "json")   onValue(typeof v === "object" && v && !Array.isArray(v) ? v : {})
+    else                     onValue(typeof v === "string" ? v : String(v ?? ""))
+  }
+
+  return (
+    <div className="kv-editor__row">
+      <input
+        className="fld__input mono kv-editor__key"
+        type="text"
+        value={k}
+        placeholder={keyPlaceholder}
+        onChange={(e) => onKey(e.target.value)}
+      />
+      {allowedTypes.length > 1 && (
+        <select
+          className="fld__input kv-editor__type"
+          value={type}
+          onChange={(e) => switchType(e.target.value as KvType)}
+        >
+          {allowedTypes.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      )}
+      <div className="kv-editor__val">
+        {type === "string" && (
+          <ExprField rows={1} value={typeof v === "string" ? v : ""} onChange={(s) => onValue(s)} placeholder={valuePlaceholder} />
+        )}
+        {type === "number" && (
+          <input
+            className="fld__input"
+            type="number"
+            value={typeof v === "number" ? String(v) : ""}
+            onChange={(e) => onValue(e.target.value === "" ? 0 : Number(e.target.value))}
+          />
+        )}
+        {type === "boolean" && (
+          <Check checked={!!v} onChange={(b) => onValue(b)} label={String(!!v)} />
+        )}
+        {type === "list" && (
+          <ListInput
+            value={Array.isArray(v) ? v.map(String) : []}
+            onChange={(arr) => onValue(arr)}
+            placeholder="comma,separated,values"
+          />
+        )}
+        {type === "json" && (
+          <textarea
+            className="fld__input mono kv-editor__json"
+            rows={2}
+            value={JSON.stringify(v ?? {}, null, 2)}
+            onChange={(e) => {
+              try { onValue(JSON.parse(e.target.value)) } catch { /* mid-edit */ }
+            }}
+          />
+        )}
+      </div>
+      <button type="button" className="kv-editor__remove" onClick={onRemove} title="Remove field">×</button>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ExprField — textarea with {{var}} autocomplete
 // ═══════════════════════════════════════════════════════════════════════════
@@ -752,15 +927,13 @@ function TransformForm({ node, patchData }: FormProps) {
         </Field>
       )}
       {mode === "template" && (
-        <Field label="Template (JSON object)" hint="Each string value is rendered with {{nodeId.path}} variables">
-          <Area
-            mono
-            rows={6}
-            value={JSON.stringify(cfg.template ?? {}, null, 2)}
-            onChange={(v) => {
-              try { patchData({ template: JSON.parse(v) }) } catch { /* keep typing; JSON may be mid-edit */ }
-            }}
-            placeholder={`{\n  "greeting": "hi {{trigger.sender.name}}"\n}`}
+        <Field label="Template" hint="One field per output key. String values support {{nodeId.path}} variables.">
+          <KeyValueEditor
+            value={(cfg.template ?? {}) as Record<string, unknown>}
+            onChange={(next) => patchData({ template: next })}
+            keyPlaceholder="output key (e.g. greeting)"
+            valuePlaceholder="hi {{trigger.sender.name}}"
+            emptyHint="No fields yet — click + Add field below."
           />
         </Field>
       )}
@@ -1162,7 +1335,6 @@ function ActionLogTimeForm({ node, patchData }: FormProps) {
 
 function ActionRunForm({ node, patchData }: FormProps) {
   const cfg = node.config as { actionId?: string; inputs?: Record<string, unknown> }
-  const inputsJson = JSON.stringify(cfg.inputs ?? {}, null, 2)
   return (
     <>
       <Section title="Action">
@@ -1171,10 +1343,14 @@ function ActionRunForm({ node, patchData }: FormProps) {
         </Field>
       </Section>
       <Section title="Inputs" defaultOpen={true}>
-        <Field label="Inputs (JSON object)" hint='Values templated into the action. Strings support {{nodeId.path}} — e.g. {"version": "{{trigger.tag}}"}'>
-          <Area mono rows={5} value={inputsJson} onChange={(v) => {
-            try { patchData({ inputs: JSON.parse(v) }) } catch { /* mid-edit */ }
-          }} placeholder={'{\n  "version": "{{trigger.tag}}"\n}'} />
+        <Field label="Inputs" hint="One field per input key. String values support {{nodeId.path}} variables.">
+          <KeyValueEditor
+            value={(cfg.inputs ?? {}) as Record<string, unknown>}
+            onChange={(next) => patchData({ inputs: next })}
+            keyPlaceholder="input name (e.g. version)"
+            valuePlaceholder="{{trigger.tag}}"
+            emptyHint="No inputs configured."
+          />
         </Field>
       </Section>
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, padding: "0 10px" }}>
@@ -1200,10 +1376,15 @@ function ActionCallHTTPForm({ node, patchData }: FormProps) {
         </Field>
       </Section>
       <Section title="Headers" defaultOpen={false}>
-        <Field label="Headers (JSON object)">
-          <Area mono rows={3} value={JSON.stringify(cfg.headers ?? {}, null, 2)} onChange={(v) => {
-            try { patchData({ headers: JSON.parse(v) }) } catch { /* mid-edit */ }
-          }} placeholder={`{"Authorization": "Bearer ${"{{env.TOKEN}}"}"}`} />
+        <Field label="Headers" hint="HTTP request headers — string values support {{env.*}} and {{nodeId.path}}.">
+          <KeyValueEditor
+            value={(cfg.headers ?? {}) as Record<string, unknown>}
+            onChange={(next) => patchData({ headers: next as Record<string, string> })}
+            keyPlaceholder="Header-Name"
+            valuePlaceholder="Bearer {{env.TOKEN}}"
+            allowedTypes={["string"]}
+            emptyHint="No headers set."
+          />
         </Field>
       </Section>
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, padding: "0 10px" }}>
@@ -1377,8 +1558,14 @@ function SubProcessForm({ node, patchData }: FormProps) {
       <Field label="Workflow id" hint="id of another workflow definition — it runs to completion, then parent resumes">
         <Input mono value={String(cfg.workflowId ?? "")} onChange={(v) => patchData({ workflowId: v })} placeholder="child-workflow-id" />
       </Field>
-      <Field label="Input map (JSON)" hint={`Object mapping child-context keys to templated values; "*" for full inheritance`}>
-        <Area mono rows={4} value={JSON.stringify(cfg.inputMap ?? {}, null, 2)} onChange={(v) => { try { patchData({ inputMap: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      <Field label="Input map" hint='Map child-context keys → templated values. Use a single key "*" for full inheritance.'>
+        <KeyValueEditor
+          value={(cfg.inputMap ?? {}) as Record<string, unknown>}
+          onChange={(next) => patchData({ inputMap: next })}
+          keyPlaceholder="child key"
+          valuePlaceholder="{{trigger.foo}}"
+          emptyHint="No mapping — child workflow runs with no parent context."
+        />
       </Field>
     </Section>
   )
@@ -1394,8 +1581,14 @@ function SignalEmitForm({ node, patchData }: FormProps) {
       <Field label="Scope" hint="workflow = only same-workflow waiters; global = every waiter">
         <Select value={String(cfg.scope ?? "workflow")} onChange={(v) => patchData({ scope: v })} options={["workflow", "global"]} />
       </Field>
-      <Field label="Payload (JSON)" hint="Templated object delivered with the signal">
-        <Area mono rows={4} value={JSON.stringify(cfg.payload ?? {}, null, 2)} onChange={(v) => { try { patchData({ payload: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      <Field label="Payload" hint="Object delivered with the signal. String values support {{nodeId.path}}.">
+        <KeyValueEditor
+          value={(cfg.payload ?? {}) as Record<string, unknown>}
+          onChange={(next) => patchData({ payload: next })}
+          keyPlaceholder="payload key"
+          valuePlaceholder="{{trigger.iid}}"
+          emptyHint="Empty signal payload."
+        />
       </Field>
     </Section>
   )
@@ -1411,8 +1604,14 @@ function SignalWaitForm({ node, patchData }: FormProps) {
       <Field label="Scope">
         <Select value={String(cfg.scope ?? "workflow")} onChange={(v) => patchData({ scope: v })} options={["workflow", "global"]} />
       </Field>
-      <Field label="Match filter (JSON)" hint="Only resume when the emitted payload matches every key here">
-        <Area mono rows={3} value={JSON.stringify(cfg.match ?? {}, null, 2)} onChange={(v) => { try { patchData({ match: JSON.parse(v) }) } catch { /* ignore */ } }} />
+      <Field label="Match filter" hint="Only resume when every key here matches the emitted payload. Empty = match any payload.">
+        <KeyValueEditor
+          value={(cfg.match ?? {}) as Record<string, unknown>}
+          onChange={(next) => patchData({ match: next })}
+          keyPlaceholder="payload key"
+          valuePlaceholder="expected value"
+          emptyHint="No filter — matches any payload."
+        />
       </Field>
     </Section>
   )
@@ -1475,8 +1674,14 @@ function RuleForm({ node, patchData }: FormProps) {
             <Field label="When (per-input cells)" hint={`One per input. "*" wildcard, "x" equals, ">10" numeric, "!=x", "/regex/"`}>
               <ListInput mono value={(Array.isArray(r.when) ? r.when : []).map(String)} onChange={(v) => patchRule(idx, { when: v })} placeholder="gold, >100" />
             </Field>
-            <Field label="Output (JSON)">
-              <Area mono rows={2} value={JSON.stringify(r.output ?? {}, null, 2)} onChange={(v) => { try { patchRule(idx, { output: JSON.parse(v) }) } catch { /* ignore */ } }} />
+            <Field label="Output" hint="Fields written when this rule matches.">
+              <KeyValueEditor
+                value={(r.output ?? {}) as Record<string, unknown>}
+                onChange={(next) => patchRule(idx, { output: next })}
+                keyPlaceholder="output key"
+                valuePlaceholder="value"
+                emptyHint="No outputs."
+              />
             </Field>
           </div>
         ))}

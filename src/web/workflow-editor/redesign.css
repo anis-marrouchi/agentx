@@ -1243,3 +1243,44 @@ code, .mono {
 .hstack { display: flex; gap: 8px; align-items: center; }
 .vstack { display: flex; flex-direction: column; gap: 8px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* KeyValueEditor — friendly object editor (replaces JSON textareas
+ * for headers, inputs, payloads, match filters, output maps). */
+.kv-editor { display: flex; flex-direction: column; gap: 6px; }
+.kv-editor__empty {
+  font-size: 11px; color: var(--muted, #94a3b8);
+  padding: 6px 4px;
+}
+.kv-editor__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.4fr) auto minmax(150px, 2.4fr) auto;
+  gap: 6px;
+  align-items: start;
+}
+.kv-editor__key { min-width: 0; }
+.kv-editor__type {
+  font-size: 11px; padding: 4px 6px;
+  background: var(--surface, #f8fafc); color: var(--fg, #0f172a);
+  border: 1px solid var(--border, #e2e8f0); border-radius: 4px;
+}
+.kv-editor__val { min-width: 0; }
+.kv-editor__val > * { width: 100%; }
+.kv-editor__json { resize: vertical; min-height: 28px; }
+.kv-editor__remove {
+  background: transparent; border: 1px solid transparent;
+  color: var(--muted, #94a3b8); padding: 4px 8px;
+  border-radius: 4px; cursor: pointer; font-size: 14px;
+  align-self: start;
+}
+.kv-editor__remove:hover {
+  color: var(--err, #ef4444);
+  border-color: var(--err, #ef4444);
+}
+.kv-editor__add {
+  align-self: flex-start;
+  background: transparent; color: var(--accent, #6366f1);
+  border: 1px dashed var(--accent, #6366f1); border-radius: 4px;
+  padding: 4px 10px; cursor: pointer; font-size: 12px;
+  margin-top: 2px;
+}
+.kv-editor__add:hover { background: var(--surface, #f8fafc); }
