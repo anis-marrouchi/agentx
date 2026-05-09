@@ -125,6 +125,11 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // the daemon (needs ProjectRulesStore + workflowStore); the
       // dashboard simply forwards.
       "GET /api/admin/projects":         () => proxyDaemonJson("/api/admin/projects"),
+      // Projects mutations — link/unlink a workflow to/from a project
+      // by toggling its top-level `project:` field. Same forwarder
+      // pattern; daemon owns the on-disk write.
+      "POST /api/admin/projects/workflows/link":   () => proxyDaemonPostJson("/api/admin/projects/workflows/link", body),
+      "POST /api/admin/projects/workflows/unlink": () => proxyDaemonPostJson("/api/admin/projects/workflows/unlink", body),
     }
     const key = `${req.method} ${path}`
     const handler = dispatch[key]
@@ -671,7 +676,7 @@ function removeSkillForAgent(body: any) {
   return { summary: `removed skill "${slug}"`, ...r }
 }
 
-const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "discord", "slack", "custom"] as const
+const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "odoo", "discord", "slack", "custom"] as const
 
 function addWebhook(body: any) {
   const id = String(body?.id || "").trim()

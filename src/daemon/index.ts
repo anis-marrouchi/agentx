@@ -2437,8 +2437,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         case "GET /api/admin/projects": {
           // Aggregated per-project view: rule files + workflows + channel
           // routes + contacts. Powers the /admin/projects dashboard page.
-          // Pure read — no mutations exposed yet (controls land in a
-          // follow-up once the read view has settled).
           const { computeProjectsAggregate } = await import("./projects-api")
           if (!this.workflowStore) {
             this.json(res, 503, { error: "workflow store not initialized" })
@@ -2451,6 +2449,40 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             cwd: process.cwd(),
           })
           this.json(res, 200, result)
+          break
+        }
+
+        case "POST /api/admin/projects/workflows/link":
+        case "POST /api/admin/projects/workflows/unlink": {
+          // Tag (link) or strip (unlink) a workflow's `project:` field
+          // so it shows up under a project on /admin/projects without
+          // hand-editing the YAML. The mutation rewrites the workflow
+          // file in place — preserves comments, formatting, ordering.
+          // workflowStore.list() reads fresh each call so no reload is
+          // needed.
+          const body = await readBody(req)
+          const link = req.url?.endsWith("/link")
+          const projectKey = String(body.projectKey || "").trim()
+          const workflowId = String(body.workflowId || "").trim()
+          if (!projectKey || !workflowId) {
+            this.json(res, 400, { error: "projectKey + workflowId required" })
+            break
+          }
+          if (!/^[a-z0-9][a-z0-9_-]*$/.test(workflowId)) {
+            this.json(res, 400, { error: "invalid workflow id" })
+            break
+          }
+          const { setWorkflowProject } = await import("./projects-mutate")
+          try {
+            const result = setWorkflowProject({
+              workflowId,
+              projectKey: link ? projectKey : null,
+              cwd: process.cwd(),
+            })
+            this.json(res, 200, result)
+          } catch (e: any) {
+            this.json(res, 400, { error: e?.message || "mutation failed" })
+          }
           break
         }
 

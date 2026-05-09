@@ -38,6 +38,15 @@ import yaml from "js-yaml"
 
 export type Channel = "gitlab" | "github"
 
+/** Declarative source of a project. Drives the Projects-page UI badge
+ *  and indicates which channel adapters are expected to carry events
+ *  for it. `gitlab` and `github` have rule clauses + live adapters;
+ *  `jira` and `linear` are accepted as values for tracking purposes
+ *  even though no adapter exists yet (events from those sources can't
+ *  fire workflows today). `other` is the catch-all for projects that
+ *  exist organisationally but aren't wired to any source. */
+export type ProjectKind = "gitlab" | "github" | "jira" | "linear" | "other"
+
 /** Default runbook filenames read into the agent system prefix. Order
  *  preserved so CLAUDE.md (claude convention) lands before AGENTS.md
  *  (codex convention) — agents see Claude rules first. Operator can
@@ -94,6 +103,22 @@ export interface ProjectRule {
   /** Project path. GitLab: `org/repo`. GitHub: `owner/repo`. Required. */
   project: string
   channel?: Channel
+  /** Declarative source of this project. Optional. When unset, the
+   *  loader infers from clauses (presence of `gitlab:` → "gitlab",
+   *  `github:` → "github", neither → "other"). Set explicitly to track
+   *  jira / linear / other-source projects that don't have rule
+   *  clauses yet. */
+  kind?: ProjectKind
+  /** Human-friendly project name shown on the Projects page header. */
+  displayName?: string
+  /** External URL — opens the project's home (GitLab repo, GitHub repo,
+   *  Jira board, etc.). Rendered as a link on the project header. */
+  homeUrl?: string
+  /** Contact ids from `.agentx/contacts.json` associated with this
+   *  project. The Projects page uses these to populate the Contacts
+   *  section in addition to contacts that carry their own `project`
+   *  field. Either side may declare the link — both render. */
+  contacts?: string[]
   /** Default agent for this project. Overrides channel-level resolveAgent
    *  when set. Optional — leaving unset preserves existing behaviour. */
   agent?: string
@@ -202,6 +227,17 @@ export class ProjectRulesStore {
 
   list(): ProjectRule[] {
     return Array.from(this.byProject.values())
+  }
+
+  /** Resolve a project's `kind` even when not set on the rule file. The
+   *  loader-side default is intentionally absent — we infer at read time
+   *  so an operator who flips a `gitlab:` clause to `github:` doesn't
+   *  also have to remember to update `kind:`. */
+  static inferKind(rule: ProjectRule): ProjectKind {
+    if (rule.kind) return rule.kind
+    if (rule.gitlab) return "gitlab"
+    if (rule.github) return "github"
+    return "other"
   }
 
   health(): { count: number; errors: Array<{ file: string; error: string }> } {

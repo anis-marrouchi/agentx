@@ -113,7 +113,76 @@ const PROJECTS_PAGE_CSS = `
   padding: 18px 24px; border-bottom: 1px solid var(--ax-border);
   display: flex; align-items: center; justify-content: space-between;
 }
-.ax-pj__detail > header h2 { margin: 0; font-size: 18px; }
+.ax-pj__detail > header h2 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ax-pj__kind {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 8px; border-radius: 3px; font-weight: 500;
+  border: 1px solid transparent;
+}
+.ax-pj__kind--gitlab { color: #fc6d26; background: rgba(252, 109, 38, 0.1); border-color: rgba(252, 109, 38, 0.3); }
+.ax-pj__kind--github { color: #c9d1d9; background: rgba(110, 118, 129, 0.2); border-color: rgba(110, 118, 129, 0.4); }
+.ax-pj__kind--jira   { color: #2684ff; background: rgba(38, 132, 255, 0.1); border-color: rgba(38, 132, 255, 0.3); }
+.ax-pj__kind--linear { color: #5e6ad2; background: rgba(94, 106, 210, 0.1); border-color: rgba(94, 106, 210, 0.3); }
+.ax-pj__kind--other  { color: var(--ax-fg-muted, var(--ax-fg)); background: var(--ax-bg); border-color: var(--ax-border); }
+.ax-pj__keyhint { font-size: 12px; font-weight: normal; color: var(--ax-fg-muted, var(--ax-fg)); font-family: var(--ax-mono, monospace); }
+.ax-pj__home {
+  font-size: 12px; text-decoration: none; padding: 2px 6px;
+  color: var(--ax-fg-muted, var(--ax-fg)); border: 1px solid var(--ax-border);
+  border-radius: 3px;
+}
+.ax-pj__home:hover { color: var(--ax-accent); border-color: var(--ax-accent); }
+.ax-pj__section h3 {
+  display: flex; align-items: center; gap: 8px;
+}
+.ax-pj__btn {
+  font: inherit; font-size: 11px;
+  padding: 3px 8px; border: 1px solid var(--ax-border);
+  border-radius: 3px; background: var(--ax-bg); color: var(--ax-fg);
+  cursor: pointer; text-transform: none; letter-spacing: 0;
+  margin-left: auto;
+}
+.ax-pj__btn:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
+.ax-pj__unlink {
+  margin-left: auto;
+  background: transparent; border: 1px solid transparent;
+  color: var(--ax-fg-muted, var(--ax-fg));
+  cursor: pointer; font-size: 14px; padding: 0 6px; border-radius: 3px;
+}
+.ax-pj__unlink:hover { color: var(--ax-err, #ef4444); border-color: var(--ax-err, #ef4444); }
+/* Workflow picker modal */
+.ax-pj__modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.ax-pj__modal {
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: 6px; min-width: 480px; max-width: 720px;
+  max-height: 80vh; display: flex; flex-direction: column;
+}
+.ax-pj__modal-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--ax-border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ax-pj__modal-head h3 { margin: 0; font-size: 14px; }
+.ax-pj__modal-body { padding: 14px 18px; overflow-y: auto; }
+.ax-pj__modal-search input {
+  width: 100%; font: inherit; font-size: 13px;
+  padding: 6px 10px; border: 1px solid var(--ax-border);
+  border-radius: 4px; background: var(--ax-bg); color: var(--ax-fg);
+  margin-bottom: 12px;
+}
+.ax-pj__pick {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 4px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.ax-pj__pick:hover { background: var(--ax-bg); border-color: var(--ax-border); }
+.ax-pj__pick .pname { font-weight: 500; flex: 1; }
+.ax-pj__pick .pmeta { font-size: 11px; color: var(--ax-fg-muted, var(--ax-fg)); }
+.ax-pj__pick .ptag {
+  font-size: 11px; padding: 1px 6px; border-radius: 3px;
+  background: var(--ax-warn, #facc15); color: #1a1a1a;
+}
 .ax-pj__detail-body { padding: 24px; overflow-y: auto; flex: 1; }
 .ax-pj__section {
   margin-bottom: 28px;
@@ -202,7 +271,10 @@ const PROJECTS_PAGE_SCRIPT = `
       body.innerHTML = "";
       return;
     }
-    head.innerHTML = '<h2>' + esc(p.project) + '</h2>'
+    const kindBadge = '<span class="ax-pj__kind ax-pj__kind--' + esc(p.kind || 'other') + '">' + esc(p.kind || 'other') + '</span>';
+    const homeLink = p.homeUrl ? ' <a href="' + esc(p.homeUrl) + '" target="_blank" rel="noopener" class="ax-pj__home" title="Open project home">↗</a>' : '';
+    const heading = p.displayName ? esc(p.displayName) + ' <span class="ax-pj__keyhint">' + esc(p.project) + '</span>' : esc(p.project);
+    head.innerHTML = '<h2>' + kindBadge + ' ' + heading + homeLink + '</h2>'
       + '<div class="ax-pj__hint">'
       +   (p.runbook ? 'runbook: <code>' + esc(p.runbook) + '</code>' : '<em>no runbook</em>')
       +   (p.rulePath ? ' · rule: <code>' + esc(p.rulePath.split('/').slice(-3).join('/')) + '</code>' : '')
@@ -227,12 +299,16 @@ const PROJECTS_PAGE_SCRIPT = `
     html += '</section>';
 
     // Workflows
-    html += '<section class="ax-pj__section"><h3>Workflows (' + p.workflows.length + ')</h3>';
-    if (p.workflows.length === 0) html += '<div class="ax-pj__hint">No workflows tagged with this project. Set <code>project: ' + esc(p.project) + '</code> on a workflow YAML to associate it here.</div>';
+    html += '<section class="ax-pj__section">'
+      + '<h3>Workflows (' + p.workflows.length + ')'
+      + '   <button class="ax-pj__btn" data-action="add-workflow" data-project="' + esc(p.project) + '" title="Tag a workflow with this project">+ Add workflow</button>'
+      + '</h3>';
+    if (p.workflows.length === 0) html += '<div class="ax-pj__hint">No workflows tagged with this project. Click <strong>+ Add workflow</strong> above, or set <code>project: ' + esc(p.project) + '</code> in a workflow YAML.</div>';
     else html += p.workflows.map(w =>
       '<div class="ax-pj__row">'
       + '<span class="name"><a href="/workflows#' + esc(w.id) + '">' + esc(w.title || w.id) + '</a></span>'
       + '<span class="meta">' + esc(w.id) + (w.trigger ? ' · ' + esc(w.trigger) : '') + ' · ' + esc(w.status) + '</span>'
+      + '<button class="ax-pj__unlink" data-action="unlink-workflow" data-workflow-id="' + esc(w.id) + '" data-project="' + esc(p.project) + '" title="Strip the project tag from this workflow">×</button>'
       + '</div>').join("");
     html += '</section>';
 
@@ -255,6 +331,124 @@ const PROJECTS_PAGE_SCRIPT = `
     w.hidden = false;
     w.innerHTML = state.warnings.map(x => '⚠ ' + esc(x)).join("<br>");
   }
+
+  // ── Workflow link/unlink ──────────────────────────────────────────
+  // Both go through /api/admin/projects/workflows/{link,unlink} (the
+  // existing /api/admin/* proxy + admin-panel forwarder). On success
+  // we reload the page state — the aggregator picks up the new tag.
+
+  async function unlinkWorkflow(workflowId, projectKey) {
+    if (!confirm("Strip project tag '" + projectKey + "' from workflow '" + workflowId + "'?")) return;
+    try {
+      const r = await fetch("/api/admin/projects/workflows/unlink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+        body: JSON.stringify({ projectKey, workflowId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+      await load();
+    } catch (e) {
+      alert("Unlink failed: " + (e.message || e));
+    }
+  }
+
+  async function linkWorkflow(workflowId, projectKey) {
+    try {
+      const r = await fetch("/api/admin/projects/workflows/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+        body: JSON.stringify({ projectKey, workflowId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+      closeModal();
+      await load();
+    } catch (e) {
+      alert("Link failed: " + (e.message || e));
+    }
+  }
+
+  // ── Workflow picker modal ────────────────────────────────────────
+
+  function closeModal() {
+    const bg = document.querySelector(".ax-pj__modal-bg");
+    if (bg) bg.remove();
+  }
+
+  async function openWorkflowPicker(projectKey) {
+    // Fetch the full workflow list via the existing /api/workflows
+    // endpoint (proxied through the mesh selector — the picker shows
+    // workflows from the SELECTED node, not local). Workflows already
+    // tagged with this project are still shown but flagged.
+    let workflows = [];
+    try {
+      const r = await fetch("/api/workflows");
+      const data = await r.json();
+      workflows = Array.isArray(data.workflows) ? data.workflows : [];
+    } catch (e) { alert("Could not load workflows: " + e.message); return; }
+
+    // Build modal.
+    const bg = document.createElement("div");
+    bg.className = "ax-pj__modal-bg";
+    bg.innerHTML =
+      '<div class="ax-pj__modal" role="dialog" aria-label="Pick workflow">'
+      + '<div class="ax-pj__modal-head">'
+      +   '<h3>Tag a workflow with <code>' + esc(projectKey) + '</code></h3>'
+      +   '<button class="ax-pj__icon" data-pj-close>×</button>'
+      + '</div>'
+      + '<div class="ax-pj__modal-body">'
+      +   '<div class="ax-pj__modal-search"><input type="search" id="pj-pick-search" placeholder="Filter by id or title…" autofocus /></div>'
+      +   '<div id="pj-pick-list"></div>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(bg);
+    bg.addEventListener("click", (e) => { if (e.target === bg) closeModal(); });
+    bg.querySelector("[data-pj-close]").addEventListener("click", closeModal);
+
+    function renderPickList() {
+      const needle = (document.getElementById("pj-pick-search").value || "").toLowerCase();
+      const filtered = workflows.filter(w =>
+        !needle || w.id.toLowerCase().includes(needle) || (w.title || "").toLowerCase().includes(needle));
+      const html = filtered.map(w => {
+        const alreadyHere = w.project === projectKey;
+        const otherProject = w.project && w.project !== projectKey;
+        return '<div class="ax-pj__pick" data-wf-id="' + esc(w.id) + '">'
+          + '<span class="pname">' + esc(w.title || w.id) + '</span>'
+          + '<span class="pmeta">' + esc(w.id) + '</span>'
+          + (alreadyHere ? '<span class="ptag">already linked</span>' : "")
+          + (otherProject ? '<span class="ptag" title="Currently on ' + esc(w.project) + '">' + esc(w.project) + ' → ' + esc(projectKey) + '</span>' : "")
+          + '</div>';
+      }).join("") || '<div class="ax-pj__hint">No workflows match.</div>';
+      document.getElementById("pj-pick-list").innerHTML = html;
+      document.querySelectorAll(".ax-pj__pick").forEach(el => {
+        el.addEventListener("click", () => linkWorkflow(el.dataset.wfId, projectKey));
+      });
+    }
+    renderPickList();
+    document.getElementById("pj-pick-search").addEventListener("input", renderPickList);
+    document.addEventListener("keydown", function escClose(e) {
+      if (e.key === "Escape") { closeModal(); document.removeEventListener("keydown", escClose); }
+    });
+  }
+
+  // Delegate clicks for unlink + add buttons since detail re-renders.
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const unlinkBtn = t.closest("[data-action='unlink-workflow']");
+    if (unlinkBtn) {
+      e.preventDefault();
+      unlinkWorkflow(unlinkBtn.dataset.workflowId, unlinkBtn.dataset.project);
+      return;
+    }
+    const addBtn = t.closest("[data-action='add-workflow']");
+    if (addBtn) {
+      e.preventDefault();
+      openWorkflowPicker(addBtn.dataset.project);
+      return;
+    }
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     $("#pj-refresh").addEventListener("click", load);

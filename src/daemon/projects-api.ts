@@ -22,7 +22,7 @@
 import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import type { DaemonConfig } from "./config"
-import type { ProjectRulesStore, ProjectRule } from "@/projects/rules"
+import { ProjectRulesStore, type ProjectRule, type ProjectKind } from "@/projects/rules"
 import type { WorkflowStore } from "@/workflows"
 
 export interface ProjectsApiContext {
@@ -37,6 +37,13 @@ export interface ProjectsApiContext {
 export interface ProjectAggregateRow {
   /** Canonical project key — `<org>/<repo>` for vcs, operator slug otherwise. */
   project: string
+  /** Source of this project, declared on the rule or inferred from
+   *  clauses. Used for the badge/icon on the Projects page header. */
+  kind: ProjectKind
+  /** Optional human-friendly name. Falls back to `project` when unset. */
+  displayName?: string
+  /** Optional external URL — repo / board home. */
+  homeUrl?: string
   /** Channel binding inferred from the project rule + channel routes. Often
    *  "gitlab" — but could be "github" or both ("gitlab,github") when a
    *  monorepo is mirrored. */
@@ -210,12 +217,38 @@ export function computeProjectsAggregate(ctx: ProjectsApiContext): ProjectsApiRe
         channels: Object.keys(c.channels ?? {}),
       }))
 
+    // Merge contacts from BOTH sides of the link: rule.contacts (ids) and
+    // .agentx/contacts.json entries with `project: <key>`. Dedup by id —
+    // either side declaring the relationship is enough.
+    const contactsMap = new Map<string, ProjectAggregateRow["contacts"][number]>()
+    for (const c of contacts) contactsMap.set(c.id, c)
+    if (rule?.contacts) {
+      for (const cid of rule.contacts) {
+        if (contactsMap.has(cid)) continue
+        const found = allContacts.find((c) => c.id === cid)
+        if (found) {
+          contactsMap.set(cid, {
+            id: cid,
+            name: found.name ?? cid,
+            channels: Object.keys(found.channels ?? {}),
+          })
+        } else {
+          // Rule declares a contact id that doesn't exist in contacts.json.
+          // Surface anyway so the operator can spot stale links.
+          contactsMap.set(cid, { id: cid, name: cid + " (unknown)", channels: [] })
+        }
+      }
+    }
+
     rows.push({
       project: key,
+      kind: rule ? ProjectRulesStore.inferKind(rule) : "other",
+      displayName: rule?.displayName,
+      homeUrl: rule?.homeUrl,
       channels,
       agents,
       workflows: workflowsByProject.get(key) ?? [],
-      contacts,
+      contacts: Array.from(contactsMap.values()),
       runbook: rule?.runbook,
       rulePath: rule?._path,
     })
