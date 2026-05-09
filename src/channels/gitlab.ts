@@ -1652,6 +1652,120 @@ export class GitLabAdapter implements ChannelAdapter {
     }
   }
 
+  /** Set assignees on an issue or MR. Same identity-resolution shape as
+   *  setLabels / createIssue: per-agent token → mesh-forward to home →
+   *  global fallback. Usernames are resolved to numeric user_ids before
+   *  the PUT call (GitLab's API requires assignee_ids[] integers).
+   *  Returns the resolved numeric ids on success, or null. */
+  async setAssignees(args: {
+    project: string
+    kind?: "issue" | "merge_request"
+    iid: string
+    assignees: string[]   // GitLab usernames; resolved to user_ids here
+    agentId?: string
+  }): Promise<number[] | null> {
+    const { project, kind = "issue", iid, assignees, agentId } = args
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const agentToken = this.getAgentToken(agentId)
+
+    // Mesh-forward when the agent lives on a peer. We piggyback on the
+    // setLabelsForwarder shape via a separate slot below to keep the same
+    // home-as-poster discipline. For now: if no local token + remote agent,
+    // fall back to global so the call works rather than fails silently.
+    // (Adding a setAssigneesForwarder is a separate increment when the
+    // first cross-host PM-driven assignment lands.)
+    const token = agentToken || this.config.token
+    if (!token) {
+      this.log(`setAssignees failed: no token for agent "${agentId || "global"}"`)
+      return null
+    }
+
+    // Resolve usernames → numeric ids (GitLab's API quirk).
+    const ids: number[] = []
+    for (const username of assignees) {
+      try {
+        const r = await fetch(`${this.config.host}/api/v4/users?username=${encodeURIComponent(username)}`, {
+          headers: { "PRIVATE-TOKEN": token },
+        })
+        if (!r.ok) {
+          this.log(`setAssignees: lookup "${username}" returned ${r.status}`)
+          continue
+        }
+        const users = await r.json() as Array<{ id: number; username: string }>
+        const match = users.find((u) => u.username.toLowerCase() === username.toLowerCase())
+        if (match?.id) ids.push(match.id)
+        else this.log(`setAssignees: no user found for "${username}"`)
+      } catch (e: any) {
+        this.log(`setAssignees: lookup error for "${username}": ${e.message}`)
+      }
+    }
+
+    // Empty array is the canonical "unassign" call — do not bail when
+    // the caller intentionally wants to clear assignees. Only short-circuit
+    // when the caller passed names that ALL failed to resolve.
+    if (ids.length === 0 && assignees.length > 0) {
+      this.log(`setAssignees: none of [${assignees.join(", ")}] resolved on ${project}`)
+      return null
+    }
+
+    const segment = kind === "merge_request" ? "merge_requests" : "issues"
+    const endpoint = `${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${segment}/${iid}`
+    const body = new URLSearchParams()
+    for (const id of ids) body.append("assignee_ids[]", String(id))
+    if (ids.length === 0) body.append("assignee_ids[]", "0")  // GitLab convention to clear
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "PRIVATE-TOKEN": token },
+        body: body.toString(),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        this.log(`setAssignees failed (${res.status}): ${text.slice(0, 200)}`)
+        return null
+      }
+      const node = mapping?.node ? `via ${mapping.node}` : (agentId || "global")
+      this.log(`Assignees updated on ${project} ${kind}/${iid} (${node}): [${assignees.join(", ")}] → ids [${ids.join(", ")}]`)
+      return ids
+    } catch (e: any) {
+      this.log(`setAssignees error: ${e.message}`)
+      return null
+    }
+  }
+
+  /** Cross-link two issues via GitLab's `/relate` API. Used by the PM
+   *  test-case-create flow: after creating the test issue, link it to the
+   *  parent dev issue so cost-per-feature accumulates correctly per the
+   *  wiki convention. Same project only — cross-project links use a
+   *  different API shape and aren't part of this fast path. */
+  async relateIssue(args: { project: string; sourceIid: string; targetIid: string; agentId?: string }): Promise<boolean> {
+    const { project, sourceIid, targetIid, agentId } = args
+    const token = this.getAgentToken(agentId) || this.config.token
+    if (!token) {
+      this.log(`relateIssue failed: no token for "${agentId || "global"}"`)
+      return false
+    }
+    const encoded = encodeURIComponent(project)
+    const endpoint = `${this.config.host}/api/v4/projects/${encoded}/issues/${sourceIid}/links?target_project_id=${encoded}&target_issue_iid=${targetIid}`
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "PRIVATE-TOKEN": token },
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        this.log(`relateIssue ${project}#${sourceIid}↔${targetIid} failed (${res.status}): ${text.slice(0, 200)}`)
+        return false
+      }
+      this.log(`Issues related on ${project}: #${sourceIid} ↔ #${targetIid} (${agentId || "global"})`)
+      return true
+    } catch (e: any) {
+      this.log(`relateIssue error: ${e.message}`)
+      return false
+    }
+  }
+
   /** Read current labels on an issue or MR. Read-only, so doesn't need
    *  per-agent identity. Uses the global token. */
   async getLabels(args: { project: string; kind?: "issue" | "merge_request"; iid: string }): Promise<string[] | null> {

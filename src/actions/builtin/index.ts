@@ -10,7 +10,7 @@
 
 import { registerBuiltin, _resetBuiltinsForTesting as _registryReset } from "./registry"
 import { agentCall } from "./agent"
-import { channelLabel, channelReply } from "./channel"
+import { channelAssign, channelCreateIssue, channelLabel, channelReply } from "./channel"
 import { extractStructured } from "./extract"
 import { fileReadLines, fileWriteJsonl } from "./file"
 import { httpFetch, httpPost } from "./http"
@@ -25,6 +25,8 @@ import { ragLexical } from "./rag"
  */
 export function registerAllBuiltins(): void {
   registerBuiltin(agentCall)
+  registerBuiltin(channelAssign)
+  registerBuiltin(channelCreateIssue)
   registerBuiltin(channelLabel)
   registerBuiltin(channelReply)
   registerBuiltin(extractStructured)
