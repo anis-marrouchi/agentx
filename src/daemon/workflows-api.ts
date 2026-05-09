@@ -428,7 +428,25 @@ function handleSave(
     }
   }
 
-  const saved = deps.store.save(wf)
+  // store.save() throws on protected disk states — most importantly
+  // "yaml-authored workflow exists" (refuses to write JSON next to a
+  // YAML twin and silently shadow the operator's source). Catch here
+  // and surface as a 400; if the throw escapes, the request handler
+  // (called from a stream `end` callback in board-dashboard.ts) takes
+  // the dashboard process down with it.
+  let saved
+  try {
+    saved = deps.store.save(wf)
+  } catch (e: any) {
+    const message: string = e?.message || String(e)
+    const yamlSibling = /yaml-authored workflow .* exists at /.test(message)
+    return sendJson(res, yamlSibling ? 409 : 500, {
+      error: yamlSibling
+        ? "this workflow is YAML-authored on disk — the editor refuses to overwrite it as JSON. Edit the YAML directly OR delete it and re-author from the editor."
+        : message,
+      kind: yamlSibling ? "yaml-authored" : "save-failed",
+    })
+  }
   // Prune stale layout entries if any nodes were removed since the last save.
   deps.layouts.sync(saved.id, saved.nodes.map((n) => n.id))
   return sendJson(res, 200, { workflow: saved })
@@ -548,7 +566,23 @@ function withBody(req: IncomingMessage, res: ServerResponse, handler: (body: unk
       sendJson(res, 400, { error: "invalid JSON body", message: e.message })
       return
     }
-    void Promise.resolve(handler(parsed)).catch((e: any) => {
+    // Defensive double-wrap: handler() may throw synchronously (e.g.
+    // workflowStore.save() refusing to overwrite a YAML-authored
+    // workflow). The throw would escape the Promise.resolve below
+    // because Promise.resolve only wraps the RETURN value — a sync
+    // throw beats it. Without this try, the throw bubbles to the
+    // IncomingMessage event listener and from there to the global
+    // uncaughtException, killing the dashboard. We caught one such
+    // crash 2026-05-09 on clawd; never again.
+    let result: ReturnType<typeof handler>
+    try {
+      result = handler(parsed)
+    } catch (e: any) {
+      try { sendJson(res, 500, { error: "handler threw (sync)", message: e?.message ?? String(e) }) }
+      catch { /* response already sent */ }
+      return
+    }
+    void Promise.resolve(result).catch((e: any) => {
       try { sendJson(res, 500, { error: "handler threw", message: e?.message ?? String(e) }) }
       catch { /* response already sent */ }
     })
