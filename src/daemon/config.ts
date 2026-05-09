@@ -39,6 +39,92 @@ const mcpServerSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
 })
 
+/**
+ * Per-agent integration registration. Declares which third-party services
+ * an agent has credentials for — e.g. "@cx-bot has a Telegram bot token,
+ * a HubSpot private app token, and a Gmail account". The actual secret is
+ * NEVER stored in agentx.json: only an env-var reference (`tokenEnv`) or a
+ * keyring directive. Skills, channel adapters, and the action layer read
+ * from this registry to discover what an agent can use.
+ *
+ * The `kind` field is open-string (well-known values listed below in
+ * INTEGRATION_KINDS) so new services can be declared without a schema
+ * bump. Doctor warns on unknown kinds.
+ */
+const integrationCredentialsSchema = z.object({
+  /** Env var holding the secret. Uppercase identifier; daemon resolves at use-time. */
+  tokenEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  /** Alternate env-var keys for credential schemes that need >1 secret
+   *  (e.g. HubSpot private app + portal id, OAuth refresh tokens). */
+  privateAppTokenEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  refreshTokenEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  clientIdEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  clientSecretEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  /** OS keyring directive — credential lives in macOS Keychain / Linux
+   *  Secret Service / Windows Credential Manager. The skill that reads
+   *  this integration is responsible for resolving the keyring entry
+   *  (typically keyed by agentId+kind). */
+  auth: z.literal("keyring").optional(),
+  /** File-based session directory (WhatsApp, Telegram MTProto, etc.). */
+  sessionDir: z.string().optional(),
+}).strict()
+
+const integrationSchema = z.object({
+  /** Service identifier — open string, well-known values in INTEGRATION_KINDS. */
+  kind: z.string().min(1),
+  /** Human-readable label (e.g. "@cx_bot", "Noqta CRM", "anis@noqta.tn"). Unique per (agent, kind). */
+  label: z.string().min(1),
+  credentials: integrationCredentialsSchema.default({}),
+  /** Non-secret metadata — username, email, host URL, portal id, JID, etc.
+   *  Visible in the dashboard and to skills. */
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+  /** Operator-set toggle without removing the entry. */
+  enabled: z.boolean().default(true),
+})
+
+export type Integration = z.infer<typeof integrationSchema>
+
+/**
+ * Canonical kind list — for autocomplete + doctor validation. Open string
+ * schema so new services drop in without a bump; doctor warns when a kind
+ * is outside this list.
+ */
+export const INTEGRATION_KINDS = [
+  // Inbound channels
+  "telegram-bot",
+  "whatsapp",
+  "slack-bot",
+  "discord-bot",
+  // Code platforms (user-scoped tokens, not channel routing)
+  "gitlab-user",
+  "github-user",
+  // Email
+  "gmail",
+  "hotmail",
+  "smtp",
+  // CRM / ERP
+  "hubspot",
+  "salesforce",
+  "pipedrive",
+  "odoo",
+  // Project management
+  "trello",
+  "linear",
+  "asana",
+  "jira",
+  "notion",
+  // Payments
+  "stripe",
+  // Observability / hosting
+  "sentry",
+  "vercel",
+  // Voice / SMS
+  "twilio",
+  // Catch-all
+  "custom",
+] as const
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -127,6 +213,12 @@ const agentConfigSchema = z.object({
    *   - "public": external apps can POST /api/public/agents/<id>/messages
    *     with a scoped token (agent:<id> or agent:*). */
   access: z.enum(["private", "public"]).default("private"),
+  /** Per-agent third-party integrations registry. Declares which services
+   *  this agent has credentials for (telegram-bot, hubspot, gitlab-user,
+   *  gmail, etc.). Secrets stay in env vars / keyring; this block holds
+   *  declarations + non-secret metadata only. Skills and channel adapters
+   *  read from here to know what the agent can use. See INTEGRATION_KINDS. */
+  integrations: z.array(integrationSchema).default([]),
 })
 
 const telegramAccountSchema = z.object({

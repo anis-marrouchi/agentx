@@ -512,6 +512,56 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
     }
   }
 
+  // 7. Per-agent integrations: missing env vars + unknown kinds + duplicates.
+  //    The new agents[].integrations[] block declares third-party credentials
+  //    (telegram-bot, hubspot, gitlab-user, gmail, ...). Doctor scans for:
+  //      - duplicate (kind, label) on the same agent (config integrity)
+  //      - tokenEnv refs that don't exist in process.env (latent failure)
+  //      - kinds outside the canonical INTEGRATION_KINDS set (typos)
+  //    Failures are warnings, not blocking — credentials may be set on the
+  //    daemon process and absent from the doctor's local shell.
+  const KNOWN_KINDS = new Set([
+    "telegram-bot", "whatsapp", "slack-bot", "discord-bot",
+    "gitlab-user", "github-user",
+    "gmail", "hotmail", "smtp",
+    "hubspot", "salesforce", "pipedrive", "odoo",
+    "trello", "linear", "asana", "jira", "notion",
+    "stripe", "sentry", "vercel", "twilio", "custom",
+  ])
+  for (const [agentId, a] of Object.entries((cfg.agents ?? {}) as Record<string, any>)) {
+    const list = (a.integrations as any[] | undefined) ?? []
+    if (!list.length) continue
+    const seen = new Set<string>()
+    for (const i of list) {
+      const key = `${i.kind}::${i.label}`
+      if (seen.has(key)) {
+        findings.push({
+          severity: "warn",
+          title: `agents.${agentId}.integrations: duplicate (${i.kind}, ${i.label})`,
+          fix: `Remove the duplicate or rename one. (kind, label) must be unique per agent.`,
+        })
+      }
+      seen.add(key)
+      if (!KNOWN_KINDS.has(i.kind)) {
+        findings.push({
+          severity: "warn",
+          title: `agents.${agentId}.integrations: unknown kind "${i.kind}" on integration "${i.label}"`,
+          fix: `Use a canonical kind from INTEGRATION_KINDS, or "custom" for ad-hoc services.`,
+        })
+      }
+      const creds = (i.credentials || {}) as Record<string, unknown>
+      for (const [k, v] of Object.entries(creds)) {
+        if (typeof v === "string" && /^[A-Z][A-Z0-9_]*$/.test(v) && !process.env[v]) {
+          findings.push({
+            severity: "warn",
+            title: `agents.${agentId}.integrations[${i.kind}/${i.label}].${k} -> $${v} but env var is unset (in this shell)`,
+            fix: `Set ${v} on the daemon environment. The daemon's process.env is what matters; this warning fires from your local shell.`,
+          })
+        }
+      }
+    }
+  }
+
   // (Removed: the "agentx.json newer than daemon pid" check produced
   //  false positives because the pid file is only rewritten on start,
   //  not on hot-reload. The signal-to-noise was too low. A future check

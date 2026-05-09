@@ -2100,6 +2100,7 @@ function renderAgents() {
           '<div style="grid-column:1/-1"><dt>Trigger words</dt><dd><div class="ax-triggers">' + triggers + '</div></dd></div>' +
         '</dl>' +
         (a.systemPrompt ? '<div><dt style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--ax-muted);margin-bottom:4px;font-family:var(--ax-mono)">Personality</dt><dd style="margin:0;color:var(--ax-text-2);line-height:1.6;font-size:12.5px;white-space:pre-wrap">' + escapeHtml(a.systemPrompt) + '</dd></div>' : '') +
+        renderIntegrationsBlock(a) +
         '<div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap">' +
           '<button class="ax-btn" data-edit="' + escapeHtml(a.id) + '">Edit</button>' +
           '<button class="ax-btn" data-files="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.name) + '">Files</button>' +
@@ -2124,6 +2125,15 @@ function renderAgents() {
       setAgentAccess(btn.dataset.toggle, want);
     });
     card.querySelector('[data-delete]').addEventListener('click', () => deleteAgent(a.id));
+    // Wire integration row actions: delete one, add via inline form.
+    card.querySelectorAll('[data-int-rm]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const ds = el.dataset;
+        removeIntegration(a.id, ds.intRm, ds.intLabel);
+      });
+    });
+    const addBtn = card.querySelector('[data-int-add]');
+    if (addBtn) addBtn.addEventListener('click', () => addIntegration(a.id, card));
     list.appendChild(card);
   }
   // Refresh the cron agent picker so new agents show up.
@@ -2166,6 +2176,102 @@ async function deleteAgent(id) {
   if (!confirm('Delete agent "' + id + '"? The config entry is removed; the workspace folder on disk is kept.')) return;
   try { await req('DELETE', '/api/admin/agents', { id }); refresh(); }
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+// Per-agent integrations registry. Each row: { kind, label, credentials, credStatus, metadata, enabled }.
+// credStatus comes from server: { tokenEnv: "set"|"unset", auth: "literal", ... }.
+const INT_KINDS = [
+  'telegram-bot', 'whatsapp', 'slack-bot', 'discord-bot',
+  'gitlab-user', 'github-user',
+  'gmail', 'hotmail', 'smtp',
+  'hubspot', 'salesforce', 'pipedrive', 'odoo',
+  'trello', 'linear', 'asana', 'jira', 'notion',
+  'stripe', 'sentry', 'vercel', 'twilio',
+  'custom',
+];
+
+function renderIntegrationsBlock(a) {
+  const list = Array.isArray(a.integrations) ? a.integrations : [];
+  const rows = list.map((i) => {
+    const statusBits = Object.entries(i.credStatus || {}).map(([k, st]) => {
+      if (st === 'set') return '<span class="ax-pill ax-pill--ok" style="font-size:10px"><span class="ax-pill__dot"></span>' + escapeHtml(k) + '=set</span>';
+      if (st === 'unset') return '<span class="ax-pill ax-pill--warn" style="font-size:10px"><span class="ax-pill__dot"></span>' + escapeHtml(k) + '=UNSET</span>';
+      return '<span class="ax-pill ax-pill--off" style="font-size:10px">' + escapeHtml(k) + '</span>';
+    }).join(' ');
+    const credText = Object.entries(i.credentials || {}).map(([k, v]) => k + '=' + v).join(', ');
+    const metaText = Object.entries(i.metadata || {}).map(([k, v]) => k + '=' + v).join(' · ');
+    return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--ax-surface);border:1px solid var(--ax-border);border-radius:5px;margin-top:6px">' +
+      '<div style="flex:1">' +
+        '<div style="font-size:12px"><span class="mono" style="color:var(--ax-accent,#3a7bd5)">' + escapeHtml(i.kind) + '</span> · <b>' + escapeHtml(i.label) + '</b>' + (i.enabled === false ? ' <span class="ax-pill ax-pill--off" style="font-size:10px">disabled</span>' : '') + '</div>' +
+        (statusBits ? '<div style="margin-top:4px">' + statusBits + '</div>' : '') +
+        (credText ? '<div style="font-size:10.5px;color:var(--ax-muted);margin-top:3px;font-family:var(--ax-mono)">' + escapeHtml(credText) + '</div>' : '') +
+        (metaText ? '<div style="font-size:10.5px;color:var(--ax-muted);margin-top:2px">' + escapeHtml(metaText) + '</div>' : '') +
+      '</div>' +
+      '<button class="ax-btn ax-btn--ghost" data-int-rm="' + escapeHtml(i.kind) + '" data-int-label="' + escapeHtml(i.label) + '" style="padding:3px 8px;font-size:11px">Remove</button>' +
+    '</div>';
+  }).join('');
+  const empty = list.length === 0
+    ? '<div style="font-size:11px;color:var(--ax-muted);font-style:italic;padding:8px 0">No integrations declared. Add one below to give this agent credentials for HubSpot, GitLab, Telegram, etc.</div>'
+    : '';
+  const kindOptions = INT_KINDS.map((k) => '<option value="' + k + '">' + k + '</option>').join('');
+  return '<details style="margin-top:14px">' +
+    '<summary style="cursor:pointer;font-size:11px;color:var(--ax-accent,#3a7bd5)">Integrations <span style="color:var(--ax-muted)">(' + list.length + ')</span></summary>' +
+    '<div style="margin-top:8px">' +
+      '<div style="font-size:11px;color:var(--ax-muted);margin-bottom:6px">Per-agent third-party credentials. Secrets stay in env vars / keyring; this lists declarations and resolved env-set status.</div>' +
+      empty + rows +
+      '<div style="margin-top:10px;padding:8px 10px;background:var(--ax-bg);border:1px dashed var(--ax-border-2);border-radius:5px">' +
+        '<div style="display:grid;grid-template-columns:1fr 1.5fr;gap:6px">' +
+          '<select data-int-kind style="font-size:11px">' + kindOptions + '</select>' +
+          '<input data-int-label-add placeholder="Label (e.g. Noqta CRM, @cx_bot)" style="font-size:11px" />' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">' +
+          '<input data-int-tokenenv placeholder="Token env var (UPPERCASE)" style="font-size:11px" />' +
+          '<input data-int-meta placeholder="Metadata: k=v,k=v (optional)" style="font-size:11px" />' +
+        '</div>' +
+        '<button class="ax-btn ax-btn--primary" data-int-add="' + escapeHtml(a.id) + '" style="margin-top:6px;padding:4px 10px;font-size:11px">+ Add integration</button>' +
+      '</div>' +
+    '</div>' +
+  '</details>';
+}
+
+async function addIntegration(agentId, card) {
+  const kind = (card.querySelector('[data-int-kind]') || {}).value || '';
+  const label = (card.querySelector('[data-int-label-add]') || {}).value.trim();
+  const tokenEnv = (card.querySelector('[data-int-tokenenv]') || {}).value.trim();
+  const metaRaw = (card.querySelector('[data-int-meta]') || {}).value.trim();
+  if (!kind || !label) {
+    showMsg($('global-msg'), 'err', 'kind and label are required');
+    return;
+  }
+  const credentials = {};
+  if (tokenEnv) credentials.tokenEnv = tokenEnv;
+  if (!Object.keys(credentials).length) {
+    showMsg($('global-msg'), 'err', 'token env var is required (or use the CLI for keyring/sessionDir variants)');
+    return;
+  }
+  const metadata = {};
+  if (metaRaw) {
+    for (const pair of metaRaw.split(',')) {
+      const [k, ...rest] = pair.split('=');
+      if (k && k.trim()) metadata[k.trim()] = rest.join('=').trim();
+    }
+  }
+  try {
+    await req('POST', '/api/admin/agents/integrations', { agentId, kind, label, credentials, metadata });
+    refresh();
+  } catch (e) {
+    showMsg($('global-msg'), 'err', e.message);
+  }
+}
+
+async function removeIntegration(agentId, kind, label) {
+  if (!confirm('Remove integration ' + kind + ' "' + label + '" from ' + agentId + '?')) return;
+  try {
+    await req('DELETE', '/api/admin/agents/integrations', { agentId, kind, label });
+    refresh();
+  } catch (e) {
+    showMsg($('global-msg'), 'err', e.message);
+  }
 }
 
 function renderChannels() {

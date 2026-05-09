@@ -62,6 +62,9 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/tokens": () => createToken(body),
       "DELETE /api/admin/tokens": () => revokeToken(body),
       "POST /api/admin/agents/test": () => testDriveAgent(body),
+      "POST /api/admin/agents/integrations": () => addIntegration(body),
+      "DELETE /api/admin/agents/integrations": () => removeIntegration(body),
+      "PATCH /api/admin/agents/integrations": () => editIntegration(body),
       "PATCH /api/admin/channels/telegram": () => editTelegramAccount(body),
       "POST /api/admin/channels/slack": () => configureSlack(body),
       "POST /api/admin/channels/slack/toggle": () => toggleSlack(body),
@@ -203,6 +206,29 @@ function getAdminState() {
     maxConcurrent: a.maxConcurrent ?? 1,
     maxExecutionMinutes: a.maxExecutionMinutes ?? 20,
     permissionMode: a.permissionMode || "default",
+    // Per-agent integrations registry. Each entry: { kind, label, credentials, metadata, enabled }.
+    // Credentials carry env-var REFS (uppercase identifier) — not values.
+    // The integration list endpoint also resolves env-set status server-side
+    // so the UI can render ✓/✗ without leaking secrets.
+    integrations: (Array.isArray(a.integrations) ? a.integrations : []).map((i: any) => {
+      const creds = i.credentials || {}
+      const credStatus: Record<string, "set" | "unset" | "literal"> = {}
+      for (const [k, v] of Object.entries(creds)) {
+        if (typeof v === "string" && /^[A-Z][A-Z0-9_]*$/.test(v)) {
+          credStatus[k] = process.env[v] ? "set" : "unset"
+        } else if (typeof v === "string") {
+          credStatus[k] = "literal"
+        }
+      }
+      return {
+        kind: i.kind,
+        label: i.label,
+        enabled: i.enabled !== false,
+        credentials: creds,
+        credStatus,
+        metadata: i.metadata || {},
+      }
+    }),
   }))
   const telegramAccounts = cfg.channels?.telegram?.accounts || {}
   const telegram = {
@@ -681,6 +707,92 @@ function removeSkillForAgent(body: any) {
   if (!agentId || !slug) throw new Error("agent and slug are required.")
   const r = deleteAgentSkill(workspaceFor(agentId), slug)
   return { summary: `removed skill "${slug}"`, ...r }
+}
+
+// --- Per-agent integration registry (agents[].integrations) ---
+//
+// Mirrors the dashboard's Integrations tab. Keeps secrets out of the JSON —
+// only env-var refs and non-secret metadata are persisted. The CLI
+// (`agentx agent integrations`) and this admin panel converge on the same
+// mutator path through mutateAgentxConfig.
+
+function addIntegration(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  const kind = String(body?.kind || "").trim()
+  const label = String(body?.label || "").trim()
+  if (!agentId) throw new Error("agentId is required")
+  if (!kind) throw new Error("kind is required")
+  if (!label) throw new Error("label is required")
+  const credentials: Record<string, string> = {}
+  const c = (body?.credentials || {}) as Record<string, unknown>
+  for (const k of ["tokenEnv", "privateAppTokenEnv", "apiKeyEnv", "refreshTokenEnv", "clientIdEnv", "clientSecretEnv"]) {
+    const v = c[k]
+    if (typeof v === "string" && v.trim()) {
+      if (!/^[A-Z][A-Z0-9_]*$/.test(v.trim())) {
+        throw new Error(`${k} must be uppercase identifier (got "${v}")`)
+      }
+      credentials[k] = v.trim()
+    }
+  }
+  if (c.auth === "keyring") credentials.auth = "keyring"
+  if (typeof c.sessionDir === "string" && c.sessionDir.trim()) credentials.sessionDir = c.sessionDir.trim()
+  if (Object.keys(credentials).length === 0) throw new Error("at least one credential field required")
+  const metadata: Record<string, string | number | boolean> = {}
+  for (const [k, v] of Object.entries((body?.metadata || {}) as Record<string, unknown>)) {
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") metadata[k] = v
+  }
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.agents?.[agentId]) throw new Error(`Unknown agent "${agentId}"`)
+    cfg.agents[agentId].integrations = Array.isArray(cfg.agents[agentId].integrations)
+      ? cfg.agents[agentId].integrations
+      : []
+    if (cfg.agents[agentId].integrations.find((i: any) => i.kind === kind && i.label === label)) {
+      throw new Error(`integration (${kind}, ${label}) already exists on ${agentId}`)
+    }
+    cfg.agents[agentId].integrations.push({ kind, label, credentials, metadata, enabled: true })
+    return `added ${kind} integration "${label}" to ${agentId}`
+  })
+  return { summary }
+}
+
+function removeIntegration(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  const kind = String(body?.kind || "").trim()
+  const label = String(body?.label || "").trim()
+  if (!agentId) throw new Error("agentId is required")
+  if (!kind || !label) throw new Error("kind and label are required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const a = cfg.agents?.[agentId]
+    if (!a) throw new Error(`Unknown agent "${agentId}"`)
+    const list = (a.integrations as any[] | undefined) || []
+    const idx = list.findIndex((i: any) => i.kind === kind && i.label === label)
+    if (idx === -1) throw new Error(`integration (${kind}, ${label}) not found on ${agentId}`)
+    list.splice(idx, 1)
+    return `removed ${kind} integration "${label}" from ${agentId}`
+  })
+  return { summary }
+}
+
+function editIntegration(body: any) {
+  const agentId = String(body?.agentId || "").trim()
+  const kind = String(body?.kind || "").trim()
+  const label = String(body?.label || "").trim()
+  if (!agentId) throw new Error("agentId is required")
+  if (!kind || !label) throw new Error("kind and label are required")
+  const patch = body?.patch || {}
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const a = cfg.agents?.[agentId]
+    if (!a) throw new Error(`Unknown agent "${agentId}"`)
+    const list = (a.integrations as any[] | undefined) || []
+    const i = list.find((x: any) => x.kind === kind && x.label === label)
+    if (!i) throw new Error(`integration (${kind}, ${label}) not found on ${agentId}`)
+    if (typeof patch.enabled === "boolean") i.enabled = patch.enabled
+    if (patch.metadata && typeof patch.metadata === "object") {
+      i.metadata = { ...(i.metadata || {}), ...patch.metadata }
+    }
+    return `updated integration (${kind}, ${label}) on ${agentId}`
+  })
+  return { summary }
 }
 
 const WEBHOOK_SOURCES = ["gitlab", "github", "sentry", "stripe", "vercel", "odoo", "discord", "slack", "custom"] as const

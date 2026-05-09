@@ -214,6 +214,229 @@ agent
     console.log(chalk.dim(`  Restart the daemon (or POST /reload) for the change to take effect.`))
   })
 
+// ==================== agentx agent integrations ====================
+//
+// Per-agent third-party integration registry. Declarations live in
+// agentx.json's agents[].integrations[]; secrets live in env vars / keyring.
+
+const integrations = new Command()
+  .name("integrations")
+  .alias("integ")
+  .description("manage per-agent third-party credentials (telegram-bot, hubspot, gitlab-user, gmail, etc.)")
+
+integrations
+  .command("list <agentId>")
+  .alias("ls")
+  .description("list integrations declared on an agent")
+  .option("--json", "emit JSON")
+  .action(async (agentId: string, opts) => {
+    const cfg = loadConfig()
+    const a = cfg.agents?.[agentId]
+    if (!a) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const list = (a.integrations as any[] | undefined) ?? []
+    if (opts.json) { console.log(JSON.stringify(list, null, 2)); return }
+    if (!list.length) {
+      console.log(chalk.dim(`\n  ${agentId}: no integrations declared. Add one with: agentx agent integrations add ${agentId}\n`))
+      return
+    }
+    console.log()
+    console.log(chalk.bold(`  ${agentId}`))
+    for (const i of list) {
+      const enabled = i.enabled !== false
+      const statusBits: string[] = []
+      const creds = i.credentials ?? {}
+      for (const [k, v] of Object.entries(creds)) {
+        if (typeof v === "string" && /^[A-Z][A-Z0-9_]*$/.test(v)) {
+          statusBits.push(process.env[v] ? chalk.green(`${k}:${v}=set`) : chalk.yellow(`${k}:${v}=UNSET`))
+        } else if (k === "auth" && v === "keyring") {
+          statusBits.push(chalk.dim("auth:keyring"))
+        } else if (k === "sessionDir" && typeof v === "string") {
+          statusBits.push(chalk.dim(`sessionDir:${v}`))
+        }
+      }
+      const meta = Object.entries(i.metadata ?? {})
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")
+      console.log(`    ${enabled ? chalk.cyan(i.kind.padEnd(14)) : chalk.dim(i.kind.padEnd(14))} ${chalk.bold(i.label)}`)
+      if (statusBits.length) console.log(`      ${statusBits.join("  ")}`)
+      if (meta) console.log(`      ${chalk.dim(meta)}`)
+      if (!enabled) console.log(`      ${chalk.dim("(disabled)")}`)
+    }
+    console.log()
+  })
+
+integrations
+  .command("add <agentId>")
+  .description("declare a new integration on an agent")
+  .option("--kind <name>", "service kind (e.g. telegram-bot, hubspot, gitlab-user, gmail)")
+  .option("--label <text>", "human-readable label (must be unique within (agent, kind))")
+  .option("--token-env <name>", "env-var holding the secret (uppercase identifier)")
+  .option("--auth <mode>", "alternative to --token-env: 'keyring' for OS keyring")
+  .option("--session-dir <path>", "for whatsapp / mtproto: file-based session directory")
+  .option("--metadata <kvList>", "comma-separated key=value pairs (e.g. 'username=anis,email=anis@noqta.tn')")
+  .option("--no-prompt", "fail instead of prompting for missing values")
+  .action(async (agentId: string, opts) => {
+    const cfg = loadConfig()
+    if (!cfg.agents?.[agentId]) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const interactive = opts.prompt !== false
+
+    const { INTEGRATION_KINDS } = await import("@/daemon/config")
+    let kind = String(opts.kind || "").trim()
+    if (!kind && interactive) {
+      const r = await prompts({
+        type: "autocomplete",
+        name: "kind",
+        message: "Service kind",
+        choices: (INTEGRATION_KINDS as readonly string[]).map((k) => ({ title: k, value: k })),
+      })
+      kind = (r.kind || "").trim()
+    }
+    if (!kind) { console.log(chalk.red("  --kind is required")); process.exit(1) }
+
+    let label = String(opts.label || "").trim()
+    if (!label && interactive) {
+      const r = await prompts({
+        type: "text",
+        name: "label",
+        message: `Label (e.g. "@cx_bot", "Noqta CRM", "anis@noqta.tn")`,
+      })
+      label = (r.label || "").trim()
+    }
+    if (!label) { console.log(chalk.red("  --label is required")); process.exit(1) }
+
+    let tokenEnv = String(opts.tokenEnv || "").trim()
+    let auth = String(opts.auth || "").trim()
+    let sessionDir = String(opts.sessionDir || "").trim()
+    if (!tokenEnv && !auth && !sessionDir && interactive) {
+      const r = await prompts({
+        type: "select",
+        name: "scheme",
+        message: "Credential scheme",
+        choices: [
+          { title: "Env var (e.g. HUBSPOT_TOKEN_CX)", value: "tokenEnv" },
+          { title: "OS keyring", value: "keyring" },
+          { title: "File-based session (whatsapp / mtproto)", value: "sessionDir" },
+        ],
+      })
+      if (r.scheme === "tokenEnv") {
+        const t = await prompts({
+          type: "text",
+          name: "tokenEnv",
+          message: "Env var name (uppercase)",
+          initial: `${kind.replace(/-/g, "_").toUpperCase()}_${agentId.replace(/-/g, "_").toUpperCase()}`,
+        })
+        tokenEnv = (t.tokenEnv || "").trim()
+      } else if (r.scheme === "keyring") {
+        auth = "keyring"
+      } else if (r.scheme === "sessionDir") {
+        const s = await prompts({
+          type: "text",
+          name: "sessionDir",
+          message: "Session directory path",
+          initial: `.agentx/${kind}-sessions/${agentId}`,
+        })
+        sessionDir = (s.sessionDir || "").trim()
+      }
+    }
+
+    let metadata: Record<string, string | number | boolean> = {}
+    if (opts.metadata) {
+      for (const pair of String(opts.metadata).split(",")) {
+        const [k, ...rest] = pair.split("=")
+        if (!k) continue
+        metadata[k.trim()] = rest.join("=").trim()
+      }
+    } else if (interactive) {
+      const r = await prompts({
+        type: "text",
+        name: "metadata",
+        message: "Metadata (k=v,k=v) — non-secret only, optional",
+      })
+      if (r.metadata) {
+        for (const pair of String(r.metadata).split(",")) {
+          const [k, ...rest] = pair.split("=")
+          if (!k) continue
+          metadata[k.trim()] = rest.join("=").trim()
+        }
+      }
+    }
+
+    const credentials: Record<string, string> = {}
+    if (tokenEnv) {
+      if (!/^[A-Z][A-Z0-9_]*$/.test(tokenEnv)) {
+        console.log(chalk.red(`  --token-env must be uppercase identifier (got "${tokenEnv}")`)); process.exit(1)
+      }
+      credentials.tokenEnv = tokenEnv
+    }
+    if (auth === "keyring") credentials.auth = "keyring"
+    if (sessionDir) credentials.sessionDir = sessionDir
+    if (!Object.keys(credentials).length) { console.log(chalk.red("  one of --token-env / --auth / --session-dir is required")); process.exit(1) }
+
+    cfg.agents[agentId].integrations = (cfg.agents[agentId].integrations as any[] | undefined) ?? []
+    if (cfg.agents[agentId].integrations.find((i: any) => i.kind === kind && i.label === label)) {
+      console.log(chalk.red(`  Integration (${kind}, ${label}) already exists on ${agentId}`)); process.exit(1)
+    }
+    cfg.agents[agentId].integrations.push({ kind, label, credentials, metadata, enabled: true })
+    await saveConfig(cfg)
+    console.log(chalk.green(`  ✓ ${agentId}: added ${kind} integration "${label}"`))
+    if (tokenEnv && !process.env[tokenEnv]) {
+      console.log(chalk.yellow(`  ⚠ env var ${tokenEnv} is not set — set it on the daemon environment before use`))
+    }
+  })
+
+integrations
+  .command("remove <agentId> <kindOrLabel>")
+  .alias("rm")
+  .description("remove an integration (matched by kind, label, or 'kind:label')")
+  .action(async (agentId: string, target: string) => {
+    const cfg = loadConfig()
+    const a = cfg.agents?.[agentId]
+    if (!a) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const list = (a.integrations as any[] | undefined) ?? []
+    const [tk, tl] = target.includes(":") ? target.split(":", 2) : [target, ""]
+    const idx = list.findIndex((i: any) => (i.kind === tk && (!tl || i.label === tl)) || i.label === target)
+    if (idx === -1) { console.log(chalk.red(`  No integration matched "${target}"`)); process.exit(1) }
+    const removed = list.splice(idx, 1)[0]
+    await saveConfig(cfg)
+    console.log(chalk.green(`  ✓ removed ${removed.kind} integration "${removed.label}" from ${agentId}`))
+  })
+
+integrations
+  .command("test <agentId> [kindOrLabel]")
+  .description("validate env vars are set for one or all integrations on an agent")
+  .action(async (agentId: string, target?: string) => {
+    const cfg = loadConfig()
+    const a = cfg.agents?.[agentId]
+    if (!a) { console.log(chalk.red(`  Agent "${agentId}" not found`)); process.exit(1) }
+    const list = (a.integrations as any[] | undefined) ?? []
+    const filtered = target
+      ? list.filter((i: any) => i.kind === target || i.label === target || `${i.kind}:${i.label}` === target)
+      : list
+    if (!filtered.length) { console.log(chalk.yellow("  no integrations to test")); return }
+    let bad = 0
+    console.log()
+    for (const i of filtered) {
+      const creds = i.credentials ?? {}
+      const issues: string[] = []
+      for (const [k, v] of Object.entries(creds)) {
+        if (typeof v === "string" && /^[A-Z][A-Z0-9_]*$/.test(v) && !process.env[v]) {
+          issues.push(`${k}: env var ${v} is unset`)
+        }
+      }
+      if (issues.length) {
+        bad += 1
+        console.log(`    ${chalk.red("✗")} ${i.kind} "${i.label}"`)
+        for (const issue of issues) console.log(`      ${chalk.dim(issue)}`)
+      } else {
+        console.log(`    ${chalk.green("✓")} ${i.kind} "${i.label}"`)
+      }
+    }
+    console.log()
+    if (bad > 0) process.exit(1)
+  })
+
+agent.addCommand(integrations)
+
 // ==================== agentx channel ====================
 
 export const channel = new Command()
