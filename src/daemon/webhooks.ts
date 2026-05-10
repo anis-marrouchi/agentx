@@ -142,7 +142,24 @@ export class WebhookHandler {
     // `secretEnv` set. Silent no-op was the prior behavior — that's a
     // security trap: an operator configures a secret expecting protection,
     // gets none. Reject 401 instead.
-    const sigError = this.validateSignature(req.headers, raw, source, agentId)
+    // Debug: dump source-relevant headers so we can see what providers
+    // actually send when signature verification fails. Gated by env var so
+    // production logs stay clean.
+    if (process.env.AGENTX_WEBHOOK_DEBUG_HEADERS === "1") {
+      const interesting: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (k.startsWith("x-hubspot") || k.startsWith("x-hub") || k.startsWith("x-github") ||
+            k.startsWith("x-gitlab") || k.startsWith("stripe") || k.startsWith("sentry") ||
+            k.startsWith("x-vercel") || k.startsWith("x-odoo") || k.startsWith("x-webhook") ||
+            k === "user-agent" || k === "content-type" || k === "host" ||
+          k === "x-forwarded-host" || k === "x-forwarded-proto" ||
+          k === "x-forwarded-for") {
+          interesting[k] = v
+        }
+      }
+      this.log(`Webhook [${source}] reqUrl=${(req as any).url} headers: ${JSON.stringify(interesting)}`)
+    }
+    const sigError = this.validateSignature(req.headers, raw, source, agentId, req.url)
     if (sigError) {
       this.log(`Webhook [${source}] -> ${agentId}: REJECTED (${sigError})`)
       this.sendJson(res, 401, { error: sigError })
@@ -544,6 +561,7 @@ export class WebhookHandler {
     raw: string,
     source: string,
     agentId: string,
+    reqUrl?: string,
   ): string | null {
     const entry = this.webhookEntries.find(
       w => w.enabled && w.agentId === agentId && w.source === source,
@@ -593,20 +611,27 @@ export class WebhookHandler {
       const ageMs = Date.now() - tsNum
       if (ageMs > 5 * 60_000) return `HubSpot webhook is ${Math.floor(ageMs / 1000)}s old (>5min replay window)`
       // HubSpot signs METHOD + URI + body + timestamp. The URI is the FULL
-      // public URL the webhook hit, including scheme + host + path. We don't
-      // have that on the inbound side without trusting headers like
-      // X-Forwarded-Host; HubSpot's docs let you sign just the path component
-      // when configured. Try both — full URI from headers, then path-only —
-      // and accept whichever matches.
+      // public URL the app was configured to deliver to (scheme + host + path).
+      // Behind a reverse proxy (Tailscale Funnel, Cloudflare Tunnel, Caddy,
+      // nginx) the inbound `req.url` is just the path and `host` is whatever
+      // the proxy passed through. Build the URI from the most authoritative
+      // signals available, then try several reasonable variants since
+      // operators may set up TLS termination differently:
+      //   1. https://<x-forwarded-host or host><req.url>      (most common)
+      //   2. http://<host><req.url>                            (HTTP-only setups)
+      //   3. just <req.url>                                    (path-only signing)
+      //   4. legacy x-original-uri / x-forwarded-path fallback
+      //   5. empty                                             (very rare)
       const method = "POST"
-      const path = (headers["x-original-uri"] as string) || (headers["x-forwarded-path"] as string) || ""
-      const host = (headers["x-forwarded-host"] as string) || (headers["host"] as string) || ""
-      const proto = (headers["x-forwarded-proto"] as string) || "https"
-      const fullUri = host ? `${proto}://${host}${path}` : path
+      const path = reqUrl || (headers["x-original-uri"] as string) || (headers["x-forwarded-path"] as string) || ""
+      const fwdHost = headers["x-forwarded-host"] as string | undefined
+      const rawHost = headers["host"] as string | undefined
+      const fwdProto = (headers["x-forwarded-proto"] as string | undefined) || "https"
       const candidates = new Set<string>()
-      if (fullUri) candidates.add(fullUri)
+      if (fwdHost && path) candidates.add(`${fwdProto}://${fwdHost}${path}`)
+      if (rawHost && path) candidates.add(`https://${rawHost}${path}`)
+      if (rawHost && path) candidates.add(`http://${rawHost}${path}`)
       if (path) candidates.add(path)
-      // Last fallback: empty URI (some HubSpot setups sign just method + body + ts).
       candidates.add("")
       for (const uri of candidates) {
         const expected = createHmac("sha256", secret).update(`${method}${uri}${raw}${ts}`).digest("base64")
@@ -614,7 +639,7 @@ export class WebhookHandler {
           return null
         }
       }
-      return "signature mismatch"
+      return `signature mismatch (tried ${candidates.size} URI variants)`
     }
     if (source === "odoo") {
       // Odoo's signing scheme varies by module (`webhook` / `automated_actions`
