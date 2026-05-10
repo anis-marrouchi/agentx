@@ -522,6 +522,60 @@ describe("WorkflowDispatcher integration", () => {
     expect(result.claimed).toHaveLength(0)
     expect(result.runs).toHaveLength(0)
   })
+
+  it("workflow's top-level project: hard-scopes trigger matching across projects", async () => {
+    const store = new WorkflowStore({ baseDir: TEST_DIR })
+    // Two workflows tagged to different projects, both subscribed to the
+    // same gitlab-issue trigger. Mirrors the real ksi-vs-mtgl situation.
+    // fanOut: true so every matching workflow gets claimed (not just the
+    // first by priority) — that's how we observe the project filter.
+    store.save(baseWorkflow({
+      id: "ksi-pm-triage",
+      project: "ksi/int.ksi.tn",
+      fanOut: true,
+      nodes: [
+        { id: "trigger", type: "trigger.hook", config: { source: "gitlab-issue", event: "on:gitlab-issue" } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "done" }],
+    }))
+    store.save(baseWorkflow({
+      id: "mtgl-pm-triage",
+      project: "mtgl/mtgl-system-v2",
+      fanOut: true,
+      nodes: [
+        { id: "trigger", type: "trigger.hook", config: { source: "gitlab-issue", event: "on:gitlab-issue" } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "done" }],
+    }))
+    // Cross-project workflow with no `project` field: should still match.
+    store.save(baseWorkflow({
+      id: "audit-all-issues",
+      fanOut: true,
+      nodes: [
+        { id: "trigger", type: "trigger.hook", config: { source: "gitlab-issue", event: "on:gitlab-issue" } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "done" }],
+    }))
+
+    const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
+    const dispatcher = new WorkflowDispatcher({
+      store, runs, nodeId: "node-a",
+      channels: {},
+      agents: { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) },
+    })
+    const result = await dispatcher.dispatch({
+      trigger: { source: "gitlab-issue", project: "ksi/int.ksi.tn" },
+      entityRef: { backend: "gitlab", id: "ksi/int.ksi.tn#446" },
+      event: { id: "evt", payload: { project: "ksi/int.ksi.tn" } },
+    })
+    const claimedIds = result.claimed.map((w) => w.id).sort()
+    expect(claimedIds).not.toContain("mtgl-pm-triage")
+    expect(claimedIds).toContain("ksi-pm-triage")
+    expect(claimedIds).toContain("audit-all-issues")  // global workflows still see every project
+  })
 })
 
 describe("WorkflowStore", () => {

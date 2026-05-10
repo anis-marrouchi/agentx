@@ -458,6 +458,16 @@ export class WorkflowDispatcher {
         filter?: { project?: string; repo?: string; chat?: string; labels?: string[]; fromJid?: string }
       }
       if (cfg.source !== t.source) continue
+      // Project-scope gate. A workflow's top-level `project:` field is
+      // a hard scope: events from a different project never match. This
+      // is what stops cross-tenant fan-out — e.g. an `on:gitlab-issue`
+      // event from `ksi/int.ksi.tn` reaching `mtgl-pm-triage` (which is
+      // tagged `project: mtgl/mtgl-system-v2`). Workflows with no
+      // `project` field are global and match across projects (rare —
+      // typically cross-project chores or templates). Events with no
+      // `t.project` (manual / cron / 1:1 chat) bypass this check; the
+      // project field only constrains project-scoped event sources.
+      if (wf.project && t.project && wf.project !== t.project) continue
       const f = cfg.filter
       if (f) {
         if (f.project && f.project !== "*" && f.project !== t.project) continue
