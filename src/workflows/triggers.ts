@@ -61,7 +61,20 @@ export function startWorkflowTriggers(args: {
       }, args.dispatcher, args.log)
       cronTimers++
     } else if (trigger.type === "trigger.hook") {
-      const cfg = trigger.config as { event?: string; passthrough?: boolean }
+      const cfg = trigger.config as {
+        event?: string
+        passthrough?: boolean
+        filter?: {
+          /** Restrict to specific actions (gitlab-issue / gitlab-mr).
+           *  Example: ["open", "reopen"] keeps the workflow off update/close events. */
+          action?: string[]
+          /** Restrict on:gitlab-note to comments that @-mention at least one of
+           *  these usernames. Without this, every note on the project fires the
+           *  workflow — including ones that don't address any agent. Match is
+           *  case-insensitive on the bare username (no leading @). */
+          mentions?: string[]
+        }
+      }
       if (!cfg.event || !cfg.event.startsWith("on:")) {
         args.log(`[workflows] ${wf.id} trigger.hook config.event must start with "on:" — skipping`)
         continue
@@ -76,6 +89,31 @@ export function startWorkflowTriggers(args: {
           // companion check on the per-workflow hook path.
           const ctxProject = typeof ctx.project === "string" ? ctx.project : undefined
           if (wf.project && ctxProject && wf.project !== ctxProject) return {}
+          // Trigger-level filters. These move the "ONLY ACT when …; exit
+          // cleanly otherwise" prompt-level guard up to the dispatch gate,
+          // which means the agent isn't woken up + billed for a turn just
+          // to print "exit cleanly".
+          if (cfg.filter) {
+            // filter.action — gitlab-issue / gitlab-mr action gate.
+            if (Array.isArray(cfg.filter.action) && cfg.filter.action.length > 0) {
+              const action = typeof ctx.action === "string" ? ctx.action : undefined
+              if (!action || !cfg.filter.action.includes(action)) return {}
+            }
+            // filter.mentions — gitlab-note mention gate. Without this, the
+            // workflow's hard-coded `agentId` runs no matter who the comment
+            // @-mentioned, so e.g. ksi-mr-fix-loop spawns ksi-v2 even on a
+            // comment addressed @pm-ksi. The legacy @-mention resolver still
+            // routes those to the right agent on the second pass when the
+            // workflow doesn't claim the event.
+            if (Array.isArray(cfg.filter.mentions) && cfg.filter.mentions.length > 0) {
+              const ctxMentions = Array.isArray(ctx.mentions)
+                ? (ctx.mentions as string[]).map((m) => m.toLowerCase().replace(/^@/, ""))
+                : []
+              const wanted = cfg.filter.mentions.map((m) => m.toLowerCase().replace(/^@/, ""))
+              const hit = wanted.some((w) => ctxMentions.includes(w))
+              if (!hit) return {}
+            }
+          }
           // Go direct: this hook subscriber is registered per-workflow,
           // so we already know which workflow to fire. Going through
           // dispatch() + matchByTrigger() would drop the event unless the
