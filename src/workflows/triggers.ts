@@ -61,7 +61,7 @@ export function startWorkflowTriggers(args: {
       }, args.dispatcher, args.log)
       cronTimers++
     } else if (trigger.type === "trigger.hook") {
-      const cfg = trigger.config as { event?: string }
+      const cfg = trigger.config as { event?: string; passthrough?: boolean }
       if (!cfg.event || !cfg.event.startsWith("on:")) {
         args.log(`[workflows] ${wf.id} trigger.hook config.event must start with "on:" — skipping`)
         continue
@@ -90,10 +90,24 @@ export function startWorkflowTriggers(args: {
               payload: { hookEvent: cfg.event, ...ctx },
             },
           })
+          // Signal claim. When a workflow claims a project-scoped event,
+          // the GitLab adapter (and other future adapters) must suppress
+          // their legacy "@-mention dispatch" / "default-route dispatch"
+          // path — otherwise the same agent gets spawned twice for one
+          // event (once via the workflow run, once via the legacy
+          // resolver). Read from `combinedModified.__workflowClaimed`
+          // already accumulated by earlier per-workflow handlers; append
+          // this workflow's id.
+          // Opt-out: `trigger.config.passthrough = true` — the workflow is
+          // observability-only and the legacy reply should still fire.
+          if (cfg.passthrough) return {}
+          const prevClaimed = (ctx as { __workflowClaimed?: unknown }).__workflowClaimed
+          const claimedList = Array.isArray(prevClaimed) ? (prevClaimed as string[]) : []
+          return { modified: { __workflowClaimed: [...claimedList, wf.id] } }
         } catch (e: any) {
           args.log(`[workflows] ${wf.id} hook dispatch failed: ${e.message}`)
+          return {}
         }
-        return {}
       }, 60)
       hookSubscribers++
     }

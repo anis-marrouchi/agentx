@@ -540,9 +540,10 @@ export class GitLabAdapter implements ChannelAdapter {
     // as on:gitlab-mr — hook errors don't block the legacy default-target
     // dispatch below. Hook fires AFTER the project rule's note clause has
     // approved the event so workflows see a pre-filtered event stream.
+    let workflowClaimedNote = false
     if (this.hooks?.has("on:gitlab-note" as any)) {
       try {
-        await this.hooks.execute("on:gitlab-note" as any, {
+        const result = await this.hooks.execute("on:gitlab-note" as any, {
           event: "on:gitlab-note" as any,
           noteEvent: event,
           project,
@@ -554,9 +555,17 @@ export class GitLabAdapter implements ChannelAdapter {
           authorUsername: user.username,
           mentions,
         })
+        const claimed = (result?.modified as { __workflowClaimed?: unknown } | undefined)?.__workflowClaimed
+        if (Array.isArray(claimed) && claimed.length > 0) {
+          workflowClaimedNote = true
+          this.log(`[handleNote] note ${noteId} claimed by workflow(s) ${(claimed as string[]).join(", ")} — skipping legacy @-mention dispatch`)
+        }
       } catch (e: any) {
         this.log(`on:gitlab-note hook error: ${e.message}`)
       }
+    }
+    if (workflowClaimedNote) {
+      res.writeHead(200); res.end("ok"); return
     }
 
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
@@ -740,6 +749,16 @@ export class GitLabAdapter implements ChannelAdapter {
         })
         if (result.blocked) {
           hookBlocked = true
+        }
+        // trigger.hook subscribers signal claim via modified.__workflowClaimed
+        // so the legacy default-route dispatch is suppressed when a workflow
+        // owns the event. Without this, the same agent gets spawned twice
+        // for one issue event (once via the workflow run, once via the
+        // project's default-agent route below).
+        const claimed = (result?.modified as { __workflowClaimed?: unknown } | undefined)?.__workflowClaimed
+        if (Array.isArray(claimed) && claimed.length > 0) {
+          hookBlocked = true
+          this.log(`Issue #${attrs.iid} claimed by workflow(s) ${(claimed as string[]).join(", ")} — default dispatch suppressed`)
         }
         const modDispatch = (result.modified as any)?.dispatch
         if (Array.isArray(modDispatch) && modDispatch.length > 0) {
@@ -1083,9 +1102,10 @@ export class GitLabAdapter implements ChannelAdapter {
     // merge-deploy, etc.) can route off MR transitions. Mirror of the
     // on:gitlab-issue contract — fail-soft: hook errors don't block the
     // legacy default-target dispatch below.
+    let workflowClaimedMR = false
     if (this.hooks?.has("on:gitlab-mr" as any)) {
       try {
-        await this.hooks.execute("on:gitlab-mr" as any, {
+        const result = await this.hooks.execute("on:gitlab-mr" as any, {
           event: "on:gitlab-mr" as any,
           mrEvent: event,
           project,
@@ -1100,9 +1120,22 @@ export class GitLabAdapter implements ChannelAdapter {
           labels: mrLabels,
           defaultAgentId: defaultAgentId || null,
         })
+        // Suppress legacy default-target dispatch when a workflow has
+        // claimed this MR transition (set via modified.__workflowClaimed
+        // by the per-workflow trigger.hook handler in triggers.ts).
+        // Without this, the same agent gets spawned twice — once via the
+        // workflow run, once via the project's default-route dispatch.
+        const claimed = (result?.modified as { __workflowClaimed?: unknown } | undefined)?.__workflowClaimed
+        if (Array.isArray(claimed) && claimed.length > 0) {
+          workflowClaimedMR = true
+          this.log(`MR !${attrs.iid} claimed by workflow(s) ${(claimed as string[]).join(", ")} — default dispatch suppressed`)
+        }
       } catch (e: any) {
         this.log(`on:gitlab-mr hook error: ${e.message}`)
       }
+    }
+    if (workflowClaimedMR) {
+      res.writeHead(200); res.end("ok"); return
     }
 
     // Same target-resolution model as handleIssue: mentions ∪ assignees ∪
