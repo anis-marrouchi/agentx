@@ -286,11 +286,45 @@ describe("WorkflowStore — YAML loading", () => {
     expect(store.get("foo")).toBeNull()
   })
 
-  it("save() refuses when a YAML sibling exists for the id", () => {
+  it("save() round-trips back to YAML when a sibling exists, preserving comments", () => {
+    const { store, dir } = freshStore()
+    const originalYaml = `# Top-of-file header — must survive a save.
+id: foo
+version: 2
+title: Foo (yaml)
+nodes:
+  # comment above first node — must travel with the node.
+  - { id: start, type: trigger.manual, config: {} }
+  - { id: act,   type: agent,          config: { agentId: a, prompt: "x" } }
+  - { id: done,  type: end,            config: {} }
+flow: [start, act, done]
+`
+    writeFileSync(path.join(dir, "foo.yaml"), originalYaml)
+    store.save({
+      id: "foo",
+      version: 2,
+      title: "Foo (edited)",
+      nodes: [
+        { id: "start", type: "trigger.manual", config: {} },
+        { id: "act",   type: "agent",          config: { agentId: "a", prompt: "x" } },
+        { id: "done",  type: "end",            config: {} },
+      ],
+      edges: [{ from: "start", to: "act" }, { from: "act", to: "done" }],
+    } as any)
+    const fs = require("fs")
+    const text = fs.readFileSync(path.join(dir, "foo.yaml"), "utf-8")
+    expect(text).toContain("Top-of-file header")
+    expect(text).toContain("comment above first node")
+    expect(text).toContain('Foo (edited)')
+    // No JSON twin written.
+    expect(fs.existsSync(path.join(dir, "foo.json"))).toBe(false)
+  })
+
+  it("save() with convertFromYaml deletes YAML and writes JSON", () => {
     const { store, dir } = freshStore()
     writeFileSync(path.join(dir, "foo.yaml"), VALID_FLOW_YAML)
-    expect(() =>
-      store.save({
+    store.save(
+      {
         id: "foo",
         version: 2,
         title: "from editor",
@@ -299,8 +333,12 @@ describe("WorkflowStore — YAML loading", () => {
           { id: "done",  type: "end",            config: {} },
         ],
         edges: [{ from: "start", to: "done" }],
-      } as any),
-    ).toThrow(/yaml-authored workflow "foo"/)
+      } as any,
+      { convertFromYaml: true },
+    )
+    const fs = require("fs")
+    expect(fs.existsSync(path.join(dir, "foo.yaml"))).toBe(false)
+    expect(fs.existsSync(path.join(dir, "foo.json"))).toBe(true)
   })
 
   it("validateAll() surfaces YAML structural errors with file path", () => {

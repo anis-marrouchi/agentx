@@ -100,15 +100,22 @@ export async function validate(wf: Workflow): Promise<ValidateResult> {
   return (await r.json()) as ValidateResult
 }
 
-export async function saveWorkflow(wf: Workflow, opts: { create: boolean }): Promise<{ ok: boolean; issues?: ValidationIssue[] }> {
-  const url = opts.create ? "/api/workflows" : "/api/workflows/" + encodeURIComponent(wf.id)
+export async function saveWorkflow(
+  wf: Workflow,
+  opts: { create: boolean; convertFromYaml?: boolean },
+): Promise<{ ok: boolean; issues?: ValidationIssue[]; kind?: string; path?: string; error?: string }> {
+  const base = opts.create ? "/api/workflows" : "/api/workflows/" + encodeURIComponent(wf.id)
+  const url = opts.convertFromYaml ? base + "?convertFromYaml=true" : base
   const method = opts.create ? "POST" : "PUT"
   const r = await fetch(url, { method, headers: headers(), body: JSON.stringify(wf) })
   if (r.ok) return { ok: true }
-  const err = await r.json().catch(() => ({}))
+  const err = await r.json().catch(() => ({} as Record<string, unknown>))
   return {
     ok: false,
-    issues: (err.issues as ValidationIssue[]) || [{ path: "", message: err.error || "HTTP " + r.status }],
+    issues: (err.issues as ValidationIssue[]) || [{ path: "", message: (err.error as string) || "HTTP " + r.status }],
+    kind: err.kind as string | undefined,
+    path: err.path as string | undefined,
+    error: err.error as string | undefined,
   }
 }
 

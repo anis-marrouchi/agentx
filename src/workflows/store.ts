@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import { resolve, relative } from "path"
 import { lintWorkflow, workflowSchema, type Workflow } from "./types"
 import { parseYamlWorkflow, WorkflowYamlError } from "./yaml"
+import { renderWorkflowYamlPreservingComments } from "./yaml-roundtrip"
 
 // --- WorkflowStore (V2) ---
 //
@@ -184,24 +185,48 @@ export class WorkflowStore {
     }
   }
 
-  save(workflow: Workflow): Workflow {
+  save(workflow: Workflow, opts: { convertFromYaml?: boolean } = {}): Workflow {
     const now = new Date().toISOString().slice(0, 10)
     const normalized = workflowSchema.parse({
       ...workflow,
       created: workflow.created || now,
       updated: now,
     })
-    // Editor saves are always JSON (canonical). If a YAML sibling exists
-    // for this id, refuse — the operator authored it on disk and the
-    // editor must not overwrite it with a JSON twin.
+    // YAML-authored workflows round-trip back to YAML so the editor
+    // doesn't silently strip the operator's comments. yaml@2's Document
+    // API preserves commentBefore on top-level keys and per-node items,
+    // so per-node `# ...` blocks survive a structural edit. Comments tied
+    // to deleted keys / removed nodes are dropped by design (no honest
+    // place to relocate them).
+    //
+    // `convertFromYaml: true` is the explicit "I want JSON" opt-in: the
+    // editor surfaces a confirm modal ("you'll lose comments"), then
+    // retries with this flag set. We delete the YAML and write JSON.
     const yamlPath = this.pathForYaml(normalized.id)
     const ymlPath = resolve(this.baseDir, `${normalized.id}.yml`)
-    if (existsSync(yamlPath) || existsSync(ymlPath)) {
-      throw new Error(
-        `yaml-authored workflow "${normalized.id}" exists at ${
-          existsSync(yamlPath) ? yamlPath : ymlPath
-        }; edit on disk or delete the YAML before saving from the editor`,
-      )
+    const existingYaml = existsSync(yamlPath) ? yamlPath : (existsSync(ymlPath) ? ymlPath : null)
+    if (existingYaml && opts.convertFromYaml) {
+      unlinkSync(existingYaml)
+      writeFileSync(this.pathForJson(normalized.id), JSON.stringify(normalized, null, 2) + "\n")
+      return normalized
+    }
+    if (existingYaml) {
+      const originalText = readFileSync(existingYaml, "utf-8")
+      try {
+        const out = renderWorkflowYamlPreservingComments(originalText, normalized)
+        writeFileSync(existingYaml, out)
+        return normalized
+      } catch (e: any) {
+        // Round-trip should never fail on a file we just successfully
+        // parsed elsewhere, but if the merge throws (e.g. the source has
+        // a structure we don't understand), surface the failure rather
+        // than silently fall through to JSON.
+        const err = new Error(
+          `yaml round-trip failed for "${normalized.id}" at ${existingYaml}: ${e?.message ?? e}`,
+        ) as Error & { yamlPath?: string }
+        err.yamlPath = existingYaml
+        throw err
+      }
     }
     writeFileSync(this.pathForJson(normalized.id), JSON.stringify(normalized, null, 2) + "\n")
     return normalized

@@ -411,9 +411,27 @@ export function App() {
         return
       }
     }
-    const res = draftMode
+    let res = draftMode
       ? await saveDraft(workflow.id, workflow)
       : await saveWorkflow(workflow, { create: snap.isNew })
+    // YAML-authored workflows refuse JSON overwrite by default. Surface the
+    // path + comment-loss warning, then retry with the explicit convert flag
+    // if the user agrees. Drafts can't hit this branch (drafts are always
+    // YAML), so the cast is safe — saveDraft never sets `kind`.
+    if (!draftMode && !res.ok && (res as { kind?: string }).kind === "yaml-authored") {
+      const yamlPath = (res as { path?: string }).path || "(unknown path)"
+      const proceed = confirm(
+        `This workflow is YAML-authored on disk:\n\n  ${yamlPath}\n\n` +
+        `Saving from the editor will overwrite the YAML as JSON and discard any comments in the YAML file.\n\n` +
+        `Continue and convert to JSON?`,
+      )
+      if (!proceed) {
+        setStatus("is-dirty")
+        showToast("Save canceled — YAML preserved on disk", "err")
+        return
+      }
+      res = await saveWorkflow(workflow, { create: snap.isNew, convertFromYaml: true })
+    }
     if (!res.ok) {
       setStatus("is-dirty")
       showToast(res.issues?.[0]?.message ?? "Save failed", "err")

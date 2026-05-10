@@ -88,7 +88,9 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
     }
     if (method === "POST") {
       if (!deps.requireScope(req, res, ["dashboard:write"])) return true
-      return withBody(req, res, (body) => handleSave(res, deps, body, { mode: "create" }))
+      const q = new URL(url, "http://_").searchParams
+      const convertFromYaml = q.get("convertFromYaml") === "true" || q.get("convertFromYaml") === "1"
+      return withBody(req, res, (body) => handleSave(res, deps, body, { mode: "create", convertFromYaml }))
     }
   }
 
@@ -257,7 +259,9 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
       }
       if (method === "PUT") {
         if (!deps.requireScope(req, res, ["dashboard:write"])) return true
-        return withBody(req, res, (body) => handleSave(res, deps, body, { mode: "update", id }))
+        const q = new URL(url, "http://_").searchParams
+        const convertFromYaml = q.get("convertFromYaml") === "true" || q.get("convertFromYaml") === "1"
+        return withBody(req, res, (body) => handleSave(res, deps, body, { mode: "update", id, convertFromYaml }))
       }
       if (method === "DELETE") {
         if (!deps.requireScope(req, res, ["dashboard:write"])) return true
@@ -389,7 +393,9 @@ function handleSave(
   res: ServerResponse,
   deps: WorkflowsApiDeps,
   body: unknown,
-  opts: { mode: "create" } | { mode: "update"; id: string },
+  opts:
+    | { mode: "create"; convertFromYaml?: boolean }
+    | { mode: "update"; id: string; convertFromYaml?: boolean },
 ): true {
   const parsed = workflowSchema.safeParse(body)
   if (!parsed.success) {
@@ -428,23 +434,27 @@ function handleSave(
     }
   }
 
-  // store.save() throws on protected disk states — most importantly
-  // "yaml-authored workflow exists" (refuses to write JSON next to a
-  // YAML twin and silently shadow the operator's source). Catch here
-  // and surface as a 400; if the throw escapes, the request handler
-  // (called from a stream `end` callback in board-dashboard.ts) takes
-  // the dashboard process down with it.
+  // store.save() round-trips YAML-authored workflows back to YAML
+  // (preserving comments) by default; the only way it surfaces a
+  // yaml-related error here is if the round-trip itself fails (e.g. the
+  // source file has a structure the merger doesn't understand). In that
+  // case we offer the editor a "convert to JSON" escape hatch via the
+  // 409 + kind:yaml-authored response. Other throws bubble up as 500;
+  // catching here is also a backstop against the throw escaping the
+  // `req.on("end")` callback and taking the dashboard down with it.
   let saved
   try {
-    saved = deps.store.save(wf)
+    saved = deps.store.save(wf, { convertFromYaml: opts.convertFromYaml })
   } catch (e: any) {
     const message: string = e?.message || String(e)
-    const yamlSibling = /yaml-authored workflow .* exists at /.test(message)
+    const yamlPath: string | undefined = e?.yamlPath
+    const yamlSibling = !!yamlPath || /yaml round-trip failed/.test(message)
     return sendJson(res, yamlSibling ? 409 : 500, {
       error: yamlSibling
-        ? "this workflow is YAML-authored on disk — the editor refuses to overwrite it as JSON. Edit the YAML directly OR delete it and re-author from the editor."
+        ? "couldn't preserve comments while saving back to the YAML file. Re-submit with ?convertFromYaml=true to convert this workflow to JSON (comments will be lost)."
         : message,
       kind: yamlSibling ? "yaml-authored" : "save-failed",
+      ...(yamlPath ? { path: yamlPath } : {}),
     })
   }
   // Prune stale layout entries if any nodes were removed since the last save.
