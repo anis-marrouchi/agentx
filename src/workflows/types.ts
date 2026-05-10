@@ -148,14 +148,16 @@ export const workflowSchema = z.object({
   tags: z.array(z.string()).default([]),
   /** Project this workflow is scoped to, in `<org>/<repo>` form for
    *  GitLab/GitHub or any operator-defined slug for non-VCS workflows.
-   *  Optional — workflows without a project field show up as "Global"
-   *  in the UI. When set, the Projects page groups workflows under
-   *  this project; the Workflows page renders a project badge per row.
-   *  This is metadata only — the dispatcher does NOT use it for gating
-   *  (project rules in .agentx/projects/ already do that, at the
-   *  webhook layer). The field exists so operators have one place to
-   *  see "what does this project do" across agents/workflows/contacts/
-   *  channels per-project view. */
+   *  Optional — workflows without a project field are global and match
+   *  any project's events. When set, the field is BOTH metadata (UI
+   *  grouping, project badges) AND a hard scope: the dispatcher and
+   *  the per-workflow hook handler in `triggers.ts` drop events whose
+   *  `ctx.project` differs from this field. Without that gate, two
+   *  workflows tagged for different projects but subscribed to the
+   *  same hook (e.g. on:gitlab-issue) both fire on every event — see
+   *  the cross-tenant leak that prompted this commit. Project rules
+   *  in `.agentx/projects/` still pre-filter at the webhook layer; the
+   *  workflow-level scope is a defence in depth. */
   project: z.string().optional(),
   entity: z.string().optional(),
   intentPath: z.array(z.string()).default([]),

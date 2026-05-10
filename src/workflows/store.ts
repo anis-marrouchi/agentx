@@ -174,15 +174,36 @@ export class WorkflowStore {
       }
     }
     const yPath = existsSync(yamlPath) ? yamlPath : (existsSync(ymlPath) ? ymlPath : null)
-    if (!yPath) return null
-    try {
-      const text = readFileSync(yPath, "utf-8")
-      const raw = parseYamlWorkflow(text, { filePath: relative(this.baseDir, yPath) })
-      const parsed = workflowSchema.safeParse(raw)
-      return parsed.success ? parsed.data : null
-    } catch {
-      return null
+    if (yPath) {
+      try {
+        const text = readFileSync(yPath, "utf-8")
+        const raw = parseYamlWorkflow(text, { filePath: relative(this.baseDir, yPath) })
+        const parsed = workflowSchema.safeParse(raw)
+        return parsed.success ? parsed.data : null
+      } catch {
+        return null
+      }
     }
+    // Filename ≠ id fallback. Authors sometimes pick a short filename
+    // for an `id:` that's longer / differently namespaced (e.g.
+    // `ksi-mr-fix-loop.yaml` containing `id: ksi-int-ksi-tn-mr-fix-loop`).
+    // list() finds these because it scans the directory; the per-id
+    // fast paths above don't. Scan as a last resort so the editor's
+    // GET /api/workflows/:id can still load the workflow.
+    if (!existsSync(this.baseDir)) return null
+    for (const entry of readdirSync(this.baseDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !this.isWorkflowFile(entry.name)) continue
+      const filenameId = this.idFromFilename(entry.name)
+      if (filenameId === id) continue  // already tried above
+      try {
+        const raw = this.readAndParse(entry.name)
+        const parsed = workflowSchema.safeParse(raw)
+        if (parsed.success && parsed.data.id === id) return parsed.data
+      } catch {
+        // skip malformed file
+      }
+    }
+    return null
   }
 
   save(workflow: Workflow, opts: { convertFromYaml?: boolean } = {}): Workflow {
@@ -204,7 +225,27 @@ export class WorkflowStore {
     // retries with this flag set. We delete the YAML and write JSON.
     const yamlPath = this.pathForYaml(normalized.id)
     const ymlPath = resolve(this.baseDir, `${normalized.id}.yml`)
-    const existingYaml = existsSync(yamlPath) ? yamlPath : (existsSync(ymlPath) ? ymlPath : null)
+    let existingYaml = existsSync(yamlPath) ? yamlPath : (existsSync(ymlPath) ? ymlPath : null)
+    // Filename ≠ id fallback (matches get()'s fallback): if no YAML at
+    // <id>.yaml, scan for any *.ya?ml whose parsed `id:` equals this
+    // workflow's id and round-trip THAT file. Without this, a YAML
+    // named `ksi-mr-fix-loop.yaml` (id `ksi-int-ksi-tn-mr-fix-loop`)
+    // would slip through to the JSON-write path below, leaving the
+    // YAML as an orphan and creating a coexistence trap on next load.
+    if (!existingYaml && existsSync(this.baseDir)) {
+      for (const entry of readdirSync(this.baseDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !this.isWorkflowFile(entry.name)) continue
+        if (entry.name.endsWith(".json")) continue
+        try {
+          const raw = this.readAndParse(entry.name)
+          const parsed = workflowSchema.safeParse(raw)
+          if (parsed.success && parsed.data.id === normalized.id) {
+            existingYaml = resolve(this.baseDir, entry.name)
+            break
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
     if (existingYaml && opts.convertFromYaml) {
       unlinkSync(existingYaml)
       writeFileSync(this.pathForJson(normalized.id), JSON.stringify(normalized, null, 2) + "\n")

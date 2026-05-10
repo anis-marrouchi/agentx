@@ -68,6 +68,14 @@ export function startWorkflowTriggers(args: {
       }
       args.hooks.registerHandler(cfg.event as HookEvent, `workflows:${wf.id}`, async (ctx) => {
         try {
+          // Project-scope gate. The hook subscriber is registered per-workflow,
+          // so we go direct (skipping matchByTrigger) — but the workflow's
+          // top-level `project:` still has to be honored, otherwise an
+          // on:gitlab-issue from project A reaches every workflow tagged
+          // for project B. matchByTrigger has the same gate; this is the
+          // companion check on the per-workflow hook path.
+          const ctxProject = typeof ctx.project === "string" ? ctx.project : undefined
+          if (wf.project && ctxProject && wf.project !== ctxProject) return {}
           // Go direct: this hook subscriber is registered per-workflow,
           // so we already know which workflow to fire. Going through
           // dispatch() + matchByTrigger() would drop the event unless the
