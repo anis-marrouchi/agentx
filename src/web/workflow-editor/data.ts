@@ -27,6 +27,8 @@ export const PALETTE: PaletteSection[] = [
     { id: "trigger.channel.whatsapp", type: "trigger.channel", label: "WhatsApp", hint: "On incoming WhatsApp message", glyph: "g-trigger", icon: "msg" },
     { id: "trigger.channel.telegram", type: "trigger.channel", label: "Telegram", hint: "On incoming Telegram message", glyph: "g-trigger", icon: "msg" },
     { id: "trigger.channel.gitlab",   type: "trigger.channel", label: "GitLab",   hint: "Issue / pipeline events", glyph: "g-trigger", icon: "gitlab" },
+    { id: "trigger.channel.sentry",   type: "trigger.channel", label: "Sentry",   hint: "On any webhook event", glyph: "g-trigger", icon: "hook" },
+    { id: "trigger.channel.whatsapp",   type: "trigger.channel", label: "Webhooks",   hint: "On any available webhook event", glyph: "g-trigger", icon: "hook" },
     { id: "trigger.cron",             type: "trigger.cron",    label: "Cron",     hint: "Fires on a timer", glyph: "g-trigger", icon: "clock" },
     { id: "trigger.manual",           type: "trigger.manual",  label: "Manual",   hint: "Kick off from UI / CLI", glyph: "g-trigger", icon: "play" },
     { id: "trigger.form",             type: "trigger.form",    label: "Form",     hint: "Human fills a form to start", glyph: "g-trigger", icon: "plus" },
