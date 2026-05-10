@@ -73,6 +73,21 @@ export function startWorkflowTriggers(args: {
            *  workflow — including ones that don't address any agent. Match is
            *  case-insensitive on the bare username (no leading @). */
           mentions?: string[]
+          /** Fire only when one of these usernames was newly added as an
+           *  assignee. The adapter computes the diff from
+           *  `changes.assignees.{previous,current}` and exposes it as
+           *  `ctx.assigneesAdded`. Lets a "coder-pickup" workflow target the
+           *  moment a coder is assigned without the workflow needing to
+           *  re-derive the diff in its prompt. Username comparison is
+           *  case-insensitive, leading @ stripped. */
+          assigneesAdded?: string[]
+          /** Same shape, for MR reviewers. `ctx.reviewersAdded`. */
+          reviewersAdded?: string[]
+          /** Fire only when one of these labels was newly added on an
+           *  update event. The adapter computes the diff from
+           *  `changes.labels.{previous,current}` and exposes it as
+           *  `ctx.labelsAdded`. Labels are matched case-insensitive. */
+          labelsAdded?: string[]
         }
       }
       if (!cfg.event || !cfg.event.startsWith("on:")) {
@@ -111,6 +126,36 @@ export function startWorkflowTriggers(args: {
                 : []
               const wanted = cfg.filter.mentions.map((m) => m.toLowerCase().replace(/^@/, ""))
               const hit = wanted.some((w) => ctxMentions.includes(w))
+              if (!hit) return {}
+            }
+            // filter.assigneesAdded — coder-pickup-style trigger. Fires only
+            // when one of the listed usernames appears in ctx.assigneesAdded
+            // (computed by the gitlab adapter from changes.assignees diff).
+            if (Array.isArray(cfg.filter.assigneesAdded) && cfg.filter.assigneesAdded.length > 0) {
+              const ctxAdded = Array.isArray(ctx.assigneesAdded)
+                ? (ctx.assigneesAdded as string[]).map((u) => u.toLowerCase().replace(/^@/, ""))
+                : []
+              const wanted = cfg.filter.assigneesAdded.map((u) => u.toLowerCase().replace(/^@/, ""))
+              const hit = wanted.some((w) => ctxAdded.includes(w))
+              if (!hit) return {}
+            }
+            // filter.reviewersAdded — MR review-on-assignment trigger.
+            if (Array.isArray(cfg.filter.reviewersAdded) && cfg.filter.reviewersAdded.length > 0) {
+              const ctxAdded = Array.isArray(ctx.reviewersAdded)
+                ? (ctx.reviewersAdded as string[]).map((u) => u.toLowerCase().replace(/^@/, ""))
+                : []
+              const wanted = cfg.filter.reviewersAdded.map((u) => u.toLowerCase().replace(/^@/, ""))
+              const hit = wanted.some((w) => ctxAdded.includes(w))
+              if (!hit) return {}
+            }
+            // filter.labelsAdded — fires when a specific label was added on
+            // an update event. Useful for "Blocked"-label workflows.
+            if (Array.isArray(cfg.filter.labelsAdded) && cfg.filter.labelsAdded.length > 0) {
+              const ctxAdded = Array.isArray(ctx.labelsAdded)
+                ? (ctx.labelsAdded as string[]).map((l) => l.toLowerCase())
+                : []
+              const wanted = cfg.filter.labelsAdded.map((l) => l.toLowerCase())
+              const hit = wanted.some((w) => ctxAdded.includes(w))
               if (!hit) return {}
             }
           }

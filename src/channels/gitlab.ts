@@ -381,6 +381,13 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     const token = agentToken || this.config.token
+    if (!agentToken && msg.agentId) {
+      // Global-token fallback. The note will appear in GitLab as authored
+      // by the global bot user (devops-noqta), not the requesting agent.
+      // Mark in journalctl (not just debug.webhook) so operators can spot
+      // misattribution without flipping AGENTX_WEBHOOK_DEBUG.
+      this.log(`[gitlab/identity] note from "${msg.agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — agent has no per-agent token`)
+    }
     debug.webhook("gitlab", "send", `agentId="${msg.agentId}" token=${agentToken ? "per-agent" : "GLOBAL(" + this.botUsername + ")"}`)
 
     try {
@@ -730,6 +737,16 @@ export class GitLabAdapter implements ChannelAdapter {
     //   - return nothing, letting the default project-agent behavior run
     // The event body stays inside the context so hook scripts have full detail
     // (changes.assignees, attrs.assignees, labels, etc.) without us re-parsing.
+    // Compute change-diffs once so hook subscribers + workflow filters can
+    // gate on "this update added a new assignee / label" rather than just
+    // the coarse `action=update` signal. Empty arrays when not an update
+    // event or no diff present.
+    const issuePrevAssignees = new Set((event.changes?.assignees?.previous ?? []).map((a) => a.username.toLowerCase()))
+    const issueAssigneesAdded = (event.changes?.assignees?.current ?? [])
+      .map((a) => a.username.toLowerCase())
+      .filter((u) => !issuePrevAssignees.has(u))
+    const issueLabelsAdded = extractLabelDiff((event as any).changes?.labels)
+
     let dispatch: Array<{ agentId: string; preferNode?: string; prompt?: string; assignee?: string }> | undefined
     let hookBlocked = false
     if (this.hooks?.has("on:gitlab-issue" as any)) {
@@ -743,6 +760,8 @@ export class GitLabAdapter implements ChannelAdapter {
           description: attrs.description || "",
           url: attrs.url,
           action: attrs.action,
+          assigneesAdded: issueAssigneesAdded,
+          labelsAdded: issueLabelsAdded,
           usernameToAgent: Object.fromEntries(this.usernameToAgent.entries()),
           agentMappings: this.config.agentMappings || [],
           defaultAgentId: defaultAgentId || null,
@@ -1102,6 +1121,20 @@ export class GitLabAdapter implements ChannelAdapter {
     // merge-deploy, etc.) can route off MR transitions. Mirror of the
     // on:gitlab-issue contract — fail-soft: hook errors don't block the
     // legacy default-target dispatch below.
+    // Compute change-diffs (mirror of handleIssue). Workflows can filter on
+    // assigneesAdded / reviewersAdded so e.g. a "review-on-assignment"
+    // workflow only fires when a NEW reviewer was added, not on every
+    // unrelated MR update.
+    const mrPrevAssignees = new Set((event.changes?.assignees?.previous ?? []).map((a) => a.username.toLowerCase()))
+    const mrAssigneesAdded = (event.changes?.assignees?.current ?? [])
+      .map((a) => a.username.toLowerCase())
+      .filter((u) => !mrPrevAssignees.has(u))
+    const mrPrevReviewers = new Set((event.changes?.reviewers?.previous ?? []).map((r) => r.username.toLowerCase()))
+    const mrReviewersAdded = (event.changes?.reviewers?.current ?? [])
+      .map((r) => r.username.toLowerCase())
+      .filter((u) => !mrPrevReviewers.has(u))
+    const mrLabelsAdded = extractLabelDiff((event as any).changes?.labels)
+
     let workflowClaimedMR = false
     if (this.hooks?.has("on:gitlab-mr" as any)) {
       try {
@@ -1118,6 +1151,9 @@ export class GitLabAdapter implements ChannelAdapter {
           source_branch: attrs.source_branch,
           target_branch: attrs.target_branch,
           labels: mrLabels,
+          assigneesAdded: mrAssigneesAdded,
+          reviewersAdded: mrReviewersAdded,
+          labelsAdded: mrLabelsAdded,
           defaultAgentId: defaultAgentId || null,
         })
         // Suppress legacy default-target dispatch when a workflow has
@@ -1601,6 +1637,9 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     const token = agentToken || this.config.token
+    if (!agentToken && agentId) {
+      this.log(`[gitlab/identity] time-log on ${project} ${noteableType}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — time will be attributed to the global bot, not the agent`)
+    }
 
     try {
       const res = await fetch(endpoint, {
@@ -1656,12 +1695,45 @@ export class GitLabAdapter implements ChannelAdapter {
       this.log(`Issue-create failed: no token available for agent "${agentId || "global"}"`)
       return null
     }
+    if (!agentToken && agentId) {
+      this.log(`[gitlab/identity] issue-create on ${project} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — issue will be authored by the global bot, not the agent`)
+    }
+
+    // Stamp the originating agent into the description so the audit
+    // trail survives even when the API actor is the shared bot. Same
+    // <!-- agentx:<agentId> --> marker convention used on notes.
+    const stampedDescription = agentId ? markBody(description, agentId) : description
 
     const encodedProject = encodeURIComponent(project)
+
+    // Pre-check: dedupe on title within the last 5 minutes. The user's
+    // 2026-05-10 trace had two near-identical issues (#446 + #447) created
+    // within 15 minutes by cx-agent → devops-agent delegation cycles.
+    // Searching for an open issue with this title and returning it instead
+    // makes the create idempotent under retry/handoff loops.
+    try {
+      const searchUrl = `${this.config.host}/api/v4/projects/${encodedProject}/issues?state=opened&search=${encodeURIComponent(title)}&in=title&order_by=created_at&sort=desc&per_page=5`
+      const search = await fetch(searchUrl, { headers: { "PRIVATE-TOKEN": token } })
+      if (search.ok) {
+        const existing = await search.json() as Array<{ iid: number; title: string; web_url: string; created_at: string }>
+        const cutoff = Date.now() - 5 * 60 * 1000
+        const recent = existing.find(
+          (i) => i.title === title && Date.parse(i.created_at) > cutoff,
+        )
+        if (recent) {
+          this.log(`Issue-create deduped: "${title}" on ${project} already exists at #${recent.iid} (created ${recent.created_at}) — returning existing`)
+          return { iid: recent.iid, url: recent.web_url }
+        }
+      }
+    } catch (e: any) {
+      // Pre-check failure is non-fatal; fall through to create.
+      this.log(`Issue-create dedupe check failed (non-fatal): ${e.message}`)
+    }
+
     const endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/issues`
     const body = new URLSearchParams()
     body.set("title", title)
-    if (description) body.set("description", description)
+    if (stampedDescription) body.set("description", stampedDescription)
     if (labels.length > 0) body.set("labels", labels.join(","))
     // GitLab takes `assignee_ids[]`; users pass usernames for ergonomics,
     // so resolve them to numeric ids first. Failure to resolve any one
@@ -1730,6 +1802,9 @@ export class GitLabAdapter implements ChannelAdapter {
     }
     const token = agentToken || this.config.token
     if (!token) { this.log(`setLabels failed: no token for "${agentId || "global"}"`); return null }
+    if (!agentToken && agentId) {
+      this.log(`[gitlab/identity] setLabels on ${project} ${kind}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — label change will appear under the global bot`)
+    }
 
     const segment = kind === "merge_request" ? "merge_requests" : "issues"
     const endpoint = `${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/${segment}/${iid}`
@@ -1782,6 +1857,9 @@ export class GitLabAdapter implements ChannelAdapter {
     if (!token) {
       this.log(`setAssignees failed: no token for agent "${agentId || "global"}"`)
       return null
+    }
+    if (!agentToken && agentId) {
+      this.log(`[gitlab/identity] setAssignees on ${project} ${kind}/${iid} from "${agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — assignment will appear under the global bot`)
     }
 
     // Resolve usernames → numeric ids (GitLab's API quirk).
@@ -1961,4 +2039,29 @@ export class GitLabAdapter implements ChannelAdapter {
       req.on("error", () => resolve({}))
     })
   }
+}
+
+/** Extract the list of labels newly added on an `update` event. GitLab's
+ *  webhook diff is `changes.labels.{previous, current}`, each an array of
+ *  `{title, ...}` objects. We return just the lower-cased titles that
+ *  appear in current but not in previous so workflow filters can match
+ *  on `labelsAdded` regardless of GitLab's casing. */
+function extractLabelDiff(diff: unknown): string[] {
+  if (!diff || typeof diff !== "object") return []
+  const d = diff as { previous?: unknown; current?: unknown }
+  const prev = Array.isArray(d.previous)
+    ? new Set(
+        d.previous
+          .map((l: any) => (typeof l === "string" ? l : l?.title))
+          .filter((s: any): s is string => typeof s === "string")
+          .map((s: string) => s.toLowerCase()),
+      )
+    : new Set<string>()
+  const cur = Array.isArray(d.current)
+    ? d.current
+        .map((l: any) => (typeof l === "string" ? l : l?.title))
+        .filter((s: any): s is string => typeof s === "string")
+        .map((s: string) => s.toLowerCase())
+    : []
+  return cur.filter((s) => !prev.has(s))
 }
