@@ -291,6 +291,29 @@ function runMigrations(db: Database.Database): void {
         ALTER TABLE task_traces ADD COLUMN final_response   TEXT;
       `,
     },
+    {
+      // task_queue — persistent chat-initiated work queue (Phase 2).
+      // Each row represents a task an agent queued during a /chat turn.
+      // status: 'active' = currently running; 'queued' = waiting;
+      //         'done' = completed; 'error' = failed.
+      // position is 1-based rank among queued rows (null when active/done/error).
+      v: 9,
+      sql: `
+        CREATE TABLE task_queue (
+          id TEXT PRIMARY KEY,
+          conversation_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued',
+          position INTEGER,
+          created_at INTEGER NOT NULL,
+          started_at INTEGER,
+          finished_at INTEGER
+        );
+        CREATE INDEX idx_task_queue_status    ON task_queue(status, created_at);
+        CREATE INDEX idx_task_queue_convo     ON task_queue(conversation_id, created_at);
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {
@@ -306,6 +329,142 @@ function runMigrations(db: Database.Database): void {
 /** Schema version check for tests. */
 export function getSchemaVersion(db: Database.Database): number {
   return (db.prepare("SELECT MAX(v) AS v FROM schema_version").get() as { v: number | null }).v ?? 0
+}
+
+// --- task_queue helpers (Phase 2 chat-initiated work queue) ---
+
+export interface TaskQueueEntry {
+  id: string
+  conversationId: string
+  agentId: string
+  summary: string
+  status: "active" | "queued" | "done" | "error"
+  position: number | null
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+}
+
+export interface InsertTaskQueueResult {
+  id: string
+  status: "active" | "queued"
+  position: number | null
+}
+
+/**
+ * Insert a new task into the queue. Respects maxConcurrent — if the number
+ * of 'active' rows is below the limit the new task is inserted as 'active';
+ * otherwise it is 'queued' with a 1-based position.
+ */
+export function insertTaskQueue(
+  db: Database.Database,
+  entry: { id: string; conversationId: string; agentId: string; summary: string },
+  maxConcurrent: number,
+): InsertTaskQueueResult {
+  const now = Date.now()
+  const activeCount = (db
+    .prepare("SELECT COUNT(*) AS n FROM task_queue WHERE status = 'active'")
+    .get() as { n: number }).n
+
+  const isActive = activeCount < maxConcurrent
+  let position: number | null = null
+  if (!isActive) {
+    const queuedCount = (db
+      .prepare("SELECT COUNT(*) AS n FROM task_queue WHERE status = 'queued'")
+      .get() as { n: number }).n
+    position = queuedCount + 1
+  }
+
+  db.prepare(`
+    INSERT INTO task_queue (id, conversation_id, agent_id, summary, status, position, created_at, started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    entry.id,
+    entry.conversationId,
+    entry.agentId,
+    entry.summary,
+    isActive ? "active" : "queued",
+    position,
+    now,
+    isActive ? now : null,
+  )
+
+  return { id: entry.id, status: isActive ? "active" : "queued", position }
+}
+
+/**
+ * Mark a task done/error and promote the next queued task (if any) to active.
+ */
+export function completeTaskQueue(
+  db: Database.Database,
+  id: string,
+  status: "done" | "error" = "done",
+): void {
+  const now = Date.now()
+  db.prepare(`
+    UPDATE task_queue SET status = ?, finished_at = ?, position = NULL WHERE id = ?
+  `).run(status, now, id)
+
+  // Promote oldest queued task to active
+  const next = db.prepare(`
+    SELECT id FROM task_queue WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1
+  `).get() as { id: string } | undefined
+  if (next) {
+    db.prepare(`
+      UPDATE task_queue SET status = 'active', position = NULL, started_at = ? WHERE id = ?
+    `).run(now, next.id)
+    // Resequence remaining queued positions
+    const remaining = db.prepare(`
+      SELECT id FROM task_queue WHERE status = 'queued' ORDER BY created_at ASC
+    `).all() as Array<{ id: string }>
+    const upd = db.prepare("UPDATE task_queue SET position = ? WHERE id = ?")
+    for (let i = 0; i < remaining.length; i++) {
+      upd.run(i + 1, remaining[i].id)
+    }
+  }
+}
+
+/** Look up a single task_queue row. */
+export function getTaskQueue(
+  db: Database.Database,
+  id: string,
+): TaskQueueEntry | null {
+  const row = db.prepare("SELECT * FROM task_queue WHERE id = ?").get(id) as Record<string, unknown> | undefined
+  if (!row) return null
+  return {
+    id: row.id as string,
+    conversationId: row.conversation_id as string,
+    agentId: row.agent_id as string,
+    summary: row.summary as string,
+    status: row.status as TaskQueueEntry["status"],
+    position: row.position as number | null,
+    createdAt: row.created_at as number,
+    startedAt: row.started_at as number | null,
+    finishedAt: row.finished_at as number | null,
+  }
+}
+
+/** List task_queue rows for a conversation, newest first. */
+export function listTaskQueueByConversation(
+  db: Database.Database,
+  conversationId: string,
+  limit = 20,
+): TaskQueueEntry[] {
+  const rows = db.prepare(`
+    SELECT * FROM task_queue WHERE conversation_id = ?
+    ORDER BY created_at DESC LIMIT ?
+  `).all(conversationId, limit) as Array<Record<string, unknown>>
+  return rows.map((row) => ({
+    id: row.id as string,
+    conversationId: row.conversation_id as string,
+    agentId: row.agent_id as string,
+    summary: row.summary as string,
+    status: row.status as TaskQueueEntry["status"],
+    position: row.position as number | null,
+    createdAt: row.created_at as number,
+    startedAt: row.started_at as number | null,
+    finishedAt: row.finished_at as number | null,
+  }))
 }
 
 export interface PruneResult {

@@ -1486,11 +1486,25 @@ async function loadActivity(){
 
 /* ===== Test drive (sandbox chat) ===== */
 let __tdBusy = false;
-function appendTdBubble(kind, text, meta) {
+// Stable conversation id for the test-drive session (page load scoped)
+const __tdConvId = 'td-' + Math.random().toString(36).slice(2, 10);
+function appendTdBubble(kind, text, meta, queuedTask) {
   const wrap = document.createElement('div');
   wrap.className = 'ax-td-chat__msg-wrap is-' + kind;
+  let chipHtml = '';
+  if (queuedTask) {
+    const isActive = queuedTask.status === 'active';
+    const label = isActive ? 'QUEUED · running now' : 'QUEUED · #' + queuedTask.position + ' in line';
+    chipHtml =
+      '<div class="ax-td-task-chip' + (isActive ? '' : ' ax-td-task-chip--queued') + '">' +
+        '<span class="ax-td-task-chip__dot"></span>' +
+        label +
+        ' <span class="ax-td-task-chip__id">' + esc(queuedTask.id) + '</span>' +
+      '</div>';
+  }
   wrap.innerHTML =
     '<div class="ax-td-chat__bubble is-' + kind + '">' + esc(text) + '</div>' +
+    chipHtml +
     '<div class="ax-td-chat__meta">' + esc(meta || '') + '</div>';
   const chat = $('td-chat');
   chat.appendChild(wrap);
@@ -1531,10 +1545,26 @@ async function dispatchTd(text) {
   appendTdTyping();
   const t0 = Date.now();
   try {
-    const r = await req('POST', '/task', { agent: AGENT_ID, message: text, context: { channel: 'test-drive', sender: 'admin-ui' } });
+    // Use /chat endpoint so test-drive exercises the same path as noqta.tn.
+    // Falls back to /task reply shape if /chat isn't reachable (no auth configured).
+    let reply, queuedTask;
+    try {
+      const r = await req('POST', '/chat', {
+        agentId: AGENT_ID,
+        user_id: 'admin-ui',
+        conversation_id: __tdConvId,
+        message: text,
+      });
+      reply = r.reply || r.content || '(empty reply)';
+      queuedTask = r.queued_task || null;
+    } catch (_chatErr) {
+      // /chat may reject with 401 if AGENTX_CHAT_SECRET is set — fall back to /task
+      const r = await req('POST', '/task', { agent: AGENT_ID, message: text, context: { channel: 'test-drive', sender: 'admin-ui' } });
+      reply = r.content || '(empty reply)';
+    }
     removeTdTyping();
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1) + 's';
-    appendTdBubble('bot', r.content || '(empty reply)', new Date().toLocaleTimeString() + ' · ' + elapsed);
+    appendTdBubble('bot', reply, new Date().toLocaleTimeString() + ' · ' + elapsed, queuedTask);
   } catch (e) {
     removeTdTyping();
     appendTdBubble('bot', '[error] ' + e.message, 'failed');

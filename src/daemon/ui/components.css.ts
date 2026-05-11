@@ -1396,6 +1396,27 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   background: color-mix(in oklch, var(--ax-accent) 88%, white);
 }
 
+/* Inline task-queue chip on bot messages */
+.ax-td-task-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 5px; padding: 3px 8px;
+  background: color-mix(in oklch, var(--ax-accent) 10%, var(--ax-surface));
+  border: 1px solid color-mix(in oklch, var(--ax-accent) 35%, var(--ax-border));
+  border-radius: 8px; font-size: 10px; color: var(--ax-accent);
+  font-family: var(--ax-mono); letter-spacing: 0.04em;
+  cursor: default; user-select: none;
+}
+.ax-td-task-chip__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ax-accent); flex-shrink: 0;
+}
+.ax-td-task-chip--queued .ax-td-task-chip__dot {
+  background: var(--ax-muted);
+}
+.ax-td-task-chip__id {
+  font-family: var(--ax-mono); opacity: 0.7; font-size: 9px;
+}
+
 /* Section mini-label used throughout detail pages */
 .ax-sec-label-d {
   display: flex; align-items: center; justify-content: space-between;

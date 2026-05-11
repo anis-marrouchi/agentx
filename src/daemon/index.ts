@@ -22,7 +22,8 @@ import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
-import { openDb, pruneSqliteTables } from "@/storage/sqlite"
+import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
+import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
@@ -2088,6 +2089,125 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.json(res, 500, { error: "agent execute failed", message: e.message })
         }
+        return
+      }
+
+      // POST /chat — External web-chat endpoint (noqta.tn → clawd-server).
+      //
+      // Contract:
+      //   Authorization: Bearer <AGENTX_CHAT_SECRET>
+      //   Body: { agentId, user_id, conversation_id, message, max_turns? }
+      //   → { reply, tokens?, task?, queued_task? }
+      //
+      // When the agent's reply contains an <agentx-task>{"summary":"…"}</agentx-task>
+      // sentinel the route strips it, inserts a row into task_queue (respecting
+      // MAX_CONCURRENT_CHAT_TASKS), and returns queued_task: { id, status, position }.
+      if (req.method === "POST" && path === "/chat") {
+        // Bearer auth — AGENTX_CHAT_SECRET env, falling back to TELEGRAM_BOT_API_SECRET.
+        const chatSecret = process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET
+        if (chatSecret) {
+          const authHeader = req.headers["authorization"] || ""
+          const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""
+          if (token !== chatSecret) {
+            this.json(res, 401, { error: "unauthorized" }); return
+          }
+        }
+
+        let body: any
+        try { body = await readJsonBody(req) } catch (e: any) {
+          this.json(res, 400, { error: "invalid JSON body", message: (e as Error).message }); return
+        }
+
+        const agentId = typeof body?.agentId === "string" ? body.agentId : this.config.node.defaultAgent
+        const conversationId = typeof body?.conversation_id === "string" ? body.conversation_id : ""
+        const userId = typeof body?.user_id === "string" ? body.user_id : "anonymous"
+        const message = typeof body?.message === "string" ? body.message : ""
+
+        if (!agentId) { this.json(res, 400, { error: "agentId required (or set node.defaultAgent)" }); return }
+        if (!message)  { this.json(res, 400, { error: "message required" }); return }
+        if (!conversationId) { this.json(res, 400, { error: "conversation_id required" }); return }
+
+        try {
+          const resp = await this.registry.execute({
+            agentId,
+            message,
+            context: { channel: "web-chat", sender: userId, chatId: conversationId },
+          })
+
+          if (resp.error) {
+            this.json(res, 502, { error: resp.error }); return
+          }
+
+          let reply = resp.content ?? ""
+          let taskPayload: { summary: string } | undefined
+
+          // Parse <agentx-task>{"summary":"…"}</agentx-task> sentinel from reply.
+          const sentinelRe = /<agentx-task>([\s\S]*?)<\/agentx-task>/i
+          const match = sentinelRe.exec(reply)
+          if (match) {
+            try {
+              const parsed = JSON.parse(match[1].trim())
+              if (parsed && typeof parsed.summary === "string") {
+                taskPayload = { summary: parsed.summary }
+              }
+            } catch { /* malformed — ignore */ }
+            reply = reply.replace(match[0], "").trim()
+          }
+
+          let queuedTask: { id: string; status: string; position: number | null } | undefined
+          if (taskPayload && this.db) {
+            const taskId = newEventId().slice(0, 12) // short enough for inline display
+            const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_CHAT_TASKS || "2", 10)
+            const result = insertTaskQueue(this.db, {
+              id: taskId,
+              conversationId,
+              agentId,
+              summary: taskPayload.summary,
+            }, maxConcurrent)
+            queuedTask = { id: result.id, status: result.status, position: result.position }
+          }
+
+          const out: Record<string, unknown> = { reply }
+          if (resp.usage) out.tokens = { input: resp.usage.inputTokens, output: resp.usage.outputTokens }
+          if (taskPayload) out.task = taskPayload
+          if (queuedTask) out.queued_task = queuedTask
+
+          this.json(res, 200, out)
+        } catch (e: any) {
+          this.json(res, 500, { error: "agent execute failed", message: (e as Error).message })
+        }
+        return
+      }
+
+      // GET /chat/task-queue/:id — task queue entry status
+      if (req.method === "GET" && path.startsWith("/chat/task-queue/") && this.db) {
+        const taskId = decodeURIComponent(path.replace(/^\/chat\/task-queue\//, ""))
+        if (!taskId) { this.json(res, 400, { error: "task id required" }); return }
+        const entry = getTaskQueue(this.db, taskId)
+        if (!entry) { this.json(res, 404, { error: "not found" }); return }
+        this.json(res, 200, entry)
+        return
+      }
+
+      // GET /chat/task-queue?conversation_id=… — list tasks for a conversation
+      if (req.method === "GET" && path === "/chat/task-queue" && this.db) {
+        const urlObj = new URL(req.url || "/", `http://${req.headers.host || "_"}`)
+        const convId = urlObj.searchParams.get("conversation_id") || ""
+        if (!convId) { this.json(res, 400, { error: "conversation_id query param required" }); return }
+        const entries = listTaskQueueByConversation(this.db, convId)
+        this.json(res, 200, { tasks: entries })
+        return
+      }
+
+      // PATCH /chat/task-queue/:id — mark a task done/error
+      if (req.method === "PATCH" && path.startsWith("/chat/task-queue/") && this.db) {
+        const taskId = decodeURIComponent(path.replace(/^\/chat\/task-queue\//, ""))
+        let body: any
+        try { body = await readJsonBody(req) } catch { body = {} }
+        const status = body?.status === "error" ? "error" : "done"
+        completeTaskQueue(this.db, taskId, status)
+        const updated = getTaskQueue(this.db, taskId)
+        this.json(res, updated ? 200 : 404, updated ?? { error: "not found" })
         return
       }
 
