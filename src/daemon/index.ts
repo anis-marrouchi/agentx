@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
+import { createReadStream } from "fs"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
-import { resolve, dirname } from "path"
+import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
@@ -2097,11 +2098,14 @@ export class AgentXDaemon {
       // Contract:
       //   Authorization: Bearer <AGENTX_CHAT_SECRET>
       //   Body: { agentId, user_id, conversation_id, message, max_turns? }
-      //   → { reply, tokens?, task?, queued_task? }
+      //   → { reply, tokens?, task?, queued_task?, artifacts? }
       //
-      // When the agent's reply contains an <agentx-task>{"summary":"…"}</agentx-task>
-      // sentinel the route strips it, inserts a row into task_queue (respecting
-      // MAX_CONCURRENT_CHAT_TASKS), and returns queued_task: { id, status, position }.
+      // Sentinels the agent may embed in its reply (all stripped before returning):
+      //   <agentx-task>{"summary":"…"}</agentx-task>       → queued_task
+      //   <agentx-artifact>{"filename":"f","mime":"t"}</agentx-artifact> → artifacts[]
+      //
+      // Retrieve an artifact file via:
+      //   GET /agents/:id/workspace/<filename>   (same Bearer auth)
       if (req.method === "POST" && path === "/chat") {
         // Bearer auth — AGENTX_CHAT_SECRET env, falling back to TELEGRAM_BOT_API_SECRET.
         const chatSecret = process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET
@@ -2127,11 +2131,23 @@ export class AgentXDaemon {
         if (!message)  { this.json(res, 400, { error: "message required" }); return }
         if (!conversationId) { this.json(res, 400, { error: "conversation_id required" }); return }
 
+        // System prompt addendum injected for every web-chat turn: instructs the
+        // agent to declare files it writes so the caller can surface them.
+        const chatSystemAppend = [
+          "## Web-chat artifact protocol",
+          "When you write, generate, or save a file during this conversation, declare it",
+          "at the END of your reply using this exact XML sentinel (one per file):",
+          '  <agentx-artifact>{"filename":"<name.ext>","mime":"<mime/type>"}</agentx-artifact>',
+          "Do NOT describe the attachment in prose — the caller will fetch and render it.",
+          "Use accurate MIME types: image/png, image/jpeg, application/pdf, text/csv, etc.",
+        ].join("\n")
+
         try {
           const resp = await this.registry.execute({
             agentId,
             message,
             context: { channel: "web-chat", sender: userId, chatId: conversationId },
+            systemPromptAppend: chatSystemAppend,
           })
 
           if (resp.error) {
@@ -2140,6 +2156,24 @@ export class AgentXDaemon {
 
           let reply = resp.content ?? ""
           let taskPayload: { summary: string } | undefined
+          const artifacts: Array<{ type: string; filename: string; mime: string }> = []
+
+          // Strip and parse all <agentx-artifact> sentinels.
+          const artifactRe = /<agentx-artifact>([\s\S]*?)<\/agentx-artifact>/gi
+          reply = reply.replace(artifactRe, (_full, inner) => {
+            try {
+              const parsed = JSON.parse(inner.trim())
+              if (parsed && typeof parsed.filename === "string" && typeof parsed.mime === "string") {
+                const mime: string = parsed.mime
+                const type = mime.startsWith("image/") ? "image"
+                  : mime === "application/pdf" ? "pdf"
+                  : mime.startsWith("text/") ? "text"
+                  : "file"
+                artifacts.push({ type, filename: parsed.filename, mime })
+              }
+            } catch { /* malformed — ignore */ }
+            return ""
+          }).trim()
 
           // Parse <agentx-task>{"summary":"…"}</agentx-task> sentinel from reply.
           const sentinelRe = /<agentx-task>([\s\S]*?)<\/agentx-task>/i
@@ -2171,6 +2205,7 @@ export class AgentXDaemon {
           if (resp.usage) out.tokens = { input: resp.usage.inputTokens, output: resp.usage.outputTokens }
           if (taskPayload) out.task = taskPayload
           if (queuedTask) out.queued_task = queuedTask
+          if (artifacts.length > 0) out.artifacts = artifacts
 
           this.json(res, 200, out)
         } catch (e: any) {
@@ -2208,6 +2243,59 @@ export class AgentXDaemon {
         completeTaskQueue(this.db, taskId, status)
         const updated = getTaskQueue(this.db, taskId)
         this.json(res, updated ? 200 : 404, updated ?? { error: "not found" })
+        return
+      }
+
+      // GET /agents/:id/workspace/*filepath — binary passthrough for agent workspace files.
+      //
+      // Authorization: Bearer <AGENTX_CHAT_SECRET>
+      //
+      // Returns the raw file with an appropriate Content-Type so browsers /
+      // noqta.tn can display images, PDFs, and other artifacts the agent wrote
+      // during a /chat turn. Path traversal is blocked — the resolved path must
+      // stay inside the agent's workspace directory.
+      const workspaceFileMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/workspace\/(.+)$/)
+      if (workspaceFileMatch) {
+        const chatSecret = process.env.AGENTX_CHAT_SECRET || process.env.TELEGRAM_BOT_API_SECRET
+        if (chatSecret) {
+          const authHeader = req.headers["authorization"] || ""
+          const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""
+          if (token !== chatSecret) {
+            this.json(res, 401, { error: "unauthorized" }); return
+          }
+        }
+        const wsAgentId = workspaceFileMatch[1]
+        const rawFilePath = decodeURIComponent(workspaceFileMatch[2])
+        const agentDef = this.registry.getAgent(wsAgentId)
+        if (!agentDef) { this.json(res, 404, { error: `agent "${wsAgentId}" not found` }); return }
+
+        // Resolve and guard against path traversal.
+        const workspaceDir = resolve(process.cwd(), agentDef.workspace)
+        const resolvedFile = resolve(workspaceDir, rawFilePath)
+        if (!resolvedFile.startsWith(workspaceDir + sep) && resolvedFile !== workspaceDir) {
+          this.json(res, 403, { error: "path traversal denied" }); return
+        }
+        if (!existsSync(resolvedFile)) {
+          this.json(res, 404, { error: "file not found" }); return
+        }
+
+        // Derive Content-Type from extension.
+        const ext = extname(resolvedFile).toLowerCase()
+        const mimeMap: Record<string, string> = {
+          ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+          ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+          ".pdf": "application/pdf",
+          ".csv": "text/csv", ".txt": "text/plain", ".md": "text/markdown",
+          ".json": "application/json", ".html": "text/html",
+          ".mp4": "video/mp4", ".webm": "video/webm",
+        }
+        const contentType = mimeMap[ext] ?? "application/octet-stream"
+        res.writeHead(200, {
+          "Content-Type": contentType,
+          "Cache-Control": "private, max-age=3600",
+          "Access-Control-Allow-Origin": "*",
+        })
+        createReadStream(resolvedFile).pipe(res)
         return
       }
 
