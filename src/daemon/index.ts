@@ -2199,7 +2199,25 @@ export class AgentXDaemon {
             // TODO if it becomes a UX issue: switch agents to a tool_use
             // declaration of artifacts/tasks instead of inline sentinels,
             // so the streaming text stays clean.
+            // OpenAI shape: final chunk with finish_reason set, then an
+            // optional usage-only chunk (empty choices[], usage populated)
+            // when stream_options.include_usage was requested. We emit it
+            // unconditionally so noqta.tn's voice forwarder always has
+            // token counts to debit credits against — the OpenAI SDK and
+            // ElevenLabs both ignore unknown chunks gracefully.
             res.write(`data: ${JSON.stringify({ ...baseChunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`)
+            if (resp.usage) {
+              const usageChunk = {
+                ...baseChunk,
+                choices: [],
+                usage: {
+                  prompt_tokens: resp.usage.inputTokens || 0,
+                  completion_tokens: resp.usage.outputTokens || 0,
+                  total_tokens: (resp.usage.inputTokens || 0) + (resp.usage.outputTokens || 0),
+                },
+              }
+              res.write(`data: ${JSON.stringify(usageChunk)}\n\n`)
+            }
             res.write("data: [DONE]\n\n")
             res.end()
           } catch (e: any) {
