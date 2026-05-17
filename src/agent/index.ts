@@ -530,6 +530,8 @@ export async function* generateStream(
           outputType,
           followUp: agenticResult.followUp,
           tokensUsed: agenticResult.tokensUsed,
+          inputTokens: agenticResult.inputTokens,
+          outputTokens: agenticResult.outputTokens,
         },
       }
       return
@@ -580,6 +582,8 @@ export async function* generateStream(
         content,
         outputType,
         tokensUsed: agenticResult.tokensUsed,
+        inputTokens: agenticResult.inputTokens,
+        outputTokens: agenticResult.outputTokens,
         healResult,
       },
     }

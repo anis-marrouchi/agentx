@@ -1230,6 +1230,8 @@ export async function executeOrchestrator(
       const { generateStream } = await import("@/agent")
       let content = ""
       let tokensUsed: number | undefined
+      let inputTokens: number | undefined
+      let outputTokens: number | undefined
       let errorMsg: string | undefined
       for await (const event of generateStream(baseOpts)) {
         if (event.type === "text_delta") {
@@ -1250,6 +1252,10 @@ export async function executeOrchestrator(
             }
           }
           tokensUsed = event.result.tokensUsed
+          // Pick up split tokens so the SSE usage chunk is accurate
+          // — same shape as the non-streaming path below.
+          if (event.result.inputTokens != null) inputTokens = event.result.inputTokens
+          if (event.result.outputTokens != null) outputTokens = event.result.outputTokens
         } else if (event.type === "done") {
           // Non-agentic path emits `done` with the full result.
           if (event.result.content && event.result.content !== content) {
@@ -1273,9 +1279,19 @@ export async function executeOrchestrator(
           duration: Date.now() - start,
         }
       }
+      // Fallback estimate so the SSE usage chunk on the daemon /chat
+      // path always has SOME values for noqta.tn's cost-based billing
+      // to work against (the floor still protects against undercharge).
+      if ((inputTokens === undefined || outputTokens === undefined) && tokensUsed) {
+        inputTokens = Math.round(tokensUsed * 0.7)
+        outputTokens = tokensUsed - inputTokens
+      }
       return {
         content: content || "Done.",
         tokensUsed,
+        usage: (inputTokens !== undefined || outputTokens !== undefined)
+          ? { inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, cacheReadTokens: 0, cacheCreateTokens: 0 }
+          : undefined,
         duration: Date.now() - start,
       }
     }
