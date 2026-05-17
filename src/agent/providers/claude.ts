@@ -17,6 +17,32 @@ import { getLegacyTools } from "../tools/definitions"
 
 const DEFAULT_MODEL = "claude-sonnet-4-20250514"
 const DEFAULT_MAX_TOKENS = 8192
+// Min tokens for Anthropic prompt-cache eligibility (varies by model:
+// 1024 Haiku / 2048 Sonnet / 4096 Opus). Below threshold the API
+// silently skips caching. We wrap unconditionally — cheap when it
+// doesn't fit, big win when it does. Voice/text on noqta-public have
+// 40K-token system prompts so caching always kicks in there.
+const CACHE_MIN_CHARS = 4 * 1024 // ~1k tokens at 4 char/tok
+
+/**
+ * Wrap a system-prompt string in an Anthropic structured-block array
+ * with `cache_control: { type: "ephemeral" }`. Returns a plain string
+ * when the prompt is too short to be cache-eligible (saves a request-
+ * shape change that wouldn't help). Cache TTL is the default 5 minutes;
+ * suitable for back-to-back chat turns within a session.
+ */
+function wrapSystemForCache(systemPrompt: string): unknown {
+  if (!systemPrompt || systemPrompt.length < CACHE_MIN_CHARS) {
+    return systemPrompt
+  }
+  return [
+    {
+      type: "text",
+      text: systemPrompt,
+      cache_control: { type: "ephemeral" },
+    },
+  ]
+}
 
 interface AnthropicResponse {
   id: string
@@ -80,7 +106,7 @@ export class ClaudeProvider implements AgentProvider {
     }
 
     if (systemMsg) {
-      body.system = systemMsg.content
+      body.system = wrapSystemForCache(systemMsg.content)
     }
 
     if (options?.temperature !== undefined) {
@@ -104,7 +130,7 @@ export class ClaudeProvider implements AgentProvider {
     const body: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: wrapSystemForCache(systemPrompt),
       messages,
       tools,
     }
@@ -162,7 +188,7 @@ export class ClaudeProvider implements AgentProvider {
     }
 
     if (systemMsg) {
-      body.system = systemMsg.content
+      body.system = wrapSystemForCache(systemMsg.content)
     }
 
     const headers = this.buildHeaders()
@@ -438,7 +464,7 @@ export class ClaudeProvider implements AgentProvider {
     const body: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: wrapSystemForCache(systemPrompt),
       messages,
       tools,
       stream: true,
