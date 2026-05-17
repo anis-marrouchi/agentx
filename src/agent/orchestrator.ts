@@ -90,14 +90,66 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     onProgress?.({ type: "iteration_start", iteration })
     debug.step(iteration, `Agentic loop iteration (${tools.length} tools available)`)
 
+    // Streaming path: when the provider supports generateRawStream AND a
+    // caller is listening for progress events, pipe text deltas through
+    // as they arrive (so voice/SSE clients see per-token output) and
+    // still assemble the same RawGenerationResult the non-streaming
+    // path produces. Tool detection then runs unchanged on result.content.
+    //
+    // The fallback (generateRaw, single-shot) is preserved for:
+    //   - providers without generateRawStream (CLI, anything pre-stream)
+    //   - non-streaming callers (no onProgress) — extra streaming
+    //     ceremony would add latency and per-chunk parsing overhead
+    //     for callers that don't need it (telegram, crons, mesh).
     let result: RawGenerationResult
+    const useRawStream = !!provider.generateRawStream && !!onProgress
     try {
-      result = await provider.generateRaw(
-        anthropicMessages,
-        systemPrompt,
-        tools,
-        providerOptions
-      )
+      if (useRawStream) {
+        // We accumulate text per-block as it streams. The raw_result
+        // event at the end carries the same blocks (with tool_use
+        // inputs fully parsed) so the existing tool-dispatch branch
+        // below operates on identical data to the non-streaming case.
+        let streamedResult: RawGenerationResult | null = null
+        let streamError: string | null = null
+        let streamedTextThisIteration = ""
+        for await (const ev of provider.generateRawStream!(
+          anthropicMessages,
+          systemPrompt,
+          tools,
+          providerOptions,
+        )) {
+          if (ev.type === "text_delta") {
+            streamedTextThisIteration += ev.text
+            // Emit per-chunk so the caller (daemon /chat handler ->
+            // SSE writer) can push to the client right away. We do NOT
+            // emit a duplicate text_delta from the result-block loop
+            // below for streamed text (handled via the `streamedText`
+            // guard on each text block).
+            onProgress?.({ type: "text_delta", text: ev.text })
+          } else if (ev.type === "raw_result") {
+            streamedResult = ev.result
+          } else if (ev.type === "error") {
+            streamError = ev.error
+          }
+        }
+        if (streamError && !streamedResult) {
+          throw new Error(streamError)
+        }
+        if (!streamedResult) {
+          throw new Error("generateRawStream returned no raw_result event")
+        }
+        result = streamedResult
+        // Track the text we already streamed so the block-loop below
+        // doesn't re-emit it as a duplicate text_delta event.
+        ;(result as any)._streamedText = streamedTextThisIteration
+      } else {
+        result = await provider.generateRaw!(
+          anthropicMessages,
+          systemPrompt,
+          tools,
+          providerOptions,
+        )
+      }
     } catch (error: any) {
       // If generateRaw fails (e.g., OAuth mode), fall back to legacy
       if (error.message?.includes("not available")) {
@@ -108,13 +160,21 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
 
     totalTokens += result.usage.input_tokens + result.usage.output_tokens
 
-    // Collect text from response
+    // Collect text from response. In the streaming path we already
+    // emitted per-chunk deltas above — only re-emit text from blocks
+    // that came in AFTER our streamed accumulation (defensive: should
+    // be zero, but a divergence wouldn't silently lose tokens).
+    const streamedText: string | undefined = (result as any)._streamedText
     for (const block of result.content) {
       if (block.type === "text") {
         textContent += block.text
-        onProgress?.({ type: "text_delta", text: block.text })
+        if (streamedText === undefined) {
+          // Non-streaming path — fire one text_delta per block as before.
+          onProgress?.({ type: "text_delta", text: block.text })
+        }
       }
     }
+    if (streamedText !== undefined) delete (result as any)._streamedText
 
     // If stop_reason is end_turn or max_tokens, we're done
     if (result.stop_reason === "end_turn" || result.stop_reason === "max_tokens") {

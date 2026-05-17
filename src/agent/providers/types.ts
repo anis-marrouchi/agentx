@@ -71,7 +71,32 @@ export interface AgentProvider {
     tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
     options?: ProviderOptions
   ): Promise<RawGenerationResult>
+  /**
+   * Streaming variant of generateRaw — emits text_delta events as the
+   * model generates so callers can pipe per-token to UIs (voice TTS,
+   * SSE, etc.) AND still get the full RawGenerationResult at the end
+   * with the tool_use blocks intact, so the agentic loop's tool
+   * dispatch keeps working unchanged. Optional — runAgenticLoop falls
+   * back to generateRaw() when this isn't implemented.
+   */
+  generateRawStream?(
+    messages: AnthropicMessage[],
+    systemPrompt: string,
+    tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
+    options?: ProviderOptions
+  ): AsyncIterable<RawStreamEvent>
 }
+
+/**
+ * Event stream from generateRawStream. text_delta arrives per chunk so
+ * the caller can stream to a UI; tool_use blocks accumulate silently and
+ * are surfaced in the terminal raw_result event so the agentic loop's
+ * tool dispatch logic stays unchanged.
+ */
+export type RawStreamEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "raw_result"; result: RawGenerationResult }
+  | { type: "error"; error: string }
 
 // --- Agent configuration ---
 
