@@ -60,6 +60,11 @@ export interface GenerateResult {
   outputType: OutputType
   followUp?: string
   tokensUsed?: number
+  /** Split tokens when the provider supplies them (Claude raw mode does;
+   *  CLI mode and legacy fallbacks may not). Callers that bill by
+   *  direction should prefer these over a 30/70 estimate of tokensUsed. */
+  inputTokens?: number
+  outputTokens?: number
   healResult?: import("@/runtime/heal").HealResult
 }
 
@@ -232,7 +237,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   }
 
   let { content } = agenticResult
-  const { followUp, tokensUsed: totalTokens } = agenticResult
+  const { followUp, tokensUsed: totalTokens, inputTokens: agInput, outputTokens: agOutput } = agenticResult
 
   if (agenticResult.iterations > 1) {
     logger.info(`Completed in ${agenticResult.iterations} step(s)`)
@@ -262,6 +267,8 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       outputType,
       followUp,
       tokensUsed: totalTokens,
+      inputTokens: agInput,
+      outputTokens: agOutput,
     }
   }
 
@@ -322,6 +329,8 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     content,
     outputType,
     tokensUsed: totalTokens,
+    inputTokens: agInput,
+    outputTokens: agOutput,
     healResult,
   }
 }

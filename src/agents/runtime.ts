@@ -1284,9 +1284,24 @@ export async function executeOrchestrator(
     // behaviour so existing callers (telegram, mesh, crons) keep working.
     const { generate } = await import("@/agent")
     const result = await generate(baseOpts)
+    // Surface split tokens on `usage` so the daemon /chat handler (and
+    // its noqta.tn voice forwarder) can do cost-based billing instead
+    // of the floor-only fallback. Falls back to a 30/70 estimate when
+    // the provider only reports a combined total (CLI tier, legacy
+    // loop) so downstream billing never sees zeros for a real turn.
+    let inputTokens = result.inputTokens
+    let outputTokens = result.outputTokens
+    if ((inputTokens === undefined || outputTokens === undefined) && result.tokensUsed) {
+      const total = result.tokensUsed
+      inputTokens = Math.round(total * 0.7)
+      outputTokens = total - inputTokens
+    }
     return {
       content: result.content || "Done.",
       tokensUsed: result.tokensUsed,
+      usage: (inputTokens !== undefined || outputTokens !== undefined)
+        ? { inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, cacheReadTokens: 0, cacheCreateTokens: 0 }
+        : undefined,
       duration: Date.now() - start,
     }
   } catch (error: any) {

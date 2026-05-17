@@ -40,6 +40,13 @@ export interface AgenticResult {
   content: string
   followUp?: string
   tokensUsed: number
+  /** Split input/output token counts when the provider supplies them.
+   *  Kept separate from `tokensUsed` so callers that bill by direction
+   *  (input vs output have very different per-1M costs) don't have to
+   *  guess a 30/70 split. Undefined when the provider only reports a
+   *  combined total (CLI tier, legacy loop). */
+  inputTokens?: number
+  outputTokens?: number
   iterations: number
 }
 
@@ -81,6 +88,8 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
 
   const allFiles: GeneratedFile[] = []
   let totalTokens = 0
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
   let textContent = ""
   let followUp: string | undefined
   let iteration = 0
@@ -159,6 +168,8 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     }
 
     totalTokens += result.usage.input_tokens + result.usage.output_tokens
+    totalInputTokens += result.usage.input_tokens
+    totalOutputTokens += result.usage.output_tokens
 
     // Collect text from response. In the streaming path we already
     // emitted per-chunk deltas above — only re-emit text from blocks
@@ -264,6 +275,8 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     content: textContent,
     followUp,
     tokensUsed: totalTokens,
+    inputTokens: totalInputTokens || undefined,
+    outputTokens: totalOutputTokens || undefined,
     iterations: iteration,
   }
 }
