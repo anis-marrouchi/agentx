@@ -2142,6 +2142,76 @@ export class AgentXDaemon {
           "Use accurate MIME types: image/png, image/jpeg, application/pdf, text/csv, etc.",
         ].join("\n")
 
+        // Stream mode: caller wants OpenAI-shaped SSE chunks back instead
+        // of a single JSON response. Triggered by body.stream:true or by
+        // an explicit Accept: text/event-stream. Used by the noqta.tn
+        // voice forwarder (ElevenLabs custom-LLM has a tight first-token
+        // deadline that the non-streaming path blows past).
+        //
+        // The agentic loop still runs end-to-end on this server — we just
+        // stream text deltas back as the underlying provider emits them
+        // (via registry.execute's onDelta), and emit artifact/task
+        // sentinels in trailing chunks the OpenAI SSE shape ignores.
+        const acceptHeader = String(req.headers["accept"] || "")
+        const wantStream = body?.stream === true || acceptHeader.includes("text/event-stream")
+
+        if (wantStream) {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Connection: "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+          })
+          const sseId = `chatcmpl-${newEventId()}`
+          const created = Math.floor(Date.now() / 1000)
+          const baseChunk = { id: sseId, object: "chat.completion.chunk", created, model: agentId }
+          const send = (delta: Record<string, unknown>, finish: string | null = null) => {
+            const chunk = { ...baseChunk, choices: [{ index: 0, delta, finish_reason: finish }] }
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+          }
+          send({ role: "assistant" })
+
+          const onDelta = (delta: string) => {
+            if (delta) send({ content: delta })
+          }
+
+          try {
+            const resp = await this.registry.execute({
+              agentId,
+              message,
+              context: { channel: "web-chat", sender: userId, chatId: conversationId },
+              systemPromptAppend: chatSystemAppend,
+            }, onDelta)
+
+            if (resp.error) {
+              send({ content: `\n[error] ${resp.error}` }, "stop")
+              res.write("data: [DONE]\n\n")
+              res.end()
+              return
+            }
+
+            // Strip the sentinels from the assistant reply (same logic as
+            // non-stream path). We don't backpatch what the model already
+            // streamed — sentinels reach the client as raw text and the
+            // client strips them too. For voice that's fine: the sentinel
+            // string is short and EL's TTS reads it as gibberish but
+            // doesn't break the flow.
+            // TODO if it becomes a UX issue: switch agents to a tool_use
+            // declaration of artifacts/tasks instead of inline sentinels,
+            // so the streaming text stays clean.
+            res.write(`data: ${JSON.stringify({ ...baseChunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`)
+            res.write("data: [DONE]\n\n")
+            res.end()
+          } catch (e: any) {
+            try {
+              send({ content: `\n[error] ${(e as Error).message}` }, "stop")
+              res.write("data: [DONE]\n\n")
+            } catch { /* socket may already be dead */ }
+            res.end()
+          }
+          return
+        }
+
         try {
           const resp = await this.registry.execute({
             agentId,

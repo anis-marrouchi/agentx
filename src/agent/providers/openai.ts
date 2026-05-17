@@ -4,6 +4,7 @@ import type {
   GenerationResult,
   GeneratedFile,
   ProviderOptions,
+  StreamEvent,
   AnthropicMessage,
   RawGenerationResult,
   ContentBlock,
@@ -175,6 +176,153 @@ export class OpenAIProvider implements AgentProvider {
 
     const data = await this.callApi(body)
     return this.parseRawResponse(data)
+  }
+
+  async *stream(
+    messages: GenerationMessage[],
+    options?: ProviderOptions,
+  ): AsyncIterable<StreamEvent> {
+    const model = options?.model || process.env.OPENAI_MODEL || DEFAULT_MODEL
+    const maxTokens = options?.maxTokens || DEFAULT_MAX_TOKENS
+
+    const oaMessages = messages.map((m) => ({ role: m.role, content: m.content }))
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: maxTokens,
+      messages: oaMessages,
+      tools: this.legacyToolsAsOpenAI(),
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+    if (options?.temperature !== undefined) body.temperature = options.temperature
+
+    let res: Response
+    try {
+      res = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      })
+    } catch (err: any) {
+      yield { type: "error", error: `OpenAI-compat stream init failed: ${err.message}` }
+      return
+    }
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "")
+      yield {
+        type: "error",
+        error: `OpenAI-compat API error (${res.status}): ${errText.slice(0, 500)}`,
+      }
+      return
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) {
+      yield { type: "error", error: "No response body on OpenAI-compat stream" }
+      return
+    }
+
+    // Same SSE parsing approach as ClaudeProvider.stream — read chunks, split
+    // on lines, accumulate tool_calls by index. Tool args arrive as
+    // many small string fragments and must be joined before JSON.parse.
+    const decoder = new TextDecoder()
+    let buffer = ""
+    let content = ""
+    let followUp: string | undefined
+    let tokensUsed = 0
+    const files: GeneratedFile[] = []
+    interface ToolAcc { id: string; name: string; argumentsRaw: string }
+    const toolAcc: Record<number, ToolAcc> = {}
+    let activeToolEmittedIdx: Record<number, boolean> = {}
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const data = line.slice(6).trim()
+          if (data === "[DONE]") continue
+
+          let chunk: any
+          try { chunk = JSON.parse(data) } catch { continue }
+          const choice = chunk.choices?.[0]
+          const delta = choice?.delta
+
+          // Text deltas — stream to caller and accumulate.
+          if (typeof delta?.content === "string" && delta.content) {
+            content += delta.content
+            yield { type: "text_delta", text: delta.content }
+          }
+
+          // Tool call deltas — accumulate per index. Emit start once per
+          // tool, emit delta fragments as input_json comes in.
+          if (Array.isArray(delta?.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index
+              if (idx == null) continue
+              const acc = (toolAcc[idx] ||= { id: "", name: "", argumentsRaw: "" })
+              if (tc.id) acc.id = tc.id
+              if (tc.function?.name) acc.name = tc.function.name
+              if (tc.function?.arguments) acc.argumentsRaw += tc.function.arguments
+
+              if (acc.id && acc.name && !activeToolEmittedIdx[idx]) {
+                activeToolEmittedIdx[idx] = true
+                yield { type: "tool_use_start", name: acc.name, id: acc.id }
+              }
+              if (activeToolEmittedIdx[idx] && tc.function?.arguments) {
+                yield { type: "tool_use_delta", json: tc.function.arguments }
+              }
+            }
+          }
+
+          // Usage chunk (OpenAI sends a final chunk with `usage` when
+          // stream_options.include_usage=true; DeepSeek/others may not).
+          if (chunk.usage) {
+            tokensUsed =
+              (chunk.usage.prompt_tokens || 0) + (chunk.usage.completion_tokens || 0)
+          }
+        }
+      }
+    } catch (err: any) {
+      yield { type: "error", error: `OpenAI-compat stream read failed: ${err.message}` }
+      return
+    }
+
+    // Finalize tool_calls: parse the joined arguments JSON and map
+    // create_files / ask_user the same way ClaudeProvider does.
+    for (const acc of Object.values(toolAcc)) {
+      if (!acc.name) continue
+      yield { type: "tool_use_end", name: acc.name }
+      try {
+        const input = acc.argumentsRaw ? JSON.parse(acc.argumentsRaw) : {}
+        if (acc.name === "create_files" && Array.isArray(input.files)) {
+          files.push(...(input.files as GeneratedFile[]))
+          if (typeof input.summary === "string" && input.summary.trim()) {
+            content += (content ? "\n" : "") + input.summary
+          }
+        } else if (acc.name === "ask_user" && typeof input.question === "string") {
+          followUp = input.question
+          if (Array.isArray(input.options) && input.options.length) {
+            followUp += `\nOptions: ${input.options.join(", ")}`
+          }
+        }
+      } catch {
+        // Malformed tool args — surface as missing, don't crash the stream.
+      }
+    }
+
+    yield { type: "done", result: { content, files, followUp, tokensUsed } }
   }
 
   // --- helpers ---
