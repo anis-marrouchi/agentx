@@ -205,7 +205,7 @@ export class OpenAIProvider implements AgentProvider {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(this.maybeDeepseekExtras(body)),
       })
     } catch (err: any) {
       yield { type: "error", error: `OpenAI-compat stream init failed: ${err.message}` }
@@ -334,13 +334,28 @@ export class OpenAIProvider implements AgentProvider {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(this.maybeDeepseekExtras(body)),
     })
     if (!res.ok) {
       const errorText = await res.text().catch(() => "")
       throw new Error(`OpenAI-compatible API error (${res.status}) ${this.baseUrl}: ${errorText.slice(0, 500)}`)
     }
     return (await res.json()) as OpenAIChatResponse
+  }
+
+  /**
+   * DeepSeek v4 enables "thinking mode" by default, which makes the
+   * model emit a `reasoning_content` block that the API expects to be
+   * echoed back on the next request. Our agentic loop sends regular
+   * messages back without reasoning_content, so the second iteration
+   * fails with "The `reasoning_content` in the thinking mode must be
+   * passed back to the API." Easiest fix: disable thinking mode for
+   * DeepSeek requests via `enable_thinking: false`. Other OpenAI-
+   * compat providers pass through unchanged.
+   */
+  private maybeDeepseekExtras(body: Record<string, unknown>): Record<string, unknown> {
+    if (!this.baseUrl.includes("deepseek.com")) return body
+    return { ...body, enable_thinking: false }
   }
 
   private parseHighLevelResponse(response: OpenAIChatResponse): GenerationResult {
