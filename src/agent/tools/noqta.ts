@@ -169,6 +169,16 @@ export async function executeNoqtaTool(
 
   const body = { tool: toolName, user_id: ctx.userId, ...(input || {}) }
 
+  // Hard timeout on the HTTP call. Without this, a slow or hung
+  // /api/agent/tools response stalls the agentic loop indefinitely
+  // (observed in prod: two voice turns stuck for 71+ min on the same
+  // conversation before a manual daemon restart). 30s is generous for
+  // a DB-backed RPC; the tool itself is supposed to be sub-second.
+  // Tunable via NOQTA_TOOL_TIMEOUT_MS env.
+  const timeoutMs = Number(process.env.NOQTA_TOOL_TIMEOUT_MS || 30_000)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -178,6 +188,7 @@ export async function executeNoqtaTool(
         "X-Agent-Id": ctx.agentId || "noqta-public",
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
     const text = await res.text()
     const MAX = 4 * 1024
@@ -187,14 +198,17 @@ export async function executeNoqtaTool(
     }
     return { content: trimmed, is_error: false }
   } catch (err: any) {
+    const aborted = err?.name === "AbortError"
     return {
       content: JSON.stringify({
         ok: false,
-        error: "noqta tool RPC failed",
+        error: aborted ? `noqta tool RPC timed out after ${timeoutMs}ms` : "noqta tool RPC failed",
         detail: err?.message || "unknown",
       }),
       is_error: true,
     }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
