@@ -23,10 +23,16 @@ function openReadOnly(): OpenedDb | null {
   try {
     const db = new Database(path, { readonly: true, fileMustExist: true })
     return { db, close: () => db.close() }
-  } catch {
+  } catch (e: any) {
+    const now = Date.now()
+    if (now - _lastOpenReadOnlyErrAt > 60_000) {
+      _lastOpenReadOnlyErrAt = now
+      console.error(`[ledger-panel] openReadOnly failed: ${e?.message ?? e}`)
+    }
     return null
   }
 }
+let _lastOpenReadOnlyErrAt = 0
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" })

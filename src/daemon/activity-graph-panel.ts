@@ -35,8 +35,19 @@ function openLedger(): OpenedDb | null {
   try {
     const db = new Database(path, { readonly: true, fileMustExist: true })
     return { db, close: () => db.close() }
-  } catch { return null }
+  } catch (e: any) {
+    // Surface the real reason — silent failure previously masked a
+    // better-sqlite3 ABI mismatch as an empty "intent ledger not available"
+    // UI for days. Log once per minute to avoid flooding the dashboard log.
+    const now = Date.now()
+    if (now - _lastOpenLedgerErrAt > 60_000) {
+      _lastOpenLedgerErrAt = now
+      console.error(`[activity-graph] openLedger failed: ${e?.message ?? e}`)
+    }
+    return null
+  }
 }
+let _lastOpenLedgerErrAt = 0
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" })
