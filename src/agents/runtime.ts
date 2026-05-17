@@ -1189,17 +1189,25 @@ export async function executeSdk(
 
 /**
  * Execute a task using agentx's own orchestrator (tier: "orchestrator").
+ *
+ * When `onDelta` is supplied, switches from `generate()` (single-shot) to
+ * `generateStream()` and forwards text deltas as they arrive. This is what
+ * lets the daemon's POST /chat?stream=true actually stream Claude/DeepSeek
+ * tokens — without it, the orchestrator returned only after the agentic
+ * loop finished and SSE clients saw `role` then `stop` with no content
+ * between (the failure mode that surfaced on the noqta-public smoke test
+ * after the tier switch).
  */
 export async function executeOrchestrator(
   agent: AgentDef,
   task: AgentTask,
   apiKey?: string,
   historyContext?: string,
+  onDelta?: StreamCallback,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
   try {
-    const { generate } = await import("@/agent")
     const providerName = agent.provider || "claude-code"
 
     // Build full prompt with context (landscape, memory, patterns, etc.)
@@ -1207,7 +1215,7 @@ export async function executeOrchestrator(
       ? `${historyContext}\n\n${task.message}`
       : task.message
 
-    const result = await generate({
+    const baseOpts = {
       task: fullTask,
       cwd: agent.workspace,
       provider: providerName as any,
@@ -1216,8 +1224,66 @@ export async function executeOrchestrator(
       overwrite: true,
       interactive: false,
       context7: false,
-    })
+    }
 
+    if (onDelta) {
+      const { generateStream } = await import("@/agent")
+      let content = ""
+      let tokensUsed: number | undefined
+      let errorMsg: string | undefined
+      for await (const event of generateStream(baseOpts)) {
+        if (event.type === "text_delta") {
+          content += event.text
+          onDelta(event.text, content)
+        } else if (event.type === "generate_result") {
+          // Final canonical result — generate_result.content may include
+          // text the provider emitted as a single payload alongside
+          // tool_use, plus any files/followUp summarisation. Prefer it
+          // when it diverges from our running accumulation.
+          if (event.result.content && event.result.content !== content) {
+            const trailing = event.result.content.slice(content.length)
+            if (trailing) {
+              content = event.result.content
+              onDelta(trailing, content)
+            } else {
+              content = event.result.content
+            }
+          }
+          tokensUsed = event.result.tokensUsed
+        } else if (event.type === "done") {
+          // Non-agentic path emits `done` with the full result.
+          if (event.result.content && event.result.content !== content) {
+            const trailing = event.result.content.slice(content.length)
+            if (trailing) {
+              content = event.result.content
+              onDelta(trailing, content)
+            } else {
+              content = event.result.content
+            }
+          }
+          if (event.result.tokensUsed != null) tokensUsed = event.result.tokensUsed
+        } else if (event.type === "error") {
+          errorMsg = event.error
+        }
+      }
+      if (errorMsg && !content) {
+        return {
+          content: "",
+          ...buildErrorEnvelope(`Orchestrator error: ${errorMsg}`),
+          duration: Date.now() - start,
+        }
+      }
+      return {
+        content: content || "Done.",
+        tokensUsed,
+        duration: Date.now() - start,
+      }
+    }
+
+    // Non-streaming path — unchanged from the original orchestrator
+    // behaviour so existing callers (telegram, mesh, crons) keep working.
+    const { generate } = await import("@/agent")
+    const result = await generate(baseOpts)
     return {
       content: result.content || "Done.",
       tokensUsed: result.tokensUsed,
@@ -1414,7 +1480,7 @@ export async function executeTask(
     case "orchestrator": {
       const providerName = agent.provider || "claude-code"
       const apiKey = providers[providerName]?.apiKey
-      return executeOrchestrator(agent, task, apiKey, historyContext)
+      return executeOrchestrator(agent, task, apiKey, historyContext, onDelta)
     }
 
     default:
