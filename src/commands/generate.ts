@@ -21,7 +21,7 @@ const generateOptionsSchema = z.object({
   output: z.string().optional(),
   overwrite: z.boolean().default(false),
   dryRun: z.boolean().default(false),
-  provider: z.enum(["claude-code", "claude", "openai", "ollama", "custom"]).default("claude-code"),
+  provider: z.enum(["claude-code", "claude", "openai", "deepseek", "ollama", "custom"]).default("claude-code"),
   model: z.string().optional(),
   apiKey: z.string().optional(),
   cwd: z.string(),

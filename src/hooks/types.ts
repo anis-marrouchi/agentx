@@ -67,7 +67,7 @@ export const hookDefinitionSchema = z.object({
   // For "prompt" type: LLM prompt template
   prompt: z.string().optional(),
   // For "prompt" type: override provider/model for this hook
-  provider: z.enum(["claude-code", "claude", "openai", "ollama", "custom"]).optional(),
+  provider: z.enum(["claude-code", "claude", "openai", "deepseek", "ollama", "custom"]).optional(),
   model: z.string().optional(),
   // For "script" type: path to JS/TS file exporting a handler
   script: z.string().optional(),
