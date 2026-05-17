@@ -1215,6 +1215,21 @@ export async function executeOrchestrator(
       ? `${historyContext}\n\n${task.message}`
       : task.message
 
+    // Enable noqta workspace tools (list_projects, create_task, etc.)
+    // when the channel is web-chat AND the sender is a noqta user_id
+    // UUID. The ToolExecutor reads the bearer from env at dispatch
+    // time — it never enters the agent's prompt context. Non-noqta
+    // callers (telegram numeric ids, mesh, crons) get no noqtaContext
+    // so the tools are absent from their catalog entirely.
+    const sender = task.context?.sender
+    const looksUuid =
+      typeof sender === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sender)
+    const noqtaContext =
+      task.context?.channel === "web-chat" && looksUuid
+        ? { userId: sender, agentId: task.agentId || "noqta-public" }
+        : undefined
+
     const baseOpts = {
       task: fullTask,
       cwd: agent.workspace,
@@ -1224,6 +1239,7 @@ export async function executeOrchestrator(
       overwrite: true,
       interactive: false,
       context7: false,
+      noqtaContext,
     }
 
     if (onDelta) {

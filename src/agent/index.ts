@@ -52,6 +52,12 @@ export interface GenerateOptions {
     lintCommand?: string
     maxAttempts?: number
   }
+  /** Enables the noqta workspace tool catalog (list_projects, create_task,
+   *  …) in the agentic loop and threads the user_id through to the
+   *  executor. Without this set, the noqta-tools are absent from the
+   *  agent's tool list — keeps non-noqta agents clean. The bearer is
+   *  read from env at dispatch time and NEVER enters the prompt. */
+  noqtaContext?: import("./tools/noqta").NoqtaToolContext
 }
 
 export interface GenerateResult {
@@ -218,6 +224,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     interactive,
     overwrite,
     dryRun,
+    noqtaContext: options.noqtaContext,
     onProgress: (event) => {
       if (event.type === "iteration_start" && event.iteration > 1) {
         logger.info(`Step ${event.iteration}/${maxSteps}...`)
@@ -451,6 +458,7 @@ export async function* generateStream(
           interactive,
           overwrite,
           dryRun,
+          noqtaContext: options.noqtaContext,
           onProgress: (event) => {
             if (event.type === "text_delta") {
               q.push({ type: "text_delta", text: event.text })

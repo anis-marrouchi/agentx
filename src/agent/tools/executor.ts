@@ -8,6 +8,7 @@ import { globalPermissions } from "@/permissions"
 import { globalHooks } from "@/hooks"
 import { debug } from "@/observability"
 import type { GeneratedFile } from "../providers/types"
+import { executeNoqtaTool, isNoqtaTool, type NoqtaToolContext } from "./noqta"
 
 export interface ToolCallInput {
   name: string
@@ -29,6 +30,12 @@ export interface ToolExecutorOptions {
   interactive?: boolean
   overwrite?: boolean
   dryRun?: boolean
+  /** When set, noqta-tools (list_projects, create_task, etc.) become
+   *  available — the executor dispatches them by POSTing to
+   *  /api/agent/tools with the server-held bearer. The bearer NEVER
+   *  enters the model's prompt context. Omit to leave noqta-tools off
+   *  (the agent will see "Unknown tool" if it calls one anyway). */
+  noqtaContext?: NoqtaToolContext
 }
 
 export class ToolExecutor {
@@ -63,37 +70,50 @@ export class ToolExecutor {
     let result: ToolResult
 
     try {
-      switch (call.name) {
-        case "read_file":
-          result = await this.readFile(call)
-          break
-        case "search_files":
-          result = await this.searchFiles(call)
-          break
-        case "list_directory":
-          result = await this.listDirectory(call)
-          break
-        case "run_command":
-          result = await this.runCommand(call)
-          break
-        case "edit_file":
-          result = await this.editFile(call)
-          break
-        case "create_files":
-          result = await this.createFiles(call)
-          break
-        case "ask_user":
-          result = await this.askUser(call)
-          break
-        case "spawn_agent":
-          result = await this.spawnAgent(call)
-          break
-        default:
-          result = {
-            tool_use_id: call.id,
-            content: `Unknown tool: ${call.name}`,
-            is_error: true,
-          }
+      // noqta-tools dispatch first — if the call name belongs to the
+      // noqta catalog AND a noqtaContext is configured, run it via the
+      // server-side HTTP dispatcher. Without context we fall through to
+      // the "unknown tool" branch so the agent gets a clear error.
+      if (this.options.noqtaContext && isNoqtaTool(call.name)) {
+        const res = await executeNoqtaTool(call.name, call.input, this.options.noqtaContext)
+        result = {
+          tool_use_id: call.id,
+          content: res.content,
+          is_error: res.is_error,
+        }
+      } else {
+        switch (call.name) {
+          case "read_file":
+            result = await this.readFile(call)
+            break
+          case "search_files":
+            result = await this.searchFiles(call)
+            break
+          case "list_directory":
+            result = await this.listDirectory(call)
+            break
+          case "run_command":
+            result = await this.runCommand(call)
+            break
+          case "edit_file":
+            result = await this.editFile(call)
+            break
+          case "create_files":
+            result = await this.createFiles(call)
+            break
+          case "ask_user":
+            result = await this.askUser(call)
+            break
+          case "spawn_agent":
+            result = await this.spawnAgent(call)
+            break
+          default:
+            result = {
+              tool_use_id: call.id,
+              content: `Unknown tool: ${call.name}`,
+              is_error: true,
+            }
+        }
       }
     } catch (error: any) {
       result = {

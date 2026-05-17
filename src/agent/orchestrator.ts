@@ -11,6 +11,7 @@ import type {
 } from "./providers/types"
 import { ToolExecutor, type ToolResult } from "./tools"
 import { getAnthropicTools, formatToolsForSystemPrompt } from "./tools"
+import { NOQTA_TOOLS, type NoqtaToolContext } from "./tools/noqta"
 import { debug } from "@/observability"
 
 export interface AgenticLoopOptions {
@@ -25,6 +26,11 @@ export interface AgenticLoopOptions {
   overwrite?: boolean
   dryRun?: boolean
   onProgress?: (event: AgenticProgressEvent) => void
+  /** When set, the noqta workspace tool catalog (list_projects,
+   *  create_task, …) becomes part of the agent's tool set and the
+   *  executor dispatches calls via /api/agent/tools using the server-
+   *  held bearer. The bearer NEVER enters the model's prompt context. */
+  noqtaContext?: NoqtaToolContext
 }
 
 export type AgenticProgressEvent =
@@ -75,8 +81,21 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     return runLegacyLoop(options)
   }
 
-  const executor = new ToolExecutor(cwd, { interactive, overwrite, dryRun })
+  const executor = new ToolExecutor(cwd, {
+    interactive,
+    overwrite,
+    dryRun,
+    noqtaContext: options.noqtaContext,
+  })
   const tools = getAnthropicTools(enabledTools)
+  // Append noqta workspace tools only when we have a noqta user context
+  // to dispatch them against. Adding them otherwise would confuse the
+  // model (it'd see tools it can't successfully invoke).
+  if (options.noqtaContext) {
+    for (const t of NOQTA_TOOLS) {
+      tools.push({ name: t.name, description: t.description, input_schema: t.input_schema })
+    }
+  }
 
   // Convert GenerationMessage[] to AnthropicMessage[] (strip system messages)
   const anthropicMessages: AnthropicMessage[] = inputMessages
