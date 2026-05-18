@@ -415,8 +415,14 @@ export class AgentRegistry {
   private taskOutputs: Map<string, TaskOutput> = new Map()
   /** Per-running-task AbortController. Set when execution starts, removed in
    *  finally. Cancel paths (operator stop / replace) call .abort() and the
-   *  runtime kills the underlying claude subprocess. */
-  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; controller: AbortController }> = new Map()
+   *  runtime kills the underlying claude subprocess.
+   *
+   *  `originalMessage` is captured so the operator follow-up flow can frame
+   *  the replacement as "correction to this prior ask" — without it, the
+   *  agent just sees two bare user messages in a row and the second one is
+   *  ambiguous (saw a real bug where "Count up to 30" + "up to 20" was
+   *  interpreted as "list top-20 CPU hogs"). */
+  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
@@ -857,6 +863,7 @@ export class AgentRegistry {
       agentId: task.agentId,
       channel: runningTask.channel,
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
+      originalMessage: task.message || "",
       controller: abortController,
     })
 
@@ -2158,11 +2165,26 @@ export class AgentRegistry {
     if (!entry) return null
     const { agentId, channel, chatId } = entry
 
+    // On replace, frame the queued message so the agent knows it's a
+    // correction to the cancelled prior turn, not a second independent
+    // request. Without this, the session history shows two bare user
+    // messages in a row (the cancelled run produced no assistant reply)
+    // and the agent free-associates from its system prompt instead of
+    // treating message #2 as a replacement for message #1.
+    let text = message
+    if (opts.replace) {
+      const orig = (entry.originalMessage || "").trim().replace(/\s+/g, " ").slice(0, 240)
+      text =
+        `[OPERATOR CORRECTION] Your previous instruction was cancelled mid-execution by the operator. Ignore it entirely and do the following instead — this fully supersedes the cancelled ask:\n\n` +
+        `${message}\n\n` +
+        (orig ? `(For reference, the cancelled instruction was: "${orig}")` : "")
+    }
+
     // Enqueue first so the cancel→flush ordering is deterministic: the
     // run's finally{} block flushes pending messages right after the
     // abort propagates, and the new message is already there.
     this.messageQueue.enqueue(agentId, channel, chatId, {
-      text: message,
+      text,
       sender,
       timestamp: Date.now(),
       channel,
