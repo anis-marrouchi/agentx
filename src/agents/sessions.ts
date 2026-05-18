@@ -345,6 +345,29 @@ export class SessionStore {
   }
 
   /**
+   * Pop the last user message if it matches `expectedContent` (exact equality
+   * after trim). Used by the operator Update flow when Stop was pressed
+   * first — the cancelled user turn has no agent reply, so leaving it in
+   * history makes the next Update read as a bare orphan ask. Match guard
+   * prevents removing something a concurrent path just added.
+   */
+  removeLastUserMessageIfMatches(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    expectedContent: string,
+  ): boolean {
+    const session = this.getSession(agentId, channel, chatId)
+    const last = session.messages[session.messages.length - 1]
+    if (!last || last.role !== "user") return false
+    if ((last.content || "").trim() !== (expectedContent || "").trim()) return false
+    session.messages.pop()
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
+    return true
+  }
+
+  /**
    * Add an agent response to the session. Same dedup rule as user messages —
    * retries and duplicate responses shouldn't be replayed on every turn.
    */

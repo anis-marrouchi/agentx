@@ -416,8 +416,13 @@ export class AgentRegistry {
   private taskOutputs: Map<string, TaskOutput> = new Map()
   /** Per-running-task AbortController. Set when execution starts, removed in
    *  finally. Cancel paths (operator stop / replace) call .abort() and the
-   *  runtime kills the underlying claude subprocess. */
-  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; controller: AbortController }> = new Map()
+   *  runtime kills the underlying claude subprocess.
+   *
+   *  `originalMessage` is the user text recorded in SessionStore at the start
+   *  of this run. When the operator presses Stop first then Update, we use it
+   *  to drop the orphan cancelled turn from history so the Update reads as an
+   *  edit, not a bare follow-up. */
+  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
@@ -858,6 +863,7 @@ export class AgentRegistry {
       agentId: task.agentId,
       channel: runningTask.channel,
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
+      originalMessage: task.message || "",
       controller: abortController,
     })
 
@@ -2196,23 +2202,30 @@ export class AgentRegistry {
     message: string,
     sender: string,
     opts: { replace?: boolean; reason?: string } = {},
-  ): { agentId: string; channel: string; chatId: string; replaced: boolean; pending: number } | null {
+  ): { agentId: string; channel: string; chatId: string; replaced: boolean; edited: boolean; pending: number } | null {
     const entry = this.taskAborts.get(taskId)
     if (!entry) return null
-    const { agentId, channel, chatId } = entry
+    const { agentId, channel, chatId, originalMessage } = entry
 
-    // Inject-only model: the operator's message is appended to the same
-    // chat session, the running task keeps going, and the new message
-    // dispatches at the first chance (when the current turn finishes).
-    // This matches sending a message to an ongoing Claude session. The
-    // dashboard Update button uses this path (replace defaults to false).
-    // The replace=true variant is API-only: cancel the running task
-    // first, then queue the message. We deliberately do NOT rewrite the
-    // session history in either path — coupling cancel + history surgery
-    // into Update created confusing edge cases (orphan user turns,
-    // agents pattern-matching "[OPERATOR CORRECTION]" framing as prompt
-    // injection). Operators who want a clean reset should use Stop and
-    // then send a fresh message via the channel.
+    // Inject model: Update appends a message to the same chat session;
+    // the running task keeps going and the new message dispatches at the
+    // first chance — same as sending a message to an ongoing Claude
+    // session. Update never *initiates* a cancel (use Stop for that).
+    //
+    // BUT — if the controller is already aborted (operator pressed Stop
+    // just before Update), the cancelled user turn is sitting in session
+    // history with no agent reply. Leaving it there makes the Update
+    // read as a bare orphan ask ("87" after a stranded "count up to 75"
+    // → agent had no idea what "87" meant). So when we detect the
+    // aborted state, we treat the Update as editing the cancelled
+    // message in place: pop the orphan from session history before
+    // enqueueing the new message.
+    const isStopped = entry.controller.signal.aborted
+    let edited = false
+    if (isStopped && originalMessage) {
+      edited = this.sessions.removeLastUserMessageIfMatches(agentId, channel, chatId, originalMessage)
+    }
+
     this.messageQueue.enqueue(agentId, channel, chatId, {
       text: message,
       sender,
@@ -2230,9 +2243,9 @@ export class AgentRegistry {
       this.log(`[${agentId}] task ${taskId} replaced by follow-up — ${reason}`)
       replaced = true
     } else {
-      this.log(`[${agentId}] follow-up queued for task ${taskId} (pending=${pending})`)
+      this.log(`[${agentId}] follow-up queued for task ${taskId} (pending=${pending}${edited ? ", edited cancelled turn" : ""})`)
     }
-    return { agentId, channel, chatId, replaced, pending }
+    return { agentId, channel, chatId, replaced, edited, pending }
   }
 
   /**
