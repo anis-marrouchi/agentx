@@ -47,6 +47,14 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }
+  // Internal-thinking output from "reasoning" models (DeepSeek V4
+  // `reasoning_content`, OpenAI o-series, etc.). Not surfaced to end
+  // users; the agentic loop keeps it on the assistant turn so the
+  // round-trip to the next iteration carries it back — required by
+  // DeepSeek V4 which otherwise errors "reasoning_content in the
+  // thinking mode must be passed back to the API". Non-reasoning
+  // providers ignore this block type.
+  | { type: "reasoning"; text: string }
 
 export interface RawGenerationResult {
   content: ContentBlock[]

@@ -41,6 +41,12 @@ interface OpenAIResponseMessage {
   role: "assistant"
   content: string | null
   tool_calls?: OpenAIToolCall[]
+  // DeepSeek V4 reasoning output ("thinking mode"). When present, MUST
+  // be echoed back on subsequent requests of the same turn or DeepSeek
+  // 400s with "The reasoning_content in the thinking mode must be
+  // passed back to the API." We surface it as a {type:"reasoning"}
+  // ContentBlock so the agentic loop carries it through.
+  reasoning_content?: string
 }
 
 interface OpenAIChatResponse {
@@ -137,13 +143,21 @@ export class OpenAIProvider implements AgentProvider {
           oaMessages.push({ role: "user", content: m.content as any })
         }
       } else {
-        // Assistant turns may have text + tool_use blocks; OpenAI wants
-        // `content` + `tool_calls` on a single message.
+        // Assistant turns may have text + tool_use + reasoning blocks;
+        // OpenAI wants `content` + `tool_calls` on a single message,
+        // and DeepSeek V4 also wants the prior `reasoning_content`
+        // (otherwise it rejects with "reasoning_content … must be
+        // passed back to the API"). Pull all three out, fold them
+        // into one OpenAI message.
         const toolUses = blocks.filter((b) => (b as any).type === "tool_use") as Array<{
           type: "tool_use"; id: string; name: string; input: Record<string, unknown>;
         }>
         const text = blocks
           .filter((b) => (b as any).type === "text")
+          .map((b) => (b as any).text)
+          .join("")
+        const reasoning = blocks
+          .filter((b) => (b as any).type === "reasoning")
           .map((b) => (b as any).text)
           .join("")
         const msg: any = { role: "assistant", content: text || null }
@@ -153,6 +167,9 @@ export class OpenAIProvider implements AgentProvider {
             type: "function" as const,
             function: { name: tu.name, arguments: JSON.stringify(tu.input || {}) },
           }))
+        }
+        if (reasoning) {
+          msg.reasoning_content = reasoning
         }
         oaMessages.push(msg)
       }
@@ -401,6 +418,12 @@ export class OpenAIProvider implements AgentProvider {
     const message = choice?.message
     const blocks: ContentBlock[] = []
 
+    // Reasoning_content goes FIRST so the order matches what the
+    // upstream returned (DeepSeek emits reasoning then content). The
+    // agentic loop preserves block order when round-tripping.
+    if (message?.reasoning_content) {
+      blocks.push({ type: "reasoning", text: message.reasoning_content })
+    }
     if (message?.content) {
       blocks.push({ type: "text", text: message.content })
     }
