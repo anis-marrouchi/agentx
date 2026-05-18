@@ -20,7 +20,7 @@ The view is "skim friendly" by design — scan the grid, spot the agent that's s
 - **Filter by peer** via the top-bar chips when running multi-node mesh.
 - **Watch the SSE stream** in dev tools: every change pushes a delta — no polling.
 - **Stop a running task** — click `✕ stop` on the running-task card. Sends SIGTERM to the underlying `claude` subprocess (SIGKILL after 3 s) and the task surfaces `errorKind: "cancelled"`.
-- **Update / correct a running task** — click `✎ update`, enter the correction. You pick whether to queue it (current run finishes, then your message dispatches as the next turn — preserves warm cache and in-process memory on `persistentProcess` agents) or replace (current run is killed, your message dispatches immediately — fresh process but conversation history is preserved). See the [HTTP API reference](#api) for the underlying endpoints.
+- **Update / append a message** — click `✎ update`, type the message. The current turn finishes, then your message dispatches as the next turn on the same chat session (same model as sending a new message to an ongoing Claude session). On `persistentProcess: true` agents the warm handle and prompt cache are preserved. If you also want to kill the current run, click Stop separately. See the [HTTP API reference](#api) for the underlying endpoints.
 
 ## Common tasks
 

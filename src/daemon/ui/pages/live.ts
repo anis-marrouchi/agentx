@@ -1045,10 +1045,14 @@ document.getElementById('grid').addEventListener('click', (e) => {
       if (!confirm('Stop this running task?')) return;
       taskAction(nodeUrl, taskId, 'cancel', {});
     } else if (action === 'followup') {
-      const msg = prompt('Correction / update to send to the agent:');
+      // Update = append a new message to the same chat session. The agent
+      // finishes its current turn, then processes this as the next turn
+      // (same model as sending a message to an ongoing Claude session).
+      // No framing, no truncation — just the operator's message as-is.
+      // To kill the current run separately, use Stop.
+      const msg = prompt('Message to send to the agent (will be processed after the current turn finishes):');
       if (!msg || !msg.trim()) return;
-      const replace = confirm('Stop the current run and dispatch this immediately?\\n\\n  OK  → stop & dispatch now\\n  Cancel → queue after current run finishes');
-      taskAction(nodeUrl, taskId, 'followup', { message: msg.trim(), replace, sender: 'dashboard' });
+      taskAction(nodeUrl, taskId, 'followup', { message: msg.trim(), sender: 'dashboard' });
     }
     return;
   }
