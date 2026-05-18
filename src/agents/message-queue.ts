@@ -138,11 +138,19 @@ export class MessageQueue {
 
     switch (q.mode) {
       case "collect": {
-        // Batch all pending messages into a single combined message
+        // Batch all pending messages into a single combined message. The
+        // `[sender, HH:MM]:` prefix only helps disambiguate multi-message
+        // batches (e.g. several group-chat users speaking while the agent
+        // is busy); for a single queued message the prefix turned out to
+        // be actively harmful — agents read "[dashboard, 19:03]: ..." as
+        // a non-human source and got suspicious. Strip it in that case.
+        const combinedText = messages.length === 1
+          ? messages[0].text
+          : messages.map((m) =>
+              `[${m.sender}, ${new Date(m.timestamp).toISOString().slice(11, 16)}]: ${m.text}`
+            ).join("\n")
         const combined: QueuedMessage = {
-          text: messages.map((m) =>
-            `[${m.sender}, ${new Date(m.timestamp).toISOString().slice(11, 16)}]: ${m.text}`
-          ).join("\n"),
+          text: combinedText,
           sender: messages[messages.length - 1].sender,
           timestamp: Date.now(),
           channel: messages[0].channel,

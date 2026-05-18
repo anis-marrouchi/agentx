@@ -531,7 +531,7 @@ function renderAgent(a, node) {
       : '';
     const actions = t.id
       ? '<div class="ax-agent__task-actions">' +
-          '<button type="button" class="ax-task-action ax-task-action--update" data-action="followup" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Send correction / update to this running task">✎ update</button>' +
+          '<button type="button" class="ax-task-action ax-task-action--update" data-action="followup" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Add a message to this chat — the current turn keeps running, your message dispatches as the next turn">✎ update</button>' +
           '<button type="button" class="ax-task-action ax-task-action--stop" data-action="cancel" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Stop this running task">✕ stop</button>' +
         '</div>'
       : '';
