@@ -416,8 +416,13 @@ export class AgentRegistry {
   private taskOutputs: Map<string, TaskOutput> = new Map()
   /** Per-running-task AbortController. Set when execution starts, removed in
    *  finally. Cancel paths (operator stop / replace) call .abort() and the
-   *  runtime kills the underlying claude subprocess. */
-  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; controller: AbortController }> = new Map()
+   *  runtime kills the underlying claude subprocess.
+   *
+   *  `originalMessage` is the user text that was recorded in SessionStore at
+   *  the start of this run — the Update follow-up uses it to remove the
+   *  cancelled message from history so the new turn reads as an edit, not a
+   *  second independent ask. */
+  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
@@ -858,6 +863,7 @@ export class AgentRegistry {
       agentId: task.agentId,
       channel: runningTask.channel,
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
+      originalMessage: task.message || "",
       controller: abortController,
     })
 
@@ -2199,15 +2205,21 @@ export class AgentRegistry {
   ): { agentId: string; channel: string; chatId: string; replaced: boolean; pending: number } | null {
     const entry = this.taskAborts.get(taskId)
     if (!entry) return null
-    const { agentId, channel, chatId } = entry
+    const { agentId, channel, chatId, originalMessage } = entry
+
+    // Edit-in-place semantic: Update is the operator amending the message
+    // that started the running task, not appending a brand new one. Drop
+    // the original user turn from session history so the agent sees only
+    // the corrected ask. Without this the agent treats the Update as a
+    // continuation ("Count up to 50" cancelled + "to 65" → agent counted
+    // 31-65 instead of treating "to 65" as the edited ask).
+    if (originalMessage) {
+      this.sessions.removeLastUserMessageIfMatches(agentId, channel, chatId, originalMessage)
+    }
 
     // Append the operator's message to the chat as-is — no framing, no
     // truncation. Same model as sending a new message to an ongoing Claude
-    // session: it gets processed at the first chance (next turn). An earlier
-    // attempt at an `[OPERATOR CORRECTION]` preamble backfired — agents
-    // pattern-matched it as prompt injection and refused. The follow-up
-    // dispatches against the same session, so the agent gets the full chat
-    // history (prior user turn + new user turn) and reasons normally.
+    // session: it gets processed at the first chance (next turn).
     this.messageQueue.enqueue(agentId, channel, chatId, {
       text: message,
       sender,
