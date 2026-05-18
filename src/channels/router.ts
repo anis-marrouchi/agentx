@@ -850,6 +850,16 @@ export class MessageRouter {
         return
       }
 
+      // Operator-cancelled task — the operator already pressed the button,
+      // they don't need an "Error: task cancelled by operator" echo in the
+      // chat. Skipping the post also keeps the conversation clean for the
+      // next follow-up turn (no orphan assistant message between the
+      // cancelled user turn and the operator's correction).
+      if (response.errorKind === "cancelled") {
+        this.log(`Task cancelled for ${agentName} — suppressing channel error echo`)
+        return
+      }
+
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`
       if (sentMessageId) {

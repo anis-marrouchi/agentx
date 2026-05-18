@@ -24,6 +24,7 @@ import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
+import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -1898,19 +1899,30 @@ export class AgentRegistry {
         .then((queued) => {
           if (queued.length === 0) return
           this.log(`[${task.agentId}] flushing ${queued.length} queued message(s)`)
-          // Re-execute each queued message as a new task
+          // Re-execute each queued message as a new task. The original
+          // inbound message (the one that triggered this run) was posted
+          // back to its channel by the router after `registry.execute`
+          // returned. Queued messages, however, are re-dispatched here
+          // directly — bypassing the router — so we must explicitly post
+          // the response back to the channel ourselves, or the user never
+          // sees the reply. (Real symptom: operator hits Update on a
+          // running task, the follow-up runs and produces a reply, but
+          // nothing arrives in Telegram.)
           for (const qm of queued) {
+            const ctx = (qm.originalContext as AgentTask["context"]) || {
+              channel: qm.channel,
+              sender: qm.sender,
+              chatId: qm.chatId,
+            }
             this.execute({
               message: qm.text,
               agentId: task.agentId,
-              context: (qm.originalContext as AgentTask["context"]) || {
-                channel: qm.channel,
-                sender: qm.sender,
-                chatId: qm.chatId,
-              },
-            }).catch((e) => {
-              this.log(`[${task.agentId}] queued message failed: ${e.message}`)
+              context: ctx,
             })
+              .then((resp) => this.postQueuedResponseToChannel(task.agentId, ctx, resp))
+              .catch((e) => {
+                this.log(`[${task.agentId}] queued message failed: ${e.message}`)
+              })
           }
         })
         .catch((e) => {
@@ -2120,6 +2132,37 @@ export class AgentRegistry {
 
   private safe(s: string): string {
     return s.replace(/[^a-zA-Z0-9_.:-]/g, "_")
+  }
+
+  /**
+   * Post a queued message's response back to its originating channel.
+   * Used by the flush block in `execute()` — channel messages that arrive
+   * while the agent is busy are queued and re-dispatched here, bypassing
+   * the router; without this helper the agent's reply would never reach
+   * the user. Skipped silently for internal channels (`test`, `api`,
+   * `a2a`, `cron`, `workflow`, …) where no adapter is registered.
+   */
+  private postQueuedResponseToChannel(
+    agentId: string,
+    ctx: AgentTask["context"],
+    resp: AgentResponse,
+  ): void {
+    const router = getMessageRouter()
+    if (!router) return
+    const channel = ctx?.channel
+    const chatId = ctx?.chatId
+    if (!channel || !chatId) return
+    // Operator-cancelled / queued-marker — nothing to deliver
+    if (resp.errorKind === "cancelled") return
+    if (resp.error?.startsWith("__queued__")) return
+    const text = resp.error
+      ? `Error: ${resp.error}`
+      : (resp.content || "").trim()
+    if (!text) return
+    // Resolve account binding for shared-channel adapters (Telegram is
+    // multi-account); sendOutbound auto-fills accountId from agentId.
+    router.sendOutbound({ channel, chatId, text, agentId } as any)
+      .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
   }
 
   /**
