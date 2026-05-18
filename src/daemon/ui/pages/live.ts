@@ -49,6 +49,14 @@ export function renderLivePage(opts: LivePageOpts = {}): string {
       <button class="task-modal-close" id="task-modal-close" aria-label="Close">×</button>
     </header>
     <div id="task-modal-output" class="task-modal-output"></div>
+    <footer class="task-modal-compose" id="task-modal-compose">
+      <textarea id="task-modal-input" class="task-modal-input" rows="2" placeholder="Send a message to this chat (current turn keeps running; your message dispatches as the next turn). ⌘/Ctrl+Enter to send."></textarea>
+      <div class="task-modal-compose-actions">
+        <span class="task-modal-compose-hint" id="task-modal-compose-hint"></span>
+        <button type="button" id="task-modal-stop" class="task-modal-btn task-modal-btn--stop" title="Stop the current turn">✕ stop</button>
+        <button type="button" id="task-modal-send" class="task-modal-btn task-modal-btn--send" title="Send the message">send →</button>
+      </div>
+    </footer>
   </div>
 </div>`
 
@@ -312,6 +320,32 @@ const LIVE_PAGE_CSS = `
   cursor: pointer; padding: 0 6px; line-height: 1;
 }
 .task-modal-close:hover { color: var(--ax-text); }
+.task-modal-compose {
+  border-top: 1px solid var(--ax-border); padding: 10px 14px 12px;
+  display: flex; flex-direction: column; gap: 6px; background: var(--ax-bg-2);
+}
+.task-modal-compose.is-disabled { opacity: 0.55; pointer-events: none; }
+.task-modal-input {
+  width: 100%; resize: vertical; min-height: 44px; max-height: 180px;
+  font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text);
+  background: var(--ax-bg); border: 1px solid var(--ax-border);
+  border-radius: 4px; padding: 8px 10px; box-sizing: border-box;
+}
+.task-modal-input:focus { outline: none; border-color: var(--ax-accent); }
+.task-modal-compose-actions { display: flex; align-items: center; gap: 8px; }
+.task-modal-compose-hint { flex: 1; font-size: 11px; color: var(--ax-muted); font-family: var(--ax-mono); min-height: 1em; }
+.task-modal-compose-hint.is-ok { color: var(--ax-accent); }
+.task-modal-compose-hint.is-err { color: var(--ax-err); }
+.task-modal-btn {
+  font: inherit; font-size: 12px; line-height: 1; padding: 6px 12px;
+  border-radius: 3px; cursor: pointer; border: 1px solid var(--ax-border);
+  background: transparent; color: var(--ax-muted);
+}
+.task-modal-btn:hover { border-color: var(--ax-accent); color: var(--ax-text); }
+.task-modal-btn--send { background: var(--ax-accent); color: var(--ax-bg); border-color: var(--ax-accent); }
+.task-modal-btn--send:hover { color: var(--ax-bg); opacity: 0.85; }
+.task-modal-btn--stop:hover { border-color: #d33; color: #d33; }
+.task-modal-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 
 /* --- Event timeline (inside task modal) --- */
 .task-modal-output {
@@ -702,9 +736,15 @@ const taskModal = {
   status: document.getElementById('task-modal-status'),
   channel: document.getElementById('task-modal-channel'),
   closeBtn: document.getElementById('task-modal-close'),
+  compose: document.getElementById('task-modal-compose'),
+  input: document.getElementById('task-modal-input'),
+  sendBtn: document.getElementById('task-modal-send'),
+  stopBtn: document.getElementById('task-modal-stop'),
+  hint: document.getElementById('task-modal-compose-hint'),
   backdrop: null,
   es: null,
   currentTaskId: null,
+  currentNodeUrl: null,
   /** Trailing line fragment from the last chunk (completes on next newline). */
   lineBuf: '',
   /** Active text event DOM node — consecutive plain-text lines coalesce into it. */
@@ -723,6 +763,21 @@ function resetOutput() {
   taskModal.output.innerHTML = '';
   taskModal.lineBuf = '';
   taskModal.openTextEv = null;
+}
+
+function resetCompose() {
+  if (!taskModal.input) return;
+  taskModal.input.value = '';
+  setComposeHint('', '');
+  if (taskModal.compose) taskModal.compose.classList.remove('is-disabled');
+  if (taskModal.sendBtn) taskModal.sendBtn.disabled = false;
+  if (taskModal.stopBtn) taskModal.stopBtn.disabled = false;
+}
+
+function setComposeHint(text, kind) {
+  if (!taskModal.hint) return;
+  taskModal.hint.textContent = text || '';
+  taskModal.hint.className = 'task-modal-compose-hint' + (kind ? ' is-' + kind : '');
 }
 
 /**
@@ -861,17 +916,24 @@ function closeTaskModal() {
 
 function openTaskModal(opts) {
   if (!taskModal.el || !opts.taskId || !opts.nodeUrl) return;
-  if (taskModal.currentTaskId === opts.taskId) { taskModal.el.classList.remove('hidden'); return; }
+  if (taskModal.currentTaskId === opts.taskId) {
+    taskModal.el.classList.remove('hidden');
+    if (opts.focusInput && taskModal.input) taskModal.input.focus();
+    return;
+  }
   const L = window.UI_LABELS || {};
   closeTaskModal();
   taskModal.currentTaskId = opts.taskId;
+  taskModal.currentNodeUrl = opts.nodeUrl;
   taskModal.el.classList.remove('hidden');
   taskModal.el.setAttribute('aria-hidden', 'false');
   taskModal.title.textContent = opts.agentName + ' · ' + (opts.preview || 'task ' + opts.taskId);
   taskModal.title.title = opts.preview || '';
   taskModal.channel.textContent = opts.channel || '—';
   resetOutput();
+  resetCompose();
   setStatus(L.taskModalConnecting || 'connecting…', '');
+  if (opts.focusInput && taskModal.input) setTimeout(() => taskModal.input.focus(), 0);
   const url = '/api/task/stream?node=' + encodeURIComponent(opts.nodeUrl)
     + '&agent=' + encodeURIComponent(opts.agentId)
     + '&task=' + encodeURIComponent(opts.taskId);
@@ -902,6 +964,39 @@ function openTaskModal(opts) {
 if (taskModal.closeBtn) taskModal.closeBtn.addEventListener('click', closeTaskModal);
 if (taskModal.backdrop) taskModal.backdrop.addEventListener('click', closeTaskModal);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && taskModal.el && !taskModal.el.classList.contains('hidden')) closeTaskModal(); });
+
+function submitComposeMessage() {
+  if (!taskModal.input || !taskModal.currentTaskId) return;
+  const msg = (taskModal.input.value || '').trim();
+  if (!msg) { setComposeHint('Empty message — nothing sent.', 'err'); return; }
+  taskAction(taskModal.currentNodeUrl, taskModal.currentTaskId, 'followup', { message: msg, sender: 'dashboard' }, {
+    onStart: () => { taskModal.sendBtn.disabled = true; setComposeHint('sending…', ''); },
+    onOk: (body) => {
+      taskModal.input.value = '';
+      taskModal.sendBtn.disabled = false;
+      const edited = body && body.edited ? ' (replaced cancelled turn)' : '';
+      setComposeHint('queued, will run at first chance' + edited, 'ok');
+    },
+    onErr: (err) => { taskModal.sendBtn.disabled = false; setComposeHint('send failed: ' + err, 'err'); },
+  });
+}
+function submitComposeStop() {
+  if (!taskModal.currentTaskId) return;
+  taskAction(taskModal.currentNodeUrl, taskModal.currentTaskId, 'cancel', { reason: 'dashboard-stop' }, {
+    onStart: () => { taskModal.stopBtn.disabled = true; setComposeHint('stopping…', ''); },
+    onOk: () => { setComposeHint('stopped — type a new message and send to inject as the next turn', 'ok'); taskModal.stopBtn.disabled = false; if (taskModal.input) taskModal.input.focus(); },
+    onErr: (err) => { taskModal.stopBtn.disabled = false; setComposeHint('stop failed: ' + err, 'err'); },
+  });
+}
+if (taskModal.sendBtn) taskModal.sendBtn.addEventListener('click', submitComposeMessage);
+if (taskModal.stopBtn) taskModal.stopBtn.addEventListener('click', submitComposeStop);
+if (taskModal.input) {
+  taskModal.input.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl+Enter sends — bare Enter still inserts a newline so multi-line
+    // corrections are easy to type.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitComposeMessage(); }
+  });
+}
 
 // --- History panel ---
 const historyPanel = {
@@ -1045,14 +1140,20 @@ document.getElementById('grid').addEventListener('click', (e) => {
       if (!confirm('Stop this running task?')) return;
       taskAction(nodeUrl, taskId, 'cancel', {});
     } else if (action === 'followup') {
-      // Update = append a new message to the same chat session. The agent
-      // finishes its current turn, then processes this as the next turn
-      // (same model as sending a message to an ongoing Claude session).
-      // No framing, no truncation — just the operator's message as-is.
-      // To kill the current run separately, use Stop.
-      const msg = prompt('Message to send to the agent (will be processed after the current turn finishes):');
-      if (!msg || !msg.trim()) return;
-      taskAction(nodeUrl, taskId, 'followup', { message: msg.trim(), sender: 'dashboard' });
+      // Open the live-stream modal and focus its compose box. The modal
+      // hosts the textarea + Send/Stop controls — no more native prompt()
+      // (which was single-line, blocked by some browsers, and didn't give
+      // operators streaming context while typing the correction).
+      const card = actionEl.closest('.ax-agent__task[data-task-id]');
+      openTaskModal({
+        taskId,
+        agentId: card && card.dataset.agentId,
+        nodeUrl,
+        channel: card && card.dataset.channel,
+        agentName: (card && (card.dataset.agentName || card.dataset.agentId)) || '',
+        preview: (card && card.getAttribute('title')) || '',
+        focusInput: true,
+      });
     }
     return;
   }
@@ -1080,15 +1181,16 @@ document.getElementById('grid').addEventListener('click', (e) => {
   }
 });
 
-function taskAction(nodeUrl, taskId, kind, body) {
+function taskAction(nodeUrl, taskId, kind, body, hooks) {
   // Browser → dashboard origin → originating daemon. Mirrors the proxy
-  // pattern used by openTaskModal / openHistoryPanel — node identifies
-  // which daemon owns the task; the dashboard validates against its
-  // allowlist and forwards with the configured operator token.
+  // pattern used by openTaskModal / openHistoryPanel.
+  hooks = hooks || {};
   if (!nodeUrl) {
-    alert('Task ' + kind + ' failed: no daemon URL on this task');
+    const msg = 'no daemon URL on this task';
+    if (hooks.onErr) hooks.onErr(msg); else alert('Task ' + kind + ' failed: ' + msg);
     return;
   }
+  if (hooks.onStart) hooks.onStart();
   const url = '/api/task/action?node=' + encodeURIComponent(nodeUrl)
     + '&task=' + encodeURIComponent(taskId)
     + '&kind=' + encodeURIComponent(kind);
@@ -1099,10 +1201,15 @@ function taskAction(nodeUrl, taskId, kind, body) {
   })
     .then(async r => {
       const txt = await r.text();
-      if (!r.ok) throw new Error(txt || ('HTTP ' + r.status));
-      console.log('[task ' + kind + ']', txt);
+      let parsed = null; try { parsed = JSON.parse(txt); } catch {}
+      if (!r.ok) throw new Error((parsed && parsed.error) || txt || ('HTTP ' + r.status));
+      console.log('[task ' + kind + ']', parsed || txt);
+      if (hooks.onOk) hooks.onOk(parsed);
     })
-    .catch(err => alert('Task ' + kind + ' failed: ' + (err && err.message || err)));
+    .catch(err => {
+      const msg = err && err.message || String(err);
+      if (hooks.onErr) hooks.onErr(msg); else alert('Task ' + kind + ' failed: ' + msg);
+    });
 }
 
 `
