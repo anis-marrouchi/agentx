@@ -366,6 +366,8 @@ When any agent has `persistentProcess: true`, the daemon keeps a warm Claude sub
 }
 ```
 
+The default `maxIdleSeconds: 30` is tuned for batch/burst traffic — for **chat-paced** traffic (human typing gaps regularly exceed 30 s) the warm cache vanishes between turns and you lose the entire point of the pool. Bump it to `900` (15 min) or higher for chat workloads; cap is `maxAgeSeconds` regardless.
+
 Increase `maxAgeSeconds` for chat workloads where the same conversation legitimately spans hours; decrease it (e.g. 1800) to eject any pool slot that's been idle longer than 30 minutes — useful when a triage→worker pattern would otherwise inherit stale visitor context. See [Persistent processes](./cli#persistent-processes-production-recipe) for the full operator recipe.
 
 ## Actions registry (separate files)

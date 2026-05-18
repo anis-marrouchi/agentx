@@ -19,6 +19,8 @@ The view is "skim friendly" by design — scan the grid, spot the agent that's s
 - **Click a task in the rail** to open the same page scrolled to that task in the history.
 - **Filter by peer** via the top-bar chips when running multi-node mesh.
 - **Watch the SSE stream** in dev tools: every change pushes a delta — no polling.
+- **Stop a running task** — click `✕ stop` on the running-task card. Sends SIGTERM to the underlying `claude` subprocess (SIGKILL after 3 s) and the task surfaces `errorKind: "cancelled"`.
+- **Update / correct a running task** — click `✎ update`, enter the correction. You pick whether to queue it (current run finishes, then your message dispatches as the next turn — preserves warm cache and in-process memory on `persistentProcess` agents) or replace (current run is killed, your message dispatches immediately — fresh process but conversation history is preserved). See the [HTTP API reference](#api) for the underlying endpoints.
 
 ## Common tasks
 
@@ -39,3 +41,11 @@ The view is "skim friendly" by design — scan the grid, spot the agent that's s
 - Page module: `src/daemon/ui/pages/live.ts` (skeleton + JS)
 - API: `GET /api/live/stream` (Server-Sent Events)
 - The live snapshot is computed from the same data the `agentx daemon status` and `agentx daemon watch` CLIs surface — single source of truth.
+
+## <a id="api"></a>HTTP API
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/tasks/:taskId/cancel` `{ reason? }` | Stop an in-flight task. 404 if no running task matches `taskId` (use `GET /agents` → `runningTasks[].id` to find it). |
+| `POST /api/tasks/:taskId/followup` `{ message, replace?, sender? }` | Inject a correction/update. `replace=false` (default) queues behind the running task; `replace=true` cancels the run first and dispatches the message immediately. |
+| `POST /api/task/action?node=<url>&task=<id>&kind=cancel\|followup` | Dashboard-side proxy used by the Live page's Stop / Update buttons — forwards to the originating daemon with the configured operator token. |
