@@ -492,6 +492,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Cross-node action proxy: stop / follow-up a running task on any daemon
+  // in the dashboard's allowlist. The browser talks to the dashboard origin
+  // (same as /api/task/stream), and the dashboard forwards to the daemon's
+  // /api/tasks/:taskId/{cancel|followup} endpoint with the operator token.
+  //   POST /api/task/action?node=<url>&task=<id>&kind=cancel|followup
+  // body: passthrough JSON (cancel: { reason? }; followup: { message, replace?, sender? })
+  if (method === "POST" && path === "/api/task/action") {
+    const u = new URL(req.url || "/", "http://localhost")
+    const nodeUrl = u.searchParams.get("node")
+    const taskId = u.searchParams.get("task")
+    const kind = u.searchParams.get("kind")
+    if (!nodeUrl || !taskId || (kind !== "cancel" && kind !== "followup")) {
+      sendJson(res, 400, { error: "node, task, kind=cancel|followup query params required" })
+      return
+    }
+    await proxyTaskAction(req, res, ctx, nodeUrl, taskId, kind)
+    return
+  }
+
   // Agent roster (proxy to configured daemon) — used by draft-agent picker.
   if (method === "GET" && path === "/api/agents") {
     try {
@@ -1488,6 +1507,60 @@ async function proxyTaskHistory(
       "Access-Control-Allow-Origin": "*",
     })
     res.end(body)
+  } catch (e: any) {
+    sendJson(res, 502, { error: e.message || "upstream fetch failed" })
+  }
+}
+
+/**
+ * Cross-node POST proxy for the live page's Stop / Update controls.
+ * Forwards the operator's request body verbatim to the originating daemon's
+ * /api/tasks/:taskId/{cancel|followup} endpoint. Same allowlist + token
+ * resolution as proxyTaskStream / proxyTaskHistory.
+ */
+async function proxyTaskAction(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: { config: DaemonConfig },
+  nodeUrl: string,
+  taskId: string,
+  kind: "cancel" | "followup",
+): Promise<void> {
+  const target = nodeUrl.replace(/\/+$/, "")
+  const allowed = new Set<string>()
+  allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
+  for (const d of ctx.config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
+  try {
+    const peers = await fetchMeshPeers(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), ctx.config.dashboard.token)
+    for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
+  } catch { /* */ }
+  if (!allowed.has(target)) {
+    sendJson(res, 403, { error: "node not in dashboard allowlist", target })
+    return
+  }
+  const tokenForNode =
+    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      ? ctx.config.dashboard.token
+      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" }
+  if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
+  let body = "{}"
+  try {
+    const parsed = await readJson(req)
+    body = parsed ? JSON.stringify(parsed) : "{}"
+  } catch { /* leave default */ }
+  try {
+    const r = await fetch(`${target}/api/tasks/${encodeURIComponent(taskId)}/${kind}`, {
+      method: "POST",
+      headers,
+      body,
+    })
+    const text = await r.text()
+    res.writeHead(r.status, {
+      "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+    })
+    res.end(text)
   } catch (e: any) {
     sendJson(res, 502, { error: e.message || "upstream fetch failed" })
   }

@@ -23,6 +23,7 @@ export interface FriendlyError {
     | "invalid_request"
     | "upstream_api"
     | "timeout"
+    | "cancelled"
     | "unknown"
   /** Whether this error is transient — a retry has a reasonable chance of succeeding. */
   retryable: boolean

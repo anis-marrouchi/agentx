@@ -413,6 +413,10 @@ export class AgentRegistry {
   private activeSouls: Map<string, string> = new Map()
   /** Live output captured per running task id — drives the dashboard streaming modal. */
   private taskOutputs: Map<string, TaskOutput> = new Map()
+  /** Per-running-task AbortController. Set when execution starts, removed in
+   *  finally. Cancel paths (operator stop / replace) call .abort() and the
+   *  runtime kills the underlying claude subprocess. */
+  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; controller: AbortController }> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
@@ -845,6 +849,16 @@ export class AgentRegistry {
       startedAt: new Date(),
     }
     state.runningTasks.push(runningTask)
+
+    // AbortController for operator stop / replace. Stored under the running
+    // task id so /api/tasks/:id/cancel can resolve and abort it.
+    const abortController = new AbortController()
+    this.taskAborts.set(runningTask.id, {
+      agentId: task.agentId,
+      channel: runningTask.channel,
+      chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
+      controller: abortController,
+    })
 
     // Output capture for the dashboard streaming modal. We never *force*
     // streaming on a caller that didn't ask for it — that would change the
@@ -1646,7 +1660,7 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
       }
 
-      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent)
+      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent, abortController.signal)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
@@ -1834,6 +1848,9 @@ export class AgentRegistry {
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
       if (idx !== -1) state.runningTasks.splice(idx, 1)
+      // Drop the abort entry — the controller is unreachable after this point
+      // and a future cancel for the same id should 404, not silently no-op.
+      this.taskAborts.delete(runningTask.id)
 
       // Notify any open dashboard streams that this task has finished, then
       // schedule the buffer for cleanup so memory doesn't grow unbounded.
@@ -2103,6 +2120,67 @@ export class AgentRegistry {
 
   private safe(s: string): string {
     return s.replace(/[^a-zA-Z0-9_.:-]/g, "_")
+  }
+
+  /**
+   * Operator stop. Aborts the in-flight run for `taskId` (kills the
+   * underlying claude subprocess via the AbortSignal threaded through
+   * runtime.ts). Returns the task's identity for HTTP / audit callers,
+   * or null when no live run matches.
+   */
+  cancelRunningTask(taskId: string, reason = "operator"): { agentId: string; channel: string; chatId: string } | null {
+    const entry = this.taskAborts.get(taskId)
+    if (!entry) return null
+    try {
+      entry.controller.abort(new Error(reason))
+    } catch { /* AbortController.abort never throws on modern Node, but defend */ }
+    this.log(`[${entry.agentId}] task ${taskId} cancelled — ${reason}`)
+    return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
+  }
+
+  /**
+   * Queue a follow-up correction/update for an in-flight task. The message
+   * lands in the per-session MessageQueue and is dispatched after the
+   * current run finishes — same path channel messages take while the agent
+   * is busy. With `replace=true` we cancel the current run first so the
+   * follow-up runs immediately.
+   *
+   * Returns the resolved identity + queue position, or null when no live
+   * run matches taskId.
+   */
+  queueFollowUp(
+    taskId: string,
+    message: string,
+    sender: string,
+    opts: { replace?: boolean; reason?: string } = {},
+  ): { agentId: string; channel: string; chatId: string; replaced: boolean; pending: number } | null {
+    const entry = this.taskAborts.get(taskId)
+    if (!entry) return null
+    const { agentId, channel, chatId } = entry
+
+    // Enqueue first so the cancel→flush ordering is deterministic: the
+    // run's finally{} block flushes pending messages right after the
+    // abort propagates, and the new message is already there.
+    this.messageQueue.enqueue(agentId, channel, chatId, {
+      text: message,
+      sender,
+      timestamp: Date.now(),
+      channel,
+      chatId,
+      originalContext: { channel, chatId, sender },
+    })
+    const pending = this.messageQueue.pendingCount(agentId, channel, chatId)
+
+    let replaced = false
+    if (opts.replace) {
+      const reason = opts.reason || `replaced by follow-up from ${sender}`
+      try { entry.controller.abort(new Error(reason)) } catch { /* */ }
+      this.log(`[${agentId}] task ${taskId} replaced by follow-up — ${reason}`)
+      replaced = true
+    } else {
+      this.log(`[${agentId}] follow-up queued for task ${taskId} (pending=${pending})`)
+    }
+    return { agentId, channel, chatId, replaced, pending }
   }
 
   /**

@@ -203,6 +203,16 @@ const LIVE_PAGE_CSS = `
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; line-height: 1.35;
 }
+.ax-agent__task-actions {
+  display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;
+}
+.ax-task-action {
+  font: inherit; font-size: 11px; line-height: 1;
+  padding: 4px 8px; border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--ax-border); background: transparent; color: var(--ax-muted);
+}
+.ax-task-action:hover { border-color: var(--ax-accent); color: var(--ax-text); }
+.ax-task-action--stop:hover { border-color: #d33; color: #d33; }
 .ax-agent__summary { border-top: 1px dashed var(--ax-border); padding-top: 8px; }
 .ax-agent__summary-caption {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -510,20 +520,30 @@ function renderAgent(a, node) {
   const tierLabels = (L.tierLabels) || {};
   const tierDisplay = tierLabels[a.tier] || a.tier || '';
 
-  // Running task card (clickable → opens live stream modal)
+  // Running task card (clickable → opens live stream modal). Wrapper is a
+  // <div role="button"> so we can nest the Stop / Update action buttons
+  // inside (button-in-button is invalid HTML); click handler is delegated
+  // via the .ax-agent__task class.
   const taskHtml = (a.runningTasks || []).map(t => {
     const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
     const dataAttrs = t.id
       ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
       : '';
-    return '<button class="ax-agent__task"' + dataAttrs + ' data-started-at="' + escapeHtml(t.startedAt || '') + '" title="' + escapeHtml(t.messagePreview || '') + '">' +
+    const actions = t.id
+      ? '<div class="ax-agent__task-actions">' +
+          '<button type="button" class="ax-task-action ax-task-action--update" data-action="followup" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Send correction / update to this running task">✎ update</button>' +
+          '<button type="button" class="ax-task-action ax-task-action--stop" data-action="cancel" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Stop this running task">✕ stop</button>' +
+        '</div>'
+      : '';
+    return '<div class="ax-agent__task" role="button" tabindex="0"' + dataAttrs + ' data-started-at="' + escapeHtml(t.startedAt || '') + '" title="' + escapeHtml(t.messagePreview || '') + '">' +
       '<div class="ax-agent__task-head">' +
         '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' +
         '<span>running · ' + escapeHtml(t.channel || '') + '</span>' +
         '<span class="elapsed">' + elapsed + '</span>' +
       '</div>' +
       '<div class="ax-agent__task-body">' + escapeHtml(t.messagePreview || '(no preview)') + '</div>' +
-    '</button>';
+      actions +
+    '</div>';
   }).join('');
   const runningBlock = taskHtml
     ? '<div class="ax-agent__running">' + taskHtml + '</div>'
@@ -1009,8 +1029,29 @@ async function openTaskRecord(opts) {
 if (historyPanel.closeBtn) historyPanel.closeBtn.addEventListener('click', closeHistoryPanel);
 
 // Click delegation on the agent grid — opens the modal for any task card,
-// or the history panel for the "history →" link.
+// or the history panel for the "history →" link. Task action buttons
+// (stop / update) are intercepted FIRST so they don't bubble into the
+// modal-open path.
 document.getElementById('grid').addEventListener('click', (e) => {
+  const actionEl = e.target.closest('.ax-task-action[data-action]');
+  if (actionEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    const action = actionEl.dataset.action;
+    const taskId = actionEl.dataset.taskId;
+    const nodeUrl = actionEl.dataset.nodeUrl || '';
+    if (!taskId) return;
+    if (action === 'cancel') {
+      if (!confirm('Stop this running task?')) return;
+      taskAction(nodeUrl, taskId, 'cancel', {});
+    } else if (action === 'followup') {
+      const msg = prompt('Correction / update to send to the agent:');
+      if (!msg || !msg.trim()) return;
+      const replace = confirm('Stop the current run and dispatch this immediately?\\n\\n  OK  → stop & dispatch now\\n  Cancel → queue after current run finishes');
+      taskAction(nodeUrl, taskId, 'followup', { message: msg.trim(), replace, sender: 'dashboard' });
+    }
+    return;
+  }
   const taskEl = e.target.closest('.ax-agent__task[data-task-id]');
   if (taskEl) {
     e.preventDefault();
@@ -1034,5 +1075,30 @@ document.getElementById('grid').addEventListener('click', (e) => {
     });
   }
 });
+
+function taskAction(nodeUrl, taskId, kind, body) {
+  // Browser → dashboard origin → originating daemon. Mirrors the proxy
+  // pattern used by openTaskModal / openHistoryPanel — node identifies
+  // which daemon owns the task; the dashboard validates against its
+  // allowlist and forwards with the configured operator token.
+  if (!nodeUrl) {
+    alert('Task ' + kind + ' failed: no daemon URL on this task');
+    return;
+  }
+  const url = '/api/task/action?node=' + encodeURIComponent(nodeUrl)
+    + '&task=' + encodeURIComponent(taskId)
+    + '&kind=' + encodeURIComponent(kind);
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+    .then(async r => {
+      const txt = await r.text();
+      if (!r.ok) throw new Error(txt || ('HTTP ' + r.status));
+      console.log('[task ' + kind + ']', txt);
+    })
+    .catch(err => alert('Task ' + kind + ' failed: ' + (err && err.message || err)));
+}
 
 `

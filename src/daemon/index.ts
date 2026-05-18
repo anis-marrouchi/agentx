@@ -2693,6 +2693,51 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
         return
       }
 
+      // Operator stop: abort the in-flight execution for a specific runningTask.id.
+      //   POST /api/tasks/:taskId/cancel    body: { reason? }
+      // 200 → { ok, agentId, channel, chatId }
+      // 404 → task not running (already finished or never existed)
+      const cancelMatch = req.method === "POST" && path.match(/^\/api\/tasks\/([^/]+)\/cancel$/)
+      if (cancelMatch) {
+        const taskId = decodeURIComponent(cancelMatch[1])
+        try {
+          const body = await readJsonBody(req).catch(() => ({}))
+          const reason = typeof (body as any)?.reason === "string" ? (body as any).reason : "operator"
+          const result = this.registry.cancelRunningTask(taskId, reason)
+          if (!result) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
+          this.json(res, 200, { ok: true, cancelled: { taskId, ...result, reason } })
+        } catch (e: any) {
+          this.json(res, 500, { error: e?.message || String(e) })
+        }
+        return
+      }
+
+      // Operator follow-up: enqueue a correction/update message for an in-flight
+      // task. With replace=true the current run is aborted so the new message
+      // runs immediately; otherwise it waits for the current run to finish.
+      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender? }
+      // 200 → { ok, agentId, channel, chatId, replaced, pending }
+      // 404 → task not running
+      const followupMatch = req.method === "POST" && path.match(/^\/api\/tasks\/([^/]+)\/followup$/)
+      if (followupMatch) {
+        const taskId = decodeURIComponent(followupMatch[1])
+        try {
+          const body = await readJsonBody(req)
+          const message = typeof (body as any)?.message === "string" ? (body as any).message.trim() : ""
+          if (!message) { this.json(res, 400, { error: "message required" }); return }
+          const replace = (body as any)?.replace === true
+          const sender = typeof (body as any)?.sender === "string" && (body as any).sender.trim()
+            ? (body as any).sender.trim()
+            : "operator"
+          const result = this.registry.queueFollowUp(taskId, message, sender, { replace })
+          if (!result) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
+          this.json(res, 200, { ok: true, taskId, ...result })
+        } catch (e: any) {
+          this.json(res, 500, { error: e?.message || String(e) })
+        }
+        return
+      }
+
       // OpenAI-compatible endpoint for ElevenLabs, Cursor, etc.
       // POST /v1/chat/completions or /llm/:agentId/v1/chat/completions
       if (req.method === "POST" && (path === "/v1/chat/completions" || path.match(/^\/llm\/[^/]+\/v1\/chat\/completions$/))) {

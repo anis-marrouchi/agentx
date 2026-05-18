@@ -625,6 +625,7 @@ export async function executeClaudeCode(
   task: AgentTask,
   historyContext?: string,
   resumeSessionId?: string,
+  abortSignal?: AbortSignal,
 ): Promise<AgentResponse> {
   const start = Date.now()
   // Always inject context (landscape, rules, channel info) even on resume.
@@ -634,10 +635,18 @@ export async function executeClaudeCode(
   const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend)
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
+  // If the caller already aborted before we spawned, short-circuit so we
+  // don't spend tokens on a doomed run.
+  if (abortSignal?.aborted) {
+    return { content: "", error: "task cancelled by operator", duration: Date.now() - start }
+  }
+
+  let abortReason: string | undefined
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string }>((resolve, reject) => {
+    const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
       const childEnv = buildAgentEnv(agent.workspace)
+      let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
         timeout: timeoutMs,
@@ -649,13 +658,36 @@ export async function executeClaudeCode(
           stdout: stdout || "",
           stderr: stderr || "",
           exitCode: error ? (error as any).code ?? 1 : 0,
+          killed,
         })
       })
       // Close stdin immediately. Claude CLI otherwise waits 3s for input then
       // proceeds with a warning; in cron retries that cascade invalidates the
       // prompt cache between attempts (5× input cost on cache-create).
       proc.stdin?.end()
+      // Operator-initiated cancellation. SIGTERM first; if the child is still
+      // alive after 3s, escalate to SIGKILL. The execFile callback fires when
+      // the child exits, which resolves the outer promise.
+      if (abortSignal) {
+        const onAbort = () => {
+          killed = true
+          abortReason = (abortSignal.reason as any)?.message || (typeof abortSignal.reason === "string" ? abortSignal.reason : "task cancelled by operator")
+          try { proc.kill("SIGTERM") } catch { /* */ }
+          setTimeout(() => { try { if (!proc.killed) proc.kill("SIGKILL") } catch { /* */ } }, 3000).unref?.()
+        }
+        if (abortSignal.aborted) onAbort()
+        else abortSignal.addEventListener("abort", onAbort, { once: true })
+      }
     })
+
+    if (killed) {
+      return {
+        content: "",
+        error: abortReason || "task cancelled by operator",
+        errorKind: "cancelled",
+        duration: Date.now() - start,
+      }
+    }
 
     if (!stdout && exitCode !== 0) {
       // exit 143 = 128+SIGTERM → our own `timeout` killed the process. Surface
@@ -717,8 +749,12 @@ export async function executeClaudeCodeStreaming(
   historyContext?: string,
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
 ): Promise<AgentResponse> {
   const start = Date.now()
+  if (abortSignal?.aborted) {
+    return { content: "", error: "task cancelled by operator", duration: Date.now() - start }
+  }
   // Always inject context (landscape, rules, channel info) even on resume.
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
@@ -750,6 +786,22 @@ export async function executeClaudeCodeStreaming(
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
       stdin: "ignore",
     })
+
+    // Operator cancellation. SIGTERM → SIGKILL escalation after 3s; we mark
+    // the run as cancelled so the post-await result-mapping below surfaces a
+    // clean "task cancelled" error instead of a garbled "killed by signal".
+    let cancelled = false
+    let cancelReason: string | undefined
+    if (abortSignal) {
+      const onAbort = () => {
+        cancelled = true
+        cancelReason = (abortSignal.reason as any)?.message || (typeof abortSignal.reason === "string" ? abortSignal.reason : "task cancelled by operator")
+        try { proc.kill("SIGTERM") } catch { /* */ }
+        setTimeout(() => { try { proc.kill("SIGKILL") } catch { /* */ } }, 3000).unref?.()
+      }
+      if (abortSignal.aborted) onAbort()
+      else abortSignal.addEventListener("abort", onAbort, { once: true })
+    }
 
     // Parse stream-json output line by line.
     // StringDecoder buffers partial UTF-8 sequences across chunk
@@ -858,6 +910,18 @@ export async function executeClaudeCodeStreaming(
     // exits mid-character.
     const tail = decoder.end()
     if (tail) lineBuffer += tail
+
+    // Operator cancellation wins over any partial stream — surface the
+    // friendly error so callers (KPI, dashboard, channel ack) record it
+    // distinctly from a timeout or model failure.
+    if (cancelled) {
+      return {
+        content: "",
+        error: cancelReason || "task cancelled by operator",
+        errorKind: "cancelled",
+        duration: Date.now() - start,
+      }
+    }
 
     // If we got no streaming content, fall back to stdout
     if (!fullText && result.stdout) {
@@ -1367,6 +1431,7 @@ async function executeClaudeCodePersistent(
   historyContext?: string,
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
 ): Promise<AgentResponse | null> {
   const registry = getProcessRegistry()
   if (!registry) return null
@@ -1423,6 +1488,19 @@ async function executeClaudeCodePersistent(
   let billedModel: string | undefined
   let sessionId: string | undefined
 
+  // Operator cancellation for the persistent path. Killing the handle
+  // closes its stdio, which terminates the async iterator below; we then
+  // emit a "cancelled" envelope just like the spawn-per-task paths.
+  let cancelled = false
+  const onAbort = () => {
+    cancelled = true
+    void registry.kill(key, "operator-cancel").catch(() => {})
+  }
+  if (abortSignal) {
+    if (abortSignal.aborted) onAbort()
+    else abortSignal.addEventListener("abort", onAbort, { once: true })
+  }
+
   try {
     for await (const evt of handle.runTurn({ message: prompt, taskId: task.taskId ?? "unknown" })) {
       // Forward to existing onEvent — trace step emitter, dashboard
@@ -1466,13 +1544,25 @@ async function executeClaudeCodePersistent(
       }
     }
   } catch (e: any) {
-    const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
-    finalError = env.error
-    finalErrorKind = env.errorKind
+    if (cancelled) {
+      finalError = "task cancelled by operator"
+      finalErrorKind = "cancelled"
+    } else {
+      const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
+      finalError = env.error
+      finalErrorKind = env.errorKind
+    }
+  } finally {
+    if (abortSignal) abortSignal.removeEventListener("abort", onAbort)
+  }
+
+  if (cancelled && !finalError) {
+    finalError = "task cancelled by operator"
+    finalErrorKind = "cancelled"
   }
 
   return {
-    content: finalText,
+    content: cancelled ? "" : finalText,
     error: finalError,
     errorKind: finalErrorKind,
     duration: Date.now() - start,
@@ -1490,6 +1580,7 @@ export async function executeTask(
   historyContext?: string,
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
 ): Promise<AgentResponse> {
   switch (agent.tier) {
     case "claude-code":
@@ -1498,13 +1589,13 @@ export async function executeTask(
       // a slot — we fall through to the legacy spawn-per-task path so
       // a registry-only failure can never block dispatch.
       if (agent.persistentProcess) {
-        const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent)
+        const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent, abortSignal)
         if (persistent !== null) return persistent
       }
       if (onDelta) {
-        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
+        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
       }
-      return executeClaudeCode(agent, task, historyContext, resumeSessionId)
+      return executeClaudeCode(agent, task, historyContext, resumeSessionId, abortSignal)
 
     case "codex-cli":
       if (onDelta) {
