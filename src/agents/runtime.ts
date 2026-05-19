@@ -1262,6 +1262,12 @@ export async function executeSdk(
  * between (the failure mode that surfaced on the noqta-public smoke test
  * after the tier switch).
  */
+/** Side-channel for reasoning/thinking chunks — distinct from
+ *  StreamCallback so callers can route them to a different UI lane
+ *  (e.g. a collapsible thinking block on noqta.tn, a dimmed terminal
+ *  block in the dashboard) without polluting the visible response. */
+export type ThinkingCallback = (text: string) => void
+
 export async function executeOrchestrator(
   agent: AgentDef,
   task: AgentTask,
@@ -1269,6 +1275,7 @@ export async function executeOrchestrator(
   historyContext?: string,
   onDelta?: StreamCallback,
   providerOpts?: { thinking?: boolean },
+  onThinking?: ThinkingCallback,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -1320,15 +1327,14 @@ export async function executeOrchestrator(
           content += event.text
           onDelta(event.text, content)
         } else if (event.type === "thinking_delta") {
-          // Surface thinking to the dashboard task modal but keep it out
-          // of `content` (the agent's visible response). Each chunk is
-          // emitted as its own line prefixed with the `💭 ` marker the
-          // modal's stream formatter already understands — successive
-          // chunks render as separate thought events, which is fine for
-          // a live "watch it think" experience.
-          if (event.text && event.text.trim()) {
-            onDelta(`💭 ${event.text}\n`, content)
-          }
+          // Route thinking to the dedicated side-channel so the chat
+          // endpoint can emit `delta.reasoning_content` (DeepSeek's
+          // own convention) and the dashboard modal can render it in
+          // a distinct lane. Keeping it out of onDelta is critical:
+          // the chat SSE consumer (noqta.tn) treats `delta.content`
+          // as visible response text, so leaking thinking there
+          // floods the chat with `💭 the / 💭 user / …` per token.
+          if (event.text && onThinking) onThinking(event.text)
         } else if (event.type === "generate_result") {
           // Final canonical result — generate_result.content may include
           // text the provider emitted as a single payload alongside
@@ -1593,6 +1599,7 @@ export async function executeTask(
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
   abortSignal?: AbortSignal,
+  onThinking?: ThinkingCallback,
 ): Promise<AgentResponse> {
   switch (agent.tier) {
     case "claude-code":
@@ -1633,7 +1640,7 @@ export async function executeTask(
       const apiKey = providerCfg?.apiKey
       return executeOrchestrator(agent, task, apiKey, historyContext, onDelta, {
         thinking: (providerCfg as any)?.thinking,
-      })
+      }, onThinking)
     }
 
     default:

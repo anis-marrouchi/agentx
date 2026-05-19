@@ -2174,6 +2174,14 @@ export class AgentXDaemon {
           const onDelta = (delta: string) => {
             if (delta) send({ content: delta })
           }
+          // Thinking goes on a separate SSE field — DeepSeek's own
+          // convention. Clients can render reasoning_content in a
+          // dimmed/collapsible lane and leave `content` clean. Without
+          // this, every thinking token would bleed into the visible
+          // chat output prefixed with `💭 `.
+          const onThinking = (text: string) => {
+            if (text) send({ reasoning_content: text })
+          }
 
           try {
             const resp = await this.registry.execute({
@@ -2181,7 +2189,7 @@ export class AgentXDaemon {
               message,
               context: { channel: "web-chat", sender: userId, chatId: conversationId },
               systemPromptAppend: chatSystemAppend,
-            }, onDelta)
+            }, onDelta, onThinking)
 
             if (resp.error) {
               send({ content: `\n[error] ${resp.error}` }, "stop")

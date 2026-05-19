@@ -1,5 +1,5 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
-import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type AgentPeer } from "./runtime"
+import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint } from "./sessions"
 import { WikiHub } from "@/wiki"
@@ -705,11 +705,11 @@ export class AgentRegistry {
    * this, every dispatched decision sits in-flight forever and the
    * active-task check becomes vacuously over-aggressive.
    */
-  async execute(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
+  async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback): Promise<AgentResponse> {
     const startedAt = Date.now()
     let response: AgentResponse
     try {
-      response = await this.executeInternal(task, onDelta)
+      response = await this.executeInternal(task, onDelta, onThinking)
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
     }
@@ -743,7 +743,7 @@ export class AgentRegistry {
    * Internal dispatcher — the real body. See `execute` for the public
    * wrapper that adds intent-ledger resolution recording.
    */
-  private async executeInternal(task: AgentTask, onDelta?: StreamCallback): Promise<AgentResponse> {
+  private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback): Promise<AgentResponse> {
     const state = this.agents.get(task.agentId)
     if (!state) {
       // Mesh fallback: the agent isn't local but a healthy peer may host
@@ -1683,7 +1683,38 @@ export class AgentRegistry {
             if (text) pushToBuffer(text)
             if (onDelta) onDelta(text, fullText)
           }
-      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDelta, historyContext, resumeSessionId, onEvent, abortController.signal)
+      // Thinking chunks land on a side channel: we forward to the
+      // caller's onThinking (chat endpoint surfaces them as
+      // delta.reasoning_content on the SSE wire) AND push to the
+      // modal buffer with a `💭 ` prefix only on the first chunk so
+      // the dashboard's line-based renderer treats the whole run of
+      // reasoning as a single thought event instead of one per token.
+      let thinkingOpen = false
+      const wrappedOnThinking: ThinkingCallback | undefined = tierUsesStreamJson
+        ? onThinking
+        : (text) => {
+            if (text) {
+              if (!thinkingOpen) {
+                pushToBuffer(`💭 ${text}`)
+                thinkingOpen = true
+              } else {
+                pushToBuffer(text)
+              }
+            }
+            if (onThinking) onThinking(text)
+          }
+      // When the agent transitions back to text, close any open
+      // thought block in the modal so the next text chunk doesn't
+      // get folded into the same line.
+      const closeThinkingIfOpen = () => {
+        if (thinkingOpen) { pushToBuffer("\n"); thinkingOpen = false }
+      }
+      const wrappedOnDeltaWithThinkingClose: StreamCallback | undefined = tierUsesStreamJson
+        ? wrappedOnDelta
+        : wrappedOnDelta
+          ? (text, fullText) => { closeThinkingIfOpen(); wrappedOnDelta(text, fullText) }
+          : undefined
+      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
