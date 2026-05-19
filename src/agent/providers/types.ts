@@ -26,6 +26,12 @@ export interface ProviderOptions {
   maxTokens?: number
   temperature?: number
   apiKey?: string
+  /** Operator-cancel signal — passed straight to fetch() so the in-
+   *  flight HTTP request to the provider can be closed when the
+   *  task is cancelled. Without this, /api/tasks/:id/cancel only
+   *  marks the task aborted in the registry; the underlying request
+   *  can hang for hours waiting for the model to finish thinking. */
+  abortSignal?: AbortSignal
 }
 
 export type StreamEvent =

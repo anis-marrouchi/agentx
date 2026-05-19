@@ -63,6 +63,14 @@ export interface GenerateOptions {
    *  `providers.<name>.thinking` in agentx.json by the daemon's
    *  orchestrator-tier dispatch path. */
   providerOpts?: { thinking?: boolean }
+  /** Operator-cancel signal. When the daemon's task-cancel API fires
+   *  the AbortController, runAgenticLoop forwards this into the
+   *  provider's fetch() so the in-flight HTTP call is actually
+   *  closed. Without this, /api/tasks/:id/cancel for orchestrator-
+   *  tier agents only marks the task `cancelled` in the registry
+   *  while the underlying DeepSeek request keeps running (seen in
+   *  production: 100+ minute hangs). */
+  abortSignal?: AbortSignal
 }
 
 export interface GenerateResult {
@@ -457,6 +465,7 @@ export async function* generateStream(
           providerOptions: { model: resolvedModel, maxTokens: 8192 },
           cwd,
           maxIterations: maxSteps,
+          abortSignal: options.abortSignal,
           enabledTools: context.config.agentic.enabledTools.filter(
             (t) => !context.config.agentic.disabledTools.includes(t)
           ),

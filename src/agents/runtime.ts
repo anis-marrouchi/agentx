@@ -1276,6 +1276,7 @@ export async function executeOrchestrator(
   onDelta?: StreamCallback,
   providerOpts?: { thinking?: boolean },
   onThinking?: ThinkingCallback,
+  abortSignal?: AbortSignal,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -1313,6 +1314,7 @@ export async function executeOrchestrator(
       context7: false,
       noqtaContext,
       providerOpts,
+      abortSignal,
     }
 
     if (onDelta) {
@@ -1371,6 +1373,18 @@ export async function executeOrchestrator(
         }
       }
       if (errorMsg && !content) {
+        // Operator-cancel: surface the same `errorKind: "cancelled"`
+        // envelope claude-code uses, so the router / channel layer
+        // suppresses the error echo and the registry's finally block
+        // can route follow-ups normally.
+        if (errorMsg === "cancelled" || abortSignal?.aborted) {
+          return {
+            content: "",
+            error: "task cancelled by operator",
+            errorKind: "cancelled",
+            duration: Date.now() - start,
+          }
+        }
         return {
           content: "",
           ...buildErrorEnvelope(`Orchestrator error: ${errorMsg}`),
@@ -1640,7 +1654,7 @@ export async function executeTask(
       const apiKey = providerCfg?.apiKey
       return executeOrchestrator(agent, task, apiKey, historyContext, onDelta, {
         thinking: (providerCfg as any)?.thinking,
-      }, onThinking)
+      }, onThinking, abortSignal)
     }
 
     default:

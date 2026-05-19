@@ -131,7 +131,7 @@ export class OpenAIProvider implements AgentProvider {
     options?: ProviderOptions,
   ): Promise<RawGenerationResult> {
     const body = this.buildRawBody(messages, systemPrompt, tools, options)
-    const data = await this.callApi(body)
+    const data = await this.callApi(body, options?.abortSignal)
     return this.parseRawResponse(data)
   }
 
@@ -157,8 +157,21 @@ export class OpenAIProvider implements AgentProvider {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
         body: JSON.stringify(this.maybeDeepseekExtras(body)),
+        // Forward operator cancel down to the HTTP layer so Stop
+        // actually terminates the in-flight request. Without this,
+        // the abort fires in the registry but fetch keeps draining
+        // tokens.
+        signal: options?.abortSignal as any,
       })
     } catch (err: any) {
+      // AbortError surfaces here when the operator cancelled before
+      // the connection completed. Treat as cancelled, not a real
+      // error — the registry's outer handler already records the
+      // cancellation.
+      if (err?.name === "AbortError" || options?.abortSignal?.aborted) {
+        yield { type: "error", error: "cancelled" }
+        return
+      }
       yield { type: "error", error: `OpenAI-compat raw stream init failed: ${err?.message ?? err}` }
       return
     }
@@ -502,7 +515,7 @@ export class OpenAIProvider implements AgentProvider {
 
   // --- helpers ---
 
-  private async callApi(body: Record<string, unknown>): Promise<OpenAIChatResponse> {
+  private async callApi(body: Record<string, unknown>, abortSignal?: AbortSignal): Promise<OpenAIChatResponse> {
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -510,6 +523,7 @@ export class OpenAIProvider implements AgentProvider {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(this.maybeDeepseekExtras(body)),
+      signal: abortSignal as any,
     })
     if (!res.ok) {
       const errorText = await res.text().catch(() => "")

@@ -31,6 +31,9 @@ export interface AgenticLoopOptions {
    *  executor dispatches calls via /api/agent/tools using the server-
    *  held bearer. The bearer NEVER enters the model's prompt context. */
   noqtaContext?: NoqtaToolContext
+  /** Cancel signal. Forwarded into ProviderOptions so the provider's
+   *  fetch() actually closes when the operator hits Stop. */
+  abortSignal?: AbortSignal
 }
 
 export type AgenticProgressEvent =
@@ -70,7 +73,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     provider,
     systemPrompt,
     messages: inputMessages,
-    providerOptions,
+    providerOptions: providerOptionsRaw,
     cwd,
     maxIterations = 20,
     enabledTools,
@@ -78,7 +81,16 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     overwrite = false,
     dryRun = false,
     onProgress,
+    abortSignal,
   } = options
+  // Fold the abort signal into ProviderOptions so each iteration's
+  // provider call (fetch under the hood) gets it. Without this, an
+  // operator Stop only flags the task in the registry — the in-flight
+  // HTTP request to DeepSeek/OpenAI keeps running until the model
+  // decides to finish, which has produced multi-hour hangs.
+  const providerOptions: ProviderOptions = abortSignal
+    ? { ...providerOptionsRaw, abortSignal }
+    : providerOptionsRaw
 
   // Check if provider supports generateRaw
   if (!provider.generateRaw) {
@@ -119,6 +131,11 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
 
   while (iteration < maxIterations) {
     iteration++
+    // Operator-cancel check between iterations — bails before we
+    // pay for another provider round-trip.
+    if (abortSignal?.aborted) {
+      throw new Error("cancelled")
+    }
     onProgress?.({ type: "iteration_start", iteration })
     debug.step(iteration, `Agentic loop iteration (${tools.length} tools available)`)
 
