@@ -38,6 +38,10 @@ export type AgenticProgressEvent =
   | { type: "tool_call"; name: string; id: string; input: Record<string, unknown> }
   | { type: "tool_result"; name: string; id: string; content: string; is_error?: boolean }
   | { type: "text_delta"; text: string }
+  // Thinking-mode chunk (DeepSeek V4 `reasoning_content` / OpenAI o-series).
+  // Distinct from text_delta so consumers can render with a different style
+  // and so the final response content stays clean.
+  | { type: "thinking_delta"; text: string }
   | { type: "files_created"; files: GeneratedFile[] }
   | { type: "complete"; iterations: number; totalTokens: number }
 
@@ -154,6 +158,13 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
             // below for streamed text (handled via the `streamedText`
             // guard on each text block).
             onProgress?.({ type: "text_delta", text: ev.text })
+          } else if (ev.type === "thinking_delta") {
+            // Forward the thinking chunk. It's not folded into
+            // streamedTextThisIteration (or `content`) — the agent's
+            // visible answer should stay clean — but the raw_result's
+            // `reasoning` content block carries the full text for the
+            // agentic round-trip.
+            onProgress?.({ type: "thinking_delta", text: ev.text })
           } else if (ev.type === "raw_result") {
             streamedResult = ev.result
           } else if (ev.type === "error") {

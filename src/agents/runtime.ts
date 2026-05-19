@@ -1268,6 +1268,7 @@ export async function executeOrchestrator(
   apiKey?: string,
   historyContext?: string,
   onDelta?: StreamCallback,
+  providerOpts?: { thinking?: boolean },
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -1304,6 +1305,7 @@ export async function executeOrchestrator(
       interactive: false,
       context7: false,
       noqtaContext,
+      providerOpts,
     }
 
     if (onDelta) {
@@ -1317,6 +1319,16 @@ export async function executeOrchestrator(
         if (event.type === "text_delta") {
           content += event.text
           onDelta(event.text, content)
+        } else if (event.type === "thinking_delta") {
+          // Surface thinking to the dashboard task modal but keep it out
+          // of `content` (the agent's visible response). Each chunk is
+          // emitted as its own line prefixed with the `💭 ` marker the
+          // modal's stream formatter already understands — successive
+          // chunks render as separate thought events, which is fine for
+          // a live "watch it think" experience.
+          if (event.text && event.text.trim()) {
+            onDelta(`💭 ${event.text}\n`, content)
+          }
         } else if (event.type === "generate_result") {
           // Final canonical result — generate_result.content may include
           // text the provider emitted as a single payload alongside
@@ -1617,8 +1629,11 @@ export async function executeTask(
 
     case "orchestrator": {
       const providerName = agent.provider || "claude-code"
-      const apiKey = providers[providerName]?.apiKey
-      return executeOrchestrator(agent, task, apiKey, historyContext, onDelta)
+      const providerCfg = providers[providerName]
+      const apiKey = providerCfg?.apiKey
+      return executeOrchestrator(agent, task, apiKey, historyContext, onDelta, {
+        thinking: (providerCfg as any)?.thinking,
+      })
     }
 
     default:

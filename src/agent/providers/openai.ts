@@ -7,6 +7,7 @@ import type {
   StreamEvent,
   AnthropicMessage,
   RawGenerationResult,
+  RawStreamEvent,
   ContentBlock,
 } from "./types"
 import { getLegacyTools } from "../tools/definitions"
@@ -60,18 +61,39 @@ interface OpenAIChatResponse {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 }
 
+export interface OpenAIProviderOptions {
+  /** Toggle "thinking mode" on backends that support it (DeepSeek V4
+   *  `reasoning_content`). Default `true` for DeepSeek baseUrls so the
+   *  agent surfaces its reasoning live in the dashboard; set to `false`
+   *  via `providers.<name>.thinking` in agentx.json if a particular
+   *  agent wants the extra latency / cost back. Ignored on backends
+   *  that don't speak the thinking-mode protocol (vanilla OpenAI,
+   *  vLLM, Together, …). */
+  thinking?: boolean
+}
+
 export class OpenAIProvider implements AgentProvider {
   name = "openai"
   private apiKey: string
   private baseUrl: string
+  /** Resolved thinking flag — null when the backend isn't a known
+   *  thinking-mode endpoint and the option is irrelevant. */
+  private thinkingEnabled: boolean | null
 
-  constructor(apiKey?: string, baseUrl?: string) {
+  constructor(apiKey?: string, baseUrl?: string, opts: OpenAIProviderOptions = {}) {
     this.apiKey = apiKey || process.env.OPENAI_API_KEY || ""
     this.baseUrl = (
       baseUrl ||
       process.env.OPENAI_BASE_URL ||
       "https://api.openai.com/v1"
     ).replace(/\/$/, "")
+    // DeepSeek defaults to thinking ON — that's the model's own default
+    // behavior. Operator can flip it off via providers.<name>.thinking=false.
+    // Non-DeepSeek backends ignore the flag entirely.
+    const isDeepseek = this.baseUrl.includes("deepseek.com")
+    this.thinkingEnabled = isDeepseek
+      ? (opts.thinking === false ? false : true)
+      : null
     if (!this.apiKey) {
       throw new Error(
         "OpenAI-compatible API key required. Set OPENAI_API_KEY (or pass --api-key). " +
@@ -108,6 +130,137 @@ export class OpenAIProvider implements AgentProvider {
     tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
     options?: ProviderOptions,
   ): Promise<RawGenerationResult> {
+    const body = this.buildRawBody(messages, systemPrompt, tools, options)
+    const data = await this.callApi(body)
+    return this.parseRawResponse(data)
+  }
+
+  /**
+   * Streaming variant of generateRaw. Yields text_delta and thinking_delta
+   * events as the model speaks, then a terminal raw_result with the full
+   * content blocks (text, tool_use, and — for DeepSeek thinking mode —
+   * a `reasoning` block at the head). The agentic loop's tool-dispatch
+   * and reasoning-round-trip logic then operates on identical data to
+   * the non-streaming path.
+   */
+  async *generateRawStream(
+    messages: AnthropicMessage[],
+    systemPrompt: string,
+    tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
+    options?: ProviderOptions,
+  ): AsyncIterable<RawStreamEvent> {
+    const body = { ...this.buildRawBody(messages, systemPrompt, tools, options), stream: true, stream_options: { include_usage: true } }
+
+    let res: Response
+    try {
+      res = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify(this.maybeDeepseekExtras(body)),
+      })
+    } catch (err: any) {
+      yield { type: "error", error: `OpenAI-compat raw stream init failed: ${err?.message ?? err}` }
+      return
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "")
+      yield { type: "error", error: `OpenAI-compat API error (${res.status}): ${errText.slice(0, 500)}` }
+      return
+    }
+    const reader = res.body?.getReader()
+    if (!reader) { yield { type: "error", error: "No response body on OpenAI-compat raw stream" }; return }
+
+    const decoder = new TextDecoder()
+    let buffer = ""
+    let textOut = ""
+    let reasoningOut = ""
+    let inputTokens = 0
+    let outputTokens = 0
+    let finishReason: string | null = null
+    interface ToolAcc { id: string; name: string; argumentsRaw: string }
+    const toolAcc: Record<number, ToolAcc> = {}
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const data = line.slice(6).trim()
+          if (!data || data === "[DONE]") continue
+          let chunk: any
+          try { chunk = JSON.parse(data) } catch { continue }
+          const choice = chunk.choices?.[0]
+          const delta = choice?.delta
+          if (choice?.finish_reason) finishReason = choice.finish_reason
+
+          if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
+            reasoningOut += delta.reasoning_content
+            yield { type: "thinking_delta", text: delta.reasoning_content }
+          }
+          if (typeof delta?.content === "string" && delta.content) {
+            textOut += delta.content
+            yield { type: "text_delta", text: delta.content }
+          }
+          if (Array.isArray(delta?.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index
+              if (idx == null) continue
+              const acc = (toolAcc[idx] ||= { id: "", name: "", argumentsRaw: "" })
+              if (tc.id) acc.id = tc.id
+              if (tc.function?.name) acc.name = tc.function.name
+              if (tc.function?.arguments) acc.argumentsRaw += tc.function.arguments
+            }
+          }
+          if (chunk.usage) {
+            inputTokens = chunk.usage.prompt_tokens || 0
+            outputTokens = chunk.usage.completion_tokens || 0
+          }
+        }
+      }
+    } catch (err: any) {
+      yield { type: "error", error: `OpenAI-compat raw stream read failed: ${err?.message ?? err}` }
+      return
+    }
+
+    // Assemble blocks in the same order parseRawResponse uses so the
+    // agentic loop's round-trip stays consistent.
+    const blocks: ContentBlock[] = []
+    if (reasoningOut) blocks.push({ type: "reasoning", text: reasoningOut })
+    if (textOut) blocks.push({ type: "text", text: textOut })
+    for (const acc of Object.values(toolAcc)) {
+      if (!acc.id || !acc.name) continue
+      let input: Record<string, unknown> = {}
+      try { input = acc.argumentsRaw ? JSON.parse(acc.argumentsRaw) : {} } catch { /* keep empty input */ }
+      blocks.push({ type: "tool_use", id: acc.id, name: acc.name, input })
+    }
+
+    let stop_reason: RawGenerationResult["stop_reason"] = "end_turn"
+    switch (finishReason) {
+      case "tool_calls":
+      case "function_call":
+        stop_reason = "tool_use"; break
+      case "length":
+        stop_reason = "max_tokens"; break
+    }
+
+    yield {
+      type: "raw_result",
+      result: { content: blocks, stop_reason, usage: { input_tokens: inputTokens, output_tokens: outputTokens } },
+    }
+  }
+
+  /** Shared request-body builder for generateRaw / generateRawStream — both
+   *  need the same message translation, tool list, and provider extras. */
+  private buildRawBody(
+    messages: AnthropicMessage[],
+    systemPrompt: string,
+    tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
+    options?: ProviderOptions,
+  ): Record<string, unknown> {
     const model = options?.model || process.env.OPENAI_MODEL || DEFAULT_MODEL
     const maxTokens = options?.maxTokens || DEFAULT_MAX_TOKENS
 
@@ -121,8 +274,6 @@ export class OpenAIProvider implements AgentProvider {
     for (const m of messages) {
       const blocks = Array.isArray(m.content) ? m.content : [{ type: "text" as const, text: m.content }]
       if (m.role === "user") {
-        // User turns may carry one or more tool_result blocks (Anthropic shape).
-        // OpenAI expects each tool_result as its own message with role:"tool".
         const toolResults = blocks.filter((b) => (b as any).type === "tool_result") as Array<{
           type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean;
         }>
@@ -145,10 +296,8 @@ export class OpenAIProvider implements AgentProvider {
       } else {
         // Assistant turns may have text + tool_use + reasoning blocks;
         // OpenAI wants `content` + `tool_calls` on a single message,
-        // and DeepSeek V4 also wants the prior `reasoning_content`
-        // (otherwise it rejects with "reasoning_content … must be
-        // passed back to the API"). Pull all three out, fold them
-        // into one OpenAI message.
+        // and DeepSeek V4 also wants the prior `reasoning_content` so
+        // thinking-mode round-trip works.
         const toolUses = blocks.filter((b) => (b as any).type === "tool_use") as Array<{
           type: "tool_use"; id: string; name: string; input: Record<string, unknown>;
         }>
@@ -190,9 +339,7 @@ export class OpenAIProvider implements AgentProvider {
       tool_choice: "auto",
     }
     if (options?.temperature !== undefined) body.temperature = options.temperature
-
-    const data = await this.callApi(body)
-    return this.parseRawResponse(data)
+    return body
   }
 
   async *stream(
@@ -275,6 +422,17 @@ export class OpenAIProvider implements AgentProvider {
           try { chunk = JSON.parse(data) } catch { continue }
           const choice = chunk.choices?.[0]
           const delta = choice?.delta
+
+          // Reasoning deltas (DeepSeek V4 thinking mode). Emit as a
+          // separate event so the consumer can render them inline as
+          // the agent thinks, without polluting `content`. The high-
+          // level stream() path doesn't carry reasoning into the
+          // final `GenerationResult` (it's not part of the visible
+          // answer) — only generateRawStream does, so the agentic
+          // round-trip can echo it back.
+          if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
+            yield { type: "thinking_delta", text: delta.reasoning_content }
+          }
 
           // Text deltas — stream to caller and accumulate.
           if (typeof delta?.content === "string" && delta.content) {
@@ -361,18 +519,20 @@ export class OpenAIProvider implements AgentProvider {
   }
 
   /**
-   * DeepSeek v4 enables "thinking mode" by default, which makes the
-   * model emit a `reasoning_content` block that the API expects to be
-   * echoed back on the next request. Our agentic loop sends regular
-   * messages back without reasoning_content, so the second iteration
-   * fails with "The `reasoning_content` in the thinking mode must be
-   * passed back to the API." Easiest fix: disable thinking mode for
-   * DeepSeek requests via `enable_thinking: false`. Other OpenAI-
-   * compat providers pass through unchanged.
+   * DeepSeek v4 enables "thinking mode" by default — the model emits a
+   * `reasoning_content` block that the API expects to be echoed back on
+   * the next request. The agentic loop now handles that round-trip
+   * (assistant turns with a `reasoning` content block get folded into
+   * `msg.reasoning_content` in the next request), so we no longer need
+   * to globally disable it. Operator can still opt out per provider via
+   * `providers.<name>.thinking: false` in agentx.json — the constructor
+   * resolves `this.thinkingEnabled` and we only emit `enable_thinking:
+   * false` when explicitly disabled.
    */
   private maybeDeepseekExtras(body: Record<string, unknown>): Record<string, unknown> {
-    if (!this.baseUrl.includes("deepseek.com")) return body
-    return { ...body, enable_thinking: false }
+    if (this.thinkingEnabled === null) return body  // not a thinking-mode backend
+    if (this.thinkingEnabled === false) return { ...body, enable_thinking: false }
+    return body  // thinking ON — DeepSeek's default, no extra flag needed
   }
 
   private parseHighLevelResponse(response: OpenAIChatResponse): GenerationResult {

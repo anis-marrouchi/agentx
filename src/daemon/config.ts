@@ -31,6 +31,13 @@ const providerConfigSchema = z.object({
   apiKey: z.string().optional(),
   defaultModel: z.string().optional(),
   baseUrl: z.string().optional(),
+  /** Toggle thinking-mode output on backends that support it (DeepSeek
+   *  V4 `reasoning_content`). When `true` (the DeepSeek default), the
+   *  agent streams its reasoning live in the dashboard task modal and
+   *  the agentic round-trip echoes it back on the next iteration. Set
+   *  to `false` to disable for cost/latency-sensitive agents. Ignored
+   *  on backends that don't speak the thinking-mode protocol. */
+  thinking: z.boolean().optional(),
 })
 
 const mcpServerSchema = z.object({

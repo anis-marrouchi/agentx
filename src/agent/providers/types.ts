@@ -33,6 +33,12 @@ export type StreamEvent =
   | { type: "tool_use_start"; name: string; id: string }
   | { type: "tool_use_delta"; json: string }
   | { type: "tool_use_end"; name: string }
+  // Internal reasoning chunk from a thinking-mode model (DeepSeek V4
+  // `reasoning_content`, OpenAI o-series, …). Consumers can render
+  // these inline as the agent thinks; runtime.ts forwards them with
+  // a `💭 ` marker so the live dashboard modal's existing thought-
+  // event renderer picks them up automatically.
+  | { type: "thinking_delta"; text: string }
   | { type: "done"; result: GenerationResult }
   | { type: "error"; error: string }
 
@@ -103,6 +109,11 @@ export interface AgentProvider {
  */
 export type RawStreamEvent =
   | { type: "text_delta"; text: string }
+  // Reasoning chunk from a thinking-mode model. Emitted alongside
+  // text_delta events as the model thinks; the final raw_result also
+  // carries a `reasoning` content block so the agentic loop's
+  // round-trip continues to satisfy DeepSeek's "must echo back" rule.
+  | { type: "thinking_delta"; text: string }
   | { type: "raw_result"; result: RawGenerationResult }
   | { type: "error"; error: string }
 

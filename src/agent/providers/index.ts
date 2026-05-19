@@ -15,9 +15,17 @@ const DEEPSEEK_PRESET = {
   envKey: "DEEPSEEK_API_KEY",
 }
 
+export interface CreateProviderOptions {
+  /** Toggle DeepSeek thinking-mode (`reasoning_content` blocks). Default
+   *  `true` for DeepSeek baseUrls. Wire this from
+   *  `providers.<name>.thinking` in agentx.json. */
+  thinking?: boolean
+}
+
 export function createProvider(
   name: ProviderName = "claude-code",
-  apiKey?: string
+  apiKey?: string,
+  opts: CreateProviderOptions = {},
 ): AgentProvider {
   // Auto-detect provider from stored config when using the default
   let resolvedName = name
@@ -37,13 +45,14 @@ export function createProvider(
       // OpenAI-compatible. Defaults to api.openai.com/v1 + OPENAI_API_KEY;
       // override the host via OPENAI_BASE_URL so the same class talks to
       // any compatible backend (vLLM, OpenRouter, Together, llama.cpp).
-      return new OpenAIProvider(apiKey)
+      return new OpenAIProvider(apiKey, undefined, { thinking: opts.thinking })
     case "deepseek":
       // Convenience preset — forces the DeepSeek baseUrl and pulls the key
       // from DEEPSEEK_API_KEY (falls back to apiKey arg or OPENAI_API_KEY).
       return new OpenAIProvider(
         apiKey || process.env[DEEPSEEK_PRESET.envKey] || process.env.OPENAI_API_KEY,
         DEEPSEEK_PRESET.baseUrl,
+        { thinking: opts.thinking },
       )
     case "ollama":
       throw new Error(

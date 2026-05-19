@@ -58,6 +58,11 @@ export interface GenerateOptions {
    *  agent's tool list — keeps non-noqta agents clean. The bearer is
    *  read from env at dispatch time and NEVER enters the prompt. */
   noqtaContext?: import("./tools/noqta").NoqtaToolContext
+  /** Provider-level options forwarded to `createProvider`. Today only
+   *  `thinking` (for DeepSeek thinking-mode). Wired from
+   *  `providers.<name>.thinking` in agentx.json by the daemon's
+   *  orchestrator-tier dispatch path. */
+  providerOpts?: { thinking?: boolean }
 }
 
 export interface GenerateResult {
@@ -192,7 +197,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   }
 
   // 6. Create provider
-  const provider = createProvider(providerName, apiKey)
+  const provider = createProvider(providerName, apiKey, options.providerOpts || {})
   const resolvedModel = model || loadAuthConfig()?.model
 
   // Build initial messages (without system — orchestrator handles it)
@@ -424,7 +429,7 @@ export async function* generateStream(
   }
 
   // 6. Create provider
-  const provider = createProvider(providerName, apiKey)
+  const provider = createProvider(providerName, apiKey, options.providerOpts || {})
   const resolvedModel = model || loadAuthConfig()?.model
   const useAgentic = supportsAgenticLoop(provider)
   const maxSteps = options.maxSteps ?? (useAgentic ? 20 : 5)
@@ -462,6 +467,9 @@ export async function* generateStream(
           onProgress: (event) => {
             if (event.type === "text_delta") {
               q.push({ type: "text_delta", text: event.text })
+            }
+            if (event.type === "thinking_delta") {
+              q.push({ type: "thinking_delta", text: event.text })
             }
             if (event.type === "iteration_start") {
               q.push({ type: "iteration", iteration: event.iteration })
