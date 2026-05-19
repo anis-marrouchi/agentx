@@ -1393,16 +1393,10 @@ export class MessageRouter {
             return true
           } catch (e: any) {
             clearInterval(typingTimer)
-            this.log(`Mesh routing error: ${e.message}`)
-
-            await this.adapterSend(adapter, {
-              channel: msg.channel,
-              chatId,
-              text: `Error from ${peer.peer}/${skill.name}: ${e.message}`,
-              replyTo: msg.id,
-              parseMode: "plain",
-              accountId: replyAccountId,
-            })
+            // Same policy as handleViaMeshByAgentId/handleViaMeshByPeer —
+            // react ❌, log the real reason locally, do not spam the channel.
+            this.log(`Mesh routing error for ${peer.peer}/${skill.id}: ${e.message}`)
+            this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
             return true
           }
         }
@@ -1458,16 +1452,13 @@ export class MessageRouter {
         return true
       } catch (e: any) {
         clearInterval(typingTimer)
-        this.log(`Mesh routing error for ${agentId}: ${e.message}`)
-
-        await this.adapterSend(adapter, {
-          channel: msg.channel,
-          chatId,
-          text: `Error from ${peer.peer}/${skill.name}: ${e.message}`,
-          replyTo: msg.id,
-          parseMode: "plain",
-          accountId: replyAccountId,
-        })
+        // Surface the real error in the local log (mesh.ts now includes the
+        // peer's response body), but do NOT post a public comment — most
+        // mesh failures are transient (timeout, Anthropic overload, mid-turn
+        // process death) and noisy "Error from X" comments pollute the thread.
+        // The ❌ reaction is the operator-visible signal.
+        this.log(`Mesh routing error for ${peer.peer}/${agentId}: ${e.message}`)
+        this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
         return true
       }
     }
@@ -1491,8 +1482,6 @@ export class MessageRouter {
     const peer = directory.find(p => p.peer === peerName)
 
     if (!peer || !peer.healthy) return false
-
-    const skill = peer.skills.find(s => s.id === agentId) ?? { name: agentId, id: agentId }
 
     this.log(`Mesh routing by preferNode [${msg.channel}/${msg.sender.name}] -> peer "${peerName}" agent "${agentId}"`)
 
@@ -1534,16 +1523,11 @@ export class MessageRouter {
       return true
     } catch (e: any) {
       clearInterval(typingTimer)
+      // See handleViaMeshByAgentId — log the full error (now includes peer's
+      // response body via mesh.ts) and react ❌ on the source message instead
+      // of posting a noisy "Error from X" comment for transient failures.
       this.log(`Mesh routing error for ${peerName}/${agentId}: ${e.message}`)
-
-      await this.adapterSend(adapter, {
-        channel: msg.channel,
-        chatId,
-        text: `Error from ${peerName}/${skill.name}: ${e.message}`,
-        replyTo: msg.id,
-        parseMode: "plain",
-        accountId: replyAccountId,
-      })
+      this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
       return true
     } finally {
       this.activeMeshForwards--

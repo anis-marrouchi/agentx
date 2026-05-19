@@ -165,11 +165,20 @@ export class GitLabAdapter implements ChannelAdapter {
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
   private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>
   private setLabelsForwarder?: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>
+  /** Optional mesh reference — when set, mention resolution falls back to
+   *  remote peers' agent-card skills/tags so @-mentions for agents that live
+   *  on another node route automatically without an explicit `agentMappings`
+   *  entry on this node. */
+  private mesh?: import("@/a2a/mesh").A2AMesh
 
   constructor(config: GitLabChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[gitlab]"), hooks?: HookRegistry) {
     this.config = config
     this.log = log
     this.hooks = hooks
+  }
+
+  setMesh(mesh: import("@/a2a/mesh").A2AMesh): void {
+    this.mesh = mesh
   }
 
   setReactForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>): void {
@@ -578,8 +587,10 @@ export class GitLabAdapter implements ChannelAdapter {
     // Resolve agent deterministically from GitLab @mention -> usernameToAgent map.
     debug.webhook("gitlab", "handleNote", `noteId=${noteId} mentions=[${mentions.join(",")}] user=${user.username}`)
 
-    const resolvedAgentId = this.resolveAgentFromMention(note)
-    debug.webhook("gitlab", "resolve", `agentId=${resolvedAgentId ?? "NONE"}`)
+    const resolved = this.resolveAgentFromMention(note)
+    const resolvedAgentId = resolved?.agentId
+    const resolvedFromMesh = resolved?.node
+    debug.webhook("gitlab", "resolve", `agentId=${resolvedAgentId ?? "NONE"}${resolvedFromMesh ? ` peer=${resolvedFromMesh}` : ""}`)
 
     if (!resolvedAgentId) {
       this.log(`[handleNote] @mentions in note ${noteId} are not agents (${mentions.join(", ")}), skipping`)
@@ -607,11 +618,18 @@ export class GitLabAdapter implements ChannelAdapter {
 
     const targetAgentId = resolvedAgentId
 
-    // React with 👀 using the RESOLVED agent's own token (deterministic identity)
+    // React with 👀 using the RESOLVED agent's own token (deterministic identity).
+    // Three resolution paths:
+    //   1. Explicit `agentMappings[]` entry on this node (legacy) — may have
+    //      its own `token` (post here) or `node` (forward to peer).
+    //   2. Mesh fallback (resolvedFromMesh set) — no local mapping, peer owns
+    //      both the agent and the GitLab token. Forward react to peer.
+    //   3. Local agent with no mapping — agentNode/agentToken both undefined;
+    //      reactToNote skips silently.
     const agentMapping = this.config.agentMappings?.find(m => m.agentId === targetAgentId)
     const agentToken = agentMapping?.token
-    const agentNode = (agentMapping as any)?.node as string | undefined
-    debug.webhook("gitlab", "token", `agent="${targetAgentId}" mapping=${agentMapping ? "found" : "MISSING"} hasToken=${!!agentToken} node=${agentNode ?? "local"}`)
+    const agentNode = (agentMapping as any)?.node as string | undefined ?? resolvedFromMesh
+    debug.webhook("gitlab", "token", `agent="${targetAgentId}" mapping=${agentMapping ? "found" : "MISSING"} hasToken=${!!agentToken} node=${agentNode ?? "local"}${resolvedFromMesh ? " (via mesh)" : ""}`)
     this.reactToNote(project, noteableType, noteableIid, event.object_attributes.id, agentToken, agentNode, targetAgentId).catch(() => {})
 
     const chatId = `${project}:${noteableType}:${noteableIid}`
@@ -658,7 +676,7 @@ export class GitLabAdapter implements ChannelAdapter {
       timestamp: new Date(),
       raw: event,
       resolvedAgent: targetAgentId,
-      preferNode: agentMapping?.node,
+      preferNode: agentMapping?.node ?? resolvedFromMesh,
       channelMeta: channelMeta ? { ...channelMeta, issue: { type: noteableType, iid: noteableIid, title: noteableTitle } } : undefined,
       media: imageAttachment,
       intentRef,
@@ -1378,17 +1396,51 @@ export class GitLabAdapter implements ChannelAdapter {
    * Uses the authoritative usernameToAgent map (built from API token resolution
    * at startup) — not the manually configured gitlabUsernames which may be wrong.
    */
-  private resolveAgentFromMention(text: string): string | undefined {
+  private resolveAgentFromMention(text: string): { agentId: string; node?: string } | undefined {
     // Extract @mentions from the comment, strip trailing dots/punctuation
     const mentions = text.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "").toLowerCase()) || []
     if (mentions.length === 0) return undefined
 
-    // Check against the authoritative username->agent map (resolved from tokens)
+    // Check against the authoritative username->agent map (resolved from tokens
+    // + agentMappings). This is the local + explicit-remote (`node:` set on the
+    // mapping) path, identical to the legacy behavior.
     for (const mention of mentions) {
       const agentId = this.usernameToAgent.get(mention)
       if (agentId) {
-        this.log(`Mention @${mention} -> agent "${agentId}" (resolved from token)`)
-        return agentId
+        this.log(`Mention @${mention} -> agent "${agentId}" (resolved from local map)`)
+        return { agentId }
+      }
+    }
+
+    // Mesh fallback — check each healthy peer's agent-card skills. A skill's
+    // `tags` array carries up to 4 of the agent's `mentions` (set by the
+    // daemon's /.well-known/agent-card.json builder). This lets a remote
+    // agent receive @-mentions without operators having to hand-maintain a
+    // mirror `agentMappings` entry on every node where the mention might
+    // arrive — generic cross-mesh channel routing.
+    if (this.mesh) {
+      const directory = this.mesh.directory()
+      for (const peer of directory) {
+        if (!peer.healthy) continue
+        // Only consider peers that actually host the GitLab channel — posting
+        // a reply requires the peer to have the GitLab token wiring (peer
+        // endpoints /gitlab/send-note etc.). Skip peers without GitLab.
+        const hasGitlab = peer.channels?.includes("gitlab")
+        if (!hasGitlab) continue
+        for (const skill of peer.skills) {
+          // The skill id itself is a candidate (covers `@<agentId>`).
+          const skillCandidates = new Set<string>([skill.id.toLowerCase()])
+          for (const tag of skill.tags ?? []) {
+            const cleaned = String(tag).replace(/^@/, "").toLowerCase()
+            if (cleaned) skillCandidates.add(cleaned)
+          }
+          for (const mention of mentions) {
+            if (skillCandidates.has(mention)) {
+              this.log(`Mention @${mention} -> agent "${skill.id}" on mesh peer "${peer.peer}"`)
+              return { agentId: skill.id, node: peer.peer }
+            }
+          }
+        }
       }
     }
 
@@ -1567,19 +1619,8 @@ export class GitLabAdapter implements ChannelAdapter {
       return
     }
 
-    const encodedProject = encodeURIComponent(project)
-    let endpoint: string
-
-    switch (noteableType) {
-      case "issue":
-        endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/issues/${noteableIid}/notes/${noteId}/award_emoji`
-        break
-      case "merge_request":
-        endpoint = `${this.config.host}/api/v4/projects/${encodedProject}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
-        break
-      default:
-        return
-    }
+    const endpoint = this.buildAwardEndpoint(project, noteableType, noteableIid, noteId)
+    if (!endpoint) return
 
     try {
       const res = await fetch(endpoint, {
@@ -1595,6 +1636,57 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     } catch (e: any) {
       this.log(`Failed to react to note ${noteId}: ${e.message}`)
+    }
+  }
+
+  private buildAwardEndpoint(project: string, noteableType: string, noteableIid: string, noteId: number): string | undefined {
+    const encodedProject = encodeURIComponent(project)
+    if (noteableType === "issue") {
+      return `${this.config.host}/api/v4/projects/${encodedProject}/issues/${noteableIid}/notes/${noteId}/award_emoji`
+    }
+    if (noteableType === "merge_request") {
+      return `${this.config.host}/api/v4/projects/${encodedProject}/merge_requests/${noteableIid}/notes/${noteId}/award_emoji`
+    }
+    return undefined
+  }
+
+  /**
+   * Public ChannelAdapter.react — emoji acknowledgement of a note. Used by
+   * the router on transient mesh failures (❌) so the operator sees the
+   * outcome on the thread without a noisy bot comment. Identity is the
+   * global token (the error happens *before* an agent attribution is
+   * meaningful), so this never piggy-backs on a per-agent PAT.
+   */
+  async react(chatId: string, messageId: string, emoji: string = "👀"): Promise<void> {
+    const parts = chatId.split(":")
+    if (parts.length < 3) return
+    const iid = parts.pop()!
+    const noteableType = parts.pop()!
+    const project = parts.join(":")
+    const noteId = Number(messageId)
+    if (!noteId || !this.config.token) return
+    const endpoint = this.buildAwardEndpoint(project, noteableType, iid, noteId)
+    if (!endpoint) return
+    // GitLab uses gemoji shortcodes for award_emoji; map the few unicodes the
+    // router actually sends. Unknown emoji → request body with the literal
+    // unicode (GitLab will reject; logged).
+    const name =
+      emoji === "👀" ? "eyes" :
+      emoji === "❌" ? "x" :
+      emoji === "✅" ? "white_check_mark" :
+      emoji === "⚠️" ? "warning" :
+      emoji
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": this.config.token },
+        body: JSON.stringify({ name }),
+      })
+      if (!res.ok && res.status !== 404) {
+        this.log(`React "${emoji}" on note ${noteId} failed: ${res.status}`)
+      }
+    } catch (e: any) {
+      this.log(`React "${emoji}" on note ${noteId} error: ${e.message}`)
     }
   }
 

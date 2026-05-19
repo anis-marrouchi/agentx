@@ -39,6 +39,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
+import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
   RunStore as WorkflowRunStore,
@@ -1171,6 +1172,13 @@ export class AgentXDaemon {
       )
       // Wire up mesh reaction forwarder — for agents hosted on remote peers
       if (this.mesh) {
+        // Generic cross-mesh mention resolution — when an @-mention doesn't
+        // match a local agent or an explicit `node:` mapping, the adapter
+        // walks `mesh.directory()` looking for a peer whose agent-card skill
+        // tags include the mention. This is how a brand-new remote agent
+        // becomes reachable via @-mention without operators having to mirror
+        // an `agentMappings` entry on every node.
+        gitlab.setMesh(this.mesh)
         gitlab.setReactForwarder(async (node, project, noteableType, noteableIid, noteId, agentId) => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
           if (!peer) {
@@ -3028,15 +3036,14 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // Forwarded from a mesh peer: perform a 👀 reaction using local agent token
           const body = await readBody(req)
           const { project, noteableType, noteableIid, noteId, agentId } = body as any
-          const mappings = this.config.channels.gitlab?.agentMappings || []
-          const mapping = mappings.find((m: any) => m.agentId === agentId)
-          const token = mapping?.token || this.config.channels.gitlab?.token
+          const resolved = this.resolveGitlabTokenForAgent(agentId)
+          const token = resolved.token
           const host = this.config.channels.gitlab?.host
-          this.log(`[gitlab/react] agent="${agentId}" project="${project}" mappingFound=${!!mapping} mappingToken=${!!mapping?.token} globalToken=${!!this.config.channels.gitlab?.token}(len=${(this.config.channels.gitlab?.token || "").length}) host=${host || "MISSING"}`)
+          this.log(`[gitlab/react] agent="${agentId}" project="${project}" source=${resolved.source} host=${host || "MISSING"}`)
           if (!token || !host) {
             this.json(res, 404, {
               error: "no gitlab token for agent",
-              debug: { agentId, mappingFound: !!mapping, hasMappingToken: !!mapping?.token, hasGlobalToken: !!this.config.channels.gitlab?.token, hasHost: !!host },
+              debug: { agentId, source: resolved.source, hasGlobalToken: !!this.config.channels.gitlab?.token, hasHost: !!host },
             })
             break
           }
@@ -3065,14 +3072,14 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // so the comment shows up under the agent's real GitLab user.
           const body = await readBody(req)
           const { project, noteableType, noteableIid, agentId, text } = body as any
-          const mappings = this.config.channels.gitlab?.agentMappings || []
-          const mapping = mappings.find((m: any) => m.agentId === agentId)
-          const token = mapping?.token || this.config.channels.gitlab?.token
+          const resolved = this.resolveGitlabTokenForAgent(agentId)
+          const token = resolved.token
           const host = this.config.channels.gitlab?.host
           if (!token || !host) {
-            this.json(res, 404, { error: "no gitlab token for agent", debug: { agentId, hasToken: !!token, hasHost: !!host } })
+            this.json(res, 404, { error: "no gitlab token for agent", debug: { agentId, source: resolved.source, hasToken: !!token, hasHost: !!host } })
             break
           }
+          this.log(`[gitlab/send-note] agent="${agentId}" source=${resolved.source}`)
           const encoded = encodeURIComponent(project)
           const ep = noteableType === "issue"
             ? `${host}/api/v4/projects/${encoded}/issues/${noteableIid}/notes`
@@ -3099,12 +3106,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           // Forwarded from a mesh peer: log spent time under the agent's own user.
           const body = await readBody(req)
           const { project, noteableType, noteableIid, agentId, durationMs } = body as any
-          const mappings = this.config.channels.gitlab?.agentMappings || []
-          const mapping = mappings.find((m: any) => m.agentId === agentId)
-          const token = mapping?.token || this.config.channels.gitlab?.token
+          const resolved = this.resolveGitlabTokenForAgent(agentId)
+          const token = resolved.token
           const host = this.config.channels.gitlab?.host
           if (!token || !host) {
-            this.json(res, 404, { error: "no gitlab token for agent" })
+            this.json(res, 404, { error: "no gitlab token for agent", debug: { agentId, source: resolved.source } })
             break
           }
           const totalSeconds = Math.max(60, Math.round(Number(durationMs) / 1000))
@@ -3984,6 +3990,26 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
   private json(res: ServerResponse, status: number, data: unknown): void {
     res.writeHead(status, { "Content-Type": "application/json" })
     res.end(JSON.stringify(data, null, 2))
+  }
+
+  /** Resolve a GitLab API token for the given agent, checking (in order):
+   *    1. `channels.gitlab.agentMappings[].token` — legacy per-agent token
+   *    2. `agents[id].integrations[]` (kind=gitlab-user, tokenEnv) — newer
+   *       style used by agents declared via `agentx manage`
+   *    3. `channels.gitlab.token` — global fallback (group bot identity)
+   *  Returns the token plus a `source` tag for diagnostic logging. */
+  private resolveGitlabTokenForAgent(agentId?: string): { token: string | undefined; source: string } {
+    if (!agentId) {
+      return { token: this.config.channels.gitlab?.token, source: "global" }
+    }
+    const mapping = (this.config.channels.gitlab?.agentMappings || []).find((m: any) => m.agentId === agentId)
+    if (mapping?.token) return { token: mapping.token, source: "agentMappings" }
+    const credential = resolveAgentCredential(this.config, agentId, "gitlab-user", "tokenEnv")
+    if (credential.status === "ok" && credential.value) {
+      return { token: credential.value, source: `integrations(${credential.envVar})` }
+    }
+    if (this.config.channels.gitlab?.token) return { token: this.config.channels.gitlab.token, source: "global" }
+    return { token: undefined, source: credential.status }
   }
 
   /** Pick today's usage rollup according to AGENTX_USAGE_READ:

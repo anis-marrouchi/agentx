@@ -350,8 +350,19 @@ export class A2AMesh {
     }
     clearTimeout(timer)
 
+    // The daemon's /task handler returns 500 with `{ error: "<reason>" }`
+    // when registry.execute fails (Claude timeout, Anthropic overload, operator
+    // cancel, mid-turn process exit, ...). Read the body even on !res.ok so
+    // the caller sees the real reason instead of an opaque "/task error: 500".
     if (!res.ok) {
-      throw new Error(`Peer "${peerName}" /task error: ${res.status}`)
+      let detail = ""
+      try {
+        const errBody = await res.json() as { error?: string }
+        if (errBody.error) detail = `: ${errBody.error}`
+      } catch {
+        /* body was not JSON — fall through with status only */
+      }
+      throw new Error(`Peer "${peerName}" /task error: ${res.status}${detail}`)
     }
 
     const data = await res.json() as { content?: string; error?: string }
