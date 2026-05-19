@@ -1667,7 +1667,23 @@ export class AgentRegistry {
         if (warning) this.log(`[${task.agentId}] ${warning}`)
       }
 
-      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, onDelta, historyContext, resumeSessionId, onEvent, abortController.signal)
+      // Tiers other than claude-code don't emit stream-json events into
+      // onEvent — they only call onDelta with text chunks. Without
+      // wiring those chunks into the modal buffer, /live's task modal
+      // came up blank for orchestrator-tier (noqta-public) and
+      // codex-cli runs even when text was actively streaming back to
+      // the caller. Wrap onDelta only for non-claude-code tiers; for
+      // claude-code the formatter (onEvent → pushToBuffer) is already
+      // the authoritative source — wrapping there would double-print
+      // every text chunk in the modal.
+      const tierUsesStreamJson = state.def.tier === "claude-code"
+      const wrappedOnDelta: StreamCallback | undefined = tierUsesStreamJson
+        ? onDelta
+        : (text, fullText) => {
+            if (text) pushToBuffer(text)
+            if (onDelta) onDelta(text, fullText)
+          }
+      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDelta, historyContext, resumeSessionId, onEvent, abortController.signal)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
