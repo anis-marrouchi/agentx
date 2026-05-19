@@ -967,6 +967,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     }
   }
 
+  // Friendly aliases for naked paths people copy-paste from terminal output,
+  // Slack messages, or muscle memory ("just open /health"). The dashboard
+  // proper lives under /admin/<page> — unknown top-level paths that match a
+  // known admin section get a 302 so the URL works instead of dumping
+  // {"error":"not found"} JSON. Only slugs that resolve to a real admin
+  // page are mapped — phantom redirects (/admin/<slug> 404) would be worse
+  // than the original 404.
+  if (method === "GET" && /^\/[a-z][a-z-]*\/?$/.test(path)) {
+    const slug = path.replace(/^\/+|\/+$/g, "")
+    const SLUG_TO_ADMIN: Record<string, string> = {
+      health: "/admin/health",
+      activity: "/admin/activity-graph",
+      ledger: "/admin/ledger",
+      cost: "/admin/cost",
+      projects: "/admin/projects",
+      graph: "/admin/graph",
+      wiki: "/admin/wiki/",
+      observability: "/admin/health",
+    }
+    const target = SLUG_TO_ADMIN[slug]
+    if (target) {
+      res.writeHead(302, { Location: target })
+      res.end()
+      return
+    }
+  }
+
   sendJson(res, 404, { error: "not found", path })
 }
 

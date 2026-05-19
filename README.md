@@ -2,6 +2,16 @@
 
 **The AI operations layer for small & medium businesses.** Plug in the channels your team already uses — Telegram, WhatsApp, Slack, Discord, GitLab, GitHub — set schedules, and watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted.
 
+## What it is — and isn't
+
+**It is** the ops + observability layer above whatever agents you're already running: routing across Telegram / WhatsApp / Slack / Discord / GitLab / GitHub, an append-only intent ledger you can replay, per-agent cost accounting, schedules, and a live dashboard. Bring any LLM — Claude, OpenAI, Ollama, your own — via `providers.<name>` in `agentx.json`.
+
+**It is not:**
+- **Not a chatbot.** AgentX coordinates the agents you've configured; it doesn't have an opinion about what they say.
+- **Not a hosted SaaS.** Everything stays on your machines — `agentx.json` + SQLite are the source of truth, no telemetry leaves the box.
+- **Not yet another agent framework.** If you want a DSL for a single agent, reach for AutoGen / LangGraph / CrewAI. AgentX is the layer *above* that: which agent runs, on which channel, on what schedule, at what cost, and replayably auditable when something goes wrong.
+- **Not provider-locked.** Swap LLMs without rewriting agents.
+
 ## Who it's for
 
 **Small & medium businesses running AI agents on real channels.** Support queues, devops squads, ops teams, internal automation. You want multiple agents handling different jobs, coordinating across machines, answering on the tools your people already use — without standing up a ML platform or hiring dedicated infra.
