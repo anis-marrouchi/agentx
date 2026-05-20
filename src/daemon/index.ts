@@ -59,6 +59,7 @@ import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
 import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
+import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
@@ -505,6 +506,14 @@ export class AgentXDaemon {
     // Operator-owned files (no agentx marker) are skipped; only files
     // we wrote ourselves are rewritten or removed.
     this.installAgentMcpConfig()
+
+    // Background-index any codegraph-enabled workspace whose `.codegraph/`
+    // is missing. Fire-and-forget — boot continues immediately; indexes
+    // land while the daemon is already serving traffic, and cold
+    // dispatches before the index is ready fall through gracefully (the
+    // managed CLAUDE.md tells the agent to use grep when codegraph
+    // returns nothing).
+    void bootstrapCodegraphIndexes(this.config.agents, this.log)
 
     // Print cron summary
     const cronJobs = this.cron.list()
@@ -4062,7 +4071,10 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
     for (const [agentId, def] of Object.entries(this.config.agents)) {
       const ws = def.workspace
       if (!ws || !existsSync(ws)) continue
-      const mcp = ((def as any).mcp ?? {}) as McpServerMap
+      // effectiveMcpConfig layers the codegraph server on top of any
+      // operator-declared MCP servers when `def.codegraph === true`.
+      // Operator entries still win on collision (see effectiveMcpConfig).
+      const mcp = effectiveMcpConfig(def)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {

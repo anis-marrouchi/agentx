@@ -43,6 +43,7 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceChecks(checks, cfg)
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
+  if (cfg) runCodegraphChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -609,6 +610,71 @@ async function runRuntimeChecks(checks: Check[], cfg: any): Promise<void> {
       detail: url,
       fix: "Run `agentx daemon start`. Skip this check with `agentx doctor --no-running`.",
     })
+  }
+}
+
+function runCodegraphChecks(checks: Check[], cfg: any): void {
+  const optedIn = Object.entries(cfg.agents || {})
+    .filter(([, a]: [string, any]) =>
+      a?.codegraph === true && (a.tier === "claude-code" || a.tier === "codex-cli"),
+    ) as Array<[string, any]>
+
+  if (optedIn.length === 0) return // No agent uses codegraph — skip silently.
+
+  // Binary on PATH.
+  let cgPath: string | null = null
+  try {
+    cgPath = execFileSync(process.platform === "win32" ? "where" : "which", ["codegraph"], { encoding: "utf-8" })
+      .trim().split("\n")[0] || null
+  } catch { cgPath = null }
+
+  if (cgPath) {
+    let ver: string | undefined
+    try { ver = execFileSync("codegraph", ["--version"], { encoding: "utf-8", timeout: 3000 }).trim() } catch { /* */ }
+    checks.push({
+      severity: "ok",
+      group: "CodeGraph",
+      title: `codegraph CLI ${ver || "installed"}`,
+      detail: cgPath,
+    })
+  } else {
+    checks.push({
+      severity: "fail",
+      group: "CodeGraph",
+      title: "codegraph CLI not on PATH",
+      detail: `${optedIn.length} agent(s) have codegraph:true but the binary isn't available.`,
+      fix: "Install with `npm i -g @colbymchenry/codegraph`.",
+    })
+  }
+
+  // Per-workspace index presence.
+  for (const [agentId, def] of optedIn) {
+    if (!def.workspace || !existsSync(def.workspace)) {
+      checks.push({
+        severity: "warn",
+        group: "CodeGraph",
+        title: `${agentId}: workspace missing`,
+        detail: `Workspace path ${def.workspace} does not exist — codegraph will skip this agent.`,
+      })
+      continue
+    }
+    const dbPath = resolve(def.workspace, ".codegraph", "codegraph.db")
+    if (existsSync(dbPath)) {
+      checks.push({
+        severity: "ok",
+        group: "CodeGraph",
+        title: `${agentId}: index present`,
+        detail: dbPath,
+      })
+    } else {
+      checks.push({
+        severity: "warn",
+        group: "CodeGraph",
+        title: `${agentId}: index not built yet`,
+        detail: ".codegraph/ missing — daemon will background-index this workspace on next boot.",
+        fix: `Run \`codegraph init --index ${def.workspace}\` to build it now.`,
+      })
+    }
   }
 }
 

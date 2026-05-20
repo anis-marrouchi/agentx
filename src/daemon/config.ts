@@ -163,6 +163,16 @@ const agentConfigSchema = z.object({
    *  to <workspace>/.mcp.json at daemon boot via agent-mcp.ts. Operator
    *  edits to .mcp.json are respected (see SyncResult.skipped-operator-owned). */
   mcp: z.record(z.string(), mcpServerSchema).optional(),
+  /** Enable CodeGraph (https://github.com/colbymchenry/codegraph) for this
+   *  agent's claude-code or codex-cli workspace. When true, agentx (a) adds
+   *  a codegraph MCP server to <workspace>/.mcp.json, (b) extends
+   *  .claude/settings.json permissions.allow with the codegraph_* tools,
+   *  (c) appends a CodeGraph instruction section to the managed CLAUDE.md,
+   *  and (d) background-indexes the workspace at daemon boot if .codegraph/
+   *  is missing. Off by default — flip on for coding agents (mtgl-v2-coder,
+   *  ksi-v2-coder, hasanah-coding, etc.) where token-volume on exploration
+   *  loops is the bottleneck. */
+  codegraph: z.boolean().default(false),
   /** Per-agent override for the global `session.contextStrategy`. Lets
    *  one agent run `planner` (smaller upfront context, more tool-driven
    *  exploration) while siblings stay on `layered`. Used for agents that

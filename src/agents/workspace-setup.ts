@@ -3,6 +3,7 @@ import { resolve } from "path"
 import { createHash } from "crypto"
 import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
+import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -11,15 +12,22 @@ import { generateAgentsMd } from "./bootstrap"
 const MANAGED_MARKER_PREFIX = "<!-- agentx-managed: hash="
 const MANAGED_MARKER_SUFFIX = " -->"
 
-function systemPromptHash(systemPrompt: string | undefined): string {
+/** Hash inputs that drive the managed-CLAUDE.md content. Anything that
+ *  affects what `generateClaudeMd` emits should feed into this so flipping
+ *  the input also refreshes the file on next boot. Currently:
+ *  systemPrompt + codegraph flag (the codegraph instruction block is
+ *  conditional on it). */
+function managedHashInputs(def: Pick<AgentDef, "systemPrompt" | "codegraph">): string {
   return createHash("sha256")
-    .update(systemPrompt ?? "")
+    .update(def.systemPrompt ?? "")
+    .update("\0")
+    .update(def.codegraph ? "cg:1" : "cg:0")
     .digest("hex")
     .slice(0, 16)
 }
 
-function buildManagedMarker(systemPrompt: string | undefined): string {
-  return `${MANAGED_MARKER_PREFIX}${systemPromptHash(systemPrompt)}${MANAGED_MARKER_SUFFIX}`
+function buildManagedMarker(def: Pick<AgentDef, "systemPrompt" | "codegraph">): string {
+  return `${MANAGED_MARKER_PREFIX}${managedHashInputs(def)}${MANAGED_MARKER_SUFFIX}`
 }
 
 /**
@@ -60,7 +68,7 @@ export function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: str
   // Managed-marker on line 1 — used by setupWorkspace to detect stale
   // auto-generated files and regenerate them when systemPrompt changes.
   // User-edited files (no marker) are left alone forever.
-  lines.push(buildManagedMarker(def.systemPrompt))
+  lines.push(buildManagedMarker(def))
   lines.push(`# ${def.name}`)
   lines.push("")
   lines.push("@AGENTS.md")
@@ -176,6 +184,13 @@ export function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: str
   lines.push("- Calling an agent on a peer mesh node → `mesh.delegate` (cross-machine; same fresh-session default)")
   lines.push("")
 
+  // CodeGraph instruction block — only when the agent opted in. See
+  // src/agents/codegraph-bootstrap.ts for the section content; sourcing it
+  // from one place keeps the wording consistent if upstream changes.
+  if (def.codegraph) {
+    lines.push(codegraphClaudeMdSection())
+  }
+
   return lines.join("\n")
 }
 
@@ -204,6 +219,16 @@ function generateSettings(agentId: string, def: AgentDef): Record<string, unknow
         "Bash(mkfs*)",
       ],
     }
+  }
+
+  // Pre-authorize codegraph MCP tools so claude doesn't prompt for each
+  // call. Even under bypassPermissions there's no harm — an explicit allow
+  // list survives if the agent later switches to a stricter mode.
+  if (def.codegraph) {
+    const perms = (settings["permissions"] as Record<string, unknown>) || {}
+    const existing = Array.isArray(perms["allow"]) ? (perms["allow"] as string[]) : []
+    perms["allow"] = [...new Set([...existing, ...CODEGRAPH_TOOLS])]
+    settings["permissions"] = perms
   }
 
   // Hooks
@@ -403,11 +428,12 @@ export function setupWorkspace(
     return { created, skipped }
   }
 
-  // CLAUDE.md — managed: silently refreshed when systemPrompt changes.
+  // CLAUDE.md — managed: silently refreshed when systemPrompt OR codegraph
+  // flag changes (both feed into the marker hash via managedHashInputs).
   writeManaged(
     resolve(workspace, "CLAUDE.md"),
     generateClaudeMd(agentId, def, daemonPort),
-    systemPromptHash(def.systemPrompt),
+    managedHashInputs(def),
   )
 
   // .claude/settings.json

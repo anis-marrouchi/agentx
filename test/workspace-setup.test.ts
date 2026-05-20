@@ -149,3 +149,60 @@ describe("setupWorkspace CLAUDE.md refresh", () => {
     expect(result.skipped.some((p) => p.endsWith("CLAUDE.md"))).toBe(true)
   })
 })
+
+describe("codegraph opt-in", () => {
+  let workspace: string
+
+  beforeEach(() => {
+    workspace = mkdtempSync(resolve(tmpdir(), "agentx-ws-cg-"))
+  })
+
+  afterEach(() => {
+    rmSync(workspace, { recursive: true, force: true })
+  })
+
+  it("CLAUDE.md omits the CodeGraph section when codegraph=false", () => {
+    const md = generateClaudeMd("a", baseAgent({ codegraph: false, systemPrompt: "p" }), "19900")
+    expect(md).not.toContain("## CodeGraph")
+    expect(md).not.toContain("codegraph_search")
+  })
+
+  it("CLAUDE.md includes the CodeGraph section when codegraph=true", () => {
+    const md = generateClaudeMd("a", baseAgent({ codegraph: true, systemPrompt: "p" }), "19900")
+    expect(md).toContain("## CodeGraph")
+    expect(md).toContain("codegraph_search")
+    expect(md).toContain("codegraph_callers")
+    // The block instructs Explore-subagent usage for the heavy tools.
+    expect(md).toMatch(/Explore subagent/i)
+  })
+
+  it("settings.json adds codegraph tools to permissions.allow when codegraph=true", () => {
+    setupWorkspace("ws-cg", baseAgent({ workspace, codegraph: true }), "19900", () => {})
+    const settings = JSON.parse(readFileSync(resolve(workspace, ".claude/settings.json"), "utf8"))
+    const allow = settings.permissions?.allow ?? []
+    expect(allow).toContain("mcp__codegraph__codegraph_search")
+    expect(allow).toContain("mcp__codegraph__codegraph_callers")
+    expect(allow).toContain("mcp__codegraph__codegraph_impact")
+  })
+
+  it("settings.json omits the codegraph allow entries when codegraph=false", () => {
+    setupWorkspace("ws-cg", baseAgent({ workspace, codegraph: false }), "19900", () => {})
+    const settings = JSON.parse(readFileSync(resolve(workspace, ".claude/settings.json"), "utf8"))
+    const allow = settings.permissions?.allow ?? []
+    expect(allow).not.toContain("mcp__codegraph__codegraph_search")
+  })
+
+  it("flipping codegraph false → true refreshes CLAUDE.md", () => {
+    setupWorkspace("ws-cg", baseAgent({ workspace, codegraph: false, systemPrompt: "p" }), "19900", () => {})
+    const before = readFileSync(resolve(workspace, "CLAUDE.md"), "utf8")
+    expect(before).not.toContain("## CodeGraph")
+
+    // managedHashInputs folds the codegraph flag into the marker hash so
+    // flipping the flag triggers a refresh on next setup, even when the
+    // systemPrompt is unchanged.
+    const result = setupWorkspace("ws-cg", baseAgent({ workspace, codegraph: true, systemPrompt: "p" }), "19900", () => {})
+    const after = readFileSync(resolve(workspace, "CLAUDE.md"), "utf8")
+    expect(after).toContain("## CodeGraph")
+    expect(result.created.some((p) => p.endsWith("CLAUDE.md (refreshed)"))).toBe(true)
+  })
+})
