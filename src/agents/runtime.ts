@@ -12,9 +12,13 @@ import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./e
  *  kind survives onto the response (see AgentResponse.errorKind). */
 function buildErrorEnvelope(raw: string | undefined | null): { error: string; errorKind: FriendlyError["kind"] } {
   const friendly = friendlyModelError(raw)
+  if (friendly.kind === "invalid_request" || friendly.kind === "unknown") {
+    const sample = (raw || "").replace(/\s+/g, " ").slice(0, 800)
+    if (sample) process.stderr.write(`[agentx][model-error][${friendly.kind}] raw=${sample}\n`)
+  }
   return { error: renderFriendlyError(friendly), errorKind: friendly.kind }
 }
-import { buildAgentEnv } from "@/utils/workspace-env"
+import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
@@ -645,7 +649,7 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = buildAgentEnv(agent.workspace)
+      const childEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
       let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -776,11 +780,13 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    const spawnEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
     const proc = execa("claude", args, {
       cwd: agent.workspace,
       timeout: streamTimeoutMs,
       reject: false,
-      env: buildAgentEnv(agent.workspace),
+      env: spawnEnv,
+      extendEnv: false,
       // Don't buffer — we'll read stdout line by line
       buffer: false,
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
@@ -890,6 +896,9 @@ export async function executeClaudeCodeStreaming(
             // carries the authoritative new session_id (line above).
             if (event.type === "system" && event.subtype === "init") {
               if (typeof event.model === "string") streamBilledModel = event.model
+              if (process.env.AGENTX_DEBUG_CLAUDE_ENV === "1") {
+                process.stderr.write(`[claude-init] agent=${task.agentId} apiKeySource=${event.apiKeySource} version=${event.claude_code_version} model=${event.model} permMode=${event.permissionMode}\n`)
+              }
             }
           } catch {
             // Not JSON — could be raw text output, append it
@@ -1005,6 +1014,7 @@ export async function executeCodexCli(
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
+      extendEnv: false,
       stdin: "ignore",
     })
 
@@ -1085,6 +1095,7 @@ export async function executeCodexCliStreaming(
       timeout: timeoutMs,
       reject: false,
       env: buildRuntimeEnv(agent, task),
+      extendEnv: false,
       buffer: false,
       stdin: "ignore",
     })

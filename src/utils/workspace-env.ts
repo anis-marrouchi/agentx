@@ -106,3 +106,17 @@ export function buildAgentEnv(
   }
   return child
 }
+
+// Force the `claude` CLI to use OAuth/subscription billing. When
+// ANTHROPIC_API_KEY is present (env, systemd EnvironmentFile, daemon .env not
+// stripped because the workspace also defines it), the CLI silently switches
+// to the API-key path and any usage caps on that key surface as
+// "You have reached your specified API usage limits...". This caused
+// claude-code-tier agents to bypass the user's subscription. The same
+// stripping pattern lives in src/agent/providers/claude-code.ts for the
+// in-process provider — keep them in sync.
+export function stripAnthropicApiKey(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  delete env.ANTHROPIC_API_KEY
+  delete env.ANTHROPIC_API_KEY_OLD
+  return env
+}

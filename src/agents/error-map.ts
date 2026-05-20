@@ -15,6 +15,7 @@ export interface FriendlyError {
   kind:
     | "out_of_credits"
     | "overage_disabled"
+    | "usage_cap"
     | "auth"
     | "permission"
     | "rate_limit"
@@ -58,6 +59,27 @@ export function friendlyModelError(raw: string | undefined | null): FriendlyErro
       retryable: true,
       message: "The agent's Claude Code session is logged out.",
       fix: "Usually a transient OAuth refresh race under concurrent load — retry in a moment. If it persists, run `/login` in the agent's workspace.",
+      raw: source,
+    }
+  }
+
+  // User-set monthly /usage cap on the Claude Code subscription (the
+  // `/usage` slash-command limit). Surfaces as "You have reached your
+  // specified API usage limits. You will regain access on <ISO date>" —
+  // wording introduced by Claude CLI v2.1.x. Distinct from
+  // `overage_disabled` (which is the org-level toggle, retryable as soon
+  // as someone flips it) and `out_of_credits` (programmatic API key
+  // billing). The operator fix is to raise the cap at
+  // claude.ai/settings/usage OR wait for the cycle reset; not retryable
+  // until either happens.
+  if (/specified API usage limits/i.test(source)) {
+    const dateMatch = source.match(/regain access on ([^.\n]+?)(?:\.|$)/i)
+    const when = dateMatch ? ` Resets ${dateMatch[1].trim()}.` : ""
+    return {
+      kind: "usage_cap",
+      retryable: false,
+      message: `Claude Code subscription /usage cap exhausted.${when}`,
+      fix: "Raise the cap at https://claude.ai/settings/usage (this is the user-set monthly limit on the OAuth account, not Anthropic API billing). If the daemon is using a different account than expected, check CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY in the spawn env — capped keys leak the same error.",
       raw: source,
     }
   }

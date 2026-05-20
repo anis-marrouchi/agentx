@@ -12,6 +12,7 @@ import {
   type TurnInput,
 } from "./process-registry"
 import { readManagedHash } from "./workspace-setup"
+import { stripAnthropicApiKey } from "@/utils/workspace-env"
 
 // --- Real subprocess factory for `claude` ---
 //
@@ -96,7 +97,7 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     this.child = spawn(binary, args, {
       cwd: spawnOpts.workspace,
-      env: { ...process.env },
+      env: stripAnthropicApiKey({ ...process.env }),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 

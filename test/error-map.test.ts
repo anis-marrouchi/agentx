@@ -83,6 +83,16 @@ describe("friendlyModelError", () => {
     expect(f.kind).toBe("out_of_credits")
   })
 
+  it("classifies the v2.1.x 'specified API usage limits' cap message", () => {
+    const raw = "API Error: 400 You have reached your specified API usage limits. You will regain access on 2026-06-01 at 00:00 UTC."
+    const f = friendlyModelError(raw)
+    expect(f.kind).toBe("usage_cap")
+    expect(f.retryable).toBe(false)
+    expect(f.message).toMatch(/cap exhausted/i)
+    expect(f.message).toMatch(/2026-06-01/)
+    expect(f.fix).toMatch(/claude\.ai\/settings\/usage/)
+  })
+
   it("renders a single actionable line", () => {
     const raw = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage"}}`
     const rendered = renderFriendlyError(friendlyModelError(raw))
