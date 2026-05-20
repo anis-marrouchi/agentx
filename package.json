@@ -76,6 +76,7 @@
     "execa": "^7.0.0",
     "fast-glob": "^3.3.2",
     "fs-extra": "^11.2.0",
+    "ink": "^5.0.1",
     "js-yaml": "^4.1.1",
     "minisearch": "^7.2.0",
     "node-fetch": "^3.3.0",

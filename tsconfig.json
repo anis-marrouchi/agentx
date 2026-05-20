@@ -20,7 +20,8 @@
     "isolatedModules": false,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "ink": ["./node_modules/ink/build/index.d.ts"]
     },
     "jsx": "react-jsx"
   },
