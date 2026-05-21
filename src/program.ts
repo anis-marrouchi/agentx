@@ -29,6 +29,7 @@ import { actions as actionsCmd } from "@/commands/actions"
 import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
 import { tui } from "@/commands/tui"
+import { chat } from "@/commands/chat"
 import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { bench } from "@/commands/bench"
@@ -93,6 +94,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(role)
     .addCommand(watch)
     .addCommand(tui)
+    .addCommand(chat)
     .addCommand(memoryCmd)
     .addCommand(token)
     .addCommand(doctor)

@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer, useRef } from "react"
 import { Box, Text, useApp, useInput } from "ink"
+import { randomUUID } from "crypto"
 import {
   fetchAgents,
   fetchCrons,
@@ -16,11 +17,20 @@ import { streamEvents, type SseFrame } from "./sse.js"
 type FocusPane = "agents" | "processes" | "events"
 type BottomRight = "crons" | "channels"
 
-interface ComposerState {
-  open: boolean
+interface ChatTurn {
+  role: "you" | "agent" | "error"
   text: string
-  targetAgentId: string | null
-  status: "idle" | "sending" | "error"
+  at: number
+  elapsedMs?: number
+}
+
+interface ChatState {
+  active: boolean
+  agentId: string | null
+  chatId: string
+  history: ChatTurn[]
+  text: string
+  status: "idle" | "sending"
   error: string | null
 }
 
@@ -43,15 +53,11 @@ interface State {
   focus: FocusPane
   cursor: { agents: number; processes: number; events: number }
   bottomRight: BottomRight
-  composer: ComposerState
+  chat: ChatState
   toast: { text: string; color: "green" | "red" | "yellow"; at: number } | null
 }
 
-interface EventRow {
-  at: number
-  kind: string
-  line: string
-}
+interface EventRow { at: number; kind: string; line: string }
 
 type Action =
   | { type: "agents"; data: AgentRow[] }
@@ -63,7 +69,13 @@ type Action =
   | { type: "focus"; pane: FocusPane }
   | { type: "cursor"; pane: FocusPane; delta: number }
   | { type: "bottomRight"; pane: BottomRight }
-  | { type: "composer"; patch: Partial<ComposerState> }
+  | { type: "chatStart"; agentId: string }
+  | { type: "chatExit" }
+  | { type: "chatClear" }
+  | { type: "chatText"; text: string }
+  | { type: "chatSubmitStart"; you: ChatTurn }
+  | { type: "chatSubmitDone"; reply: ChatTurn }
+  | { type: "chatSubmitError"; error: string }
   | { type: "toast"; text: string; color: "green" | "red" | "yellow" }
   | { type: "clearToast" }
 
@@ -74,22 +86,20 @@ function clampCursor(idx: number, len: number): number {
   return idx
 }
 
+function newChatId(): string { return `tui:${randomUUID().slice(0, 12)}` }
+
+function appendHistory(prev: ChatTurn[], turn: ChatTurn): ChatTurn[] {
+  const next = [...prev, turn]
+  if (next.length > 50) next.splice(0, next.length - 50)
+  return next
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case "agents": {
-      return {
-        ...state,
-        agents: action.data,
-        cursor: { ...state.cursor, agents: clampCursor(state.cursor.agents, action.data.length) },
-      }
-    }
-    case "processes": {
-      return {
-        ...state,
-        processes: action.data,
-        cursor: { ...state.cursor, processes: clampCursor(state.cursor.processes, action.data.length) },
-      }
-    }
+    case "agents":
+      return { ...state, agents: action.data, cursor: { ...state.cursor, agents: clampCursor(state.cursor.agents, action.data.length) } }
+    case "processes":
+      return { ...state, processes: action.data, cursor: { ...state.cursor, processes: clampCursor(state.cursor.processes, action.data.length) } }
     case "crons": return { ...state, crons: action.data }
     case "event": {
       const next = [action.row, ...state.events]
@@ -108,13 +118,42 @@ function reducer(state: State, action: Action): State {
       const len = action.pane === "agents" ? state.agents.length
         : action.pane === "processes" ? state.processes.length
           : state.events.length
-      return {
-        ...state,
-        cursor: { ...state.cursor, [action.pane]: clampCursor(state.cursor[action.pane] + action.delta, len) },
-      }
+      return { ...state, cursor: { ...state.cursor, [action.pane]: clampCursor(state.cursor[action.pane] + action.delta, len) } }
     }
     case "bottomRight": return { ...state, bottomRight: action.pane }
-    case "composer": return { ...state, composer: { ...state.composer, ...action.patch } }
+    case "chatStart":
+      return {
+        ...state,
+        chat: {
+          active: true,
+          agentId: action.agentId,
+          chatId: newChatId(),
+          history: [],
+          text: "",
+          status: "idle",
+          error: null,
+        },
+      }
+    case "chatExit":
+      return { ...state, chat: { ...state.chat, active: false } }
+    case "chatClear":
+      return { ...state, chat: { ...state.chat, chatId: newChatId(), history: [], text: "", status: "idle", error: null } }
+    case "chatText":
+      return { ...state, chat: { ...state.chat, text: action.text } }
+    case "chatSubmitStart":
+      return { ...state, chat: { ...state.chat, history: appendHistory(state.chat.history, action.you), text: "", status: "sending", error: null } }
+    case "chatSubmitDone":
+      return { ...state, chat: { ...state.chat, history: appendHistory(state.chat.history, action.reply), status: "idle", error: null } }
+    case "chatSubmitError":
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          history: appendHistory(state.chat.history, { role: "error", text: action.error, at: Date.now() }),
+          status: "idle",
+          error: action.error,
+        },
+      }
     case "toast": return { ...state, toast: { text: action.text, color: action.color, at: Date.now() } }
     case "clearToast": return { ...state, toast: null }
   }
@@ -131,7 +170,7 @@ const initialState: State = {
   focus: "agents",
   cursor: { agents: 0, processes: 0, events: 0 },
   bottomRight: "crons",
-  composer: { open: false, text: "", targetAgentId: null, status: "idle", error: null },
+  chat: { active: false, agentId: null, chatId: newChatId(), history: [], text: "", status: "idle", error: null },
   toast: null,
 }
 
@@ -140,7 +179,6 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
   const { exit } = useApp()
   const abortRef = useRef<AbortController | null>(null)
 
-  // Auto-clear toasts after a few seconds.
   useEffect(() => {
     if (!state.toast) return
     const id = setTimeout(() => dispatch({ type: "clearToast" }), 3500)
@@ -148,48 +186,50 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
   }, [state.toast])
 
   useInput((input, key) => {
-    // Composer captures input while open — everything routes there except Esc / Enter.
-    if (state.composer.open) {
-      if (key.escape) {
-        dispatch({ type: "composer", patch: { open: false, text: "", status: "idle", error: null } })
+    // Chat mode: capture all input into the composer except control keys.
+    if (state.chat.active) {
+      if (key.escape) { dispatch({ type: "chatExit" }); return }
+      if (key.ctrl && input === "l") {
+        dispatch({ type: "chatClear" })
         return
       }
       if (key.return) {
-        const text = state.composer.text.trim()
-        const agentId = state.composer.targetAgentId
-        if (!text || !agentId) return
-        dispatch({ type: "composer", patch: { status: "sending", error: null } })
+        const text = state.chat.text.trim()
+        const agentId = state.chat.agentId
+        if (!text || !agentId || state.chat.status === "sending") return
+        const startedAt = Date.now()
+        const chatId = state.chat.chatId
+        const youTurn: ChatTurn = { role: "you", text, at: startedAt }
+        dispatch({ type: "chatSubmitStart", you: youTurn })
         void (async () => {
-          dispatch({
-            type: "event",
-            row: { at: Date.now(), kind: "you", line: `→ @${agentId}: ${text}` },
-          })
           try {
-            const r = await sendTask(conn, agentId, text)
-            const reply = r?.content?.toString?.() || r?.error || "(empty reply)"
+            const r = await sendTask(conn, agentId, text, { channel: "tui", chatId })
+            if (r?.error) {
+              dispatch({ type: "chatSubmitError", error: r.error })
+              return
+            }
+            const reply = (r?.content ?? "").toString().trim() || "(empty reply)"
             dispatch({
-              type: "event",
-              row: { at: Date.now(), kind: "reply", line: `@${agentId}: ${reply.slice(0, 240)}` },
+              type: "chatSubmitDone",
+              reply: { role: "agent", text: reply, at: Date.now(), elapsedMs: Date.now() - startedAt },
             })
-            dispatch({ type: "composer", patch: { open: false, text: "", status: "idle", error: null } })
-            dispatch({ type: "toast", text: "task done", color: "green" })
           } catch (e: any) {
-            dispatch({ type: "composer", patch: { status: "error", error: e?.message || String(e) } })
+            dispatch({ type: "chatSubmitError", error: e?.message || String(e) })
           }
         })()
         return
       }
       if (key.backspace || key.delete) {
-        dispatch({ type: "composer", patch: { text: state.composer.text.slice(0, -1) } })
+        dispatch({ type: "chatText", text: state.chat.text.slice(0, -1) })
         return
       }
       if (input && !key.ctrl && !key.meta) {
-        dispatch({ type: "composer", patch: { text: state.composer.text + input } })
-        return
+        dispatch({ type: "chatText", text: state.chat.text + input })
       }
       return
     }
 
+    // Mission control input.
     if (input === "q" || (key.ctrl && input === "c")) {
       abortRef.current?.abort()
       exit()
@@ -204,16 +244,13 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
     if (input === "a") { dispatch({ type: "focus", pane: "agents" }); return }
     if (input === "p") { dispatch({ type: "focus", pane: "processes" }); return }
     if (input === "e") { dispatch({ type: "focus", pane: "events" }); return }
-    if (input === "c") {
-      dispatch({ type: "bottomRight", pane: state.bottomRight === "crons" ? "channels" : "crons" })
-      return
-    }
+    if (input === "c") { dispatch({ type: "bottomRight", pane: state.bottomRight === "crons" ? "channels" : "crons" }); return }
     if (key.upArrow) { dispatch({ type: "cursor", pane: state.focus, delta: -1 }); return }
     if (key.downArrow) { dispatch({ type: "cursor", pane: state.focus, delta: 1 }); return }
-    if (input === "/" && state.focus === "agents") {
+    if (key.return && state.focus === "agents") {
       const target = state.agents[state.cursor.agents]
       if (!target) { dispatch({ type: "toast", text: "no agent selected", color: "yellow" }); return }
-      dispatch({ type: "composer", patch: { open: true, text: "", targetAgentId: target.id, status: "idle", error: null } })
+      dispatch({ type: "chatStart", agentId: target.id })
       return
     }
     if (input === "k" && state.focus === "processes") {
@@ -257,8 +294,6 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
     return () => { stopped = true; clearInterval(id); ac.abort() }
   }, [conn.baseUrl, conn.token, pollMs])
 
-  // SSE event stream — reconnects on disconnect with a small backoff.
-  // Channel events also feed the per-channel tally for the Channels pane.
   useEffect(() => {
     let stopped = false
     const ac = new AbortController()
@@ -278,9 +313,7 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
               const outbound = prev.outbound + (frame.data.direction === "out" ? 1 : 0)
               channelTally = {
                 channel: frame.data.channel,
-                inbound,
-                outbound,
-                lastAt: row.at,
+                inbound, outbound, lastAt: row.at,
                 lastPreview: (frame.data.textPreview || "").slice(0, 60),
               }
               tallyByChannel.set(frame.data.channel, channelTally)
@@ -301,43 +334,46 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
 
   return (
     <Box flexDirection="column" width="100%">
-      <Header conn={conn} lastTick={state.lastTick} connError={state.connError} />
+      <Header conn={conn} lastTick={state.lastTick} connError={state.connError} chat={state.chat} />
       <Box flexDirection="row" flexGrow={1}>
-        <Pane title="AGENTS" width="50%" focused={state.focus === "agents"}>
-          <AgentList rows={state.agents} cursor={state.cursor.agents} focused={state.focus === "agents"} />
-        </Pane>
-        <Pane title="LIVE EVENTS" width="50%" focused={state.focus === "events"}>
-          <EventList rows={state.events} cursor={state.cursor.events} focused={state.focus === "events"} />
-        </Pane>
+        <Box flexDirection="column" width="50%">
+          <Pane title="AGENTS" focused={!state.chat.active && state.focus === "agents"}>
+            <AgentList rows={state.agents} cursor={state.cursor.agents} focused={!state.chat.active && state.focus === "agents"} talkingTo={state.chat.active ? state.chat.agentId : null} />
+          </Pane>
+          <Pane title="PROCESSES" focused={!state.chat.active && state.focus === "processes"}>
+            <ProcessList rows={state.processes} cursor={state.cursor.processes} focused={!state.chat.active && state.focus === "processes"} />
+          </Pane>
+        </Box>
+        {state.chat.active
+          ? <ChatPane chat={state.chat} />
+          : (
+            <Box flexDirection="column" width="50%">
+              <Pane title="LIVE EVENTS" focused={state.focus === "events"}>
+                <EventList rows={state.events} cursor={state.cursor.events} focused={state.focus === "events"} />
+              </Pane>
+              <Pane title={state.bottomRight === "crons" ? "CRONS / SCHEDULES" : "CHANNELS"} focused={false}>
+                {state.bottomRight === "crons"
+                  ? <CronList rows={state.crons} />
+                  : <ChannelList rows={Array.from(state.channels.values())} />}
+              </Pane>
+            </Box>
+          )}
       </Box>
-      <Box flexDirection="row" flexGrow={1}>
-        <Pane title="PROCESSES" width="50%" focused={state.focus === "processes"}>
-          <ProcessList rows={state.processes} cursor={state.cursor.processes} focused={state.focus === "processes"} />
-        </Pane>
-        <Pane
-          title={state.bottomRight === "crons" ? "CRONS / SCHEDULES" : "CHANNELS"}
-          width="50%"
-          focused={false}
-        >
-          {state.bottomRight === "crons"
-            ? <CronList rows={state.crons} />
-            : <ChannelList rows={Array.from(state.channels.values())} />}
-        </Pane>
-      </Box>
-      {state.composer.open
-        ? <Composer composer={state.composer} />
-        : <Footer focus={state.focus} bottomRight={state.bottomRight} toast={state.toast} />}
+      <Footer focus={state.focus} bottomRight={state.bottomRight} chat={state.chat} toast={state.toast} />
     </Box>
   )
 }
 
-function Header({ conn, lastTick, connError }: { conn: DaemonConn; lastTick: number; connError: string | null }) {
+function Header({ conn, lastTick, connError, chat }: { conn: DaemonConn; lastTick: number; connError: string | null; chat: ChatState }) {
   const status = connError ? <Text color="red">● {connError}</Text>
     : lastTick === 0 ? <Text color="yellow">● connecting…</Text>
       : <Text color="green">● live</Text>
+  const mode = chat.active
+    ? <Text color="green" bold>CHAT @{chat.agentId}</Text>
+    : <Text bold>agentx tui</Text>
   return (
     <Box paddingX={1} justifyContent="space-between">
-      <Text bold>agentx tui</Text>
+      <Box>{mode}</Box>
       <Text dimColor>{conn.baseUrl}</Text>
       <Box>{status}</Box>
     </Box>
@@ -345,46 +381,31 @@ function Header({ conn, lastTick, connError }: { conn: DaemonConn; lastTick: num
 }
 
 function Footer({
-  focus, bottomRight, toast,
-}: { focus: FocusPane; bottomRight: BottomRight; toast: State["toast"] }) {
-  const hints = [
-    `[Tab/a/p/e] focus (now: ${focus})`,
-    focus === "agents" ? "[/] talk" : null,
-    focus === "processes" ? "[k] kill" : null,
-    `[c] ${bottomRight === "crons" ? "→channels" : "→crons"}`,
-    "[↑/↓] move",
-    "[q] quit",
-  ].filter(Boolean).join("  ·  ")
+  focus, bottomRight, chat, toast,
+}: { focus: FocusPane; bottomRight: BottomRight; chat: ChatState; toast: State["toast"] }) {
+  const hints = chat.active
+    ? ["[Enter] send", "[Esc] exit chat", "[Ctrl-L] new session"]
+    : [
+      `[Tab/a/p/e] focus (now: ${focus})`,
+      focus === "agents" ? "[Enter] chat" : null,
+      focus === "processes" ? "[k] kill" : null,
+      `[c] ${bottomRight === "crons" ? "→channels" : "→crons"}`,
+      "[↑/↓] move",
+      "[q] quit",
+    ].filter(Boolean)
   return (
     <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} justifyContent="space-between">
-      <Text dimColor>{hints}</Text>
+      <Text dimColor>{hints.join("  ·  ")}</Text>
       {toast ? <Text color={toast.color}>{toast.text}</Text> : <Text> </Text>}
     </Box>
   )
 }
 
-function Composer({ composer }: { composer: ComposerState }) {
-  const label = composer.status === "sending" ? "sending…" : composer.status === "error" ? `error: ${composer.error}` : "Enter to send · Esc to cancel"
-  return (
-    <Box flexDirection="column" paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
-      <Box>
-        <Text color="cyan">@{composer.targetAgentId} </Text>
-        <Text>› </Text>
-        <Text>{composer.text}</Text>
-        <Text inverse> </Text>
-      </Box>
-      <Text dimColor>{label}</Text>
-    </Box>
-  )
-}
-
-function Pane({
-  title, width, focused, children,
-}: { title: string; width: string; focused: boolean; children: React.ReactNode }) {
+function Pane({ title, focused, children }: { title: string; focused: boolean; children: React.ReactNode }) {
   return (
     <Box
       flexDirection="column"
-      width={width}
+      width="100%"
       borderStyle={focused ? "double" : "single"}
       borderColor={focused ? "cyan" : undefined}
       paddingX={1}
@@ -399,21 +420,24 @@ function selectable(focused: boolean, isCursor: boolean): { inverse?: boolean } 
   return focused && isCursor ? { inverse: true } : {}
 }
 
-function AgentList({ rows, cursor, focused }: { rows: AgentRow[]; cursor: number; focused: boolean }) {
+function AgentList({
+  rows, cursor, focused, talkingTo,
+}: { rows: AgentRow[]; cursor: number; focused: boolean; talkingTo: string | null }) {
   if (rows.length === 0) return <Text dimColor>no agents</Text>
   return (
     <Box flexDirection="column">
       {rows.slice(0, 12).map((a, i) => {
         const sel = selectable(focused, i === cursor)
-        const dot = a.errors > 0 ? "●" : a.active > 0 ? "●" : "●"
         const dotColor: "red" | "yellow" | "green" = a.errors > 0 ? "red" : a.active > 0 ? "yellow" : "green"
+        const talking = a.id === talkingTo
         return (
           <Box key={a.id}>
-            <Text {...sel} color={dotColor}>{dot}</Text>
+            <Text {...sel} color={dotColor}>●</Text>
             <Text {...sel}> {pad(a.name, 14)}</Text>
             <Text {...sel}>{pad(a.tier, 6)} </Text>
             <Text {...sel}>{a.active}/{a.total}</Text>
             {a.errors > 0 ? <Text {...sel} color="red"> err={a.errors}</Text> : null}
+            {talking ? <Text color="green"> ↔ chatting</Text> : null}
           </Box>
         )
       })}
@@ -502,6 +526,63 @@ function EventList({
   )
 }
 
+function ChatPane({ chat }: { chat: ChatState }) {
+  // Render the last N turns in chronological order. When history exceeds
+  // the slice, oldest turns clip off the top so the composer stays anchored
+  // at the bottom of the pane (Claude-Code-like reading order).
+  const visible = chat.history.slice(-14)
+  const status = chat.status === "sending"
+    ? <Text color="yellow">● thinking…</Text>
+    : chat.error
+      ? <Text color="red">● {chat.error}</Text>
+      : <Text dimColor>● ready</Text>
+  return (
+    <Box flexDirection="column" width="50%" borderStyle="double" borderColor="green" paddingX={1}>
+      <Box justifyContent="space-between">
+        <Text bold color="green">CHAT · @{chat.agentId}</Text>
+        <Box>{status}</Box>
+      </Box>
+      <Text dimColor>{chat.chatId}</Text>
+      <Box flexDirection="column" flexGrow={1} marginTop={1}>
+        {visible.length === 0
+          ? <Text dimColor>(type a message and press Enter — Esc exits, Ctrl-L starts fresh)</Text>
+          : visible.map((t, i) => <TurnView key={`${t.at}-${i}`} turn={t} agentId={chat.agentId} />)}
+      </Box>
+      <Box marginTop={1}>
+        <Text color="cyan">you › </Text>
+        <Text>{chat.text}</Text>
+        <Text inverse> </Text>
+      </Box>
+    </Box>
+  )
+}
+
+function TurnView({ turn, agentId }: { turn: ChatTurn; agentId: string | null }) {
+  if (turn.role === "you") {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Text color="cyan">you</Text>
+        {turn.text.split("\n").map((ln, i) => <Text key={i}>  {ln}</Text>)}
+      </Box>
+    )
+  }
+  if (turn.role === "error") {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Text color="red">error</Text>
+        <Text color="red">  {turn.text}</Text>
+      </Box>
+    )
+  }
+  const elapsed = turn.elapsedMs != null ? ` · ${(turn.elapsedMs / 1000).toFixed(1)}s` : ""
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text color="green">@{agentId ?? "agent"}<Text dimColor>{elapsed}</Text></Text>
+      {turn.text.split("\n").slice(0, 10).map((ln, i) => <Text key={i}>  {ln}</Text>)}
+    </Box>
+  )
+}
+
 function frameToRow(frame: SseFrame): EventRow {
   const p = frame.data ?? {}
   const at = typeof p.at === "string" || typeof p.at === "number" ? new Date(p.at).getTime() : Date.now()
@@ -540,8 +621,6 @@ function kindColor(kind: string): string {
     case "signal": return "green"
     case "mesh": return "blue"
     case "channel": return "yellow"
-    case "you": return "white"
-    case "reply": return "green"
     default: return "white"
   }
 }
