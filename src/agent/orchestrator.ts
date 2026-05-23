@@ -102,6 +102,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     overwrite,
     dryRun,
     noqtaContext: options.noqtaContext,
+    abortSignal,
   })
   const tools = getAnthropicTools(enabledTools)
   // Append noqta workspace tools only when we have a noqta user context

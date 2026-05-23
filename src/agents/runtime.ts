@@ -1291,6 +1291,37 @@ export async function executeOrchestrator(
 ): Promise<AgentResponse> {
   const start = Date.now()
 
+  // Wall-clock cap. Every other tier (claude-code, codex-cli) already
+  // honours agent.maxExecutionMinutes; without it on the orchestrator
+  // path a hung provider stream or stuck tool keeps the runningTask
+  // alive forever — the registry's finally-block only fires when this
+  // function returns, and operator Stop relies on the same return.
+  // Combine the operator's abortSignal with a timer so EITHER source
+  // forces the loop to bail and the registry to clean up.
+  const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+  const combined = new AbortController()
+  let timedOut = false
+  const onOperatorAbort = () => {
+    const reason = (abortSignal!.reason as any)?.message
+      || (typeof abortSignal!.reason === "string" ? abortSignal!.reason : "task cancelled by operator")
+    try { combined.abort(new Error(reason)) } catch { /* */ }
+  }
+  if (abortSignal) {
+    if (abortSignal.aborted) onOperatorAbort()
+    else abortSignal.addEventListener("abort", onOperatorAbort, { once: true })
+  }
+  const wallClockTimer = setTimeout(() => {
+    timedOut = true
+    try { combined.abort(new Error(`orchestrator timed out after ${Math.round(timeoutMs / 60_000)}m`)) } catch { /* */ }
+  }, timeoutMs)
+  ;(wallClockTimer as any).unref?.()
+
+  const timeoutEnvelope = (): AgentResponse => ({
+    content: "",
+    ...buildErrorEnvelope(`Orchestrator timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`),
+    duration: Date.now() - start,
+  })
+
   try {
     const providerName = agent.provider || "claude-code"
 
@@ -1325,7 +1356,7 @@ export async function executeOrchestrator(
       context7: false,
       noqtaContext,
       providerOpts,
-      abortSignal,
+      abortSignal: combined.signal,
     }
 
     if (onDelta) {
@@ -1384,11 +1415,15 @@ export async function executeOrchestrator(
         }
       }
       if (errorMsg && !content) {
+        // Wall-clock cap fired — surface as a `timeout` envelope so
+        // operators see the same "timed out after Xm" message every
+        // other tier produces.
+        if (timedOut) return timeoutEnvelope()
         // Operator-cancel: surface the same `errorKind: "cancelled"`
         // envelope claude-code uses, so the router / channel layer
         // suppresses the error echo and the registry's finally block
         // can route follow-ups normally.
-        if (errorMsg === "cancelled" || abortSignal?.aborted) {
+        if (errorMsg === "cancelled" || abortSignal?.aborted || combined.signal.aborted) {
           return {
             content: "",
             error: "task cancelled by operator",
@@ -1444,11 +1479,25 @@ export async function executeOrchestrator(
       duration: Date.now() - start,
     }
   } catch (error: any) {
+    if (timedOut) return timeoutEnvelope()
+    // `generate()` (non-streaming) throws "cancelled" from the agentic
+    // loop's iteration_start check when the combined signal fires.
+    if (error?.message === "cancelled" || abortSignal?.aborted || combined.signal.aborted) {
+      return {
+        content: "",
+        error: "task cancelled by operator",
+        errorKind: "cancelled",
+        duration: Date.now() - start,
+      }
+    }
     return {
       content: "",
       ...buildErrorEnvelope(`Orchestrator error: ${error.message}`),
       duration: Date.now() - start,
     }
+  } finally {
+    clearTimeout(wallClockTimer)
+    if (abortSignal) abortSignal.removeEventListener("abort", onOperatorAbort)
   }
 }
 

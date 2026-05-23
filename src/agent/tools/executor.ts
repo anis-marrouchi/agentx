@@ -36,6 +36,10 @@ export interface ToolExecutorOptions {
    *  enters the model's prompt context. Omit to leave noqta-tools off
    *  (the agent will see "Unknown tool" if it calls one anyway). */
   noqtaContext?: NoqtaToolContext
+  /** Operator-cancel signal. When fired we short-circuit `execute()`
+   *  before dispatch and forward to execa as `cancelSignal` so a
+   *  hung shell command can't outlive the abort. */
+  abortSignal?: AbortSignal
 }
 
 export class ToolExecutor {
@@ -49,6 +53,14 @@ export class ToolExecutor {
 
   async execute(call: ToolCallInput): Promise<ToolResult> {
     debug.context("tool-executor", `executing: ${call.name}`)
+
+    if (this.options.abortSignal?.aborted) {
+      return {
+        tool_use_id: call.id,
+        content: "Task cancelled before tool dispatch.",
+        is_error: true,
+      }
+    }
 
     // pre:tool-call hook
     if (globalHooks.has("pre:tool-call")) {
@@ -272,6 +284,7 @@ export class ToolExecutor {
       timeout,
       reject: false,
       stdin: "ignore",
+      signal: this.options.abortSignal,
     })
 
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n")
