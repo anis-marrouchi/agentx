@@ -22,11 +22,25 @@ import { resolve } from "path"
 
 const MARKER = "_agentxManaged"
 
-export interface McpServerConfig {
+/** stdio MCP server — spawned as a child process by Claude Code (and
+ *  by agentx for orchestrator-tier agents). */
+export interface McpStdioServerConfig {
+  type?: "stdio"
   command: string
   args?: string[]
   env?: Record<string, string>
 }
+
+/** HTTP MCP server (Streamable HTTP transport). Claude Code reads this
+ *  natively when written into .mcp.json. agentx's orchestrator-tier
+ *  uses src/agent/mcp-client.ts:HttpTransport for the same shape. */
+export interface McpHttpServerConfig {
+  type: "http"
+  url: string
+  headers?: Record<string, string>
+}
+
+export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
 
 export type McpServerMap = Record<string, McpServerConfig>
 

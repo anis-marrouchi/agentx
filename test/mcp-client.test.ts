@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach } from "vitest"
 import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
+import { createServer, type Server } from "http"
+import { AddressInfo } from "net"
 import { McpClient, startMcpPool, isMcpToolName } from "../src/agent/mcp-client"
 
 // Minimal stdio MCP server used as a test double. Reads NDJSON requests
@@ -146,6 +148,118 @@ describe("startMcpPool", () => {
       expect(serverNames.has("bad")).toBe(false)
     } finally {
       pool.close()
+    }
+  })
+})
+
+// --- HTTP transport coverage ---
+// Spin up a tiny Node http.Server that speaks the Streamable HTTP MCP
+// flavour: POST JSON-RPC, answer with SSE `data: <json>` payloads. The
+// test exercises the same initialize → tools/list → tools/call round-trip
+// as the stdio cases but over fetch, and verifies the
+// `Mcp-Session-Id` handshake survives across calls.
+
+function startHttpMockServer(opts: { contentType?: "sse" | "json" } = {}): Promise<{ url: string; server: Server; sessions: Set<string> }> {
+  return new Promise((resolve) => {
+    const sessions = new Set<string>()
+    const server = createServer((req, res) => {
+      if (req.method !== "POST") { res.statusCode = 405; res.end(); return }
+      let body = ""
+      req.on("data", (c) => { body += c.toString() })
+      req.on("end", () => {
+        let msg: any
+        try { msg = JSON.parse(body) } catch { res.statusCode = 400; res.end("bad json"); return }
+        const sid = req.headers["mcp-session-id"] as string | undefined
+        if (sid) sessions.add(sid)
+
+        // Notifications: 202 Accepted, no body.
+        if (typeof msg.id === "undefined") { res.statusCode = 202; res.end(); return }
+
+        let result: any
+        if (msg.method === "initialize") {
+          // Hand out a session id on initialize; client must echo it back.
+          res.setHeader("Mcp-Session-Id", "sess-abc")
+          result = {
+            protocolVersion: "2024-11-05",
+            capabilities: { tools: {} },
+            serverInfo: { name: "http-mock", version: "0.0.0" },
+          }
+        } else if (msg.method === "tools/list") {
+          result = { tools: [
+            { name: "ping", description: "HTTP echo", inputSchema: { type: "object", properties: { text: { type: "string" } } } },
+          ] }
+        } else if (msg.method === "tools/call") {
+          result = { content: [{ type: "text", text: JSON.stringify({ pong: msg.params?.arguments }) }] }
+        } else {
+          res.statusCode = 400; res.end("unknown method"); return
+        }
+
+        const envelope = JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })
+        if (opts.contentType === "json") {
+          res.setHeader("Content-Type", "application/json")
+          res.end(envelope)
+        } else {
+          res.setHeader("Content-Type", "text/event-stream")
+          res.write(`data: ${envelope}\n\n`)
+          res.end()
+        }
+      })
+    })
+    server.listen(0, "127.0.0.1", () => {
+      const port = (server.address() as AddressInfo).port
+      resolve({ url: `http://127.0.0.1:${port}/`, server, sessions })
+    })
+  })
+}
+
+describe("McpClient (HTTP transport)", () => {
+  it("round-trips initialize / tools/list / tools/call over SSE", async () => {
+    const { url, server, sessions } = await startHttpMockServer()
+    const client = new McpClient("http-mock", { type: "http", url })
+    try {
+      await client.initialize()
+      const tools = await client.listTools()
+      expect(tools.map((t) => t.name)).toEqual(["ping"])
+      const r = await client.callTool("ping", { text: "hello" })
+      expect(r.isError).toBeFalsy()
+      expect(r.content).toContain('"hello"')
+      // The mock issued sess-abc on initialize; every later request must
+      // carry it back. We saw at least initialize + tools/list +
+      // tools/call → server should have logged the same id for the
+      // post-initialize calls.
+      expect(sessions.has("sess-abc")).toBe(true)
+    } finally {
+      client.close()
+      server.close()
+    }
+  })
+
+  it("handles application/json responses (non-SSE servers)", async () => {
+    const { url, server } = await startHttpMockServer({ contentType: "json" })
+    const client = new McpClient("http-mock", { type: "http", url })
+    try {
+      await client.initialize()
+      const r = await client.callTool("ping", { text: "json-mode" })
+      expect(r.content).toContain('"json-mode"')
+    } finally {
+      client.close()
+      server.close()
+    }
+  })
+
+  it("startMcpPool namespaces tools from an HTTP server", async () => {
+    const { url, server } = await startHttpMockServer()
+    const pool = await startMcpPool({
+      remote: { type: "http", url },
+    })
+    try {
+      expect(pool.tools.map((t) => t.name)).toEqual(["mcp__remote__ping"])
+      const r = await pool.dispatch("mcp__remote__ping", { text: "via-pool" })
+      expect(r.isError).toBeFalsy()
+      expect(r.content).toContain('"via-pool"')
+    } finally {
+      pool.close()
+      server.close()
     }
   })
 })

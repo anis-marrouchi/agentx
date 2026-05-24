@@ -40,11 +40,23 @@ const providerConfigSchema = z.object({
   thinking: z.boolean().optional(),
 })
 
-const mcpServerSchema = z.object({
+const mcpStdioServerSchema = z.object({
+  type: z.literal("stdio").optional(),
   command: z.string(),
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).optional(),
 })
+
+const mcpHttpServerSchema = z.object({
+  type: z.literal("http"),
+  url: z.string().url(),
+  headers: z.record(z.string(), z.string()).optional(),
+})
+
+// HTTP variant first so a record with `type: "http"` matches the HTTP
+// shape; stdio is the default fallback when `type` is absent (keeps the
+// original `{ command, args, env }` configs valid without a migration).
+const mcpServerSchema = z.union([mcpHttpServerSchema, mcpStdioServerSchema])
 
 /**
  * Per-agent integration registration. Declares which third-party services
