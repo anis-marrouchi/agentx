@@ -22,6 +22,7 @@ import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
+import { effectiveMcpConfig } from "./codegraph-bootstrap"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -1345,6 +1346,15 @@ export async function executeOrchestrator(
         ? { userId: sender, agentId: task.agentId || "noqta-public" }
         : undefined
 
+    // MCP servers declared on this agent (including codegraph when
+    // codegraph=true) — agentx already syncs these to .mcp.json for
+    // CLI-backed tiers, but the orchestrator's in-process loop has its
+    // own hand-rolled catalog and never reads that file. startMcpPool
+    // inside generate()/generateStream() boots them as stdio children
+    // and exposes their tools to the loop.
+    const mcpServers = effectiveMcpConfig(agent)
+    const hasMcp = Object.keys(mcpServers).length > 0
+
     const baseOpts = {
       task: fullTask,
       cwd: agent.workspace,
@@ -1357,6 +1367,7 @@ export async function executeOrchestrator(
       noqtaContext,
       providerOpts,
       abortSignal: combined.signal,
+      mcpServers: hasMcp ? mcpServers : undefined,
     }
 
     if (onDelta) {

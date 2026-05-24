@@ -16,6 +16,7 @@ import { debug } from "@/observability"
 import { MemoryHierarchy, ContextBuilder, loadProjectInstructions } from "@/memory"
 import type { Skill } from "./skills/types"
 import { runAgenticLoop, supportsAgenticLoop, type AgenticProgressEvent } from "./orchestrator"
+import { startMcpPool, type McpPool, type McpServerMap } from "./mcp-client"
 import { AsyncQueue } from "@/utils/async-queue"
 
 // --- Agent Orchestrator: the brain that coordinates everything ---
@@ -71,6 +72,13 @@ export interface GenerateOptions {
    *  while the underlying DeepSeek request keeps running (seen in
    *  production: 100+ minute hangs). */
   abortSignal?: AbortSignal
+  /** External MCP servers to boot for this generation. Each entry is
+   *  spawned as a stdio child, its tools listed via tools/list, and
+   *  exposed to the agentic loop as `mcp__<server>__<tool>`. Wired
+   *  from `effectiveMcpConfig(agent)` by the orchestrator tier in
+   *  src/agents/runtime.ts — CLI-backed tiers (claude-code, codex-cli)
+   *  load their own `.mcp.json` natively and ignore this. */
+  mcpServers?: McpServerMap
 }
 
 export interface GenerateResult {
@@ -220,38 +228,52 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   const useAgentic = supportsAgenticLoop(provider)
   const maxSteps = options.maxSteps ?? (useAgentic ? 20 : 5)
 
-  // 7. Run orchestrator (agentic or legacy)
-  const agenticResult = await runAgenticLoop({
-    provider,
-    systemPrompt,
-    messages: [
-      { role: "system", content: systemPrompt },
-      ...sessionMessages,
-    ],
-    providerOptions: { model: resolvedModel, maxTokens: 8192 },
-    cwd,
-    maxIterations: maxSteps,
-    enabledTools: context.config.agentic.enabledTools.filter(
-      (t) => !context.config.agentic.disabledTools.includes(t)
-    ),
-    interactive,
-    overwrite,
-    dryRun,
-    noqtaContext: options.noqtaContext,
-    // Forward operator-Stop / wall-clock timeout into the loop. Without
-    // this, generate() ignored the signal and the orchestrator kept
-    // iterating after combined.abort() fired in executeOrchestrator —
-    // production saw 3-hour hangs on noqta-public (A2A /task path).
-    abortSignal: options.abortSignal,
-    onProgress: (event) => {
-      if (event.type === "iteration_start" && event.iteration > 1) {
-        logger.info(`Step ${event.iteration}/${maxSteps}...`)
-      }
-      if (event.type === "tool_call") {
-        debug.step(0, `Tool: ${event.name}`)
-      }
-    },
-  })
+  // Boot MCP servers (orchestrator tier only — CLI tiers don't reach
+  // this codepath). Always closed in `finally` so a crash inside the
+  // loop can't leak child processes.
+  const mcpPool = options.mcpServers && Object.keys(options.mcpServers).length > 0
+    ? await startMcpPool(options.mcpServers)
+    : undefined
+
+  let agenticResult: Awaited<ReturnType<typeof runAgenticLoop>>
+  try {
+    // 7. Run orchestrator (agentic or legacy)
+    agenticResult = await runAgenticLoop({
+      provider,
+      systemPrompt,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...sessionMessages,
+      ],
+      providerOptions: { model: resolvedModel, maxTokens: 8192 },
+      cwd,
+      maxIterations: maxSteps,
+      enabledTools: context.config.agentic.enabledTools.filter(
+        (t) => !context.config.agentic.disabledTools.includes(t)
+      ),
+      interactive,
+      overwrite,
+      dryRun,
+      noqtaContext: options.noqtaContext,
+      // Forward operator-Stop / wall-clock timeout into the loop. Without
+      // this, generate() ignored the signal and the orchestrator kept
+      // iterating after combined.abort() fired in executeOrchestrator —
+      // production saw 3-hour hangs on noqta-public (A2A /task path).
+      abortSignal: options.abortSignal,
+      mcpTools: mcpPool?.tools,
+      mcpDispatch: mcpPool ? mcpPool.dispatch.bind(mcpPool) : undefined,
+      onProgress: (event) => {
+        if (event.type === "iteration_start" && event.iteration > 1) {
+          logger.info(`Step ${event.iteration}/${maxSteps}...`)
+        }
+        if (event.type === "tool_call") {
+          debug.step(0, `Tool: ${event.name}`)
+        }
+      },
+    })
+  } finally {
+    mcpPool?.close()
+  }
 
   // Track token usage
   if (agenticResult.tokensUsed) {
@@ -458,6 +480,19 @@ export async function* generateStream(
     let agenticResult: Awaited<ReturnType<typeof runAgenticLoop>> | undefined
     let agenticError: unknown
 
+    // Boot MCP servers (orchestrator tier only). Pool is closed in the
+    // agenticPromise's finally so child processes are reaped on both
+    // success and error paths.
+    let mcpPool: McpPool | undefined
+    if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+      try {
+        mcpPool = await startMcpPool(options.mcpServers)
+      } catch (e: any) {
+        yield { type: "error", error: `MCP pool startup failed: ${e.message}` }
+        return
+      }
+    }
+
     const agenticPromise = (async () => {
       try {
         agenticResult = await runAgenticLoop({
@@ -478,6 +513,8 @@ export async function* generateStream(
           overwrite,
           dryRun,
           noqtaContext: options.noqtaContext,
+          mcpTools: mcpPool?.tools,
+          mcpDispatch: mcpPool ? mcpPool.dispatch.bind(mcpPool) : undefined,
           onProgress: (event) => {
             if (event.type === "text_delta") {
               q.push({ type: "text_delta", text: event.text })
@@ -502,6 +539,7 @@ export async function* generateStream(
       } catch (err) {
         agenticError = err
       } finally {
+        mcpPool?.close()
         q.close()
       }
     })()

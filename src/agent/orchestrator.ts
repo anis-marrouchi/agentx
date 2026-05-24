@@ -12,6 +12,7 @@ import type {
 import { ToolExecutor, type ToolResult } from "./tools"
 import { getAnthropicTools, formatToolsForSystemPrompt } from "./tools"
 import { NOQTA_TOOLS, type NoqtaToolContext } from "./tools/noqta"
+import type { McpTool, McpCallResult } from "./mcp-client"
 import { debug } from "@/observability"
 
 export interface AgenticLoopOptions {
@@ -31,6 +32,13 @@ export interface AgenticLoopOptions {
    *  executor dispatches calls via /api/agent/tools using the server-
    *  held bearer. The bearer NEVER enters the model's prompt context. */
   noqtaContext?: NoqtaToolContext
+  /** Tools supplied by external MCP servers booted upstream
+   *  (see src/agent/mcp-client.ts). The loop merges these into the
+   *  catalog passed to provider.generateRaw and routes matching
+   *  tool_use blocks through `mcpDispatch` instead of the local
+   *  executor. */
+  mcpTools?: McpTool[]
+  mcpDispatch?: (name: string, input: Record<string, unknown>) => Promise<McpCallResult>
   /** Cancel signal. Forwarded into ProviderOptions so the provider's
    *  fetch() actually closes when the operator hits Stop. */
   abortSignal?: AbortSignal
@@ -111,6 +119,16 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
   if (options.noqtaContext) {
     for (const t of NOQTA_TOOLS) {
       tools.push({ name: t.name, description: t.description, input_schema: t.input_schema })
+    }
+  }
+  // MCP tools — booted by the caller (executeOrchestrator) so the loop
+  // doesn't need to know about agent definitions or .mcp.json. Routed
+  // via options.mcpDispatch in the tool_use branch below.
+  const mcpToolNames = new Set<string>()
+  if (options.mcpTools?.length) {
+    for (const t of options.mcpTools) {
+      tools.push({ name: t.name, description: t.description, input_schema: t.input_schema })
+      mcpToolNames.add(t.name)
     }
   }
 
@@ -267,11 +285,21 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
 
         debug.step(iteration, `Tool call: ${toolBlock.name}`)
 
-        const toolResult = await executor.execute({
-          name: toolBlock.name,
-          id: toolBlock.id,
-          input: toolBlock.input,
-        })
+        let toolResult: ToolResult
+        if (mcpToolNames.has(toolBlock.name) && options.mcpDispatch) {
+          const r = await options.mcpDispatch(toolBlock.name, toolBlock.input)
+          toolResult = {
+            tool_use_id: toolBlock.id,
+            content: r.content,
+            is_error: r.isError,
+          }
+        } else {
+          toolResult = await executor.execute({
+            name: toolBlock.name,
+            id: toolBlock.id,
+            input: toolBlock.input,
+          })
+        }
 
         onProgress?.({
           type: "tool_result",
