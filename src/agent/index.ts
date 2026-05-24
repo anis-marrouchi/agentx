@@ -238,6 +238,11 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     overwrite,
     dryRun,
     noqtaContext: options.noqtaContext,
+    // Forward operator-Stop / wall-clock timeout into the loop. Without
+    // this, generate() ignored the signal and the orchestrator kept
+    // iterating after combined.abort() fired in executeOrchestrator —
+    // production saw 3-hour hangs on noqta-public (A2A /task path).
+    abortSignal: options.abortSignal,
     onProgress: (event) => {
       if (event.type === "iteration_start" && event.iteration > 1) {
         logger.info(`Step ${event.iteration}/${maxSteps}...`)
