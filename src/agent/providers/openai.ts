@@ -183,6 +183,21 @@ export class OpenAIProvider implements AgentProvider {
     const reader = res.body?.getReader()
     if (!reader) { yield { type: "error", error: "No response body on OpenAI-compat raw stream" }; return }
 
+    // Wire the operator's abort signal into reader.cancel() so an abort
+    // mid-stream actually closes the underlying TCP socket. Without this,
+    // undici sometimes keeps reader.read() pending forever even after
+    // fetch's signal aborts — DeepSeek's reasoning_content can stream for
+    // many minutes, and the orchestrator's wall-clock timer fired into a
+    // signal that no one was actually watching here. Production saw 58+
+    // min hangs past the 15-min maxExecutionMinutes cap on noqta-public.
+    const onAbortCancelReader = () => {
+      reader.cancel(new Error("aborted")).catch(() => { /* already closed */ })
+    }
+    if (options?.abortSignal) {
+      if (options.abortSignal.aborted) onAbortCancelReader()
+      else options.abortSignal.addEventListener("abort", onAbortCancelReader, { once: true })
+    }
+
     const decoder = new TextDecoder()
     let buffer = ""
     let textOut = ""
@@ -195,6 +210,13 @@ export class OpenAIProvider implements AgentProvider {
 
     try {
       while (true) {
+        // Belt-and-braces: bail between chunks too, in case reader.cancel()
+        // didn't unblock the pending read (some SSE proxies hold the
+        // connection open even after upstream close).
+        if (options?.abortSignal?.aborted) {
+          yield { type: "error", error: "cancelled" }
+          return
+        }
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
@@ -235,8 +257,16 @@ export class OpenAIProvider implements AgentProvider {
         }
       }
     } catch (err: any) {
+      if (err?.name === "AbortError" || options?.abortSignal?.aborted) {
+        yield { type: "error", error: "cancelled" }
+        return
+      }
       yield { type: "error", error: `OpenAI-compat raw stream read failed: ${err?.message ?? err}` }
       return
+    } finally {
+      if (options?.abortSignal) {
+        options.abortSignal.removeEventListener("abort", onAbortCancelReader)
+      }
     }
 
     // Assemble blocks in the same order parseRawResponse uses so the
