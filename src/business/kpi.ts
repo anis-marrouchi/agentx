@@ -105,11 +105,17 @@ export class KPI {
   }
 
   private persist(): void {
-    // Rotate if day changed
+    // Rotate if day changed: final write under the closing date, then
+    // re-init for today. Must NOT go through flush() — flush() delegates
+    // back to persist() and the stale-date check recurses forever.
     if (this.stats.date !== today()) {
-      this.flush()
+      this.writeStats()
       this.stats = this.loadOrInit()
     }
+    this.writeStats()
+  }
+
+  private writeStats(): void {
     try {
       writeFileSync(resolve(this.dir, `${this.stats.date}.json`), JSON.stringify(this.stats, null, 2))
     } catch (e: any) {
