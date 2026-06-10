@@ -369,22 +369,24 @@ export class GitLabAdapter implements ChannelAdapter {
     // never under the shared group-access-token user (e.g. @group_<id>_bot_*):
     //
     //   1. If the agent has a per-agent token configured locally → use it.
-    //   2. Else if the agent lives on a remote peer (mapping.node) and a
-    //      sendNoteForwarder is wired → forward the post there. The peer uses
-    //      its own local token (owned by that agent's GitLab user) to POST.
+    //   2. Else if the agent lives on a remote peer (explicit mapping.node,
+    //      or discovered via the mesh directory — same fallback that routed
+    //      the @mention here in the first place) and a sendNoteForwarder is
+    //      wired → forward the post there. The peer uses its own local token
+    //      (owned by that agent's GitLab user) to POST.
     //   3. Else fall back to the global token (signed content from a generic
     //      shared identity — legacy path, only reached for local agents with
     //      no token mapping).
-    const mapping = this.config.agentMappings?.find((m) => m.agentId === msg.agentId)
-    const agentToken = this.getAgentToken(msg.agentId)
-    if (!agentToken && mapping?.node && this.sendNoteForwarder) {
+    const target = this.resolvePostTarget(msg.agentId)
+    const agentToken = target.token
+    if (!agentToken && target.node && this.sendNoteForwarder) {
       try {
         const body = markBody(msg.text, msg.agentId || "unknown")
-        const noteId = await this.sendNoteForwarder(mapping.node, project, noteableType, iid, msg.agentId || "", body)
+        const noteId = await this.sendNoteForwarder(target.node, project, noteableType, iid, msg.agentId || "", body)
         if (noteId) this.sentNoteIds.add(noteId)
         return noteId
       } catch (e: any) {
-        this.log(`GitLab send forward to "${mapping.node}" failed: ${e.message} — skipping (would post as group bot)`)
+        this.log(`GitLab send forward to "${target.node}" failed: ${e.message} — skipping (would post as group bot)`)
         return ""
       }
     }
@@ -1588,6 +1590,33 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   /**
+   * Resolve where a GitLab write (note / time-log / issue / labels) for
+   * `agentId` should execute. Single source of truth for every writer,
+   * mirroring `resolveAgentFromMention`'s precedence — an agent that can
+   * RECEIVE a mention via the mesh directory must also be able to POST
+   * under its own identity, or replies die silently on the webhook node:
+   *   1. Per-agent token on this node → post locally as the agent's user.
+   *   2. Explicit `agentMappings[].node` → forward to the pinned peer.
+   *   3. Mesh directory — the healthy peer that hosts both the agent and
+   *      the GitLab channel wiring (its /gitlab/* endpoints resolve the
+   *      token from the agent's own integrations[]).
+   *   4. Neither → caller falls back to the global token.
+   */
+  private resolvePostTarget(agentId?: string): { token?: string; node?: string } {
+    if (!agentId) return {}
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    if (mapping?.token) return { token: mapping.token }
+    if (mapping?.node) return { node: mapping.node }
+    if (this.mesh) {
+      for (const peer of this.mesh.directory()) {
+        if (!peer.healthy || !peer.channels?.includes("gitlab")) continue
+        if (peer.skills.some((s) => s.id === agentId)) return { node: peer.peer }
+      }
+    }
+    return {}
+  }
+
+  /**
    * Find the per-agent token for the first @mentioned agent in note text.
    */
   private getTokenForMentionedAgent(text: string): string | undefined {
@@ -1716,14 +1745,14 @@ export class GitLabAdapter implements ChannelAdapter {
     // Same identity rules as send(): for remote-hosted agents with no local
     // per-agent token, forward the time-log to the peer so it posts as the
     // agent's real GitLab user rather than the shared group bot.
-    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
-    const agentToken = this.getAgentToken(agentId)
-    if (!agentToken && mapping?.node && this.logTimeForwarder) {
+    const target = this.resolvePostTarget(agentId)
+    const agentToken = target.token
+    if (!agentToken && target.node && this.logTimeForwarder) {
       try {
-        await this.logTimeForwarder(mapping.node, project, noteableType, iid, agentId || "", durationMs)
-        this.log(`Time logged (via peer "${mapping.node}"): ${duration} on ${project} ${typeSegment}/${iid} (${agentId})`)
+        await this.logTimeForwarder(target.node, project, noteableType, iid, agentId || "", durationMs)
+        this.log(`Time logged (via peer "${target.node}"): ${duration} on ${project} ${typeSegment}/${iid} (${agentId})`)
       } catch (e: any) {
-        this.log(`Time log forward to "${mapping.node}" failed: ${e.message} — skipping (would log as group bot)`)
+        this.log(`Time log forward to "${target.node}" failed: ${e.message} — skipping (would log as group bot)`)
       }
       return
     }
@@ -1767,17 +1796,17 @@ export class GitLabAdapter implements ChannelAdapter {
     agentId?: string
   }): Promise<{ iid: number; url: string } | null> {
     const { project, title, description = "", labels = [], assignees = [], agentId } = args
-    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
-    const agentToken = this.getAgentToken(agentId)
+    const target = this.resolvePostTarget(agentId)
+    const agentToken = target.token
 
     // Remote-hosted agent with no local token — forward to peer.
-    if (!agentToken && mapping?.node && this.createIssueForwarder) {
+    if (!agentToken && target.node && this.createIssueForwarder) {
       try {
-        const result = await this.createIssueForwarder(mapping.node, project, title, description, labels, assignees, agentId || "")
-        if (result) this.log(`Issue created (via peer "${mapping.node}") #${result.iid} on ${project}`)
+        const result = await this.createIssueForwarder(target.node, project, title, description, labels, assignees, agentId || "")
+        if (result) this.log(`Issue created (via peer "${target.node}") #${result.iid} on ${project}`)
         return result
       } catch (e: any) {
-        this.log(`Issue-create forward to "${mapping.node}" failed: ${e.message}`)
+        this.log(`Issue-create forward to "${target.node}" failed: ${e.message}`)
         return null
       }
     }
@@ -1879,16 +1908,16 @@ export class GitLabAdapter implements ChannelAdapter {
     agentId?: string
   }): Promise<string[] | null> {
     const { project, kind = "issue", iid, add = [], remove = [], agentId } = args
-    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
-    const agentToken = this.getAgentToken(agentId)
+    const target = this.resolvePostTarget(agentId)
+    const agentToken = target.token
 
-    if (!agentToken && mapping?.node && this.setLabelsForwarder) {
+    if (!agentToken && target.node && this.setLabelsForwarder) {
       try {
-        const labels = await this.setLabelsForwarder(mapping.node, project, kind, iid, add, remove, agentId || "")
-        if (labels) this.log(`Labels updated (via peer "${mapping.node}") on ${project} ${kind}/${iid}`)
+        const labels = await this.setLabelsForwarder(target.node, project, kind, iid, add, remove, agentId || "")
+        if (labels) this.log(`Labels updated (via peer "${target.node}") on ${project} ${kind}/${iid}`)
         return labels
       } catch (e: any) {
-        this.log(`setLabels forward to "${mapping.node}" failed: ${e.message}`)
+        this.log(`setLabels forward to "${target.node}" failed: ${e.message}`)
         return null
       }
     }
