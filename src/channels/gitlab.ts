@@ -1501,10 +1501,28 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   /**
-   * Check if a username belongs to a known bot/agent user.
+   * Check if a username belongs to a known bot/agent user — local tokens,
+   * configured usernames, auto-derived ids, OR an agent hosted on a mesh
+   * peer (its GitLab usernames travel as agent-card skill tags, the same
+   * source resolveAgentFromMention uses). Without the mesh check, a peer
+   * agent's own API actions (replies, time logs → issue:update webhooks)
+   * look like human activity on the webhook node and re-dispatch agents
+   * in a feedback loop.
    */
   private isBotUser(username: string): boolean {
-    return this.botUsernames.has(username)
+    if (this.botUsernames.has(username)) return true
+    if (!this.mesh) return false
+    const lc = username.toLowerCase()
+    for (const peer of this.mesh.directory()) {
+      if (!peer.healthy) continue
+      for (const skill of peer.skills) {
+        if (skill.id.toLowerCase() === lc) return true
+        for (const tag of skill.tags ?? []) {
+          if (String(tag).replace(/^@/, "").toLowerCase() === lc) return true
+        }
+      }
+    }
+    return false
   }
 
   /** ChannelAdapter.seedHistory: fetch the issue/MR's existing notes from
@@ -1687,6 +1705,13 @@ export class GitLabAdapter implements ChannelAdapter {
    * meaningful), so this never piggy-backs on a per-agent PAT.
    */
   async react(chatId: string, messageId: string, emoji: string = "👀"): Promise<void> {
+    // 👀 acks are posted by handleNote with the resolved agent's own token
+    // (deterministic identity). The router ALSO fires a generic 👀 through
+    // this method when it routes the task — posting that one with the
+    // global token double-reacts under the wrong user, so drop it here.
+    // Outcome signals (❌ / ✅ / ⚠️) still post with the global token:
+    // they fire when no agent identity is meaningful (e.g. mesh errors).
+    if (emoji === "👀") return
     const parts = chatId.split(":")
     if (parts.length < 3) return
     const iid = parts.pop()!
