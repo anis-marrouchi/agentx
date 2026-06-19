@@ -371,6 +371,122 @@ export class A2AMesh {
   }
 
   /**
+   * Streaming variant of `sendTask`. POSTs to the peer's `/task` with
+   * `Accept: text/event-stream`, parses the agentx SSE wire (event/data
+   * pairs), and yields `{event, data}` records as they arrive — text
+   * deltas, thinking chunks, tool start/result, and a terminal
+   * `done` (or `error`).
+   *
+   * Same timeout + dispatcher story as sendTask: undici dispatcher with
+   * disabled headersTimeout/bodyTimeout so a multi-minute agent run does
+   * not get killed by the default 300s headers cap, while an
+   * AbortController enforces our own wall-clock.
+   */
+  async *sendTaskStream(
+    peerName: string,
+    text: string,
+    agentId?: string,
+    opts: {
+      timeoutMs?: number
+      senderAgentId?: string
+      freshSession?: boolean
+      context?: Record<string, unknown>
+    } = {},
+  ): AsyncGenerator<{ event: string; data: any }> {
+    const state = this.peers.get(peerName)
+    if (!state) throw new Error(`Unknown peer: ${peerName}`)
+    if (!state.healthy) throw new Error(`Peer "${peerName}" is not healthy`)
+
+    const agent = agentId || state.agents[0]?.id
+    if (!agent) throw new Error(`Peer "${peerName}" has no agents`)
+
+    const url = `${state.peer.url}/task`
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    }
+    if (state.peer.token) headers["Authorization"] = `Bearer ${state.peer.token}`
+
+    const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    let res: Awaited<ReturnType<typeof undiciFetch>>
+    try {
+      res = await undiciFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          agent,
+          message: text,
+          stream: true,
+          ...(opts.senderAgentId ? { senderAgentId: opts.senderAgentId } : {}),
+          ...(typeof opts.freshSession === "boolean" ? { freshSession: opts.freshSession } : {}),
+          ...(opts.context ? { context: opts.context } : {}),
+        }),
+        signal: controller.signal,
+        dispatcher: longTaskDispatcher,
+      })
+    } catch (e: any) {
+      clearTimeout(timer)
+      if (controller.signal.aborted) throw new Error(`Peer "${peerName}" /task stream timed out after ${Math.round(timeoutMs / 1000)}s`)
+      throw e
+    }
+
+    if (!res.ok) {
+      clearTimeout(timer)
+      let detail = ""
+      try {
+        const errBody = await res.text()
+        detail = errBody ? `: ${errBody.slice(0, 200)}` : ""
+      } catch { /* */ }
+      throw new Error(`Peer "${peerName}" /task stream error: ${res.status}${detail}`)
+    }
+    if (!res.body) {
+      clearTimeout(timer)
+      throw new Error(`Peer "${peerName}" /task stream has no body`)
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    let pendingEvent = "message"
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Split on SSE record boundaries (\n\n). The trailing partial
+        // record stays in `buffer` for the next iteration.
+        let sep = buffer.indexOf("\n\n")
+        while (sep !== -1) {
+          const record = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          sep = buffer.indexOf("\n\n")
+          if (!record.trim()) continue
+          let event = "message"
+          const dataLines: string[] = []
+          for (const line of record.split("\n")) {
+            if (line.startsWith(":")) continue // comment / heartbeat
+            if (line.startsWith("event:")) event = line.slice(6).trim()
+            else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim())
+          }
+          if (dataLines.length === 0) continue
+          let data: any = dataLines.join("\n")
+          try { data = JSON.parse(data) } catch { /* leave as string */ }
+          yield { event, data }
+          pendingEvent = event
+          if (event === "done" || event === "error") return
+        }
+      }
+    } finally {
+      clearTimeout(timer)
+      try { await reader.cancel() } catch { /* */ }
+    }
+    void pendingEvent
+  }
+
+  /**
    * Forward a WebRTC signaling message (SDP / ICE / hangup) to a remote peer's
    * /webrtc/signal endpoint. Not gated by peer health — a healthy control plane
    * is useful but a one-off probe miss should not drop a live call; the browser

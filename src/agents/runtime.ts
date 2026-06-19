@@ -1289,6 +1289,7 @@ export async function executeOrchestrator(
   providerOpts?: { thinking?: boolean },
   onThinking?: ThinkingCallback,
   abortSignal?: AbortSignal,
+  onEvent?: (event: any) => void,
 ): Promise<AgentResponse> {
   const start = Date.now()
 
@@ -1378,6 +1379,13 @@ export async function executeOrchestrator(
       let outputTokens: number | undefined
       let errorMsg: string | undefined
       for await (const event of generateStream(baseOpts)) {
+        // Forward tool_call/tool_result (and a few other signal events)
+        // to the caller-supplied onEvent so the daemon's SSE writer can
+        // surface "calling wiki_search…" → "✓ wiki_search done" badges
+        // on the jort-wiki chat without parsing internal stream-json.
+        if (onEvent) {
+          try { onEvent(event) } catch { /* subscriber crashed */ }
+        }
         if (event.type === "text_delta") {
           content += event.text
           onDelta(event.text, content)
@@ -1725,7 +1733,7 @@ export async function executeTask(
       const apiKey = providerCfg?.apiKey
       return executeOrchestrator(agent, task, apiKey, historyContext, onDelta, {
         thinking: (providerCfg as any)?.thinking,
-      }, onThinking, abortSignal)
+      }, onThinking, abortSignal, onEvent)
     }
 
     default:

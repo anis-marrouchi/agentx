@@ -705,11 +705,11 @@ export class AgentRegistry {
    * this, every dispatched decision sits in-flight forever and the
    * active-task check becomes vacuously over-aggressive.
    */
-  async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback): Promise<AgentResponse> {
+  async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
     const startedAt = Date.now()
     let response: AgentResponse
     try {
-      response = await this.executeInternal(task, onDelta, onThinking)
+      response = await this.executeInternal(task, onDelta, onThinking, onEvent)
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
     }
@@ -743,7 +743,7 @@ export class AgentRegistry {
    * Internal dispatcher — the real body. See `execute` for the public
    * wrapper that adds intent-ledger resolution recording.
    */
-  private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback): Promise<AgentResponse> {
+  private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, callerOnEvent?: (event: any) => void): Promise<AgentResponse> {
     const state = this.agents.get(task.agentId)
     if (!state) {
       // Mesh fallback: the agent isn't local but a healthy peer may host
@@ -916,6 +916,10 @@ export class AgentRegistry {
         // SQLite subscriber persists it under traceTaskId.
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        // Caller-supplied event subscriber (HTTP SSE callers, etc.).
+        // Fire after internal capture so a subscriber crash never breaks
+        // our own bookkeeping.
+        if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     } else {
       // Even without a dashboard subscriber, we want trace steps for
@@ -923,6 +927,7 @@ export class AgentRegistry {
       onEvent = (event: any) => {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     }
 

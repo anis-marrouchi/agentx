@@ -3527,6 +3527,93 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
           const freshSession = explicitFresh !== undefined
             ? explicitFresh
             : (senderAgentId ? true : undefined)
+
+          // Streaming mode — caller can opt in with `Accept: text/event-stream`
+          // or `body.stream:true`. Emits a simple agentx-shaped SSE wire
+          // (`event: <kind>\ndata: <json>\n\n`) so peers, the Laravel
+          // jort-wiki proxy, and any browser/EventSource client get
+          // incremental visibility into the orchestrator's progress
+          // instead of a 60-180s blank wait. Existing JSON callers are
+          // untouched — they see the original single-response shape.
+          const acceptHeader = String(req.headers["accept"] || "")
+          const wantStream = body.stream === true || acceptHeader.includes("text/event-stream")
+          if (wantStream) {
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream; charset=utf-8",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Connection: "keep-alive",
+              "X-Accel-Buffering": "no",
+              "Access-Control-Allow-Origin": "*",
+            })
+            const writeSse = (event: string, payload: unknown) => {
+              try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`) } catch { /* socket gone */ }
+            }
+            writeSse("start", { agentId, startedAt: Date.now() })
+            const heartbeat = setInterval(() => {
+              try { res.write(": ping\n\n") } catch { /* */ }
+            }, 15_000)
+            ;(heartbeat as any).unref?.()
+            const onDelta = (text: string) => { if (text) writeSse("text", { text }) }
+            const onThinking = (text: string) => { if (text) writeSse("thinking", { text }) }
+            // Map orchestrator stream events → public SSE shape. The
+            // orchestrator (`src/agent/index.ts`) emits flat
+            // `{type:"tool_call", name, id}` and `{type:"tool_result",
+            // name, id, is_error}` events directly; we only forward
+            // those plus the claude-code stream-json equivalents so
+            // either tier drives the ToolBadge UI without leaking
+            // provider internals.
+            const onEvent = (event: any) => {
+              const kind = event?.type
+              if (kind === "tool_call") {
+                writeSse("tool", { status: "start", id: event.id, name: event.name })
+              } else if (kind === "tool_result") {
+                writeSse("tool", {
+                  status: "result",
+                  id: event.id,
+                  name: event.name,
+                  error: event.is_error === true,
+                })
+              } else if (kind === "content_block_start" && event?.content_block?.type === "tool_use") {
+                // claude-code tier still emits provider-shaped events here.
+                writeSse("tool", {
+                  status: "start",
+                  id: event.content_block.id,
+                  name: event.content_block.name,
+                })
+              }
+            }
+            try {
+              const resp = await this.registry.execute(
+                {
+                  agentId,
+                  message: body.message as string,
+                  context: body.context as any,
+                  contextStrategy,
+                  intentRef,
+                  freshSession,
+                },
+                onDelta,
+                onThinking,
+                onEvent,
+              )
+              clearInterval(heartbeat)
+              if (resp.error) {
+                writeSse("error", { error: resp.error, errorKind: resp.errorKind })
+              } else {
+                writeSse("done", {
+                  content: resp.content,
+                  duration: resp.duration,
+                  usage: resp.usage,
+                })
+              }
+            } catch (e: any) {
+              clearInterval(heartbeat)
+              writeSse("error", { error: e?.message ?? String(e) })
+            }
+            try { res.end() } catch { /* */ }
+            break
+          }
+
           const response = await this.registry.execute(
             {
               agentId,
@@ -3594,6 +3681,46 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             this.json(res, 400, { error: "Mesh not enabled" })
             return
           }
+
+          // Streaming pass-through: forward the peer's `/task` SSE to the
+          // caller verbatim. Used by the jort-wiki Laravel proxy so the
+          // browser sees the orchestrator's text/thinking/tool events
+          // arrive incrementally instead of waiting for the whole answer.
+          const acceptHeader = String(req.headers["accept"] || "")
+          const wantStream = body.stream === true || acceptHeader.includes("text/event-stream")
+          if (wantStream) {
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream; charset=utf-8",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Connection: "keep-alive",
+              "X-Accel-Buffering": "no",
+              "Access-Control-Allow-Origin": "*",
+            })
+            const writeSse = (event: string, payload: unknown) => {
+              try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`) } catch { /* */ }
+            }
+            const heartbeat = setInterval(() => {
+              try { res.write(": ping\n\n") } catch { /* */ }
+            }, 15_000)
+            ;(heartbeat as any).unref?.()
+            try {
+              for await (const ev of this.mesh.sendTaskStream(
+                body.peer as string,
+                body.message as string,
+                body.agent as string | undefined,
+                { context: body.context as any },
+              )) {
+                writeSse(ev.event, ev.data)
+              }
+            } catch (e: any) {
+              writeSse("error", { error: e?.message ?? String(e) })
+            } finally {
+              clearInterval(heartbeat)
+              try { res.end() } catch { /* */ }
+            }
+            break
+          }
+
           const result = await this.mesh.sendTask(body.peer as string, body.message as string, body.agent as string | undefined)
           this.json(res, 200, { response: result })
           break
