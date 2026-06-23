@@ -73,6 +73,14 @@ export function startWorkflowTriggers(args: {
            *  workflow — including ones that don't address any agent. Match is
            *  case-insensitive on the bare username (no leading @). */
           mentions?: string[]
+          /** Restrict on:gitlab-note to a noteable type — "merge_request" or
+           *  "issue". Without this, an mr-fix-loop whose only gate is
+           *  `mentions` also claims issue comments that @-mention the coder,
+           *  suppresses the legacy @-mention reply path, then no-ops (the
+           *  prompt bails on issues) — so the comment gets swallowed with no
+           *  reply. Gating here lets issue notes fall through to the legacy
+           *  resolver. Match is case-insensitive on `ctx.noteableType`. */
+          noteableType?: string[]
           /** Fire only when one of these usernames was newly added as an
            *  assignee. The adapter computes the diff from
            *  `changes.assignees.{previous,current}` and exposes it as
@@ -127,6 +135,14 @@ export function startWorkflowTriggers(args: {
               const wanted = cfg.filter.mentions.map((m) => m.toLowerCase().replace(/^@/, ""))
               const hit = wanted.some((w) => ctxMentions.includes(w))
               if (!hit) return {}
+            }
+            // filter.noteableType — gitlab-note type gate. Keeps an
+            // mr-fix-loop off issue comments so they fall through to the
+            // legacy @-mention reply path instead of being claimed + no-op'd.
+            if (Array.isArray(cfg.filter.noteableType) && cfg.filter.noteableType.length > 0) {
+              const ctxType = typeof ctx.noteableType === "string" ? ctx.noteableType.toLowerCase() : undefined
+              const wanted = cfg.filter.noteableType.map((t) => t.toLowerCase())
+              if (!ctxType || !wanted.includes(ctxType)) return {}
             }
             // filter.assigneesAdded — coder-pickup-style trigger. Fires only
             // when one of the listed usernames appears in ctx.assigneesAdded
