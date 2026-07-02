@@ -8,14 +8,18 @@ import {
   PROMOTION_LEDGER_FILE,
   appendPromotionLedger,
   getUnpromotedMemories,
+  groupCandidates,
   listAllAgentMemories,
   memoryKey,
   memoryStamp,
   mergeSources,
   parseMemoryStamp,
+  parsePromotionResponse,
   readPromotionLedger,
+  type MemoryCandidate,
   type PromotionLedger,
 } from "../src/wiki/promote"
+import { PROMOTE_BODY_LIMIT, buildMemoryPromotePrompt } from "../src/wiki/prompts"
 
 const ROOT = resolve(__dirname, "../.test-wiki-promote")
 const WIKI_DIR = resolve(ROOT, "wiki")
@@ -193,5 +197,106 @@ describe("getUnpromotedMemories", () => {
     const out = getUnpromotedMemories(all, index(), [], { max: 1 })
     expect(out).toHaveLength(1)
     expect(out[0].key).toBe("cx/reference_wacli") // 06-15 > 06-01
+  })
+})
+
+function cand(agentId: string, over: Partial<MemoryRecord> = {}): MemoryCandidate {
+  const memory = mem(over)
+  return { agentId, memory, key: memoryKey(agentId, memory), stamp: memoryStamp(agentId, memory) }
+}
+
+describe("groupCandidates", () => {
+  it("clusters same type_name across agents as corroboration with higher confidence", () => {
+    const clusters = groupCandidates([
+      cand("clawd"),
+      cand("devops", { updatedAt: "2026-06-10T00:00:00.000Z" }),
+      cand("cx", { name: "wacli", type: "reference" }),
+      cand("cx", { name: "style", type: "feedback" }),
+    ])
+    expect(clusters).toHaveLength(3)
+    const corroborated = clusters.find((c) => c.candidates.length === 2)!
+    expect(corroborated.corroboratingAgents).toEqual(["clawd", "devops"])
+    // 0.5 + 0.15·1 + 0.05 (project) = 0.70
+    expect(corroborated.confidence).toBeCloseTo(0.7)
+    const singleRef = clusters.find((c) => c.candidates[0].memory.name === "wacli")!
+    expect(singleRef.confidence).toBeCloseTo(0.55) // reference boost, single agent
+    const singleFb = clusters.find((c) => c.candidates[0].memory.type === "feedback")!
+    expect(singleFb.confidence).toBeCloseTo(0.5) // no boost
+  })
+})
+
+describe("parsePromotionResponse", () => {
+  const offered = new Set([cand("clawd").stamp, cand("cx", { name: "wacli", type: "reference" }).stamp])
+  const goodArticle = {
+    path: "concepts/ports.md",
+    title: "Server Ports",
+    type: "concept",
+    related: ["Clawd Server"],
+    tags: ["infra"],
+    content: "Ports for [[Clawd Server]] …",
+    promotedFrom: [cand("clawd").stamp],
+  }
+
+  it("parses a valid response surrounded by prose", () => {
+    const text = `Here you go:\n${JSON.stringify({ articles: [goodArticle], skipped: [{ memory: cand("cx", { name: "wacli", type: "reference" }).stamp, reason: "transient" }], gaps: ["Clawd Server — no article"] })}\nDone.`
+    const out = parsePromotionResponse(text, offered)
+    if ("error" in out) throw new Error(out.error)
+    expect(out.articles).toHaveLength(1)
+    expect(out.articles[0].promotedFrom).toEqual([cand("clawd").stamp])
+    expect(out.skipped).toEqual([{ stamp: cand("cx", { name: "wacli", type: "reference" }).stamp, reason: "transient" }])
+    expect(out.gaps).toEqual(["Clawd Server — no article"])
+    expect(out.warnings).toEqual([])
+  })
+
+  it("errors on prose-only, unbalanced, and articles-missing responses", () => {
+    expect(parsePromotionResponse("no json here", offered)).toHaveProperty("error")
+    expect(parsePromotionResponse('{"articles": [', offered)).toHaveProperty("error")
+    expect(parsePromotionResponse('{"gaps": []}', offered)).toHaveProperty("error")
+  })
+
+  it("drops hallucinated stamps; drops articles left with zero valid stamps", () => {
+    const fake = "memory:ghost/project_nope@2026-01-01T00:00:00.000Z"
+    const text = JSON.stringify({
+      articles: [
+        { ...goodArticle, promotedFrom: [cand("clawd").stamp, fake] },
+        { ...goodArticle, path: "concepts/ghost.md", promotedFrom: [fake] },
+      ],
+      skipped: [{ memory: fake, reason: "x" }],
+      gaps: [],
+    })
+    const out = parsePromotionResponse(text, offered)
+    if ("error" in out) throw new Error(out.error)
+    expect(out.articles).toHaveLength(1)
+    expect(out.articles[0].promotedFrom).toEqual([cand("clawd").stamp])
+    expect(out.skipped).toEqual([])
+    expect(out.warnings.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it("is not fooled by braces inside JSON strings", () => {
+    const text = JSON.stringify({ articles: [{ ...goodArticle, content: 'code: `if (x) { return "}" }`' }], skipped: [], gaps: [] })
+    const out = parsePromotionResponse(text, offered)
+    if ("error" in out) throw new Error(out.error)
+    expect(out.articles[0].content).toContain('"}"')
+  })
+})
+
+describe("buildMemoryPromotePrompt", () => {
+  it("contains the wikilink mandate, exact stamps, corroboration, and truncated bodies", () => {
+    const long = cand("clawd", { body: "x".repeat(PROMOTE_BODY_LIMIT + 500) })
+    const clusters = groupCandidates([long, cand("devops")])
+    const prompt = buildMemoryPromotePrompt(
+      "memory-promoter",
+      clusters,
+      [{ title: "Clawd Server", path: "concepts/clawd-server.md", type: "concept" }],
+      "",
+    )
+    expect(prompt).toContain("2–5 other articles via `[[Article Title]]` wikilinks")
+    expect(prompt).toContain(long.stamp)
+    expect(prompt).toContain("corroborated by: clawd, devops (2 agents)")
+    expect(prompt).toContain("[… truncated]")
+    expect(prompt).not.toContain("x".repeat(PROMOTE_BODY_LIMIT + 1))
+    expect(prompt).toContain("[[Clawd Server]] — concepts/clawd-server.md")
+    expect(prompt).toContain("Never a secret")
+    expect(prompt).toContain('"promotedFrom"')
   })
 })

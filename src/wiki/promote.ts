@@ -169,6 +169,137 @@ export function appendPromotionLedger(wikiBaseDir: string, entries: PromotionLed
   )
 }
 
+// --- Clustering -------------------------------------------------------------
+
+export interface PromotionCluster {
+  /** ≥1 candidate; >1 when the same `<type>_<name>` exists on several agents. */
+  candidates: MemoryCandidate[]
+  corroboratingAgents: string[]
+  /** 0.5 base + 0.15 per extra corroborating agent + 0.05 for
+   *  project|reference types, capped at 0.95. Advisory only — shown to
+   *  the LLM judge, never a hard gate (mirrors clusterWorkflowCandidates). */
+  confidence: number
+}
+
+/** Group candidates that share `<type>_<name>` across agents. Exact-match
+ *  clustering only — two agents naming a memory identically is treated as
+ *  corroboration; fuzzy matching is future work. */
+export function groupCandidates(cands: MemoryCandidate[]): PromotionCluster[] {
+  const byName = new Map<string, MemoryCandidate[]>()
+  for (const c of cands) {
+    const k = `${c.memory.type}_${c.memory.name}`
+    const list = byName.get(k) ?? []
+    list.push(c)
+    byName.set(k, list)
+  }
+  return [...byName.values()].map((candidates) => {
+    const corroboratingAgents = [...new Set(candidates.map((c) => c.agentId))].sort()
+    const typeBoost = ["project", "reference"].includes(candidates[0].memory.type) ? 0.05 : 0
+    const confidence = Math.min(0.95, 0.5 + 0.15 * (corroboratingAgents.length - 1) + typeBoost)
+    return { candidates, corroboratingAgents, confidence }
+  })
+}
+
+// --- LLM response parsing ----------------------------------------------------
+
+export interface PromotedArticle {
+  path: string
+  title: string
+  type?: string
+  related?: string[]
+  tags: string[]
+  content: string
+  /** Validated stamps of the memories this article was promoted from. */
+  promotedFrom: string[]
+}
+
+export interface PromotionResponse {
+  articles: PromotedArticle[]
+  skipped: Array<{ stamp: string; reason: string }>
+  gaps: string[]
+  /** Stamp refs the LLM emitted that weren't in the offered set, plus
+   *  articles dropped for having zero valid stamps. For the report. */
+  warnings: string[]
+}
+
+/** Parse the promotion LLM's reply. Balanced-JSON extraction (adapted from
+ *  the wiki absorb CLI): find the outermost `{...}`, depth-scan to its
+ *  close, JSON.parse, then validate. Stamps not present in `offeredStamps`
+ *  are hallucinations — dropped; an article left with zero valid stamps is
+ *  dropped entirely (nothing to dedupe against on the next run). Any
+ *  failure returns `{error}` — the caller must write nothing. */
+export function parsePromotionResponse(
+  text: string,
+  offeredStamps: Set<string>,
+): PromotionResponse | { error: string } {
+  const start = text.indexOf("{")
+  if (start === -1) return { error: "no JSON object in response" }
+  let depth = 0
+  let end = -1
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (escaped) { escaped = false; continue }
+    if (ch === "\\") { escaped = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === "{") depth++
+    else if (ch === "}") { depth--; if (depth === 0) { end = i + 1; break } }
+  }
+  if (end === -1) return { error: "unbalanced JSON in response" }
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(text.slice(start, end))
+  } catch (e: any) {
+    return { error: `JSON parse error: ${e.message}` }
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.articles)) {
+    return { error: "response JSON missing articles array" }
+  }
+
+  const warnings: string[] = []
+  const articles: PromotedArticle[] = []
+  for (const a of parsed.articles) {
+    if (!a || typeof a.path !== "string" || typeof a.title !== "string" || typeof a.content !== "string") {
+      warnings.push(`article missing path/title/content — dropped`)
+      continue
+    }
+    const raw = Array.isArray(a.promotedFrom) ? a.promotedFrom.filter((s: unknown) => typeof s === "string") : []
+    const promotedFrom = raw.filter((s: string) => offeredStamps.has(s))
+    for (const s of raw) {
+      if (!offeredStamps.has(s)) warnings.push(`article "${a.path}" references unknown stamp "${s}" — dropped`)
+    }
+    if (promotedFrom.length === 0) {
+      warnings.push(`article "${a.path}" has no valid promotedFrom stamps — dropped`)
+      continue
+    }
+    articles.push({
+      path: a.path,
+      title: a.title,
+      type: typeof a.type === "string" ? a.type : undefined,
+      related: Array.isArray(a.related) ? a.related.filter((r: unknown) => typeof r === "string") : undefined,
+      tags: Array.isArray(a.tags) ? a.tags.filter((t: unknown) => typeof t === "string") : [],
+      content: a.content,
+      promotedFrom,
+    })
+  }
+
+  const skipped: Array<{ stamp: string; reason: string }> = []
+  for (const s of Array.isArray(parsed.skipped) ? parsed.skipped : []) {
+    const stamp = typeof s?.memory === "string" ? s.memory : typeof s?.stamp === "string" ? s.stamp : ""
+    if (!offeredStamps.has(stamp)) {
+      if (stamp) warnings.push(`skip references unknown stamp "${stamp}" — dropped`)
+      continue
+    }
+    skipped.push({ stamp, reason: typeof s.reason === "string" ? s.reason : "" })
+  }
+
+  const gaps = Array.isArray(parsed.gaps) ? parsed.gaps.filter((g: unknown) => typeof g === "string") : []
+  return { articles, skipped, gaps, warnings }
+}
+
 // --- Candidate selection ---------------------------------------------------
 
 export interface UnpromotedOptions {
