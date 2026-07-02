@@ -109,3 +109,59 @@ describe("SessionStore", () => {
     expect(context).toBe("")
   })
 })
+
+describe("SessionStore — tier-2 rotation metric (context vs cumulative)", () => {
+  let store: SessionStore
+  const bigCumulative = { inputTokens: 12_000, outputTokens: 900, cacheReadTokens: 3_200_000, cacheCreateTokens: 130_000 }
+
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true })
+    store = new SessionStore(TEST_DIR, { tierTwoThresholdTokens: 180_000 })
+    store.setClaudeSessionId("atlas", "telegram", "g1", "sess-1")
+  })
+  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }))
+
+  it("records both the cumulative turn total and the per-request context size", () => {
+    store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 120_000)
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.lastTurnInputTokens).toBe(3_342_000)
+    expect(s.lastTurnContextTokens).toBe(120_000)
+    expect(s.turnCount).toBe(1)
+  })
+
+  it("does NOT rotate on a tool-heavy turn whose real context is small (the amnesia bug)", () => {
+    // 3.3M cumulative (cache reads across 20 calls) but only 120K real context
+    store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 120_000)
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "g1")).toBe(false)
+  })
+
+  it("rotates when the real context crosses the threshold", () => {
+    store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 190_000)
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "g1")).toBe(true)
+    expect(store.getLastTurnContextTokens("atlas", "telegram", "g1")).toBe(190_000)
+  })
+
+  it("falls back to the cumulative total when no context reading exists (non-streaming path)", () => {
+    store.recordTurnUsage("atlas", "telegram", "g1", { inputTokens: 190_500, outputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 0 })
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "g1")).toBe(true)
+    store.recordTurnUsage("atlas", "telegram", "g1", { inputTokens: 50_000, outputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 0 })
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "g1")).toBe(false)
+  })
+
+  it("a non-streaming turn clears the previous streaming turn's context reading", () => {
+    store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 120_000)
+    store.recordTurnUsage("atlas", "telegram", "g1", { inputTokens: 30_000, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0 })
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.lastTurnContextTokens).toBeUndefined()
+    expect(s.lastTurnInputTokens).toBe(30_000)
+  })
+
+  it("rotation clears the context reading along with the counters", () => {
+    store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 190_000)
+    store.clearClaudeSessionId("atlas", "telegram", "g1")
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.lastTurnContextTokens).toBeUndefined()
+    expect(s.turnCount).toBeUndefined()
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "g1")).toBe(false)
+  })
+})

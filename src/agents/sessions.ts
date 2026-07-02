@@ -40,11 +40,17 @@ export interface Session {
    *  Claude CLI replays the entire prior session on every turn, so long
    *  sessions pay a linearly growing cache-read tax. */
   turnCount?: number
-  /** Total billable input of the LAST turn on this claudeSessionId
-   *  (inputTokens + cacheReadTokens + cacheCreateTokens). Used to detect
-   *  tier-2 hits (>200K) from the prior turn so we can rotate before the
-   *  next turn pays the 1.5× multiplier again. */
+  /** CUMULATIVE billable input of the LAST turn on this claudeSessionId
+   *  (inputTokens + cacheReadTokens + cacheCreateTokens summed across every
+   *  API call in the agentic loop). Kept for observability/billing only —
+   *  a tool-heavy turn sums to millions via cache reads, so this must NOT
+   *  drive rotation decisions. See lastTurnContextTokens. */
   lastTurnInputTokens?: number
+  /** End-of-turn CONTEXT size: the last API call's (input + cacheRead +
+   *  cacheCreate) inside the previous turn — how full the conversation
+   *  window actually is. This is the tier-2 rotation metric. Absent when
+   *  the turn ran through a non-streaming path (no per-call usage). */
+  lastTurnContextTokens?: number
 }
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
@@ -849,6 +855,7 @@ export class SessionStore {
     delete session.codexSessionId
     delete session.turnCount
     delete session.lastTurnInputTokens
+    delete session.lastTurnContextTokens
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -866,6 +873,7 @@ export class SessionStore {
     delete session.codexSessionId
     delete session.turnCount
     delete session.lastTurnInputTokens
+    delete session.lastTurnContextTokens
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -881,30 +889,43 @@ export class SessionStore {
   }
 
   /**
-   * Check whether the LAST turn on this session pushed total input past
-   * the tier-2 threshold. If yes, rotate so we don't pay the 1.5×
-   * multiplier again on the next turn.
+   * Check whether the LAST turn left the conversation context near the
+   * tier-2 boundary. Uses `lastTurnContextTokens` (the final API call's
+   * per-request input — the true context size) when the runtime captured
+   * it; falls back to the cumulative turn total only when it didn't.
+   * The cumulative number sums cache reads across every call in an
+   * agentic turn (easily 10-20× the real context), so preferring the
+   * per-call metric is what stops rotation from firing on every
+   * tool-heavy turn — the "agent forgets mid-task" bug.
    */
   shouldRotateByTierTwo(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
     if (!session.claudeSessionId && !session.codexSessionId) return false
-    return (session.lastTurnInputTokens ?? 0) >= this.tierTwoThresholdTokens
+    const contextSize = session.lastTurnContextTokens ?? session.lastTurnInputTokens ?? 0
+    return contextSize >= this.tierTwoThresholdTokens
   }
 
   /**
    * Record a completed turn's token usage and bump the turn counter.
    * Called after a successful native CLI response returns with usage info.
+   * `contextTokens` is the end-of-turn per-request context size (see
+   * AgentResponse.contextTokens); undefined on non-streaming paths.
    */
   recordTurnUsage(
     agentId: string,
     channel: string,
     chatId: string,
     usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number },
+    contextTokens?: number,
   ): void {
     const session = this.getSession(agentId, channel, chatId)
     session.turnCount = (session.turnCount ?? 0) + 1
     session.lastTurnInputTokens =
       (usage.inputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheCreateTokens || 0)
+    // Overwrite (including back to undefined) rather than keep a stale
+    // value: a non-streaming turn after a streaming one must not reuse
+    // the older context reading.
+    session.lastTurnContextTokens = contextTokens
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -915,6 +936,12 @@ export class SessionStore {
   }
   getLastTurnInputTokens(agentId: string, channel: string, chatId: string): number {
     return this.getSession(agentId, channel, chatId).lastTurnInputTokens ?? 0
+  }
+  /** The rotation metric shouldRotateByTierTwo actually used: per-request
+   *  context size when available, else the cumulative fallback. */
+  getLastTurnContextTokens(agentId: string, channel: string, chatId: string): number {
+    const s = this.getSession(agentId, channel, chatId)
+    return s.lastTurnContextTokens ?? s.lastTurnInputTokens ?? 0
   }
   getMaxTurnsPerSession(): number { return this.maxTurnsPerSession }
   getTierTwoThresholdTokens(): number { return this.tierTwoThresholdTokens }

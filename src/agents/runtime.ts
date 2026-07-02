@@ -167,6 +167,14 @@ export interface AgentResponse {
   claudeSessionId?: string
   codexSessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
+  /** End-of-turn context size: the LAST API call's (input + cacheRead +
+   *  cacheCreate) inside this turn, captured from the final assistant
+   *  stream event. `usage` above is CUMULATIVE across every call in the
+   *  agentic loop (a tool-heavy turn easily sums to millions via cache
+   *  reads) — only this field reflects how full the conversation context
+   *  actually is, so rotation decisions must use it, never `usage`.
+   *  Undefined on non-streaming paths (result JSON has no per-call data). */
+  contextTokens?: number
   /** The model Claude actually billed for (from the CLI's init event). When
    *  absent, cost reporting should fall back to the model override / agent
    *  config. Knowing the billed model is what makes cache-aware pricing
@@ -775,6 +783,8 @@ export async function executeClaudeCodeStreaming(
   let streamBilledModel: string | undefined
   let streamUsage: TokenUsage | undefined
   let streamSessionId: string | undefined
+  /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
+  let streamContextTokens: number | undefined
   /** If the terminal `result` event carries is_error, we stash it here and
    *  surface the translated message instead of treating `result` as agent text. */
   let streamApiError: string | undefined
@@ -836,6 +846,19 @@ export async function executeClaudeCodeStreaming(
             // Best-effort — never let a subscriber crash the runtime.
             if (onEvent) {
               try { onEvent(event) } catch { /* */ }
+            }
+
+            // Every "assistant" event is a full API message envelope whose
+            // usage covers THAT call only — input + cache tokens ≈ the
+            // context size of the request that produced it. The last one
+            // seen is the end-of-turn context size (rotation metric).
+            if (event.type === "assistant" && event.message?.usage) {
+              const u = event.message.usage
+              const callContext =
+                (u.input_tokens || 0) +
+                (u.cache_read_input_tokens || 0) +
+                (u.cache_creation_input_tokens || 0)
+              if (callContext > 0) streamContextTokens = callContext
             }
 
             // Claude stream-json emits different event types
@@ -972,6 +995,7 @@ export async function executeClaudeCodeStreaming(
         ...buildErrorEnvelope(streamApiError),
         duration: Date.now() - start,
         usage: streamUsage,
+        contextTokens: streamContextTokens,
         billedModel: streamBilledModel,
         claudeSessionId: streamSessionId,
       }
@@ -981,6 +1005,7 @@ export async function executeClaudeCodeStreaming(
       content: fullText,
       duration: Date.now() - start,
       usage: streamUsage,
+      contextTokens: streamContextTokens,
       billedModel: streamBilledModel,
       claudeSessionId: streamSessionId,
     }
@@ -990,6 +1015,7 @@ export async function executeClaudeCodeStreaming(
       ...buildErrorEnvelope(error.message),
       duration: Date.now() - start,
       usage: streamUsage,
+      contextTokens: streamContextTokens,
       billedModel: streamBilledModel,
       claudeSessionId: streamSessionId,
     }
@@ -1596,6 +1622,7 @@ async function executeClaudeCodePersistent(
   let finalError: string | undefined
   let finalErrorKind: FriendlyError["kind"] | undefined
   let usage: TokenUsage | undefined
+  let contextTokens: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
 
@@ -1627,6 +1654,18 @@ async function executeClaudeCodePersistent(
           if (block.type === "text" && typeof block.text === "string") {
             finalText = block.text
           }
+        }
+        // Per-call usage on the assistant envelope: the last call's
+        // (input + cache) tokens = end-of-turn context size. See
+        // AgentResponse.contextTokens for why this, not the cumulative
+        // result usage, drives session rotation.
+        const u = (evt.raw as any).message?.usage
+        if (u) {
+          const callContext =
+            (u.input_tokens || 0) +
+            (u.cache_read_input_tokens || 0) +
+            (u.cache_creation_input_tokens || 0)
+          if (callContext > 0) contextTokens = callContext
         }
       }
 
@@ -1678,6 +1717,7 @@ async function executeClaudeCodePersistent(
     errorKind: finalErrorKind,
     duration: Date.now() - start,
     usage,
+    contextTokens,
     billedModel,
     claudeSessionId: sessionId,
   }

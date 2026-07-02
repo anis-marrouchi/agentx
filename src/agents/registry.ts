@@ -1086,13 +1086,14 @@ export class AgentRegistry {
       resumeSessionId = undefined
     }
 
-    // If prior turn pushed total input past the tier-2 threshold (>200K billed
-    // at 1.5×), rotate before paying the multiplier again. Claude CLI --resume
-    // replays every past tool result, so one bloated turn keeps billing
-    // tier-2 indefinitely until we drop the session.
+    // If the prior turn's END-OF-TURN CONTEXT (per-request input, not the
+    // cumulative-with-cache-reads turn total) is near the 200K tier-2
+    // boundary, rotate before paying the 1.5× multiplier again. Claude CLI
+    // --resume replays every past tool result, so one genuinely bloated
+    // context keeps billing tier-2 indefinitely until we drop the session.
     if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
-      const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
-      this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn: ${lastTokens} input tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
+      const lastTokens = this.sessions.getLastTurnContextTokens(task.agentId, channel, chatId)
+      this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn context: ${lastTokens} tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
       if (state.def.tier === "claude-code") {
         void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
       }
@@ -1796,24 +1797,28 @@ export class AgentRegistry {
         }
 
         // Record this turn's usage so next task can decide whether to rotate:
-        // tracks turnCount + lastTurnInputTokens (input + cacheRead + cacheCreate).
+        // turnCount + cumulative lastTurnInputTokens (observability) +
+        // per-request lastTurnContextTokens (the actual rotation metric).
         // Only meaningful when we kept a claude session — skip otherwise so the
         // counter isn't incremented for tiers that don't use --resume.
         if ((response.claudeSessionId || response.codexSessionId) && response.usage) {
-          this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage)
+          this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage, response.contextTokens)
         }
 
-        // Tier-2 warning: Claude bills at 1.5× when a single turn's total
-        // input crosses 200K. Surface it visibly so operators don't need to
-        // read raw usage JSON to notice. Next turn will auto-rotate (see
-        // shouldRotateByTierTwo), but logging THIS turn keeps it observable.
+        // Tier-2 warning: Claude bills the 1.5× long-context rate when a
+        // single REQUEST's input crosses 200K — so judge by the end-of-turn
+        // per-request context size, not the cumulative turn total (which
+        // sums cache reads across every call and reads 10-20× too high).
+        // Next turn will auto-rotate (see shouldRotateByTierTwo); logging
+        // THIS turn keeps it observable.
         if (response.usage) {
-          const totalInput =
+          const contextSize = response.contextTokens
+          const cumulative =
             (response.usage.inputTokens || 0) +
             (response.usage.cacheReadTokens || 0) +
             (response.usage.cacheCreateTokens || 0)
-          if (totalInput >= this.sessions.getTierTwoThresholdTokens()) {
-            this.log(`[${task.agentId}] TIER-2 HIT on ${channel}:${chatId}: ${totalInput} total input tokens (input=${response.usage.inputTokens}, cacheRead=${response.usage.cacheReadTokens}, cacheCreate=${response.usage.cacheCreateTokens}) — next turn will rotate`)
+          if ((contextSize ?? cumulative) >= this.sessions.getTierTwoThresholdTokens()) {
+            this.log(`[${task.agentId}] TIER-2 HIT on ${channel}:${chatId}: context=${contextSize ?? "n/a"} tokens (cumulative turn total=${cumulative}) — next turn will rotate`)
           }
         }
 
