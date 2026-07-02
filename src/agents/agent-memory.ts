@@ -19,10 +19,12 @@ import { resolve } from "path"
 //     ...
 //
 // Philosophy: the wiki is authoritative / cross-agent / documented.
-// Memory is experiential / per-agent / "what I learned across runs." A
-// memory can be promoted to a wiki article (planned follow-up) after
-// multiple agents confirm the same fact, but we don't enforce that
-// here. Authors keep both layers parallel.
+// Memory is experiential / per-agent / "what I learned across runs."
+// Durable, cross-agent-relevant memories get promoted to shared wiki
+// articles by `agentx wiki promote` (src/wiki/promote.ts) — corroboration
+// across agents boosts confidence but isn't required. This module stays
+// read-only from the promotion pipeline's perspective; authors keep both
+// layers parallel.
 
 export type MemoryType = "user" | "feedback" | "project" | "reference"
 

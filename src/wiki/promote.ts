@@ -518,7 +518,6 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
     return report
   }
   report.clusters = groupCandidates(report.candidates)
-  log(`${report.candidates.length} candidate(s) in ${report.clusters.length} cluster(s)`)
   if (report.dryRun) return report
 
   const prompt = buildMemoryPromotePrompt(

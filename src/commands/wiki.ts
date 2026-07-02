@@ -4,6 +4,7 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
+import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { resolve, relative, dirname } from "path"
 import { execSync } from "child_process"
@@ -350,6 +351,122 @@ wiki
     }
     console.log()
   })
+
+// agentx wiki promote — memory→wiki promotion. Reads per-agent memories
+// (.agentx/agent-memory/), has an LLM judge which are durable and
+// cross-agent relevant, and writes them as [[wikilinked]] articles in the
+// SHARED store under owner "memory-promoter". Idempotent via stamps in
+// article sources[] + the _memory-promotions.json skip ledger — the
+// planned follow-up documented in agents/agent-memory.ts.
+wiki
+  .command("promote")
+  .description("promote per-agent memories into shared, authoritative wiki articles")
+  .option("--dir <path>", "wiki directory (default .agentx/wiki)")
+  .option("--memory-dir <path>", "the .agentx dir holding agent-memory/ (default .agentx)")
+  .option("--since <duration>", "memory window, e.g. 24h, 7d", "7d")
+  .option("--agent <id>", "only this agent's memories")
+  .option("--types <list>", "comma-separated memory types", "project,reference,feedback")
+  .option("--max <n>", "max candidate memories per run", "20")
+  .option("--via <agentId>", "route the LLM call through an agent — uses the agent's own session, no API key")
+  .option("--model <model>", "direct Anthropic API — needs ANTHROPIC_API_KEY")
+  .option("--daemon <url>", "daemon API base URL for --via", "http://127.0.0.1:18800")
+  .option("--commit", "write articles and ledger (default: dry-run)", false)
+  .action(async (opts) => {
+    const sinceMs = parsePromoteSince(opts.since)
+    const types = String(opts.types).split(",").map((t: string) => t.trim()).filter(Boolean)
+    const validTypes = ["user", "feedback", "project", "reference"]
+    const badType = types.find((t: string) => !validTypes.includes(t))
+    if (badType) {
+      console.log(chalk.red(`  Invalid memory type "${badType}". Valid: ${validTypes.join(", ")}`))
+      process.exit(1)
+    }
+    if (opts.commit && !opts.via && !opts.model) {
+      console.log(chalk.red("  --commit needs an LLM: pass --via <agentId> or --model <model>"))
+      process.exit(1)
+    }
+
+    console.log()
+    console.log(chalk.bold("  Memory → Wiki Promotion"))
+    console.log()
+
+    const report = await runPromotion({
+      wikiDir: opts.dir ? resolve(opts.dir) : undefined,
+      memoryRoot: opts.memoryDir ? resolve(opts.memoryDir) : undefined,
+      sinceMs,
+      agentFilter: opts.agent,
+      types: types as import("@/agents/agent-memory").MemoryType[],
+      max: Number(opts.max) || 20,
+      viaAgent: opts.via,
+      model: opts.model,
+      daemonUrl: opts.daemon,
+      commit: opts.commit,
+      log: (msg) => console.log(chalk.dim(`  ${msg}`)),
+    })
+
+    if (report.candidates.length === 0) {
+      console.log(chalk.dim("  Nothing unpromoted in window"))
+      console.log()
+      return
+    }
+
+    console.log(`  ${report.candidates.length} candidate(s) in ${report.clusters.length} cluster(s):`)
+    for (const cluster of report.clusters) {
+      const c = cluster.candidates[0]
+      const corr = cluster.corroboratingAgents.length > 1
+        ? chalk.green(` ×${cluster.corroboratingAgents.length} agents`)
+        : ""
+      console.log(`    ${chalk.cyan(`[${c.memory.type}]`)} ${c.memory.name}${corr} ${chalk.dim(`(${cluster.corroboratingAgents.join(", ")}, conf ${cluster.confidence.toFixed(2)})`)}`)
+      console.log(chalk.dim(`      ${c.memory.description}`))
+    }
+    console.log()
+
+    if (report.dryRun) {
+      console.log(chalk.dim("  Dry run — pass --commit to promote"))
+      console.log()
+      return
+    }
+
+    for (const w of report.written) {
+      const typeTag = w.type ? chalk.magenta(`[${w.type}]`) + " " : ""
+      const relStr = w.related?.length
+        ? ` → ${w.related.slice(0, 3).join(", ")}${w.related.length > 3 ? ", …" : ""}`
+        : ""
+      console.log(`  ${chalk.green("+")} ${typeTag}${w.path}: ${w.title}${chalk.dim(relStr)}`)
+      console.log(chalk.dim(`     from: ${w.stamps.join(", ")}`))
+    }
+    for (const s of report.skipped) {
+      console.log(`  ${chalk.yellow("-")} ${s.stamp} ${chalk.dim(`— ${s.reason}`)}`)
+    }
+    if (report.gaps.length) {
+      console.log()
+      console.log(chalk.yellow(`  Gaps (${report.gaps.length}):`))
+      for (const gap of report.gaps) console.log(chalk.yellow(`    ? ${gap}`))
+    }
+    for (const wmsg of report.warnings) console.log(chalk.dim(`  ! ${wmsg}`))
+    for (const err of report.errors) console.log(chalk.red(`  x ${err}`))
+    console.log()
+    console.log(
+      report.errors.length
+        ? chalk.red(`  ${report.written.length} promoted, ${report.errors.length} error(s)`)
+        : chalk.green(`  ${report.written.length} promoted, ${report.skipped.length} skipped`),
+    )
+    console.log()
+    if (report.errors.length) process.exit(1)
+  })
+
+/** "24h" / "7d" / "30m" → window in ms. (Same grammar as workflow absorb's
+ *  parseSince, but returns the window size — runPromotion applies the clock.) */
+function parsePromoteSince(input: string | undefined): number | undefined {
+  if (!input) return undefined
+  const m = /^(\d+)\s*([smhd])$/.exec(input.trim())
+  if (!m) {
+    console.log(chalk.red(`  Invalid --since "${input}". Use "30m", "24h", or "7d".`))
+    process.exit(1)
+  }
+  const n = Number(m[1])
+  const unit = m[2]
+  return n * (unit === "s" ? 1000 : unit === "m" ? 60_000 : unit === "h" ? 3600_000 : 86_400_000)
+}
 
 // agentx wiki ab-test — compare old BM25 preload vs new agentic query on
 // real messages pulled from .agentx/task-history. Emits a markdown report
