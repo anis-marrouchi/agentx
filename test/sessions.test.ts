@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { SessionStore } from "../src/agents/sessions"
-import { rmSync } from "fs"
+import { rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
 const TEST_DIR = resolve(__dirname, "../.test-sessions")
@@ -107,6 +107,57 @@ describe("SessionStore", () => {
   it("returns empty context for new sessions", () => {
     const context = store.buildHistoryContext("atlas", "telegram", "g1")
     expect(context).toBe("")
+  })
+})
+
+describe("SessionStore — day-rollover continuity", () => {
+  let store: SessionStore
+
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true })
+    store = new SessionStore(TEST_DIR, { staleMinutes: 720 })
+  })
+  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }))
+
+  /** Write a session file for UTC yesterday, bypassing the (today-keyed) store. */
+  function seedYesterday(updatedAt: string, extra: Record<string, unknown> = {}) {
+    const prevDay = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+    const key = `atlas:telegram:g1:${prevDay}`
+    const record = {
+      id: key, agentId: "atlas", channel: "telegram", chatId: "g1", day: prevDay,
+      messages: [{ role: "user", name: "Anis", content: "old", timestamp: updatedAt }],
+      createdAt: updatedAt, updatedAt,
+      claudeSessionId: "sess-yesterday", turnCount: 7, lastTurnContextTokens: 90_000,
+      ...extra,
+    }
+    writeFileSync(resolve(TEST_DIR, ".agentx/sessions", `${key}.json`), JSON.stringify(record))
+  }
+
+  it("seeds today's record from yesterday's resumable session (no midnight amnesia)", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600_000).toISOString()
+    seedYesterday(twoHoursAgo)
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.claudeSessionId).toBe("sess-yesterday")
+    expect(s.turnCount).toBe(7)
+    expect(s.lastTurnContextTokens).toBe(90_000)
+    expect(s.messages).toHaveLength(0) // history stays day-scoped
+    expect(store.getClaudeSessionId("atlas", "telegram", "g1")).toBe("sess-yesterday")
+    expect(store.isSessionStale("atlas", "telegram", "g1")).toBe(false)
+  })
+
+  it("carries yesterday's updatedAt so an idle session still goes stale", () => {
+    const twentyHoursAgo = new Date(Date.now() - 20 * 3600_000).toISOString()
+    seedYesterday(twentyHoursAgo)
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.claudeSessionId).toBe("sess-yesterday")
+    // 20h idle > 12h staleMinutes → the rotation path in execute() clears it
+    expect(store.isSessionStale("atlas", "telegram", "g1")).toBe(true)
+  })
+
+  it("creates a plain fresh session when yesterday has nothing", () => {
+    const s = store.getSession("atlas", "telegram", "g1")
+    expect(s.claudeSessionId).toBeUndefined()
+    expect(s.turnCount).toBeUndefined()
   })
 })
 

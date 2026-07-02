@@ -310,7 +310,13 @@ export class SessionStore {
       }
     }
 
-    // Create new session
+    // Create new session. The key is day-scoped, so without carry-over a
+    // conversation crossing UTC midnight would silently lose its --resume
+    // id — guaranteed daily amnesia even mid-task. Seed continuity
+    // metadata (native session ids + rotation counters + updatedAt) from
+    // yesterday's record; the normal stale/tier-2/max-turns checks then
+    // decide whether to actually resume. Messages stay day-scoped.
+    const prev = this.loadPreviousDaySession(agentId, channel, chatId)
     const day = new Date().toISOString().slice(0, 10)
     const session: Session = {
       id: key,
@@ -320,12 +326,32 @@ export class SessionStore {
       day,
       messages: [],
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: prev?.updatedAt ?? new Date().toISOString(),
+      claudeSessionId: prev?.claudeSessionId,
+      codexSessionId: prev?.codexSessionId,
+      turnCount: prev?.turnCount,
+      lastTurnInputTokens: prev?.lastTurnInputTokens,
+      lastTurnContextTokens: prev?.lastTurnContextTokens,
     }
 
     this.cache.set(key, session)
     this.save(session)
     return session
+  }
+
+  /** Yesterday's (UTC) session record for the same triple, or null. Only
+   *  one day back — a gap of 2+ days is stale at any sane staleMinutes,
+   *  so scanning further would never change the outcome. */
+  private loadPreviousDaySession(agentId: string, channel: string, chatId: string): Session | null {
+    const prevDay = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+    const prevKey = `${agentId}:${channel}:${chatId}:${prevDay}`
+    const file = this.sessionFile(prevKey)
+    if (!existsSync(file)) return null
+    try {
+      return JSON.parse(readFileSync(file, "utf-8")) as Session
+    } catch {
+      return null
+    }
   }
 
   /**
