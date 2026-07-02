@@ -20,6 +20,8 @@ import {
   type PromotionLedger,
 } from "../src/wiki/promote"
 import { PROMOTE_BODY_LIMIT, buildMemoryPromotePrompt } from "../src/wiki/prompts"
+import { PROMOTER_OWNER, runPromotion } from "../src/wiki/promote"
+import { WikiStore } from "../src/wiki/store"
 
 const ROOT = resolve(__dirname, "../.test-wiki-promote")
 const WIKI_DIR = resolve(ROOT, "wiki")
@@ -277,6 +279,138 @@ describe("parsePromotionResponse", () => {
     const out = parsePromotionResponse(text, offered)
     if ("error" in out) throw new Error(out.error)
     expect(out.articles[0].content).toContain('"}"')
+  })
+})
+
+describe("runPromotion", () => {
+  const NOW = Date.parse("2026-07-01T12:00:00.000Z")
+
+  /** Seed one clawd project memory; returns its stamp. */
+  function seedMemory(over: Partial<Parameters<AgentMemory["save"]>[0]> = {}): string {
+    const store = new AgentMemory({ baseDir: ROOT })
+    const rec = store.save({
+      agentId: "clawd", type: "project", name: "server_ports",
+      description: "daemon ports", body: "HTTP=19900, GitLab=18810", ...over,
+    })
+    return memoryStamp((over as any).agentId ?? "clawd", rec)
+  }
+
+  function fetchReturning(payload: unknown): typeof fetch {
+    const calls: any[] = []
+    const impl = (async (_url: any, init: any) => {
+      calls.push(JSON.parse(init.body))
+      return {
+        ok: true,
+        json: async () => ({ content: JSON.stringify(payload) }),
+        text: async () => "",
+      } as Response
+    }) as typeof fetch
+    ;(impl as any).calls = calls
+    return impl
+  }
+
+  function articlePayload(stamp: string) {
+    return {
+      articles: [{
+        path: "concepts/clawd-server-ports.md",
+        title: "Clawd Server Ports",
+        type: "concept",
+        related: ["Clawd Server"],
+        tags: ["infra"],
+        content: "Ports on [[Clawd Server]]: HTTP=19900.",
+        promotedFrom: [stamp],
+      }],
+      skipped: [],
+      gaps: ["Clawd Server — referenced but missing"],
+    }
+  }
+
+  const baseOpts = { wikiDir: WIKI_DIR, memoryRoot: ROOT, viaAgent: "graph-agent", commit: true, now: NOW }
+
+  it("dry-run reports candidates and writes nothing", async () => {
+    seedMemory()
+    const report = await runPromotion({ ...baseOpts, commit: false, fetchImpl: fetchReturning({}) })
+    expect(report.dryRun).toBe(true)
+    expect(report.candidates).toHaveLength(1)
+    expect(report.written).toEqual([])
+    expect(readPromotionLedger(WIKI_DIR)).toEqual([])
+  })
+
+  it("writes the article with promoter owner, public access, merged sources; re-run is a no-op", async () => {
+    const stamp = seedMemory()
+    const fetchImpl = fetchReturning(articlePayload(stamp))
+    const report = await runPromotion({ ...baseOpts, fetchImpl })
+    expect(report.errors).toEqual([])
+    expect(report.written).toHaveLength(1)
+    expect(report.gaps).toHaveLength(1)
+
+    const store = new WikiStore(WIKI_DIR, () => {})
+    const article = store.readArticle("concepts/clawd-server-ports.md")!
+    expect(article.meta.owner).toBe(PROMOTER_OWNER)
+    expect(article.meta.access).toBe("public")
+    expect(article.meta.sources).toEqual([stamp])
+    expect(readPromotionLedger(WIKI_DIR)).toHaveLength(1)
+
+    // Second run: nothing unpromoted → no LLM call, no rewrite.
+    const secondFetch = fetchReturning(articlePayload(stamp))
+    const rerun = await runPromotion({ ...baseOpts, fetchImpl: secondFetch })
+    expect(rerun.candidates).toEqual([])
+    expect((secondFetch as any).calls).toHaveLength(0)
+    expect(store.getVersions("concepts/clawd-server-ports.md")).toHaveLength(0) // never overwritten
+  })
+
+  it("an updated memory re-promotes and mergeSources replaces the stale stamp", async () => {
+    const stamp1 = seedMemory()
+    await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp1)) })
+    await new Promise((r) => setTimeout(r, 10))
+    const stamp2 = seedMemory({ body: "HTTP=19900, GitLab=18810, MacBook=18800" })
+    expect(stamp2).not.toBe(stamp1)
+
+    const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp2)) })
+    expect(report.written).toHaveLength(1)
+    const store = new WikiStore(WIKI_DIR, () => {})
+    expect(store.readArticle("concepts/clawd-server-ports.md")!.meta.sources).toEqual([stamp2])
+  })
+
+  it("unusable LLM reply after retry writes nothing and leaves the ledger untouched", async () => {
+    seedMemory()
+    const impl = (async () => ({
+      ok: true,
+      json: async () => ({ content: "I could not produce JSON, sorry." }),
+      text: async () => "",
+    })) as unknown as typeof fetch
+    const report = await runPromotion({ ...baseOpts, fetchImpl: impl })
+    expect(report.errors).toHaveLength(1)
+    expect(report.written).toEqual([])
+    expect(readPromotionLedger(WIKI_DIR)).toEqual([])
+    expect(new WikiStore(WIKI_DIR, () => {}).readArticle("concepts/clawd-server-ports.md")).toBeNull()
+  })
+
+  it("canWrite denial reports an error and does NOT ledger the stamp", async () => {
+    const stamp = seedMemory()
+    const store = new WikiStore(WIKI_DIR, () => {})
+    store.writeArticle("concepts/clawd-server-ports.md", {
+      title: "Clawd Server Ports", tags: [], owner: "someone-else", access: "public",
+      created: "2026-01-01", lastUpdated: "2026-01-01", sources: [],
+    }, "pre-existing", "someone-else")
+
+    const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp)) })
+    expect(report.errors).toHaveLength(1)
+    expect(report.errors[0]).toContain("someone-else")
+    expect(report.written).toEqual([])
+    expect(readPromotionLedger(WIKI_DIR)).toEqual([]) // retried after a human resolves
+    expect(store.readArticle("concepts/clawd-server-ports.md")!.content).toBe("pre-existing")
+  })
+
+  it("skip decisions land in the ledger and suppress the memory next run", async () => {
+    const stamp = seedMemory()
+    const payload = { articles: [], skipped: [{ memory: stamp, reason: "transient" }], gaps: [] }
+    const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(payload) })
+    expect(report.skipped).toEqual([{ stamp, reason: "transient" }])
+    expect(readPromotionLedger(WIKI_DIR)).toHaveLength(1)
+
+    const rerun = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(payload) })
+    expect(rerun.candidates).toEqual([])
   })
 })
 

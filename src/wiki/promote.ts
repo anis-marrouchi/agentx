@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { AgentMemory, type MemoryRecord, type MemoryType } from "../agents/agent-memory"
-import type { WikiIndex } from "./types"
+import { WikiStore } from "./store"
+import { buildMemoryPromotePrompt } from "./prompts"
+import { isWikiArticleType, type WikiIndex } from "./types"
 
 // --- Memory → wiki promotion ---
 //
@@ -360,4 +362,229 @@ export function getUnpromotedMemories(
   return candidates
     .sort((a, b) => b.memory.updatedAt.localeCompare(a.memory.updatedAt))
     .slice(0, max)
+}
+
+// --- LLM transport -----------------------------------------------------------
+
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
+const ANTHROPIC_VERSION = "2023-06-01"
+
+export interface PromotionLlmOptions {
+  /** Route through the daemon: POST /task to this agent. No API key needed —
+   *  the agent's own session handles auth (mirrors architectWorkflowViaAgent). */
+  viaAgent?: string
+  /** Direct Anthropic API model. Requires ANTHROPIC_API_KEY. */
+  model?: string
+  daemonUrl?: string
+  timeoutMs?: number
+  fetchImpl?: typeof fetch
+  /** Stable chat id so a retry's --resume replay sees the first reply. */
+  chatId?: string
+}
+
+/** Run the promotion prompt through an LLM and return the raw reply text.
+ *  Throws on transport failure — the caller decides whether to retry.
+ *  `feedback` turns the call into a correction round: the via-agent branch
+ *  resumes the same session; the direct branch replays the conversation. */
+export async function callPromotionLlm(
+  prompt: string,
+  opts: PromotionLlmOptions,
+  feedback: string | null = null,
+): Promise<string> {
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const timeoutMs = opts.timeoutMs ?? 180_000
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    if (opts.viaAgent) {
+      const daemonUrl = (opts.daemonUrl ?? "http://127.0.0.1:18800").replace(/\/+$/, "")
+      const message = feedback
+        ? `Your previous response failed validation: ${feedback}\nRe-emit the FULL corrected JSON object — same structure, fixed issues, valid JSON only.`
+        : prompt
+      const res = await fetchImpl(`${daemonUrl}/task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: opts.viaAgent,
+          message,
+          // First call gets a fresh session; the retry resumes it so the
+          // agent can fix its own output instead of starting over.
+          freshSession: feedback === null,
+          context: { channel: "api", chatId: opts.chatId ?? "memory-promote" },
+        }),
+        signal: ctrl.signal,
+      })
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "")
+        throw new Error(`agent /task ${res.status}: ${errBody.slice(0, 500)}`)
+      }
+      const body: any = await res.json()
+      if (body.error) throw new Error(`agent reported error: ${body.error}`)
+      const content = String(body.content ?? "").trim()
+      if (!content) throw new Error("agent returned empty content")
+      return content
+    }
+
+    if (!opts.model) throw new Error("callPromotionLlm: viaAgent or model is required")
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set; use --via <agentId> instead")
+    const messages: Array<{ role: string; content: string }> = [{ role: "user", content: prompt }]
+    if (feedback) {
+      messages.push({ role: "assistant", content: "(previous attempt; will retry with corrections)" })
+      messages.push({ role: "user", content: `Your previous response failed validation: ${feedback}\nRe-emit the FULL corrected JSON object.` })
+    }
+    const res = await fetchImpl(ANTHROPIC_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+      },
+      body: JSON.stringify({ model: opts.model, max_tokens: 8000, messages }),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "")
+      throw new Error(`anthropic API ${res.status}: ${errBody.slice(0, 500)}`)
+    }
+    const body: any = await res.json()
+    const blocks = Array.isArray(body.content) ? body.content : []
+    const text = blocks.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n").trim()
+    if (!text) throw new Error("anthropic API returned no text content")
+    return text
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// --- Orchestrator ------------------------------------------------------------
+
+export interface RunPromotionOptions extends PromotionLlmOptions {
+  /** Wiki base dir (the shared store). Default `.agentx/wiki`. */
+  wikiDir?: string
+  /** The `.agentx` dir holding `agent-memory/`. Default `.agentx`. */
+  memoryRoot?: string
+  sinceMs?: number
+  agentFilter?: string
+  types?: MemoryType[]
+  max?: number
+  /** Write articles + ledger. Default false (dry-run). */
+  commit?: boolean
+  log?: (msg: string) => void
+  /** Injectable clock (tests). */
+  now?: number
+}
+
+export interface PromotionReport {
+  candidates: MemoryCandidate[]
+  clusters: PromotionCluster[]
+  written: Array<{ path: string; title: string; type?: string; related?: string[]; stamps: string[] }>
+  skipped: Array<{ stamp: string; reason: string }>
+  gaps: string[]
+  warnings: string[]
+  errors: string[]
+  dryRun: boolean
+}
+
+/** End-to-end promotion run: enumerate memories → diff against promoted/
+ *  skipped → cluster → (dry-run stops here) → LLM judge → write articles
+ *  with merged sources → ledger → rebuild index. Parses the full response
+ *  before any write — a bad reply writes nothing, and idempotency makes
+ *  the next scheduled run retry for free. */
+export async function runPromotion(opts: RunPromotionOptions = {}): Promise<PromotionReport> {
+  const wikiDir = opts.wikiDir ?? resolve(process.cwd(), ".agentx", "wiki")
+  const memoryRoot = opts.memoryRoot ?? resolve(process.cwd(), ".agentx")
+  const log = opts.log ?? (() => {})
+  const now = opts.now ?? Date.now()
+  const report: PromotionReport = {
+    candidates: [], clusters: [], written: [], skipped: [],
+    gaps: [], warnings: [], errors: [], dryRun: !opts.commit,
+  }
+
+  const store = new WikiStore(wikiDir, (...args: unknown[]) => log(args.map(String).join(" ")))
+  const index = store.rebuildIndex()
+  const ledger = readPromotionLedger(wikiDir)
+  const all = listAllAgentMemories(memoryRoot)
+
+  report.candidates = getUnpromotedMemories(all, index, ledger, {
+    types: opts.types,
+    sinceMs: opts.sinceMs,
+    agentFilter: opts.agentFilter,
+    now,
+    max: opts.max,
+  })
+  if (report.candidates.length === 0) {
+    log("no unpromoted memories in window")
+    return report
+  }
+  report.clusters = groupCandidates(report.candidates)
+  log(`${report.candidates.length} candidate(s) in ${report.clusters.length} cluster(s)`)
+  if (report.dryRun) return report
+
+  const prompt = buildMemoryPromotePrompt(
+    PROMOTER_OWNER,
+    report.clusters,
+    index.articles.map((a) => ({ title: a.title, path: a.path, type: a.type })),
+    store.getWorldview() ?? "",
+  )
+  const offered = new Set(report.candidates.map((c) => c.stamp))
+  const chatId = opts.chatId ?? `memory-promote-${new Date(now).toISOString().slice(0, 10)}`
+
+  let parsed = parsePromotionResponse(await callPromotionLlm(prompt, { ...opts, chatId }), offered)
+  if ("error" in parsed) {
+    log(`parse failed (${parsed.error}) — retrying with feedback`)
+    parsed = parsePromotionResponse(await callPromotionLlm(prompt, { ...opts, chatId }, parsed.error), offered)
+  }
+  if ("error" in parsed) {
+    report.errors.push(`LLM response unusable after retry: ${parsed.error}`)
+    return report
+  }
+  report.warnings.push(...parsed.warnings)
+  report.gaps = parsed.gaps
+
+  const today = new Date(now).toISOString().slice(0, 10)
+  const at = new Date(now).toISOString()
+  const ledgerEntries: PromotionLedgerEntry[] = []
+
+  for (const article of parsed.articles) {
+    const existing = store.readArticle(article.path)
+    const ok = store.writeArticle(
+      article.path,
+      {
+        title: article.title,
+        type: isWikiArticleType(article.type) ? article.type : undefined,
+        related: article.related,
+        tags: article.tags,
+        owner: PROMOTER_OWNER,
+        access: "public",
+        created: existing?.meta.created ?? today,
+        lastUpdated: today,
+        sources: mergeSources(existing?.meta.sources, article.promotedFrom),
+      },
+      article.content,
+      PROMOTER_OWNER,
+    )
+    if (!ok) {
+      // Owned by another agent — a human resolves; stamps stay unledgered
+      // so the memory is retried after the standoff clears.
+      report.errors.push(`write denied for "${article.path}" (owned by ${existing?.meta.owner ?? "?"})`)
+      continue
+    }
+    report.written.push({
+      path: article.path, title: article.title, type: article.type,
+      related: article.related, stamps: article.promotedFrom,
+    })
+    for (const stamp of article.promotedFrom) {
+      ledgerEntries.push({ stamp, decision: "promoted", article: article.path, at })
+    }
+  }
+
+  for (const s of parsed.skipped) {
+    ledgerEntries.push({ stamp: s.stamp, decision: "skipped", reason: s.reason, at })
+    report.skipped.push(s)
+  }
+
+  if (ledgerEntries.length) appendPromotionLedger(wikiDir, ledgerEntries)
+  store.rebuildIndex()
+  return report
 }
