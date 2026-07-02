@@ -641,21 +641,23 @@ export const daemonConfigSchema = z.object({
     defaultWorkflow: z.string().optional(),
   })).default([]),
   /** Session cache-reuse policy. Controls when we drop a Claude `--resume`
-   *  session and rebuild the prompt from scratch.
-   *  - `staleMinutes`: idle timeout before rotation. Longer is cheaper at
-   *    Opus rates but lets a session accumulate tool-result bloat across an
-   *    all-day chat.
-   *  - `maxTurnsPerSession`: hard cap on turns per Claude session. Prevents
-   *    unbounded `--resume` growth. When hit, next turn starts fresh with
-   *    the compacted summary + recent-messages context.
-   *  - `tierTwoThresholdTokens`: if the prior turn's (input + cacheRead +
-   *    cacheCreate) exceeded this, rotate proactively. Claude bills tier-2
-   *    at 1.5× above 200K total input, so rotating before that threshold
-   *    undercuts the multiplier. */
+   *  session and rebuild the prompt from scratch. Every rotation captures a
+   *  continuity memo that's injected into the chat's next fresh session.
+   *  - `staleMinutes`: idle timeout before rotation. 12 h default — chat
+   *    conversations must survive a workday's pauses; overnight silence
+   *    starts fresh.
+   *  - `maxTurnsPerSession`: backstop cap on turns per Claude session.
+   *    Size-based rotation measures real context now, so this rarely fires
+   *    first.
+   *  - `tierTwoThresholdTokens`: rotate when the prior turn's END-OF-TURN
+   *    per-request context (last API call's input + cacheRead + cacheCreate)
+   *    reaches this. Claude bills the 1.5× long-context rate above 200K
+   *    per REQUEST — 180K leaves headroom. NOT the cumulative turn total:
+   *    that sums cache reads across every call and reads 10-20× too high. */
   session: z.object({
-    staleMinutes: z.number().int().min(1).max(1440).default(45),
-    maxTurnsPerSession: z.number().int().min(2).max(200).default(15),
-    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(195_000),
+    staleMinutes: z.number().int().min(1).max(1440).default(720),
+    maxTurnsPerSession: z.number().int().min(2).max(200).default(40),
+    tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
     /** Context assembly strategy:
      *  - "layered" (default): the classic stacked layers — session history,
      *    memory, cross-chat, wiki hint all appended every turn.

@@ -56,22 +56,24 @@ export interface Session {
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
 const MAX_MESSAGES = 30          // Keep last 30 messages max
 /** Default stale timeout. Overridable via SessionStore options so each node
- *  can trade cache-hit ratio (long timeout → prompt cache survives work
- *  pauses) against "fresh context" (short timeout → new session rebuilds the
- *  prompt from scratch). Agents on Opus pay ~$0.50 cache-create per task,
- *  so the higher the timeout, the less often that cost recurs. 45 min keeps
- *  cache warm for an active conversation but stops an all-day chat from
- *  snowballing a single Claude CLI session into 500K+ tokens of replay. */
-const DEFAULT_STALE_SESSION_MINUTES = 45
-/** Default hard cap on turns per Claude session. Claude CLI `--resume`
- *  replays the entire prior session (every tool result, every file read)
- *  on each turn, so cache-read grows linearly. 15 turns keeps the replay
- *  under ~200K for most agents; rotate after that and seed the next
- *  session from the compacted summary + recent-messages history. */
-const DEFAULT_MAX_TURNS_PER_SESSION = 15
-/** Default tier-2 trigger. Claude bills tier-2 (1.5× rate) when a single
- *  request's total input exceeds 200K. Rotating at 180K leaves headroom
- *  for the next turn's additions before we re-enter the multiplier. */
+ *  can trade cache-hit ratio against "fresh context". 12 h matches how chat
+ *  channels are actually used: a task discussed in the morning must still
+ *  resume that evening (the old 45 min rotated on every coffee break and
+ *  read as amnesia); overnight silence starts fresh — with the rotation
+ *  memo carrying the open task forward. Size-based rotation (tier-2) now
+ *  measures true per-request context, so a long-lived session no longer
+ *  needs a short stale window to keep replay bounded. */
+const DEFAULT_STALE_SESSION_MINUTES = 720
+/** Default hard cap on turns per Claude session — a backstop only. Claude
+ *  CLI `--resume` replays the prior session on each turn, so replay cost
+ *  grows with turn count; but the tier-2 check now measures the ACTUAL
+ *  per-request context, so it catches bloat directly. 40 turns lets an
+ *  active chat run all day without a mid-task reset. */
+const DEFAULT_MAX_TURNS_PER_SESSION = 40
+/** Default tier-2 trigger. Claude bills the 1.5× long-context rate when a
+ *  single REQUEST's input exceeds 200K. Rotating at 180K of measured
+ *  context leaves headroom for the next turn's additions before we'd
+ *  enter the multiplier. (Must match the config schema default.) */
 const DEFAULT_TIER_TWO_THRESHOLD_TOKENS = 180_000
 
 /** Session has a compacted summary prepended to its messages */
