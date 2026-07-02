@@ -654,6 +654,11 @@ export class AgentRegistry {
         keywords: ["rotation-memo", channel, ...chatKeyword],
         source: { channel, chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
       })
+      // Also pin it per-chat for DETERMINISTIC injection into the next
+      // fresh session — MemoryStore retrieval is BM25-scored and rarely
+      // surfaces the memo on the turn right after rotation, which is
+      // exactly when it matters.
+      this.sessions.setRotationMemo(agentId, channel, chatId, result.memo, reason)
       this.log(
         `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars)`,
       )
@@ -1178,6 +1183,16 @@ export class AgentRegistry {
         )
       : undefined
 
+    // Continuity memo from the previous (rotated) session — deterministic
+    // handover so a fresh session opens knowing the ongoing task instead
+    // of amnesiac. Fresh-session-only, same gate as the history rebuild:
+    // a resumed session already carries this context natively, and
+    // re-injecting per-turn is exactly the bloat that used to force
+    // premature tier-2 rotation.
+    const rotationMemo = !resumeSessionId
+      ? this.sessions.getRotationMemo(task.agentId, channel, chatId) ?? undefined
+      : undefined
+
     // Context-rebuild diagnostic. Fires under `--debug context` (or `all`).
     // The amnesia-vs-misreasoning question — "did the agent see X in its
     // prompt?" — was unanswerable from session JSONs alone (the rendered
@@ -1509,6 +1524,7 @@ export class AgentRegistry {
       longMemoryRecall: longMemoryRecall || undefined,
       wikiContext: isCodexCli ? undefined : wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
+      rotationMemo,
       intent: intent
         ? {
             path: intent.path,

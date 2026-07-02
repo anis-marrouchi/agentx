@@ -111,3 +111,25 @@ describe("estimateTokens", () => {
     expect(estimateTokens("")).toBe(0)
   })
 })
+
+describe("rotation continuity memo layer", () => {
+  it("renders the memo with reason and an explicit carry-on instruction", () => {
+    const ctx = buildAgentContext({
+      ...baseInput,
+      rotationMemo: {
+        memo: "- Deploying erp-api to staging\n- DB is erp_db, no new composer deps\n- Next: run migrations",
+        reason: "tier-2",
+        capturedAt: "2026-07-02T10:00:00.000Z",
+      },
+    })
+    expect(ctx).toContain("Continuity memo")
+    expect(ctx).toContain("tier-2")
+    expect(ctx).toContain("Deploying erp-api to staging")
+    expect(ctx).toContain("do not claim you lack prior context")
+  })
+
+  it("renders nothing when absent", () => {
+    const ctx = buildAgentContext(baseInput)
+    expect(ctx).not.toContain("Continuity memo")
+  })
+})

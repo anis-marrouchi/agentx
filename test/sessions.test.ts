@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { SessionStore } from "../src/agents/sessions"
-import { rmSync, writeFileSync } from "fs"
+import { readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
 const TEST_DIR = resolve(__dirname, "../.test-sessions")
@@ -158,6 +158,44 @@ describe("SessionStore — day-rollover continuity", () => {
     const s = store.getSession("atlas", "telegram", "g1")
     expect(s.claudeSessionId).toBeUndefined()
     expect(s.turnCount).toBeUndefined()
+  })
+})
+
+describe("SessionStore — rotation memos", () => {
+  let store: SessionStore
+
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true })
+    store = new SessionStore(TEST_DIR)
+  })
+  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }))
+
+  it("round-trips a memo per chat and overwrites on re-rotation", () => {
+    store.setRotationMemo("atlas", "telegram", "g1", "- task A in flight", "tier-2")
+    expect(store.getRotationMemo("atlas", "telegram", "g1")?.memo).toBe("- task A in flight")
+    expect(store.getRotationMemo("atlas", "telegram", "g2")).toBeNull()
+
+    store.setRotationMemo("atlas", "telegram", "g1", "- task B now", "stale")
+    const rec = store.getRotationMemo("atlas", "telegram", "g1")!
+    expect(rec.memo).toBe("- task B now")
+    expect(rec.reason).toBe("stale")
+  })
+
+  it("expires memos past the 7-day TTL", () => {
+    store.setRotationMemo("atlas", "telegram", "g1", "- ancient task", "stale")
+    // Backdate the stored record directly
+    const file = resolve(TEST_DIR, ".agentx/sessions", "_rotation-memos.json")
+    const memos = JSON.parse(readFileSync(file, "utf-8"))
+    memos["atlas:telegram:g1"].capturedAt = new Date(Date.now() - 8 * 86_400_000).toISOString()
+    writeFileSync(file, JSON.stringify(memos))
+    expect(store.getRotationMemo("atlas", "telegram", "g1")).toBeNull()
+  })
+
+  it("treats a corrupt memo file as empty", () => {
+    writeFileSync(resolve(TEST_DIR, ".agentx/sessions", "_rotation-memos.json"), "{oops")
+    expect(store.getRotationMemo("atlas", "telegram", "g1")).toBeNull()
+    store.setRotationMemo("atlas", "telegram", "g1", "- recovers", "max-turns")
+    expect(store.getRotationMemo("atlas", "telegram", "g1")?.memo).toBe("- recovers")
   })
 })
 

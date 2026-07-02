@@ -77,6 +77,18 @@ const DEFAULT_TIER_TWO_THRESHOLD_TOKENS = 180_000
 /** Session has a compacted summary prepended to its messages */
 const COMPACTION_MARKER = "[Compacted conversation summary"
 
+/** Continuity memo captured from a dying session at rotation time —
+ *  injected deterministically into the chat's next fresh session. */
+export interface RotationMemoRecord {
+  memo: string
+  reason: string
+  capturedAt: string
+}
+
+/** A memo older than this never injects — a week-old "open task" brief is
+ *  more likely to mislead than to help. */
+const ROTATION_MEMO_TTL_MS = 7 * 86_400_000
+
 /** Keywords that suggest the current message references another chat, an
  *  earlier conversation, or a peer agent — and therefore benefits from the
  *  cross-chat summary. Tuned for English + Arabic (Tunisian team usage);
@@ -954,6 +966,47 @@ export class SessionStore {
     session.lastTurnContextTokens = contextTokens
     session.updatedAt = new Date().toISOString()
     this.save(session)
+  }
+
+  // --- Rotation memos -----------------------------------------------------
+  //
+  // When a session rotates, a Haiku call distills the dying session into a
+  // continuity memo (rotation-memo.ts). Storing it ONLY in MemoryStore made
+  // carry-over BM25-luck: the memo rarely scored high enough to surface on
+  // the very next turn, so rotation still read as amnesia. This map keeps
+  // the latest memo per chat for DETERMINISTIC injection into the next
+  // fresh session. Overwritten on each rotation; TTL guards ancient memos.
+
+  private rotationMemoFile(): string {
+    return resolve(this.sessionsDir, "_rotation-memos.json")
+  }
+
+  private readRotationMemos(): Record<string, RotationMemoRecord> {
+    try {
+      const parsed = JSON.parse(readFileSync(this.rotationMemoFile(), "utf-8"))
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  setRotationMemo(agentId: string, channel: string, chatId: string, memo: string, reason: string): void {
+    const memos = this.readRotationMemos()
+    memos[`${agentId}:${channel}:${chatId}`] = {
+      memo,
+      reason,
+      capturedAt: new Date().toISOString(),
+    }
+    writeFileSync(this.rotationMemoFile(), JSON.stringify(memos, null, 2))
+  }
+
+  /** Latest memo for this chat, or null when absent/expired (7-day TTL). */
+  getRotationMemo(agentId: string, channel: string, chatId: string): RotationMemoRecord | null {
+    const rec = this.readRotationMemos()[`${agentId}:${channel}:${chatId}`]
+    if (!rec?.memo) return null
+    const age = Date.now() - Date.parse(rec.capturedAt)
+    if (!Number.isFinite(age) || age > ROTATION_MEMO_TTL_MS) return null
+    return rec
   }
 
   /** Diagnostic getters — used by registry logging. */

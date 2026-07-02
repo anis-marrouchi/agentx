@@ -133,6 +133,16 @@ export interface ContextInput {
     at: string                       // ISO timestamp of the handover
   }
 
+  // Continuity memo distilled from this chat's previous (rotated) Claude
+  // session. Injected on FRESH sessions only (registry gates on
+  // !resumeSessionId) so an ongoing task survives rotation instead of
+  // the agent opening with amnesia. See SessionStore rotation memos.
+  rotationMemo?: {
+    memo: string
+    reason: string                   // stale | tier-2 | max-turns
+    capturedAt: string               // ISO timestamp of the rotation
+  }
+
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
   intent?: {
@@ -391,6 +401,23 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("handover", 400),
       content: lines.join("\n"),
       tags: ["handover", input.handoverNote.fromAgent],
+    })
+  }
+
+  // 7d. Rotation continuity memo — the previous Claude session for this
+  //      chat was rotated (${reason}); its distilled facts/open tasks are
+  //      handed to the fresh session so the conversation picks up where
+  //      it left off. Only present on fresh sessions (registry-gated).
+  if (input.rotationMemo) {
+    layers.push({
+      name: "rotation-memo",
+      priority: 7.6,
+      maxTokens: budget("rotation-memo", 800),
+      content: [
+        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from these facts; do not claim you lack prior context:]`,
+        input.rotationMemo.memo,
+      ].join("\n"),
+      tags: ["continuity", "rotation-memo"],
     })
   }
 
