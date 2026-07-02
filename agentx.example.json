@@ -70,6 +70,15 @@
       "prompt": "Generate today's status report.",
       "timeout": 600,
       "onError": "log"
+    },
+    "memory-promote-nightly": {
+      "enabled": false,
+      "schedule": "30 2 * * *",
+      "timezone": "UTC",
+      "agent": "assistant",
+      "timeout": 1800,
+      "onError": "log",
+      "prompt": "Run this shell command EXACTLY as written. If it exits non-zero, report the verbatim exit code and stderr and STOP.\n\n1) cd /path/to/agentx && node dist/cli.js wiki promote --since 48h --max 20 --via assistant --commit\n\nReport a one-line summary: articles written (path, title), memories skipped (count), gaps."
     }
   },
 
