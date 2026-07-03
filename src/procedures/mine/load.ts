@@ -60,44 +60,72 @@ export function loadEpisodes(db: Database.Database, opts: LoadEpisodesOptions = 
 
   const episodes: ActivityEpisode[] = []
   for (const trace of traces) {
-    const detail = getTrace(db, trace.taskId)
-    if (!detail) continue
-    const toolSteps = detail.steps.filter((s) => s.name === "tool_use" && s.action)
-    const actions = toolSteps.map((s) => s.action as string)
-    const actionSummaries = toolSteps.map((s) => (s.inputSummary ?? "").slice(0, MAX_SUMMARY_CHARS))
-
-    let userTurns: string[] = []
-    if (opts.sessions && trace.channel && trace.chatId) {
-      try {
-        const endedAt = trace.finishedAt ?? trace.startedAt
-        const recall = opts.sessions.recallTurns({
-          agentId: trace.agentId,
-          channel: trace.channel,
-          chatId: trace.chatId,
-          after: new Date(trace.startedAt - JOIN_WINDOW_MS).toISOString(),
-          before: new Date(endedAt + JOIN_WINDOW_MS).toISOString(),
-          limit: 20,
-        })
-        userTurns = recall.turns
-          .filter((t) => t.role === "user")
-          .map((t) => t.content)
-          .reverse() // recallTurns is newest-first; episodes read oldest-first
-          .slice(0, MAX_USER_TURNS)
-      } catch { /* transcript join is best-effort — the trace alone suffices */ }
-    }
-
-    episodes.push({
-      taskId: trace.taskId,
-      agentId: trace.agentId,
-      channel: trace.channel ?? "unknown",
-      chatId: trace.chatId ?? "",
-      startedAt: trace.startedAt,
-      userMessage: (trace.originalMessage ?? trace.messagePreview ?? "").trim(),
-      finalResponse: trace.finalResponse ?? undefined,
-      userTurns,
-      actions,
-      actionSummaries,
-    })
+    const episode = buildEpisode(db, trace.taskId, opts.sessions)
+    if (episode) episodes.push(episode)
   }
   return episodes
+}
+
+/** Load specific episodes by trace id — the distillation fallback for
+ *  candidates whose occurrences are behind the scan watermark (their counts
+ *  accumulated on earlier runs). The ledger keeps taskIds precisely so a
+ *  ready candidate can be sampled at any time, not only in the run where
+ *  its last occurrence happened. */
+export function loadEpisodesByTaskIds(
+  db: Database.Database,
+  taskIds: string[],
+  sessions?: SessionStore,
+): ActivityEpisode[] {
+  const episodes: ActivityEpisode[] = []
+  for (const taskId of taskIds) {
+    const episode = buildEpisode(db, taskId, sessions)
+    if (episode) episodes.push(episode)
+  }
+  return episodes.sort((a, b) => b.startedAt - a.startedAt)
+}
+
+function buildEpisode(
+  db: Database.Database,
+  taskId: string,
+  sessions?: SessionStore,
+): ActivityEpisode | null {
+  const detail = getTrace(db, taskId)
+  if (!detail) return null
+  const trace = detail.task
+  const toolSteps = detail.steps.filter((s) => s.name === "tool_use" && s.action)
+  const actions = toolSteps.map((s) => s.action as string)
+  const actionSummaries = toolSteps.map((s) => (s.inputSummary ?? "").slice(0, MAX_SUMMARY_CHARS))
+
+  let userTurns: string[] = []
+  if (sessions && trace.channel && trace.chatId) {
+    try {
+      const endedAt = trace.finishedAt ?? trace.startedAt
+      const recall = sessions.recallTurns({
+        agentId: trace.agentId,
+        channel: trace.channel,
+        chatId: trace.chatId,
+        after: new Date(trace.startedAt - JOIN_WINDOW_MS).toISOString(),
+        before: new Date(endedAt + JOIN_WINDOW_MS).toISOString(),
+        limit: 20,
+      })
+      userTurns = recall.turns
+        .filter((t) => t.role === "user")
+        .map((t) => t.content)
+        .reverse() // recallTurns is newest-first; episodes read oldest-first
+        .slice(0, MAX_USER_TURNS)
+    } catch { /* transcript join is best-effort — the trace alone suffices */ }
+  }
+
+  return {
+    taskId: trace.taskId,
+    agentId: trace.agentId,
+    channel: trace.channel ?? "unknown",
+    chatId: trace.chatId ?? "",
+    startedAt: trace.startedAt,
+    userMessage: (trace.originalMessage ?? trace.messagePreview ?? "").trim(),
+    finalResponse: trace.finalResponse ?? undefined,
+    userTurns,
+    actions,
+    actionSummaries,
+  }
 }

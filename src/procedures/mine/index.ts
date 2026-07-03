@@ -11,7 +11,7 @@ import {
   type Candidate,
   type CandidateLedger,
 } from "../candidates"
-import { loadEpisodes, type ActivityEpisode, type LoadEpisodesOptions } from "./load"
+import { loadEpisodes, loadEpisodesByTaskIds, type ActivityEpisode, type LoadEpisodesOptions } from "./load"
 import { clusterEpisodes, clusterKey, nearMisses } from "./cluster"
 import { distillClusters, type MinedProcedure } from "./distill"
 import type { ClusterSample } from "./prompts"
@@ -110,14 +110,18 @@ export async function runExtraction(
     if (!opts.llm?.viaAgent && !opts.llm?.model) {
       report.warnings.push(`${ready.length} candidate(s) ready but no LLM configured (--via or --model) — counts saved, no drafts written`)
     } else {
-      const samples: ClusterSample[] = ready.map((candidate) => ({
-        candidate,
-        // Episodes from this run when available; ledger sample text otherwise
-        // (candidates can cross the threshold on evidence from earlier runs).
-        episodes: byKey.get(candidate.key) ?? [],
-      })).filter((s) => s.episodes.length > 0)
+      const samples: ClusterSample[] = ready.map((candidate) => {
+        // Episodes from this run when available; otherwise reload the
+        // candidate's recorded occurrences by trace id — counts often cross
+        // the threshold on a run whose window no longer contains them.
+        let eps = byKey.get(candidate.key) ?? []
+        if (eps.length === 0) {
+          eps = loadEpisodesByTaskIds(db, candidate.taskIds.slice(-5), opts.sessions)
+        }
+        return { candidate, episodes: eps }
+      }).filter((s) => s.episodes.length > 0)
       if (samples.length < ready.length) {
-        report.warnings.push(`${ready.length - samples.length} ready candidate(s) had no episodes in this window — will distill on their next occurrence`)
+        report.warnings.push(`${ready.length - samples.length} ready candidate(s) had no loadable episodes (traces pruned?) — skipped`)
       }
       if (samples.length > 0) {
         const result = await distillClusters(samples, opts.llm, log)
