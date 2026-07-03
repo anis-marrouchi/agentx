@@ -3,7 +3,7 @@ import chalk from "chalk"
 import { randomUUID } from "crypto"
 import { createInterface } from "node:readline/promises"
 import ora from "ora"
-import { resolveConn, sendTask, fetchAgents, type AgentRow } from "@/tui/client"
+import { resolveConn, streamTask, fetchAgents, type AgentRow } from "@/tui/client"
 
 // `agentx chat @agent` — daemon-mediated REPL.
 //
@@ -61,7 +61,15 @@ export const chat = new Command()
     printBanner(conn.baseUrl, agentId, chatId, channel)
 
     const rl = createInterface({ input: process.stdin, output: process.stdout })
-    rl.on("close", () => { console.log(chalk.dim("\n  bye")); process.exit(0) })
+    // Don't hard-exit mid-turn: if stdin closes (Ctrl-D / piped EOF) while a
+    // reply is streaming, let the in-flight turn finish, then quit.
+    let busy = false
+    let closeRequested = false
+    rl.on("close", () => {
+      if (busy) { closeRequested = true; return }
+      console.log(chalk.dim("\n  bye"))
+      process.exit(0)
+    })
 
     while (true) {
       let line: string
@@ -119,25 +127,90 @@ export const chat = new Command()
         continue
       }
 
-      const spinner = ora({ text: `@${agentId} thinking…`, color: "cyan" }).start()
+      busy = true
+      const spinner = ora({ text: `@${agentId}…`, color: "cyan" }).start()
       const startedAt = Date.now()
+      const render = createStreamRenderer(agentId)
       try {
-        const r = await sendTask(conn, agentId, line, { channel, chatId })
-        const elapsed = Math.round((Date.now() - startedAt) / 100) / 10
+        const r = await streamTask(conn, agentId, line, {
+          channel,
+          chatId,
+          onText: (t) => { spinner.stop(); render.text(t) },
+          onThinking: () => { /* reasoning lane — kept quiet in the MVP */ },
+          onTool: (tool) => { spinner.stop(); render.tool(tool) },
+        })
         spinner.stop()
-        if (r?.error) {
-          console.log(chalk.red(`@${agentId} ✗ ${r.error}`))
+        const elapsed = Math.round((Date.now() - startedAt) / 100) / 10
+        if (r.error) {
+          render.finishError(r.error)
         } else {
-          const reply = (r?.content ?? "").toString().trim() || "(empty reply)"
-          console.log(`${chalk.green(`@${agentId}`)} ${chalk.dim(`· ${elapsed}s`)}`)
-          for (const ln of reply.split("\n")) console.log(`  ${ln}`)
+          render.finish(elapsed, r.usage)
         }
       } catch (e: any) {
         spinner.stop()
-        console.log(chalk.red(`@${agentId} ✗ ${e?.message || e}`))
+        render.finishError(e?.message || String(e))
+      } finally {
+        busy = false
       }
+      if (closeRequested) { console.log(chalk.dim("  bye")); return }
     }
   })
+
+/** Stateful renderer for one streamed reply. Streams text deltas with a
+ *  hanging 2-space indent and prints Claude-Code-style `● tool` badges as
+ *  the agent works — interleaving cleanly by tracking line position. */
+function createStreamRenderer(agentId: string) {
+  let headerShown = false
+  let atLineStart = true
+  let anyText = false
+  const seenTools = new Set<string>()
+
+  const header = () => {
+    if (headerShown) return
+    process.stdout.write(`${chalk.green(`@${agentId}`)}\n`)
+    headerShown = true
+  }
+
+  return {
+    /** Write a streamed text delta, indenting each new line by two spaces. */
+    text(delta: string) {
+      if (!delta) return
+      header()
+      anyText = true
+      for (const ch of delta) {
+        if (atLineStart && ch !== "\n") { process.stdout.write("  "); atLineStart = false }
+        process.stdout.write(ch)
+        if (ch === "\n") atLineStart = true
+      }
+    },
+    /** Print a tool-call badge (once per tool invocation id). */
+    tool(t: { status: "start" | "result"; id?: string; name?: string; error?: boolean }) {
+      header()
+      if (t.status === "start" && t.name) {
+        const key = t.id || `${t.name}:${seenTools.size}`
+        if (seenTools.has(key)) return
+        seenTools.add(key)
+        if (!atLineStart) { process.stdout.write("\n"); atLineStart = true }
+        process.stdout.write(`  ${chalk.green("●")} ${chalk.bold(t.name)}\n`)
+      } else if (t.status === "result" && t.error) {
+        if (!atLineStart) { process.stdout.write("\n"); atLineStart = true }
+        process.stdout.write(`  ${chalk.red("●")} ${chalk.dim(`${t.name ?? "tool"} failed`)}\n`)
+      }
+    },
+    /** Close the turn: ensure a trailing newline + a dim timing/usage footer. */
+    finish(elapsedS: number, usage?: Record<string, number>) {
+      if (!headerShown) { process.stdout.write(`${chalk.green(`@${agentId}`)} ${chalk.dim("· (empty reply)")}\n\n`); return }
+      if (!atLineStart) process.stdout.write("\n")
+      const out = usage?.outputTokens != null ? `, ${usage.outputTokens} tok` : ""
+      process.stdout.write(chalk.dim(`  · ${elapsedS}s${out}\n\n`))
+      void anyText
+    },
+    finishError(msg: string) {
+      if (headerShown && !atLineStart) process.stdout.write("\n")
+      process.stdout.write(chalk.red(`  ✗ ${msg}\n\n`))
+    },
+  }
+}
 
 function printBanner(baseUrl: string, agentId: string, chatId: string, channel: string) {
   console.log()
