@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink"
+import { Box, Text, useApp, useInput, useStdout } from "ink"
 import { randomUUID } from "crypto"
 import { fetchAgents, streamTask, type AgentRow, type DaemonConn } from "./client.js"
 import { renderMarkdown } from "./markdown.js"
@@ -242,13 +242,26 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   const accent = busy ? theme.working : theme.accent
   const inputLines = input.length ? input.split("\n") : [""]
   const model = agents.find((a) => a.id === agentId)?.model
+  const rows = stdout?.rows || 24
+  // Bottom-anchored transcript window: render a bounded tail (older turns
+  // clip off the top), so the composer stays flush with the terminal's
+  // bottom edge like a fixed footer.
+  const visibleTurns = turns.slice(-40)
   return (
-    <Box flexDirection="column">
-      <Static items={turns}>
-        {(t) => <TurnView key={t.id} turn={t} width={width} />}
-      </Static>
-      {active && <TurnView turn={active} width={width} />}
+    <Box flexDirection="column" height={rows}>
+      {/* Transcript — fills the space above the footer, anchored to bottom. */}
+      <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflow="hidden">
+        {turns.length === 0 && !active ? (
+          <Box flexDirection="column">
+            <Text><Text color={theme.accent} bold>{BRAND}</Text><Text dimColor> — chat with </Text><Text color={theme.accent}>@{agentId}</Text>{model ? <Text dimColor> · {model}</Text> : null}</Text>
+            <Text dimColor>streaming · markdown · tools · type a message, or / for commands</Text>
+          </Box>
+        ) : null}
+        {visibleTurns.map((t) => <TurnView key={t.id} turn={t} width={width} />)}
+        {active ? <TurnView turn={active} width={width} /> : null}
+      </Box>
 
+      {/* Footer: command menu / suggestions, the input bar, and the status line. */}
       {/* command menu / @-suggestions / transient notice, above the input */}
       {slashSuggest ? (
         <Box flexDirection="column" marginTop={1}>
@@ -278,7 +291,6 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
         borderRight={false}
         borderDimColor={!busy}
         width="100%"
-        marginTop={slashSuggest || suggest || notice ? 0 : 1}
       >
         <Box flexDirection="column" width="100%">
           {inputLines.map((ln, i, arr) => (
