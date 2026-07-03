@@ -140,10 +140,15 @@ export const workflowSchema = z.object({
   version: z.literal(2).default(2),
   title: z.string().min(1),
   description: z.string().optional(),
-  /** Reusable-workflow lifecycle. `state` controls dispatch registration;
-   *  `status` controls review/product lifecycle. Generated workflows are
-   *  saved as status=draft + state=disabled so they validate but never fire
-   *  until an operator promotes them. */
+  /** REVIEW METADATA ONLY — `status` never gates dispatch. The one and only
+   *  dispatch gate is `state` below: a workflow with status=draft but
+   *  state=active WILL fire; status=active with state=disabled will NOT.
+   *  (The matcher in matcher.ts is the single exception: it requires both
+   *  to be active before suggesting.) Generated workflows are saved as
+   *  status=draft + state=disabled so they validate but never fire until
+   *  an operator promotes them. If you're deciding "will this run?", read
+   *  `state`; if you're deciding "has a human reviewed this?", read
+   *  `status`. */
   status: z.enum(["draft", "review", "active", "deprecated"]).default("active"),
   tags: z.array(z.string()).default([]),
   /** Project this workflow is scoped to, in `<org>/<repo>` form for
@@ -168,7 +173,8 @@ export const workflowSchema = z.object({
   ownerAgent: z.string().optional(),
   lastMatchedAt: z.string().optional(),
   matchCount: z.number().int().min(0).default(0),
-  /** Lifecycle state. The dispatcher and trigger registrar honor this:
+  /** THE dispatch gate (see `status` above for the review-metadata axis).
+   *  The dispatcher and trigger registrar honor this:
    *   - active:      normal — triggers register, runs create + advance
    *   - disabled:    operator kill switch (config or admin action). No new
    *                  triggers, no new runs. In-flight runs continue.

@@ -106,7 +106,11 @@ workflow
       const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
       const cfg = (trigger?.config ?? {}) as { source?: string; filter?: { project?: string; repo?: string; chat?: string } }
       const filterParts = [cfg.filter?.project, cfg.filter?.repo, cfg.filter?.chat].filter(Boolean).join(" / ")
-      console.log(`  ${chalk.cyan(wf.id)}  ${chalk.bold(wf.title)} ${chalk.dim(`v${wf.version} state=${wf.state} status=${wf.status}`)}`)
+      // `state` is the dispatch gate; `status` is review metadata (see
+      // workflowSchema). Rendered unambiguously because the bare pair
+      // "state=… status=…" kept getting misread as one lifecycle.
+      const dispatch = wf.state === "active" ? chalk.green("dispatch: active") : chalk.yellow(`dispatch: ${wf.state}`)
+      console.log(`  ${chalk.cyan(wf.id)}  ${chalk.bold(wf.title)} ${chalk.dim(`v${wf.version} ·`)} ${dispatch} ${chalk.dim(`· review: ${wf.status}`)}`)
       console.log(`    ${chalk.dim("trigger:")} ${cfg.source ?? "?"}${filterParts ? `  ${chalk.dim(filterParts)}` : ""}`)
       console.log(`    ${chalk.dim("nodes:  ")} ${wf.nodes.length} (${wf.nodes.map((n) => n.type).join(", ")})`)
     }
@@ -420,7 +424,7 @@ workflow
 
 workflow
   .command("absorb")
-  .description("mine successful task traces into reviewable workflow drafts")
+  .description("distill executable DAG drafts from traces (advanced — for user-facing pattern mining see `agentx procedure extract`)")
   .option("--path <path>", "SQLite db path", ".agentx/db.sqlite")
   .option("--since <duration>", "trace window, e.g. 24h, 7d, or ms epoch", "24h")
   .option("--agent <id>", "only absorb traces for one agent")

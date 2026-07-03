@@ -435,6 +435,29 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
     }
   }
 
+  // 2b. Incoherent workflow lifecycle: status=active says "reviewed, ship
+  //     it" while state=quarantined means the runtime refuses to dispatch
+  //     it (conflict detector parked it). The two axes are independent
+  //     (state is the only dispatch gate — see workflowSchema), so this
+  //     combo silently looks live while never firing.
+  try {
+    if (existsSync(workflowDir)) {
+      for (const f of readdirSync(workflowDir)) {
+        if (!f.endsWith(".json") || f.startsWith("_") || f.endsWith(".disabled.json")) continue
+        try {
+          const wf = JSON.parse(readFileSync(resolve(workflowDir, f), "utf-8"))
+          if (wf?.status === "active" && wf?.state === "quarantined") {
+            findings.push({
+              severity: "warn",
+              title: `workflow "${wf.id ?? f}" is status=active but state=quarantined — it looks live but will never dispatch`,
+              fix: `Resolve the conflict the detector flagged, then set state back to "active" (or set status to "review" while parked).`,
+            })
+          }
+        } catch { /* unparseable file is caught by workflow validate */ }
+      }
+    }
+  } catch { /* directory races are non-fatal for doctor */ }
+
   // 3. Mesh-routed webhooks naming peers that don't exist.
   const peers = new Set<string>(((cfg.mesh?.peers ?? []) as Array<{ name: string }>).map(p => p.name))
   for (const w of webhooks) {
