@@ -3,6 +3,7 @@ import { Box, Static, Text, useApp, useInput, useStdout } from "ink"
 import { randomUUID } from "crypto"
 import { fetchAgents, streamTask, type AgentRow, type DaemonConn } from "./client.js"
 import { renderMarkdown } from "./markdown.js"
+import { applyMention, mentionSuggestions } from "./mention-complete.js"
 
 // --- Claude-Code-style chat REPL (Ink) ---
 //
@@ -56,6 +57,12 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   const history = useRef<string[]>([])
   const histIdx = useRef<number>(-1)
   const busy = active?.live ?? false
+
+  // `@`-mention autocomplete for the current buffer (agents + cwd files).
+  const suggest = useMemo(
+    () => mentionSuggestions(input, agents.map((a) => a.id), process.cwd()),
+    [input, agents],
+  )
 
   const pushNotice = (m: string) => setNotice(m)
 
@@ -151,6 +158,11 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   useInput((ch, key) => {
     if (key.ctrl && ch === "c") { exit(); return }
     if (key.escape) { exit(); return }
+    // Tab accepts the top @-mention suggestion.
+    if (key.tab) {
+      if (suggest) { setInput(applyMention(input, suggest.mention, suggest.items[0])); histIdx.current = -1 }
+      return
+    }
     if (key.upArrow) {
       const h = history.current
       if (!h.length) return
@@ -193,7 +205,13 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       </Static>
       {active && <TurnView turn={active} width={width} />}
       <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>{notice}</Text>
+        {suggest ? (
+          <Text dimColor>
+            <Text color="cyan">↹</Text> {suggest.items.map((it, i) => (i === 0 ? <Text key={i} color="cyan">{it}</Text> : <Text key={i}>  {it}</Text>))}
+          </Text>
+        ) : (
+          <Text dimColor>{notice}</Text>
+        )}
         <Box flexDirection="column">
           {(input.includes("\n") ? input.split("\n") : [input]).map((ln, i, arr) => (
             <Box key={i}>
