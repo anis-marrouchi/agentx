@@ -127,7 +127,7 @@ export function sendTask(
 export interface StreamTaskHandlers {
   onText?: (text: string) => void
   onThinking?: (text: string) => void
-  onTool?: (t: { status: "start" | "result"; id?: string; name?: string; error?: boolean }) => void
+  onTool?: (t: { status: "start" | "result"; id?: string; name?: string; error?: boolean; arg?: string }) => void
 }
 
 export interface StreamTaskResult {

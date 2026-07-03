@@ -3567,10 +3567,23 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             // those plus the claude-code stream-json equivalents so
             // either tier drives the ToolBadge UI without leaking
             // provider internals.
+            // Short, human argument preview for a tool badge (● Read(app.ts)).
+            // Prefers the identifying field per tool, basenames file paths,
+            // and clips. Empty string when nothing useful is available.
+            const toolArg = (input: any): string => {
+              if (!input || typeof input !== "object") return ""
+              const path = input.file_path ?? input.path ?? input.notebook_path
+              if (typeof path === "string") return path.split("/").pop() || path
+              const v = input.command ?? input.pattern ?? input.query ?? input.url ?? input.prompt ?? input.description
+              if (typeof v === "string") return v.replace(/\s+/g, " ").slice(0, 48)
+              const first = Object.values(input).find((x) => typeof x === "string") as string | undefined
+              return first ? first.replace(/\s+/g, " ").slice(0, 48) : ""
+            }
+            const emittedTools = new Set<string>()
             const onEvent = (event: any) => {
               const kind = event?.type
               if (kind === "tool_call") {
-                writeSse("tool", { status: "start", id: event.id, name: event.name })
+                writeSse("tool", { status: "start", id: event.id, name: event.name, arg: toolArg(event.input) })
               } else if (kind === "tool_result") {
                 writeSse("tool", {
                   status: "result",
@@ -3578,13 +3591,17 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
                   name: event.name,
                   error: event.is_error === true,
                 })
-              } else if (kind === "content_block_start" && event?.content_block?.type === "tool_use") {
-                // claude-code tier still emits provider-shaped events here.
-                writeSse("tool", {
-                  status: "start",
-                  id: event.content_block.id,
-                  name: event.content_block.name,
-                })
+              } else if (kind === "assistant" && Array.isArray(event.message?.content)) {
+                // claude-code tier: the assistant message carries complete
+                // tool_use blocks (name + full input) — unlike
+                // content_block_start, whose input is still empty. Dedup by
+                // block id so re-emitted message snapshots don't double-badge.
+                for (const block of event.message.content) {
+                  if (block?.type === "tool_use" && block.id && !emittedTools.has(block.id)) {
+                    emittedTools.add(block.id)
+                    writeSse("tool", { status: "start", id: block.id, name: block.name, arg: toolArg(block.input) })
+                  }
+                }
               }
             }
             try {

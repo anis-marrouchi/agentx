@@ -16,6 +16,7 @@ interface Seg {
   type: "text" | "tool"
   content?: string        // text segments
   name?: string           // tool segments
+  arg?: string            // tool argument preview
   error?: boolean
 }
 
@@ -82,7 +83,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
             },
             onTool: (tool) => {
               if (tool.status === "start" && tool.name) {
-                turn.segs.push({ type: "tool", name: tool.name })
+                turn.segs.push({ type: "tool", name: tool.name, arg: tool.arg })
                 repaint()
               } else if (tool.status === "result" && tool.error) {
                 turn.segs.push({ type: "tool", name: tool.name ?? "tool", error: true })
@@ -224,7 +225,7 @@ function renderSegs(turn: Turn, width: number): React.ReactNode {
     if (s.type === "tool") {
       nodes.push(
         <Text key={i} color={s.error ? "red" : "green"}>
-          {"  "}● <Text bold={!s.error} dimColor={s.error}>{s.name}{s.error ? " failed" : ""}</Text>
+          {"  "}● <Text bold={!s.error} dimColor={s.error}>{s.name}{s.arg ? <Text dimColor>({s.arg})</Text> : null}{s.error ? " failed" : ""}</Text>
         </Text>,
       )
     } else if (s.content) {

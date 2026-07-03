@@ -24,7 +24,7 @@ interface ChatTurn {
   at: number
   elapsedMs?: number
   streaming?: boolean
-  tools?: Array<{ name: string; error?: boolean }>
+  tools?: Array<{ name: string; arg?: string; error?: boolean }>
   outTokens?: number
 }
 
@@ -82,7 +82,7 @@ type Action =
   | { type: "chatSubmitError"; error: string }
   | { type: "chatStreamStart"; you: ChatTurn }
   | { type: "chatStreamDelta"; text: string }
-  | { type: "chatStreamTool"; name: string; error?: boolean }
+  | { type: "chatStreamTool"; name: string; arg?: string; error?: boolean }
   | { type: "chatStreamEnd"; elapsedMs: number; outTokens?: number; error?: string }
   | { type: "toast"; text: string; color: "green" | "red" | "yellow" }
   | { type: "clearToast" }
@@ -176,7 +176,7 @@ function reducer(state: State, action: Action): State {
     case "chatStreamTool": {
       const h = state.chat.history.slice()
       const last = h[h.length - 1]
-      if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, tools: [...(last.tools ?? []), { name: action.name, error: action.error }] }
+      if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, tools: [...(last.tools ?? []), { name: action.name, arg: action.arg, error: action.error }] }
       return { ...state, chat: { ...state.chat, history: h } }
     }
     case "chatStreamEnd": {
@@ -247,7 +247,7 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
               chatId,
               onText: (t) => dispatch({ type: "chatStreamDelta", text: t }),
               onTool: (tool) => {
-                if (tool.status === "start" && tool.name) dispatch({ type: "chatStreamTool", name: tool.name })
+                if (tool.status === "start" && tool.name) dispatch({ type: "chatStreamTool", name: tool.name, arg: tool.arg })
                 else if (tool.status === "result" && tool.error) dispatch({ type: "chatStreamTool", name: tool.name ?? "tool", error: true })
               },
             })
@@ -622,7 +622,7 @@ function TurnView({ turn, agentId }: { turn: ChatTurn; agentId: string | null })
     <Box flexDirection="column" marginBottom={1}>
       <Text color="green">@{agentId ?? "agent"}<Text dimColor>{elapsed}</Text></Text>
       {(turn.tools ?? []).map((tl, i) => (
-        <Text key={`tool${i}`} color={tl.error ? "red" : "green"}>  ● <Text bold={!tl.error} dimColor={tl.error}>{tl.name}{tl.error ? " failed" : ""}</Text></Text>
+        <Text key={`tool${i}`} color={tl.error ? "red" : "green"}>  ● <Text bold={!tl.error} dimColor={tl.error}>{tl.name}{tl.arg ? <Text dimColor>({tl.arg})</Text> : null}{tl.error ? " failed" : ""}</Text></Text>
       ))}
       {body.split("\n").slice(0, 14).map((ln, i) => <Text key={i}>  {ln}</Text>)}
     </Box>

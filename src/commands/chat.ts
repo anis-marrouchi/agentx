@@ -196,14 +196,15 @@ function createStreamRenderer(agentId: string) {
       }
     },
     /** Print a tool-call badge (once per tool invocation id). */
-    tool(t: { status: "start" | "result"; id?: string; name?: string; error?: boolean }) {
+    tool(t: { status: "start" | "result"; id?: string; name?: string; error?: boolean; arg?: string }) {
       header()
       if (t.status === "start" && t.name) {
         const key = t.id || `${t.name}:${seenTools.size}`
         if (seenTools.has(key)) return
         seenTools.add(key)
         if (!atLineStart) { process.stdout.write("\n"); atLineStart = true }
-        process.stdout.write(`  ${chalk.green("●")} ${chalk.bold(t.name)}\n`)
+        const arg = t.arg ? chalk.dim(`(${t.arg})`) : ""
+        process.stdout.write(`  ${chalk.green("●")} ${chalk.bold(t.name)}${arg}\n`)
       } else if (t.status === "result" && t.error) {
         if (!atLineStart) { process.stdout.write("\n"); atLineStart = true }
         process.stdout.write(`  ${chalk.red("●")} ${chalk.dim(`${t.name ?? "tool"} failed`)}\n`)
