@@ -22,6 +22,16 @@ export const procedureMetaSchema = z.object({
   kpis: z.array(z.string()).default([]),
   owner: z.string().optional(),
   tags: z.array(z.string()).default([]),
+  /**
+   * Single lifecycle axis (deliberately — workflows' status/state split proved
+   * confusing). draft = mined/unreviewed (lives in _drafts/), active = the
+   * matcher/injector will surface it, deprecated = kept but never surfaced.
+   */
+  status: z.enum(["draft", "active", "deprecated"]).default("active"),
+  /** Provenance: "mined:<clusterKey>" for extracted procedures, "manual" otherwise. */
+  source: z.string().optional(),
+  /** Trace task ids (ULIDs) the miner distilled this procedure from. */
+  evidence: z.array(z.string()).default([]),
   created: z.string().optional(),
   updated: z.string().optional(),
   /** Related procedures (ids) or wiki articles (titles). Drives the graph. */

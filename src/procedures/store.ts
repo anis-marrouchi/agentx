@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve, relative } from "path"
 import { procedureMetaSchema, type Procedure, type ProcedureMeta } from "./types"
 
@@ -42,6 +42,9 @@ function serializeFrontmatter(meta: ProcedureMeta): string {
   if (meta.kpis?.length) lines.push(`kpis: ${JSON.stringify(meta.kpis)}`)
   if (meta.owner) lines.push(`owner: ${meta.owner}`)
   if (meta.tags?.length) lines.push(`tags: ${JSON.stringify(meta.tags)}`)
+  lines.push(`status: ${meta.status}`)
+  if (meta.source) lines.push(`source: "${meta.source.replace(/"/g, '\\"')}"`)
+  if (meta.evidence?.length) lines.push(`evidence: ${JSON.stringify(meta.evidence)}`)
   if (meta.related?.length) lines.push(`related: ${JSON.stringify(meta.related)}`)
   if (meta.created) lines.push(`created: ${meta.created}`)
   if (meta.updated) lines.push(`updated: ${meta.updated}`)
@@ -61,31 +64,16 @@ export class ProcedureStore {
     return resolve(this.baseDir, `${id}.md`)
   }
 
-  list(): Procedure[] {
-    if (!existsSync(this.baseDir)) return []
-    const out: Procedure[] = []
-    for (const entry of readdirSync(this.baseDir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name.startsWith("_")) continue
-      const full = resolve(this.baseDir, entry.name)
-      const raw = readFileSync(full, "utf-8")
-      const { meta, body } = parseFrontmatter(raw)
-      const parsed = procedureMetaSchema.safeParse({
-        ...meta,
-        inputs: meta.inputs || [],
-        kpis: meta.kpis || [],
-        tags: meta.tags || [],
-        related: meta.related || [],
-      })
-      if (!parsed.success) continue
-      out.push({ meta: parsed.data, body: body.trim(), path: relative(this.baseDir, full) })
-    }
-    return out.sort((a, b) => a.meta.id.localeCompare(b.meta.id))
+  private get draftsDir(): string {
+    return resolve(this.baseDir, "_drafts")
   }
 
-  get(id: string): Procedure | null {
-    const p = this.pathFor(id)
-    if (!existsSync(p)) return null
-    const raw = readFileSync(p, "utf-8")
+  private draftPathFor(id: string): string {
+    return resolve(this.draftsDir, `${id}.md`)
+  }
+
+  private parseFile(full: string): Procedure | null {
+    const raw = readFileSync(full, "utf-8")
     const { meta, body } = parseFrontmatter(raw)
     const parsed = procedureMetaSchema.safeParse({
       ...meta,
@@ -93,9 +81,41 @@ export class ProcedureStore {
       kpis: meta.kpis || [],
       tags: meta.tags || [],
       related: meta.related || [],
+      evidence: meta.evidence || [],
     })
     if (!parsed.success) return null
-    return { meta: parsed.data, body: body.trim(), path: relative(this.baseDir, p) }
+    return { meta: parsed.data, body: body.trim(), path: relative(this.baseDir, full) }
+  }
+
+  private listDir(dir: string): Procedure[] {
+    if (!existsSync(dir)) return []
+    const out: Procedure[] = []
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name.startsWith("_")) continue
+      const proc = this.parseFile(resolve(dir, entry.name))
+      if (proc) out.push(proc)
+    }
+    return out.sort((a, b) => a.meta.id.localeCompare(b.meta.id))
+  }
+
+  list(): Procedure[] {
+    return this.listDir(this.baseDir)
+  }
+
+  listDrafts(): Procedure[] {
+    return this.listDir(this.draftsDir)
+  }
+
+  get(id: string): Procedure | null {
+    const p = this.pathFor(id)
+    if (!existsSync(p)) return null
+    return this.parseFile(p)
+  }
+
+  getDraft(id: string): Procedure | null {
+    const p = this.draftPathFor(id)
+    if (!existsSync(p)) return null
+    return this.parseFile(p)
   }
 
   add(meta: ProcedureMeta, body: string): Procedure {
@@ -122,5 +142,52 @@ export class ProcedureStore {
     const body = newBody !== undefined ? newBody : existing.body
     writeFileSync(this.pathFor(id), serializeFrontmatter(merged) + "\n\n" + body.trim() + "\n")
     return { meta: merged, body: body.trim(), path: existing.path }
+  }
+
+  addDraft(meta: ProcedureMeta, body: string): Procedure {
+    const parsed = procedureMetaSchema.parse({
+      ...meta,
+      status: "draft",
+      created: meta.created || new Date().toISOString().slice(0, 10),
+      updated: new Date().toISOString().slice(0, 10),
+    })
+    if (this.get(parsed.id)) throw new Error(`Procedure already exists: ${parsed.id}`)
+    const p = this.draftPathFor(parsed.id)
+    if (existsSync(p)) throw new Error(`Draft already exists: ${parsed.id}`)
+    mkdirSync(this.draftsDir, { recursive: true })
+    writeFileSync(p, serializeFrontmatter(parsed) + "\n\n" + body.trim() + "\n")
+    return { meta: parsed, body: body.trim(), path: relative(this.baseDir, p) }
+  }
+
+  /** Move a draft into the active set (status: active). */
+  promoteDraft(id: string): Procedure {
+    const draft = this.getDraft(id)
+    if (!draft) throw new Error(`Draft not found: ${id}`)
+    if (this.get(id)) throw new Error(`Procedure already exists: ${id}`)
+    const merged = procedureMetaSchema.parse({
+      ...draft.meta,
+      status: "active",
+      updated: new Date().toISOString().slice(0, 10),
+    })
+    writeFileSync(this.pathFor(id), serializeFrontmatter(merged) + "\n\n" + draft.body + "\n")
+    unlinkSync(this.draftPathFor(id))
+    return { meta: merged, body: draft.body, path: relative(this.baseDir, this.pathFor(id)) }
+  }
+
+  /** Park a draft under _drafts/_rejected/ so the miner never re-drafts it. */
+  rejectDraft(id: string): void {
+    const p = this.draftPathFor(id)
+    if (!existsSync(p)) throw new Error(`Draft not found: ${id}`)
+    const rejectedDir = resolve(this.draftsDir, "_rejected")
+    mkdirSync(rejectedDir, { recursive: true })
+    renameSync(p, resolve(rejectedDir, `${id}.md`))
+  }
+
+  isRejected(id: string): boolean {
+    return existsSync(resolve(this.draftsDir, "_rejected", `${id}.md`))
+  }
+
+  deprecate(id: string): Procedure {
+    return this.update(id, { status: "deprecated" })
   }
 }
