@@ -58,6 +58,18 @@ export const chat = new Command()
       process.exit(1)
     }
 
+    // Interactive terminal → rich Ink REPL (streaming, markdown, tool
+    // badges, history). Non-TTY (piped/scripted) → the plain streaming
+    // fallback below, which stays scriptable.
+    if (process.stdout.isTTY && process.stdin.isTTY) {
+      const { render } = await import("ink")
+      const { ChatApp } = await import("@/tui/ChatApp")
+      const React = (await import("react")).default
+      const instance = render(React.createElement(ChatApp, { conn, agentId, channel, chatId, agents }))
+      await instance.waitUntilExit()
+      return
+    }
+
     printBanner(conn.baseUrl, agentId, chatId, channel)
 
     const rl = createInterface({ input: process.stdin, output: process.stdout })
