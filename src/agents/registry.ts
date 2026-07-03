@@ -30,6 +30,8 @@ import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-s
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
+import { ProcedureStore } from "@/procedures"
+import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -1193,6 +1195,32 @@ export class AgentRegistry {
       ? this.sessions.getRotationMemo(task.agentId, channel, chatId) ?? undefined
       : undefined
 
+    // Matched procedures — user-perspective SOPs mined from recurring
+    // activity. Fresh-session-only, same gate and same reasoning as
+    // rotationMemo/references above: a warm session already saw the block,
+    // and per-turn re-injection is the bloat that forces tier-2 rotation.
+    // Warm sessions can pull one on demand via `agentx procedure match`.
+    let procedureContext: string | undefined
+    if (this.config.procedures?.injection?.enabled && !resumeSessionId && !isCodexCli) {
+      try {
+        const procStore = new ProcedureStore({
+          baseDir: resolve(process.cwd(), this.config.procedures.dir),
+        })
+        const procMatches = matchProcedures(task.message, procStore.list(), {
+          limit: this.config.procedures.injection.maxProcedures,
+          minScore: this.config.procedures.injection.minScore,
+        })
+        if (procMatches.length > 0) {
+          procedureContext = renderProcedureContext(procMatches)
+          for (const m of procMatches) {
+            this.log(`[${task.agentId}] procedure match ${m.procedure.meta.id} score=${m.score.toFixed(2)} (${m.reasons.join(",")})`)
+          }
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] procedure matcher failed (non-fatal): ${e?.message || e}`)
+      }
+    }
+
     // Context-rebuild diagnostic. Fires under `--debug context` (or `all`).
     // The amnesia-vs-misreasoning question — "did the agent see X in its
     // prompt?" — was unanswerable from session JSONs alone (the rendered
@@ -1529,6 +1557,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: isCodexCli ? undefined : patternContext || undefined,
+      procedureContext,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router

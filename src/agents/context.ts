@@ -43,6 +43,7 @@ const DEFAULT_CONFIG: ContextConfig = {
     references: 500,
     intent: 200,
     artifacts: 500,
+    procedures: 600,
     memory: 600,
     history: 1200,
     "cross-chat": 800,
@@ -71,6 +72,9 @@ export interface ContextInput {
 
   // Behavioral patterns (self-improving loop)
   patternContext?: string            // from PatternStore.buildContext()
+
+  // Matched procedures (user-perspective SOPs — known-good step sequences)
+  procedureContext?: string          // from renderProcedureContext()
 
   // Auto-injected skills (matched to current message)
   skillInjection?: string            // from getAutoInjectSkills()
@@ -337,6 +341,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("patterns", 400),
       content: input.patternContext,
       tags: ["patterns", "behavioral", "self-improving"],
+    })
+  }
+
+  // 6.4 Matched procedures (mined SOPs — the known-good path for this task)
+  if (input.procedureContext) {
+    layers.push({
+      name: "procedures",
+      priority: 6.4,
+      maxTokens: budget("procedures", 600),
+      content: input.procedureContext,
+      tags: ["procedures", "sop"],
     })
   }
 

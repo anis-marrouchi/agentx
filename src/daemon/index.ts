@@ -26,6 +26,7 @@ import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
 import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
+import { attachProcedureWatcher } from "./procedure-watcher"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import { ProcessRegistry } from "@/agents/process-registry"
@@ -272,6 +273,10 @@ export class AgentXDaemon {
         }
         attachSqliteSubscribers(db)
         this.log(`  SQLite: ${db.name}`)
+        // Procedure miner's on-task trigger — counts recurring activity
+        // patterns after each successful task (no-op unless
+        // procedures.extraction.onTaskCompletion is enabled).
+        attachProcedureWatcher(db, this.config, (m) => this.log(m))
       } else {
         this.log(`  SQLite: not opened (native binding unavailable or path unwritable)`)
       }
