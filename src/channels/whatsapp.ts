@@ -501,6 +501,14 @@ export class WhatsAppAdapter implements ChannelAdapter {
       ? msg.chatId
       : `${msg.chatId}@s.whatsapp.net`
 
+    // Buttons are intentionally unsupported: WhatsApp deprecated interactive
+    // reply buttons for most (non-official-API) senders and Baileys button
+    // messages are unreliable, so we drop them rather than fail. Polls + media
+    // below cover the useful rich cases.
+    if (msg.buttons?.length) {
+      this.log(`WhatsApp: ignoring ${msg.buttons.length} button(s) — not supported on this transport`)
+    }
+
     try {
       let content: Record<string, unknown>
 

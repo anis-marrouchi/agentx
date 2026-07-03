@@ -196,6 +196,10 @@ const agentConfigSchema = z.object({
    *  etc.) once a `references/` registry exists in the agent's workspace
    *  or repo root. See src/agents/references/. */
   contextReferences: z.boolean().default(false),
+  /** Whether this agent may emit in-band `agentx:ui` rich-message directives
+   *  (buttons/polls/media) on chat channels. Default true — set false to make
+   *  the render layer strip any directive and send plain text only. */
+  richMessages: z.boolean().default(true),
   maxConcurrent: z.number().default(1),
   /** Hard wall-clock cap on a single Claude Code invocation. Exceeding the
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder

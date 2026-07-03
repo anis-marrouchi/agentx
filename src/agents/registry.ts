@@ -1420,6 +1420,22 @@ export class AgentRegistry {
         ? "[Operating principle]\nAlways investigate the codebase before relying on issue history or comments. The code is the source of truth — start by reading relevant files (CLAUDE.md, then code), and consult conversation context only to clarify intent. Issue threads may contain wrong hypotheses; verify against the source."
         : ""
 
+    // Rich-reply convention — only on interactive chat channels, and only when
+    // the agent hasn't opted out. Rides the cacheable system prompt so it
+    // costs nothing per turn. Kept short and conditional ("when it genuinely
+    // helps") so agents don't spray buttons on every reply.
+    const richReplyInstruction =
+      (state.def.richMessages !== false && (channel === "telegram" || channel === "whatsapp"))
+        ? [
+            "[Rich replies]",
+            "On this chat channel you may add buttons, a poll, or media to a reply by appending ONE fenced block at the very end:",
+            "```agentx:ui",
+            '{ "buttons": [{"label": "Open docs", "url": "https://..."}], "poll": {"question": "Ship it?", "options": ["Yes", "No"]}, "media": {"type": "image", "url": "https://..."} }',
+            "```",
+            "All fields are optional; include only what helps. Buttons must be https URLs (tappable callback actions aren't supported yet). Use this sparingly — only when a link, choice, or image genuinely improves the reply. The block is stripped from the visible text.",
+          ].join("\n")
+        : ""
+
     // Context Surgery — Fix 3: per-workspace CLAUDE.md auto-injection. Read
     // once at task-setup, cap at 4KB to bound prompt size, silent fallback so
     // a missing/unreadable file is a no-op. Lives in the cacheable system
@@ -1480,6 +1496,7 @@ export class AgentRegistry {
     const systemPromptAppend = [
       state.def.systemPrompt || "",
       codeFirstInstruction,
+      richReplyInstruction,
       projectClaudeMd,
       projectRunbook,
       bootstrapContextText || "",

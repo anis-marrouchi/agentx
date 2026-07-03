@@ -7,7 +7,8 @@ import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { HandoverStore, type HandoverOverride } from "./handover-store"
 import { BlockStream } from "./block-stream"
-import { splitMessageText } from "./message-chunks"
+import { StreamingMessage } from "./streaming-message"
+import { splitMessageText, TG_CHUNK_CHARS } from "./message-chunks"
 import { ellipsize, firstLines } from "@/utils/ellipsize"
 import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
@@ -23,6 +24,14 @@ import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
 import type { LegacyOutcome } from "@/intent/divergence"
+import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
+
+/** During streaming, hide a partial or complete `agentx:ui` directive block so
+ *  a half-written fence never flashes as raw text in the live preview. The
+ *  final render (extractUiDirective) does the authoritative strip. */
+function previewText(full: string): string {
+  return stripUiDirectiveForPreview(full)
+}
 
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
@@ -738,41 +747,44 @@ export class MessageRouter {
     // shortly after delivery. Edit-in-place sits well under Telegram's edit
     // rate limit at the existing 1.5s throttle and gives a uniform path
     // across DMs, groups, and non-Telegram channels.
+    // Rolling multi-message streaming preview. As the reply accumulates, the
+    // live message is edited in place; once it grows past one Telegram chunk
+    // it rolls into additional messages instead of freezing/truncating (the
+    // old single-`sentMessageId` path clipped everything past ~3900 chars).
     const canStream = typeof adapter.editMessage === "function"
-    let sentMessageId: string | undefined
     let fullStreamText = ""
+    let anchorSends = 0
+    const streaming = canStream
+      ? new StreamingMessage({
+          maxChars: msg.channel === "telegram" ? TG_CHUNK_CHARS : 3900,
+          send: async (text: string) => {
+            const replyTo = anchorSends === 0 ? msg.id : undefined
+            anchorSends++
+            try {
+              return await this.adapterSend(adapter, {
+                channel: msg.channel, chatId, text, replyTo, accountId: replyAccountId,
+              })
+            } catch (e: any) {
+              this.log(`Stream preview send failed for ${msg.channel}:${chatId}: ${e?.message || e}`)
+              return ""
+            }
+          },
+          edit: async (messageId: string, text: string) => {
+            try {
+              return await this.adapterEdit(adapter, chatId, messageId, text, undefined, replyAccountId)
+            } catch (e: any) {
+              this.log(`Stream preview edit failed for ${msg.channel}:${chatId} message ${messageId}: ${e?.message || e}`)
+              return false
+            }
+          },
+        })
+      : undefined
 
-    const blockStream = canStream
+    const blockStream = streaming
       ? new BlockStream(
           async (block: string) => {
             fullStreamText += block
-            if (!sentMessageId) {
-              const preview = fullStreamText.length > 20
-                ? fullStreamText
-                : `_${agentName} is writing..._\n\n${fullStreamText}`
-              try {
-                sentMessageId = await this.adapterSend(adapter, {
-                  channel: msg.channel,
-                  chatId,
-                  text: preview,
-                  replyTo: msg.id,
-                  accountId: replyAccountId,
-                })
-              } catch (e: any) {
-                this.log(`Stream preview send failed for ${msg.channel}:${chatId}: ${e?.message || e}`)
-                /* retry next block */
-              }
-            } else {
-              try {
-                const edited = await this.adapterEdit(adapter, chatId, sentMessageId, fullStreamText, undefined, replyAccountId)
-                if (!edited) {
-                  this.log(`Stream preview edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}`)
-                }
-              } catch (e: any) {
-                this.log(`Stream preview edit failed for ${msg.channel}:${chatId} message ${sentMessageId}: ${e?.message || e}`)
-                /* retry next block */
-              }
-            }
+            await streaming.update(previewText(fullStreamText))
           },
           undefined,
           msg.channel,
@@ -862,10 +874,10 @@ export class MessageRouter {
 
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`
-      if (sentMessageId) {
-        const edited = await this.adapterEdit(adapter, chatId, sentMessageId, errorText, "plain", replyAccountId)
+      if (streaming?.primaryId) {
+        const edited = await this.adapterEdit(adapter, chatId, streaming.primaryId, errorText, "plain", replyAccountId)
         if (!edited) {
-          this.log(`Error response edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}; sending fallback`)
+          this.log(`Error response edit returned false for ${msg.channel}:${chatId} message ${streaming.primaryId}; sending fallback`)
           await this.adapterSend(adapter, {
             channel: msg.channel,
             chatId,
@@ -939,37 +951,29 @@ export class MessageRouter {
       responseText = ""
     }
 
+    // Lift any in-band `agentx:ui` directive out of the reply: strip it from
+    // the visible text and render it as buttons/poll/media on the final
+    // message. Gated per-agent (richMessages) and per-channel below.
+    let ui: UiDirective | undefined
+    if (responseText && this.richMessagesAllowed(agentId, msg.channel)) {
+      const extracted = extractUiDirective(responseText)
+      responseText = extracted.cleanText
+      ui = extracted.ui
+      if (ui?.skippedActions?.length) {
+        this.log(`[${agentId}] agentx:ui dropped ${ui.skippedActions.length} action button(s) (callback support is Phase 2): ${ui.skippedActions.join(", ")}`)
+      }
+    }
+
     // Final message:
-    //   1. Stream landed → editMessageText to replace the streamed preview
-    //      with the canonical post-hook responseText.
-    //   2. No stream → plain sendMessage.
+    //   1. Stream landed → reconcile the rolling preview to the canonical
+    //      post-hook text (rolls into more messages if it grew).
+    //   2. No stream → plain send; telegram.send() chunk-spills long text.
     let sentResponseId: string | undefined
     if (responseText) {
-      if (sentMessageId) {
-        const chunks = adapter.name === "telegram" ? splitMessageText(responseText, 3900) : [responseText]
-        const edited = await this.adapterEdit(adapter, chatId, sentMessageId, chunks[0], undefined, replyAccountId)
-        if (edited) {
-          sentResponseId = sentMessageId
-        } else {
-          this.log(`Final response edit returned false for ${msg.channel}:${chatId} message ${sentMessageId}; sending fallback`)
-          sentResponseId = await this.adapterSend(adapter, {
-            channel: msg.channel,
-            chatId,
-            text: chunks[0],
-            replyTo: msg.id,
-            accountId: replyAccountId,
-            agentId,
-          })
-        }
-        for (const chunk of chunks.slice(1)) {
-          await this.adapterSend(adapter, {
-            channel: msg.channel,
-            chatId,
-            text: chunk,
-            accountId: replyAccountId,
-            agentId,
-          })
-        }
+      if (streaming?.started) {
+        await streaming.update(responseText)
+        sentResponseId = streaming.primaryId
+        if (ui) await this.attachUiExtras(adapter, msg.channel, chatId, streaming.lastId, ui, replyAccountId, agentId)
       } else {
         sentResponseId = await this.adapterSend(adapter, {
           channel: msg.channel,
@@ -978,8 +982,14 @@ export class MessageRouter {
           replyTo: msg.id,
           accountId: replyAccountId,
           agentId,
+          buttons: ui?.buttons,
+          poll: ui?.poll ? { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 } : undefined,
+          media: ui?.media,
         })
       }
+    } else if (ui && streaming?.started) {
+      // Text was suppressed (autoReplyLegacy) but a directive still stands.
+      await this.attachUiExtras(adapter, msg.channel, chatId, streaming.lastId, ui, replyAccountId, agentId)
     }
 
     // Log bot response in group conversation
@@ -1198,7 +1208,7 @@ export class MessageRouter {
 
   private async adapterSend(
     adapter: ChannelAdapter,
-    msg: { channel: string; chatId: string; text: string; replyTo?: string; parseMode?: string; accountId?: string; agentId?: string },
+    msg: Omit<OutgoingMessage, "parseMode"> & { parseMode?: string; accountId?: string },
   ): Promise<string> {
     // For Telegram, pass accountId so the correct bot sends the message
     if (adapter.name === "telegram" && msg.accountId) {
@@ -1209,6 +1219,48 @@ export class MessageRouter {
       }) as Promise<string>
     }
     return (adapter.send(msg as any) || "") as Promise<string>
+  }
+
+  /** Whether an agent may emit rich `agentx:ui` messages on this channel.
+   *  Gated by per-agent `richMessages` (default true) and restricted to the
+   *  interactive chat channels that render buttons/polls natively. */
+  private richMessagesAllowed(agentId: string, channel: string): boolean {
+    if (channel !== "telegram" && channel !== "whatsapp") return false
+    const def = this.registry.getAgent(agentId) as { richMessages?: boolean } | undefined
+    return def?.richMessages !== false
+  }
+
+  /** Attach directive extras to a just-delivered reply: buttons onto the last
+   *  text message (edit reply_markup), poll + media as follow-up messages.
+   *  Best-effort — a failure here never breaks the text reply. */
+  private async attachUiExtras(
+    adapter: ChannelAdapter,
+    channel: string,
+    chatId: string,
+    lastMessageId: string | undefined,
+    ui: UiDirective,
+    accountId?: string,
+    agentId?: string,
+  ): Promise<void> {
+    try {
+      if (ui.buttons?.length && lastMessageId && adapter.name === "telegram") {
+        await (adapter as unknown as TelegramAdapter).setMessageButtons(chatId, lastMessageId, ui.buttons, accountId)
+      } else if (ui.buttons?.length) {
+        // Non-telegram or no anchor id — send buttons as their own message.
+        await this.adapterSend(adapter, { channel, chatId, text: "⌄", accountId, agentId, buttons: ui.buttons })
+      }
+      if (ui.poll) {
+        await this.adapterSend(adapter, {
+          channel, chatId, text: "", accountId, agentId,
+          poll: { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 },
+        })
+      }
+      if (ui.media) {
+        await this.adapterSend(adapter, { channel, chatId, text: ui.media.caption ?? "", accountId, agentId, media: ui.media })
+      }
+    } catch (e: any) {
+      this.log(`attachUiExtras failed for ${channel}:${chatId}: ${e?.message || e}`)
+    }
   }
 
   private async adapterEdit(

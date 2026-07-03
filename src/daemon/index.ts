@@ -3434,6 +3434,11 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               parseMode: body.parseMode as any,
               agentId: body.agentId as string | undefined,
               accountId: body.accountId as string | undefined,
+              // Optional rich payloads (buttons/poll/media) — enables cron
+              // jobs and API callers to send interactive messages directly.
+              buttons: body.buttons as any,
+              poll: body.poll as any,
+              media: body.media as any,
             })
             this.json(res, 200, { ok: true, messageId: messageId || null })
           } catch (e: any) {

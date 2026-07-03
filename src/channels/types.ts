@@ -97,6 +97,9 @@ export interface OutgoingMessage {
     mimetype?: string
     fileName?: string
   }
+  /** URL inline buttons (Phase 1). Telegram renders an inline_keyboard;
+   *  channels without button support ignore them. */
+  buttons?: Array<{ label: string; url: string }>
 }
 
 export interface ChannelAdapter {

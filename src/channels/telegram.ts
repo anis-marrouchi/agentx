@@ -1,11 +1,45 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, SeededMessage } from "./types"
 import { markdownToTelegramHtml } from "./telegram-format"
-import { splitMessageText } from "./message-chunks"
+import { splitMessageText, TG_CHUNK_CHARS, TG_MAX_MESSAGE_CHARS } from "./message-chunks"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { getCursorStore, type CursorStore } from "./cursor-store"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
+
+type OutPoll = { name: string; values: string[]; selectableCount?: number }
+type OutMedia = { type: "image" | "document" | "audio" | "video"; url: string; caption?: string }
+
+/** Build sendPoll params. Telegram requires 2–10 options; `allows_multiple_answers`
+ *  is on when the caller asked to select more than one. Pure — unit-testable. */
+export function pollParams(chatId: string, poll: OutPoll, replyTo?: string): Record<string, unknown> {
+  const options = poll.values.slice(0, 10)
+  const params: Record<string, unknown> = {
+    chat_id: chatId,
+    question: poll.name.slice(0, 300),
+    options: JSON.stringify(options),
+    is_anonymous: false,
+    allows_multiple_answers: (poll.selectableCount ?? 1) > 1,
+  }
+  if (replyTo) params.reply_to_message_id = parseInt(replyTo, 10)
+  return params
+}
+
+/** Map an outbound media object to the Bot API method + params. Pure. */
+export function mediaSendSpec(chatId: string, media: OutMedia, replyTo?: string): { method: string; params: Record<string, unknown> } {
+  const method =
+    media.type === "image" ? "sendPhoto" :
+    media.type === "audio" ? "sendAudio" :
+    media.type === "video" ? "sendVideo" : "sendDocument"
+  const field =
+    media.type === "image" ? "photo" :
+    media.type === "audio" ? "audio" :
+    media.type === "video" ? "video" : "document"
+  const params: Record<string, unknown> = { chat_id: chatId, [field]: media.url }
+  if (media.caption) params.caption = media.caption
+  if (replyTo) params.reply_to_message_id = parseInt(replyTo, 10)
+  return { method, params }
+}
 
 interface TelegramUpdate {
   update_id: number
@@ -513,11 +547,31 @@ export class TelegramAdapter implements ChannelAdapter {
       return ""
     }
 
-    const chunks = splitMessageText(msg.text, 3900)
+    // Rich payloads are their own Telegram message types.
+    if (msg.poll) {
+      const result = await this.apiCall(token, "sendPoll", pollParams(msg.chatId, msg.poll, msg.replyTo))
+      const id = String(result.result?.message_id || "")
+      this.recordOutboundShadow(msg.chatId, id, `[poll] ${msg.poll.name}`, msg.agentId, msg.accountId)
+      // A poll carries no free text, but callers may pass a caption in text.
+      if (!msg.text?.trim()) return id
+    }
+    if (msg.media) {
+      const { method, params } = mediaSendSpec(msg.chatId, msg.media, msg.replyTo)
+      const result = await this.apiCall(token, method, params)
+      const id = String(result.result?.message_id || "")
+      this.recordOutboundShadow(msg.chatId, id, `[${msg.media.type}] ${msg.media.url}`, msg.agentId, msg.accountId)
+      if (!msg.text?.trim()) return id
+    }
+
+    const chunks = splitMessageText(msg.text, TG_CHUNK_CHARS)
     let firstMessageId = ""
 
     for (let i = 0; i < chunks.length; i++) {
       const text = chunks[i]
+      const isLast = i === chunks.length - 1
+      // Buttons attach to the last chunk only.
+      const replyMarkup = isLast && msg.buttons?.length ? this.inlineKeyboardMarkup(msg.buttons) : undefined
+
       const formatted = msg.parseMode === "markdown" || msg.parseMode === undefined
         ? markdownToTelegramHtml(text)
         : text
@@ -527,6 +581,7 @@ export class TelegramAdapter implements ChannelAdapter {
         text: formatted,
         parse_mode: "HTML",
       }
+      if (replyMarkup) params.reply_markup = replyMarkup
 
       if (msg.replyTo && i === 0) {
         params.reply_to_message_id = parseInt(msg.replyTo, 10)
@@ -559,6 +614,29 @@ export class TelegramAdapter implements ChannelAdapter {
       }
     }
     return firstMessageId
+  }
+
+  /** Add/replace inline URL buttons on an existing message (editMessageReplyMarkup).
+   *  Used to attach an agentx:ui button row to a streamed reply. Best-effort. */
+  async setMessageButtons(
+    chatId: string,
+    messageId: string,
+    buttons: Array<{ label: string; url: string }>,
+    accountId?: string,
+  ): Promise<boolean> {
+    const token = this.resolveToken(chatId, accountId)
+    if (!token || !buttons.length) return false
+    try {
+      await this.apiCall(token, "editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: parseInt(messageId, 10),
+        reply_markup: this.inlineKeyboardMarkup(buttons),
+      })
+      return true
+    } catch (e: any) {
+      this.log(`setMessageButtons failed for ${chatId}/${messageId}: ${describeError(e)}`)
+      return false
+    }
   }
 
   /** Best-effort outbound shadow log. Captures every successful send into
@@ -610,21 +688,51 @@ export class TelegramAdapter implements ChannelAdapter {
     const token = this.resolveToken(args.chatId, args.accountId)
     if (!token) { this.log("No telegram token found for sending"); return "" }
 
-    const text = splitMessageText(args.text, 3900)[0]
-    const formatted = args.parseMode === "markdown" || args.parseMode === undefined
+    // Overflow-safe: earlier chunks send plain, the buttons attach to the
+    // LAST chunk. Previously kept `[0]` only and silently dropped the tail.
+    const chunks = splitMessageText(args.text, TG_CHUNK_CHARS)
+    let firstMessageId = ""
+    for (let i = 0; i < chunks.length; i++) {
+      const isLast = i === chunks.length - 1
+      const id = await this.sendOneWithMarkup(
+        token,
+        args.chatId,
+        chunks[i],
+        args.parseMode,
+        isLast ? this.inlineKeyboardMarkup(args.buttons) : undefined,
+      )
+      if (!firstMessageId) firstMessageId = id
+    }
+    return firstMessageId
+  }
+
+  /** Build a Telegram inline_keyboard reply_markup from URL buttons (one row
+   *  per button). Shared by sendWithInlineButtons and send()'s `buttons`. */
+  private inlineKeyboardMarkup(buttons: Array<{ label: string; url: string }>): string {
+    return JSON.stringify({
+      inline_keyboard: buttons.map((b) => [{ text: b.label, url: b.url }]),
+    })
+  }
+
+  /** Send a single (already chunk-sized) message with optional reply_markup,
+   *  with the standard HTML→plain parse-mode fallback. Returns message id. */
+  private async sendOneWithMarkup(
+    token: string,
+    chatId: string,
+    text: string,
+    parseMode: "markdown" | "html" | "plain" | undefined,
+    replyMarkup?: string,
+  ): Promise<string> {
+    const formatted = parseMode === "markdown" || parseMode === undefined
       ? markdownToTelegramHtml(text)
       : text
-
     const params: Record<string, unknown> = {
-      chat_id: args.chatId,
+      chat_id: chatId,
       text: formatted,
-      parse_mode: args.parseMode === "plain" ? undefined : "HTML",
-      reply_markup: JSON.stringify({
-        inline_keyboard: args.buttons.map((b) => [{ text: b.label, url: b.url }]),
-      }),
+      parse_mode: parseMode === "plain" ? undefined : "HTML",
     }
+    if (replyMarkup) params.reply_markup = replyMarkup
     if (params.parse_mode === undefined) delete params.parse_mode
-
     try {
       const result = await this.apiCall(token, "sendMessage", params)
       return String(result.result?.message_id || "")
@@ -646,7 +754,13 @@ export class TelegramAdapter implements ChannelAdapter {
     const token = this.resolveToken(chatId, accountId)
     if (!token) return false
 
-    const trimmed = splitMessageText(text, 3900)[0]
+    // The router owns chunk-spill and never edits a message with more than one
+    // chunk's worth of text — so DON'T silently drop overflow here (the old
+    // `splitMessageText(text,3900)[0]` was the streaming-truncation bug).
+    // Keep only a defensive hard-cap guard against Telegram's 4096 ceiling.
+    const trimmed = text.length > TG_MAX_MESSAGE_CHARS
+      ? text.slice(0, TG_MAX_MESSAGE_CHARS)
+      : text
 
     const formatted = parseMode !== "html" && parseMode !== "plain"
       ? markdownToTelegramHtml(trimmed)
@@ -711,8 +825,10 @@ export class TelegramAdapter implements ChannelAdapter {
     const token = this.resolveToken(chatId, accountId)
     if (!token) return false
 
-    const maxLen = 4096
-    const trimmed = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text
+    // Draft is a DM-only transient typing affordance (not a persistent
+    // message), so a hard cap is acceptable here — the real reply is delivered
+    // separately via send()/editMessage which chunk-spill.
+    const trimmed = text.length > TG_MAX_MESSAGE_CHARS ? text.slice(0, TG_MAX_MESSAGE_CHARS - 3) + "..." : text
     if (!trimmed) return false
 
     const formatted = parseMode !== "html" && parseMode !== "plain"

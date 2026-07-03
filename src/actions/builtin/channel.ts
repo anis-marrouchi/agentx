@@ -53,6 +53,15 @@ const channelReplyInput = z.object({
    *  scheme — useful for "I want to overwrite my last status update"
    *  patterns where the body changes but the intent is the same post. */
   idempotencyKey: z.string().optional(),
+  /** Optional rich payloads (telegram/whatsapp). URL buttons render as an
+   *  inline keyboard; poll/media send as their own message. */
+  buttons: z.array(z.object({ label: z.string(), url: z.string() })).optional(),
+  poll: z.object({ name: z.string(), values: z.array(z.string()), selectableCount: z.number().optional() }).optional(),
+  media: z.object({
+    type: z.enum(["image", "document", "audio", "video"]),
+    url: z.string(),
+    caption: z.string().optional(),
+  }).optional(),
 })
 type ChannelReplyInput = z.infer<typeof channelReplyInput>
 
@@ -87,6 +96,9 @@ export const channelReply: BuiltinAction<ChannelReplyInput, ChannelReplyOutput> 
         agentId: input.agentId,
         accountId: input.accountId,
         replyTo: input.replyTo,
+        buttons: input.buttons,
+        poll: input.poll,
+        media: input.media,
       },
       { idempotencyKey, dedupeWindowMs: 60_000 },
     )
