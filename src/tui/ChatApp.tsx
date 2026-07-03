@@ -7,6 +7,7 @@ import { advanceMention, mentionSuggestions, type MentionCycle } from "./mention
 import { classifyComposerInput } from "./composer-input.js"
 import { WorkingStatus } from "./working-status.js"
 import { theme, BRAND, GUTTER } from "./theme.js"
+import { resolveProvider, shortModel } from "./provider.js"
 
 // --- Claude-Code-style chat REPL (Ink) ---
 //
@@ -241,7 +242,8 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
 
   const accent = busy ? theme.working : theme.accent
   const inputLines = input.length ? input.split("\n") : [""]
-  const model = agents.find((a) => a.id === agentId)?.model
+  const agentRow = agents.find((a) => a.id === agentId)
+  const provider = resolveProvider(agentRow?.tier ?? "", agentRow?.model)
   const rows = stdout?.rows || 24
   // Bottom-anchored transcript window: render a bounded tail (older turns
   // clip off the top), so the composer stays flush with the terminal's
@@ -253,7 +255,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflow="hidden">
         {turns.length === 0 && !active ? (
           <Box flexDirection="column">
-            <Text><Text color={theme.accent} bold>{BRAND}</Text><Text dimColor> — chat with </Text><Text color={theme.accent}>@{agentId}</Text>{model ? <Text dimColor> · {model}</Text> : null}</Text>
+            <Text><Text color={theme.accent} bold>{BRAND}</Text><Text dimColor> — chat with </Text><Text color={theme.accent}>@{agentId}</Text><Text dimColor> via </Text><Text color={provider.color} bold>{provider.glyph} {provider.label}</Text>{agentRow?.model ? <Text dimColor> ({agentRow.model})</Text> : null}</Text>
             <Text dimColor>streaming · markdown · tools · type a message, or / for commands</Text>
           </Box>
         ) : null}
@@ -303,11 +305,13 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
         </Box>
       </Box>
 
-      {/* Status bar */}
+      {/* Status bar — reflects the underlying provider/command running the agent. */}
       <Box justifyContent="space-between">
         <Text>
           <Text color={theme.accent} bold>{BRAND}</Text>
-          <Text dimColor> · @{agentId}{model ? ` · ${model}` : ""}</Text>
+          <Text dimColor> · @{agentId} · </Text>
+          <Text color={provider.color} bold>{provider.glyph} {provider.label}</Text>
+          {agentRow?.model ? <Text dimColor> {shortModel(agentRow.model)}</Text> : null}
         </Text>
         <Text dimColor>↵ send   / cmds   @ mention   esc {busy ? "stop" : "exit"}</Text>
       </Box>

@@ -17,6 +17,7 @@ import { renderMarkdown } from "./markdown.js"
 import { advanceMention, mentionSuggestions, type MentionCycle, type MentionSuggestions } from "./mention-complete.js"
 import { classifyComposerInput } from "./composer-input.js"
 import { WorkingStatus } from "./working-status.js"
+import { resolveProvider, shortModel } from "./provider.js"
 
 type FocusPane = "agents" | "processes" | "events"
 type BottomRight = "crons" | "channels"
@@ -408,7 +409,7 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
           </Pane>
         </Box>
         {state.chat.active
-          ? <ChatPane chat={state.chat} suggest={chatSuggest} />
+          ? <ChatPane chat={state.chat} suggest={chatSuggest} agents={state.agents} />
           : (
             <Box flexDirection="column" width="50%">
               <Pane title="LIVE EVENTS" focused={state.focus === "events"}>
@@ -589,11 +590,13 @@ function EventList({
   )
 }
 
-function ChatPane({ chat, suggest }: { chat: ChatState; suggest: MentionSuggestions | null }) {
+function ChatPane({ chat, suggest, agents }: { chat: ChatState; suggest: MentionSuggestions | null; agents: AgentRow[] }) {
   // Render the last N turns in chronological order. When history exceeds
   // the slice, oldest turns clip off the top so the composer stays anchored
   // at the bottom of the pane (Claude-Code-like reading order).
   const visible = chat.history.slice(-14)
+  const row = agents.find((a) => a.id === chat.agentId)
+  const provider = resolveProvider(row?.tier ?? "", row?.model)
   const liveTurn = chat.status === "sending" ? [...chat.history].reverse().find((t) => t.role === "agent" && t.streaming) : undefined
   const status = chat.status === "sending"
     ? <WorkingStatus startedAt={liveTurn?.at ?? Date.now()} phase={liveTurn?.text ? "responding" : "thinking"} indent="" />
@@ -606,7 +609,11 @@ function ChatPane({ chat, suggest }: { chat: ChatState; suggest: MentionSuggesti
         <Text bold color="green">CHAT · @{chat.agentId}</Text>
         <Box>{status}</Box>
       </Box>
-      <Text dimColor>{chat.chatId}</Text>
+      <Text>
+        <Text color={provider.color} bold>{provider.glyph} {provider.label}</Text>
+        {row?.model ? <Text dimColor> {shortModel(row.model)}</Text> : null}
+        <Text dimColor>  ·  {chat.chatId}</Text>
+      </Text>
       <Box flexDirection="column" flexGrow={1} marginTop={1}>
         {visible.length === 0
           ? <Text dimColor>(type a message and press Enter — Esc exits, Ctrl-L starts fresh)</Text>
