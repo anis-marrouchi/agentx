@@ -3558,6 +3558,22 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               try { res.write(": ping\n\n") } catch { /* */ }
             }, 15_000)
             ;(heartbeat as any).unref?.()
+            // Client-disconnect → interrupt (the chat REPL's "esc to
+            // interrupt"). Best-effort: kills a persistent claude process for
+            // this (agent, channel, chatId) so it stops mid-turn; a no-op for
+            // spawn-per-task agents (whose output is simply discarded once the
+            // stream closes). Guarded so it never fires after normal
+            // completion.
+            let streamDone = false
+            req.on("close", () => {
+              if (streamDone) return
+              streamDone = true
+              clearInterval(heartbeat)
+              const ctx = (body.context ?? {}) as { channel?: string; chatId?: string }
+              if (ctx.channel && ctx.chatId) {
+                void this.processRegistry?.kill({ agentId, channel: ctx.channel, chatId: ctx.chatId }, "client-interrupt").catch(() => {})
+              }
+            })
             const onDelta = (text: string) => { if (text) writeSse("text", { text }) }
             const onThinking = (text: string) => { if (text) writeSse("thinking", { text }) }
             // Map orchestrator stream events → public SSE shape. The
@@ -3618,6 +3634,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
                 onThinking,
                 onEvent,
               )
+              streamDone = true
               clearInterval(heartbeat)
               if (resp.error) {
                 writeSse("error", { error: resp.error, errorKind: resp.errorKind })
@@ -3629,6 +3646,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
                 })
               }
             } catch (e: any) {
+              streamDone = true
               clearInterval(heartbeat)
               writeSse("error", { error: e?.message ?? String(e) })
             }

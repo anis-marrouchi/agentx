@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink"
 import { randomUUID } from "crypto"
 import { fetchAgents, streamTask, type AgentRow, type DaemonConn } from "./client.js"
 import { renderMarkdown } from "./markdown.js"
 import { advanceMention, mentionSuggestions, type MentionCycle } from "./mention-complete.js"
 import { classifyComposerInput } from "./composer-input.js"
+import { WorkingStatus } from "./working-status.js"
 
 // --- Claude-Code-style chat REPL (Ink) ---
 //
@@ -27,9 +28,14 @@ interface Turn {
   you: string
   segs: Seg[]
   live: boolean
+  /** Accumulated reasoning text (forwarded `thinking` frames). Empty for
+   *  claude-code agents — the headless CLI redacts thinking text. */
+  thinking?: string
+  startedAt: number
   elapsedMs?: number
   outTokens?: number
   error?: string
+  interrupted?: boolean
 }
 
 export interface ChatAppProps {
@@ -58,6 +64,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   const history = useRef<string[]>([])
   const histIdx = useRef<number>(-1)
   const cycle = useRef<MentionCycle | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const busy = active?.live ?? false
 
   // `@`-mention autocomplete for the current buffer (agents + cwd files).
@@ -72,11 +79,13 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
     (text: string) => {
       const id = randomUUID().slice(0, 8)
       const startedAt = Date.now()
-      setActive({ id, you: text, segs: [], live: true })
+      const ac = new AbortController()
+      abortRef.current = ac
 
       // Mutable ref to the current turn so streaming callbacks coalesce
       // without stale-closure races; we mirror it into state to repaint.
-      const turn: Turn = { id, you: text, segs: [], live: true }
+      const turn: Turn = { id, you: text, segs: [], live: true, startedAt }
+      setActive({ ...turn })
       const repaint = () => setActive({ ...turn, segs: turn.segs.map((s) => ({ ...s })) })
 
       void (async () => {
@@ -84,12 +93,14 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
           const r = await streamTask(conn, agentId, text, {
             channel,
             chatId,
+            signal: ac.signal,
             onText: (t) => {
               const last = turn.segs[turn.segs.length - 1]
               if (last && last.type === "text") last.content = (last.content ?? "") + t
               else turn.segs.push({ type: "text", content: t })
               repaint()
             },
+            onThinking: (t) => { turn.thinking = (turn.thinking ?? "") + t; repaint() },
             onTool: (tool) => {
               if (tool.status === "start" && tool.name) {
                 turn.segs.push({ type: "tool", name: tool.name, arg: tool.arg })
@@ -100,18 +111,19 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
               }
             },
           })
-          const finished: Turn = {
-            ...turn,
-            live: false,
-            elapsedMs: Date.now() - startedAt,
-            outTokens: r.usage?.outputTokens,
-            error: r.error,
-          }
-          setTurns((prev) => [...prev, finished])
+          setTurns((prev) => [...prev, {
+            ...turn, live: false, elapsedMs: Date.now() - startedAt, outTokens: r.usage?.outputTokens, error: r.error,
+          }])
           setActive(null)
         } catch (e: any) {
-          setTurns((prev) => [...prev, { ...turn, live: false, error: e?.message || String(e), elapsedMs: Date.now() - startedAt }])
+          const interrupted = ac.signal.aborted || e?.name === "AbortError"
+          setTurns((prev) => [...prev, {
+            ...turn, live: false, elapsedMs: Date.now() - startedAt,
+            interrupted, error: interrupted ? undefined : (e?.message || String(e)),
+          }])
           setActive(null)
+        } finally {
+          if (abortRef.current === ac) abortRef.current = null
         }
       })()
     },
@@ -159,7 +171,12 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
 
   useInput((ch, key) => {
     if (key.ctrl && ch === "c") { exit(); return }
-    if (key.escape) { exit(); return }
+    // Esc interrupts a live turn; when idle it exits.
+    if (key.escape) {
+      if (busy && abortRef.current) { abortRef.current.abort(); return }
+      exit()
+      return
+    }
     // Tab accepts the top @-mention suggestion; repeated Tab cycles.
     if (key.tab) {
       const applied = advanceMention(input, cycle, agents.map((a) => a.id), process.cwd())
@@ -232,17 +249,35 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
 
 function TurnView({ turn, width }: { turn: Turn; width: number }) {
   const body = useMemo(() => renderSegs(turn, width), [turn, width])
+  const hasText = turn.segs.some((s) => s.type === "text" && s.content)
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text color="cyan">you › <Text color="white">{turn.you}</Text></Text>
+      {turn.thinking ? (
+        <Box flexDirection="column">
+          {tail(turn.thinking, turn.live ? 3 : 2).map((ln, i) => (
+            <Text key={`th${i}`} dimColor italic>  {ln}</Text>
+          ))}
+        </Box>
+      ) : null}
       {body}
-      {turn.error ? (
+      {turn.live ? (
+        <WorkingStatus startedAt={turn.startedAt} phase={hasText ? "responding" : "thinking"} hint="esc to interrupt" />
+      ) : turn.interrupted ? (
+        <Text dimColor>  ⊘ interrupted · {(turn.elapsedMs! / 1000).toFixed(1)}s</Text>
+      ) : turn.error ? (
         <Text color="red">  ✗ {turn.error}</Text>
-      ) : !turn.live && turn.elapsedMs != null ? (
+      ) : turn.elapsedMs != null ? (
         <Text dimColor>  · {(turn.elapsedMs / 1000).toFixed(1)}s{turn.outTokens != null ? `, ${turn.outTokens} tok` : ""}</Text>
       ) : null}
     </Box>
   )
+}
+
+/** Last `n` non-empty lines of a block (for a compact thinking preview). */
+function tail(text: string, n: number): string[] {
+  const lines = text.split("\n").filter((l) => l.trim())
+  return lines.slice(-n)
 }
 
 /** Render a turn's segments: tool badges + agent text. Text is raw while the

@@ -16,6 +16,7 @@ import { streamEvents, type SseFrame } from "./sse.js"
 import { renderMarkdown } from "./markdown.js"
 import { advanceMention, mentionSuggestions, type MentionCycle, type MentionSuggestions } from "./mention-complete.js"
 import { classifyComposerInput } from "./composer-input.js"
+import { WorkingStatus } from "./working-status.js"
 
 type FocusPane = "agents" | "processes" | "events"
 type BottomRight = "crons" | "channels"
@@ -26,6 +27,7 @@ interface ChatTurn {
   at: number
   elapsedMs?: number
   streaming?: boolean
+  thinking?: string
   tools?: Array<{ name: string; arg?: string; error?: boolean }>
   outTokens?: number
 }
@@ -84,6 +86,7 @@ type Action =
   | { type: "chatSubmitError"; error: string }
   | { type: "chatStreamStart"; you: ChatTurn }
   | { type: "chatStreamDelta"; text: string }
+  | { type: "chatStreamThinking"; text: string }
   | { type: "chatStreamTool"; name: string; arg?: string; error?: boolean }
   | { type: "chatStreamEnd"; elapsedMs: number; outTokens?: number; error?: string }
   | { type: "toast"; text: string; color: "green" | "red" | "yellow" }
@@ -173,6 +176,12 @@ function reducer(state: State, action: Action): State {
       const h = state.chat.history.slice()
       const last = h[h.length - 1]
       if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, text: last.text + action.text }
+      return { ...state, chat: { ...state.chat, history: h } }
+    }
+    case "chatStreamThinking": {
+      const h = state.chat.history.slice()
+      const last = h[h.length - 1]
+      if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, thinking: (last.thinking ?? "") + action.text }
       return { ...state, chat: { ...state.chat, history: h } }
     }
     case "chatStreamTool": {
@@ -267,6 +276,7 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
               channel: "tui",
               chatId,
               onText: (t) => dispatch({ type: "chatStreamDelta", text: t }),
+              onThinking: (t) => dispatch({ type: "chatStreamThinking", text: t }),
               onTool: (tool) => {
                 if (tool.status === "start" && tool.name) dispatch({ type: "chatStreamTool", name: tool.name, arg: tool.arg })
                 else if (tool.status === "result" && tool.error) dispatch({ type: "chatStreamTool", name: tool.name ?? "tool", error: true })
@@ -584,8 +594,9 @@ function ChatPane({ chat, suggest }: { chat: ChatState; suggest: MentionSuggesti
   // the slice, oldest turns clip off the top so the composer stays anchored
   // at the bottom of the pane (Claude-Code-like reading order).
   const visible = chat.history.slice(-14)
+  const liveTurn = chat.status === "sending" ? [...chat.history].reverse().find((t) => t.role === "agent" && t.streaming) : undefined
   const status = chat.status === "sending"
-    ? <Text color="yellow">● thinking…</Text>
+    ? <WorkingStatus startedAt={liveTurn?.at ?? Date.now()} phase={liveTurn?.text ? "responding" : "thinking"} indent="" />
     : chat.error
       ? <Text color="red">● {chat.error}</Text>
       : <Text dimColor>● ready</Text>
@@ -640,6 +651,9 @@ function TurnView({ turn, agentId }: { turn: ChatTurn; agentId: string | null })
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text color="green">@{agentId ?? "agent"}<Text dimColor>{elapsed}</Text></Text>
+      {turn.thinking
+        ? turn.thinking.split("\n").filter((l) => l.trim()).slice(-2).map((ln, i) => <Text key={`th${i}`} dimColor italic>  {ln}</Text>)
+        : null}
       {(turn.tools ?? []).map((tl, i) => (
         <Text key={`tool${i}`} color={tl.error ? "red" : "green"}>  ● <Text bold={!tl.error} dimColor={tl.error}>{tl.name}{tl.arg ? <Text dimColor>({tl.arg})</Text> : null}{tl.error ? " failed" : ""}</Text></Text>
       ))}
