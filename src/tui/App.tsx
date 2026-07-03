@@ -233,7 +233,10 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
       const hasNewline = /[\r\n]/.test(input ?? "")
       if (key.return || hasNewline) {
         const typed = hasNewline ? (input as string).replace(/[\r\n][\s\S]*$/, "") : ""
-        const text = (state.chat.text + typed).trim()
+        const raw = state.chat.text + typed
+        // Trailing backslash → newline instead of submit (multiline compose).
+        if (raw.endsWith("\\")) { dispatch({ type: "chatText", text: raw.slice(0, -1) + "\n" }); return }
+        const text = raw.trim()
         const agentId = state.chat.agentId
         if (!text || !agentId || state.chat.status === "sending") { if (typed) dispatch({ type: "chatText", text: "" }); return }
         const startedAt = Date.now()

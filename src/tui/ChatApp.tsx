@@ -175,8 +175,10 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
     // compose, so the rest is discarded.
     const hasNewline = /[\r\n]/.test(ch ?? "")
     if (key.return || hasNewline) {
-      if (busy) return
       const combined = input + (hasNewline ? (ch as string).replace(/[\r\n][\s\S]*$/, "") : "")
+      // Trailing backslash → continue on a new line instead of submitting.
+      if (combined.endsWith("\\")) { setInput(combined.slice(0, -1) + "\n"); return }
+      if (busy) return
       setInput("")
       submit(combined)
       return
@@ -192,10 +194,14 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       {active && <TurnView turn={active} width={width} />}
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>{notice}</Text>
-        <Box>
-          <Text color="cyan">{busy ? "  … " : "you › "}</Text>
-          <Text>{input}</Text>
-          <Text color="cyan">▏</Text>
+        <Box flexDirection="column">
+          {(input.includes("\n") ? input.split("\n") : [input]).map((ln, i, arr) => (
+            <Box key={i}>
+              <Text color="cyan">{i === 0 ? (busy ? "  … " : "you › ") : "      "}</Text>
+              <Text>{ln}</Text>
+              {i === arr.length - 1 ? <Text color="cyan">▏</Text> : null}
+            </Box>
+          ))}
         </Box>
       </Box>
     </Box>
