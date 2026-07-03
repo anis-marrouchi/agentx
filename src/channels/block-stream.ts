@@ -34,7 +34,7 @@ const DEFAULT_CONFIG: BlockStreamConfig = {
 
 /** Per-channel default overrides */
 export const CHANNEL_DEFAULTS: Record<string, Partial<BlockStreamConfig>> = {
-  telegram: { minChars: 60, maxChars: 4096, minIntervalMs: 1500 },
+  telegram: { minChars: 60, maxChars: 3900, minIntervalMs: 1500 },
   whatsapp: { minChars: 40, maxChars: 3000, minIntervalMs: 2000, humanPacing: true },
   discord: { minChars: 80, maxChars: 2000, minIntervalMs: 1000 },
   gitlab: { minChars: 200, maxChars: 60000, minIntervalMs: 3000 },

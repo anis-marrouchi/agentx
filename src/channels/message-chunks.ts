@@ -1,3 +1,10 @@
+/** Telegram's hard per-message ceiling (text + captions cap lower, but 4096
+ *  is the text limit). */
+export const TG_MAX_MESSAGE_CHARS = 4096
+/** Chunk target we split at — under TG_MAX_MESSAGE_CHARS so markdown→HTML
+ *  expansion (e.g. `**x**`→`<b>x</b>`) can't push a chunk over the hard cap. */
+export const TG_CHUNK_CHARS = 3900
+
 export function splitMessageText(text: string, maxChars: number): string[] {
   if (text.length <= maxChars) return [text]
   const chunks: string[] = []
