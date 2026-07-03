@@ -6,13 +6,14 @@ import {
   fetchCrons,
   fetchProcesses,
   killProcess,
-  sendTask,
+  streamTask,
   type AgentRow,
   type CronRow,
   type DaemonConn,
   type ProcessRow,
 } from "./client.js"
 import { streamEvents, type SseFrame } from "./sse.js"
+import { renderMarkdown } from "./markdown.js"
 
 type FocusPane = "agents" | "processes" | "events"
 type BottomRight = "crons" | "channels"
@@ -22,6 +23,9 @@ interface ChatTurn {
   text: string
   at: number
   elapsedMs?: number
+  streaming?: boolean
+  tools?: Array<{ name: string; error?: boolean }>
+  outTokens?: number
 }
 
 interface ChatState {
@@ -76,6 +80,10 @@ type Action =
   | { type: "chatSubmitStart"; you: ChatTurn }
   | { type: "chatSubmitDone"; reply: ChatTurn }
   | { type: "chatSubmitError"; error: string }
+  | { type: "chatStreamStart"; you: ChatTurn }
+  | { type: "chatStreamDelta"; text: string }
+  | { type: "chatStreamTool"; name: string; error?: boolean }
+  | { type: "chatStreamEnd"; elapsedMs: number; outTokens?: number; error?: string }
   | { type: "toast"; text: string; color: "green" | "red" | "yellow" }
   | { type: "clearToast" }
 
@@ -154,6 +162,33 @@ function reducer(state: State, action: Action): State {
           error: action.error,
         },
       }
+    case "chatStreamStart": {
+      const withYou = appendHistory(state.chat.history, action.you)
+      const withAgent = appendHistory(withYou, { role: "agent", text: "", at: Date.now(), streaming: true, tools: [] })
+      return { ...state, chat: { ...state.chat, history: withAgent, text: "", status: "sending", error: null } }
+    }
+    case "chatStreamDelta": {
+      const h = state.chat.history.slice()
+      const last = h[h.length - 1]
+      if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, text: last.text + action.text }
+      return { ...state, chat: { ...state.chat, history: h } }
+    }
+    case "chatStreamTool": {
+      const h = state.chat.history.slice()
+      const last = h[h.length - 1]
+      if (last?.role === "agent" && last.streaming) h[h.length - 1] = { ...last, tools: [...(last.tools ?? []), { name: action.name, error: action.error }] }
+      return { ...state, chat: { ...state.chat, history: h } }
+    }
+    case "chatStreamEnd": {
+      const h = state.chat.history.slice()
+      const last = h[h.length - 1]
+      if (last?.role === "agent" && last.streaming) {
+        h[h.length - 1] = action.error
+          ? { ...last, streaming: false, role: "error", text: action.error }
+          : { ...last, streaming: false, elapsedMs: action.elapsedMs, outTokens: action.outTokens }
+      }
+      return { ...state, chat: { ...state.chat, history: h, status: "idle", error: action.error ?? null } }
+    }
     case "toast": return { ...state, toast: { text: action.text, color: action.color, at: Date.now() } }
     case "clearToast": return { ...state, toast: null }
   }
@@ -193,28 +228,32 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
         dispatch({ type: "chatClear" })
         return
       }
-      if (key.return) {
-        const text = state.chat.text.trim()
+      // Submit on Enter or a newline embedded in a paste (Ink delivers a
+      // pasted "text\r" as one input chunk, not a discrete key.return).
+      const hasNewline = /[\r\n]/.test(input ?? "")
+      if (key.return || hasNewline) {
+        const typed = hasNewline ? (input as string).replace(/[\r\n][\s\S]*$/, "") : ""
+        const text = (state.chat.text + typed).trim()
         const agentId = state.chat.agentId
-        if (!text || !agentId || state.chat.status === "sending") return
+        if (!text || !agentId || state.chat.status === "sending") { if (typed) dispatch({ type: "chatText", text: "" }); return }
         const startedAt = Date.now()
         const chatId = state.chat.chatId
         const youTurn: ChatTurn = { role: "you", text, at: startedAt }
-        dispatch({ type: "chatSubmitStart", you: youTurn })
+        dispatch({ type: "chatStreamStart", you: youTurn })
         void (async () => {
           try {
-            const r = await sendTask(conn, agentId, text, { channel: "tui", chatId })
-            if (r?.error) {
-              dispatch({ type: "chatSubmitError", error: r.error })
-              return
-            }
-            const reply = (r?.content ?? "").toString().trim() || "(empty reply)"
-            dispatch({
-              type: "chatSubmitDone",
-              reply: { role: "agent", text: reply, at: Date.now(), elapsedMs: Date.now() - startedAt },
+            const r = await streamTask(conn, agentId, text, {
+              channel: "tui",
+              chatId,
+              onText: (t) => dispatch({ type: "chatStreamDelta", text: t }),
+              onTool: (tool) => {
+                if (tool.status === "start" && tool.name) dispatch({ type: "chatStreamTool", name: tool.name })
+                else if (tool.status === "result" && tool.error) dispatch({ type: "chatStreamTool", name: tool.name ?? "tool", error: true })
+              },
             })
+            dispatch({ type: "chatStreamEnd", elapsedMs: Date.now() - startedAt, outTokens: r.usage?.outputTokens, error: r.error })
           } catch (e: any) {
-            dispatch({ type: "chatSubmitError", error: e?.message || String(e) })
+            dispatch({ type: "chatStreamEnd", elapsedMs: Date.now() - startedAt, error: e?.message || String(e) })
           }
         })()
         return
@@ -574,11 +613,18 @@ function TurnView({ turn, agentId }: { turn: ChatTurn; agentId: string | null })
       </Box>
     )
   }
-  const elapsed = turn.elapsedMs != null ? ` · ${(turn.elapsedMs / 1000).toFixed(1)}s` : ""
+  const elapsed = turn.elapsedMs != null
+    ? ` · ${(turn.elapsedMs / 1000).toFixed(1)}s${turn.outTokens != null ? `, ${turn.outTokens} tok` : ""}`
+    : turn.streaming ? " · …" : ""
+  // Raw while streaming (partial markdown is jumpy); markdown once committed.
+  const body = turn.streaming ? turn.text : renderMarkdown(turn.text, 58)
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text color="green">@{agentId ?? "agent"}<Text dimColor>{elapsed}</Text></Text>
-      {turn.text.split("\n").slice(0, 10).map((ln, i) => <Text key={i}>  {ln}</Text>)}
+      {(turn.tools ?? []).map((tl, i) => (
+        <Text key={`tool${i}`} color={tl.error ? "red" : "green"}>  ● <Text bold={!tl.error} dimColor={tl.error}>{tl.name}{tl.error ? " failed" : ""}</Text></Text>
+      ))}
+      {body.split("\n").slice(0, 14).map((ln, i) => <Text key={i}>  {ln}</Text>)}
     </Box>
   )
 }
