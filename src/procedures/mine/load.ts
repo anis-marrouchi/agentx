@@ -63,21 +63,106 @@ const JOIN_WINDOW_MS = 10 * 60 * 1000
 const MAX_USER_TURNS = 6
 const MAX_SUMMARY_CHARS = 160
 
+/** Channels where one task = one turn of a longer conversation. A routine
+ *  there ("download the attachment → transcribe → record → follow up")
+ *  spans several turns whose individual texts never repeat ("go ahead",
+ *  "did you receive it") — so chat turns are grouped into conversation
+ *  episodes before clustering. Event channels (gitlab, api, webhooks) stay
+ *  turn-level: one event genuinely is one activity there. */
+const CHAT_CHANNELS = new Set(["telegram", "whatsapp", "discord", "slack", "signal", "chat-cli"])
+
+/** Turns in the same chat separated by more than this start a new
+ *  conversation episode. */
+export const CONVERSATION_GAP_MS = 45 * 60 * 1000
+
+const MIN_MESSAGE_CHARS = 30
+
 export function loadEpisodes(db: Database.Database, opts: LoadEpisodesOptions = {}): ActivityEpisode[] {
+  // minMessageLength 1: short chat turns ("go ahead") must survive loading —
+  // their ACTIONS belong to the surrounding conversation. Length filtering
+  // happens below, per channel kind.
   const traces = loadSuccessfulTraces(db, {
     since: opts.since,
     agentId: opts.agentId,
     limit: opts.limit ?? 1000,
+    minMessageLength: 1,
   })
     .filter((t) => !isMachineChat(t.chatId))
     .filter((t) => !isSelfReferential(t.originalMessage ?? t.messagePreview))
 
-  const episodes: ActivityEpisode[] = []
+  const turnEpisodes: ActivityEpisode[] = []
   for (const trace of traces) {
     const episode = buildEpisode(db, trace.taskId, opts.sessions)
-    if (episode) episodes.push(episode)
+    if (episode) turnEpisodes.push(episode)
   }
-  return episodes
+
+  const chatTurns = turnEpisodes.filter((e) => CHAT_CHANNELS.has(e.channel))
+  const eventEpisodes = turnEpisodes.filter(
+    (e) => !CHAT_CHANNELS.has(e.channel) && e.userMessage.length >= MIN_MESSAGE_CHARS,
+  )
+  const conversations = groupIntoConversations(chatTurns).filter(
+    (e) => e.userMessage.length >= MIN_MESSAGE_CHARS,
+  )
+  return [...eventEpisodes, ...conversations]
+}
+
+/** Merge chat turns into conversation episodes. Turns are grouped per
+ *  (agent, channel, chat) and split on gaps > CONVERSATION_GAP_MS. The
+ *  merged episode is identified by its FIRST turn's taskId (stable across
+ *  re-scans, so the candidate ledger dedupes correctly), described by its
+ *  opening request, and carries the concatenated action sequence plus every
+ *  turn's text as userTurns for the LLM sample. */
+export function groupIntoConversations(
+  turns: ActivityEpisode[],
+  gapMs: number = CONVERSATION_GAP_MS,
+): ActivityEpisode[] {
+  const byChat = new Map<string, ActivityEpisode[]>()
+  for (const turn of turns) {
+    const key = `${turn.agentId}:${turn.channel}:${turn.chatId}`
+    const list = byChat.get(key) ?? []
+    list.push(turn)
+    byChat.set(key, list)
+  }
+
+  const conversations: ActivityEpisode[] = []
+  for (const list of byChat.values()) {
+    list.sort((a, b) => a.startedAt - b.startedAt)
+    let group: ActivityEpisode[] = []
+    const flush = () => {
+      if (group.length > 0) conversations.push(mergeConversation(group))
+      group = []
+    }
+    for (const turn of list) {
+      const prev = group[group.length - 1]
+      if (prev && turn.startedAt - prev.startedAt > gapMs) flush()
+      group.push(turn)
+    }
+    flush()
+  }
+  return conversations
+}
+
+function mergeConversation(turns: ActivityEpisode[]): ActivityEpisode {
+  if (turns.length === 1) return turns[0]
+  const first = turns[0]
+  // Opening request defines the routine; if it's a short pleasantry, the
+  // first substantive turn does.
+  const opener = turns.find((t) => t.userMessage.length >= MIN_MESSAGE_CHARS) ?? first
+  return {
+    taskId: first.taskId,
+    agentId: first.agentId,
+    channel: first.channel,
+    chatId: first.chatId,
+    startedAt: first.startedAt,
+    userMessage: opener.userMessage,
+    finalResponse: turns[turns.length - 1].finalResponse,
+    userTurns: turns
+      .map((t) => t.userMessage)
+      .filter((m) => m && m !== opener.userMessage)
+      .slice(0, MAX_USER_TURNS),
+    actions: turns.flatMap((t) => t.actions),
+    actionSummaries: turns.flatMap((t) => t.actionSummaries),
+  }
 }
 
 /** Load specific episodes by trace id — the distillation fallback for

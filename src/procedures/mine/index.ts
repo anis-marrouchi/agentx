@@ -20,7 +20,7 @@ export type { ActivityEpisode } from "./load"
 export { clusterEpisodes, clusterKey, intentShape, actionSkeleton, nearMisses } from "./cluster"
 export { distillClusters, lintBlackBox, parseExtractionResponse, minedProcedureSchema, type MinedProcedure } from "./distill"
 export { buildExtractionPrompt, activityOutline } from "./prompts"
-export { loadEpisodes }
+export { loadEpisodes, loadEpisodesByTaskIds, groupIntoConversations, CONVERSATION_GAP_MS } from "./load"
 
 // --- runExtraction ---
 // The full mining pipeline: load episodes → cluster → count recurrences in
