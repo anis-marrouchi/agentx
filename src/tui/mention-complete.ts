@@ -64,3 +64,35 @@ export function applyMention(input: string, mention: Mention, item: string): str
   const trailing = item.endsWith("/") ? "" : " "
   return head + item + trailing
 }
+
+/** Frozen suggestion list for Tab-cycling: the `@` position + the items as
+ *  captured on the first Tab, so subsequent Tabs cycle without the (now
+ *  completed) buffer re-deriving a different list. */
+export interface MentionCycle {
+  start: number
+  items: string[]
+  idx: number
+}
+
+/**
+ * Tab handler: on the first Tab, freeze the current suggestions and apply the
+ * top one; on subsequent Tabs, cycle to the next and re-apply at the frozen
+ * `@` position. Returns the new buffer, or null when there's nothing to
+ * complete. Callers reset `cycleRef.current` to null on any non-Tab edit.
+ */
+export function advanceMention(
+  input: string,
+  cycleRef: { current: MentionCycle | null },
+  agentIds: string[],
+  cwd: string,
+): string | null {
+  if (cycleRef.current) {
+    const c = cycleRef.current
+    c.idx = (c.idx + 1) % c.items.length
+    return applyMention(input, { token: "", start: c.start }, c.items[c.idx])
+  }
+  const s = mentionSuggestions(input, agentIds, cwd)
+  if (!s) return null
+  cycleRef.current = { start: s.mention.start, items: s.items, idx: 0 }
+  return applyMention(input, s.mention, s.items[0])
+}

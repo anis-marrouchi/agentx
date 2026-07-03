@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { resolve, join } from "path"
-import { parseMention, matchAgents, matchFiles, mentionSuggestions, applyMention } from "../src/tui/mention-complete"
+import { parseMention, matchAgents, matchFiles, mentionSuggestions, applyMention, advanceMention, type MentionCycle } from "../src/tui/mention-complete"
 
 describe("parseMention", () => {
   it("captures a trailing @token at a word boundary", () => {
@@ -63,5 +63,28 @@ describe("mentionSuggestions + applyMention", () => {
   it("applyMention replaces the token; agents get a space, dirs stay open", () => {
     expect(applyMention("hi @co", { token: "co", start: 3 }, "@coo-agent")).toBe("hi @coo-agent ")
     expect(applyMention("see @sr", { token: "sr", start: 4 }, "src/")).toBe("see src/")
+  })
+})
+
+describe("advanceMention (Tab-cycling)", () => {
+  const ids = ["coo-agent", "coder-agent", "cx-agent"]
+
+  it("first Tab accepts the top match; subsequent Tabs cycle at the frozen @ position", () => {
+    const ref: { current: MentionCycle | null } = { current: null }
+    // "co" matches coo-agent + coder-agent
+    let buf = advanceMention("hi @co", ref, ids, "/nonexistent-xyz")!
+    expect(buf).toBe("hi @coo-agent ")
+    expect(ref.current?.items).toEqual(["@coo-agent", "@coder-agent"])
+    buf = advanceMention(buf, ref, ids, "/nonexistent-xyz")!
+    expect(buf).toBe("hi @coder-agent ")
+    // wraps back to the first
+    buf = advanceMention(buf, ref, ids, "/nonexistent-xyz")!
+    expect(buf).toBe("hi @coo-agent ")
+  })
+
+  it("returns null when there is no mention to complete", () => {
+    const ref: { current: MentionCycle | null } = { current: null }
+    expect(advanceMention("no mention", ref, ids, "/nonexistent-xyz")).toBeNull()
+    expect(ref.current).toBeNull()
   })
 })

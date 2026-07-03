@@ -14,6 +14,8 @@ import {
 } from "./client.js"
 import { streamEvents, type SseFrame } from "./sse.js"
 import { renderMarkdown } from "./markdown.js"
+import { advanceMention, mentionSuggestions, type MentionCycle, type MentionSuggestions } from "./mention-complete.js"
+import { classifyComposerInput } from "./composer-input.js"
 
 type FocusPane = "agents" | "processes" | "events"
 type BottomRight = "crons" | "channels"
@@ -213,6 +215,9 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
   const [state, dispatch] = useReducer(reducer, initialState)
   const { exit } = useApp()
   const abortRef = useRef<AbortController | null>(null)
+  const chatCycle = useRef<MentionCycle | null>(null)
+  const chatAgentIds = state.agents.map((a) => a.id)
+  const chatSuggest = state.chat.active ? mentionSuggestions(state.chat.text, chatAgentIds, process.cwd()) : null
 
   useEffect(() => {
     if (!state.toast) return
@@ -228,17 +233,30 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
         dispatch({ type: "chatClear" })
         return
       }
-      // Submit on Enter or a newline embedded in a paste (Ink delivers a
-      // pasted "text\r" as one input chunk, not a discrete key.return).
-      const hasNewline = /[\r\n]/.test(input ?? "")
-      if (key.return || hasNewline) {
-        const typed = hasNewline ? (input as string).replace(/[\r\n][\s\S]*$/, "") : ""
-        const raw = state.chat.text + typed
-        // Trailing backslash → newline instead of submit (multiline compose).
-        if (raw.endsWith("\\")) { dispatch({ type: "chatText", text: raw.slice(0, -1) + "\n" }); return }
-        const text = raw.trim()
+      // Tab accepts / cycles the @-mention suggestion.
+      if (key.tab) {
+        const applied = advanceMention(state.chat.text, chatCycle, chatAgentIds, process.cwd())
+        if (applied !== null) dispatch({ type: "chatText", text: applied })
+        return
+      }
+      if (key.backspace || key.delete) {
+        chatCycle.current = null
+        dispatch({ type: "chatText", text: state.chat.text.slice(0, -1) })
+        return
+      }
+      if (key.ctrl || key.meta) return
+      const action = classifyComposerInput(input ?? "", key.return, state.chat.text)
+      if (action.kind === "paste" || action.kind === "type") {
+        chatCycle.current = null
+        dispatch({ type: "chatText", text: state.chat.text + action.text })
+        return
+      }
+      if (action.kind === "continue") { dispatch({ type: "chatText", text: action.buffer }); return }
+      if (action.kind === "submit") {
+        const text = action.text.trim()
         const agentId = state.chat.agentId
-        if (!text || !agentId || state.chat.status === "sending") { if (typed) dispatch({ type: "chatText", text: "" }); return }
+        if (!text || !agentId || state.chat.status === "sending") { dispatch({ type: "chatText", text: "" }); return }
+        chatCycle.current = null
         const startedAt = Date.now()
         const chatId = state.chat.chatId
         const youTurn: ChatTurn = { role: "you", text, at: startedAt }
@@ -260,13 +278,6 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
           }
         })()
         return
-      }
-      if (key.backspace || key.delete) {
-        dispatch({ type: "chatText", text: state.chat.text.slice(0, -1) })
-        return
-      }
-      if (input && !key.ctrl && !key.meta) {
-        dispatch({ type: "chatText", text: state.chat.text + input })
       }
       return
     }
@@ -387,7 +398,7 @@ export function App({ conn, pollMs = 3000 }: { conn: DaemonConn; pollMs?: number
           </Pane>
         </Box>
         {state.chat.active
-          ? <ChatPane chat={state.chat} />
+          ? <ChatPane chat={state.chat} suggest={chatSuggest} />
           : (
             <Box flexDirection="column" width="50%">
               <Pane title="LIVE EVENTS" focused={state.focus === "events"}>
@@ -568,7 +579,7 @@ function EventList({
   )
 }
 
-function ChatPane({ chat }: { chat: ChatState }) {
+function ChatPane({ chat, suggest }: { chat: ChatState; suggest: MentionSuggestions | null }) {
   // Render the last N turns in chronological order. When history exceeds
   // the slice, oldest turns clip off the top so the composer stays anchored
   // at the bottom of the pane (Claude-Code-like reading order).
@@ -590,7 +601,12 @@ function ChatPane({ chat }: { chat: ChatState }) {
           ? <Text dimColor>(type a message and press Enter — Esc exits, Ctrl-L starts fresh)</Text>
           : visible.map((t, i) => <TurnView key={`${t.at}-${i}`} turn={t} agentId={chat.agentId} />)}
       </Box>
-      <Box marginTop={1}>
+      {suggest ? (
+        <Text dimColor>
+          <Text color="cyan">↹</Text> {suggest.items.slice(0, 5).map((it, i) => (i === 0 ? <Text key={i} color="cyan">{it}</Text> : <Text key={i}>  {it}</Text>))}
+        </Text>
+      ) : null}
+      <Box>
         <Text color="cyan">you › </Text>
         <Text>{chat.text}</Text>
         <Text inverse> </Text>

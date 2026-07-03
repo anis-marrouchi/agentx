@@ -3,7 +3,8 @@ import { Box, Static, Text, useApp, useInput, useStdout } from "ink"
 import { randomUUID } from "crypto"
 import { fetchAgents, streamTask, type AgentRow, type DaemonConn } from "./client.js"
 import { renderMarkdown } from "./markdown.js"
-import { applyMention, mentionSuggestions } from "./mention-complete.js"
+import { advanceMention, mentionSuggestions, type MentionCycle } from "./mention-complete.js"
+import { classifyComposerInput } from "./composer-input.js"
 
 // --- Claude-Code-style chat REPL (Ink) ---
 //
@@ -56,6 +57,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
 
   const history = useRef<string[]>([])
   const histIdx = useRef<number>(-1)
+  const cycle = useRef<MentionCycle | null>(null)
   const busy = active?.live ?? false
 
   // `@`-mention autocomplete for the current buffer (agents + cwd files).
@@ -158,9 +160,10 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   useInput((ch, key) => {
     if (key.ctrl && ch === "c") { exit(); return }
     if (key.escape) { exit(); return }
-    // Tab accepts the top @-mention suggestion.
+    // Tab accepts the top @-mention suggestion; repeated Tab cycles.
     if (key.tab) {
-      if (suggest) { setInput(applyMention(input, suggest.mention, suggest.items[0])); histIdx.current = -1 }
+      const applied = advanceMention(input, cycle, agents.map((a) => a.id), process.cwd())
+      if (applied !== null) { setInput(applied); histIdx.current = -1 }
       return
     }
     if (key.upArrow) {
@@ -178,24 +181,25 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       setInput(h[histIdx.current] ?? "")
       return
     }
-    if (key.backspace || key.delete) { setInput((s) => s.slice(0, -1)); return }
+    if (key.backspace || key.delete) { cycle.current = null; setInput((s) => s.slice(0, -1)); return }
 
-    // Submit on Enter, or on a newline embedded in a paste (Ink delivers a
-    // pasted "text\r" as one input chunk, not a discrete key.return — so
-    // relying on key.return alone drops fast/pasted input). Everything
-    // before the first newline is the submission; a chat has no multiline
-    // compose, so the rest is discarded.
-    const hasNewline = /[\r\n]/.test(ch ?? "")
-    if (key.return || hasNewline) {
-      const combined = input + (hasNewline ? (ch as string).replace(/[\r\n][\s\S]*$/, "") : "")
-      // Trailing backslash → continue on a new line instead of submitting.
-      if (combined.endsWith("\\")) { setInput(combined.slice(0, -1) + "\n"); return }
-      if (busy) return
-      setInput("")
-      submit(combined)
-      return
+    // Everything else routes through the shared composer classifier: a real
+    // Enter (or single-line text+newline) submits, a multi-line paste is
+    // preserved, a trailing backslash continues on a new line.
+    if (key.ctrl || key.meta) return
+    const action = classifyComposerInput(ch ?? "", key.return, input)
+    switch (action.kind) {
+      case "paste": cycle.current = null; setInput((s) => s + action.text); histIdx.current = -1; return
+      case "type": cycle.current = null; setInput((s) => s + action.text); histIdx.current = -1; return
+      case "continue": setInput(action.buffer); return
+      case "submit":
+        if (busy) return
+        cycle.current = null
+        setInput("")
+        submit(action.text)
+        return
+      case "none": return
     }
-    if (ch && !key.ctrl && !key.meta) { setInput((s) => s + ch); histIdx.current = -1 }
   })
 
   return (
