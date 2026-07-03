@@ -21,7 +21,10 @@ function ensureConfigured(width: number): void {
     markedTerminal({
       width,
       reflowText: true,
-      // Tone down the defaults a touch so replies read as chat, not a man page.
+      // Don't prepend literal "## " to headings — render the text styled only.
+      showSectionPrefix: false,
+      // Shallower indent for lists/code so replies read as chat, not a man page.
+      tab: 2,
       heading: chalk.bold.cyan,
       firstHeading: chalk.bold.cyan,
       code: chalk.gray,
@@ -29,7 +32,6 @@ function ensureConfigured(width: number): void {
       blockquote: chalk.gray.italic,
       link: chalk.blue.underline,
       href: chalk.blue.underline,
-      listitem: (t: string) => t,
     }) as any,
   )
 }
