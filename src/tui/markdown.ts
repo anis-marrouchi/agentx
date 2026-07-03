@@ -62,7 +62,8 @@ export function renderMarkdown(md: string, width = 80, opts?: { balance?: boolea
     ensureConfigured(w)
     const src = opts?.balance ? balanceMarkdown(md) : md
     const out = marked.parse(src, { async: false }) as string
-    return out.replace(/\n+$/, "")
+    // marked-terminal hardcodes "* " list bullets — swap for a cleaner "•".
+    return out.replace(/\n+$/, "").replace(/^(\s*)\* /gm, "$1• ")
   } catch {
     return md.trimEnd()
   }

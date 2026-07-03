@@ -6,6 +6,7 @@ import { renderMarkdown } from "./markdown.js"
 import { advanceMention, mentionSuggestions, type MentionCycle } from "./mention-complete.js"
 import { classifyComposerInput } from "./composer-input.js"
 import { WorkingStatus } from "./working-status.js"
+import { theme, BRAND, GUTTER } from "./theme.js"
 
 // --- Claude-Code-style chat REPL (Ink) ---
 //
@@ -49,10 +50,19 @@ export interface ChatAppProps {
 
 const HELP = "/help /agent <id> /agents /clear /who /exit"
 
+const COMMANDS: Array<{ cmd: string; desc: string }> = [
+  { cmd: "/agent", desc: "switch the target agent (/agent <id>)" },
+  { cmd: "/agents", desc: "list registered agents" },
+  { cmd: "/clear", desc: "start a fresh session" },
+  { cmd: "/who", desc: "show agent + chat id" },
+  { cmd: "/help", desc: "list commands" },
+  { cmd: "/exit", desc: "quit the chat" },
+]
+
 export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialChatId, agents: initialAgents }: ChatAppProps) {
   const { exit } = useApp()
   const { stdout } = useStdout()
-  const width = Math.max(40, Math.min((stdout?.columns ?? 80) - 4, 100))
+  const width = Math.max(40, Math.min((stdout?.columns || 80) - 4, 100))
 
   const [turns, setTurns] = useState<Turn[]>([])
   const [active, setActive] = useState<Turn | null>(null)
@@ -60,7 +70,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
   const [agents, setAgents] = useState(initialAgents)
   const [chatId, setChatId] = useState(initialChatId)
   const [input, setInput] = useState("")
-  const [notice, setNotice] = useState<string>(`agent @${agentId} · ${HELP}`)
+  const [notice, setNotice] = useState<string>("")
 
   const history = useRef<string[]>([])
   const histIdx = useRef<number>(-1)
@@ -73,6 +83,14 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
     () => mentionSuggestions(input, agents.map((a) => a.id), process.cwd()),
     [input, agents],
   )
+
+  // `/`-command menu — active while typing a command (slash + partial word).
+  const slashSuggest = useMemo(() => {
+    const m = /^\/(\w*)$/.exec(input)
+    if (!m) return null
+    const items = COMMANDS.filter((c) => c.cmd.slice(1).startsWith(m[1].toLowerCase()))
+    return items.length ? items : null
+  }, [input])
 
   const pushNotice = (m: string) => setNotice(m)
 
@@ -178,8 +196,9 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       exit()
       return
     }
-    // Tab accepts the top @-mention suggestion; repeated Tab cycles.
+    // Tab completes a slash command, or accepts/cycles an @-mention.
     if (key.tab) {
+      if (slashSuggest) { setInput(slashSuggest[0].cmd + " "); return }
       const applied = advanceMention(input, cycle, agents.map((a) => a.id), process.cwd())
       if (applied !== null) { setInput(applied); histIdx.current = -1 }
       return
@@ -220,8 +239,9 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
     }
   })
 
-  const accent = busy ? "magenta" : "cyan"
+  const accent = busy ? theme.working : theme.accent
   const inputLines = input.length ? input.split("\n") : [""]
+  const model = agents.find((a) => a.id === agentId)?.model
   return (
     <Box flexDirection="column">
       <Static items={turns}>
@@ -229,35 +249,55 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
       </Static>
       {active && <TurnView turn={active} width={width} />}
 
-      {/* Composer: suggestions / notice, a bordered input box, and a hint bar. */}
-      <Box flexDirection="column" marginTop={1}>
-        {suggest ? (
-          <Box>
-            <Text color="cyan">↹ </Text>
-            {suggest.items.map((it, i) => (
-              <Text key={i} color={i === 0 ? "cyan" : "gray"}>{it}{i < suggest.items.length - 1 ? "   " : ""}</Text>
-            ))}
-          </Box>
-        ) : notice ? (
-          <Text dimColor>{notice}</Text>
-        ) : null}
-
-        <Box borderStyle="round" borderColor={accent} paddingX={1}>
-          <Box flexDirection="column" width="100%">
-            {inputLines.map((ln, i, arr) => (
-              <Box key={i}>
-                <Text color={accent} bold>{i === 0 ? "› " : "  "}</Text>
-                <Text>{ln}</Text>
-                {i === arr.length - 1 && !busy ? <Text color={accent}>▏</Text> : null}
-              </Box>
-            ))}
-          </Box>
+      {/* command menu / @-suggestions / transient notice, above the input */}
+      {slashSuggest ? (
+        <Box flexDirection="column" marginTop={1}>
+          {slashSuggest.map((c, i) => (
+            <Box key={c.cmd}>
+              <Text color={i === 0 ? theme.accent : theme.muted} bold={i === 0}>{c.cmd.padEnd(10)}</Text>
+              <Text dimColor>{c.desc}</Text>
+            </Box>
+          ))}
         </Box>
-
-        <Box justifyContent="space-between">
-          <Text dimColor>↵ send   \ + ↵ newline   / cmds   @ mention   esc {busy ? "stop" : "exit"}</Text>
-          <Text dimColor>@{agentId}</Text>
+      ) : suggest ? (
+        <Box marginTop={1}>
+          <Text color={theme.accent}>↹ </Text>
+          {suggest.items.map((it, i) => (
+            <Text key={i} color={i === 0 ? theme.accent : theme.muted}>{it}{i < suggest.items.length - 1 ? "   " : ""}</Text>
+          ))}
         </Box>
+      ) : notice ? (
+        <Box marginTop={1}><Text dimColor>{notice}</Text></Box>
+      ) : null}
+
+      {/* Full-width input — top + bottom rules only, pinned to the bottom. */}
+      <Box
+        borderStyle="single"
+        borderColor={accent}
+        borderLeft={false}
+        borderRight={false}
+        borderDimColor={!busy}
+        width="100%"
+        marginTop={slashSuggest || suggest || notice ? 0 : 1}
+      >
+        <Box flexDirection="column" width="100%">
+          {inputLines.map((ln, i, arr) => (
+            <Box key={i}>
+              <Text color={accent} bold>{i === 0 ? "› " : "  "}</Text>
+              <Text>{ln}</Text>
+              {i === arr.length - 1 && !busy ? <Text color={accent}>▏</Text> : null}
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      {/* Status bar */}
+      <Box justifyContent="space-between">
+        <Text>
+          <Text color={theme.accent} bold>{BRAND}</Text>
+          <Text dimColor> · @{agentId}{model ? ` · ${model}` : ""}</Text>
+        </Text>
+        <Text dimColor>↵ send   / cmds   @ mention   esc {busy ? "stop" : "exit"}</Text>
       </Box>
     </Box>
   )
@@ -268,9 +308,9 @@ function TurnView({ turn, width }: { turn: Turn; width: number }) {
   const hasText = turn.segs.some((s) => s.type === "text" && s.content)
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text color="cyan" bold>▌ you</Text>
+      <Text color={theme.accent} bold>{GUTTER} you</Text>
       {turn.you.split("\n").map((ln, i) => <Text key={`u${i}`} color="white">  {ln}</Text>)}
-      <Text color="green" bold>▌ {turn.agentId ?? "agent"}</Text>
+      <Text color={theme.agent} bold>{GUTTER} {turn.agentId ?? "agent"}</Text>
       {turn.thinking ? (
         <Box flexDirection="column">
           {tail(turn.thinking, turn.live ? 3 : 2).map((ln, i) => (

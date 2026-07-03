@@ -65,6 +65,14 @@ export const chat = new Command()
       const { render } = await import("ink")
       const { ChatApp } = await import("@/tui/ChatApp")
       const React = (await import("react")).default
+      // One-time welcome banner (stays at the top of scrollback).
+      const model = agents.find((a) => a.id === agentId)?.model
+      const rule = chalk.dim("─".repeat(Math.max(10, Math.min((process.stdout.columns || 60) - 2, 58))))
+      console.log()
+      console.log("  " + chalk.cyan.bold("◇ agentx") + chalk.dim(`  ·  chat with `) + chalk.cyan(`@${agentId}`) + (model ? chalk.dim(`  ·  ${model}`) : ""))
+      console.log("  " + rule)
+      console.log("  " + chalk.dim("streaming · markdown · tools    /commands  @mention  ↵ send  esc exit"))
+      console.log()
       const instance = render(React.createElement(ChatApp, { conn, agentId, channel, chatId, agents }))
       await instance.waitUntilExit()
       return
