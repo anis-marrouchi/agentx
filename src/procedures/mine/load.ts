@@ -47,6 +47,18 @@ function isMachineChat(chatId: string | null): boolean {
   return MACHINE_CHAT_PREFIXES.some((p) => id.startsWith(p))
 }
 
+/** Self-referential infra tasks slip the chatId filter when an agent shells
+ *  agentx tooling on someone's behalf (e.g. the nightly cron prompt tells
+ *  coo-agent to run `node dist/cli.js workflow absorb …` and the task is
+ *  recorded on the `api` channel). Any task whose own request invokes the
+ *  agentx CLI is orchestration of the system, not user activity — mining it
+ *  makes the system learn from itself. */
+const SELF_REFERENTIAL_MESSAGE = /\bdist\/cli\.js\b|\bagentx\s+(workflow|procedure|wiki|cron|schedule)\b/i
+
+function isSelfReferential(message: string | null): boolean {
+  return SELF_REFERENTIAL_MESSAGE.test(message ?? "")
+}
+
 const JOIN_WINDOW_MS = 10 * 60 * 1000
 const MAX_USER_TURNS = 6
 const MAX_SUMMARY_CHARS = 160
@@ -56,7 +68,9 @@ export function loadEpisodes(db: Database.Database, opts: LoadEpisodesOptions = 
     since: opts.since,
     agentId: opts.agentId,
     limit: opts.limit ?? 1000,
-  }).filter((t) => !isMachineChat(t.chatId))
+  })
+    .filter((t) => !isMachineChat(t.chatId))
+    .filter((t) => !isSelfReferential(t.originalMessage ?? t.messagePreview))
 
   const episodes: ActivityEpisode[] = []
   for (const trace of traces) {
@@ -92,6 +106,10 @@ function buildEpisode(
   const detail = getTrace(db, taskId)
   if (!detail) return null
   const trace = detail.task
+  // Guard both entry paths (window scan AND ledger-taskId fallback) — a
+  // machine trace counted before a filter existed must not resurface here.
+  if (isMachineChat(trace.chatId)) return null
+  if (isSelfReferential(trace.originalMessage ?? trace.messagePreview)) return null
   const toolSteps = detail.steps.filter((s) => s.name === "tool_use" && s.action)
   const actions = toolSteps.map((s) => s.action as string)
   const actionSummaries = toolSteps.map((s) => (s.inputSummary ?? "").slice(0, MAX_SUMMARY_CHARS))
