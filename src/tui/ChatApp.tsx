@@ -26,6 +26,7 @@ interface Seg {
 interface Turn {
   id: string
   you: string
+  agentId: string
   segs: Seg[]
   live: boolean
   /** Accumulated reasoning text (forwarded `thinking` frames). Empty for
@@ -84,7 +85,7 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
 
       // Mutable ref to the current turn so streaming callbacks coalesce
       // without stale-closure races; we mirror it into state to repaint.
-      const turn: Turn = { id, you: text, segs: [], live: true, startedAt }
+      const turn: Turn = { id, you: text, agentId, segs: [], live: true, startedAt }
       setActive({ ...turn })
       const repaint = () => setActive({ ...turn, segs: turn.segs.map((s) => ({ ...s })) })
 
@@ -219,28 +220,43 @@ export function ChatApp({ conn, agentId: initialAgent, channel, chatId: initialC
     }
   })
 
+  const accent = busy ? "magenta" : "cyan"
+  const inputLines = input.length ? input.split("\n") : [""]
   return (
     <Box flexDirection="column">
       <Static items={turns}>
         {(t) => <TurnView key={t.id} turn={t} width={width} />}
       </Static>
       {active && <TurnView turn={active} width={width} />}
+
+      {/* Composer: suggestions / notice, a bordered input box, and a hint bar. */}
       <Box flexDirection="column" marginTop={1}>
         {suggest ? (
-          <Text dimColor>
-            <Text color="cyan">↹</Text> {suggest.items.map((it, i) => (i === 0 ? <Text key={i} color="cyan">{it}</Text> : <Text key={i}>  {it}</Text>))}
-          </Text>
-        ) : (
+          <Box>
+            <Text color="cyan">↹ </Text>
+            {suggest.items.map((it, i) => (
+              <Text key={i} color={i === 0 ? "cyan" : "gray"}>{it}{i < suggest.items.length - 1 ? "   " : ""}</Text>
+            ))}
+          </Box>
+        ) : notice ? (
           <Text dimColor>{notice}</Text>
-        )}
-        <Box flexDirection="column">
-          {(input.includes("\n") ? input.split("\n") : [input]).map((ln, i, arr) => (
-            <Box key={i}>
-              <Text color="cyan">{i === 0 ? (busy ? "  … " : "you › ") : "      "}</Text>
-              <Text>{ln}</Text>
-              {i === arr.length - 1 ? <Text color="cyan">▏</Text> : null}
-            </Box>
-          ))}
+        ) : null}
+
+        <Box borderStyle="round" borderColor={accent} paddingX={1}>
+          <Box flexDirection="column" width="100%">
+            {inputLines.map((ln, i, arr) => (
+              <Box key={i}>
+                <Text color={accent} bold>{i === 0 ? "› " : "  "}</Text>
+                <Text>{ln}</Text>
+                {i === arr.length - 1 && !busy ? <Text color={accent}>▏</Text> : null}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        <Box justifyContent="space-between">
+          <Text dimColor>↵ send   \ + ↵ newline   / cmds   @ mention   esc {busy ? "stop" : "exit"}</Text>
+          <Text dimColor>@{agentId}</Text>
         </Box>
       </Box>
     </Box>
@@ -252,7 +268,9 @@ function TurnView({ turn, width }: { turn: Turn; width: number }) {
   const hasText = turn.segs.some((s) => s.type === "text" && s.content)
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text color="cyan">you › <Text color="white">{turn.you}</Text></Text>
+      <Text color="cyan" bold>▌ you</Text>
+      {turn.you.split("\n").map((ln, i) => <Text key={`u${i}`} color="white">  {ln}</Text>)}
+      <Text color="green" bold>▌ {turn.agentId ?? "agent"}</Text>
       {turn.thinking ? (
         <Box flexDirection="column">
           {tail(turn.thinking, turn.live ? 3 : 2).map((ln, i) => (
@@ -292,8 +310,9 @@ function renderSegs(turn: Turn, width: number): React.ReactNode {
         </Text>,
       )
     } else if (s.content) {
-      const rendered = turn.live ? indent(s.content) : indent(renderMarkdown(s.content, width))
-      nodes.push(<Text key={i}>{rendered}</Text>)
+      // Render markdown live as it streams — balancing open markers while the
+      // turn is live so partial spans (**bold, `code) render styled, never raw.
+      nodes.push(<Text key={i}>{indent(renderMarkdown(s.content, width, { balance: turn.live }))}</Text>)
     }
   })
   return nodes

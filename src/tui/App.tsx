@@ -646,8 +646,8 @@ function TurnView({ turn, agentId }: { turn: ChatTurn; agentId: string | null })
   const elapsed = turn.elapsedMs != null
     ? ` · ${(turn.elapsedMs / 1000).toFixed(1)}s${turn.outTokens != null ? `, ${turn.outTokens} tok` : ""}`
     : turn.streaming ? " · …" : ""
-  // Raw while streaming (partial markdown is jumpy); markdown once committed.
-  const body = turn.streaming ? turn.text : renderMarkdown(turn.text, 58)
+  // Render markdown live as it streams; balance open markers while streaming.
+  const body = renderMarkdown(turn.text, 58, { balance: turn.streaming })
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text color="green">@{agentId ?? "agent"}<Text dimColor>{elapsed}</Text></Text>

@@ -36,12 +36,32 @@ function ensureConfigured(width: number): void {
   )
 }
 
-/** Render markdown → ANSI string, wrapped to `width` columns. */
-export function renderMarkdown(md: string, width = 80): string {
+/**
+ * Auto-close markdown markers left open by a mid-stream partial reply, so a
+ * half-written `**bold` or ```` ```code ```` renders styled immediately
+ * instead of flashing raw syntax while the closing marker is still arriving.
+ * Conservative: only balances unterminated code fences, inline code, and
+ * bold — the markers that actually cause visible flashes.
+ */
+export function balanceMarkdown(md: string): string {
+  let out = md
+  // Unterminated fenced code block → close it.
+  if (((out.match(/```/g) || []).length) % 2 === 1) out += "\n```"
+  // After fences are balanced, count inline markers outside code blocks.
+  const bare = out.replace(/```[\s\S]*?```/g, "")
+  if (((bare.match(/`/g) || []).length) % 2 === 1) out += "`"
+  if (((bare.match(/\*\*/g) || []).length) % 2 === 1) out += "**"
+  return out
+}
+
+/** Render markdown → ANSI string, wrapped to `width` columns. When `balance`
+ *  is set (live streaming), open markers are auto-closed first (see above). */
+export function renderMarkdown(md: string, width = 80, opts?: { balance?: boolean }): string {
   const w = Math.max(20, Math.min(width, 120))
   try {
     ensureConfigured(w)
-    const out = marked.parse(md, { async: false }) as string
+    const src = opts?.balance ? balanceMarkdown(md) : md
+    const out = marked.parse(src, { async: false }) as string
     return out.replace(/\n+$/, "")
   } catch {
     return md.trimEnd()
