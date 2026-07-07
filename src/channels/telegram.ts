@@ -939,6 +939,12 @@ export class TelegramAdapter implements ChannelAdapter {
           if (update.message && this.handler) {
             const msg = update.message
 
+            // Skip messages sent by the bot itself (prevents self-message loops in groups)
+            const botInfo = this.botInfo.get(accountId)
+            if (botInfo && msg.from && msg.from.id === botInfo.userId) {
+              continue
+            }
+
             // Extract text from any message type
             let text = msg.text || msg.caption || ""
             let mediaInfo: IncomingMessage["media"] | undefined
