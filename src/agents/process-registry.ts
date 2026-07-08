@@ -85,10 +85,6 @@ export interface SpawnOptions {
   /** Pass-through to `claude --resume <id>`. Set when SessionStore has a
    *  stored claudeSessionId for this chat (e.g. across daemon restart). */
   resumeSessionId?: string
-  /** pxpipe proxy origin — exported as ANTHROPIC_BASE_URL on the child.
-   *  Fixed at spawn time: toggling pxpipe mid-chat only takes effect on
-   *  the next fresh spawn (freshSession / rotation / restart). */
-  pxpipeUrl?: string
 }
 
 export interface TurnInput {

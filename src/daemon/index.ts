@@ -3486,10 +3486,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
             body.contextStrategy === "layered" || body.contextStrategy === "planner"
               ? body.contextStrategy
               : undefined
-          // Per-task pxpipe override (image-context compression proxy).
-          // Absent → registry falls back to agent.pxpipe → config.pxpipe.
-          // Used by `agentx bench pxpipe` to A/B without a daemon reload.
-          const pxpipe = typeof body.pxpipe === "boolean" ? body.pxpipe : undefined
           // Phase 1 commit 6.d — record the inbound mesh dispatch decision
           // in the ledger. The mesh protocol has no stable request id, so
           // each call records as its own event row (no per-event idempotency).
@@ -3636,7 +3632,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
                   message: body.message as string,
                   context: body.context as any,
                   contextStrategy,
-                  pxpipe,
                   intentRef,
                   freshSession,
                 },
@@ -3670,7 +3665,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
               message: body.message as string,
               context: body.context as any,
               contextStrategy,
-              pxpipe,
               intentRef,
               freshSession,
             },

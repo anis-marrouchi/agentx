@@ -1631,34 +1631,9 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${sizeParts.history}, sysPrompt=${sizeParts.sysPrompt}, message=${sizeParts.message})`)
     }
 
-    // pxpipe — optional image-context compression proxy for claude-code
-    // agents (github.com/teamchong/pxpipe). Resolution mirrors
-    // contextStrategy: per-task override (bench) → per-agent → global.
-    // Fail-open: when the proxy is unreachable and can't be started, the
-    // dispatch runs direct rather than erroring — a missing optimizer
-    // must never block an agent.
-    let pxpipeUrl: string | undefined
-    if (state.def.tier === "claude-code") {
-      const wantPxpipe = task.pxpipe ?? state.def.pxpipe ?? this.config.pxpipe?.enabled ?? false
-      if (wantPxpipe) {
-        try {
-          const { ensurePxpipeProxy } = await import("./pxpipe")
-          const url = await ensurePxpipeProxy(this.config.pxpipe, (m) => this.log(m))
-          if (url) {
-            pxpipeUrl = url
-            this.log(`[${task.agentId}] pxpipe enabled — routing claude via ${url}`)
-          } else {
-            this.log(`[${task.agentId}] pxpipe requested but proxy unavailable — running direct`)
-          }
-        } catch (e: any) {
-          this.log(`[${task.agentId}] pxpipe setup failed (non-fatal): ${e.message}`)
-        }
-      }
-    }
-
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
-    const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend, pxpipeUrl }
+    const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
 
     let finalResponse: AgentResponse | undefined
     try {

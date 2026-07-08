@@ -97,10 +97,7 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     this.child = spawn(binary, args, {
       cwd: spawnOpts.workspace,
-      env: stripAnthropicApiKey({
-        ...process.env,
-        ...(spawnOpts.pxpipeUrl ? { ANTHROPIC_BASE_URL: spawnOpts.pxpipeUrl } : {}),
-      }),
+      env: stripAnthropicApiKey({ ...process.env }),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 
