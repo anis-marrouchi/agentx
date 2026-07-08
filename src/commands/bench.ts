@@ -10,9 +10,13 @@ import { loadDaemonConfig } from "@/daemon/config"
 // POST /task so it exercises the full production path (session lookup,
 // memory retrieval, Claude CLI invocation). Does NOT mock anything.
 
+import { benchPxpipe } from "./bench-pxpipe"
+
 export const bench = new Command()
   .name("bench")
-  .description("benchmark harnesses (context strategies, ...)")
+  .description("benchmark harnesses (context strategies, pxpipe, ...)")
+
+bench.addCommand(benchPxpipe)
 
 bench
   .command("context")
