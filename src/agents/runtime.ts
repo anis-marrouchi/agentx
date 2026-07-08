@@ -77,6 +77,16 @@ export interface AgentTask {
    *  from benchmark harnesses that want to A/B the same request under
    *  "layered" and "planner" without reloading daemon config. */
   contextStrategy?: "layered" | "planner"
+  /** Per-invocation pxpipe override (image-context compression proxy).
+   *  Resolution in registry.execute: task.pxpipe → agent.pxpipe →
+   *  config.pxpipe.enabled. Set from the bench harness to A/B the same
+   *  request with and without the proxy. claude-code tier only. */
+  pxpipe?: boolean
+  /** INTERNAL — set by registry.execute after resolving the pxpipe flag
+   *  and health-checking/starting the proxy. When present, the claude
+   *  CLI spawn paths export it as ANTHROPIC_BASE_URL. Never set this
+   *  from callers; use `pxpipe` instead. */
+  pxpipeUrl?: string
   /** Upper bound on how long this task may run. Applied to mesh
    *  forwarding (as fetch timeout) and local execution when the runtime
    *  supports it. Workflow `agent` nodes pass this through from their
@@ -659,6 +669,9 @@ export async function executeClaudeCode(
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
       const childEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
+      // pxpipe opt-in: route this spawn's API traffic through the local
+      // image-compression proxy. Workspace .env wins if it set its own URL.
+      if (task.pxpipeUrl && !childEnv.ANTHROPIC_BASE_URL) childEnv.ANTHROPIC_BASE_URL = task.pxpipeUrl
       let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -792,6 +805,8 @@ export async function executeClaudeCodeStreaming(
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const spawnEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
+    // pxpipe opt-in — see executeClaudeCode for the same injection.
+    if (task.pxpipeUrl && !spawnEnv.ANTHROPIC_BASE_URL) spawnEnv.ANTHROPIC_BASE_URL = task.pxpipeUrl
     const proc = execa("claude", args, {
       cwd: agent.workspace,
       timeout: streamTimeoutMs,
@@ -1600,6 +1615,7 @@ async function executeClaudeCodePersistent(
       permissionMode: agent.permissionMode,
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
+      pxpipeUrl: task.pxpipeUrl,
     })
     wasFreshSpawn = registry.list().length > before
   } catch (e: any) {

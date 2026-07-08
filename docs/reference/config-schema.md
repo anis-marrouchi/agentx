@@ -65,6 +65,7 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | `maxDelegationDepth` | number (0–50) | `5` | **Phase 8 — capability-bounded security.** Max distinct upstream agents in the delegation chain on the same `(project, subject)` before a dispatch to this agent is refused. The ledger walker counts distinct agents across recent decisions on the subject. Set to 0 to disable for an agent that's always called as the bottom of a chain. **When to change:** lower this (e.g. 2) for agents at the bottom of a chain — prevents cascade loops where A → B → A. Default 5 is fine for most teams |
 | `mcp` | `Record<string, McpServer>` | — | Per-agent MCP servers. Synced to `<workspace>/.mcp.json` at boot. Operator edits to `.mcp.json` are respected — see `agent-mcp.ts` |
 | `contextStrategy` | `"layered"` \| `"planner"` | inherited from `session.contextStrategy` | Per-agent override of the global context-assembly strategy |
+| `pxpipe` | bool | inherited from `pxpipe.enabled` | Route this agent's claude-code traffic through the local [pxpipe](https://github.com/teamchong/pxpipe) proxy, which renders bulky context (tool results, old history, system slab) as PNGs to cut input tokens. **Lossy on byte-exact strings** (hashes, IDs — misreads are silent). Keep off for agents that apply diffs or quote identifiers; A/B first with `agentx bench pxpipe --fidelity`. claude-code tier only |
 | `contextReferences` | bool | `false` | When true, the registry resolves references-recipes for this agent's workspace and renders a deterministic `[Verified References]` block at priority 4.7. Off by default — flip on per agent (e.g. `pm-ksi`, `devops-agent`) once a `references/` registry exists. **When to change:** turn on for agents that need stable, cited facts (PMs, devops) — surfaces a `[Verified References]` block in the prompt. Off by default because not every agent has a `references/` registry |
 | `maxConcurrent` | number | `1` | Parallel turns allowed |
 | `maxExecutionMinutes` | number (1–240) | `20` | Hard wall-clock cap on a single Claude Code invocation. Exceeding sends SIGTERM (exit 143). Bump for devops/coder agents that run long investigations or multi-file refactors |
@@ -244,6 +245,23 @@ Controls Claude CLI `--resume` session reuse and the context-assembly strategy. 
   "tierTwoThresholdTokens": 195000,
   "contextStrategy": "layered"
 }
+```
+
+## `pxpipe`
+
+Optional [pxpipe](https://github.com/teamchong/pxpipe) image-context compression for `claude-code` agents. When an agent/task opts in, the daemon health-checks (and optionally starts) a local `pxpipe-proxy` and points the claude CLI at it via `ANTHROPIC_BASE_URL`. Resolution per dispatch: `POST /task` `pxpipe` field → `agents.<id>.pxpipe` → `pxpipe.enabled`. Fail-open — if the proxy can't be reached or started, the dispatch runs direct.
+
+⚠️ pxpipe is **lossy on byte-exact strings** (12-char hex recall: 13/15 on Fable 5, 0/15 on Opus — misses are silent confabulations). Benchmark with `agentx bench pxpipe --fidelity` before enabling on agents that quote hashes/IDs or apply diffs.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `enabled` | bool | `false` | Global default for agents without an explicit `pxpipe` flag |
+| `url` | string | `http://127.0.0.1:47821` | Proxy origin exported as `ANTHROPIC_BASE_URL` |
+| `autoStart` | bool | `true` | Spawn `npx -y pxpipe-proxy` when the health check fails (logs to `~/.pxpipe/proxy.log`) |
+| `models` | string | — | Forwarded as `PXPIPE_MODELS` to the spawned proxy (model allowlist) |
+
+```json
+"pxpipe": { "enabled": false, "url": "http://127.0.0.1:47821", "autoStart": true }
 ```
 
 ## `notifications`

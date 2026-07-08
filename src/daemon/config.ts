@@ -190,6 +190,13 @@ const agentConfigSchema = z.object({
    *  exploration) while siblings stay on `layered`. Used for agents that
    *  consistently bloat their cache via large workspace reads. */
   contextStrategy: z.enum(["layered", "planner"]).optional(),
+  /** Route this agent's claude-code traffic through a local pxpipe proxy
+   *  (github.com/teamchong/pxpipe) that renders bulky context as PNGs to
+   *  cut input tokens. LOSSY on byte-exact strings (hashes, IDs) — keep
+   *  off for agents that apply diffs or quote identifiers verbatim.
+   *  Unset falls back to the global `pxpipe.enabled`. claude-code tier
+   *  only; other tiers ignore the flag. */
+  pxpipe: z.boolean().optional(),
   /** When true, the registry resolves references-recipes for this agent's
    *  workspace and renders a deterministic [Verified References] block at
    *  priority 4.7. Off by default — flip on per agent (pm-ksi, devops-agent,
@@ -682,6 +689,19 @@ export const daemonConfigSchema = z.object({
    *    reaches this. Claude bills the 1.5× long-context rate above 200K
    *    per REQUEST — 180K leaves headroom. NOT the cumulative turn total:
    *    that sums cache reads across every call and reads 10-20× too high. */
+  /** pxpipe — optional image-context compression proxy for claude-code
+   *  agents (github.com/teamchong/pxpipe). The daemon points the claude
+   *  CLI at `url` via ANTHROPIC_BASE_URL when an agent/task opts in;
+   *  `autoStart` spawns `npx pxpipe-proxy` on demand when the health
+   *  check fails. Global kill switch: `enabled: false` (default) means
+   *  only agents/tasks with an explicit `pxpipe: true` use the proxy. */
+  pxpipe: z.object({
+    enabled: z.boolean().default(false),
+    url: z.string().default("http://127.0.0.1:47821"),
+    autoStart: z.boolean().default(true),
+    /** Forwarded as PXPIPE_MODELS to the spawned proxy (model allowlist). */
+    models: z.string().optional(),
+  }).default({}),
   session: z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(720),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(40),
