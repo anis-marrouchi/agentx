@@ -551,6 +551,16 @@ export class A2AMesh {
    * workflow `action.send` to forward outbound messages back to the peer
    * that owns the channel when the workflow runs on a different node.
    */
+  /**
+   * Auth headers for daemon-level fetches to a peer's protected endpoints.
+   * Tokens deliberately never ride along in directory() — it is served to
+   * dashboards and /mesh; look them up per-request by peer name instead.
+   */
+  authHeaders(peerName: string): Record<string, string> {
+    const token = this.peers.get(peerName)?.peer.token
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
   directory(): Array<{
     peer: string
     peerUrl: string

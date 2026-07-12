@@ -1213,7 +1213,7 @@ export class AgentXDaemon {
           try {
             const r = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId }),
             })
             const respText = await r.text().catch(() => "")
@@ -1236,7 +1236,7 @@ export class AgentXDaemon {
           try {
             const r = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
             })
             const data = await r.json().catch(() => ({}))
@@ -1259,7 +1259,7 @@ export class AgentXDaemon {
           try {
             const r = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
             })
             const respText = await r.text().catch(() => "")
@@ -1302,7 +1302,7 @@ export class AgentXDaemon {
           try {
             const r = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               body: JSON.stringify({ repo, issueNumber, agentId, text }),
             })
             const data = await r.json().catch(() => ({}))
@@ -1493,7 +1493,7 @@ export class AgentXDaemon {
         try {
           const r = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
             body: JSON.stringify({ payload }),
           })
           if (!r.ok) this.log(`[workflows] forward ${url} -> ${r.status}`)
@@ -1515,7 +1515,7 @@ export class AgentXDaemon {
           try {
             const r = await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
               // Receiver discriminates on `kind: "trigger"` and dispatches
               // with fromRemote.peer = the originating node id. Peers without
               // an opted-in workflow no-op cleanly.
@@ -1541,7 +1541,7 @@ export class AgentXDaemon {
         const url = `${target.peerUrl}/channel/send`
         const r = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(target.peer) },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(15000),
         })
@@ -1949,6 +1949,13 @@ export class AgentXDaemon {
     "/workflow/transition",
     "/channel/send",
     "/webrtc/signal",
+    // Peer-identity forwards: these make the daemon act as its own GitLab/
+    // GitHub bot user, so an unauthenticated non-loopback caller could post
+    // as the bot. Daemon-side callers attach mesh.authHeaders(peer).
+    "/gitlab/react",
+    "/gitlab/send-note",
+    "/gitlab/log-time",
+    "/github/send-comment",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -4610,6 +4617,7 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       await Promise.allSettled(peers.map(async (peer) => {
         try {
           const r = await fetch(`${peer.peerUrl}/channels/${encodeURIComponent(channel)}/chats?local=1`, {
+            headers: this.mesh!.authHeaders(peer.peer),
             signal: AbortSignal.timeout(5000),
           })
           if (!r.ok) return
