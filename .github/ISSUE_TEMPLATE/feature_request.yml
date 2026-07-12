@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose new functionality or an improvement
+title: "Feat: <area> – <what it enables>"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the scenario — what are you trying to run/operate, and where does agentx fall short today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What would this look like? CLI, config, dashboard, mesh?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you've tried

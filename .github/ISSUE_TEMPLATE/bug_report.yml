@@ -1,0 +1,40 @@
+name: Bug report
+description: Something is broken or not working per the docs
+title: "Bug: <area> – <short symptom>"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: |
+        1. Ran `agentx ...`
+        2. Expected ...
+        3. Got ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, agentx version, install method
+      placeholder: |
+        - OS: macOS 15 / Ubuntu 24.04
+        - Node: 22.x
+        - agentx: `agentx --version`
+        - Install: npm / curl installer / Docker
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config (redact tokens!)
+      description: The agent/channel/mesh blocks involved. Never paste real tokens or .env contents.
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Daemon logs
+      description: Output around the failure (`agentx daemon logs` or journalctl). Redact anything sensitive.
+      render: shell

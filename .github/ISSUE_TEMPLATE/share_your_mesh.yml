@@ -1,0 +1,28 @@
+name: "Share your mesh 🕸️"
+description: Show off your setup — nodes, agents, channels, what they run
+title: "Mesh: <name or theme of your setup>"
+labels: ["showcase"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We collect real-world meshes here — they shape the roadmap and the docs.
+        Screenshots of the `/live` mesh graph are very welcome.
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      placeholder: |
+        - Nodes: MacBook (home) + VPS (Hetzner) over Tailscale
+        - Agents: @ops (Telegram, crons), @builder (GitLab MRs), @cx (WhatsApp)
+        - What it runs: client support triage + nightly report + CI fixes
+    validations:
+      required: true
+  - type: textarea
+    id: surprises
+    attributes:
+      label: What worked / what surprised you
+  - type: textarea
+    id: wishlist
+    attributes:
+      label: What's missing
