@@ -126,7 +126,7 @@ export type RawStreamEvent =
 // --- Agent configuration ---
 
 export const agentConfigSchema = z.object({
-  provider: z.enum(["claude-code", "claude", "openai", "deepseek", "ollama", "custom"]).default("claude-code"),
+  provider: z.enum(["claude-code", "claude", "openai", "deepseek", "ollama", "demo", "custom"]).default("claude-code"),
   model: z.string().optional(),
   apiKey: z.string().optional(),
   skills: z.array(z.string()).default([]),

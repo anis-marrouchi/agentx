@@ -2,13 +2,14 @@ import type { AgentProvider } from "./types"
 import { ClaudeProvider } from "./claude"
 import { ClaudeCodeProvider } from "./claude-code"
 import { OpenAIProvider } from "./openai"
+import { DemoProvider } from "./demo"
 import { loadAuthConfig } from "@/utils/auth-store"
 
 // `deepseek` is a label on top of the OpenAI-compatible provider — it
 // resolves to OpenAIProvider with the DeepSeek baseUrl + DEEPSEEK_API_KEY
 // so users can declare `provider: "deepseek"` on an agent without having to
 // also fiddle with OPENAI_BASE_URL. Same pattern for any other preset.
-export type ProviderName = "claude-code" | "claude" | "openai" | "deepseek" | "ollama" | "custom"
+export type ProviderName = "claude-code" | "claude" | "openai" | "deepseek" | "ollama" | "demo" | "custom"
 
 const DEEPSEEK_PRESET = {
   baseUrl: "https://api.deepseek.com/v1",
@@ -54,6 +55,10 @@ export function createProvider(
         DEEPSEEK_PRESET.baseUrl,
         { thinking: opts.thinking },
       )
+    case "demo":
+      // Scripted provider behind `agentx demo` — canned replies, real
+      // daemons/mesh/ledger. Never selected implicitly.
+      return new DemoProvider()
     case "ollama":
       throw new Error(
         "Ollama provider coming soon. Workaround: set provider to 'openai' with OPENAI_BASE_URL=http://localhost:11434/v1 (Ollama exposes an OpenAI-compatible endpoint). Or contribute at github.com/anis-marrouchi/agentx",

@@ -32,6 +32,7 @@ import { tui } from "@/commands/tui"
 import { chat } from "@/commands/chat"
 import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
+import { demo } from "@/commands/demo"
 import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
@@ -98,6 +99,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(token)
     .addCommand(doctor)
     .addCommand(serve)
+    .addCommand(demo)
     .addCommand(whatsapp)
     .addCommand(pluginCmd)
     .addCommand(completion)

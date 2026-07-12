@@ -32,6 +32,14 @@ You (Telegram): "@cx CI is red on gitlab — fix it and ship a patch"
   cx            → replies in your Telegram thread with the MR link
 ```
 
+## Try it in 60 seconds — no keys, no accounts
+
+```bash
+npx agentix-cli demo
+```
+
+Boots **three real daemons on your machine**, pairs them into a real A2A mesh, and plays a cross-node scenario — delegation, mesh hop, fix, report-back — live in the dashboards. Only the model is scripted; the daemons, mesh protocol, and ledger are the real thing.
+
 ## Install
 
 ```bash
