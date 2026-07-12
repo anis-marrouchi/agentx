@@ -13,9 +13,6 @@
     "openai": {
       "apiKey": "${OPENAI_API_KEY}",
       "defaultModel": "gpt-4o"
-    },
-    "ollama": {
-      "baseUrl": "http://localhost:11434"
     }
   },
 

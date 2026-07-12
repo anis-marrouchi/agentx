@@ -3,7 +3,7 @@ import { withMermaid } from "vitepress-plugin-mermaid"
 
 export default withMermaid(defineConfig({
   title: "AgentX",
-  description: "The AI operations layer for small & medium businesses. Route Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.",
+  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
   lastUpdated: true,
   cleanUrls: true,
 
@@ -11,7 +11,7 @@ export default withMermaid(defineConfig({
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
     ["meta", { name: "theme-color", content: "#0ea5e9" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "AgentX — AI operations layer for small & medium businesses" }],
+    ["meta", { property: "og:title", content: "AgentX — a self-hosted mesh of AI agents for your team" }],
     ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, Slack, Discord, or GitLab. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
   ],
 
@@ -47,13 +47,21 @@ export default withMermaid(defineConfig({
             { text: "4. Cross-channel", link: "/journey/04-cross-channel" },
             { text: "5. Hooks & webhooks", link: "/journey/05-hooks-webhooks" },
             { text: "6. Shared wiki", link: "/journey/06-shared-wiki" },
-            { text: "7. Business layer", link: "/journey/07-business-layer" },
             { text: "8. Mesh federation", link: "/journey/08-mesh-federation" },
             { text: "9. Deterministic services", link: "/journey/09-deterministic-services" },
             { text: "10. MCP server", link: "/journey/10-mcp-server" },
             { text: "11. Production hardening", link: "/journey/11-production-hardening" },
             { text: "12. BPM — grant application", link: "/journey/12-bpm-grant-application" },
             { text: "13. Authoring a typed workflow", link: "/journey/13-typed-workflow" },
+          ],
+        },
+        {
+          text: "Use cases",
+          items: [
+            { text: "Solo founder ops", link: "/use-cases/solo-founder" },
+            { text: "Agency — agent per client", link: "/use-cases/agency" },
+            { text: "Public service intake", link: "/use-cases/public-service" },
+            { text: "OSS maintainer fleet", link: "/use-cases/maintainer-fleet" },
           ],
         },
         {
@@ -82,7 +90,6 @@ export default withMermaid(defineConfig({
             { text: "Admin panel", link: "/reference/dashboard/admin" },
             { text: "Cost", link: "/reference/dashboard/cost" },
             { text: "Health", link: "/reference/dashboard/health" },
-            { text: "Business", link: "/reference/dashboard/business" },
             { text: "Team (actors & roles)", link: "/reference/dashboard/team" },
             { text: "Usage dashboard (legacy)", link: "/reference/dashboard/usage" },
           ],
@@ -124,7 +131,6 @@ export default withMermaid(defineConfig({
           items: [
             { text: "What's next", link: "/roadmap/whats-next" },
             { text: "UX v2 — zero manual config edits", link: "/roadmap/ux-v2" },
-            { text: "Business layer v2", link: "/roadmap/business-layer-v2" },
           ],
         },
         {

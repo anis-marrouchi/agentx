@@ -311,7 +311,7 @@ If 4 is no, **write a prompt.** That's the path with the highest ROI for SMB-age
 
 - [Workflows YAML spec](./architecture/workflows-yaml.md) — full schema reference
 - [Typed workflow DSL plan](./architecture/typed-workflow-dsl-plan.md) — design rationale
-- [`examples/workflows/`](../examples/workflows/) — runnable examples (lead-capture, grant-application, whatsapp-client-support)
+- [`examples/workflows/`](https://github.com/anis-marrouchi/agentx/tree/master/examples/workflows) — runnable examples (lead-capture, grant-application, whatsapp-client-support)
 - [Karpathy's LLM-Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — the broader philosophy on "the LLM is the engine; don't wrap it in five layers." Workflows are a justified wrapper *only* when the three cases above apply. Most of the time, the LLM-as-engine pattern wins.
 
 ---
