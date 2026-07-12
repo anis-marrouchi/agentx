@@ -40,6 +40,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
+import { decideMeshAuth } from "@/daemon/mesh-auth"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -1929,11 +1930,54 @@ export class AgentXDaemon {
     res.end(CALL_PAGE_HTML)
   }
 
+  /** POST endpoints that mesh peers call across the network. Everything
+   *  else on this server is either read-only, loopback-operated (CLI,
+   *  same-host dashboard), or carries its own secret (chat routes). */
+  private static readonly MESH_PROTECTED_PATHS = new Set([
+    "/task",
+    "/mesh/task",
+    "/workflow/event",
+    "/workflow/transition",
+    "/channel/send",
+    "/webrtc/signal",
+  ])
+
+  /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
+   *  logging, and the 401 response. */
+  private checkMeshAuth(req: IncomingMessage, res: ServerResponse, path: string): boolean {
+    const accepted = new Set<string>()
+    if (process.env.MESH_TOKEN) accepted.add(process.env.MESH_TOKEN)
+    for (const p of this.config.mesh?.peers || []) if (p.token) accepted.add(p.token)
+    if (this.config.dashboard?.token) accepted.add(this.config.dashboard.token)
+
+    const addr = req.socket?.remoteAddress || ""
+    const decision = decideMeshAuth({
+      remoteAddress: addr,
+      authorizationHeader: String(req.headers["authorization"] || ""),
+      acceptedTokens: accepted,
+      enforcementDisabled: process.env.AGENTX_MESH_AUTH === "off",
+    })
+
+    if (decision.allowed) {
+      if (decision.reason === "no-tokens-configured") {
+        this.log(`[auth] ⚠ unauthenticated ${path} from ${addr} allowed — no MESH_TOKEN or peer token configured. Run "agentx connect mesh" to create one; unauthenticated mesh calls will be rejected in a future release.`)
+      }
+      return true
+    }
+
+    this.log(`[auth] ✗ rejected ${path} from ${addr} — missing or invalid mesh token`)
+    this.json(res, 401, { error: "Unauthorized: mesh token required (Authorization: Bearer <MESH_TOKEN>)" })
+    return false
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
 
     try {
+      if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+      }
       // SSE live event stream
       if (req.method === "GET" && path === "/events") {
         this.handleSSE(req, res)
