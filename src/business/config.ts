@@ -1,8 +1,10 @@
 import { z } from "zod"
 
-// --- Business layer configuration schema ---
+// --- Business layer configuration schema (EXPERIMENTAL) ---
 // Optional top-level `business` key in agentx.json.
 // When enabled, AgentX simulates a team with roles, schedules, and a work pool.
+// Experimental: off by default, undocumented while the model settles —
+// config shape may change between minor versions without migration.
 
 const dayEnum = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
 
