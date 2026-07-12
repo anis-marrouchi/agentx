@@ -24,6 +24,27 @@ export interface TopbarPeer {
   tokenScope?: string
 }
 
+export interface TopbarFeatures {
+  /** Show the Boards tab — set when config.boards is non-empty. */
+  boards?: boolean
+  /** Show Workflows + Inbox tabs — set when config.workflows.enabled. */
+  workflows?: boolean
+  /** Show the Team/Business Settings sub-tabs — config.business.enabled. */
+  business?: boolean
+}
+
+// Set once at server start (board-dashboard + daemon both call it). The
+// nav must stay minimal by default, so unset flags mean hidden tabs.
+let topbarFeatures: TopbarFeatures = {}
+
+export function setTopbarFeatures(features: TopbarFeatures): void {
+  topbarFeatures = features
+}
+
+export function getTopbarFeatures(): TopbarFeatures {
+  return topbarFeatures
+}
+
 export interface TopbarOpts {
   activeTab: TopbarTab
   /** Text after the brand, e.g. "Live" / "Settings" / "Boards". */
@@ -328,50 +349,43 @@ export function renderTopbar(opts: TopbarOpts): string {
     <div class="ax-mesh-menu" role="menu">${meshMenu}</div>
   </div>`
 
-  // Tabs are grouped by the three operational tiers (System / Process /
-  // Procedure — see docs/architecture/three-tier.md). The grouping is
-  // visual only; each tab still routes to the same URL. Order within a
-  // group is by frequency-of-use, descending.
+  // Minimal, mesh-first nav. The primary group answers the four ops
+  // questions in order: who's alive and what are they doing (Live),
+  // what happened (Ledger), what did it cost (Cost), how is it wired
+  // (Settings). A second "Work" group appears only when the operator
+  // actually configured that surface (boards / workflows) — flags are
+  // set once per process via setTopbarFeatures().
   //
-  // System    — what exists, observable infrastructure
-  // Processes — named SOPs, work-in-flight, kanban + inbox
-  // Procedures — reusable building blocks (typed actions, templates, wiki)
-  //
-  // Graph tab (/admin/graph) is intentionally not promoted in the main nav
-  // until it earns its keep (wiki absorb writing graphPath, or graph-based
-  // routing). It's still reachable directly. Health = SRE/platform-health
-  // (renamed from "Observability"). Wiki is an embedded view over
-  // `agentx wiki serve` on port 4200.
+  // Deliberately NOT in the nav (still routable by URL):
+  //   /admin/health            SRE platform-health
+  //   /admin/activity-graph    ledger lens (heavy React bundle)
+  //   /admin/graph             intent taxonomy triage
+  //   /admin/projects          PM aggregation
+  //   /procedures  /admin/wiki  /glossary
+  // They stay linked from contextual pages, not from the top chrome —
+  // the trending-launch dashboard story is the mesh, not the suite.
   type Tab = { id: TopbarTab; label: string; href: string; external?: boolean }
+  const features = topbarFeatures
+  const workTabs: Tab[] = [
+    ...(features.boards ? [{ id: "boards" as const, label: "Boards", href: "/" }] : []),
+    ...(features.workflows
+      ? [
+          { id: "workflows" as const, label: "Workflows", href: "/workflows" },
+          { id: "inbox" as const, label: "Inbox", href: "/inbox" },
+        ]
+      : []),
+  ]
   const groups: Array<{ name: string; tabs: Tab[] }> = [
     {
-      name: "System",
+      name: "Mesh",
       tabs: [
         { id: "live", label: "Live", href: "/live" },
-        { id: "health", label: "Health", href: "/admin/health" },
-        { id: "graph", label: "Activity", href: "/admin/activity-graph" },
         { id: "graph", label: "Ledger", href: "/admin/ledger" },
         { id: "cost", label: "Cost", href: "/admin/cost" },
         { id: "admin", label: "Settings", href: "/admin" },
       ],
     },
-    {
-      name: "Processes",
-      tabs: [
-        { id: "projects", label: "Projects", href: "/admin/projects" },
-        { id: "workflows", label: "Workflows", href: "/workflows" },
-        { id: "boards", label: "Boards", href: "/" },
-        { id: "inbox", label: "Inbox", href: "/inbox" },
-      ],
-    },
-    {
-      name: "Procedures",
-      tabs: [
-        { id: "procedures", label: "Procedures", href: "/procedures" },
-        { id: "wiki", label: "Wiki", href: "/admin/wiki" },
-        { id: "glossary", label: "Glossary", href: "/glossary" },
-      ],
-    },
+    ...(workTabs.length ? [{ name: "Work", tabs: workTabs }] : []),
   ]
 
   const tabs = groups.map((g) => {

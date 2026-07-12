@@ -22,6 +22,7 @@ import {
   TOAST_HTML, TOAST_SCRIPT, ROW_CARD_SCRIPT,
   type TopbarPeer,
 } from ".."
+import { getTopbarFeatures } from "../../topbar"
 
 /** Feather-style stroked icons for each section head. Kept together at the
  *  top so we can swap the icon set in one place if/when the design calls
@@ -72,7 +73,7 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     noMain: true,
-    body: chrome + ADMIN_PAGE_BODY + TOAST_HTML,
+    body: chrome + adminPageBody() + TOAST_HTML,
     css: ADMIN_PAGE_CSS,
     scripts: `${tokenScript}<script>${TOAST_SCRIPT}\n${ROW_CARD_SCRIPT}\n${ADMIN_HEALTH_SCRIPT}\n${ADMIN_PAGE_SCRIPT}</script>`,
   })
@@ -144,6 +145,19 @@ const ADMIN_HEALTH_SCRIPT = `
   document.addEventListener('ax-config-saved', refresh);
 })();`
 
+/** Team/Business are business-layer surfaces (experimental) — their
+ *  Settings sub-tabs render only when config.business.enabled. The
+ *  sections stay in the DOM either way; without a button they're
+ *  simply unreachable, so no tab-switching JS changes. */
+function adminPageBody(): string {
+  const business = getTopbarFeatures().business
+    ? `<button data-tab="team">Team</button>
+  <button data-tab="business">Business</button>
+  `
+    : ""
+  return ADMIN_PAGE_BODY.replace("__BUSINESS_TABS__", business)
+}
+
 const ADMIN_PAGE_BODY = `
 <div id="peer-banner" class="peer-banner">
   <span class="label">Managing</span>
@@ -158,9 +172,7 @@ const ADMIN_PAGE_BODY = `
   <button data-tab="crons">Schedules</button>
   <button data-tab="webhooks">Webhooks</button>
   <button data-tab="mesh">Mesh</button>
-  <button data-tab="team">Team</button>
-  <button data-tab="business">Business</button>
-  <button data-tab="boards-cfg">Boards</button>
+  __BUSINESS_TABS__<button data-tab="boards-cfg">Boards</button>
   <button data-tab="actions">Actions</button>
   <button data-tab="tokens">Tokens</button>
   <button data-tab="advanced">Advanced</button>

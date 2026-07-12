@@ -41,6 +41,7 @@ import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilit
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth } from "@/daemon/mesh-auth"
+import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
 import {
@@ -135,6 +136,14 @@ export class AgentXDaemon {
     // Initialize the contact directory now that `this.log` is available.
     // Empty file (or missing file) is fine — operators populate it later.
     this.contacts = new ContactDirectory(process.cwd(), this.log)
+
+    // The daemon renders a few shell pages itself (/inbox, /processes) —
+    // give their topbar the same feature flags the 4202 dashboard uses.
+    setTopbarFeatures({
+      boards: (this.config.boards?.length ?? 0) > 0,
+      workflows: this.config.workflows?.enabled === true,
+      business: this.config.business?.enabled === true,
+    })
 
     // Validate
     const warnings = validateWorkspaces(this.config)

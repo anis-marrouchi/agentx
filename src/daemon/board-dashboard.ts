@@ -30,7 +30,7 @@ import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
-import type { TopbarPeer } from "./topbar"
+import { setTopbarFeatures, type TopbarPeer } from "./topbar"
 
 // --- Kanban Board Dashboard ---
 //
@@ -82,6 +82,14 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // agentx.json — set the module-level reference so the snapshot builder can
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
+
+  // Minimal mesh-first nav: Boards/Workflows/Inbox tabs appear only when
+  // the operator configured those surfaces.
+  setTopbarFeatures({
+    boards: boards.length > 0,
+    workflows: config.workflows?.enabled === true,
+    business: config.business?.enabled === true,
+  })
 
   const server = createServer(async (req, res) => {
     try {

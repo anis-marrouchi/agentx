@@ -113,6 +113,10 @@ function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string): void {
 
   const config = {
     node: { id: spec.id, name: spec.name, bind: `127.0.0.1:${spec.port}`, defaultAgent: spec.agentId },
+    // The dashboard block is read by the `agentx board serve` child the
+    // demo starts for node A — it discovers the other nodes through the
+    // daemon's /mesh directory, so one dashboard shows the whole mesh.
+    dashboard: { enabled: true, port: spec.port + 10, bind: "127.0.0.1", daemonUrl: `http://127.0.0.1:${spec.port}` },
     providers: { demo: { apiKey: "demo-mode" } },
     agents: {
       [spec.agentId]: {
@@ -227,6 +231,24 @@ export const demo = new Command()
       }
       console.log(chalk.green("  ✓ three daemons up"))
 
+      // One dashboard process, attached to laptop-paris — it discovers the
+      // other two nodes over the mesh, so /live shows the whole fleet.
+      const dashPort = specs[0].port + 10
+      {
+        const logFd = openSync(join(specs[0].dir, "board.log"), "a")
+        const child = spawn(process.execPath, [cli, "board", "serve"], {
+          cwd: specs[0].dir,
+          env: { ...baseEnv, MESH_TOKEN: meshToken },
+          stdio: ["ignore", logFd, logFd],
+        })
+        children.push(child)
+      }
+      await waitFor("dashboard /live", async () => {
+        const r = await fetch(`http://127.0.0.1:${dashPort}/live`)
+        return r.ok
+      }, 30_000)
+      console.log(chalk.green("  ✓ dashboard up"))
+
       await waitFor("mesh discovery (laptop sees both peers)", async () => {
         const r = await fetch(`http://127.0.0.1:${specs[0].port}/health`)
         const h: any = await r.json()
@@ -238,11 +260,10 @@ export const demo = new Command()
       // and the gate is exercised only on non-loopback deployments.
       console.log(chalk.green("  ✓ A2A mesh healthy — agent cards exchanged across three nodes"))
 
-      const liveUrl = `http://127.0.0.1:${specs[0].port}/live`
+      const liveUrl = `http://127.0.0.1:${dashPort}/live`
       console.log()
-      console.log(`  Dashboards:  ${chalk.cyan(liveUrl)}  (laptop-paris)`)
-      console.log(chalk.dim(`               http://127.0.0.1:${specs[1].port}/live  (vps-nyc)`))
-      console.log(chalk.dim(`               http://127.0.0.1:${specs[2].port}/live  (pi-office)`))
+      console.log(`  Dashboard:   ${chalk.cyan(liveUrl)}  (all three nodes via the mesh)`)
+      console.log(chalk.dim(`  Daemon APIs: ${specs.map((s) => `127.0.0.1:${s.port}`).join(" · ")}`))
 
       if (opts.open !== false) {
         const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
