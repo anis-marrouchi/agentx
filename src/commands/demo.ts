@@ -296,6 +296,7 @@ export const demo = new Command()
 
         console.log()
         console.log(chalk.dim(`  Inspect the run: ${liveUrl}  ·  ledger rows on each node record every dispatch`))
+        console.log(chalk.dim(`  Worth your time? A star helps others find it: ${chalk.cyan("https://github.com/anis-marrouchi/agentx")}`))
       }
 
       await playScenario()
