@@ -221,6 +221,14 @@ const agentConfigSchema = z.object({
    *  without a schema bump. Empty/unset means no enforcement
    *  (default — backward compatible). */
   toolUseRequired: z.array(z.string()).default([]),
+  /** Per-agent override for the channel-level `autoReplyLegacy` on
+   *  gitlab/github. When set, it wins over `channels.<name>.autoReplyLegacy`
+   *  for this agent's replies: `true` makes the daemon auto-post the agent's
+   *  final text as a comment (right for coder agents that end their turn with
+   *  a summary and don't call `agentx_channel_reply`); `false` suppresses it
+   *  (right for chatty agents whose reasoning shouldn't land as a comment).
+   *  Unset → fall back to the channel default. */
+  gitlabAutoReply: z.boolean().optional(),
   /** When true, this agent's claude-code dispatches reuse a long-lived
    *  subprocess per (channel, chatId) instead of spawning a fresh
    *  `claude -p` per turn. Driven over stdin via stream-json input,

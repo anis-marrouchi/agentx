@@ -944,9 +944,13 @@ export class MessageRouter {
     // as a comment" bug — turning the flag off makes the agent's reasoning
     // text invisible to the channel by design.
     const channelCfg = (this.config.channels as Record<string, { autoReplyLegacy?: boolean } | undefined>)?.[msg.channel]
-    const autoReplyLegacy = channelCfg?.autoReplyLegacy !== false  // default true if absent
+    // Per-agent `gitlabAutoReply` overrides the channel default when set, so a
+    // coder that ends its turn with a summary auto-posts even while the fleet
+    // default stays false. Falls back to channel.autoReplyLegacy (default true).
+    const perAgentAutoReply = (agentDef as { gitlabAutoReply?: boolean } | undefined)?.gitlabAutoReply
+    const autoReplyLegacy = perAgentAutoReply ?? (channelCfg?.autoReplyLegacy !== false)
     if (!autoReplyLegacy && responseText && (msg.channel === "gitlab" || msg.channel === "github")) {
-      this.log(`Auto-reply suppressed for ${msg.channel}:${chatId} — channel.autoReplyLegacy=false (agent must call channel.reply)`)
+      this.log(`Auto-reply suppressed for ${msg.channel}:${chatId} — autoReply=false (agent must call channel.reply)`)
       // Still log into the group conversation log below, just don't post.
       responseText = ""
     }
