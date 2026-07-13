@@ -48,10 +48,11 @@ export function parseProcessKey(s: ProcessKeyString): ProcessKey {
  *
  *   warm-cold → spawned, no claudeSessionId yet
  *   warm-hot  → at least one turn done, cache reuse expected
+ *   busy      → a turn is streaming right now; never idle-killed
  *   idle      → not running a turn, eligible for eviction
  *   dead      → killed or exited; will be removed from the registry
  */
-export type ProcessState = "warm-cold" | "warm-hot" | "idle" | "dead"
+export type ProcessState = "warm-cold" | "warm-hot" | "busy" | "idle" | "dead"
 
 export interface ProcessSnapshot {
   key: ProcessKey
@@ -108,6 +109,13 @@ export interface ProcessHandle {
   readonly key: ProcessKey
   state(): ProcessState
   snapshot(): ProcessSnapshot
+  /**
+   * Mark the handle as just-acquired: bumps lastTurnAt so the idle
+   * sweeper can't kill it in the acquire→runTurn window (the sweep
+   * runs every 5s; a handle acquired at idle 899s used to lose that
+   * race and fail the dispatch with "is dead (idle …)").
+   */
+  claim?(): void
   /**
    * Send one user turn, yield stream-json events as they arrive, and
    * return when a `result` event is observed. The handle serializes
@@ -231,7 +239,10 @@ export class ProcessRegistry {
   acquire(key: ProcessKey, opts: SpawnOptions): ProcessHandle {
     const ks = processKeyToString(key)
     const existing = this.handles.get(ks)
-    if (existing && existing.state() !== "dead") return existing
+    if (existing && existing.state() !== "dead") {
+      existing.claim?.()
+      return existing
+    }
 
     // Make room if at cap.
     if (this.handles.size >= this.cfg.maxProcessesGlobal) {

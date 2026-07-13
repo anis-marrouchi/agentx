@@ -51,6 +51,7 @@ function fmtAge(ms: number): string {
 }
 
 function stateColor(s: string): (text: string) => string {
+  if (s === "busy") return chalk.magenta
   if (s === "warm-hot") return chalk.green
   if (s === "warm-cold") return chalk.cyan
   if (s === "idle") return chalk.yellow

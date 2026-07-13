@@ -63,6 +63,17 @@ class FakeHandle implements ProcessHandle {
     this._snap = { ...this._snap, lastTurnAt: at, state: "warm-hot", turnCount: this._snap.turnCount + 1 }
   }
 
+  /** A turn is streaming right now (lastTurnAt = previous turn's end). */
+  setBusy(lastTurnAt: number = Date.now()): void {
+    this._state = "busy"
+    this._snap = { ...this._snap, lastTurnAt, state: "busy" }
+  }
+
+  claim(): void {
+    if (this._state === "dead") return
+    this._snap = { ...this._snap, lastTurnAt: Date.now() }
+  }
+
   async *runTurn(input: TurnInput): AsyncIterable<TurnEvent> {
     this._snap = { ...this._snap, pendingTaskId: input.taskId }
     yield { type: "system", raw: { type: "system", subtype: "init", session_id: "fake-sid" } }
@@ -254,6 +265,45 @@ describe("ProcessRegistry — idle/stale sweep", () => {
     await Promise.resolve()
     expect(h.killReasons.some((r) => r.startsWith("idle"))).toBe(true)
     expect(reg.list()).toHaveLength(0)
+  })
+
+  it("never kills a busy handle, even long past both timeouts", async () => {
+    // Regression: the real factory used to keep reporting "idle" while a
+    // turn streamed, so any turn longer than idleTimeoutMs was killed
+    // mid-work ("claude process … is dead (idle (903s))" on clawd).
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000,
+      staleTimeoutMs: 2_000,
+      sweepIntervalMs: 100,
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setBusy(Date.now() - 10_000) // turn running; previous turn ended 10s ago
+    vi.advanceTimersByTime(500)
+    await Promise.resolve()
+    expect(h.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(1)
+  })
+
+  it("acquire claims an almost-expired idle handle so the sweep can't race the dispatch", async () => {
+    const factory = new FakeFactory()
+    const reg = new ProcessRegistry({
+      factory,
+      idleTimeoutMs: 1_000,
+      staleTimeoutMs: 60_000,
+      sweepIntervalMs: 100,
+    })
+    reg.start()
+    const h = reg.acquire(KEY("a"), OPTS("a")) as FakeHandle
+    h.setIdle(Date.now() - 990) // 10ms from the idle threshold
+    const again = reg.acquire(KEY("a"), OPTS("a"))
+    expect(again).toBe(h)
+    vi.advanceTimersByTime(300) // without claim() this sweep would kill it
+    await Promise.resolve()
+    expect(h.killReasons).toHaveLength(0)
+    expect(reg.list()).toHaveLength(1)
   })
 
   it("kills stale handles past staleTimeoutMs even if rescheduled", async () => {

@@ -159,8 +159,12 @@ class ClaudeProcessHandle implements ProcessHandle {
       throw new Error(`claude process for ${this.key.agentId}:${this.key.chatId} is dead (${this.snap.deadReason ?? "?"})`)
     }
 
-    this.snap = { ...this.snap, pendingTaskId: input.taskId }
+    // Mark the turn in-flight. Without this the handle kept reporting
+    // "idle" while streaming, so the registry sweeper idle-killed
+    // processes mid-turn once (now − previous turn's end) crossed
+    // idleTimeoutMs — any turn longer than the idle window died.
     const turnStart = Date.now()
+    this.snap = { ...this.snap, state: "busy", pendingTaskId: input.taskId, lastTurnAt: turnStart }
 
     // Write the user line. JSON.stringify guarantees no embedded
     // newlines so a single \n delimits the message.
@@ -190,9 +194,24 @@ class ClaudeProcessHandle implements ProcessHandle {
         }
       }
     } finally {
-      this.snap = { ...this.snap, pendingTaskId: null }
+      // Success path already transitioned busy → idle in onResultEvent.
+      // On error paths (deadline, mid-turn exit) restore idle here so a
+      // handle can never leak in "busy" and dodge the sweeper forever.
+      const stillBusy = this.snap.state === "busy"
+      this.snap = {
+        ...this.snap,
+        ...(stillBusy ? { state: "idle" as const, lastTurnAt: Date.now() } : {}),
+        pendingTaskId: null,
+      }
       release()
     }
+  }
+
+  /** See ProcessHandle.claim — bump lastTurnAt on acquire so the idle
+   *  sweeper can't kill the handle before the turn's first write. */
+  claim(): void {
+    if (this.snap.state === "dead") return
+    this.snap = { ...this.snap, lastTurnAt: Date.now() }
   }
 
   async kill(reason: string): Promise<void> {

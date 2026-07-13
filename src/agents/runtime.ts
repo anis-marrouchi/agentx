@@ -1639,8 +1639,10 @@ async function executeClaudeCodePersistent(
     else abortSignal.addEventListener("abort", onAbort, { once: true })
   }
 
+  let sawEvent = false
   try {
     for await (const evt of handle.runTurn({ message: prompt, taskId: task.taskId ?? "unknown" })) {
+      sawEvent = true
       // Forward to existing onEvent — trace step emitter, dashboard
       // formatter, etc. all keep working without changes.
       if (onEvent) {
@@ -1697,6 +1699,15 @@ async function executeClaudeCodePersistent(
     if (cancelled) {
       finalError = "task cancelled by operator"
       finalErrorKind = "cancelled"
+    } else if (!sawEvent) {
+      // Turn never started (handle killed between acquire and the first
+      // write, stdin gone, etc.) — nothing streamed, so retrying is
+      // side-effect-free. Return null and let the caller fall back to
+      // spawn-per-task; an infra race must not surface as a task failure.
+      console.error(`[runtime] persistent handle unusable before first event (${e?.message || e}); falling back to spawn-per-task`)
+      registry.release(key, { kill: true, reason: "pre-turn failure" })
+      if (abortSignal) abortSignal.removeEventListener("abort", onAbort)
+      return null
     } else {
       const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
       finalError = env.error
