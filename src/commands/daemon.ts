@@ -6,6 +6,32 @@ import { existsSync, readFileSync } from "fs"
 
 // --- agentx daemon: start/stop/status/logs ---
 
+/**
+ * Best-effort check that a live PID is actually an agentx/node daemon rather
+ * than an unrelated process the OS assigned our recycled PID to. Returns true
+ * only when the process command line clearly looks like agentx; on any doubt
+ * (unknown platform, ps failure) it errs toward true so we never spawn a
+ * duplicate daemon on a healthy host.
+ */
+async function isLikelyAgentxProcess(pid: number): Promise<boolean> {
+  try {
+    const { execFileSync } = await import("child_process")
+    // `ps -p <pid> -o command=` works on both macOS and Linux and prints the
+    // full command line with no header.
+    const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf-8",
+      timeout: 2000,
+    }).trim()
+    if (!cmd) return false // no such process line — treat as stale
+    // agentx daemons run as `node .../cli.js daemon ...` (or `agentx daemon`).
+    return /\bnode\b/.test(cmd) || /agentx|agentix|cli\.js/.test(cmd)
+  } catch {
+    // ps unavailable or errored — fall back to the conservative assumption
+    // that the PID is a real daemon so we don't double-spawn.
+    return true
+  }
+}
+
 export const daemon = new Command()
   .name("daemon")
   .description("manage the agentx daemon — start, stop, status, logs")
@@ -88,12 +114,21 @@ daemon
     if (existsSync(pidPath)) {
       const oldPid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10)
       if (oldPid && oldPid !== process.pid) {
+        let alive = false
         try {
           process.kill(oldPid, 0) // throws if process doesn't exist
-          console.error(`Another agentx daemon is already running (PID ${oldPid}). Exiting.`)
-          process.exit(0)
+          alive = true
         } catch {
           // Old process is dead — we can proceed
+        }
+        // A bare kill(pid, 0) only proves *some* process holds that PID.
+        // PIDs get recycled — the OS may have reassigned our old PID to an
+        // unrelated process (e.g. a macOS system extension), which would
+        // wedge startup forever behind a false "already running". Confirm
+        // the live PID is actually a node/agentx process before yielding.
+        if (alive && (await isLikelyAgentxProcess(oldPid))) {
+          console.error(`Another agentx daemon is already running (PID ${oldPid}). Exiting.`)
+          process.exit(0)
         }
       }
     }
