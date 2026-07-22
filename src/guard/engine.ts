@@ -35,7 +35,7 @@ function ruleMatches(
   rule: GuardRule,
   input: GuardInput,
   policy: ResolvedPolicy,
-  ctx: { candidates: string[]; expandedCommand: string; env: Record<string, string> },
+  ctx: { candidates: string[]; ambientCandidates: string[]; expandedCommand: string; env: Record<string, string> },
 ): RuleHit | null {
   const m = rule.match
 
@@ -65,7 +65,13 @@ function ruleMatches(
     const set = policy.protectedResources[name]
     if (!set) return null // referenced env not declared -> cannot match on target
     const tokens = normalizeProtectedSet(set, ctx.env)
-    resolvedTarget = matchProtected(ctx.candidates, tokens)
+    // Ambient targets (DATABASE_URL & friends) only count for rules already
+    // scoped to a destructive verb — `prisma migrate reset` names no target
+    // but will happily wipe whatever DATABASE_URL points at. A bare
+    // `target_in` rule stays on explicit targets so it can't flag every `ls`
+    // in a prod-configured workspace.
+    const pool = m.command_regex ? [...ctx.candidates, ...ctx.ambientCandidates] : ctx.candidates
+    resolvedTarget = matchProtected(pool, tokens)
     if (!resolvedTarget) return null
   }
 
@@ -96,10 +102,12 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
   const env = buildResolveEnv(input.cwd)
 
   let candidates: string[] = []
+  let ambientCandidates: string[] = []
   let expandedCommand = command
   try {
     const t = resolveTargets(command, env)
     candidates = t.candidates
+    ambientCandidates = t.ambientCandidates
     expandedCommand = t.expandedCommand
   } catch {
     // Resolution itself failed. If any protected set exists, fail closed.
@@ -108,7 +116,7 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
     }
   }
 
-  const ctx = { candidates, expandedCommand, env }
+  const ctx = { candidates, ambientCandidates, expandedCommand, env }
   const hits: RuleHit[] = []
   for (const rule of policy.rules) {
     try {

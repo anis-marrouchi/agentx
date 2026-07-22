@@ -90,12 +90,38 @@ export function extractHost(token: string): string | null {
   return null
 }
 
+/**
+ * Connection-string env vars that DB tools read implicitly. `prisma migrate
+ * reset` names no target at all — it just reads DATABASE_URL — so a purely
+ * text-based resolver would see nothing to match and wave it through even
+ * when the workspace is pointed at production. These are folded in as
+ * "ambient" targets, kept separate from explicit ones because they must only
+ * arm rules that are already scoped to a destructive verb (see engine.ts);
+ * otherwise a bare `target_in` rule would match every `ls` in a
+ * prod-configured workspace.
+ */
+export const AMBIENT_DB_VARS = [
+  "DATABASE_URL",
+  "DIRECT_URL",
+  "DIRECT_DATABASE_URL",
+  "SHADOW_DATABASE_URL",
+  "POSTGRES_URL",
+  "POSTGRES_PRISMA_URL",
+  "PGHOST",
+  "PGDATABASE",
+  "MYSQL_URL",
+  "MONGODB_URI",
+  "REDIS_URL",
+]
+
 export interface ResolvedTargets {
   /** The command with `$VAR`/`${VAR}` expanded. */
   expandedCommand: string
-  /** Concrete candidate targets: full URLs, extracted hosts, and the raw
-   *  resolved values of referenced env vars. Lowercased, de-duped. */
+  /** Concrete candidate targets the command explicitly references: full URLs,
+   *  extracted hosts, and the resolved values of referenced env vars. */
   candidates: string[]
+  /** Targets implied by the ambient environment (AMBIENT_DB_VARS). */
+  ambientCandidates: string[]
 }
 
 /** Given a command and the resolve env, produce every concrete target the
@@ -128,7 +154,17 @@ export function resolveTargets(command: string, env: Record<string, string>): Re
   const hostRe = /\b(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})\b/gi
   for (const m of expanded.matchAll(hostRe)) set.add(m[0].toLowerCase())
 
-  return { expandedCommand: expanded, candidates: [...set] }
+  // 4. Ambient connection targets the tool would read implicitly.
+  const ambient = new Set<string>()
+  for (const name of AMBIENT_DB_VARS) {
+    const v = env[name]
+    if (!v) continue
+    ambient.add(v.toLowerCase())
+    const h = extractHost(v)
+    if (h) ambient.add(h)
+  }
+
+  return { expandedCommand: expanded, candidates: [...set], ambientCandidates: [...ambient] }
 }
 
 /** Expand `${VAR}` in the declared protected values themselves, then return

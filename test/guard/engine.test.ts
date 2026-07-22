@@ -100,6 +100,39 @@ describe("engine — mode + precedence", () => {
   })
 })
 
+describe("engine — ambient connection targets", () => {
+  // `prisma migrate reset` names no target; it reads DATABASE_URL implicitly.
+  // Without ambient resolution this sailed through as allow even in a
+  // prod-configured workspace (found during clawd deploy verification).
+  it("catches a destructive command that names no target but reads ambient DATABASE_URL", () => {
+    const v = run("npx prisma migrate reset --force", "enforce")
+    expect(v.action).toBe("deny")
+    expect(v.ruleId).toBe("prisma-reset-or-force-push-prod")
+    expect(v.resolvedTarget).toBe("api.hackathonat.com")
+  })
+
+  it("allows it once the ambient env is not production", () => {
+    process.env.DATABASE_URL = "postgres://user:pw@localhost:5432/dev"
+    expect(run("npx prisma migrate reset --force", "enforce").matched).toBe(false)
+  })
+
+  it("ambient targets do NOT arm a bare target_in rule (no `ls` false positives)", () => {
+    const policy: GuardPolicy = guardPolicySchema.parse({
+      protected_resources: { production: { resolve_env: true, hosts: ["api.hackathonat.com"] } },
+      agents: {
+        "coder-agent": { rules: [{ id: "coder-no-prod", match: { target_in: "production" }, action: "deny" }] },
+      },
+    })
+    const resolved = resolveInMemory({ ...policy, mode: "enforce" }, "coder-agent")
+    // Ambient DATABASE_URL is prod, but `ls` references no target.
+    expect(evaluate({ tool: "Bash", command: "ls -la", agentId: "coder-agent" }, resolved).matched).toBe(false)
+    // An explicit reference still trips it.
+    expect(
+      evaluate({ tool: "Bash", command: "psql $DATABASE_URL -c 'select 1'", agentId: "coder-agent" }, resolved).ruleId,
+    ).toBe("coder-no-prod")
+  })
+})
+
 describe("engine — agent-scoped deny", () => {
   it("coder-no-prod denies any prod-targeting command for that agent", () => {
     const policy: GuardPolicy = {
