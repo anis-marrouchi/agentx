@@ -1,22 +1,71 @@
-# Production protected resources.
+# Production protected resources — Noqta fleet.
 #
-# The catalog rules reference `target_in: production`, so DECLARING this set is
-# what arms them. `resolve_env: true` expands $VAR / ${VAR} and reads .env* in
-# the workspace before matching — so `--shadow-database-url $DATABASE_URL` is
-# caught even though the literal string "production" never appears in the
-# command (this is exactly the 2026-07-21 incident class).
+# The catalog rules reference `target_in: production`, so DECLARING a host here
+# is what ARMS them. `resolve_env: true` expands $VAR/${VAR}, reads .env* in the
+# workspace, AND folds in ambient connection vars (DATABASE_URL, PGHOST, ...),
+# so both of these are caught:
+#   prisma migrate diff --shadow-database-url $DATABASE_URL   (explicit ref)
+#   prisma migrate reset --force                              (ambient DATABASE_URL)
+#
+# Matching is host-based on purpose: hostnames are stable and non-secret, while
+# credentials rotate and must never be committed here.
+#
+# Inventory sources: mtgl-odoo / ksi-v1-coder / ksi-servers-access skills,
+# agentx mesh config, and a fleet-wide scan of agent workspace env files
+# (2026-07-22). Re-run `agentx guard policy --agent <id>` after editing.
+
 protected_resources:
   production:
     resolve_env: true
-    db_urls:
-      - "${PROD_DATABASE_URL}"
+
     hosts:
+      # --- MTGL ---------------------------------------------------------
+      - "167.99.0.229"                 # MTGL Odoo production (odoo + postgres + apache)
+
+      # --- KSI ----------------------------------------------------------
+      - "134.122.119.251"              # KSI V1 WordPress production host
+      - "ksi.tn"                       # KSI V1 production site
+
+      # --- Hackathonat (the 2026-07-21 incident) ------------------------
       - "api.hackathonat.com"
       - "185.164.25.107"
+
+      # --- Noqta marketing site (Supabase prod) -------------------------
+      - "db.rgznpcdznpcjoxxytwsh.supabase.co"
+      - "rgznpcdznpcjoxxytwsh.supabase.co"
+      - "aws-0-eu-central-1.pooler.supabase.com"
+
+      # --- Shared platform ----------------------------------------------
+      - "gitlab.noqta.tn"              # source of truth for every project
+      - "whatsapp.noqta.tn"            # WhatsApp API endpoint
+      - "noqta.tn"                     # main site + V2 jump host
+
+      # --- The agent fleet itself ---------------------------------------
+      # clawd-server runs all 22 production agents; destructive DB work
+      # against it takes down the fleet (and its own intent ledger).
+      - "64.226.102.124"               # clawd-server public
+      - "100.67.108.119"               # clawd-server tailscale
+
+    # Credentials NEVER go in this file. If you keep a dedicated prod
+    # connection string in the daemon env, reference it by name here:
+    # db_urls:
+    #   - "${PROD_DATABASE_URL}"
+    db_urls: []
+
     # buckets:
-    #   - "my-prod-uploads"
-    # contexts:            # k8s contexts, droplet ids, cluster names
+    #   - "noqta-prod-uploads"
+    # contexts:                        # k8s contexts, droplet ids, cluster names
     #   - "do-fra1-prod"
+
+  # Staging is declared but intentionally NOT referenced by any catalog rule,
+  # so it is inert by default. Add rules with `target_in: staging` if you want
+  # a lighter touch (e.g. warn) on these.
+  staging:
+    resolve_env: true
+    hosts:
+      - "v2.ksi.tn"                    # KSI V2 staging
+      - "admin.mtgl.noqta.tn"          # MTGL V2 staging
+    db_urls: []
 
 # Production-only rules beyond the catalog:
 rules: []
