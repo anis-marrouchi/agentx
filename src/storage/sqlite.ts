@@ -314,6 +314,39 @@ function runMigrations(db: Database.Database): void {
         CREATE INDEX idx_task_queue_convo     ON task_queue(conversation_id, created_at);
       `,
     },
+    {
+      // guardrail_decisions — audit trail for the destructive-action guard
+      // (PRD R7). One row per PreToolUse guard verdict, written by the
+      // short-lived `agentx guard check` hook process. `verdict` is the
+      // policy's decision (allow|deny|escalate|warn); `effective_action` is
+      // what was actually enforced after the mode downgrade (in warn mode a
+      // deny is recorded as verdict=deny, effective_action=allow). task_id is
+      // a logical link to task_traces when the guard can resolve it (often
+      // null — the hook doesn't always know the AgentX task id). `approver`
+      // is reserved for Phase 2 escalation (human who approved/denied).
+      v: 10,
+      sql: `
+        CREATE TABLE guardrail_decisions (
+          id TEXT PRIMARY KEY,
+          ts INTEGER NOT NULL,
+          agent_id TEXT,
+          task_id TEXT,
+          tool TEXT NOT NULL,
+          command TEXT,
+          resolved_target TEXT,
+          matched_rule TEXT,
+          verdict TEXT NOT NULL,
+          effective_action TEXT NOT NULL,
+          mode TEXT,
+          severity TEXT,
+          approver TEXT,
+          ms INTEGER
+        );
+        CREATE INDEX idx_guardrail_ts       ON guardrail_decisions(ts);
+        CREATE INDEX idx_guardrail_verdict  ON guardrail_decisions(verdict, ts);
+        CREATE INDEX idx_guardrail_agent    ON guardrail_decisions(agent_id, ts);
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {
