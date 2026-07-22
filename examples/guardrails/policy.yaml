@@ -1,0 +1,27 @@
+# AgentX destructive-action guardrails — global policy
+#
+# Copy this tree to <agentx-install>/.agentx/guardrails/ (or run
+# `agentx guard init`). This file + environments/*.yaml + agents/<id>.yaml are
+# deep-merged (most specific wins). The built-in catalog (prisma / rm -rf /
+# docker / terraform / git push --force ... patterns) is ALWAYS applied
+# underneath. The guard reads policy live on every tool call — edits take
+# effect on the next command, no daemon restart needed.
+version: 1
+
+# warn    = compute + audit but never block (Phase 1 rollout stance).
+# enforce = honor the verdict (deny blocks; escalate asks).
+# off     = kill-switch, allow everything.
+# Flip to enforce once `agentx guard log` shows an acceptable false-positive rate.
+mode: warn
+
+defaults:
+  fail_mode: closed   # guard error on a protected-target command => deny
+  unmatched: allow    # commands no rule matches run freely (keep routine work fast)
+
+# Extra global rules beyond the catalog go here. Example:
+# rules:
+#   - id: no-prod-ssh
+#     match: { tool: Bash, command_regex: "ssh ", target_in: production }
+#     action: escalate
+#     severity: high
+rules: []

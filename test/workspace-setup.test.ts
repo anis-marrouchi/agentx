@@ -4,6 +4,7 @@ import { tmpdir } from "os"
 import { resolve } from "path"
 import {
   generateClaudeMd,
+  patchGuardrails,
   readManagedHash,
   setupWorkspace,
 } from "../src/agents/workspace-setup"
@@ -204,5 +205,61 @@ describe("codegraph opt-in", () => {
     const after = readFileSync(resolve(workspace, "CLAUDE.md"), "utf8")
     expect(after).toContain("## CodeGraph")
     expect(result.created.some((p) => p.endsWith("CLAUDE.md (refreshed)"))).toBe(true)
+  })
+})
+
+describe("destructive-action guardrails wiring", () => {
+  let workspace: string
+  const readSettings = () => JSON.parse(readFileSync(resolve(workspace, ".claude/settings.json"), "utf8"))
+
+  beforeEach(() => {
+    workspace = mkdtempSync(resolve(tmpdir(), "agentx-ws-guard-"))
+  })
+  afterEach(() => {
+    rmSync(workspace, { recursive: true, force: true })
+  })
+
+  it("generated settings.json includes the guardrail deny list in every mode", () => {
+    for (const mode of ["bypassPermissions", "plan", "default"] as const) {
+      const ws = mkdtempSync(resolve(tmpdir(), "agentx-ws-guard-m-"))
+      setupWorkspace("a", baseAgent({ workspace: ws, permissionMode: mode }), "19900", () => {})
+      const deny: string[] = readFileSync(resolve(ws, ".claude/settings.json"), "utf8")
+        ? JSON.parse(readFileSync(resolve(ws, ".claude/settings.json"), "utf8")).permissions.deny
+        : []
+      expect(deny).toContain("Bash(npx prisma migrate reset*)")
+      expect(deny).toContain("Bash(prisma db push*)")
+      expect(deny).toContain("Bash(dropdb*)")
+      rmSync(ws, { recursive: true, force: true })
+    }
+  })
+
+  it("generated settings.json wires the PreToolUse guard hook on Bash + Write/Edit", () => {
+    setupWorkspace("devops-agent", baseAgent({ workspace }), "19900", () => {})
+    const s = readSettings()
+    const pre = s.hooks.PreToolUse
+    expect(Array.isArray(pre)).toBe(true)
+    const matchers = pre.map((e: any) => e.matcher)
+    expect(matchers).toContain("Bash")
+    expect(matchers).toContain("Write|Edit")
+    const cmds = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
+    expect(cmds.every((c: string) => c.includes("guard check --agent devops-agent"))).toBe(true)
+  })
+
+  it("patchGuardrails backfills an existing settings.json and is idempotent", () => {
+    // Simulate a pre-guardrails workspace: settings without deny/PreToolUse.
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(
+      resolve(workspace, ".claude/settings.json"),
+      JSON.stringify({ permissions: { deny: ["Bash(rm -rf /)"] }, hooks: {} }, null, 2),
+    )
+
+    expect(patchGuardrails(workspace, "coder-agent")).toBe(true)
+    const s = readSettings()
+    expect(s.permissions.deny).toContain("Bash(rm -rf /)") // preserved
+    expect(s.permissions.deny).toContain("Bash(npx prisma migrate reset*)") // added
+    expect(s.hooks.PreToolUse.some((e: any) => e.matcher === "Bash")).toBe(true)
+
+    // Second run is a no-op.
+    expect(patchGuardrails(workspace, "coder-agent")).toBe(false)
   })
 })
