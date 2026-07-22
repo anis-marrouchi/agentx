@@ -8,6 +8,7 @@ import { agent, channel, cron, mesh, skillCmd, references, hook, migrate, config
 import { db as dbCmd } from "@/commands/db"
 import { ledger as ledgerCmd } from "@/commands/ledger"
 import { trace as traceCmd } from "@/commands/trace"
+import { guard as guardCmd } from "@/commands/guard"
 import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
@@ -71,6 +72,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(dbCmd)
     .addCommand(ledgerCmd)
     .addCommand(traceCmd)
+    .addCommand(guardCmd)
     .addCommand(processCmd)
     .addCommand(ragCmd)
     .addCommand(backlog)
