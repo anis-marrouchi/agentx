@@ -234,15 +234,25 @@ describe("destructive-action guardrails wiring", () => {
   })
 
   it("generated settings.json wires the PreToolUse guard hook on Bash + Write/Edit", () => {
-    setupWorkspace("devops-agent", baseAgent({ workspace }), "19900", () => {})
+    setupWorkspace("devops-agent", baseAgent({ workspace }), "18800", () => {})
     const s = readSettings()
     const pre = s.hooks.PreToolUse
     expect(Array.isArray(pre)).toBe(true)
     const matchers = pre.map((e: any) => e.matcher)
     expect(matchers).toContain("Bash")
     expect(matchers).toContain("Write|Edit")
-    const cmds = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
-    expect(cmds.every((c: string) => c.includes("guard check --agent devops-agent"))).toBe(true)
+
+    const cmds: string[] = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
+    for (const c of cmds) {
+      // Loopback POST to the running daemon on the configured port — no node
+      // spawn per tool call.
+      expect(c).toContain("http://127.0.0.1:18800/guard/check?agent=devops-agent")
+      expect(c).not.toContain("dist/cli.js")
+      // Load-bearing: a PreToolUse hook exiting 2 blocks the call, and curl
+      // uses exit 2 for init failures. `|| true` keeps that from ever
+      // masquerading as a policy deny.
+      expect(c.trim().endsWith("|| true")).toBe(true)
+    }
   })
 
   it("patchGuardrails backfills an existing settings.json and is idempotent", () => {
@@ -253,13 +263,44 @@ describe("destructive-action guardrails wiring", () => {
       JSON.stringify({ permissions: { deny: ["Bash(rm -rf /)"] }, hooks: {} }, null, 2),
     )
 
-    expect(patchGuardrails(workspace, "coder-agent")).toBe(true)
+    expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(true)
     const s = readSettings()
     expect(s.permissions.deny).toContain("Bash(rm -rf /)") // preserved
     expect(s.permissions.deny).toContain("Bash(npx prisma migrate reset*)") // added
     expect(s.hooks.PreToolUse.some((e: any) => e.matcher === "Bash")).toBe(true)
 
     // Second run is a no-op.
-    expect(patchGuardrails(workspace, "coder-agent")).toBe(false)
+    expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false)
+  })
+
+  it("patchGuardrails replaces a stale node-CLI guard hook instead of duplicating it", () => {
+    // A workspace already carrying the first-generation (node spawn) hook,
+    // plus an unrelated user hook that must survive.
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(
+      resolve(workspace, ".claude/settings.json"),
+      JSON.stringify(
+        {
+          permissions: { deny: [] },
+          hooks: {
+            PreToolUse: [
+              { matcher: "Bash", hooks: [{ type: "command", command: '"/usr/bin/node" "/x/dist/cli.js" guard check --agent coder-agent --root "/x"' }] },
+              { matcher: "Bash", hooks: [{ type: "command", command: "echo user-hook" }] },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    )
+
+    expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(true)
+    const pre = readSettings().hooks.PreToolUse
+    const cmds: string[] = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
+
+    expect(cmds.some((c) => c.includes("echo user-hook"))).toBe(true) // user hook preserved
+    expect(cmds.some((c) => c.includes("dist/cli.js"))).toBe(false) // stale form gone
+    expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(2) // Bash + Write|Edit, no dupes
+    expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
   })
 })

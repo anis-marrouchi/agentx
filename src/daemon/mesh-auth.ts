@@ -26,6 +26,12 @@ export type MeshAuthDecision =
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 
+/** True when the socket peer is on this host. Used by loopback-only
+ *  endpoints (e.g. the guard hook) that must never be reachable off-box. */
+export function isLoopback(remoteAddress: string): boolean {
+  return LOOPBACK.has(remoteAddress)
+}
+
 export function decideMeshAuth(req: MeshAuthRequest): MeshAuthDecision {
   if (req.enforcementDisabled) return { allowed: true, reason: "disabled" }
   if (LOOPBACK.has(req.remoteAddress)) return { allowed: true, reason: "loopback" }

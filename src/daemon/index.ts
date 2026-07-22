@@ -40,7 +40,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
-import { decideMeshAuth } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback } from "@/daemon/mesh-auth"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -66,6 +66,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
+import { checkPayload, type PreToolUsePayload } from "@/guard"
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
 
@@ -1994,6 +1995,31 @@ export class AgentXDaemon {
       if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
       }
+
+      // Destructive-action guard (PreToolUse hook). Loopback ONLY: the hook
+      // always runs on this host, and the verdict text names protected
+      // hostnames, so it must never be reachable off-box. Answering here
+      // instead of spawning `agentx guard check` keeps the per-tool-call
+      // cost at ~1ms instead of ~300ms of node boot.
+      if (req.method === "POST" && path === "/guard/check") {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: "Forbidden: /guard/check is loopback-only" })
+          return
+        }
+        const agentId = url.searchParams.get("agent") || undefined
+        const envScope = url.searchParams.get("env") || undefined
+        const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        const { stdout } = checkPayload(payload as PreToolUsePayload, {
+          root: process.cwd(),
+          agentId,
+          env: envScope,
+        })
+        // Empty body == allow. The hook pipes our stdout straight to Claude Code.
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(stdout)
+        return
+      }
+
       // SSE live event stream
       if (req.method === "GET" && path === "/events") {
         this.handleSSE(req, res)

@@ -209,39 +209,49 @@ const GUARDRAIL_DENY = [
   "Bash(dropdb*)",
 ]
 
-/** The command the PreToolUse hook runs. Resolved to the daemon's own node +
- *  cli.js at generate time, with --root pinned to the install dir so the guard
- *  finds `.agentx/guardrails/` and `.agentx/db.sqlite` regardless of the
- *  agent workspace cwd it's invoked from. */
-function guardHookCommand(agentId: string): string {
-  const launcher = process.argv[1]
-    ? `"${process.execPath}" "${resolve(process.argv[1])}"`
-    : "agentx"
-  return `${launcher} guard check --agent ${agentId} --root "${process.cwd()}"`
+/**
+ * The command the PreToolUse hook runs. This fires on EVERY Bash/Write/Edit
+ * call, so it must be cheap: spawning `node dist/cli.js guard check` cost
+ * ~300ms of interpreter + bundle boot per tool call. Instead we POST the
+ * payload to the already-running daemon over loopback (~1ms) and pipe its
+ * response straight back to Claude Code. `/guard/check` is loopback-only.
+ *
+ * The trailing `|| true` is load-bearing: a PreToolUse hook exiting 2 BLOCKS
+ * the tool call, and curl uses exit 2 for its own init failures. Forcing
+ * exit 0 means a curl/daemon problem can never masquerade as a policy deny.
+ * If the daemon is unreachable we fail open — acceptable because the daemon
+ * is what spawns the agents in the first place, so "daemon down" means there
+ * are no agent tool calls to guard.
+ */
+function guardHookCommand(agentId: string, daemonPort: string): string {
+  const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
+  return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
 }
 
 /** PreToolUse hook entries wiring the guard onto Bash + Write/Edit. */
-function guardPreToolUseHooks(agentId: string): unknown[] {
-  const command = guardHookCommand(agentId)
+function guardPreToolUseHooks(agentId: string, daemonPort: string): unknown[] {
+  const command = guardHookCommand(agentId, daemonPort)
   return [
     { matcher: "Bash", hooks: [{ type: "command", command, timeout: "10s" }] },
     { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: "10s" }] },
   ]
 }
 
-/** True when a PreToolUse hooks array already contains our guard hook (any
- *  agent id / root — matched by the `guard check` signature). */
-function hasGuardHook(preToolUse: unknown): boolean {
-  if (!Array.isArray(preToolUse)) return false
-  return preToolUse.some(
-    (entry: any) =>
-      Array.isArray(entry?.hooks) &&
-      entry.hooks.some((h: any) => typeof h?.command === "string" && h.command.includes("guard check")),
+/** Is this hook entry one of ours? Matches both the current curl form and
+ *  the earlier `guard check` CLI form, so stale entries get replaced rather
+ *  than duplicated. */
+function isGuardEntry(entry: any): boolean {
+  return (
+    Array.isArray(entry?.hooks) &&
+    entry.hooks.some(
+      (h: any) =>
+        typeof h?.command === "string" && (h.command.includes("/guard/check") || h.command.includes("guard check")),
+    )
   )
 }
 
 /** Generate .claude/settings.json with hooks and permissions */
-function generateSettings(agentId: string, def: AgentDef): Record<string, unknown> {
+function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "19900"): Record<string, unknown> {
   const settings: Record<string, unknown> = {
     autoMemoryEnabled: true,
     env: {
@@ -286,7 +296,7 @@ function generateSettings(agentId: string, def: AgentDef): Record<string, unknow
   // PreToolUse — destructive-action guardrails. Runs the guard on every Bash
   // and Write/Edit call; in warn mode it audits without blocking. This is the
   // primary enforcement chokepoint (works even under bypassPermissions).
-  hooks["PreToolUse"] = guardPreToolUseHooks(agentId)
+  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort)
 
   // Notification hook — log when agent needs input
   hooks["Notification"] = [{
@@ -492,7 +502,7 @@ export function setupWorkspace(
 
   // .claude/settings.json
   const settingsPath = resolve(workspace, ".claude/settings.json")
-  writeIfMissing(settingsPath, JSON.stringify(generateSettings(agentId, def), null, 2))
+  writeIfMissing(settingsPath, JSON.stringify(generateSettings(agentId, def, daemonPort), null, 2))
 
   // .claude/rules/
   const rules = generateRules(agentId, def)
@@ -551,7 +561,7 @@ function patchSettings(workspace: string, patches: Record<string, unknown>): boo
  * existing files, so live workspaces need this explicit patch. Idempotent —
  * re-running is a no-op once both are present. Returns true if it changed.
  */
-export function patchGuardrails(workspace: string, agentId: string): boolean {
+export function patchGuardrails(workspace: string, agentId: string, daemonPort: string = "19900"): boolean {
   const settingsPath = resolve(workspace, ".claude/settings.json")
   if (!existsSync(settingsPath)) return false
 
@@ -569,13 +579,14 @@ export function patchGuardrails(workspace: string, agentId: string): boolean {
       }
     }
 
-    // 2. PreToolUse guard hook
+    // 2. PreToolUse guard hook. Drop any previous guard entries (including
+    //    the older node-CLI form) and re-add the current one, so a changed
+    //    port or invocation style self-heals instead of duplicating.
     const hooks = (existing.hooks ??= {})
-    if (!hasGuardHook(hooks.PreToolUse)) {
-      const guardEntries = guardPreToolUseHooks(agentId)
-      hooks.PreToolUse = Array.isArray(hooks.PreToolUse)
-        ? [...hooks.PreToolUse, ...guardEntries]
-        : guardEntries
+    const others = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse.filter((e: any) => !isGuardEntry(e)) : []
+    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort)]
+    if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
+      hooks.PreToolUse = desired
       changed = true
     }
 
@@ -611,7 +622,7 @@ export function setupAllWorkspaces(
 
     // Backfill destructive-action guardrails (deny list + PreToolUse hook)
     // onto existing workspaces.
-    if (def.tier === "claude-code" && patchGuardrails(def.workspace, id)) {
+    if (def.tier === "claude-code" && patchGuardrails(def.workspace, id, daemonPort)) {
       totalGuarded++
     }
   }
