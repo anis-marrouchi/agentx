@@ -1,0 +1,9 @@
+# Per-agent override for coder-agent. Top-level rules here are auto-scoped to
+# this agent (the filename names it). coder agents never touch production.
+rules:
+  - id: coder-no-prod
+    match:
+      target_in: production
+    action: deny
+    severity: critical
+    message: "coder-agent is not permitted to run commands against production."

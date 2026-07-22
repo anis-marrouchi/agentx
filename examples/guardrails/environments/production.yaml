@@ -1,0 +1,22 @@
+# Production protected resources.
+#
+# The catalog rules reference `target_in: production`, so DECLARING this set is
+# what arms them. `resolve_env: true` expands $VAR / ${VAR} and reads .env* in
+# the workspace before matching — so `--shadow-database-url $DATABASE_URL` is
+# caught even though the literal string "production" never appears in the
+# command (this is exactly the 2026-07-21 incident class).
+protected_resources:
+  production:
+    resolve_env: true
+    db_urls:
+      - "${PROD_DATABASE_URL}"
+    hosts:
+      - "api.hackathonat.com"
+      - "185.164.25.107"
+    # buckets:
+    #   - "my-prod-uploads"
+    # contexts:            # k8s contexts, droplet ids, cluster names
+    #   - "do-fra1-prod"
+
+# Production-only rules beyond the catalog:
+rules: []

@@ -194,8 +194,64 @@ export function generateClaudeMd(agentId: string, def: AgentDef, daemonPort: str
   return lines.join("\n")
 }
 
+// Phase 0 stop-gap deny list for the destructive-action guardrails. Claude
+// Code deny globs are coarse (single trailing wildcard), so this is a blunt
+// backstop for the clearly-always-destructive prisma/dropdb classes that
+// caused the 2026-07-21 prod-wipe incident. The env-var-resolved, nuanced
+// matching (diff --shadow-database-url pointed at prod, pg_restore --clean,
+// migrate deploy) is done by the `agentx guard` PreToolUse hook, which runs
+// even under bypassPermissions (where deny rules may be skipped).
+const GUARDRAIL_DENY = [
+  "Bash(npx prisma migrate reset*)",
+  "Bash(prisma migrate reset*)",
+  "Bash(npx prisma db push*)",
+  "Bash(prisma db push*)",
+  "Bash(dropdb*)",
+]
+
+/**
+ * The command the PreToolUse hook runs. This fires on EVERY Bash/Write/Edit
+ * call, so it must be cheap: spawning `node dist/cli.js guard check` cost
+ * ~300ms of interpreter + bundle boot per tool call. Instead we POST the
+ * payload to the already-running daemon over loopback (~1ms) and pipe its
+ * response straight back to Claude Code. `/guard/check` is loopback-only.
+ *
+ * The trailing `|| true` is load-bearing: a PreToolUse hook exiting 2 BLOCKS
+ * the tool call, and curl uses exit 2 for its own init failures. Forcing
+ * exit 0 means a curl/daemon problem can never masquerade as a policy deny.
+ * If the daemon is unreachable we fail open — acceptable because the daemon
+ * is what spawns the agents in the first place, so "daemon down" means there
+ * are no agent tool calls to guard.
+ */
+function guardHookCommand(agentId: string, daemonPort: string): string {
+  const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
+  return `curl -s --max-time 3 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
+}
+
+/** PreToolUse hook entries wiring the guard onto Bash + Write/Edit. */
+function guardPreToolUseHooks(agentId: string, daemonPort: string): unknown[] {
+  const command = guardHookCommand(agentId, daemonPort)
+  return [
+    { matcher: "Bash", hooks: [{ type: "command", command, timeout: "10s" }] },
+    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: "10s" }] },
+  ]
+}
+
+/** Is this hook entry one of ours? Matches both the current curl form and
+ *  the earlier `guard check` CLI form, so stale entries get replaced rather
+ *  than duplicated. */
+function isGuardEntry(entry: any): boolean {
+  return (
+    Array.isArray(entry?.hooks) &&
+    entry.hooks.some(
+      (h: any) =>
+        typeof h?.command === "string" && (h.command.includes("/guard/check") || h.command.includes("guard check")),
+    )
+  )
+}
+
 /** Generate .claude/settings.json with hooks and permissions */
-function generateSettings(agentId: string, def: AgentDef): Record<string, unknown> {
+function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "19900"): Record<string, unknown> {
   const settings: Record<string, unknown> = {
     autoMemoryEnabled: true,
     env: {
@@ -203,17 +259,20 @@ function generateSettings(agentId: string, def: AgentDef): Record<string, unknow
     },
   }
 
-  // Permission mode
+  // Permission mode. The guardrail deny list is injected in ALL modes —
+  // including bypassPermissions, which previously had none — as a stop-gap
+  // backstop beneath the PreToolUse guard hook.
   if (def.permissionMode === "bypassPermissions") {
-    // No deny rules — full access
+    settings["permissions"] = { deny: [...GUARDRAIL_DENY] }
   } else if (def.permissionMode === "plan") {
     settings["permissions"] = {
-      deny: ["Bash(rm -rf *)", "Bash(drop *)", "Bash(DELETE *)"],
+      deny: [...GUARDRAIL_DENY, "Bash(rm -rf *)", "Bash(drop *)", "Bash(DELETE *)"],
     }
   } else {
     // Default: deny destructive operations
     settings["permissions"] = {
       deny: [
+        ...GUARDRAIL_DENY,
         "Bash(rm -rf /)",
         "Bash(> /dev/sda*)",
         "Bash(mkfs*)",
@@ -233,6 +292,11 @@ function generateSettings(agentId: string, def: AgentDef): Record<string, unknow
 
   // Hooks
   const hooks: Record<string, unknown[]> = {}
+
+  // PreToolUse — destructive-action guardrails. Runs the guard on every Bash
+  // and Write/Edit call; in warn mode it audits without blocking. This is the
+  // primary enforcement chokepoint (works even under bypassPermissions).
+  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort)
 
   // Notification hook — log when agent needs input
   hooks["Notification"] = [{
@@ -438,7 +502,7 @@ export function setupWorkspace(
 
   // .claude/settings.json
   const settingsPath = resolve(workspace, ".claude/settings.json")
-  writeIfMissing(settingsPath, JSON.stringify(generateSettings(agentId, def), null, 2))
+  writeIfMissing(settingsPath, JSON.stringify(generateSettings(agentId, def, daemonPort), null, 2))
 
   // .claude/rules/
   const rules = generateRules(agentId, def)
@@ -491,6 +555,49 @@ function patchSettings(workspace: string, patches: Record<string, unknown>): boo
 }
 
 /**
+ * Backfill the destructive-action guardrails into an EXISTING settings.json:
+ * merge the stop-gap deny list into permissions.deny (dedup, no clobber) and
+ * add the PreToolUse guard hook if absent. writeIfMissing never touches
+ * existing files, so live workspaces need this explicit patch. Idempotent —
+ * re-running is a no-op once both are present. Returns true if it changed.
+ */
+export function patchGuardrails(workspace: string, agentId: string, daemonPort: string = "19900"): boolean {
+  const settingsPath = resolve(workspace, ".claude/settings.json")
+  if (!existsSync(settingsPath)) return false
+
+  try {
+    const existing = JSON.parse(readFileSync(settingsPath, "utf-8"))
+    let changed = false
+
+    // 1. deny list
+    const perms = (existing.permissions ??= {})
+    const deny: string[] = Array.isArray(perms.deny) ? perms.deny : (perms.deny = [])
+    for (const rule of GUARDRAIL_DENY) {
+      if (!deny.includes(rule)) {
+        deny.push(rule)
+        changed = true
+      }
+    }
+
+    // 2. PreToolUse guard hook. Drop any previous guard entries (including
+    //    the older node-CLI form) and re-add the current one, so a changed
+    //    port or invocation style self-heals instead of duplicating.
+    const hooks = (existing.hooks ??= {})
+    const others = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse.filter((e: any) => !isGuardEntry(e)) : []
+    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort)]
+    if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
+      hooks.PreToolUse = desired
+      changed = true
+    }
+
+    if (changed) writeFileSync(settingsPath, JSON.stringify(existing, null, 2))
+    return changed
+  } catch {
+    return false
+  }
+}
+
+/**
  * Set up all agent workspaces on daemon start.
  */
 export function setupAllWorkspaces(
@@ -500,6 +607,7 @@ export function setupAllWorkspaces(
 ): void {
   let totalCreated = 0
   let totalPatched = 0
+  let totalGuarded = 0
   for (const [id, def] of Object.entries(agents)) {
     if (def.tier !== "claude-code" && def.tier !== "codex-cli") continue
     const result = setupWorkspace(id, def, daemonPort, log)
@@ -511,11 +619,20 @@ export function setupAllWorkspaces(
     })) {
       totalPatched++
     }
+
+    // Backfill destructive-action guardrails (deny list + PreToolUse hook)
+    // onto existing workspaces.
+    if (def.tier === "claude-code" && patchGuardrails(def.workspace, id, daemonPort)) {
+      totalGuarded++
+    }
   }
   if (totalCreated > 0) {
     log(`Workspace setup: ${totalCreated} file(s) created across agent workspaces`)
   }
   if (totalPatched > 0) {
     log(`Workspace patch: ${totalPatched} workspace(s) updated with agent teams support`)
+  }
+  if (totalGuarded > 0) {
+    log(`Guardrails: ${totalGuarded} workspace(s) backfilled with deny list + PreToolUse guard hook`)
   }
 }
