@@ -232,8 +232,8 @@ function guardHookCommand(agentId: string, daemonPort: string): string {
 function guardPreToolUseHooks(agentId: string, daemonPort: string): unknown[] {
   const command = guardHookCommand(agentId, daemonPort)
   return [
-    { matcher: "Bash", hooks: [{ type: "command", command, timeout: "10s" }] },
-    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: "10s" }] },
+    { matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] },
+    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 10 }] },
   ]
 }
 
