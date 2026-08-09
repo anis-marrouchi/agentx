@@ -1,3 +1,5 @@
+
+
 <div align="center">
 
 <img src="docs/public/logo.png" alt="AgentX" width="96" />
@@ -140,7 +142,7 @@ Each agent = a workspace directory (`CLAUDE.md`, `.claude/skills/`, hooks, MCP s
 ## Docs
 
 Full documentation: **[agentx-docs.pages.dev](https://agentx-docs.pages.dev)** — including the worked journey from a one-agent Telegram bot to a hardened multi-node mesh:
-[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md)
+[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md) → [Authoring a typed workflow](docs/journey/13-typed-workflow.md)
 
 Reference: [CLI](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Dashboard](docs/reference/dashboard/) · [Tokens](docs/reference/tokens.md) · [Tailscale](docs/reference/tailscale-setup.md)
 
