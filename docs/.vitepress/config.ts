@@ -53,6 +53,7 @@ export default withMermaid(defineConfig({
             { text: "11. Production hardening", link: "/journey/11-production-hardening" },
             { text: "12. BPM — grant application", link: "/journey/12-bpm-grant-application" },
             { text: "13. Authoring a typed workflow", link: "/journey/13-typed-workflow" },
+            { text: "14. Wearable agents", link: "/journey/14-wearable-agent" },
           ],
         },
         {
@@ -98,6 +99,8 @@ export default withMermaid(defineConfig({
           text: "Reference",
           items: [
             { text: "CLI", link: "/reference/cli" },
+            { text: "Attach mode", link: "/reference/attach" },
+            { text: "Guardrails", link: "/reference/guard" },
             { text: "Config schema", link: "/reference/config-schema" },
             { text: "Communication matrix", link: "/reference/communication-matrix" },
             { text: "Context strategies", link: "/reference/context-strategies" },

@@ -50,6 +50,8 @@ Four execution tiers:
 
 All tiers pass through the same AgentX registry first: channel routing, queueing, session reset, context assembly, task history, traces, and final delivery are tier-independent. The tier only chooses the execution backend. See [Agent execution tiers](/reference/tiers) for the exact contract and current parity gaps.
 
+There is also a fourth shape that isn't a tier, because nothing is spawned at all: **attach mode**. A Claude Code session you already have open registers with the daemon and wears an agent's identity, so messages for that agent are answered in the session in front of you rather than by a new subprocess. Same routing, same guardrails, same channels — different loop. Unclaimed messages fall back to spawning after 90 seconds, so it's a preference, never a dependency. See [Attach mode](/reference/attach).
+
 ### 2. Channel
 
 The thing messages come in on. One message-in, one reply-out, or a proactive push via `/send`.

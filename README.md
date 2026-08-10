@@ -73,7 +73,8 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 - **Scheduled work** — plain-English cron: `agentx schedule "every Monday at 9am" --agent sales`, with failure alerts and auto-disable.
 - **Workflows & procedures** — declarative YAML state machines with a visual editor for the flows that must survive restarts; versioned SOPs agents cite at runtime; deterministic no-LLM handlers for canonical answers.
 - **Compounding memory** — conversations absorb into a shared wiki (typed articles, `[[wikilinks]]`, versioned) that every agent queries — also exposed to Cursor/Claude Code via MCP (`agentx serve --stdio`).
-- **Governance** — intent ledger + replay, PM gating, typed capabilities, delegation-depth caps.
+- **Wearable agents** — `agentx attach <agent>` makes the Claude Code session you already have open answer as that agent, so a Telegram or GitLab message reaches you where you're already working instead of spawning a subprocess. Unclaimed messages fall back to a spawned agent, so it's a preference, never a dependency.
+- **Governance** — intent ledger + replay, PM gating, typed capabilities, delegation-depth caps, destructive-action guardrails that hold even under `bypassPermissions`.
 
 ## How it compares
 
@@ -140,7 +141,7 @@ Each agent = a workspace directory (`CLAUDE.md`, `.claude/skills/`, hooks, MCP s
 ## Docs
 
 Full documentation: **[agentx-docs.pages.dev](https://agentx-docs.pages.dev)** — including the worked journey from a one-agent Telegram bot to a hardened multi-node mesh:
-[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md)
+[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md) → [wearable agents](docs/journey/14-wearable-agent.md)
 
 Reference: [CLI](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Dashboard](docs/reference/dashboard/) · [Tokens](docs/reference/tokens.md) · [Tailscale](docs/reference/tailscale-setup.md)
 

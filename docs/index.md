@@ -145,6 +145,8 @@ features:
 
 **I want to drive AgentX from Cursor / Claude Code.** → [Journey 10 — MCP server](/journey/10-mcp-server)
 
+**I live in Claude Code and want my agents to reach me there.** → [Journey 14 — Wearable agents](/journey/14-wearable-agent)
+
 **I'm putting agents into production.** → [Journey 11 — Production hardening](/journey/11-production-hardening)
 
 </div>
