@@ -117,8 +117,14 @@ one `git revert` rather than an archaeology session.
 
 ## Log
 
-| Date | Change | Evidence |
-|---|---|---|
-| 2026-08-11 | Baseline recorded (this document) | Fleet query, both nodes |
+| Date | Stage | Change | Evidence |
+|---|---|---|---|
+| 2026-08-11 | B0 | Baseline recorded (this document) | Fleet query, both nodes |
+| 2026-08-11 | B1 | `surface_usage` table + `agentx usage surfaces` — CLI commands and dashboard pages are now counted | The gap above |
+| 2026-08-11 | B2 | `agentx chat` and `agentx tui` deprecated (warn on use, still run) | Zero use on either node since 2026-07-03; replaced by [attach mode](/reference/attach) |
 
-*Nothing removed yet.*
+*Nothing removed yet.* Deprecation is a warning, never a block — an operator
+mid-incident should not be stopped by a message about roadmaps.
+
+The soak started 2026-08-11. Earliest date `agentx usage surfaces --unused`
+carries two weeks of signal: **2026-08-25**.

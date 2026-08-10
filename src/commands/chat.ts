@@ -4,6 +4,7 @@ import { randomUUID } from "crypto"
 import { createInterface } from "node:readline/promises"
 import ora from "ora"
 import { resolveConn, streamTask, fetchAgents, type AgentRow } from "@/tui/client"
+import { deprecationNotice, CHAT_SURFACE_DEPRECATION } from "./deprecation"
 
 // `agentx chat @agent` — daemon-mediated REPL.
 //
@@ -21,7 +22,7 @@ import { resolveConn, streamTask, fetchAgents, type AgentRow } from "@/tui/clien
 
 export const chat = new Command()
   .name("chat")
-  .description("interactive chat with a daemon-registered agent (multi-turn /task)")
+  .description("[deprecated — see agentx attach] interactive chat with a daemon-registered agent")
   .argument("[agent]", "agent id to talk to (with or without leading @)")
   .option("-c, --config <path>", "daemon config file")
   .option("--node <url>", "daemon URL (defaults to dashboard.daemonUrl from config)")
@@ -29,6 +30,7 @@ export const chat = new Command()
   .option("--channel <name>", "logical channel name passed in context", "chat-cli")
   .option("--chat-id <id>", "resume an existing chatId (otherwise a fresh one is generated)")
   .action(async (agentArg: string | undefined, opts) => {
+    deprecationNotice({ what: "agentx chat", ...CHAT_SURFACE_DEPRECATION })
     const conn = resolveConn({ node: opts.node, token: opts.token, config: opts.config })
     let agentId = (agentArg ?? "").replace(/^@/, "").trim()
     const channel: string = opts.channel

@@ -1,5 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import { deprecationNotice, CHAT_SURFACE_DEPRECATION } from "./deprecation"
 
 // `agentx tui` — read-only mission-control view over the running daemon.
 //
@@ -9,12 +10,13 @@ import chalk from "chalk"
 
 export const tui = new Command()
   .name("tui")
-  .description("interactive terminal mission control — live agents, processes, crons, events")
+  .description("[deprecated — see agentx attach] interactive terminal mission control")
   .option("-c, --config <path>", "daemon config file")
   .option("--node <url>", "daemon URL (defaults to dashboard.daemonUrl from config)")
   .option("--token <token>", "bearer token (defaults to dashboard.token from config)")
   .option("--poll <ms>", "snapshot poll interval in ms", "3000")
   .action(async (opts) => {
+    deprecationNotice({ what: "agentx tui", ...CHAT_SURFACE_DEPRECATION })
     if (!process.stdout.isTTY) {
       console.error(chalk.red("agentx tui requires an interactive terminal"))
       process.exit(1)
