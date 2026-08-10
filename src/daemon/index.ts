@@ -67,6 +67,8 @@ import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/re
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayload, type PreToolUsePayload } from "@/guard"
+import { getAttachRegistry, isDeliveryMode } from "@/attach"
+import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
 
@@ -93,6 +95,7 @@ export class AgentXDaemon {
   private heartbeat: HeartbeatManager
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
+  private attachSweep?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
@@ -744,6 +747,8 @@ export class AgentXDaemon {
     if (this.configWatcher) {
       try { this.configWatcher.close() } catch { /* best effort */ }
     }
+
+    if (this.attachSweep) clearInterval(this.attachSweep)
 
     if (this.httpServer) {
       this.httpServer.close()
@@ -1780,6 +1785,19 @@ export class AgentXDaemon {
     this.httpServer.listen(port, host || "0.0.0.0", () => {
       this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
     })
+
+    // Attach-mode deadlines. Sweeping on an interval rather than scheduling a
+    // timer per offered message keeps the hot path allocation-free and means
+    // there are no dangling handles to clean up on shutdown. 1s granularity
+    // against a 90s claim deadline is well inside the noise.
+    this.attachSweep = setInterval(() => {
+      try {
+        const reg = getAttachRegistry()
+        reg.sweep()
+        reg.prune()
+      } catch { /* best-effort */ }
+    }, 1000)
+    this.attachSweep.unref?.()
   }
 
   /**
@@ -2017,6 +2035,93 @@ export class AgentXDaemon {
         // Empty body == allow. The hook pipes our stdout straight to Claude Code.
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(stdout)
+        return
+      }
+
+      // Attach mode (wearable agents). Same shape and same constraints as
+      // /guard/check: the hooks always run on this host, the responses name
+      // agent identities and quote channel messages, and a bound session can
+      // answer as a production agent. Loopback ONLY.
+      if (req.method === "POST" && path.startsWith("/attach/")) {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: `Forbidden: ${path} is loopback-only` })
+          return
+        }
+        const payload = (await readBody(req).catch(() => ({}))) as HookPayload
+        let out = ""
+        switch (path) {
+          case "/attach/session-start":
+            out = onSessionStart(payload)
+            break
+          case "/attach/prompt":
+            out = onPrompt(payload)
+            break
+          case "/attach/stop":
+            out = onStop(payload)
+            break
+          case "/attach/session-end":
+            out = onSessionEnd(payload)
+            break
+          case "/attach/bind": {
+            // Control-plane, not a hook: `agentx attach` posts here.
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            const agentId = String((payload as any).agentId || "")
+            const mode = (payload as any).mode
+            if (!sessionId || !agentId) {
+              this.json(res, 400, { error: "sessionId and agentId are required" })
+              return
+            }
+            if (mode !== undefined && !isDeliveryMode(mode)) {
+              this.json(res, 400, { error: `invalid mode: ${mode}` })
+              return
+            }
+            if (!this.registry.getAgent(agentId)) {
+              this.json(res, 404, { error: `Unknown agent: ${agentId}` })
+              return
+            }
+            reg.register(sessionId, { cwd: (payload as any).cwd })
+            const session = reg.bind(sessionId, agentId, mode)
+            this.json(res, 200, { ok: true, session })
+            return
+          }
+          case "/attach/detach": {
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            if (!sessionId) {
+              this.json(res, 400, { error: "sessionId is required" })
+              return
+            }
+            const session = reg.unbind(sessionId, (payload as any).agentId)
+            this.json(res, 200, { ok: true, session })
+            return
+          }
+          default:
+            this.json(res, 404, { error: `Unknown attach route: ${path}` })
+            return
+        }
+        // Empty body is Claude Code's no-op. The hook pipes this straight
+        // through, so it must be a bare decision object or nothing at all.
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(out)
+        return
+      }
+
+      // Attached-session inspection. Loopback-only for the same reason: the
+      // response names which production identities a local terminal is
+      // currently answering for.
+      if (req.method === "GET" && path === "/attach/sessions") {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: "Forbidden: /attach/sessions is loopback-only" })
+          return
+        }
+        const reg = getAttachRegistry()
+        this.json(res, 200, {
+          sessions: reg.list().map((s) => ({
+            ...s,
+            pending: reg.pendingCount(s.sessionId),
+          })),
+        })
         return
       }
 

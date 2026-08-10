@@ -185,6 +185,10 @@ export interface AgentResponse {
    *  requested agent (the local registry didn't have it). Name of the
    *  peer that actually ran it. */
   viaMesh?: string
+  /** Set when a live Claude Code session attached to this identity answered
+   *  the task instead of a spawned provider (attach mode). Claude Code
+   *  session id of the terminal that wrote the reply. */
+  viaAttachedSession?: string
 }
 
 /** Callback for streaming text deltas */
