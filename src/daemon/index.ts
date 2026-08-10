@@ -2082,7 +2082,40 @@ export class AgentXDaemon {
             }
             reg.register(sessionId, { cwd: (payload as any).cwd })
             const session = reg.bind(sessionId, agentId, mode)
-            this.json(res, 200, { ok: true, session })
+            this.json(res, 200, { ok: true, session, pending: reg.pendingCount(sessionId) })
+            return
+          }
+          case "/attach/next": {
+            // Explicit drain — what `/inbox` and manual/notify modes use. The
+            // Stop hook's auto-capture still applies afterwards, so the
+            // session answers by simply replying.
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            if (!sessionId) {
+              this.json(res, 400, { error: "sessionId is required" })
+              return
+            }
+            const item = reg.claim(sessionId)
+            this.json(res, 200, {
+              item: item ?? null,
+              pending: reg.pendingCount(sessionId),
+            })
+            return
+          }
+          case "/attach/answer": {
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            const text = String((payload as any).text || "")
+            if (!sessionId || !text) {
+              this.json(res, 400, { error: "sessionId and text are required" })
+              return
+            }
+            const item = reg.answer(sessionId, text)
+            if (!item) {
+              this.json(res, 409, { error: "no message is currently claimed by this session" })
+              return
+            }
+            this.json(res, 200, { ok: true, item, pending: reg.pendingCount(sessionId) })
             return
           }
           case "/attach/detach": {
