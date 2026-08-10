@@ -123,6 +123,7 @@ export default withMermaid(defineConfig({
           text: "Architecture",
           items: [
             { text: "Three-tier model", link: "/architecture/three-tier" },
+            { text: "Surface reduction", link: "/architecture/surface-reduction" },
             { text: "Plugins", link: "/architecture/plugins" },
             { text: "Workflows YAML", link: "/architecture/workflows-yaml" },
             { text: "Workflow absorb plan", link: "/architecture/workflow-absorb-plan" },
