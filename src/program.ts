@@ -39,6 +39,7 @@ import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { getPackageInfo } from "@/utils/get-package-info"
+import { commandPath, recordSurfaceUse, shouldRecordCommand } from "@/observability/surface-usage"
 
 /**
  * Build the full commander tree. Shared between the CLI entrypoint and the
@@ -57,6 +58,15 @@ export async function buildProgram(): Promise<Command> {
       "-v, --version",
       "display the version number"
     )
+
+  // Count which commands operators actually run. Names only — never args.
+  // The 46-command surface has no usage data behind it, so decisions about
+  // what to keep are currently opinion; this makes them evidence.
+  // See docs/architecture/surface-reduction.md.
+  program.hook("preAction", (_thisCommand, actionCommand) => {
+    const path = commandPath(actionCommand as any)
+    if (shouldRecordCommand(path)) recordSurfaceUse("cli", path)
+  })
 
   program
     .addCommand(daemon)

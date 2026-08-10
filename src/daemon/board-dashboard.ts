@@ -17,6 +17,7 @@ import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
+import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
@@ -116,6 +117,31 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 }
 
+/** Every page a human can land on. Kept explicit rather than inferred from
+ *  "has no file extension" so assets, redirects and API routes can never
+ *  drift into the numbers the reduction decisions are made from. */
+const DASHBOARD_PAGES = new Set([
+  "/",
+  "/live",
+  "/glossary",
+  "/workflows",
+  "/workflows/editor",
+  "/inbox",
+  "/procedures",
+  "/processes",
+  "/graph",
+  "/setup",
+  "/admin",
+  "/admin/graph",
+  "/admin/health",
+  "/admin/observability",
+  "/admin/ledger",
+  "/admin/cost",
+  "/admin/projects",
+  "/admin/wiki",
+  "/admin/activity-graph",
+])
+
 interface Ctx {
   boards: BoardConfig[]
   sources: Map<string, WorkSource>
@@ -135,6 +161,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
+
+  // Count which dashboard pages operators actually open. Page paths only —
+  // no query strings, no ids, and nothing under /api (those are XHR from a
+  // page we already counted, so they'd inflate every number).
+  // See docs/architecture/surface-reduction.md.
+  if (method === "GET" && DASHBOARD_PAGES.has(path)) {
+    recordSurfaceUse("page", path)
+  }
 
   if (method === "GET" && path === "/") {
     // Routing priority:

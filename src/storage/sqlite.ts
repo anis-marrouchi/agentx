@@ -39,13 +39,15 @@ function betterSqlite3Fix(error: any): string {
   return `${msg} ${hint}`
 }
 
-function loadDatabaseCtor(): DatabaseConstructor | null {
+function loadDatabaseCtor(quiet = false): DatabaseConstructor | null {
   if (_Database) return _Database
   try {
     _Database = require("better-sqlite3") as DatabaseConstructor
     return _Database
   } catch (e: any) {
-    console.error(`[storage/sqlite] better-sqlite3 native binding failed to load: ${betterSqlite3Fix(e)}`)
+    if (!quiet) {
+      console.error(`[storage/sqlite] better-sqlite3 native binding failed to load: ${betterSqlite3Fix(e)}`)
+    }
     return null
   }
 }
@@ -55,6 +57,12 @@ export interface OpenOptions {
   path?: string
   /** When true, SQLite writes are skipped (used by tests + opt-out). */
   disabled?: boolean
+  /** Suppress the open-failure log. For best-effort callers whose whole
+   *  contract is "do nothing if unavailable" — telemetry, mainly. Without
+   *  this, a native-binding ABI mismatch prints a paragraph of node-gyp
+   *  advice on EVERY CLI invocation, which is worse than the thing it
+   *  is warning about. Load-bearing callers must never pass it. */
+  quiet?: boolean
 }
 
 /**
@@ -70,7 +78,7 @@ export function openDb(opts: OpenOptions = {}): Database.Database | null {
   if (opts.disabled) return null
   if (_db) return _db
   const path = resolve(process.cwd(), opts.path ?? ".agentx/db.sqlite")
-  const Database = loadDatabaseCtor()
+  const Database = loadDatabaseCtor(opts.quiet)
   if (!Database) return null
   try {
     mkdirSync(dirname(path), { recursive: true })
@@ -86,10 +94,13 @@ export function openDb(opts: OpenOptions = {}): Database.Database | null {
     _db = db
     return _db
   } catch (e: any) {
-    // Native binding missing, file unwritable, etc. Surface always — the
+    // Native binding missing, file unwritable, etc. Surface by default — the
     // alternative was a silent no-op, which makes the "SQLite not opened"
-    // message in the daemon log impossible to debug.
-    console.error(`[storage/sqlite] openDb failed at ${path}: ${betterSqlite3Fix(e)}`)
+    // message in the daemon log impossible to debug. `quiet` callers have
+    // explicitly opted out because doing nothing is their correct behavior.
+    if (!opts.quiet) {
+      console.error(`[storage/sqlite] openDb failed at ${path}: ${betterSqlite3Fix(e)}`)
+    }
     return null
   }
 }
@@ -345,6 +356,31 @@ function runMigrations(db: Database.Database): void {
         CREATE INDEX idx_guardrail_ts       ON guardrail_decisions(ts);
         CREATE INDEX idx_guardrail_verdict  ON guardrail_decisions(verdict, ts);
         CREATE INDEX idx_guardrail_agent    ON guardrail_decisions(agent_id, ts);
+      `,
+    },
+    {
+      // Which operator surfaces actually get used. task_history records agent
+      // dispatches and says nothing about which of the ~46 CLI commands or 16
+      // dashboard pages anyone opens — the two biggest surfaces by count, and
+      // the ones the surface-reduction work needs evidence for.
+      //
+      // Deliberately NOT folded into usage_daily: that table is keyed by
+      // (agent_id, model, day) and is about token cost. Surface counts share
+      // none of that shape, and mixing them would corrupt cost reporting.
+      //
+      // Names only — never arguments, paths, or payloads. This counts which
+      // door was opened, not what was carried through it.
+      v: 11,
+      sql: `
+        CREATE TABLE surface_usage (
+          kind TEXT NOT NULL,             -- 'cli' | 'page'
+          name TEXT NOT NULL,             -- 'guard log' | '/live'
+          day TEXT NOT NULL,              -- 'YYYY-MM-DD' UTC
+          count INTEGER NOT NULL DEFAULT 0,
+          last_at TEXT,
+          PRIMARY KEY (kind, name, day)
+        );
+        CREATE INDEX idx_surface_day ON surface_usage(day);
       `,
     },
   ]
