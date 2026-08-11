@@ -82,7 +82,6 @@ Available node types and their configs:
 - extract.structured     config: { prompt: string, schema: object }
 - branch                 config: { cases: [{ when: <Condition>, to: <port-name> }, ...], default?: <port-name> }
 - rule                   config: { rows: [...] }                         (DMN decision table)
-- userTask               config: { form: object, assignee: string }
 - checkpoint             config: { label: string }
 - end                    config: { status: "completed"|"failed", output: object }
 
@@ -187,7 +186,6 @@ const ARCHITECT_OUTPUT_SCHEMA: Record<string, unknown> = {
               "action.send",
               "action.builtin",
               "extract.structured",
-              "userTask",
               "checkpoint",
               "end",
             ],

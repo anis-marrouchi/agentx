@@ -26,5 +26,4 @@ Drop the service's procedure docs into `workspaces/intake/references/`.
 
 ## Grow
 
-- Formal multi-step applications with citizen forms → [BPM — grant application](../journey/12-bpm-grant-application.md)
 - FAQ wiki that compounds from real questions → [shared wiki](../journey/06-shared-wiki.md)

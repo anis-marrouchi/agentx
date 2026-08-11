@@ -49,7 +49,7 @@ Saves apply immediately — Team config is hot-reloaded, no daemon restart neede
    Click an actor row → **Send test notification**. The dashboard fires a one-time message to the preferred channel. If it doesn't arrive, the channel handle is wrong (typo in chat id, expired Slack token, etc.) — fix it before the actor receives a real task.
 
 6. **"Retire an actor who left the team."**
-   Actors → delete the row. They're automatically revoked from every role. Any in-flight tasks already assigned to them stay assigned — reassign manually from the [Inbox](./inbox).
+   Actors → delete the row. They're automatically revoked from every role.
 
 7. **"Build an escalation chain."**
    Roles can nest. Create `role:l1-support` with three actors, then create `role:escalations` with members `role:l1-support` plus `actor:senior-engineer`. A workflow can assign the first task to `role:l1-support`; if it times out, the SLA-escalation transition reassigns to `role:escalations` (which is the same three people *plus* the senior engineer).

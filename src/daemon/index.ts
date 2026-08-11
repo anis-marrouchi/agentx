@@ -1527,56 +1527,8 @@ export class AgentXDaemon {
       },
     } : undefined
 
-    // Build the Telegram user-task renderer if the Telegram adapter is
-    // active. The renderer posts a notification to each assignee's
-    // preferred channel when a userTask node pauses the run.
     const { ActorStore } = await import("@/actors/store")
-    const { TaskStore } = await import("@/workflows/task-store")
     const actorStore = new ActorStore()
-    const taskStore = new TaskStore(cfg.dir ? { baseDir: resolve(process.cwd(), cfg.dir) } : undefined)
-    const inboxBaseUrl = process.env.AGENTX_INBOX_BASE_URL || ""
-    const taskRenderers: Array<(t: import("@/workflows/task-store").UserTaskRecord) => Promise<void>> = []
-
-    const telegramAdapter = channels["telegram"] as {
-      sendMessage?: (msg: { chatId: string; text: string; parseMode?: string; accountId?: string }) => Promise<string | undefined | void>
-      sendWithInlineButtons?: (args: { chatId: string; text: string; buttons: Array<{ label: string; url: string }>; parseMode?: "markdown" | "html" | "plain"; accountId?: string }) => Promise<string | undefined | void>
-    } | undefined
-    if (telegramAdapter?.sendMessage) {
-      const { createTelegramTaskRenderer } = await import("@/forms/renderers/telegram")
-      taskRenderers.push(createTelegramTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: {
-          sendMessage: telegramAdapter.sendMessage.bind(telegramAdapter),
-          sendWithInlineButtons: telegramAdapter.sendWithInlineButtons?.bind(telegramAdapter),
-        },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    const whatsappAdapter = channels["whatsapp"] as {
-      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
-    } | undefined
-    if (whatsappAdapter?.send) {
-      const { createWhatsappTaskRenderer } = await import("@/forms/renderers/whatsapp")
-      taskRenderers.push(createWhatsappTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: { send: whatsappAdapter.send.bind(whatsappAdapter) },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    // Compose into a single callback that fans out to every registered
-    // per-channel renderer. Each renderer short-circuits when the
-    // assignee has no handle on its channel, so delivery lands on
-    // whichever channel the actor has configured without double-posting.
-    const renderUserTask: ((task: import("@/workflows/task-store").UserTaskRecord) => Promise<void>) | undefined =
-      taskRenderers.length
-        ? async (task) => { for (const r of taskRenderers) { try { await r(task) } catch { /* already logged per-renderer */ } } }
-        : undefined
 
     const { TimerService } = await import("@/workflows/timers")
     const timerService = new TimerService({
@@ -1591,10 +1543,8 @@ export class AgentXDaemon {
       agents,
       forwarder,
       actors: actorStore,
-      tasks: taskStore,
       timers: timerService,
       events: this.events,
-      renderUserTask,
       log: (m) => this.log(m),
     })
 
@@ -2182,17 +2132,6 @@ export class AgentXDaemon {
         if (await this.handleMemoryApi(req, res, path, url)) return
       }
 
-      // BPM user-task API: list + submit. Lives on the main daemon
-      // because the dispatcher is the one that drives run resumes.
-      if (path.startsWith("/api/workflows/tasks") && this.workflowDispatcher) {
-        if (await this.handleTaskApi(req, res, path)) return
-      }
-      // GET /api/workflows/kpis — actor-level + total task stats.
-      if (req.method === "GET" && path === "/api/workflows/kpis" && this.workflowDispatcher) {
-        const { computeKpis } = await import("@/workflows/task-store")
-        this.json(res, 200, computeKpis(this.workflowDispatcher.tasks))
-        return
-      }
       // GET /api/workflows/runs[?limit=&workflowId=] + /runs/:id
       // Runs live on the node that dispatches them (home-node). The
       // board-dashboard on another host proxies to this endpoint so
@@ -2559,16 +2498,6 @@ export class AgentXDaemon {
         this.json(res, 200, { ok: true, emission })
         return
       }
-      // /inbox — per-actor task list page. Static HTML, fetches the task
-      // API above via same-origin.
-      if (req.method === "GET" && path === "/inbox") {
-        const { renderInboxPage } = await import("./ui/pages/inbox")
-        const qs = url.searchParams
-        const html = renderInboxPage({ actor: qs.get("actor") || undefined })
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-        res.end(html)
-        return
-      }
       // /processes — composition-tree + SLA view of runs.
       if (req.method === "GET" && path === "/processes") {
         const { renderProcessesPage } = await import("./ui/pages/processes")
@@ -2576,34 +2505,6 @@ export class AgentXDaemon {
         res.end(renderProcessesPage({}))
         return
       }
-      // GET /t/:taskId/:action — one-click task submission from chat
-      // clients (Telegram inline-keyboard URL buttons). Submits with
-      // empty values → validator fills defaults. Only works for forms
-      // whose required fields have defaults (or none at all).
-      const oneClick = req.method === "GET" && path.match(/^\/t\/([^\/]+)\/(primary|secondary)$/)
-      if (oneClick && this.workflowDispatcher) {
-        const taskId = decodeURIComponent(oneClick[1])
-        const action = oneClick[2] as "primary" | "secondary"
-        const actor = url.searchParams.get("actor") || "anonymous"
-        const result = await this.workflowDispatcher.submitTask(taskId, { action, values: {} }, actor)
-        res.writeHead(result.ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" })
-        if (result.ok) {
-          res.end(`<!doctype html><meta charset=utf-8><title>Submitted</title>
-<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
-<h1 style="color:#27ae60">✓ Submitted</h1>
-<p>Your <strong>${action === "primary" ? "approval" : "rejection"}</strong> has been recorded. You can close this tab.</p>
-<p style="color:#888;font-size:13px">Run <code>${result.runId}</code></p>
-</body>`)
-        } else {
-          res.end(`<!doctype html><meta charset=utf-8><title>Submit failed</title>
-<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
-<h1 style="color:#c0392b">✗ ${result.error}</h1>
-${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task has required fields. Please open the <a href="/inbox?actor=${encodeURIComponent(actor)}">inbox</a> instead.</p>` : ""}
-</body>`)
-        }
-        return
-      }
-
       // Static browser call page.
       if (req.method === "GET" && path === "/call") {
         this.serveCallPage(res)
@@ -4475,61 +4376,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       const ws = this.workspaceFor(agent)
       if (ws) { try { mem.syncToWorkspace(agent, ws) } catch { /* best effort */ } }
       this.json(res, 200, { ok: true })
-      return true
-    }
-    return false
-  }
-
-  /** Mesh receiver for forwarded workflow events. Peers POST the same
-   *  payload shape the MeshForwarder sends. Enforces that the run is
-   *  actually home'd here before acting — protects against routing loops. */
-  private async handleTaskApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
-    const d = this.workflowDispatcher
-    if (!d) return false
-    const { formSubmissionSchema } = await import("@/forms/types")
-
-    // GET /api/workflows/tasks[?actor=<id>]
-    if (req.method === "GET" && (path === "/api/workflows/tasks" || path.startsWith("/api/workflows/tasks?"))) {
-      const url = new URL(req.url || "/", `http://_`)
-      const actor = url.searchParams.get("actor") || undefined
-      const tasks = actor ? d.tasks.listForActor(actor) : d.tasks.listOpen()
-      this.json(res, 200, { tasks })
-      return true
-    }
-
-    // GET /api/workflows/tasks/:id
-    // POST /api/workflows/tasks/:id/submit
-    const trail = path.replace(/^\/api\/workflows\/tasks/, "")
-    const match = trail.match(/^\/([^\/?]+)(\/submit)?$/)
-    if (!match) return false
-    const taskId = decodeURIComponent(match[1])
-
-    if (match[2]) {
-      if (req.method !== "POST") { this.json(res, 405, { error: "method not allowed" }); return true }
-      let body: any
-      try { body = await readJsonBody(req) } catch (e: any) {
-        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
-      }
-      const submissionRaw = body && typeof body === "object" && "submission" in body ? (body as any).submission : body
-      const parsed = formSubmissionSchema.safeParse(submissionRaw)
-      if (!parsed.success) {
-        this.json(res, 400, {
-          error: "invalid submission",
-          issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-        })
-        return true
-      }
-      const submittedBy = typeof body?.submittedBy === "string" ? body.submittedBy : "anonymous"
-      const result = await d.submitTask(taskId, parsed.data, submittedBy)
-      if (!result.ok) { this.json(res, 400, { error: result.error, fieldErrors: result.fieldErrors }); return true }
-      this.json(res, 200, { ok: true, runId: result.runId })
-      return true
-    }
-
-    if (req.method === "GET") {
-      const task = d.tasks.get(taskId)
-      if (!task) { this.json(res, 404, { error: "task not found" }); return true }
-      this.json(res, 200, { task })
       return true
     }
     return false

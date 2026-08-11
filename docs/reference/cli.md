@@ -474,23 +474,6 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 - `agentx workflow runs --limit 5` is the fastest way to answer "what's the daemon doing right now with workflow X?" — pair it with `agentx daemon logs -f` to watch the corresponding agent dispatches.
 - On multi-node mesh deployments, `runs` is per-node (runs belong to their home node). Use the dashboard `/workflows` page for a cross-node view.
 
-## Tasks (workflow user-task inbox)
-
-When a workflow has a `userTask` node, it pauses until a human fills the form. The dashboard `/inbox` page shows these forms with a click-to-fill UI. This CLI surface is the terminal equivalent — for scripting, headless ops, or quickly resolving a task without opening a browser. Form fields (text, long-text, number, boolean, date, select, multi-select) get prompted one at a time.
-
-| Command | Description |
-|---|---|
-| `agentx task list` | List all open user-tasks (mirrors dashboard `/inbox`) |
-| `agentx task list --actor <id>` | Filter to one actor |
-| `agentx task list --json` | Machine-readable output |
-| `agentx task show <id>` | View a task's form definition (fields, types, validation) |
-| `agentx task submit <id>` | Interactive form submission — prompts one field at a time |
-| `agentx task submit <id> --as <actor>` | Submit as a specific actor (overrides default identity) |
-| `agentx task submit <id> --json '{"values":{"k":"v"}}'` | Non-interactive submission for scripting |
-| `agentx task submit <id> --secondary` | Click the "reject"-style secondary button instead of the primary submit |
-
-`agentx task list` ↔ dashboard `/inbox`. Use the CLI when you're already in a terminal or need to script bulk-resolution; use the dashboard when you want the click-to-fill UI.
-
 ## Actions (reusable invocations)
 
 The action registry — named, parameterized shell or HTTP calls operators register once and invoke from CLI, dashboard, or workflows. Replaces hand-rolled `curl`/`exec` snippets sprinkled across crons and prompts. Storage: one JSON file per action under `.agentx/actions/<id>.json`. See the dedicated [Actions reference](./actions) for the integration cookbook.

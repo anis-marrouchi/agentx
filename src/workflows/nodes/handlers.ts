@@ -1,6 +1,5 @@
 import { evaluateBranch, getByPath } from "../engine"
 import { renderParams, render } from "../template"
-import { formSchemaSchema, type FormSchema } from "../../forms/types"
 import { parseAssigneeRef } from "../../actors/types"
 import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
@@ -448,67 +447,6 @@ const transformHandler: NodeHandler = async (ctx) => {
   return { output: {} }
 }
 
-/** userTask: assign work to an actor or role, render a form to them, pause
- *  the run until POST /workflow/task/:taskId/submit. Task records live in
- *  the TaskStore so the inbox + channel renderers can find them. */
-const userTaskHandler: NodeHandler = async (ctx) => {
-  const cfg = ctx.node.config
-  const rendered = renderParams(cfg as Record<string, unknown>, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
-
-  const assigneeRaw = String(rendered.assignTo ?? "")
-  if (!assigneeRaw) return { error: `userTask "${ctx.node.id}" missing config.assignTo` }
-  const ref = parseAssigneeRef(assigneeRaw)
-  if (!ref) return { error: `userTask "${ctx.node.id}" assignTo must be "actor:<id>" or "role:<id>", got "${assigneeRaw}"` }
-
-  const formRaw = (cfg.form ?? rendered.form) as unknown
-  const form = coerceForm(formRaw)
-  if (!form) return { error: `userTask "${ctx.node.id}" missing or invalid config.form` }
-
-  const title = String(rendered.title ?? form.title ?? ctx.node.id)
-  const description = typeof rendered.description === "string" ? rendered.description : undefined
-
-  if (!ctx.actors) return { error: `userTask "${ctx.node.id}" requires ActorStore in context (engine misconfigured)` }
-  if (!ctx.tasks)  return { error: `userTask "${ctx.node.id}" requires TaskStore in context (engine misconfigured)` }
-
-  const assignedTo = ctx.actors.pickAssignees(ref)
-  if (assignedTo.length === 0) {
-    return { error: `userTask "${ctx.node.id}" assignee "${assigneeRaw}" resolved to zero actors` }
-  }
-
-  const dueAt = computeDueAt(rendered.dueIn)
-
-  const task = ctx.tasks.create({
-    runId: ctx.run.id,
-    workflowId: ctx.workflow.id,
-    nodeId: ctx.node.id,
-    title,
-    description,
-    assignee: assigneeRaw,
-    assignedTo,
-    form,
-    dueAt,
-  })
-
-  ctx.log(`[node:${ctx.node.id}] userTask created ${task.id} for ${assigneeRaw} → actors [${assignedTo.join(", ")}]`)
-
-  return {
-    paused: true,
-    pausedAt: {
-      kind: "userTask",
-      nodeId: ctx.node.id,
-      taskId: task.id,
-      assignee: assigneeRaw,
-      assignedTo,
-    },
-  }
-}
-
-function coerceForm(raw: unknown): FormSchema | null {
-  if (!raw || typeof raw !== "object") return null
-  const parsed = formSchemaSchema.safeParse(raw)
-  return parsed.success ? parsed.data : null
-}
-
 /** Convert an ISO-8601 duration ("PT2H", "P1D") or a plain number-of-minutes
  *  into an absolute dueAt timestamp. Accepts { minutes: N } too for convenience. */
 function computeDueAt(dueIn: unknown): string | undefined {
@@ -745,7 +683,6 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "action.callHTTP":    callHTTPHandler,
   "action.run":         actionRunHandler,
   "action.builtin":     actionBuiltinHandler,
-  "userTask":        userTaskHandler,
   "subProcess":      subProcessHandler,
   "signal.emit":     signalEmitHandler,
   "signal.wait":     signalWaitHandler,

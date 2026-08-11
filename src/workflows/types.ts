@@ -56,7 +56,6 @@ export const nodeTypeSchema = z.enum([
   // downstream nodes can pipe typed data forward without reparsing.
   "action.builtin",
   // BPM: human tasks + composition + signals + intermediate timer
-  "userTask",
   "subProcess",
   "signal.emit",
   "signal.wait",
@@ -93,7 +92,7 @@ export type Condition = z.infer<typeof conditionSchema>
  *  the LAST error is what gets recorded as the node's failure.
  *  Defaults: maxAttempts=1 (no retry), backoffMs=1000.
  *
- *  Pause results (userTask, signalWait, timerWait) are NEVER retried —
+ *  Pause results (signalWait, timerWait) are NEVER retried —
  *  pausing is a normal lifecycle transition, not a failure. Only
  *  hard errors (`{error}` or thrown exceptions) trigger the retry. */
 export const retryPolicySchema = z.object({
@@ -273,7 +272,7 @@ export function lintWorkflow(wf: Workflow): string[] {
       if (!seen.has(n.id)) issues.push(`node "${n.id}" is unreachable from trigger "${trigger.id}"`)
     }
     if (!wf.nodes.some((n) => seen.has(n.id) && isTerminalOrPauseNode(n.type))) {
-      issues.push("no reachable `end`, `checkpoint`, `userTask`, `subProcess`, `signal.wait`, or `timer.boundary` node — the run cannot terminate or pause")
+      issues.push("no reachable `end`, `checkpoint`, `subProcess`, `signal.wait`, or `timer.boundary` node — the run cannot terminate or pause")
     }
   }
 
@@ -311,20 +310,18 @@ export function lintWorkflow(wf: Workflow): string[] {
 function isTerminalOrPauseNode(type: NodeType): boolean {
   return type === "end"
       || type === "checkpoint"
-      || type === "userTask"
       || type === "subProcess"
       || type === "signal.wait"
       || type === "timer.boundary"
 }
 
 function isPauseCapableNode(type: NodeType): boolean {
-  // Nodes that either pause the run (checkpoint, userTask, subProcess,
+  // Nodes that either pause the run (checkpoint, subProcess,
   // signal.wait, timer.boundary) or consume an external event (agent).
   // A cycle is safe if it crosses at least one such node — otherwise the
   // walker would spin forever.
   return type === "agent"
       || type === "checkpoint"
-      || type === "userTask"
       || type === "subProcess"
       || type === "signal.wait"
       || type === "timer.boundary"
@@ -413,7 +410,7 @@ export type EntityRef = z.infer<typeof entityRefSchema>
 
 // Discriminated `pausedAt` — each kind has its own resume path in the
 // dispatcher. The original checkpoint shape is the `checkpoint` variant;
-// new BPM nodes add userTask / subProcess / signalWait / timerWait.
+// new BPM nodes add subProcess / signalWait / timerWait.
 export const pausedAtSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("checkpoint"),
@@ -422,16 +419,6 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     /** Filter applied to incoming events for resume. Same shape as the
      *  matching trigger.channel filter. */
     resumeMatch: z.record(z.unknown()).default({}),
-  }),
-  z.object({
-    kind: z.literal("userTask"),
-    nodeId: z.string(),
-    /** Task identifier — matches the record under _tasks/<taskId>.json. */
-    taskId: z.string(),
-    /** Assignee ref encoded as "actor:<id>" or "role:<id>". */
-    assignee: z.string(),
-    /** Concrete actors who currently see the task (resolved via role strategy). */
-    assignedTo: z.array(z.string()).default([]),
   }),
   z.object({
     kind: z.literal("subProcess"),

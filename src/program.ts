@@ -22,7 +22,6 @@ import { graph } from "@/commands/graph"
 import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
 import { webhook } from "@/commands/webhook"
-import { task } from "@/commands/task"
 import { business } from "@/commands/business"
 import { plan } from "@/commands/plan"
 import { notifications } from "@/commands/notifications"
@@ -98,7 +97,6 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(procedure)
     .addCommand(workflow)
     .addCommand(webhook)
-    .addCommand(task)
     .addCommand(business)
     .addCommand(plan)
     .addCommand(notifications)

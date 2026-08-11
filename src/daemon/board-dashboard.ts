@@ -24,7 +24,6 @@ import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderInboxPage } from "./ui/pages/inbox"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
@@ -122,7 +121,6 @@ const DASHBOARD_PAGES = new Set([
   "/boards",
   "/glossary",
   "/workflows",
-  "/inbox",
   "/procedures",
   "/processes",
   "/graph",
@@ -203,12 +201,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/inbox") {
-    const actor = url.searchParams.get("actor") || undefined
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderInboxPage({ actor }))
     return
   }
   if (method === "GET" && path === "/procedures") {
@@ -804,33 +796,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       sendJson(res, r.status, data)
     } catch (e: any) {
       sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // /api/workflows/tasks[*] — BPM inbox API lives on the daemon (the
-  // dispatcher owns the TaskStore + run-resume plumbing). Proxy through
-  // so the /inbox page on the dashboard works the same as on the daemon.
-  if (path.startsWith("/api/workflows/tasks") && (method === "GET" || method === "POST")) {
-    try {
-      const t = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(ctx.config.dashboard.token ? { Authorization: `Bearer ${ctx.config.dashboard.token}` } : {}),
-      }
-      const body = method === "POST"
-        ? await new Promise<string>((resolve) => {
-            const chunks: Buffer[] = []
-            req.on("data", (c) => chunks.push(c))
-            req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")))
-          })
-        : undefined
-      const r = await fetch(`${t}${req.url}`, { method, headers, body })
-      const text = await r.text()
-      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json" })
-      res.end(text)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "tasks proxy failed", message: e?.message || String(e) })
     }
     return
   }

@@ -1,5 +1,4 @@
 import type { ActorStore } from "../../actors/store"
-import type { TaskStore } from "../task-store"
 import type { PausedAt, Workflow, WorkflowNode, WorkflowRun } from "../types"
 
 // --- Node handler interface ---
@@ -47,8 +46,6 @@ export interface NodeContext {
   /** Actor + role resolver. Required for userTask handlers; optional for
    *  legacy handlers so tests don't need to stub it. */
   actors?: ActorStore
-  /** Open user-task store — written to by userTask handler on pause. */
-  tasks?: TaskStore
   /** Outbound mesh forwarder — used by `action.send` to deliver to a channel
    *  hosted on a peer node (e.g. workflow on macbook, whatsapp on
    *  clawd-server). Optional; absent in single-node setups and tests. */

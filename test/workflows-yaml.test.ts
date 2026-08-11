@@ -132,7 +132,6 @@ describe("desugarFlow", () => {
       "gateway.parallel",
       "rule",
       "signal.wait",
-      "userTask",
       "subProcess",
       "timer.boundary",
       "checkpoint",
