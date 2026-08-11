@@ -2,10 +2,13 @@ import { renderShell, esc, type TopbarPeer } from ".."
 
 // --- Task page — watch one agent work ---
 //
-// Replaces two overlays that showed the same thing in two different ways:
-// the full-screen `#task-modal` on Live, and the `#td-panel` right drawer on
-// the agent page. Both streamed the same SSE endpoint into a box you couldn't
-// link to, couldn't reload, and couldn't keep open next to anything else.
+// Replaces the full-screen `#task-modal` on Live, which streamed this SSE
+// endpoint into a box you couldn't link to, couldn't reload, and couldn't
+// keep open next to anything else.
+//
+// (An earlier note here claimed it also replaced the agent page's `#td-panel`.
+// It doesn't — that drawer is the Test-drive sandbox, a different feature that
+// still needs its own page.)
 //
 // A running task is a place, not a popup. Giving it a URL means it can be
 // shared, bookmarked, reopened after a refresh, and left open on a second
@@ -25,6 +28,9 @@ export interface TaskPageOpts {
   agentName?: string
   nodeUrl: string
   channel?: string
+  /** Finished task opened from history: read the stored record once instead
+   *  of holding an SSE connection open for a stream that will never arrive. */
+  archived?: boolean
   peers?: TopbarPeer[]
   currentPeerId?: string
 }
@@ -35,7 +41,8 @@ export function renderTaskPage(opts: TaskPageOpts): string {
   const body = `<div class="ax-task-page"
      data-task-id="${esc(opts.taskId)}"
      data-agent-id="${esc(opts.agentId)}"
-     data-node-url="${esc(opts.nodeUrl)}">
+     data-node-url="${esc(opts.nodeUrl)}"
+     data-archived="${opts.archived ? "1" : ""}">
 
   <header class="ax-task-page__head">
     <div class="ax-task-page__who">
@@ -50,9 +57,10 @@ export function renderTaskPage(opts: TaskPageOpts): string {
     </div>
   </header>
 
+  ${opts.archived ? '<p class="ax-task-page__note">Finished task, read from history. Nothing is streaming.</p>' : ""}
   <div class="ax-task-page__output" id="task-output"></div>
 
-  <footer class="ax-task-page__compose">
+  <footer class="ax-task-page__compose"${opts.archived ? " hidden" : ""}>
     <textarea id="task-input" class="ax-task-page__input" rows="2"
       placeholder="Send a message to this chat — the current turn keeps running, your message dispatches as the next turn. ⌘/Ctrl+Enter to send."></textarea>
     <div class="ax-task-page__actions">
@@ -94,12 +102,11 @@ const TASK_PAGE_CSS = `
 
 /* The output is the page. It grows to fill whatever room is left. */
 .ax-task-page__output {
-  flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
   background: var(--ax-surface); color: var(--ax-text-2);
   border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow);
-  padding: var(--ax-pad); font-family: var(--ax-mono);
-  font-size: var(--ax-fs-sm); line-height: 1.6; min-height: 320px;
+  padding: var(--ax-pad); font-size: var(--ax-fs-sm); line-height: 1.6; min-height: 320px;
 }
 .ax-task-page__compose {
   display: flex; flex-direction: column; gap: 8px;
@@ -114,6 +121,69 @@ const TASK_PAGE_CSS = `
 .ax-task-page__input:focus { outline: none; border-color: var(--ax-accent); }
 .ax-task-page__actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .ax-task-page__hint { flex: 1; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.ax-task-page__note { margin: 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+
+/* Markdown inside a reply. Tight vertical rhythm — a reply is a block in a
+   stream, not a document, so headings and paragraphs must not push the next
+   event off the screen. */
+.ax-ev__text > *:first-child { margin-top: 0; }
+.ax-ev__text > *:last-child { margin-bottom: 0; }
+.ax-ev__text p { margin: 0 0 8px; }
+.ax-ev__text h3, .ax-ev__text h4, .ax-ev__text h5, .ax-ev__text h6 {
+  margin: 12px 0 6px; font-size: var(--ax-fs); font-weight: 700; color: var(--ax-text);
+}
+.ax-ev__text ul, .ax-ev__text ol { margin: 0 0 8px; padding-left: 20px; }
+.ax-ev__text li { margin: 2px 0; }
+.ax-ev__text code {
+  font-family: var(--ax-mono); font-size: 0.92em; padding: 1px 5px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: 5px; color: var(--ax-text);
+}
+.ax-ev__text pre.ax-ev__code code { background: none; border: none; padding: 0; }
+.ax-ev__text strong { color: var(--ax-text); font-weight: 700; }
+
+/* Stream events. The agent's output is not a wall of text — it is a sequence
+   of tool calls, results, internal reasoning and replies. Rendering each as
+   its own block with a coloured rail makes a long run scannable: you can find
+   the tool that failed without reading everything above it. */
+.ax-ev { border-left: 2px solid var(--ax-border-2); padding: 2px 0 2px 12px; }
+.ax-ev--tool { border-color: var(--ax-info); }
+.ax-ev--tool-result { border-color: var(--ax-border-2); }
+.ax-ev--tool-result.is-err { border-color: var(--ax-err); }
+.ax-ev--thought { border-color: var(--ax-muted); }
+.ax-ev--text { border-color: var(--ax-accent); }
+.ax-ev--system {
+  border-color: var(--ax-border-2); color: var(--ax-muted); font-size: var(--ax-fs-xs);
+  font-family: var(--ax-mono); padding-top: 4px; padding-bottom: 4px;
+}
+.ax-ev--system.is-done { border-color: var(--ax-accent); }
+.ax-ev--error { border-color: var(--ax-err); }
+.ax-ev__head { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.ax-ev__label { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; font-family: var(--ax-mono); }
+.ax-ev__label--soft { color: var(--ax-muted); }
+.ax-ev__label--tool { color: var(--ax-info); }
+.ax-ev__label--result { color: var(--ax-muted); }
+.ax-ev__label--text { color: var(--ax-accent); }
+.ax-ev__label--error { color: var(--ax-err); }
+.ax-ev__time { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.ax-ev__tool { font-family: var(--ax-mono); color: var(--ax-info); font-size: var(--ax-fs-xs); }
+.ax-ev__code {
+  margin: 4px 0 0; padding: 8px 10px; background: var(--ax-bg-elev);
+  border: 1px solid var(--ax-border); border-radius: 3px; font-family: var(--ax-mono);
+  font-size: var(--ax-fs-xs); white-space: pre-wrap; word-break: break-word;
+  line-height: 1.5; color: var(--ax-text-2); max-height: 200px; overflow: auto;
+}
+.ax-ev__code--muted { color: var(--ax-muted); }
+.ax-ev__code--err { color: var(--ax-err); border-color: color-mix(in oklch, var(--ax-err) 35%, var(--ax-border)); }
+.ax-ev__thought {
+  margin-top: 4px; color: var(--ax-text-2); font-style: italic;
+  font-size: var(--ax-fs-sm); line-height: 1.55; text-wrap: pretty;
+}
+.ax-ev__text {
+  margin-top: 4px; color: var(--ax-text); font-size: var(--ax-fs-sm);
+  line-height: 1.55; text-wrap: pretty; white-space: pre-wrap; word-break: break-word;
+}
+
 `
 
 const TASK_PAGE_JS = `
@@ -142,20 +212,194 @@ const TASK_PAGE_JS = `
     statusEl.className = 'ax-badge ax-badge--mono' + (kind ? ' is-' + kind : '');
   }
 
-  // Batch appends through requestAnimationFrame — a chatty agent can emit
-  // hundreds of chunks a second and one DOM write per chunk drops frames.
+  function esc(x) {
+    return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // --- Structured stream rendering ---
+  //
+  // The daemon emits one line per event with a sigil prefix. Rendering each
+  // kind as its own block — tool call, tool result, internal reasoning, reply,
+  // error — is what makes a long run scannable: you can find the tool that
+  // failed without reading everything above it.
+
+  // --- Minimal markdown for assistant replies ---
+  //
+  // Agents answer in markdown, and the stream used to render it as literal
+  // characters: **bold**, backticks and fenced blocks all showed as source.
+  //
+  // Deliberately small and dependency-free — this is a self-hosted dashboard
+  // with a strict no-CDN posture, and a full parser is not worth a bundle for
+  // bold/code/lists/headings/links, which is what replies actually contain.
+  //
+  // SECURITY: escape first, THEN apply markup. Agent output is text from the
+  // outside world (a Telegram message can steer what an agent echoes), so it
+  // must never be able to inject HTML. Fenced blocks are extracted before any
+  // inline pass so their contents are never treated as markup.
+  function mdToHtml(src) {
+    var fences = [];
+    var text = String(src == null ? '' : src).replace(/\\u0060\\u0060\\u0060([\\s\\S]*?)\\u0060\\u0060\\u0060/g, function (_m, code) {
+      fences.push(code.replace(/^[a-zA-Z0-9_-]*\\n/, ''));
+      return '\\u0000FENCE' + (fences.length - 1) + '\\u0000';
+    });
+
+    text = esc(text);
+
+    // Block level, line by line.
+    var lines = text.split('\\n');
+    var out = [];
+    var listOpen = null;
+    function closeList() { if (listOpen) { out.push('</' + listOpen + '>'); listOpen = null; } }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var h = ln.match(/^(#{1,4})\\s+(.*)$/);
+      if (h) { closeList(); out.push('<h' + (h[1].length + 2) + '>' + inline(h[2]) + '</h' + (h[1].length + 2) + '>'); continue; }
+      var ul = ln.match(/^\\s*[-*]\\s+(.*)$/);
+      if (ul) {
+        if (listOpen !== 'ul') { closeList(); out.push('<ul>'); listOpen = 'ul'; }
+        out.push('<li>' + inline(ul[1]) + '</li>'); continue;
+      }
+      var ol = ln.match(/^\\s*\\d+\\.\\s+(.*)$/);
+      if (ol) {
+        if (listOpen !== 'ol') { closeList(); out.push('<ol>'); listOpen = 'ol'; }
+        out.push('<li>' + inline(ol[1]) + '</li>'); continue;
+      }
+      closeList();
+      if (ln.trim() === '') { out.push(''); continue; }
+      out.push('<p>' + inline(ln) + '</p>');
+    }
+    closeList();
+
+    var html = out.join('\\n');
+    // Restore fenced blocks last so nothing inside them was ever parsed.
+    html = html.replace(/(?:<p>)?\\u0000FENCE(\\d+)\\u0000(?:<\\/p>)?/g, function (_m, n) {
+      return '<pre class="ax-ev__code">' + esc(fences[Number(n)]) + '</pre>';
+    });
+    return html;
+  }
+
+  function inline(s) {
+    return s
+      .replace(/\\u0060([^\\u0060]+)\\u0060/g, '<code>$1</code>')
+      .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\\*([^*]+)\\*/g, '$1<em>$2</em>')
+      // Links: only http(s), and the label is already escaped.
+      .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g,
+               '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  }
+
+  var openText = null;
+  var openRaw = '';
+  function block(cls, html) {
+    var ev = document.createElement('div');
+    ev.className = 'ax-ev ' + cls;
+    ev.innerHTML = html;
+    outputEl.appendChild(ev);
+    return ev;
+  }
+  function label(kind, text) {
+    return '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--' + kind + '">' +
+      esc(text) + '</span></div>';
+  }
+  function systemEvent(text, done) {
+    closeText();
+    block('ax-ev--system' + (done ? ' is-done' : ''),
+      '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--soft">system</span><span>' +
+      esc(text) + '</span></div>');
+  }
+  function toolUse(text) {
+    closeText();
+    // 'ToolName({...})' — best-effort split on the first paren.
+    var o = text.indexOf('('), c = text.lastIndexOf(')');
+    var name = o > 0 ? text.slice(0, o) : text;
+    var args = (o > 0 && c > o) ? text.slice(o + 1, c) : '';
+    block('ax-ev--tool',
+      '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--tool">tool call</span>' +
+      '<span class="ax-ev__tool">' + esc(name) + '</span></div>' +
+      (args ? '<pre class="ax-ev__code">' + esc(args) + '</pre>' : ''));
+  }
+  function toolResult(text) {
+    closeText();
+    var isErr = text.indexOf('[error] ') === 0;
+    var body = isErr ? text.slice(8) : text;
+    block('ax-ev--tool-result' + (isErr ? ' is-err' : ''),
+      label('result', isErr ? 'tool error' : 'tool result') +
+      '<pre class="ax-ev__code ' + (isErr ? 'ax-ev__code--err' : 'ax-ev__code--muted') + '">' +
+      esc(body) + '</pre>');
+  }
+  function thought(text) {
+    closeText();
+    block('ax-ev--thought', label('soft', 'internal') +
+      '<div class="ax-ev__thought">' + esc(text) + '</div>');
+  }
+  function errorEvent(text) {
+    closeText();
+    block('ax-ev--error', label('error', 'error') +
+      '<pre class="ax-ev__code ax-ev__code--err">' + esc(text) + '</pre>');
+  }
+  function replyLine(line) {
+    if (!openText) {
+      openText = block('ax-ev--text', label('text', 'response') + '<div class="ax-ev__text"></div>')
+        .querySelector('.ax-ev__text');
+      openRaw = '';
+    }
+    openRaw += (openRaw ? '\\n' : '') + line;
+    openText.setAttribute('data-raw', openRaw);
+  }
+  /** Re-render every open reply block from its accumulated source. Done once
+   *  per frame rather than per line — markdown is whole-block by nature
+   *  (a fence isn't valid until it closes). */
+  function renderOpenText() {
+    if (openText) openText.innerHTML = mdToHtml(openRaw);
+  }
+  /** Close the current reply block, rendering it on the way out. Every event
+   *  that interrupts a reply must go through here — nulling openText without
+   *  rendering leaves the block showing its label and nothing else, which is
+   *  exactly what happened before this existed. */
+  function closeText() { renderOpenText(); openText = null; openRaw = ''; }
+
+  function processLine(line) {
+    if (line.indexOf('· ') === 0)   return systemEvent(line.slice(2));
+    if (line.indexOf('→ ') === 0)   return toolUse(line.slice(2));
+    if (line.indexOf('← ') === 0)   return toolResult(line.slice(2));
+    if (line.indexOf('💭 ') === 0)  return thought(line.slice(2));
+    if (line.indexOf('[error] ') === 0) return errorEvent(line.slice(8));
+    if (line.indexOf('[task finished]') === 0) return systemEvent('task finished', true);
+    if (line === '') {
+      // Blank line = paragraph break inside a reply. Keep the block open.
+      if (openText) { openRaw += '\\n\\n'; }
+      return;
+    }
+    replyLine(line);
+  }
+
+  // Batch through requestAnimationFrame — a chatty agent emits hundreds of
+  // chunks a second and one DOM write per chunk drops frames. Only the last
+  // partial line is held back, so a half-arrived event never renders.
+  var lineBuf = '';
   function flush() {
     raf = 0;
     if (!buffer) return;
-    var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 40;
-    outputEl.appendChild(document.createTextNode(buffer));
+    var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 60;
+    lineBuf += buffer;
     buffer = '';
+    var lines = lineBuf.split('\\n');
+    lineBuf = lines.pop();
+    for (var i = 0; i < lines.length; i++) processLine(lines[i]);
     if (atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
   function append(text) {
     if (!text) return;
     buffer += text;
     if (!raf) raf = requestAnimationFrame(flush);
+  }
+  /** Render whatever partial line is left. Call when the stream ends. */
+  function drain() {
+    flush();
+    if (lineBuf) { processLine(lineBuf); lineBuf = ''; }
+    renderOpenText();
   }
 
   function tickElapsed() {
@@ -166,6 +410,37 @@ const TASK_PAGE_JS = `
   }
   setInterval(tickElapsed, 1000);
   tickElapsed();
+
+  // Archived: one fetch of the stored record, no SSE. Opening a stream for a
+  // task that ended hours ago would sit "connecting…" forever and then report
+  // a disconnect, which reads as breakage rather than as history.
+  if (root.getAttribute('data-archived')) {
+    finished = true;
+    elapsedEl.textContent = '';
+    setStatus('loading…', '');
+    fetch('/api/task/history?node=' + encodeURIComponent(nodeUrl)
+          + '&agent=' + encodeURIComponent(agentId)
+          + '&task=' + encodeURIComponent(taskId))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (rec) {
+        setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
+        var tx = rec.transcript || '';
+        if (tx) append(tx);
+        // Only append the final reply when the transcript didn't already
+        // carry it, so the answer isn't printed twice.
+        if (rec.responseText && (!tx || tx.indexOf(rec.responseText) === -1)) {
+          append('\\n\\n--- Final reply ---\\n' + rec.responseText);
+        }
+        if (rec.error) append('\\n\\n[error] ' + rec.error);
+        if (rec.durationMs) {
+          var s = Math.round(rec.durationMs / 1000);
+          elapsedEl.textContent = s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+        }
+        drain();
+      })
+      .catch(function (e) { setStatus(e.message, 'err'); });
+    return;
+  }
 
   var url = '/api/task/stream?node=' + encodeURIComponent(nodeUrl)
     + '&agent=' + encodeURIComponent(agentId)
@@ -188,7 +463,7 @@ const TASK_PAGE_JS = `
     finished = true;
     setStatus('finished', 'done');
     try { es.close(); } catch (e) {}
-    flush();
+    drain();
   });
   es.addEventListener('error', function () {
     if (!finished) setStatus('disconnected', 'err');

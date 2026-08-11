@@ -27,6 +27,7 @@ import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
 import { renderTaskPage } from "./ui/pages/task"
+import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
@@ -233,7 +234,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       agentId,
       agentName: url.searchParams.get("name") || undefined,
       channel: url.searchParams.get("channel") || undefined,
+      archived: url.searchParams.get("archived") === "1",
       nodeUrl,
+      peers: buildTopbarPeers(ctx.config),
+    }))
+    return
+  }
+  // /agents/:id/history — was a 360px drawer sliding over Live. The list is
+  // what you came to read, it wants width, and every row leads somewhere, so
+  // it needs to be linkable and back-navigable.
+  const histPage = method === "GET" && path.match(/^\/agents\/([^/]+)\/history$/)
+  if (histPage) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderHistoryPage({
+      agentId: decodeURIComponent(histPage[1]),
+      agentName: url.searchParams.get("name") || undefined,
+      nodeUrl: url.searchParams.get("node") || ctx.config.dashboard.daemonUrl,
       peers: buildTopbarPeers(ctx.config),
     }))
     return
