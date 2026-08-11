@@ -6,7 +6,6 @@ import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
 import type { EventBus } from "../daemon/event-bus"
-import { ActorStore } from "../actors/store"
 import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
@@ -74,10 +73,6 @@ export interface DispatcherOptions {
   channels: Record<string, unknown>
   agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   log?: (msg: string) => void
-  /** Optional Actor/Role store. If omitted, constructed with defaults so
-   *  userTask handlers still work out of the box (reads from .agentx/actors/
-   *  and .agentx/roles/). */
-  actors?: ActorStore
   /** Optional timer service. When provided, `timer.boundary` nodes
    *  schedule against it and resume on fire. When omitted, a default is
    *  constructed but its loop is NOT started — callers can start it via
@@ -118,7 +113,6 @@ export class WorkflowDispatcher {
   private readonly channels: Record<string, unknown>
   private readonly agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   private readonly log: (msg: string) => void
-  readonly actors: ActorStore
   readonly timers: TimerService
   readonly signals: SignalBus
   readonly events?: EventBus
@@ -145,7 +139,6 @@ export class WorkflowDispatcher {
     this.channels = opts.channels
     this.agents = opts.agents
     this.log = opts.log ?? (() => {})
-    this.actors = opts.actors ?? new ActorStore()
     this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
     this.signals = opts.signals ?? new SignalBus()
     this.events = opts.events
@@ -745,7 +738,6 @@ export class WorkflowDispatcher {
           workflow, run, node,
           channels: this.channels,
           agents: this.agents,
-          actors: this.actors,
           forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
           log: this.log,
         })

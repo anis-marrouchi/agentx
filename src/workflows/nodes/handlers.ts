@@ -1,6 +1,5 @@
 import { evaluateBranch, getByPath } from "../engine"
 import { renderParams, render } from "../template"
-import { parseAssigneeRef } from "../../actors/types"
 import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 

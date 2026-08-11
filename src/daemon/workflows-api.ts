@@ -17,7 +17,6 @@ import {
   writeWorkflowDraft,
 } from "@/workflows/absorb"
 import type { WorkflowDispatcher } from "@/workflows/dispatcher"
-import type { ActorStore } from "@/actors/store"
 
 // --- Workflows HTTP API ---
 //
@@ -54,7 +53,6 @@ export interface WorkflowsApiDeps {
   store: WorkflowStore
   runs: RunStore
   layouts: LayoutStore
-  actors?: ActorStore
   dispatcher?: WorkflowDispatcher
   /** Gate the request; write the 401/403 response and return falsy on failure. */
   requireScope: (req: IncomingMessage, res: ServerResponse, scopes: string[]) => unknown

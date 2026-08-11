@@ -145,14 +145,13 @@ const ADMIN_HEALTH_SCRIPT = `
   document.addEventListener('ax-config-saved', refresh);
 })();`
 
-/** Team/Business are business-layer surfaces (experimental) — their
- *  Settings sub-tabs render only when config.business.enabled. The
- *  sections stay in the DOM either way; without a button they're
- *  simply unreachable, so no tab-switching JS changes. */
+/** Business is a business-layer surface (experimental) — its Settings
+ *  sub-tab renders only when config.business.enabled. The section stays
+ *  in the DOM either way; without a button it's simply unreachable, so
+ *  no tab-switching JS changes. */
 function adminPageBody(): string {
   const business = getTopbarFeatures().business
-    ? `<button data-tab="team">Team</button>
-  <button data-tab="business">Business</button>
+    ? `<button data-tab="business">Business</button>
   `
     : ""
   return ADMIN_PAGE_BODY.replace("__BUSINESS_TABS__", business)
@@ -555,60 +554,6 @@ const ADMIN_PAGE_BODY = `
         <div class="actions"><button class="primary" onclick="saveMeshHealth()">Save</button><div id="mh-msg" class="msg"></div></div>
       </div>
     </details>
-  </section>
-
-  <section id="tab-team" class="tab">
-    ${sectionHead({
-      icon: ICONS.tokens,
-      title: "Actors & Roles",
-      lead: "Humans (Actors) and groups of humans (Roles) that workflow user-tasks can be assigned to. Mirrors <code>agentx actor</code> and <code>agentx role</code>.",
-    })}
-    ${witBanner({
-      persistKey: "team",
-      bodyHtml: `<b>Actors</b> are people. They carry one or more channel handles (Telegram, WhatsApp, Slack, Discord, email) so user-tasks land in a place they actually read. <b>Roles</b> are named groups — assigning a userTask to a role lets the engine pick a member by strategy (first-available, round-robin, all). Assignees in workflow YAML are referenced as <code>actor:&lt;id&gt;</code> or <code>role:&lt;id&gt;</code>.`,
-    })}
-
-    <div class="ax-stack" style="margin-top:14px">
-      <h3 style="margin:0 0 6px;font-size:13px">Actors</h3>
-      <div id="actors-list"></div>
-      <details class="add-form" style="margin-top:10px">
-        <summary class="primary">+ Add actor</summary>
-        <div style="margin-top:10px">
-          <label>Actor id<span class="hint">(must start with <code>actor:</code>, e.g. <code>actor:anis</code>)</span></label>
-          <input id="ac-id" placeholder="actor:anis" />
-          <label>Display name</label>
-          <input id="ac-name" placeholder="Anis Marrouchi" />
-          <label>Email <span class="hint">(optional)</span></label>
-          <input id="ac-email" placeholder="anis@noqta.tn" />
-          <label>Channel handles<span class="hint">(at least one — channel:handle, comma-separated, mark preferred with *)</span></label>
-          <input id="ac-channels" placeholder="telegram:marrouchi*, whatsapp:21612345678" />
-          <label>Timezone <span class="hint">(optional, e.g. <code>Africa/Tunis</code>)</span></label>
-          <input id="ac-timezone" placeholder="Africa/Tunis" />
-          <div class="actions"><button class="primary" onclick="upsertActor()">Save actor</button><div id="ac-msg" class="msg"></div></div>
-        </div>
-      </details>
-    </div>
-
-    <div class="ax-stack" style="margin-top:24px">
-      <h3 style="margin:0 0 6px;font-size:13px">Roles</h3>
-      <div id="roles-list"></div>
-      <details class="add-form" style="margin-top:10px">
-        <summary class="primary">+ Add role</summary>
-        <div style="margin-top:10px">
-          <label>Role id<span class="hint">(must start with <code>role:</code>, e.g. <code>role:on-call</code>)</span></label>
-          <input id="rl-id" placeholder="role:on-call" />
-          <label>Display name</label>
-          <input id="rl-name" placeholder="On-call engineers" />
-          <label>Assignment strategy</label>
-          <select id="rl-strategy">
-            <option value="first-available">first-available — first listed member sees the task</option>
-            <option value="round-robin">round-robin — rotate across members</option>
-            <option value="all">all — every member sees the task</option>
-          </select>
-          <div class="actions"><button class="primary" onclick="upsertRole()">Save role</button><div id="rl-msg" class="msg"></div></div>
-        </div>
-      </details>
-    </div>
   </section>
 
   <section id="tab-business" class="tab">
@@ -1099,8 +1044,6 @@ async function refresh() {
     renderCrons();
     renderWebhooks();
     renderMesh();
-    renderTeam();
-    wireTeamHandlers();
     renderBusiness();
     wireBusinessHandlers();
     renderBoardsCfg();
@@ -1381,139 +1324,6 @@ function initialsOf(name, id) {
 // escaped single-quotes in the JS source collapse and break the JS
 // parser. We attach a single delegated click handler instead and route
 // by data-act / data-id attributes.
-
-function renderTeam() {
-  const actors = state.actors || [];
-  const roles = state.roles || [];
-
-  const al = $('actors-list');
-  if (al) {
-    if (!actors.length) {
-      al.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px 18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">No actors yet. Add one below or via <code>agentx actor add</code>.</div>';
-    } else {
-      al.innerHTML = actors.map(a => {
-        const channels = (a.channels || []).map(c =>
-          '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' +
-          escapeHtml(c.channel) + ':' + escapeHtml(String(c.handle).slice(0, 30)) +
-          (c.preferredForTasks ? ' ★' : '') + '</span>'
-        ).join(' ');
-        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:6px">' +
-          '<div style="flex:1;min-width:0">' +
-            '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b>' + escapeHtml(a.name) + '</b><code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(a.id) + '</code>' +
-            (a.email ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.email) + '</span>' : '') +
-            (a.timezone ? '<span style="font-size:11px;color:var(--ax-muted)">' + escapeHtml(a.timezone) + '</span>' : '') +
-            '</div>' +
-            '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + channels + '</div>' +
-          '</div>' +
-          '<button class="ghost danger" data-act="delete-actor" data-id="' + escapeHtml(a.id) + '">Delete</button>' +
-        '</div>';
-      }).join('');
-    }
-  }
-
-  const rl = $('roles-list');
-  if (rl) {
-    if (!roles.length) {
-      rl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:24px 18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">No roles yet. Add one below or via <code>agentx role create</code>.</div>';
-    } else {
-      rl.innerHTML = roles.map(r => {
-        const memberPills = (r.members || []).map(m => {
-          const ref = m.actor || m.role || '';
-          return '<span class="ax-pill" style="font-size:10px;padding:2px 6px">' + escapeHtml(ref) +
-            ' <a href="#" data-act="revoke" data-role="' + escapeHtml(r.id) + '" data-member="' + escapeHtml(ref) + '" style="color:var(--ax-muted);text-decoration:none">×</a></span>';
-        }).join(' ');
-        const memberOptions = '<option value="">— add actor or role —</option>' +
-          actors.filter(a => !(r.members || []).some(m => m.actor === a.id)).map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.id) + ' (' + escapeHtml(a.name) + ')</option>').join('') +
-          roles.filter(rr => rr.id !== r.id && !(r.members || []).some(m => m.role === rr.id)).map(rr => '<option value="' + escapeHtml(rr.id) + '">' + escapeHtml(rr.id) + ' (' + escapeHtml(rr.name) + ')</option>').join('');
-        return '<div class="ax-row-card" style="padding:10px 14px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:6px">' +
-          '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:space-between">' +
-            '<div><b>' + escapeHtml(r.name) + '</b> <code style="font-size:10px;color:var(--ax-muted)">' + escapeHtml(r.id) + '</code> <span style="font-size:11px;color:var(--ax-muted)">strategy: ' + escapeHtml(r.assignmentStrategy) + '</span></div>' +
-            '<button class="ghost danger" data-act="delete-role" data-id="' + escapeHtml(r.id) + '">Delete</button>' +
-          '</div>' +
-          '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + (memberPills || '<i style="font-size:11px;color:var(--ax-muted)">no members yet</i>') +
-            '<select data-act="grant" data-role="' + escapeHtml(r.id) + '" style="margin-left:auto;font-size:11px;padding:2px 6px">' + memberOptions + '</select>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-    }
-  }
-}
-
-// Single delegated click + change handler for the Team tab. Wired once
-// at page-init time below renderTeam in the existing DOMContentLoaded
-// flow — see the wireTeamHandlers call.
-function wireTeamHandlers() {
-  if (window.__teamWired) return;
-  window.__teamWired = true;
-  document.addEventListener('click', async (ev) => {
-    const t = ev.target.closest('[data-act]');
-    if (!t) return;
-    const act = t.getAttribute('data-act');
-    if (act === 'delete-actor') {
-      const id = t.getAttribute('data-id');
-      if (!confirm('Delete actor ' + id + '?')) return;
-      try { await req('DELETE', '/api/admin/actors', { id }); await load(); }
-      catch (e) { showMsg($('global-msg'), 'err', e.message); }
-    } else if (act === 'delete-role') {
-      const id = t.getAttribute('data-id');
-      if (!confirm('Delete role ' + id + '?')) return;
-      try { await req('DELETE', '/api/admin/roles', { id }); await load(); }
-      catch (e) { showMsg($('global-msg'), 'err', e.message); }
-    } else if (act === 'revoke') {
-      ev.preventDefault();
-      const role = t.getAttribute('data-role');
-      const member = t.getAttribute('data-member');
-      try { await req('POST', '/api/admin/roles/revoke', { role, member }); await load(); }
-      catch (e) { showMsg($('global-msg'), 'err', e.message); }
-    }
-  });
-  document.addEventListener('change', async (ev) => {
-    const t = ev.target.closest('select[data-act="grant"]');
-    if (!t) return;
-    const role = t.getAttribute('data-role');
-    const member = t.value;
-    if (!member) return;
-    try { await req('POST', '/api/admin/roles/grant', { role, member }); await load(); }
-    catch (e) { showMsg($('global-msg'), 'err', e.message); }
-  });
-}
-
-// Form-submit shims kept on window for the inline onclick="upsertActor()"
-// handlers in the add-form summary blocks.
-
-window.upsertActor = async function() {
-  const id = $('ac-id').value.trim();
-  const name = $('ac-name').value.trim();
-  const email = $('ac-email').value.trim();
-  const channelsRaw = $('ac-channels').value.trim();
-  const timezone = $('ac-timezone').value.trim();
-  const channels = channelsRaw.split(',').map(s => s.trim()).filter(Boolean).map(s => {
-    const preferredForTasks = s.endsWith('*');
-    const clean = preferredForTasks ? s.slice(0, -1) : s;
-    const sep = clean.indexOf(':');
-    return { channel: clean.slice(0, sep), handle: clean.slice(sep + 1), preferredForTasks };
-  }).filter(c => c.channel && c.handle);
-  try {
-    await req('POST', '/api/admin/actors', { id, name, email: email || undefined, channels, timezone: timezone || undefined });
-    $('ac-id').value = ''; $('ac-name').value = ''; $('ac-email').value = ''; $('ac-channels').value = ''; $('ac-timezone').value = '';
-    showMsg($('ac-msg'), 'ok', 'Actor saved');
-    await load();
-  } catch (e) { showMsg($('ac-msg'), 'err', e.message); }
-}
-
-window.upsertRole = async function() {
-  const id = $('rl-id').value.trim();
-  const name = $('rl-name').value.trim();
-  const assignmentStrategy = $('rl-strategy').value;
-  try {
-    await req('POST', '/api/admin/roles', { id, name, assignmentStrategy });
-    $('rl-id').value = ''; $('rl-name').value = '';
-    showMsg($('rl-msg'), 'ok', 'Role saved');
-    await load();
-  } catch (e) { showMsg($('rl-msg'), 'err', e.message); }
-}
-
-// ---------------- Business tab ----------------
 
 function renderBusiness() {
   const b = state.business || {};

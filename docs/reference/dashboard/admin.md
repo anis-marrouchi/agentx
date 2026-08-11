@@ -2,7 +2,7 @@
 
 Path: `/admin`
 
-Single-file settings surface with a row of tabs (Agents, Channels, Schedules, Webhooks, Mesh, Team, Business, Boards, Actions, Tokens, Advanced) rendered in-place via a client-side data-tab switcher. Every tab is a typed view over a slice of `agentx.json` — saves go through `applyConfigMutation`, so the daemon hot-reloads on every successful write.
+Single-file settings surface with a row of tabs (Agents, Channels, Schedules, Webhooks, Mesh, Business, Boards, Actions, Tokens, Advanced) rendered in-place via a client-side data-tab switcher. Every tab is a typed view over a slice of `agentx.json` — saves go through `applyConfigMutation`, so the daemon hot-reloads on every successful write.
 
 Each tab is also reachable directly via `#fragment`: `/admin#channels`, `/admin#tokens`, etc. Many empty-state links across the dashboard deep-link here.
 
@@ -32,10 +32,6 @@ Bind incoming GitHub/GitLab webhooks to agents. When a PR opens, fire a review a
 ### Mesh
 
 Connect this agentx machine to other agentx machines. Tasks can flow between them. List of peers + health. Add a peer via paste-an-invite-link (resolves to `MESH_TOKEN` + URL automatically) or manually. Mirrors `agentx mesh`/`agentx connect mesh`.
-
-### Team
-
-Actors and roles for workflow user-tasks. **Actors** are humans with channel handles (Telegram/WhatsApp/Slack/Discord/email) — when a workflow assigns a task to `actor:alice` the form lands on Alice's preferred channel. **Roles** group actors with an assignment strategy (`first-available`, `round-robin`, `all`) so a `role:on-call` task picks the right person automatically. Mirrors `agentx actor` + `agentx role`. See [Team](./team) for the full guide.
 
 ### Business
 

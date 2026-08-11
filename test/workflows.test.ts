@@ -1249,31 +1249,6 @@ describe("BPM Phase 2: timer service + signal bus", () => {
 
 // ---------------- Phase 3: KPIs + renderers + CLI primitives ----------------
 
-describe("BPM Phase 3: ActorStore CLI primitives", () => {
-  beforeEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); mkdirSync(TEST_DIR, { recursive: true }) })
-  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }))
-
-  it("round-trips an actor + role through the store and resolves members", async () => {
-    const { ActorStore } = await import("../src/actors/store")
-    const store = new ActorStore({ baseDir: TEST_DIR })
-    store.saveActor({ id: "actor:ann", name: "Ann", channels: [{ channel: "telegram", handle: "100" }] } as any)
-    store.saveActor({ id: "actor:ben", name: "Ben", channels: [{ channel: "email", handle: "ben@x.test" }] } as any)
-    store.saveRole({ id: "role:team", name: "Team", members: [{ actor: "actor:ann" }, { actor: "actor:ben" }], assignmentStrategy: "all", rotationCursor: 0 } as any)
-    const members = store.resolveMembers({ kind: "role", id: "role:team" })
-    expect(members.sort()).toEqual(["actor:ann", "actor:ben"])
-    expect(store.channelFor("actor:ann", "telegram")).toBe("100")
-    expect(store.channelFor("actor:ben", "email")).toBe("ben@x.test")
-    // Round-robin updates the rotation cursor.
-    store.saveRole({ id: "role:rr", name: "RR", members: [{ actor: "actor:ann" }, { actor: "actor:ben" }], assignmentStrategy: "round-robin", rotationCursor: 0 } as any)
-    const picks = [
-      store.pickAssignees({ kind: "role", id: "role:rr" })[0],
-      store.pickAssignees({ kind: "role", id: "role:rr" })[0],
-      store.pickAssignees({ kind: "role", id: "role:rr" })[0],
-    ]
-    expect(picks).toEqual(["actor:ann", "actor:ben", "actor:ann"])
-  })
-})
-
 // ---------------- Phase 4: DMN rule node ----------------
 
 describe("BPM Phase 4: DMN rule node", () => {

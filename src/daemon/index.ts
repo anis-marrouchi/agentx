@@ -1527,9 +1527,6 @@ export class AgentXDaemon {
       },
     } : undefined
 
-    const { ActorStore } = await import("@/actors/store")
-    const actorStore = new ActorStore()
-
     const { TimerService } = await import("@/workflows/timers")
     const timerService = new TimerService({
       baseDir: cfg.dir ? resolve(process.cwd(), cfg.dir) : undefined,
@@ -1542,7 +1539,6 @@ export class AgentXDaemon {
       channels,
       agents,
       forwarder,
-      actors: actorStore,
       timers: timerService,
       events: this.events,
       log: (m) => this.log(m),

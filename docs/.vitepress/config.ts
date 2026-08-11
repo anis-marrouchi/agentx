@@ -89,7 +89,6 @@ export default withMermaid(defineConfig({
             { text: "Admin panel", link: "/reference/dashboard/admin" },
             { text: "Cost", link: "/reference/dashboard/cost" },
             { text: "Health", link: "/reference/dashboard/health" },
-            { text: "Team (actors & roles)", link: "/reference/dashboard/team" },
             { text: "Usage dashboard (legacy)", link: "/reference/dashboard/usage" },
           ],
         },

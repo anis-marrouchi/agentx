@@ -27,7 +27,6 @@ import { plan } from "@/commands/plan"
 import { notifications } from "@/commands/notifications"
 import { retention } from "@/commands/retention"
 import { actions as actionsCmd } from "@/commands/actions"
-import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
 import { tui } from "@/commands/tui"
 import { chat } from "@/commands/chat"
@@ -102,8 +101,6 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(notifications)
     .addCommand(retention)
     .addCommand(actionsCmd)
-    .addCommand(actor)
-    .addCommand(role)
     .addCommand(watch)
     .addCommand(tui)
     .addCommand(chat)
