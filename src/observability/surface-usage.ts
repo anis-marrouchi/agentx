@@ -23,6 +23,20 @@ import { openDb } from "@/storage/sqlite"
 //   3. Never throw, never block. A telemetry bug must not break the CLI or a
 //      dashboard request. Every failure is swallowed.
 
+/**
+ * True while a test runner is driving us.
+ *
+ * Three suites (trace-cli, process-cli, intent-ledger-cli) shell out to the
+ * real CLI, so a full `pnpm test` recorded dozens of invocations of exactly
+ * the commands that happen to have CLI tests — `trace list` showed 72 uses
+ * against a human total of zero. That is worse than no data: it inverts the
+ * ranking, making well-tested commands look popular and untested ones look
+ * dead, which is precisely backwards for deciding what to remove.
+ */
+function underTest(): boolean {
+  return Boolean(process.env.VITEST || process.env.NODE_ENV === "test" || process.env.AGENTX_NO_TELEMETRY)
+}
+
 /** Where the install lives, or null when we're not inside one. Never creates
  *  anything — the check IS the guard against writing stray databases. */
 function installRoot(): string | null {
@@ -49,6 +63,7 @@ export type SurfaceKind = "cli" | "page"
 export function recordSurfaceUse(kind: SurfaceKind, name: string, now = new Date()): void {
   try {
     if (!name) return
+    if (underTest()) return
     if (!installRoot()) return
     const db = openDb({ quiet: true })
     if (!db) return
