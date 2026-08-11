@@ -31,6 +31,10 @@ export interface TaskPageOpts {
   /** Finished task opened from history: read the stored record once instead
    *  of holding an SSE connection open for a stream that will never arrive. */
   archived?: boolean
+  /** The request, when the caller already knows it. A live task's stream never
+   *  replays what was asked, so Live passes it through the URL. */
+  ask?: string
+  askAt?: string
   peers?: TopbarPeer[]
   currentPeerId?: string
 }
@@ -42,14 +46,18 @@ export function renderTaskPage(opts: TaskPageOpts): string {
      data-task-id="${esc(opts.taskId)}"
      data-agent-id="${esc(opts.agentId)}"
      data-node-url="${esc(opts.nodeUrl)}"
-     data-archived="${opts.archived ? "1" : ""}">
+     data-archived="${opts.archived ? "1" : ""}"
+     data-ask="${esc(opts.ask || "")}"
+     data-ask-at="${esc(opts.askAt || "")}">
 
   <header class="ax-task-page__head">
-    <div class="ax-task-page__who">
-      <a class="ax-task-page__back" href="/live">← Live</a>
-      <span class="ax-mention">@${esc(opts.agentId)}</span>
-      <span class="ax-task-page__name">${esc(who)}</span>
-    </div>
+    <nav class="ax-crumbs" aria-label="Breadcrumb">
+      <a href="/live">Live</a>
+      <span class="ax-crumbs__sep">/</span>
+      <a href="/agents/${esc(opts.agentId)}/history?node=${encodeURIComponent(opts.nodeUrl)}&name=${encodeURIComponent(who)}"><span class="ax-mention">@${esc(opts.agentId)}</span></a>
+      <span class="ax-crumbs__sep">/</span>
+      <span class="ax-crumbs__here">Task</span>
+    </nav>
     <div class="ax-task-page__meta">
       ${opts.channel ? `<span class="ax-badge ax-badge--mono ax-badge--ghost">${esc(opts.channel)}</span>` : ""}
       <span class="ax-badge ax-badge--mono" id="task-status">connecting…</span>
@@ -92,10 +100,20 @@ export function renderTaskPage(opts: TaskPageOpts): string {
 }
 
 const TASK_PAGE_CSS = `
+/* The shell gives <main> no padding, so page content butted straight against
+   the sticky topbar. Breathe. */
 .ax-task-page {
   display: flex; flex-direction: column; gap: var(--ax-gap);
-  max-width: 1000px; margin: 0 auto; min-height: calc(100vh - 130px);
+  max-width: 1000px; margin: 0 auto; padding: 22px var(--ax-pad) var(--ax-pad);
+  min-height: calc(100vh - 130px);
 }
+/* Breadcrumb, not a back button — it says where you are, and every step up is
+   somewhere you can actually go. */
+.ax-crumbs { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-sm); min-width: 0; }
+.ax-crumbs a { color: var(--ax-text-2); font-weight: 600; text-decoration: none; }
+.ax-crumbs a:hover { color: var(--ax-accent); text-decoration: none; }
+.ax-crumbs__sep { color: var(--ax-border-2); }
+.ax-crumbs__here { color: var(--ax-text); font-weight: 700; }
 .ax-task-page__head {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--ax-gap); flex-wrap: wrap;
@@ -116,6 +134,11 @@ const TASK_PAGE_CSS = `
   border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow);
   padding: var(--ax-pad); font-size: var(--ax-fs-sm); line-height: 1.6; min-height: 320px;
 }
+/* A "display: flex" rule beats the user-agent's [hidden] rule, so an archived
+   task still showed a send/stop box that could do nothing. (No backticks in
+   this file's CSS comments — it lives in a TS template literal and one
+   backtick silently truncates the whole stylesheet.) */
+.ax-task-page__compose[hidden] { display: none; }
 .ax-task-page__compose {
   display: flex; flex-direction: column; gap: 8px;
   background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
@@ -132,17 +155,29 @@ const TASK_PAGE_CSS = `
 /* The request that started everything. The page used to render the agent's
    work with no sign of what it had been asked — you could read a whole
    transcript without learning why it ran. */
+.ax-task-page__ask[hidden] { display: none; }
 .ax-task-page__ask {
-  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-left-width: 4px; border-left-color: var(--ax-accent);
-  border-radius: var(--ax-radius); padding: 12px 14px;
+  border-radius: var(--ax-radius-lg); padding: 14px 16px;
+  box-shadow: var(--ax-shadow);
 }
 .ax-task-page__ask-head { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); }
 .ax-task-page__ask-who { color: var(--ax-text-2); font-weight: 600; }
 .ax-task-page__ask-when { margin-left: auto; color: var(--ax-muted); font-family: var(--ax-mono); }
 .ax-task-page__ask-body {
-  margin-top: 6px; font-size: var(--ax-fs-sm); line-height: 1.55; color: var(--ax-text);
-  white-space: pre-wrap; word-break: break-word; max-height: 170px; overflow: auto;
+  margin-top: 8px; font-size: var(--ax-fs-sm); line-height: 1.55; color: var(--ax-text);
+  word-break: break-word; max-height: 200px; overflow: auto;
+}
+/* Same markdown rhythm as a reply block. */
+.ax-task-page__ask-body > *:first-child { margin-top: 0; }
+.ax-task-page__ask-body > *:last-child { margin-bottom: 0; }
+.ax-task-page__ask-body p { margin: 0 0 8px; white-space: pre-wrap; }
+.ax-task-page__ask-body ul, .ax-task-page__ask-body ol { margin: 0 0 8px; padding-left: 20px; }
+.ax-task-page__ask-body code {
+  font-family: var(--ax-mono); font-size: 0.92em; padding: 1px 5px;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  border-radius: 5px;
 }
 
 /* Markdown inside a reply. Tight vertical rhythm — a reply is a block in a
@@ -150,7 +185,7 @@ const TASK_PAGE_CSS = `
    event off the screen. */
 .ax-ev__text > *:first-child { margin-top: 0; }
 .ax-ev__text > *:last-child { margin-bottom: 0; }
-.ax-ev__text p { margin: 0 0 8px; }
+.ax-ev__text p { margin: 0 0 8px; white-space: pre-wrap; }
 .ax-ev__text h3, .ax-ev__text h4, .ax-ev__text h5, .ax-ev__text h6 {
   margin: 12px 0 6px; font-size: var(--ax-fs); font-weight: 700; color: var(--ax-text);
 }
@@ -273,25 +308,40 @@ const TASK_PAGE_JS = `
     var lines = text.split('\\n');
     var out = [];
     var listOpen = null;
+    var para = [];
+    function flushPara() {
+      if (!para.length) return;
+      out.push('<p>' + para.join('\\n') + '</p>');
+      para = [];
+    }
+    // Note: closing a list must NOT flush the open paragraph — closeList()
+    // runs before every plain line, so doing both here emitted one <p> per
+    // line and defeated the grouping entirely. Callers flush explicitly.
     function closeList() { if (listOpen) { out.push('</' + listOpen + '>'); listOpen = null; } }
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i];
       var h = ln.match(/^(#{1,4})\\s+(.*)$/);
-      if (h) { closeList(); out.push('<h' + (h[1].length + 2) + '>' + inline(h[2]) + '</h' + (h[1].length + 2) + '>'); continue; }
+      if (h) { flushPara(); closeList(); out.push('<h' + (h[1].length + 2) + '>' + inline(h[2]) + '</h' + (h[1].length + 2) + '>'); continue; }
       var ul = ln.match(/^\\s*[-*]\\s+(.*)$/);
       if (ul) {
+        flushPara();
         if (listOpen !== 'ul') { closeList(); out.push('<ul>'); listOpen = 'ul'; }
         out.push('<li>' + inline(ul[1]) + '</li>'); continue;
       }
       var ol = ln.match(/^\\s*\\d+\\.\\s+(.*)$/);
       if (ol) {
+        flushPara();
         if (listOpen !== 'ol') { closeList(); out.push('<ol>'); listOpen = 'ol'; }
         out.push('<li>' + inline(ol[1]) + '</li>'); continue;
       }
       closeList();
-      if (ln.trim() === '') { out.push(''); continue; }
-      out.push('<p>' + inline(ln) + '</p>');
+      if (ln.trim() === '') { flushPara(); continue; }
+      // Consecutive non-blank lines are ONE paragraph, not one each. Agents
+      // dump JSON and log tails into replies; a <p> per line turned those into
+      // a column of double-spaced fragments. Blank lines still break.
+      para.push(inline(ln));
     }
+    flushPara();
     closeList();
 
     var html = out.join('\\n');
@@ -429,7 +479,7 @@ const TASK_PAGE_JS = `
   function showAsk(message, sender, startedAt) {
     var text = (message || '').trim();
     if (!text) return;
-    document.getElementById('task-ask-body').textContent = text;
+    document.getElementById('task-ask-body').innerHTML = mdToHtml(text);
     document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
     var when = document.getElementById('task-ask-when');
     if (startedAt) {
@@ -447,6 +497,11 @@ const TASK_PAGE_JS = `
   }
   setInterval(tickElapsed, 1000);
   tickElapsed();
+
+  // A request handed over by the caller renders immediately, before any
+  // stream data arrives — so the page never shows work without the ask.
+  var seededAsk = root.getAttribute('data-ask');
+  if (seededAsk) showAsk(seededAsk, '', root.getAttribute('data-ask-at'));
 
   // Archived: one fetch of the stored record, no SSE. Opening a stream for a
   // task that ended hours ago would sit "connecting…" forever and then report

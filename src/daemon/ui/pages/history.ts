@@ -27,11 +27,13 @@ export function renderHistoryPage(opts: HistoryPageOpts): string {
      data-agent-name="${esc(who)}"
      data-node-url="${esc(opts.nodeUrl)}">
   <header class="ax-history__head">
-    <div class="ax-history__who">
-      <a class="ax-history__back" href="/live">← Live</a>
+    <nav class="ax-crumbs" aria-label="Breadcrumb">
+      <a href="/live">Live</a>
+      <span class="ax-crumbs__sep">/</span>
       <span class="ax-mention">@${esc(opts.agentId)}</span>
-      <span class="ax-history__name">${esc(who)}</span>
-    </div>
+      <span class="ax-crumbs__sep">/</span>
+      <span class="ax-crumbs__here">History</span>
+    </nav>
   </header>
   <!-- Summary of the list below, not of the agent in general. Three numbers
        and the channel mix — enough to see "mostly GitLab, two failures" at a
@@ -64,7 +66,17 @@ export function renderHistoryPage(opts: HistoryPageOpts): string {
 }
 
 const HISTORY_CSS = `
-.ax-history { display: flex; flex-direction: column; gap: var(--ax-gap); max-width: 1000px; margin: 0 auto; }
+/* <main> carries no padding in the shell — without this the breadcrumb sits
+   flush against the sticky topbar. */
+.ax-history {
+  display: flex; flex-direction: column; gap: var(--ax-gap);
+  max-width: 1000px; margin: 0 auto; padding: 22px var(--ax-pad) var(--ax-pad);
+}
+.ax-crumbs { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-sm); min-width: 0; }
+.ax-crumbs a { color: var(--ax-text-2); font-weight: 600; text-decoration: none; }
+.ax-crumbs a:hover { color: var(--ax-accent); text-decoration: none; }
+.ax-crumbs__sep { color: var(--ax-border-2); }
+.ax-crumbs__here { color: var(--ax-text); font-weight: 700; }
 .ax-history__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ax-gap); flex-wrap: wrap; }
 .ax-history__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .ax-history__back { font-size: var(--ax-fs-sm); font-weight: 600; white-space: nowrap; }

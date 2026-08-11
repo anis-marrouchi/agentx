@@ -108,6 +108,22 @@ const LIVE_PAGE_CSS = `
 }
 .ax-agent.is-collapsed:hover { opacity: 1; }
 .ax-agent.is-collapsed .ax-agent__foot { border-top: none; padding-top: 0; }
+.ax-agent__spark { color: var(--ax-accent); }
+.ax-agent__spark svg { display: block; width: 100%; height: 22px; }
+.ax-agent__spark-caption {
+  display: flex; justify-content: space-between; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ax-muted); margin-top: 1px;
+}
+.ax-agent.is-collapsed .ax-agent__spark { opacity: 0.75; }
+
+/* Active agents inside the "running now" tile — each row opens that
+   conversation. */
+.ax-stat__running { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.ax-stat__running-row { display: block; text-decoration: none; color: inherit; border-radius: 8px; padding: 3px 6px; margin: 0 -6px; }
+.ax-stat__running-row:hover { background: var(--ax-surface-2); text-decoration: none; }
+.ax-stat__running-line { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); min-width: 0; }
+.ax-stat__running-ch { color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; }
+.ax-stat__running-el { margin-left: auto; color: var(--ax-muted); }
 .ax-agent.is-handling {
   border-color: color-mix(in oklch, var(--ax-accent) 75%, var(--ax-border));
   background: linear-gradient(180deg,
@@ -328,13 +344,19 @@ function renderStatStrip(snapshot, summary) {
   // /admin/health owns. Five tiles made the page look like a status report
   // and buried the two numbers someone opening Live actually came for.
   const failing = errors + summary.errors;
+  const runningRows = collectRunning(snapshot);
   strip.innerHTML =
     stat({ label: 'agents online', value: summary.reachable + '/' + summary.nodes + ' machines',
            sub: summary.agents + ' agents', variant: 'live', pulse: summary.reachable > 0 }) +
+    // The busy COUNT and the running-task LIST come from different parts of
+    // the snapshot and can lag each other by a poll: an agent flips to active
+    // before its task appears, and the task disappears before the count drops.
+    // Without a fallback the tile then renders a number and nothing else,
+    // which reads as broken. Never let this tile be blank.
     stat({ label: 'running now', value: summary.busy,
-           sub: summary.busy === 0
-             ? 'nothing active'
-             : 'across ' + Object.keys(byChannel).length + ' channels',
+           sub: runningRows.length ? '' :
+                (summary.busy > 0 ? 'starting…' : 'nothing active'),
+           bodyHtml: runningRows.length ? runningBodyHtml(runningRows) : '',
            variant: summary.busy > 0 ? 'live' : '' }) +
     // Failures are the one exception: they earn a tile only when non-zero,
     // because a silent failure is the thing you most need pulled forward.
@@ -344,13 +366,56 @@ function renderStatStrip(snapshot, summary) {
       : '');
 }
 
-function stat({ label, value, sub, variant, pulse }) {
+function stat({ label, value, sub, variant, pulse, bodyHtml }) {
   const cls = 'ax-stat' + (variant ? ' ax-stat--' + variant : '');
   const dot = pulse ? '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' : '';
   return '<div class="' + cls + '">' +
     '<div class="ax-stat__label">' + dot + escapeHtml(String(label)) + '</div>' +
     '<div class="ax-stat__value">' + escapeHtml(String(value)) + '</div>' +
-    (sub ? '<div class="ax-stat__sub">' + escapeHtml(String(sub)) + '</div>' : '') +
+    (bodyHtml || (sub ? '<div class="ax-stat__sub">' + escapeHtml(String(sub)) + '</div>' : '')) +
+  '</div>';
+}
+
+/** The "running now" tile, when something IS running, lists who — each a link
+ *  straight into that conversation.
+ *
+ *  A count alone made you hunt: read "2", then scan 31 cards for the two that
+ *  are lit. The tile already knows which agents they are, so it should hand
+ *  them over. This is the page's one shortcut — everything else is a roster. */
+function collectRunning(snapshot) {
+  const rows = [];
+  for (const node of (snapshot && snapshot.nodes) || []) {
+    for (const a of (node.agents || [])) {
+      for (const t of (a.runningTasks || [])) {
+        rows.push({
+          agentId: a.id,
+          agentName: a.name || a.id,
+          nodeUrl: (node && node.url) || '',
+          taskId: t.id,
+          channel: t.channel || '',
+          preview: t.messagePreview || '',
+          startedAt: t.startedAt,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+function runningBodyHtml(rows) {
+  if (!rows.length) return '';
+  return '<div class="ax-stat__running">' + rows.slice(0, 4).map(function (r) {
+    const href = r.taskId ? taskPageUrl(r) : '';  // r carries preview + startedAt
+    const elapsed = r.startedAt ? fmtElapsed(Date.now() - new Date(r.startedAt).getTime()) : '';
+    const inner =
+      '<span class="ax-mention">@' + escapeHtml(r.agentId) + '</span>' +
+      (r.channel ? '<span class="ax-stat__running-ch">' + escapeHtml(r.channel) + '</span>' : '') +
+      '<span class="ax-stat__running-el ax-mono">' + escapeHtml(elapsed) + '</span>';
+    const line = '<div class="ax-stat__running-line" title="' + escapeHtml(r.preview) + '">' + inner + '</div>';
+    return href ? '<a class="ax-stat__running-row" href="' + escapeHtml(href) + '">' + line + '</a>'
+                : '<div class="ax-stat__running-row">' + line + '</div>';
+  }).join('') +
+  (rows.length > 4 ? '<div class="ax-stat__sub">+' + (rows.length - 4) + ' more</div>' : '') +
   '</div>';
 }
 
@@ -465,7 +530,7 @@ function renderAgent(a, node) {
   // was last active. Everything else is one click away in history.
   if (!busy) {
     card.className += ' is-collapsed';
-    card.innerHTML = head +
+    card.innerHTML = head + sparkBlockFor(a) +
       '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' +
         escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
     return card;
@@ -474,10 +539,45 @@ function renderAgent(a, node) {
   card.innerHTML =
     head +
     (a.model ? '<div class="ax-agent__model">' + escapeHtml(shortenModel(a.model)) + '</div>' : '') +
+    sparkBlockFor(a) +
     runningBlock +
     summaryBlock +
     '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
+}
+
+/** Inline SVG sparkline of the last 24 hourly task counts.
+ *
+ *  This came out with the per-agent stat boxes and shouldn't have. The stat
+ *  boxes were three numbers restating what the row already said; the chart is
+ *  the one thing on the card that carries information nothing else does — the
+ *  SHAPE of an agent's day. A flat line beside a busy one is a real signal,
+ *  and it costs 22px. */
+function renderSpark(data) {
+  const w = 280, h = 22;
+  const max = Math.max.apply(null, data.concat([1]));
+  const step = w / Math.max(data.length - 1, 1);
+  let pts = '';
+  for (let i = 0; i < data.length; i++) {
+    const x = (i * step).toFixed(1);
+    const y = (h - (data[i] / max) * (h - 4) - 2).toFixed(1);
+    pts += (i ? ' ' : '') + x + ',' + y;
+  }
+  const lastX = ((data.length - 1) * step).toFixed(1);
+  const lastY = (h - (data[data.length - 1] / max) * (h - 4) - 2).toFixed(1);
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + pts + '" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />' +
+    '<circle cx="' + lastX + '" cy="' + lastY + '" r="2" fill="currentColor" />' +
+  '</svg>';
+}
+
+function sparkBlockFor(a) {
+  if (!Array.isArray(a.hourlyTasks) || !a.hourlyTasks.length) return '';
+  const total = a.hourlyTasks.reduce(function (s, v) { return s + v; }, 0);
+  if (!total) return '';
+  return '<div class="ax-agent__spark">' + renderSpark(a.hourlyTasks) +
+    '<div class="ax-agent__spark-caption"><span>last 24h</span>' +
+    '<span class="ax-mono">' + total + '</span></div></div>';
 }
 
 function shortenModel(m) {
@@ -546,11 +646,18 @@ connect();
 /** Navigate to a task's own page. Watching an agent work is a place — it gets
  *  a URL you can share, reload and keep open beside other things. */
 function taskPageUrl(d) {
+  // Carry the request preview across. A LIVE task's SSE stream only sends the
+  // agent's output — the daemon never replays what was asked — so without this
+  // the request card stays hidden for exactly the tasks you're most likely to
+  // be watching. Capped so a long GitLab comment can't blow the URL.
+  const ask = (d.preview || '').slice(0, 400);
   return '/tasks/' + encodeURIComponent(d.taskId)
     + '?agent=' + encodeURIComponent(d.agentId || '')
     + '&node=' + encodeURIComponent(d.nodeUrl || '')
     + (d.channel ? '&channel=' + encodeURIComponent(d.channel) : '')
-    + (d.agentName ? '&name=' + encodeURIComponent(d.agentName) : '');
+    + (d.agentName ? '&name=' + encodeURIComponent(d.agentName) : '')
+    + (ask ? '&ask=' + encodeURIComponent(ask) : '')
+    + (d.startedAt ? '&at=' + encodeURIComponent(d.startedAt) : '');
 }
 
 // Click delegation on the agent grid — opens the modal for any task card,
@@ -592,6 +699,8 @@ document.getElementById('grid').addEventListener('click', (e) => {
       nodeUrl: taskEl.dataset.nodeUrl,
       channel: taskEl.dataset.channel,
       agentName: taskEl.dataset.agentName || taskEl.dataset.agentId,
+      preview: taskEl.getAttribute('title') || '',
+      startedAt: taskEl.dataset.startedAt,
     });
     return;
   }

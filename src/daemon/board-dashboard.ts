@@ -235,6 +235,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       agentName: url.searchParams.get("name") || undefined,
       channel: url.searchParams.get("channel") || undefined,
       archived: url.searchParams.get("archived") === "1",
+      ask: url.searchParams.get("ask") || undefined,
+      askAt: url.searchParams.get("at") || undefined,
       nodeUrl,
       peers: buildTopbarPeers(ctx.config),
     }))
