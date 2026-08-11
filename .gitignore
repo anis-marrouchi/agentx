@@ -33,6 +33,7 @@ docs/architecture/*
 !docs/architecture/workflow-absorb-plan.md
 !docs/architecture/three-tier.md
 !docs/architecture/surface-reduction.md
+!docs/architecture/design-system.md
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd

@@ -63,10 +63,17 @@ export interface TopbarOpts {
 /**
  * Font link tags + tiny inline bootstrap script. Callers drop this in <head>.
  */
+// Fonts degrade to the system stack when the box is offline or air-gapped —
+// the tokens list real fallbacks, so a failed font fetch costs typography,
+// never layout.
+//
+// The theme bootstrap runs before first paint to avoid a flash. A stored
+// "crt" from before that theme was removed falls back to dark rather than
+// leaving data-theme set to a value no stylesheet defines.
 export const TOPBAR_HEAD = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script>(function(){try{var t=localStorage.getItem('ax-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>`
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`
 
 /**
  * CSS for topbar + subheader + theme switch + mesh selector. No token
@@ -413,7 +420,6 @@ export function renderTopbar(opts: TopbarOpts): string {
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
       <button data-theme-opt="light">Light</button>
-      <button data-theme-opt="crt">CRT</button>
     </div>
   </div>
 </header>${opts.subheader ? `<div class="ax-subheader">${opts.subheader}</div>` : ""}`
