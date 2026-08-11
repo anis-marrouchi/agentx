@@ -65,9 +65,9 @@ wear the agent identity. **Attach mode is what earns the right to deprecate
 these two** — the capability isn't being dropped, it's being replaced by a
 better host.
 
-## Runtime directories never written
+## Runtime directories never written — and why that proved almost nothing
 
-Empty on both nodes — the subsystem has produced no artefact, ever:
+Empty on both nodes, and unconfigured in both `agentx.json` files:
 
 | Directory | mac | clawd |
 |---|---|---|
@@ -77,8 +77,39 @@ Empty on both nodes — the subsystem has produced no artefact, ever:
 | `.agentx/rag/` | empty | absent |
 | `.agentx/actions/` | empty | absent |
 
-Correspondingly, `actions`, `rag`, `actors` and `roles` are unconfigured in both
-`agentx.json` files.
+The first read of this table was that all five subsystems were dead. **Four of
+the five were not**, and checking the import graph before deleting is what
+caught it:
+
+| Subsystem | Imported by | Verdict |
+|---|---|---|
+| `actions` | `workflows/nodes/handlers.ts`, daemon, admin panel | **Keep** — workflow `action` nodes depend on it |
+| `actors` | workflow dispatcher, Telegram/WhatsApp form renderers, admin panel | **Keep** — the BPM assignee model |
+| `roles` | workflow dispatcher, `actors/types.ts`, admin panel | **Keep** |
+| `patterns` | `agents/registry.ts` — the dispatch hot path | Candidate, see below |
+| `rag` | only `actions/builtin/rag.ts` (the `rag.lexical` action) | Candidate |
+
+An empty runtime directory means **no operator ever created that kind of
+data** — no custom actions, no actors, no roles. It does *not* mean the code is
+unreachable. Workflows (54 tasks in 30d) and the business layer (8 entries) both
+run through `actions` and `actors` continuously; deleting them on directory
+evidence alone would have broken live production paths on clawd.
+
+This is the impact half of the bar catching what the usage half missed, and it
+is the strongest argument for the two-part test.
+
+### The two genuine candidates
+
+`patterns` is reachable but inert. `extractPatterns()` runs fire-and-forget
+after **every** task and `patternStore.findRelevant()` feeds `patternContext`
+into context assembly — yet the store is empty on both nodes after months and
+thousands of dispatches. Removing it is behaviour-preserving by definition
+(an always-empty context contribution), but it touches the dispatch hot path in
+four places, so it wants its own commit and its own sign-off rather than being
+swept in with an adapter deletion.
+
+`rag` is reachable only through the `rag.lexical` built-in action, which no
+configured workflow references. Self-contained, low risk, small payoff.
 
 Stale but non-empty (produced something once, nothing recently) — these need the
 B1 soak before any decision:
@@ -168,6 +199,12 @@ two registration blocks, and a schema entry, not the channel abstraction itself.
 Channel-name strings (`"slack"`, `"discord"`) survive in generic union types and
 `sourceFilter` arrays. Purging those would churn 20+ files to no benefit and
 would make re-adding a channel harder, which fails the impact half of the bar.
+
+### Kept after review
+
+`actions`, `actors` and `roles` were on the removal list from directory evidence
+and came off it after the import graph showed workflows and the business layer
+depend on them. Recorded here so the next pass doesn't re-propose them.
 
 ### Still gated
 
