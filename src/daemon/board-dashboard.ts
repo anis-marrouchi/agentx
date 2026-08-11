@@ -84,11 +84,8 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
 
-  // Minimal mesh-first nav: Boards/Workflows/Inbox tabs appear only when
-  // the operator configured those surfaces.
+  // Two-tab nav (Live, Settings). Every other surface stays routable by URL.
   setTopbarFeatures({
-    boards: boards.length > 0,
-    workflows: config.workflows?.enabled === true,
     business: config.business?.enabled === true,
   })
 

@@ -142,8 +142,6 @@ export class AgentXDaemon {
     // The daemon renders a few shell pages itself (/inbox, /processes) —
     // give their topbar the same feature flags the 4202 dashboard uses.
     setTopbarFeatures({
-      boards: (this.config.boards?.length ?? 0) > 0,
-      workflows: this.config.workflows?.enabled === true,
       business: this.config.business?.enabled === true,
     })
 
