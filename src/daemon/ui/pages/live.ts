@@ -127,6 +127,14 @@ const LIVE_PAGE_CSS = `
   display: flex; flex-direction: column; gap: 10px;
   transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
+/* Idle agents are context, not content: tighter padding, muted, no shadow.
+   A working agent should be visibly heavier than a resting one. */
+.ax-agent.is-collapsed {
+  gap: 6px; padding: 12px 14px; box-shadow: none;
+  background: var(--ax-surface-2); opacity: 0.78;
+}
+.ax-agent.is-collapsed:hover { opacity: 1; }
+.ax-agent.is-collapsed .ax-agent__foot { border-top: none; padding-top: 0; }
 .ax-agent.is-handling {
   border-color: color-mix(in oklch, var(--ax-accent) 75%, var(--ax-border));
   background: linear-gradient(180deg,
@@ -166,33 +174,6 @@ const LIVE_PAGE_CSS = `
   font-size: var(--ax-fs-xs); color: var(--ax-muted);
   font-family: var(--ax-mono); margin-top: -4px;
 }
-.ax-agent__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.ax-ministat {
-  padding: 8px 10px; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 4px;
-}
-.ax-ministat__label {
-  display: flex; align-items: center; gap: 4px; font-size: 10px;
-  color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.06em;
-}
-.ax-ministat__value {
-  font-size: 18px; font-weight: 600; margin-top: 2px;
-  letter-spacing: -0.02em; font-family: var(--ax-mono);
-  font-variant-numeric: tabular-nums;
-}
-.ax-ministat--live .ax-ministat__value { color: var(--ax-accent); }
-.ax-ministat--warn .ax-ministat__value { color: var(--ax-warn); }
-.ax-ministat--err .ax-ministat__value { color: var(--ax-err); }
-.ax-agent__spark {
-  border-top: 1px dashed var(--ax-border); padding-top: 8px;
-  color: var(--ax-accent);
-}
-.ax-agent__spark-caption {
-  display: flex; justify-content: space-between; font-size: 10px;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--ax-muted); margin-top: 2px;
-}
-.ax-agent__spark svg { display: block; width: 100%; height: 28px; }
 .ax-agent__running { display: flex; flex-direction: column; gap: 6px; }
 .ax-agent__task {
   text-align: left; background: var(--ax-bg);
@@ -453,40 +434,42 @@ function renderStatStrip(snapshot, summary) {
   const strip = document.getElementById('statstrip');
   if (!strip) return;
   const L = window.UI_LABELS || {};
-  let tasks = 0, durationMs = 0, errors = 0, inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreate = 0;
+  // Only what the two tiles need: the error count, and which channels are
+  // carrying the currently-running work. Token and duration totals moved out
+  // with the cost tiles.
+  let errors = 0;
   const byChannel = {};
   for (const node of snapshot.nodes) {
     if (!node.usage || !node.usage.agents) continue;
     for (const agentId of Object.keys(node.usage.agents)) {
       const u = node.usage.agents[agentId];
-      tasks += u.tasks || 0;
-      durationMs += u.totalDuration || 0;
       errors += u.errors || 0;
-      inputTokens += u.inputTokens || 0;
-      outputTokens += u.outputTokens || 0;
-      cacheRead += u.cacheReadTokens || 0;
-      cacheCreate += u.cacheCreateTokens || 0;
       if (u.byChannel) for (const ch of Object.keys(u.byChannel)) {
         byChannel[ch] = (byChannel[ch] || 0) + (u.byChannel[ch].tasks || 0);
       }
     }
   }
-  const totalTokens = inputTokens + outputTokens + cacheRead + cacheCreate;
-  const topChannels = Object.keys(byChannel).sort((a, b) => byChannel[b] - byChannel[a]).slice(0, 3)
-    .map(ch => ch + ' (' + byChannel[ch] + ')').join(' · ');
 
+  // Two tiles, because this page answers one question: who is alive, and what
+  // are they doing right now. "tasks today" and "tokens today" answer a cost
+  // question that /admin/cost owns; "failed" answers a health question that
+  // /admin/health owns. Five tiles made the page look like a status report
+  // and buried the two numbers someone opening Live actually came for.
+  const failing = errors + summary.errors;
   strip.innerHTML =
     stat({ label: 'agents online', value: summary.reachable + '/' + summary.nodes + ' machines',
            sub: summary.agents + ' agents', variant: 'live', pulse: summary.reachable > 0 }) +
     stat({ label: 'running now', value: summary.busy,
-           sub: summary.busy === 0 ? 'nothing active' : 'across ' + Object.keys(byChannel).length + ' channels',
+           sub: summary.busy === 0
+             ? 'nothing active'
+             : 'across ' + Object.keys(byChannel).length + ' channels',
            variant: summary.busy > 0 ? 'live' : '' }) +
-    stat({ label: 'tasks today', value: tasks, sub: topChannels || 'no activity yet' }) +
-    stat({ label: 'tokens today', value: fmtTokens(totalTokens),
-           sub: fmtDuration(durationMs) + ' of agent time' }) +
-    stat({ label: L.errorsCount || 'failed', value: errors + summary.errors,
-           sub: (errors + summary.errors) === 0 ? 'all clean' : 'check history',
-           variant: (errors + summary.errors) > 0 ? 'err' : '' });
+    // Failures are the one exception: they earn a tile only when non-zero,
+    // because a silent failure is the thing you most need pulled forward.
+    (failing > 0
+      ? stat({ label: L.errorsCount || 'failed', value: failing,
+               sub: 'see health →', variant: 'err' })
+      : '');
 }
 
 function stat({ label, value, sub, variant, pulse }) {
@@ -499,22 +482,7 @@ function stat({ label, value, sub, variant, pulse }) {
   '</div>';
 }
 
-function fmtDuration(ms) {
-  if (!ms) return '0s';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + 'm';
-  const h = Math.floor(m / 60);
-  const rm = m % 60;
-  return h + 'h ' + (rm < 10 ? '0' : '') + rm + 'm';
-}
 
-function fmtTokens(n) {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'k';
-  return (n / 1_000_000).toFixed(2).replace(/\\.00$/, '') + 'M';
-}
 
 function renderNode(node) {
   const sec = document.createElement('section');
@@ -591,30 +559,6 @@ function renderAgent(a, node) {
       '</div>'
     : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
 
-  // Sparkline — last 24 hourly task counts
-  const sparkBlock = (Array.isArray(a.hourlyTasks) && a.hourlyTasks.length)
-    ? '<div class="ax-agent__spark">' + renderSpark(a.hourlyTasks) +
-        '<div class="ax-agent__spark-caption"><span>tasks · last 24h</span><span class="ax-mono">' +
-          a.hourlyTasks.reduce(function(s,v){return s+v}, 0) + ' total</span></div>' +
-      '</div>'
-    : '';
-
-  // Mini stats row
-  const miniStats = '<div class="ax-agent__stats">' +
-    '<div class="ax-ministat' + (busy ? ' ax-ministat--live' : '') + '">' +
-      '<div class="ax-ministat__label">handling</div>' +
-      '<div class="ax-ministat__value">' + (a.active || 0) + '</div>' +
-    '</div>' +
-    '<div class="ax-ministat">' +
-      '<div class="ax-ministat__label">today</div>' +
-      '<div class="ax-ministat__value">' + (a.total || 0) + '</div>' +
-    '</div>' +
-    '<div class="ax-ministat' + (errored ? ' ax-ministat--err' : '') + '">' +
-      '<div class="ax-ministat__label">failed</div>' +
-      '<div class="ax-ministat__value">' + (a.errors || 0) + '</div>' +
-    '</div>' +
-  '</div>';
-
   const lastActiveText = a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
   const lastActiveAttr = a.lastActive ? ' data-last-active="' + escapeHtml(a.lastActive) + '"' : '';
   const recentLink = nodeUrl
@@ -628,40 +572,40 @@ function renderAgent(a, node) {
     : (errored ? '<span class="ax-badge ax-badge--mono ax-badge--warn">errored</span>' : '<span class="ax-badge ax-badge--mono ax-badge--ghost">idle</span>');
   const tierBadge = tierDisplay ? '<span class="ax-badge ax-badge--mono ax-badge--ghost" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' : '';
 
-  card.innerHTML =
+  const head =
     '<div class="ax-agent__head">' +
       '<div class="ax-agent__id">' +
         '<span class="ax-mention">' + escapeHtml(mention) + '</span>' +
         '<span class="ax-agent__name">' + escapeHtml(a.name || a.id) + '</span>' +
       '</div>' +
       '<div class="ax-agent__tier">' + tierBadge + liveBadge + '</div>' +
-    '</div>' +
+    '</div>';
+
+  // An idle agent collapses to one line.
+  //
+  // The page's job is "who is alive and what are they doing RIGHT NOW". Giving
+  // an idle agent the same real estate as a working one — model, last-reply
+  // excerpt, footer — is exactly backwards: it makes the answer harder to see
+  // the more agents you run. On clawd (22 agents) the busy ones were lost in a
+  // wall of identical idle cards.
+  //
+  // Collapsed still carries what the question needs: who, engine, and when it
+  // was last active. Everything else is one click away in history.
+  if (!busy) {
+    card.className += ' is-collapsed';
+    card.innerHTML = head +
+      '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' +
+        escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
+    return card;
+  }
+
+  card.innerHTML =
+    head +
     (a.model ? '<div class="ax-agent__model">' + escapeHtml(shortenModel(a.model)) + '</div>' : '') +
-    miniStats +
-    sparkBlock +
     runningBlock +
     summaryBlock +
     '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
-}
-
-/** Inline SVG sparkline — polyline + dot on the last point. 100% width, 28px high. */
-function renderSpark(data) {
-  const w = 280, h = 28;
-  const max = Math.max.apply(null, data.concat([1]));
-  const step = w / Math.max(data.length - 1, 1);
-  let pts = '';
-  for (let i = 0; i < data.length; i++) {
-    const x = (i * step).toFixed(1);
-    const y = (h - (data[i] / max) * (h - 4) - 2).toFixed(1);
-    pts += (i ? ' ' : '') + x + ',' + y;
-  }
-  const lastX = ((data.length - 1) * step).toFixed(1);
-  const lastY = (h - (data[data.length - 1] / max) * (h - 4) - 2).toFixed(1);
-  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
-    '<polyline points="' + pts + '" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />' +
-    '<circle cx="' + lastX + '" cy="' + lastY + '" r="2" fill="currentColor" />' +
-  '</svg>';
 }
 
 function shortenModel(m) {
