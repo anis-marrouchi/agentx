@@ -850,6 +850,16 @@ function renderErrorEvent(text) {
   taskModal.output.appendChild(ev);
 }
 
+/** Navigate to a task's own page. Watching an agent work is a place — it gets
+ *  a URL you can share, reload and keep open beside other things. */
+function taskPageUrl(d) {
+  return '/tasks/' + encodeURIComponent(d.taskId)
+    + '?agent=' + encodeURIComponent(d.agentId || '')
+    + '&node=' + encodeURIComponent(d.nodeUrl || '')
+    + (d.channel ? '&channel=' + encodeURIComponent(d.channel) : '')
+    + (d.agentName ? '&name=' + encodeURIComponent(d.agentName) : '');
+}
+
 function closeTaskModal() {
   if (!taskModal.el) return;
   taskModal.el.classList.add('hidden');
@@ -1084,19 +1094,15 @@ document.getElementById('grid').addEventListener('click', (e) => {
       if (!confirm('Stop this running task?')) return;
       taskAction(nodeUrl, taskId, 'cancel', {});
     } else if (action === 'followup') {
-      // Open the live-stream modal and focus its compose box. The modal
-      // hosts the textarea + Send/Stop controls — no more native prompt()
-      // (which was single-line, blocked by some browsers, and didn't give
-      // operators streaming context while typing the correction).
+      // Both actions land on the task's page, which hosts the compose box
+      // and the Stop control alongside the live stream.
       const card = actionEl.closest('.ax-agent__task[data-task-id]');
-      openTaskModal({
+      location.href = taskPageUrl({
         taskId,
         agentId: card && card.dataset.agentId,
         nodeUrl,
         channel: card && card.dataset.channel,
         agentName: (card && (card.dataset.agentName || card.dataset.agentId)) || '',
-        preview: (card && card.getAttribute('title')) || '',
-        focusInput: true,
       });
     }
     return;
@@ -1104,13 +1110,12 @@ document.getElementById('grid').addEventListener('click', (e) => {
   const taskEl = e.target.closest('.ax-agent__task[data-task-id]');
   if (taskEl) {
     e.preventDefault();
-    openTaskModal({
+    location.href = taskPageUrl({
       taskId: taskEl.dataset.taskId,
       agentId: taskEl.dataset.agentId,
       nodeUrl: taskEl.dataset.nodeUrl,
       channel: taskEl.dataset.channel,
       agentName: taskEl.dataset.agentName || taskEl.dataset.agentId,
-      preview: taskEl.getAttribute('title') || taskEl.textContent || '',
     });
     return;
   }
