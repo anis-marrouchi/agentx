@@ -66,52 +66,82 @@ export async function buildProgram(): Promise<Command> {
     if (shouldRecordCommand(path)) recordSurfaceUse("cli", path)
   })
 
-  program
-    .addCommand(daemon)
-    .addCommand(setup)
-    .addCommand(init)
-    .addCommand(agent)
-    .addCommand(channel)
-    .addCommand(connect)
-    .addCommand(cron)
-    .addCommand(schedule)
-    .addCommand(mesh)
-    .addCommand(skillCmd)
-    .addCommand(references)
-    .addCommand(dbCmd)
-    .addCommand(ledgerCmd)
-    .addCommand(traceCmd)
-    .addCommand(guardCmd)
-    .addCommand(attachCmd)
-    .addCommand(processCmd)
-    .addCommand(ragCmd)
-    .addCommand(backlog)
-    .addCommand(hook)
-    .addCommand(migrate)
-    .addCommand(configCmd)
-    .addCommand(usage)
-    .addCommand(board)
-    .addCommand(wiki)
-    .addCommand(graph)
-    .addCommand(procedure)
-    .addCommand(workflow)
-    .addCommand(webhook)
-    .addCommand(business)
-    .addCommand(plan)
-    .addCommand(notifications)
-    .addCommand(retention)
-    .addCommand(actionsCmd)
-    .addCommand(watch)
-    .addCommand(tui)
-    .addCommand(chat)
-    .addCommand(memoryCmd)
-    .addCommand(token)
-    .addCommand(doctor)
-    .addCommand(serve)
-    .addCommand(demo)
-    .addCommand(whatsapp)
-    .addCommand(pluginCmd)
-    .addCommand(completion)
+  // --- Core: what `agentx --help` shows -----------------------------------
+  //
+  // Getting set up, running the daemon, and the handful of things an operator
+  // reaches for while the fleet is live.
+  for (const cmd of [
+    setup, init, connect,        // get running
+    daemon, doctor,              // operate
+    agent, channel, schedule,    // configure the things that carry work
+    attachCmd,                   // wear an agent in your editor
+    guardCmd,                    // safety
+    usage,                       // what it cost, what gets used
+    serve,                       // MCP
+    token, configCmd, completion,
+  ]) program.addCommand(cmd)
+
+  // --- Advanced: registered, documented, hidden from the default help ------
+  //
+  // 268 commands and subcommands accumulated here. The evidence for cutting
+  // the list down is unusually direct: on clawd — the node carrying 95% of
+  // fleet traffic — `~/.bash_history` contains ZERO `agentx <subcommand>`
+  // invocations. Production is operated with systemctl, journalctl, a text
+  // editor and the dashboard. The CLI is a development surface.
+  //
+  // So these are hidden, NOT removed. Every one still runs, still has its own
+  // `--help`, and still completes in the shell; they just stop competing for
+  // attention with the fifteen commands above. Hiding is reversible in a line
+  // and costs nobody anything, which is the right trade while the usage soak
+  // is still young — see docs/architecture/surface-reduction.md.
+  //
+  // The help footer below names them all, so nothing here is secret.
+  for (const cmd of ADVANCED) program.addCommand(cmd, { hidden: true })
+
+  program.addHelpText("after", () => {
+    const names = ADVANCED.map((c) => c.name()).sort()
+    return [
+      "",
+      `Advanced (${names.length}, hidden — run \`agentx <command> --help\` for any of them):`,
+      wrapNames(names, 74, "  "),
+      "",
+    ].join("\n")
+  })
 
   return program
+}
+
+/** Registered and fully functional, just not in the default help listing. */
+const ADVANCED = [
+  // Knowledge + memory
+  wiki, graph, memoryCmd, procedure, references, ragCmd,
+  // Workflow / BPM
+  workflow, webhook, board, backlog, business, plan,
+  // Observability + forensics
+  ledgerCmd, traceCmd, processCmd, watch, dbCmd,
+  // Fleet + extension
+  mesh, skillCmd, pluginCmd, hook, actionsCmd,
+  // Scheduling internals (`schedule` is the friendly front door)
+  cron,
+  // Housekeeping
+  migrate, retention, notifications,
+  // Channel-specific + demo
+  whatsapp, demo,
+  // Deprecated — superseded by `agentx attach`
+  chat, tui,
+]
+
+/** Pack names into indented lines of at most `width` characters. */
+function wrapNames(names: string[], width: number, indent: string): string {
+  const lines: string[] = []
+  let line = ""
+  for (const n of names) {
+    if (line && (line.length + n.length + 2) > width) {
+      lines.push(indent + line)
+      line = ""
+    }
+    line += (line ? ", " : "") + n
+  }
+  if (line) lines.push(indent + line)
+  return lines.join("\n")
 }
