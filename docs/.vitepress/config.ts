@@ -3,7 +3,7 @@ import { withMermaid } from "vitepress-plugin-mermaid"
 
 export default withMermaid(defineConfig({
   title: "AgentX",
-  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
+  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, GitLab, GitHub, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
   lastUpdated: true,
   cleanUrls: true,
 
@@ -12,7 +12,7 @@ export default withMermaid(defineConfig({
     ["meta", { name: "theme-color", content: "#0ea5e9" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:title", content: "AgentX — a self-hosted mesh of AI agents for your team" }],
-    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, Slack, Discord, or GitLab. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
+    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, GitLab, or GitHub. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
   ],
 
   themeConfig: {
@@ -107,7 +107,6 @@ export default withMermaid(defineConfig({
             { text: "WhatsApp as a data source", link: "/reference/whatsapp-ingest" },
             { text: "Telegram without the jargon", link: "/reference/telegram-setup" },
             { text: "Boards (Kanban)", link: "/reference/boards" },
-            { text: "Slack channel", link: "/reference/slack" },
             { text: "Scoped API tokens", link: "/reference/tokens" },
             { text: "Public agents", link: "/reference/public-agents" },
             { text: "Intent knowledge graph", link: "/reference/graph" },

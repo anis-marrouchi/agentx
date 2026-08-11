@@ -1555,7 +1555,7 @@ describe("BPM Phase 3: ActorStore CLI primitives", () => {
   })
 })
 
-// ---------------- Phase 4: DMN rule node + Slack renderer ----------------
+// ---------------- Phase 4: DMN rule node ----------------
 
 describe("BPM Phase 4: DMN rule node", () => {
   beforeEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); mkdirSync(TEST_DIR, { recursive: true }) })
@@ -1641,41 +1641,7 @@ describe("BPM Phase 4: DMN rule node", () => {
   })
 })
 
-describe("BPM Phase 4: Slack renderer", () => {
-  it("emits one-click URLs for approve/reject forms and a deep link for input forms", async () => {
-    const { ActorStore } = await import("../src/actors/store")
-    const { TaskStore } = await import("../src/workflows/task-store")
-    const { createSlackTaskRenderer } = await import("../src/forms/renderers/slack")
-    rmSync(TEST_DIR, { recursive: true, force: true }); mkdirSync(TEST_DIR, { recursive: true })
-    const actors = new ActorStore({ baseDir: TEST_DIR })
-    actors.saveActor({ id: "actor:dan", name: "Dan", channels: [{ channel: "slack", handle: "U12345" }] } as any)
-    const tasks = new TaskStore({ baseDir: resolve(TEST_DIR, "wf") })
-    const approveReject = tasks.create({
-      runId: "r1", workflowId: "w", nodeId: "n", title: "Merge release?",
-      assignee: "actor:dan", assignedTo: ["actor:dan"],
-      form: { title: "f", fields: [], submitLabel: "Merge", secondaryAction: { key: "hold", label: "Hold" } } as any,
-    })
-    const fullForm = tasks.create({
-      runId: "r2", workflowId: "w", nodeId: "n", title: "Risk review",
-      assignee: "actor:dan", assignedTo: ["actor:dan"],
-      form: {
-        title: "Risk review",
-        fields: [{ key: "note", label: "Notes", type: "long-text", required: true } as any],
-        submitLabel: "Submit",
-      } as any,
-    })
-    const texts: string[] = []
-    const render = createSlackTaskRenderer({
-      actors, tasks,
-      inboxBaseUrl: "https://ex.test",
-      adapter: { send: async (m) => { texts.push(m.text); return "m" } },
-    })
-    await render(approveReject)
-    await render(fullForm)
-    expect(texts[0]).toContain("https://ex.test/t/" + approveReject.id + "/primary?actor=")
-    expect(texts[0]).toContain("https://ex.test/t/" + approveReject.id + "/secondary?actor=")
-    expect(texts[1]).toContain("https://ex.test/inbox?actor=")
-    expect(texts[1]).not.toContain("/t/")
-    rmSync(TEST_DIR, { recursive: true, force: true })
-  })
-})
+// The Slack user-task renderer was removed alongside the Slack channel
+// adapter (zero traffic on any node, ever — see
+// docs/architecture/surface-reduction.md). The Telegram and WhatsApp
+// renderers above cover the same one-click-URL vs deep-link branching.

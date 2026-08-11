@@ -90,6 +90,35 @@ B1 soak before any decision:
 Alive on both nodes: `sessions/`, `usage/`, `kpi/`, `graph/`, `wiki/`,
 `workflows/`, `memory/`, `agent-memory/`, `guardrails/`, `cron/`.
 
+## Wait for the instrument, or don't
+
+The first version of this plan gated **every** removal behind a two-week soak of
+the new `surface_usage` counter. That was wrong, and it is worth writing down
+why so the mistake isn't repeated.
+
+`surface_usage` counts CLI commands and dashboard pages. It does not count
+channels, and it does not count runtime directories. Gating a channel removal on
+it measures nothing about that channel — the wait was cargo-culted from "we
+built an instrument" to "everything waits for the instrument."
+
+Worse, a calendar date cannot distinguish **unused** from **unobserved**. On a
+small fleet, two quiet weeks produce almost no signal, and `--unused` reported
+265 of 268 commands unused after a single day — mostly because nobody was typing
+commands. The gate has to be *observations accumulated*, not *days elapsed*.
+
+So decisions are made on **evidence type**:
+
+| Evidence | Gate |
+|---|---|
+| Historical and complete — `task_history` covers the whole life of the feature | Cut now |
+| A retrospective source exists — shell history for CLI commands | Cut now |
+| Only prospective — dashboard page views, where no access log has ever existed | Wait for views to accumulate on pages known to be alive |
+
+Shell history turned out to be the strongest evidence in the whole exercise.
+Every `agentx chat` and `agentx tui` invocation on this machine is dated
+**2026-07-03** — the day they shipped. Not "fell out of use"; tried once, never
+again.
+
 ## The gap this data does not cover
 
 `task_history` records *agent dispatches*. It says nothing about which **CLI
@@ -122,9 +151,27 @@ one `git revert` rather than an archaeology session.
 | 2026-08-11 | B0 | Baseline recorded (this document) | Fleet query, both nodes |
 | 2026-08-11 | B1 | `surface_usage` table + `agentx usage surfaces` — CLI commands and dashboard pages are now counted | The gap above |
 | 2026-08-11 | B2 | `agentx chat` and `agentx tui` deprecated (warn on use, still run) | Zero use on either node since 2026-07-03; replaced by [attach mode](/reference/attach) |
+| 2026-08-11 | B3 | **Removed** the Discord and Slack channel adapters, their config schema, the Slack user-task renderer, and `docs/reference/slack.md` | Zero tasks in the entire history of `task_history` on both nodes; unconfigured in both `agentx.json` |
 
-*Nothing removed yet.* Deprecation is a warning, never a block — an operator
-mid-incident should not be stopped by a message about roadmaps.
+Deprecation is a warning, never a block — an operator mid-incident should not be
+stopped by a message about roadmaps. Removal is one commit per subsystem, so
+reversing a bad call costs a `git revert`, not archaeology.
 
-The soak started 2026-08-11. Earliest date `agentx usage surfaces --unused`
-carries two weeks of signal: **2026-08-25**.
+### Note on the Discord/Slack removal
+
+This shortens the marketed channel list in the README, the docs hero, and the
+og:description. That is a real positioning cost and was taken deliberately: an
+adapter that has never carried a single message is not a feature, it is a claim.
+Re-adding either is a contained change — the removal touched two adapter files,
+two registration blocks, and a schema entry, not the channel abstraction itself.
+
+Channel-name strings (`"slack"`, `"discord"`) survive in generic union types and
+`sourceFilter` arrays. Purging those would churn 20+ files to no benefit and
+would make re-adding a channel harder, which fails the impact half of the bar.
+
+### Still gated
+
+Dashboard page removals wait on real view counts — no page-access log has ever
+existed, so this is the one decision with only prospective evidence. Check with
+`agentx usage surfaces --kind page` once `/live` and `/admin` show traffic; if
+nothing has views, the data is unobserved rather than unused and says nothing.

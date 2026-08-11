@@ -11,8 +11,6 @@ import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
-import { DiscordAdapter } from "@/channels/discord"
-import { SlackAdapter } from "@/channels/slack"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter } from "@/channels/github"
 import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
@@ -1152,35 +1150,6 @@ export class AgentXDaemon {
       this.log(`  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes)`)
     }
 
-    // Discord
-    if (this.config.channels.discord?.enabled && this.config.channels.discord.token) {
-      const discord = new DiscordAdapter(
-        {
-          token: this.config.channels.discord.token,
-          agentBinding: this.config.channels.discord.agentBinding,
-        },
-        this.log,
-      )
-      this.router.addChannel(discord)
-      this.log("  Discord: enabled")
-    }
-
-    // Slack
-    if (this.config.channels.slack?.enabled && this.config.channels.slack.botToken && this.config.channels.slack.appToken) {
-      const slack = new SlackAdapter(
-        {
-          botToken: this.config.channels.slack.botToken,
-          appToken: this.config.channels.slack.appToken,
-          agentBinding: this.config.channels.slack.agentBinding,
-        },
-        this.log,
-      )
-      this.router.addChannel(slack)
-      this.log("  Slack: enabled")
-    } else if (this.config.channels.slack?.enabled) {
-      this.log("  Slack: enabled in config but missing botToken/appToken — skipped")
-    }
-
     // GitLab
     if (this.config.channels.gitlab?.enabled && this.config.channels.gitlab.token) {
       const gitlab = new GitLabAdapter(
@@ -1597,20 +1566,6 @@ export class AgentXDaemon {
         actors: actorStore,
         tasks: taskStore,
         adapter: { send: whatsappAdapter.send.bind(whatsappAdapter) },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    const slackAdapter = channels["slack"] as {
-      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
-    } | undefined
-    if (slackAdapter?.send) {
-      const { createSlackTaskRenderer } = await import("@/forms/renderers/slack")
-      taskRenderers.push(createSlackTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: { send: slackAdapter.send.bind(slackAdapter) },
         inboxBaseUrl,
         log: (m) => this.log(m),
       }))

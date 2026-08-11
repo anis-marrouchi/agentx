@@ -23,7 +23,7 @@
 
 ---
 
-Most agent tools give you **one agent in one chat app**. AgentX runs a **network**: agents on your laptop, your VPS, and your teammates' machines pair with one link, talk over the open [A2A protocol](https://github.com/a2aproject/A2A) (Linux Foundation), and answer on the channels your team already uses — Telegram, WhatsApp, Slack, Discord, GitLab, GitHub.
+Most agent tools give you **one agent in one chat app**. AgentX runs a **network**: agents on your laptop, your VPS, and your teammates' machines pair with one link, talk over the open [A2A protocol](https://github.com/a2aproject/A2A) (Linux Foundation), and answer on the channels your team already uses — Telegram, WhatsApp, GitLab, GitHub.
 
 ```
 You (Telegram): "@cx CI is red on gitlab — fix it and ship a patch"
@@ -66,7 +66,7 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 
 ## What you get
 
-- **Channels** — Telegram, WhatsApp (QR pair in the browser), Slack, Discord, GitLab, GitHub, generic webhooks. Agents reply where they were asked, or push anywhere.
+- **Channels** — Telegram, WhatsApp (QR pair in the browser), GitLab, GitHub, generic webhooks. Agents reply where they were asked, or push anywhere.
 - **Mesh federation** — pair nodes over Tailscale/VPN with one link; manage any peer's config from one dashboard; GitLab mentions route across nodes with peer-owned tokens.
 - **Agents are folders, not code** — persona, knowledge, and tools in plain Markdown (`CLAUDE.md`, skills, references). Bring Claude Code (subscription), Anthropic/OpenAI APIs, or any OpenAI-compatible endpoint (vLLM, OpenRouter, Ollama's compat API).
 - **Operator surface** — browser setup wizard + 11-page admin dashboard: live activity, Kanban boards synced two-way with GitLab/GitHub issues, token-cost accounting, scoped API tokens.
@@ -117,8 +117,6 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 graph LR
   T[Telegram] --> R(Router)
   W[WhatsApp] --> R
-  S[Slack] --> R
-  D[Discord] --> R
   G[GitLab] --> R
   GH[GitHub] --> R
   C[Cron] --> R

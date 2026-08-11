@@ -1542,7 +1542,6 @@ configCmd
       const tgAccounts = Object.keys(config.channels.telegram.accounts).length
       console.log(chalk.dim(`    Telegram: ${config.channels.telegram.enabled ? `${tgAccounts} accounts` : "disabled"}`))
       console.log(chalk.dim(`    WhatsApp: ${config.channels.whatsapp.enabled ? `${config.channels.whatsapp.routes.length} routes` : "disabled"}`))
-      console.log(chalk.dim(`    Discord: ${config.channels.discord?.enabled ? "enabled" : "disabled"}`))
 
       // Warnings
       const warnings = validateWorkspaces(config)
