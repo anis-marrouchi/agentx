@@ -150,6 +150,33 @@ Every `agentx chat` and `agentx tui` invocation on this machine is dated
 **2026-07-03** — the day they shipped. Not "fell out of use"; tried once, never
 again.
 
+## The CLI on the production node: zero
+
+`~/.bash_history` on clawd holds 467 commands (HISTSIZE is 1000, so the file
+is complete, not truncated; no timestamps, last written 2026-07-31).
+
+**It contains no `agentx <subcommand>` invocations at all.** Every one of the
+29 lines mentioning agentx is infrastructure:
+
+| What the operator actually does on production | Count |
+|---|---|
+| `journalctl -u agentx` (read logs) | 7 |
+| `systemctl restart/edit agentx` | 8 |
+| `nano agentx.json` (hand-edit config) | 4 |
+| `cd agentx` | 5 |
+
+The 268-command CLI surface is a **development** tool. On the node carrying
+95% of the fleet's traffic it is never invoked — the operator uses systemd,
+journalctl, a text editor, and the dashboard.
+
+The `nano agentx.json` entries are their own finding: config is edited by hand
+rather than through `agentx config set`, which suggests the config commands
+are not just unused but not preferred even when they'd fit.
+
+> Correction: an earlier note in this document described clawd's shell history
+> as "months" of data. There are no timestamps in the file, so no span can be
+> claimed — only that these 467 commands are everything bash recorded.
+
 ## The gap this data does not cover
 
 `task_history` records *agent dispatches*. It says nothing about which **CLI
@@ -205,6 +232,22 @@ would make re-adding a channel harder, which fails the impact half of the bar.
 `actions`, `actors` and `roles` were on the removal list from directory evidence
 and came off it after the import graph showed workflows and the business layer
 depend on them. Recorded here so the next pass doesn't re-propose them.
+
+### The counter measured itself
+
+The first `surface_usage` data was unusable: three suites (trace-cli,
+process-cli, intent-ledger-cli) shell out to the real CLI and inherit the
+parent env, so a full `pnpm test` recorded `trace list` 72 times against a
+human total of zero.
+
+That is worse than no data — it inverts the ranking, making well-tested
+commands look popular and untested ones look dead, which is exactly backwards
+for deciding what to cut. Fixed by skipping under `VITEST` / `NODE_ENV=test`;
+polluted rows cleared and the soak restarted. Page counts were never affected
+(they come from the daemon, which tests don't drive).
+
+Worth remembering as a general hazard: instrumentation added to decide what to
+delete will be exercised by the test suite that covers the thing being deleted.
 
 ### Still gated
 
