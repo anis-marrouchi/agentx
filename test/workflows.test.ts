@@ -61,6 +61,21 @@ describe("workflowSchema", () => {
     expect(wf.edges).toHaveLength(6)
   })
 
+  // Regression: a YAML parser turns an unquoted `created: 2026-05-10` into a
+  // JS Date. The schema wanted a string, so the workflow was rejected — and
+  // WorkflowStore.list() swallows parse failures, so a production workflow
+  // silently vanished from the engine with no error anywhere. Found on
+  // clawd, where 1 of 16 workflows had been missing for months.
+  it("accepts Date objects for created/updated (unquoted YAML dates)", () => {
+    const raw = { ...baseWorkflow(), created: new Date("2026-05-10T00:00:00Z"), updated: new Date("2026-05-11T00:00:00Z") }
+    const parsed = workflowSchema.safeParse(raw)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(typeof parsed.data.created).toBe("string")
+      expect(parsed.data.created).toBe("2026-05-10T00:00:00.000Z")
+    }
+  })
+
   it("rejects v1 shape (states + transitions)", () => {
     const bad = {
       id: "old", title: "old", version: 1,

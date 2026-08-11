@@ -133,6 +133,14 @@ export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>
 
 // --------------------------- Workflow -------------------------------------
 
+/** A date that may arrive as a string OR as a JS Date. YAML parsers coerce
+ *  an unquoted `2026-05-10` into a Date; JSON never does. Normalises to an
+ *  ISO string so downstream consumers see one type. */
+const isoDateString = z.union([
+  z.string(),
+  z.date().transform((d) => d.toISOString()),
+])
+
 export const workflowSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "workflow id must be lower-kebab"),
   /** Schema version. V2 = dataflow DAG. V1 workflows are not loadable. */
@@ -220,8 +228,12 @@ export const workflowSchema = z.object({
      *  only accept events from a specific upstream node. */
     peers: z.array(z.string()).optional(),
   }).default({ allowRemote: false }),
-  created: z.string().optional(),
-  updated: z.string().optional(),
+  // YAML turns an unquoted `2026-05-10` into a JS Date, so a hand-authored
+  // workflow that omits the quotes was silently rejected by the schema and
+  // dropped by WorkflowStore.list() — which swallows parse failures. Accept
+  // both shapes and normalise to an ISO string.
+  created: isoDateString.optional(),
+  updated: isoDateString.optional(),
 })
 export type Workflow = z.infer<typeof workflowSchema>
 
