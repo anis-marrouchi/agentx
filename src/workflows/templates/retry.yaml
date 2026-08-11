@@ -2,7 +2,7 @@
 #
 # Per-node `retry: { maxAttempts, backoffMs }` re-runs hard failures
 # (returned `{ error }` or thrown exceptions) with exponential backoff.
-# Pause results (userTask, signalWait, timerWait) are NEVER retried —
+# Pause results (signalWait, timerWait) are NEVER retried —
 # pausing is a normal lifecycle transition, not a failure.
 
 id: __ID__

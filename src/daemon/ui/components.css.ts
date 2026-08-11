@@ -28,8 +28,9 @@ export const AX_COMPONENTS_CSS = `
 /* --- Badges --- */
 .ax-badge {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 1px 7px; border-radius: 3px; font-size: var(--ax-fs-xs); line-height: 16px;
-  border: 1px solid var(--ax-border-2); color: var(--ax-text-2); background: transparent;
+  padding: 2px 10px; border-radius: var(--ax-radius-pill); font-size: var(--ax-fs-xs); line-height: 18px;
+  border: var(--ax-border-w) solid var(--ax-border-2); color: var(--ax-text-2);
+  background: var(--ax-surface); font-weight: 600;
 }
 .ax-badge--mono {
   font-family: var(--ax-mono); letter-spacing: 0.02em;
@@ -59,20 +60,25 @@ export const AX_COMPONENTS_CSS = `
 
 /* --- Buttons --- */
 .ax-btn {
-  background: transparent; color: var(--ax-text-2);
-  border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius);
-  padding: 7px 14px; font: inherit; font-size: var(--ax-fs); cursor: pointer;
-  transition: border-color 0.1s, color 0.1s, background 0.1s;
-  line-height: 1.4;
+  background: var(--ax-surface); color: var(--ax-text-2);
+  border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius);
+  padding: 8px 16px; font: inherit; font-size: var(--ax-fs); font-weight: 600;
+  cursor: pointer; line-height: 1.4;
+  box-shadow: var(--ax-shadow);
+  transition: border-color 0.1s, color 0.1s, background 0.1s, transform 0.06s, box-shadow 0.06s;
 }
 .ax-btn:hover:not(:disabled) { color: var(--ax-text); border-color: var(--ax-accent); }
-.ax-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The offset shadow collapses on press so the control physically sinks —
+   the whole point of an un-blurred drop rather than a glow. */
+.ax-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--ax-border); }
+.ax-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
 .ax-btn--primary {
   background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface));
   color: var(--ax-accent);
   border-color: color-mix(in oklch, var(--ax-accent) 50%, var(--ax-border-2));
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: var(--ax-shadow-accent);
 }
 .ax-btn--primary:hover:not(:disabled) {
   background: color-mix(in oklch, var(--ax-accent) 25%, var(--ax-surface));
@@ -81,12 +87,14 @@ export const AX_COMPONENTS_CSS = `
 
 .ax-btn--ghost {
   background: transparent; color: var(--ax-muted);
-  border-color: var(--ax-border);
+  border-color: var(--ax-border); box-shadow: none;
 }
+.ax-btn--ghost:active:not(:disabled) { transform: none; }
 
 .ax-btn--danger {
   color: var(--ax-err);
-  border-color: color-mix(in oklch, var(--ax-err) 50%, var(--ax-border-2));
+  border-color: var(--ax-red-e);
+  box-shadow: 0 4px 0 var(--ax-red-e);
 }
 .ax-btn--danger:hover:not(:disabled) {
   background: color-mix(in oklch, var(--ax-err) 12%, var(--ax-surface));
@@ -96,20 +104,21 @@ export const AX_COMPONENTS_CSS = `
 /* --- Chips (read-only labels used in kanban filters, etc.) --- */
 .ax-chip {
   display: inline-block; padding: 0 6px; font-family: var(--ax-mono);
-  font-size: 10px; line-height: 16px; border-radius: 3px; color: var(--ax-muted);
-  border: 1px solid var(--ax-border); background: var(--ax-surface);
+  font-size: 11px; line-height: 18px; border-radius: var(--ax-radius-pill); color: var(--ax-text-2);
+  border: var(--ax-border-w) solid var(--ax-border); background: var(--ax-surface); font-weight: 600;
 }
 
 /* --- Cards --- */
 .ax-card {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
-  border-radius: var(--ax-radius); padding: var(--ax-pad);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); padding: var(--ax-pad);
+  box-shadow: var(--ax-shadow);
 }
 
 /* Step cards used by the setup wizard / onboarding-style flows. */
 .ax-step {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
-  border-radius: 8px; padding: 20px 22px; margin: 14px 0;
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius); padding: 20px 22px; margin: 14px 0;
 }
 .ax-step__head {
   font-size: var(--ax-fs-xs); font-weight: 600; text-transform: uppercase;
@@ -117,7 +126,7 @@ export const AX_COMPONENTS_CSS = `
   margin: 0 0 14px; display: flex; align-items: center; gap: 10px;
 }
 .ax-step__num {
-  width: 22px; height: 22px; border-radius: 4px;
+  width: 22px; height: 22px; border-radius: var(--ax-radius-sm);
   background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface));
   border: 1px solid color-mix(in oklch, var(--ax-accent) 45%, var(--ax-border-2));
   color: var(--ax-accent);
@@ -132,7 +141,7 @@ export const AX_COMPONENTS_CSS = `
   gap: var(--ax-gap); padding: var(--ax-pad) var(--ax-pad) 0;
 }
 .ax-stat {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius); padding: 14px 16px;
 }
 .ax-stat__label {
@@ -166,8 +175,8 @@ export const AX_COMPONENTS_CSS = `
 .ax-field input, .ax-field textarea, .ax-field select {
   width: 100%;
   background: var(--ax-bg); color: var(--ax-text);
-  border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius);
-  padding: 8px 10px; font: inherit; font-size: var(--ax-fs);
+  border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius);
+  padding: 11px 14px; font: inherit; font-size: var(--ax-fs);
   transition: border-color 0.1s ease;
 }
 .ax-field input:focus, .ax-field textarea:focus, .ax-field select:focus {
@@ -233,7 +242,7 @@ export const AX_COMPONENTS_CSS = `
 }
 .ax-page-head .ax-lead code {
   font-family: var(--ax-mono); font-size: 11.5px;
-  background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px;
+  background: var(--ax-surface-2); padding: 1px 6px; border-radius: var(--ax-radius-sm);
 }
 
 /* --- Health strip --- */
@@ -242,7 +251,7 @@ export const AX_COMPONENTS_CSS = `
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
 }
 .ax-health-card {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm); padding: 12px 14px;
   display: flex; align-items: center; gap: 11px;
   transition: border-color 120ms;
@@ -283,8 +292,8 @@ export const AX_COMPONENTS_CSS = `
 .ax-wit b { color: var(--ax-text); font-weight: 600; }
 .ax-wit code {
   font-family: var(--ax-mono); font-size: 11.5px;
-  background: var(--ax-bg); padding: 1px 5px; border-radius: 3px;
-  border: 1px solid var(--ax-border);
+  background: var(--ax-bg); padding: 1px 5px; border-radius: var(--ax-radius-sm);
+  border: var(--ax-border-w) solid var(--ax-border);
 }
 .ax-wit .ax-wit__dismiss {
   background: transparent; border: 0; color: var(--ax-muted);
@@ -298,7 +307,7 @@ export const AX_COMPONENTS_CSS = `
   display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px;
 }
 .ax-section-head__icon {
-  width: 44px; height: 44px; border-radius: 10px;
+  width: 44px; height: 44px; border-radius: var(--ax-radius);
   background: color-mix(in oklch, var(--ax-accent) 10%, var(--ax-surface));
   border: 1px solid color-mix(in oklch, var(--ax-accent) 25%, var(--ax-border));
   display: grid; place-items: center; flex-shrink: 0;
@@ -318,7 +327,7 @@ export const AX_COMPONENTS_CSS = `
 /* --- Row cards (collapsible list items) --- */
 .ax-stack { display: flex; flex-direction: column; gap: 10px; }
 .ax-row-card {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 14px 16px;
   transition: border-color 160ms, transform 160ms;
 }
@@ -362,14 +371,14 @@ export const AX_COMPONENTS_CSS = `
 .ax-trigger-pill {
   font-family: var(--ax-mono); font-size: 11px;
   padding: 2px 8px; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 4px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm);
   color: var(--ax-text);
 }
 
 /* --- Avatars (coloured initial square) --- */
 .ax-avatar {
-  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
-  background: var(--ax-surface-2); border: 1px solid var(--ax-border-2);
+  width: 36px; height: 36px; border-radius: var(--ax-radius); flex-shrink: 0;
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border-2);
   display: grid; place-items: center;
   font-weight: 600; font-size: 14px; letter-spacing: -0.01em;
   color: var(--ax-text);
@@ -404,8 +413,8 @@ export const AX_COMPONENTS_CSS = `
 .ax-pill {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; padding: 2px 8px; line-height: 16px;
-  border-radius: 10px; background: var(--ax-surface-2);
-  color: var(--ax-text-2); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius); background: var(--ax-surface-2);
+  color: var(--ax-text-2); border: var(--ax-border-w) solid var(--ax-border);
   white-space: nowrap;
 }
 .ax-pill .ax-pill__dot {
@@ -433,7 +442,7 @@ export const AX_COMPONENTS_CSS = `
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
 }
 .ax-connector {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 18px 18px 16px;
   cursor: pointer; position: relative;
   transition: border-color 160ms, transform 160ms, background 160ms;
@@ -450,10 +459,10 @@ export const AX_COMPONENTS_CSS = `
   display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
 }
 .ax-connector__logo {
-  width: 40px; height: 40px; border-radius: 10px;
+  width: 40px; height: 40px; border-radius: var(--ax-radius);
   display: grid; place-items: center;
   font-weight: 700; font-size: 15px; letter-spacing: -0.02em; flex-shrink: 0;
-  background: var(--ax-surface-2); border: 1px solid var(--ax-border-2);
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border-2);
   color: var(--ax-text); font-family: var(--ax-mono);
 }
 .ax-connector__meta { flex: 1; }
@@ -481,7 +490,7 @@ export const AX_COMPONENTS_CSS = `
 .ax-tab-count {
   font-family: var(--ax-mono); font-size: 10px;
   padding: 1px 6px; background: var(--ax-surface-2);
-  color: var(--ax-muted); border-radius: 9px; line-height: 14px;
+  color: var(--ax-muted); border-radius: var(--ax-radius); line-height: 14px;
   margin-left: 6px;
 }
 .is-active .ax-tab-count {
@@ -508,8 +517,8 @@ export const AX_COMPONENTS_CSS = `
 .ax-toast {
   position: fixed; bottom: 24px; right: 24px;
   background: var(--ax-surface-2);
-  border: 1px solid var(--ax-accent); color: var(--ax-text);
-  padding: 10px 16px; border-radius: 6px; font-size: 12.5px;
+  border: var(--ax-border-w) solid var(--ax-accent); color: var(--ax-text);
+  padding: 10px 16px; border-radius: var(--ax-radius); font-size: 12.5px;
   display: flex; align-items: center; gap: 10px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   opacity: 0; transform: translateY(10px); pointer-events: none;
@@ -528,12 +537,12 @@ export const AX_COMPONENTS_CSS = `
 .ax-modal-bd.is-show { display: flex; }
 .ax-modal {
   width: min(560px, 94vw); max-height: 86vh; overflow: auto;
-  background: var(--ax-surface); border: 1px solid var(--ax-border-2);
-  border-radius: 12px; padding: 0;
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2);
+  border-radius: var(--ax-radius-lg); padding: 0;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
 .ax-modal > header {
-  padding: 18px 22px 10px; border-bottom: 1px solid var(--ax-border);
+  padding: 18px 22px 10px; border-bottom: var(--ax-border-w) solid var(--ax-border);
   display: flex; align-items: center; gap: 10px;
 }
 .ax-modal > header h3 {
@@ -547,12 +556,12 @@ export const AX_COMPONENTS_CSS = `
 .ax-modal__foot {
   padding: 12px 22px 18px;
   display: flex; justify-content: flex-end; gap: 8px;
-  border-top: 1px solid var(--ax-border);
+  border-top: var(--ax-border-w) solid var(--ax-border);
 }
 
 /* --- Mesh hero (enable toggle + SVG network viz) --- */
 .ax-mesh-hero {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 20px;
   display: grid; grid-template-columns: 1fr 240px; gap: 24px;
   align-items: center; margin-bottom: 18px;
@@ -581,13 +590,13 @@ export const AX_COMPONENTS_CSS = `
 /* Pill-shaped toggle (used for the mesh enable switch + similar binary actions). */
 .ax-mesh-toggle {
   display: inline-flex; align-items: center; gap: 10px;
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: 20px; padding: 4px 14px 4px 5px;
   cursor: pointer; user-select: none; font-size: 12px;
 }
 .ax-mesh-switch {
   width: 32px; height: 18px; background: var(--ax-surface-3);
-  border-radius: 9px; position: relative; transition: background 160ms;
+  border-radius: var(--ax-radius); position: relative; transition: background 160ms;
 }
 .ax-mesh-switch::after {
   content: ""; position: absolute; top: 2px; left: 2px;
@@ -603,7 +612,7 @@ export const AX_COMPONENTS_CSS = `
 
 /* --- Schedule builder: sentence-builder + pill picks + day picker --- */
 .ax-builder {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 20px;
 }
 .ax-builder h3 {
@@ -621,7 +630,7 @@ export const AX_COMPONENTS_CSS = `
 }
 .ax-builder__inp {
   width: 100%; background: var(--ax-bg); color: var(--ax-text);
-  border: 1px solid var(--ax-border); border-radius: 5px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm);
   padding: 8px 11px; font: inherit; font-size: 13px;
   transition: border-color 120ms, box-shadow 120ms;
 }
@@ -633,13 +642,13 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 
 .ax-mode-switch {
   display: inline-flex; background: var(--ax-surface-2);
-  border: 1px solid var(--ax-border); border-radius: 6px; padding: 3px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius); padding: 3px;
   margin-bottom: 14px;
 }
 .ax-mode-switch button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 6px 14px; font: inherit; font-size: 12px; cursor: pointer;
-  border-radius: 4px; font-weight: 500;
+  border-radius: var(--ax-radius-sm); font-weight: 500;
 }
 .ax-mode-switch button.is-active {
   background: var(--ax-surface); color: var(--ax-text);
@@ -649,13 +658,13 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   display: flex; align-items: center; gap: 8px;
   font-size: 16px; line-height: 1.9; flex-wrap: wrap;
   margin-bottom: 14px; padding: 14px 16px;
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm);
 }
 .ax-sentence > span { color: var(--ax-text-2); }
 .ax-pill-pick {
-  background: var(--ax-surface); border: 1px solid var(--ax-border-2);
-  color: var(--ax-accent); padding: 3px 10px; border-radius: 6px;
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2);
+  color: var(--ax-accent); padding: 3px 10px; border-radius: var(--ax-radius);
   font-size: 14px; font-family: inherit; cursor: pointer; font-weight: 500;
 }
 .ax-pill-pick:hover { background: var(--ax-surface-2); border-color: var(--ax-accent); }
@@ -663,8 +672,8 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 
 .ax-day-picker { display: flex; gap: 4px; }
 .ax-day-picker button {
-  width: 30px; height: 30px; border-radius: 6px;
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  width: 30px; height: 30px; border-radius: var(--ax-radius);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   color: var(--ax-muted); font: inherit; font-size: 11px; font-weight: 500;
   cursor: pointer;
 }
@@ -690,44 +699,44 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-cron-hints code {
   font-family: var(--ax-mono); color: var(--ax-text);
-  background: var(--ax-bg); border: 1px solid var(--ax-border);
-  padding: 1px 6px; border-radius: 3px; margin-right: 6px;
+  background: var(--ax-bg); border: var(--ax-border-w) solid var(--ax-border);
+  padding: 1px 6px; border-radius: var(--ax-radius-sm); margin-right: 6px;
 }
 
 /* --- JSON tree viewer (Advanced tab) --- */
 .ax-jv-toolbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: var(--ax-bg-elev);
-  border: 1px solid var(--ax-border); border-bottom: 0;
+  border: var(--ax-border-w) solid var(--ax-border); border-bottom: 0;
   border-radius: var(--ax-radius) var(--ax-radius) 0 0;
 }
 .ax-jv-toolbar .ax-jv-spacer { flex: 1; }
 .ax-jv-toolbar .ax-jv-seg {
   display: inline-flex; background: var(--ax-surface);
-  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px;
 }
 .ax-jv-toolbar .ax-jv-seg button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 4px 10px; font: inherit; font-size: 11px;
-  cursor: pointer; border-radius: 4px;
+  cursor: pointer; border-radius: var(--ax-radius-sm);
 }
 .ax-jv-toolbar .ax-jv-seg button.is-active { background: var(--ax-surface-2); color: var(--ax-text); }
 .ax-jv-search {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
-  border-radius: 5px; padding: 4px 9px; font: inherit; font-size: 12px;
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 4px 9px; font: inherit; font-size: 12px;
   color: var(--ax-text); width: 180px;
 }
 .ax-jv-search:focus { outline: none; border-color: var(--ax-accent); }
 
 .ax-jv-viewer {
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-top: 0; border-radius: 0 0 var(--ax-radius) var(--ax-radius);
   font-family: var(--ax-mono); font-size: 12.5px; line-height: 1.75;
   padding: 14px 18px; max-height: 620px; overflow: auto;
 }
 .ax-jv-line {
   display: flex; align-items: flex-start; padding: 1px 0; gap: 0;
-  position: relative; border-radius: 3px; white-space: nowrap;
+  position: relative; border-radius: var(--ax-radius-sm); white-space: nowrap;
 }
 .ax-jv-line:hover { background: color-mix(in oklch, var(--ax-accent) 5%, transparent); }
 .ax-jv-line.is-match { background: color-mix(in oklch, var(--ax-warn) 16%, transparent); }
@@ -824,12 +833,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
 }
 .ax-stat-inline {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm); padding: 10px 12px;
   display: flex; align-items: center; gap: 11px;
 }
 .ax-stat-inline__icon {
-  width: 26px; height: 26px; border-radius: 6px;
+  width: 26px; height: 26px; border-radius: var(--ax-radius);
   background: color-mix(in oklch, var(--ax-accent) 12%, var(--ax-surface-2));
   display: grid; place-items: center;
   color: var(--ax-accent); flex-shrink: 0;
@@ -857,7 +866,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-rail a {
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 11px; border-radius: 6px;
+  padding: 9px 11px; border-radius: var(--ax-radius);
   color: var(--ax-text-2); font-size: 13px; font-weight: 500;
   cursor: pointer; position: relative;
   transition: background 120ms, color 120ms;
@@ -876,12 +885,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-rail a.is-active svg { color: var(--ax-accent); }
 .ax-rail a.is-active::before {
   content: ""; position: absolute; left: -3px; top: 7px; bottom: 7px;
-  width: 2px; border-radius: 2px; background: var(--ax-accent);
+  width: 2px; border-radius: var(--ax-radius-sm); background: var(--ax-accent);
 }
 .ax-rail__count {
   margin-left: auto; font-family: var(--ax-mono);
   font-size: 10px; padding: 1px 6px; background: var(--ax-surface-2);
-  color: var(--ax-muted); border-radius: 9px; line-height: 14px;
+  color: var(--ax-muted); border-radius: var(--ax-radius); line-height: 14px;
 }
 .ax-rail a.is-active .ax-rail__count {
   background: color-mix(in oklch, var(--ax-accent) 22%, transparent);
@@ -895,7 +904,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 
 /* Main panel containers (one per section) */
 .ax-panel {
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 22px;
 }
 .ax-panel + .ax-panel { margin-top: 12px; }
@@ -934,12 +943,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-slider-row .ax-opts {
   display: flex; gap: 4px; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px;
 }
 .ax-slider-row .ax-opts button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 5px 11px; font: inherit; font-size: 11.5px;
-  cursor: pointer; border-radius: 3px; white-space: nowrap;
+  cursor: pointer; border-radius: var(--ax-radius-sm); white-space: nowrap;
 }
 .ax-slider-row .ax-opts button.is-active {
   background: var(--ax-surface-2); color: var(--ax-text);
@@ -948,13 +957,13 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 /* Sub-tabs (Guided/Freeform, CLAUDE.md/SOUL.md/IDENTITY.md) */
 .ax-subtabs {
   display: inline-flex; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 6px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius);
   padding: 3px; margin-bottom: 16px;
 }
 .ax-subtabs button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 6px 14px; font: inherit; font-size: 12px;
-  cursor: pointer; border-radius: 4px; font-weight: 500;
+  cursor: pointer; border-radius: var(--ax-radius-sm); font-weight: 500;
 }
 .ax-subtabs button.is-active {
   background: var(--ax-surface-2); color: var(--ax-text);
@@ -963,8 +972,8 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 /* Trigger-word chips with inline input (for Wake words field) */
 .ax-triggers-edit {
   display: flex; flex-wrap: wrap; gap: 6px;
-  background: var(--ax-bg); border: 1px solid var(--ax-border);
-  padding: 7px; border-radius: 5px; min-height: 38px;
+  background: var(--ax-bg); border: var(--ax-border-w) solid var(--ax-border);
+  padding: 7px; border-radius: var(--ax-radius-sm); min-height: 38px;
   align-items: center; cursor: text;
 }
 .ax-triggers-edit:focus-within {
@@ -977,12 +986,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   padding: 3px 4px 3px 9px;
   background: color-mix(in oklch, var(--ax-accent) 16%, var(--ax-surface));
   border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border));
-  border-radius: 4px; color: var(--ax-accent);
+  border-radius: var(--ax-radius-sm); color: var(--ax-accent);
 }
 .ax-trig-pill button {
   background: transparent; border: 0; color: currentColor;
   opacity: 0.6; cursor: pointer; font-size: 13px; line-height: 1;
-  padding: 0 2px; border-radius: 3px;
+  padding: 0 2px; border-radius: var(--ax-radius-sm);
 }
 .ax-trig-pill button:hover {
   opacity: 1;
@@ -1003,7 +1012,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
 }
 .ax-prompt-badges .ax-pbadge {
-  font-size: 10px; padding: 3px 7px; border-radius: 3px;
+  font-size: 10px; padding: 3px 7px; border-radius: var(--ax-radius-sm);
   background: var(--ax-surface-2); color: var(--ax-muted);
   font-family: var(--ax-mono); letter-spacing: 0.03em;
 }
@@ -1023,12 +1032,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-search input { width: 100%; padding-left: 30px; }
 .ax-skill-filter {
   display: flex; gap: 4px; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px;
 }
 .ax-skill-filter button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 5px 10px; font: inherit; font-size: 11.5px;
-  cursor: pointer; border-radius: 3px;
+  cursor: pointer; border-radius: var(--ax-radius-sm);
 }
 .ax-skill-filter button.is-active {
   background: var(--ax-surface-2); color: var(--ax-text);
@@ -1038,7 +1047,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   gap: 10px;
 }
 .ax-skill-card {
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 14px;
   display: flex; flex-direction: column; gap: 8px;
   cursor: pointer; position: relative; overflow: hidden;
@@ -1064,7 +1073,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-skill-card__top { display: flex; align-items: center; gap: 10px; }
 .ax-skill-card__icon {
-  width: 32px; height: 32px; border-radius: 7px;
+  width: 32px; height: 32px; border-radius: var(--ax-radius);
   background: var(--ax-surface-2);
   display: grid; place-items: center; flex-shrink: 0;
   color: var(--ax-accent);
@@ -1103,18 +1112,18 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-callout b { color: var(--ax-text); }
 .ax-callout code {
   font-family: var(--ax-mono); font-size: 11.5px;
-  background: var(--ax-bg); padding: 1px 5px; border-radius: 3px;
-  border: 1px solid var(--ax-border);
+  background: var(--ax-bg); padding: 1px 5px; border-radius: var(--ax-radius-sm);
+  border: var(--ax-border-w) solid var(--ax-border);
 }
 
 /* Channel-binding rows (agent-specific view) */
 .ax-chan-row {
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); padding: 12px 14px;
   display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
 }
 .ax-chan-row__logo {
-  width: 32px; height: 32px; border-radius: 7px;
+  width: 32px; height: 32px; border-radius: var(--ax-radius);
   display: grid; place-items: center;
   font-weight: 700; font-size: 13px; color: white; flex-shrink: 0;
   font-family: var(--ax-mono);
@@ -1130,7 +1139,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-handover-viz {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; padding: 16px 18px;
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-lg); margin-bottom: 14px;
 }
 .ax-ho-side {
@@ -1138,7 +1147,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   gap: 6px; flex: 0 0 130px;
 }
 .ax-ho-side__av {
-  width: 42px; height: 42px; border-radius: 10px;
+  width: 42px; height: 42px; border-radius: var(--ax-radius);
   display: grid; place-items: center;
   font-weight: 600; font-size: 15px;
 }
@@ -1148,7 +1157,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   color: var(--ax-accent);
 }
 .ax-ho-side--to .ax-ho-side__av {
-  background: var(--ax-surface-2); border: 1px solid var(--ax-border-2);
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border-2);
   color: var(--ax-text);
 }
 .ax-ho-side__nm { font-size: 12px; font-weight: 600; }
@@ -1170,7 +1179,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-ho-list-row {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px;
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm); margin-bottom: 6px;
   font-size: 12.5px;
 }
@@ -1186,7 +1195,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   gap: 10px; margin-bottom: 18px;
 }
 .ax-activity-cell {
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm); padding: 14px;
 }
 .ax-activity-cell .ax-v {
@@ -1207,12 +1216,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-session {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px;
-  background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border: var(--ax-border-w) solid var(--ax-border);
   border-radius: var(--ax-radius-sm); margin-bottom: 6px;
   font-size: 12.5px;
 }
 .ax-session__ch {
-  width: 24px; height: 24px; border-radius: 5px;
+  width: 24px; height: 24px; border-radius: var(--ax-radius-sm);
   display: grid; place-items: center;
   font-weight: 700; font-size: 10px; color: white;
   flex-shrink: 0; font-family: var(--ax-mono);
@@ -1231,14 +1240,14 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-log-head {
   display: grid; grid-template-columns: 24px 90px 160px 1fr auto;
   gap: 12px; padding: 8px 10px;
-  border-bottom: 1px solid var(--ax-border-2);
+  border-bottom: var(--ax-border-w) solid var(--ax-border-2);
   font-size: 10px; color: var(--ax-muted);
   text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--ax-mono);
 }
 .ax-log-row {
   display: grid; grid-template-columns: 24px 90px 160px 1fr auto;
   gap: 12px; align-items: center; padding: 9px 10px;
-  border-bottom: 1px solid var(--ax-border); font-size: 12px;
+  border-bottom: var(--ax-border-w) solid var(--ax-border); font-size: 12px;
 }
 .ax-log-row:hover { background: color-mix(in oklch, var(--ax-accent) 4%, transparent); }
 .ax-log-row .ax-sev {
@@ -1279,7 +1288,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
  * the viewport when toggled. Similar to the Live page history-panel. */
 .ax-td-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: 420px;
-  background: var(--ax-bg-elev); border-left: 1px solid var(--ax-border);
+  background: var(--ax-bg-elev); border-left: var(--ax-border-w) solid var(--ax-border);
   z-index: 900;
   display: flex; flex-direction: column;
   box-shadow: -8px 0 24px rgba(0,0,0,0.4);
@@ -1290,7 +1299,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   .ax-td-panel { width: 100vw; }
 }
 .ax-td-head {
-  padding: 12px 14px; border-bottom: 1px solid var(--ax-border);
+  padding: 12px 14px; border-bottom: var(--ax-border-w) solid var(--ax-border);
   background: var(--ax-bg-elev);
   display: flex; align-items: center; gap: 10px;
 }
@@ -1306,12 +1315,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-td-head__seg {
   display: inline-flex; background: var(--ax-surface);
-  border: 1px solid var(--ax-border); border-radius: 5px; padding: 2px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px;
 }
 .ax-td-head__seg button {
   background: transparent; border: 0; color: var(--ax-muted);
   padding: 3px 8px; font: inherit; font-size: 10.5px;
-  cursor: pointer; border-radius: 3px; font-family: var(--ax-mono);
+  cursor: pointer; border-radius: var(--ax-radius-sm); font-family: var(--ax-mono);
 }
 .ax-td-head__seg button.is-active {
   background: var(--ax-surface-2); color: var(--ax-text);
@@ -1319,7 +1328,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 
 .ax-td-scenarios {
   padding: 10px 14px; background: var(--ax-bg-elev);
-  border-bottom: 1px solid var(--ax-border);
+  border-bottom: var(--ax-border-w) solid var(--ax-border);
   display: flex; gap: 5px; flex-wrap: wrap;
 }
 .ax-td-scenarios__lbl {
@@ -1329,8 +1338,8 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-td-scenario {
   font-size: 11px; padding: 3px 8px;
-  background: var(--ax-surface); border: 1px solid var(--ax-border);
-  border-radius: 10px; color: var(--ax-text-2);
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius); color: var(--ax-text-2);
   cursor: pointer; transition: all 120ms;
 }
 .ax-td-scenario:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
@@ -1346,7 +1355,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 .ax-td-chat__msg-wrap.is-user { align-self: flex-end; align-items: flex-end; }
 .ax-td-chat__msg-wrap.is-bot { align-self: flex-start; }
 .ax-td-chat__bubble {
-  padding: 8px 12px; border-radius: 12px;
+  padding: 8px 12px; border-radius: var(--ax-radius-lg);
   font-size: 12.5px; line-height: 1.55; word-wrap: break-word;
 }
 .ax-td-chat__bubble.is-user {
@@ -1355,7 +1364,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-td-chat__bubble.is-bot {
   background: var(--ax-surface-2); color: var(--ax-text);
-  border-bottom-left-radius: 3px; border: 1px solid var(--ax-border);
+  border-bottom-left-radius: 3px; border: var(--ax-border-w) solid var(--ax-border);
 }
 .ax-td-chat__meta {
   font-size: 9.5px; color: var(--ax-muted);
@@ -1363,8 +1372,8 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 .ax-td-chat__typing {
   align-self: flex-start; padding: 10px 14px;
-  background: var(--ax-surface-2); border: 1px solid var(--ax-border);
-  border-radius: 12px; border-bottom-left-radius: 3px;
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius-lg); border-bottom-left-radius: 3px;
   display: inline-flex; gap: 4px;
 }
 .ax-td-chat__typing span {
@@ -1378,18 +1387,18 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   30% { transform: translateY(-5px); opacity: 1; }
 }
 .ax-td-input {
-  padding: 10px; border-top: 1px solid var(--ax-border);
+  padding: 10px; border-top: var(--ax-border-w) solid var(--ax-border);
   background: var(--ax-bg-elev); display: flex; gap: 6px;
 }
 .ax-td-input input {
-  flex: 1; background: var(--ax-bg); border: 1px solid var(--ax-border);
-  border-radius: 6px; padding: 8px 11px;
+  flex: 1; background: var(--ax-bg); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius); padding: 8px 11px;
   color: var(--ax-text); font: inherit; font-size: 12.5px;
 }
 .ax-td-input input:focus { outline: none; border-color: var(--ax-accent); }
 .ax-td-input button {
   background: var(--ax-accent); color: var(--ax-bg); border: 0;
-  border-radius: 6px; padding: 0 12px;
+  border-radius: var(--ax-radius); padding: 0 12px;
   cursor: pointer; font-weight: 600;
 }
 .ax-td-input button:hover {
@@ -1402,7 +1411,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   margin-top: 5px; padding: 3px 8px;
   background: color-mix(in oklch, var(--ax-accent) 10%, var(--ax-surface));
   border: 1px solid color-mix(in oklch, var(--ax-accent) 35%, var(--ax-border));
-  border-radius: 8px; font-size: 10px; color: var(--ax-accent);
+  border-radius: var(--ax-radius); font-size: 10px; color: var(--ax-accent);
   font-family: var(--ax-mono); letter-spacing: 0.04em;
   cursor: default; user-select: none;
 }

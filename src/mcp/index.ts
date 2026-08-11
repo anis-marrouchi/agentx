@@ -399,6 +399,30 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_attach_next",
+    description:
+      "Take the next message queued for the agent identity THIS session is attached to (attach mode). Returns the message plus who sent it and on which channel, or nothing when the inbox is empty. After calling this, just answer normally — your reply is captured automatically and sent back to the channel. Use when the user runs /inbox or asks you to check for waiting messages.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "agentx_attach_answer",
+    description:
+      "Explicitly answer the message currently claimed by this session (attach mode). Usually unnecessary — replying normally after agentx_attach_next is captured automatically. Use this only when your reply to the channel should differ from what you told the user in the terminal.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        text: {
+          type: "string",
+          description: "The reply to send back to the channel, verbatim.",
+        },
+      },
+      required: ["text"],
+    },
+  },
+  {
     name: "agentx_crons",
     description:
       "List cron jobs and their health. Shows healthy, failing, disabled counts and per-job status with consecutive error counts.",
@@ -920,6 +944,53 @@ async function handleToolCall(
       const res = await fetch(`${DAEMON_URL}/health`)
       const data = await res.json() as any
       return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
+    }
+
+    // Attach mode. The session id comes from the environment Claude Code
+    // exports, not from the model — an attached session must never be able to
+    // drain or answer on behalf of a DIFFERENT session by passing an id.
+    case "agentx_attach_next": {
+      const sessionId = process.env.CLAUDE_CODE_SESSION_ID
+      if (!sessionId) {
+        return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/attach/next`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+      const data = await res.json() as any
+      if (!data?.item) {
+        return { content: [{ type: "text", text: "Inbox empty — nothing queued for this session." }] }
+      }
+      const i = data.item
+      const text = [
+        `Message for "${i.agentId}" via ${i.channel} from ${i.sender}:`,
+        "",
+        i.text,
+        "",
+        `Answer as "${i.agentId}". Your reply is sent back to ${i.channel} verbatim.`,
+        data.pending > 0 ? `(${data.pending} more waiting after this one.)` : "",
+      ].filter(Boolean).join("\n")
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_attach_answer": {
+      const sessionId = process.env.CLAUDE_CODE_SESSION_ID
+      if (!sessionId) {
+        return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
+      }
+      const res = await fetch(`${DAEMON_URL}/attach/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, text: String(args.text ?? "") }),
+      })
+      const data = await res.json() as any
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `Could not answer: ${data?.error ?? res.status}` }] }
+      }
+      const more = data.pending > 0 ? ` ${data.pending} still queued.` : ""
+      return { content: [{ type: "text", text: `Sent to ${data.item?.channel}.${more}` }] }
     }
 
     case "agentx_crons": {

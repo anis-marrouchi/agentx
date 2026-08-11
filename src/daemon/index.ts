@@ -11,8 +11,6 @@ import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
-import { DiscordAdapter } from "@/channels/discord"
-import { SlackAdapter } from "@/channels/slack"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter } from "@/channels/github"
 import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
@@ -67,6 +65,8 @@ import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/re
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayload, type PreToolUsePayload } from "@/guard"
+import { getAttachRegistry, isDeliveryMode } from "@/attach"
+import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
 
@@ -93,6 +93,7 @@ export class AgentXDaemon {
   private heartbeat: HeartbeatManager
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
+  private attachSweep?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
@@ -141,8 +142,6 @@ export class AgentXDaemon {
     // The daemon renders a few shell pages itself (/inbox, /processes) —
     // give their topbar the same feature flags the 4202 dashboard uses.
     setTopbarFeatures({
-      boards: (this.config.boards?.length ?? 0) > 0,
-      workflows: this.config.workflows?.enabled === true,
       business: this.config.business?.enabled === true,
     })
 
@@ -745,6 +744,8 @@ export class AgentXDaemon {
       try { this.configWatcher.close() } catch { /* best effort */ }
     }
 
+    if (this.attachSweep) clearInterval(this.attachSweep)
+
     if (this.httpServer) {
       this.httpServer.close()
     }
@@ -1147,35 +1148,6 @@ export class AgentXDaemon {
       this.log(`  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes)`)
     }
 
-    // Discord
-    if (this.config.channels.discord?.enabled && this.config.channels.discord.token) {
-      const discord = new DiscordAdapter(
-        {
-          token: this.config.channels.discord.token,
-          agentBinding: this.config.channels.discord.agentBinding,
-        },
-        this.log,
-      )
-      this.router.addChannel(discord)
-      this.log("  Discord: enabled")
-    }
-
-    // Slack
-    if (this.config.channels.slack?.enabled && this.config.channels.slack.botToken && this.config.channels.slack.appToken) {
-      const slack = new SlackAdapter(
-        {
-          botToken: this.config.channels.slack.botToken,
-          appToken: this.config.channels.slack.appToken,
-          agentBinding: this.config.channels.slack.agentBinding,
-        },
-        this.log,
-      )
-      this.router.addChannel(slack)
-      this.log("  Slack: enabled")
-    } else if (this.config.channels.slack?.enabled) {
-      this.log("  Slack: enabled in config but missing botToken/appToken — skipped")
-    }
-
     // GitLab
     if (this.config.channels.gitlab?.enabled && this.config.channels.gitlab.token) {
       const gitlab = new GitLabAdapter(
@@ -1555,71 +1527,6 @@ export class AgentXDaemon {
       },
     } : undefined
 
-    // Build the Telegram user-task renderer if the Telegram adapter is
-    // active. The renderer posts a notification to each assignee's
-    // preferred channel when a userTask node pauses the run.
-    const { ActorStore } = await import("@/actors/store")
-    const { TaskStore } = await import("@/workflows/task-store")
-    const actorStore = new ActorStore()
-    const taskStore = new TaskStore(cfg.dir ? { baseDir: resolve(process.cwd(), cfg.dir) } : undefined)
-    const inboxBaseUrl = process.env.AGENTX_INBOX_BASE_URL || ""
-    const taskRenderers: Array<(t: import("@/workflows/task-store").UserTaskRecord) => Promise<void>> = []
-
-    const telegramAdapter = channels["telegram"] as {
-      sendMessage?: (msg: { chatId: string; text: string; parseMode?: string; accountId?: string }) => Promise<string | undefined | void>
-      sendWithInlineButtons?: (args: { chatId: string; text: string; buttons: Array<{ label: string; url: string }>; parseMode?: "markdown" | "html" | "plain"; accountId?: string }) => Promise<string | undefined | void>
-    } | undefined
-    if (telegramAdapter?.sendMessage) {
-      const { createTelegramTaskRenderer } = await import("@/forms/renderers/telegram")
-      taskRenderers.push(createTelegramTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: {
-          sendMessage: telegramAdapter.sendMessage.bind(telegramAdapter),
-          sendWithInlineButtons: telegramAdapter.sendWithInlineButtons?.bind(telegramAdapter),
-        },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    const whatsappAdapter = channels["whatsapp"] as {
-      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
-    } | undefined
-    if (whatsappAdapter?.send) {
-      const { createWhatsappTaskRenderer } = await import("@/forms/renderers/whatsapp")
-      taskRenderers.push(createWhatsappTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: { send: whatsappAdapter.send.bind(whatsappAdapter) },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    const slackAdapter = channels["slack"] as {
-      send?: (msg: { channel: string; chatId: string; text: string; parseMode?: "markdown" | "html" | "plain" }) => Promise<string | void>
-    } | undefined
-    if (slackAdapter?.send) {
-      const { createSlackTaskRenderer } = await import("@/forms/renderers/slack")
-      taskRenderers.push(createSlackTaskRenderer({
-        actors: actorStore,
-        tasks: taskStore,
-        adapter: { send: slackAdapter.send.bind(slackAdapter) },
-        inboxBaseUrl,
-        log: (m) => this.log(m),
-      }))
-    }
-
-    // Compose into a single callback that fans out to every registered
-    // per-channel renderer. Each renderer short-circuits when the
-    // assignee has no handle on its channel, so delivery lands on
-    // whichever channel the actor has configured without double-posting.
-    const renderUserTask: ((task: import("@/workflows/task-store").UserTaskRecord) => Promise<void>) | undefined =
-      taskRenderers.length
-        ? async (task) => { for (const r of taskRenderers) { try { await r(task) } catch { /* already logged per-renderer */ } } }
-        : undefined
-
     const { TimerService } = await import("@/workflows/timers")
     const timerService = new TimerService({
       baseDir: cfg.dir ? resolve(process.cwd(), cfg.dir) : undefined,
@@ -1632,11 +1539,8 @@ export class AgentXDaemon {
       channels,
       agents,
       forwarder,
-      actors: actorStore,
-      tasks: taskStore,
       timers: timerService,
       events: this.events,
-      renderUserTask,
       log: (m) => this.log(m),
     })
 
@@ -1780,6 +1684,19 @@ export class AgentXDaemon {
     this.httpServer.listen(port, host || "0.0.0.0", () => {
       this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
     })
+
+    // Attach-mode deadlines. Sweeping on an interval rather than scheduling a
+    // timer per offered message keeps the hot path allocation-free and means
+    // there are no dangling handles to clean up on shutdown. 1s granularity
+    // against a 90s claim deadline is well inside the noise.
+    this.attachSweep = setInterval(() => {
+      try {
+        const reg = getAttachRegistry()
+        reg.sweep()
+        reg.prune()
+      } catch { /* best-effort */ }
+    }, 1000)
+    this.attachSweep.unref?.()
   }
 
   /**
@@ -2020,6 +1937,126 @@ export class AgentXDaemon {
         return
       }
 
+      // Attach mode (wearable agents). Same shape and same constraints as
+      // /guard/check: the hooks always run on this host, the responses name
+      // agent identities and quote channel messages, and a bound session can
+      // answer as a production agent. Loopback ONLY.
+      if (req.method === "POST" && path.startsWith("/attach/")) {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: `Forbidden: ${path} is loopback-only` })
+          return
+        }
+        const payload = (await readBody(req).catch(() => ({}))) as HookPayload
+        let out = ""
+        switch (path) {
+          case "/attach/session-start":
+            out = onSessionStart(payload)
+            break
+          case "/attach/prompt":
+            out = onPrompt(payload)
+            break
+          case "/attach/stop":
+            out = onStop(payload)
+            break
+          case "/attach/session-end":
+            out = onSessionEnd(payload)
+            break
+          case "/attach/bind": {
+            // Control-plane, not a hook: `agentx attach` posts here.
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            const agentId = String((payload as any).agentId || "")
+            const mode = (payload as any).mode
+            if (!sessionId || !agentId) {
+              this.json(res, 400, { error: "sessionId and agentId are required" })
+              return
+            }
+            if (mode !== undefined && !isDeliveryMode(mode)) {
+              this.json(res, 400, { error: `invalid mode: ${mode}` })
+              return
+            }
+            if (!this.registry.getAgent(agentId)) {
+              this.json(res, 404, { error: `Unknown agent: ${agentId}` })
+              return
+            }
+            reg.register(sessionId, { cwd: (payload as any).cwd })
+            const session = reg.bind(sessionId, agentId, mode)
+            this.json(res, 200, { ok: true, session, pending: reg.pendingCount(sessionId) })
+            return
+          }
+          case "/attach/next": {
+            // Explicit drain — what `/inbox` and manual/notify modes use. The
+            // Stop hook's auto-capture still applies afterwards, so the
+            // session answers by simply replying.
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            if (!sessionId) {
+              this.json(res, 400, { error: "sessionId is required" })
+              return
+            }
+            const item = reg.claim(sessionId)
+            this.json(res, 200, {
+              item: item ?? null,
+              pending: reg.pendingCount(sessionId),
+            })
+            return
+          }
+          case "/attach/answer": {
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            const text = String((payload as any).text || "")
+            if (!sessionId || !text) {
+              this.json(res, 400, { error: "sessionId and text are required" })
+              return
+            }
+            const item = reg.answer(sessionId, text)
+            if (!item) {
+              this.json(res, 409, { error: "no message is currently claimed by this session" })
+              return
+            }
+            this.json(res, 200, { ok: true, item, pending: reg.pendingCount(sessionId) })
+            return
+          }
+          case "/attach/detach": {
+            const reg = getAttachRegistry()
+            const sessionId = String((payload as any).sessionId || "")
+            if (!sessionId) {
+              this.json(res, 400, { error: "sessionId is required" })
+              return
+            }
+            const session = reg.unbind(sessionId, (payload as any).agentId)
+            this.json(res, 200, { ok: true, session })
+            return
+          }
+          default:
+            this.json(res, 404, { error: `Unknown attach route: ${path}` })
+            return
+        }
+        // Empty body is Claude Code's no-op. The hook pipes this straight
+        // through, so it must be a bare decision object or nothing at all.
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(out)
+        return
+      }
+
+      // Attached-session inspection. Loopback-only for the same reason: the
+      // response names which production identities a local terminal is
+      // currently answering for.
+      if (req.method === "GET" && path === "/attach/sessions") {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: "Forbidden: /attach/sessions is loopback-only" })
+          return
+        }
+        const reg = getAttachRegistry()
+        this.json(res, 200, {
+          sessions: reg.list().map((s) => ({
+            ...s,
+            pending: reg.pendingCount(s.sessionId),
+          })),
+        })
+        return
+      }
+
       // SSE live event stream
       if (req.method === "GET" && path === "/events") {
         this.handleSSE(req, res)
@@ -2091,17 +2128,6 @@ export class AgentXDaemon {
         if (await this.handleMemoryApi(req, res, path, url)) return
       }
 
-      // BPM user-task API: list + submit. Lives on the main daemon
-      // because the dispatcher is the one that drives run resumes.
-      if (path.startsWith("/api/workflows/tasks") && this.workflowDispatcher) {
-        if (await this.handleTaskApi(req, res, path)) return
-      }
-      // GET /api/workflows/kpis — actor-level + total task stats.
-      if (req.method === "GET" && path === "/api/workflows/kpis" && this.workflowDispatcher) {
-        const { computeKpis } = await import("@/workflows/task-store")
-        this.json(res, 200, computeKpis(this.workflowDispatcher.tasks))
-        return
-      }
       // GET /api/workflows/runs[?limit=&workflowId=] + /runs/:id
       // Runs live on the node that dispatches them (home-node). The
       // board-dashboard on another host proxies to this endpoint so
@@ -2147,58 +2173,6 @@ export class AgentXDaemon {
           this.json(res, 200, { run })
           return
         }
-      }
-      // POST /api/workflows/editor/chat — author chat dispatched to an agent.
-      //
-      // Body: { messages: [{role, content}], currentWorkflow?, agentId?, context? }
-      // Returns: { reply, workflow? | null, error? }
-      //
-      // The endpoint packs the full V2 schema + environment (available
-      // agents, actors, roles, channels, existing workflows) into the
-      // agent's prompt so a generic agent with no special training can
-      // still produce a valid workflow JSON.
-      if (req.method === "POST" && path === "/api/workflows/editor/chat" && this.workflowDispatcher) {
-        let body: any
-        try { body = await readJsonBody(req) } catch (e: any) {
-          this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
-        }
-        const messages = Array.isArray(body?.messages) ? body.messages as Array<{ role: string; content: string }> : []
-        if (!messages.length) { this.json(res, 400, { error: "messages array required" }); return }
-        const normMessages = messages
-          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
-        if (!normMessages.length) { this.json(res, 400, { error: "messages must contain at least one {role: 'user'|'assistant', content}" }); return }
-
-        const agentId = typeof body?.agentId === "string" && body.agentId
-          ? body.agentId
-          : (process.env.AGENTX_WORKFLOW_AUTHOR_AGENT || this.registry.list()[0]?.id)
-        if (!agentId) { this.json(res, 503, { error: "no authoring agent available — register an agent or set AGENTX_WORKFLOW_AUTHOR_AGENT" }); return }
-
-        const { buildWorkflowAuthorPrompt, extractWorkflowJson } = await import("@/workflows/editor-chat")
-        const availableChannels = Object.keys(this.workflowDispatcher["channels"] as Record<string, unknown>).sort()
-        const availableAgents = this.registry.list().map((a) => ({ id: a.id, description: a.name }))
-        const prompt = buildWorkflowAuthorPrompt({
-          messages: normMessages,
-          store: this.workflowStore!,
-          actors: this.workflowDispatcher.actors,
-          availableAgents,
-          availableChannels,
-          currentWorkflow: body?.currentWorkflow,
-        })
-        try {
-          const resp = await this.registry.execute({
-            agentId,
-            message: prompt,
-            context: { channel: "workflow-editor", chatId: "editor", sender: "editor" } as any,
-          })
-          if (resp.error) { this.json(res, 502, { error: resp.error, agentId }); return }
-          const reply = resp.content ?? ""
-          const workflow = extractWorkflowJson(reply)
-          this.json(res, 200, { reply, workflow, agentId })
-        } catch (e: any) {
-          this.json(res, 500, { error: "agent execute failed", message: e.message })
-        }
-        return
       }
 
       // POST /chat — External web-chat endpoint (noqta.tn → clawd-server).
@@ -2520,16 +2494,6 @@ export class AgentXDaemon {
         this.json(res, 200, { ok: true, emission })
         return
       }
-      // /inbox — per-actor task list page. Static HTML, fetches the task
-      // API above via same-origin.
-      if (req.method === "GET" && path === "/inbox") {
-        const { renderInboxPage } = await import("./ui/pages/inbox")
-        const qs = url.searchParams
-        const html = renderInboxPage({ actor: qs.get("actor") || undefined })
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-        res.end(html)
-        return
-      }
       // /processes — composition-tree + SLA view of runs.
       if (req.method === "GET" && path === "/processes") {
         const { renderProcessesPage } = await import("./ui/pages/processes")
@@ -2537,34 +2501,6 @@ export class AgentXDaemon {
         res.end(renderProcessesPage({}))
         return
       }
-      // GET /t/:taskId/:action — one-click task submission from chat
-      // clients (Telegram inline-keyboard URL buttons). Submits with
-      // empty values → validator fills defaults. Only works for forms
-      // whose required fields have defaults (or none at all).
-      const oneClick = req.method === "GET" && path.match(/^\/t\/([^\/]+)\/(primary|secondary)$/)
-      if (oneClick && this.workflowDispatcher) {
-        const taskId = decodeURIComponent(oneClick[1])
-        const action = oneClick[2] as "primary" | "secondary"
-        const actor = url.searchParams.get("actor") || "anonymous"
-        const result = await this.workflowDispatcher.submitTask(taskId, { action, values: {} }, actor)
-        res.writeHead(result.ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" })
-        if (result.ok) {
-          res.end(`<!doctype html><meta charset=utf-8><title>Submitted</title>
-<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
-<h1 style="color:#27ae60">✓ Submitted</h1>
-<p>Your <strong>${action === "primary" ? "approval" : "rejection"}</strong> has been recorded. You can close this tab.</p>
-<p style="color:#888;font-size:13px">Run <code>${result.runId}</code></p>
-</body>`)
-        } else {
-          res.end(`<!doctype html><meta charset=utf-8><title>Submit failed</title>
-<body style="font-family:system-ui;max-width:520px;margin:48px auto;padding:0 16px;text-align:center">
-<h1 style="color:#c0392b">✗ ${result.error}</h1>
-${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task has required fields. Please open the <a href="/inbox?actor=${encodeURIComponent(actor)}">inbox</a> instead.</p>` : ""}
-</body>`)
-        }
-        return
-      }
-
       // Static browser call page.
       if (req.method === "GET" && path === "/call") {
         this.serveCallPage(res)
@@ -4436,61 +4372,6 @@ ${Array.isArray(result.fieldErrors) && result.fieldErrors.length ? `<p>This task
       const ws = this.workspaceFor(agent)
       if (ws) { try { mem.syncToWorkspace(agent, ws) } catch { /* best effort */ } }
       this.json(res, 200, { ok: true })
-      return true
-    }
-    return false
-  }
-
-  /** Mesh receiver for forwarded workflow events. Peers POST the same
-   *  payload shape the MeshForwarder sends. Enforces that the run is
-   *  actually home'd here before acting — protects against routing loops. */
-  private async handleTaskApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
-    const d = this.workflowDispatcher
-    if (!d) return false
-    const { formSubmissionSchema } = await import("@/forms/types")
-
-    // GET /api/workflows/tasks[?actor=<id>]
-    if (req.method === "GET" && (path === "/api/workflows/tasks" || path.startsWith("/api/workflows/tasks?"))) {
-      const url = new URL(req.url || "/", `http://_`)
-      const actor = url.searchParams.get("actor") || undefined
-      const tasks = actor ? d.tasks.listForActor(actor) : d.tasks.listOpen()
-      this.json(res, 200, { tasks })
-      return true
-    }
-
-    // GET /api/workflows/tasks/:id
-    // POST /api/workflows/tasks/:id/submit
-    const trail = path.replace(/^\/api\/workflows\/tasks/, "")
-    const match = trail.match(/^\/([^\/?]+)(\/submit)?$/)
-    if (!match) return false
-    const taskId = decodeURIComponent(match[1])
-
-    if (match[2]) {
-      if (req.method !== "POST") { this.json(res, 405, { error: "method not allowed" }); return true }
-      let body: any
-      try { body = await readJsonBody(req) } catch (e: any) {
-        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
-      }
-      const submissionRaw = body && typeof body === "object" && "submission" in body ? (body as any).submission : body
-      const parsed = formSubmissionSchema.safeParse(submissionRaw)
-      if (!parsed.success) {
-        this.json(res, 400, {
-          error: "invalid submission",
-          issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-        })
-        return true
-      }
-      const submittedBy = typeof body?.submittedBy === "string" ? body.submittedBy : "anonymous"
-      const result = await d.submitTask(taskId, parsed.data, submittedBy)
-      if (!result.ok) { this.json(res, 400, { error: result.error, fieldErrors: result.fieldErrors }); return true }
-      this.json(res, 200, { ok: true, runId: result.runId })
-      return true
-    }
-
-    if (req.method === "GET") {
-      const task = d.tasks.get(taskId)
-      if (!task) { this.json(res, 404, { error: "task not found" }); return true }
-      this.json(res, 200, { task })
       return true
     }
     return false

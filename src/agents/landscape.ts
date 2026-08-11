@@ -210,10 +210,6 @@ export class LandscapeBuilder {
     if (ch.whatsapp.enabled) {
       parts.push("whatsapp(DMs only, no delegation)")
     }
-    if (ch.discord?.enabled) {
-      parts.push("discord(enabled)")
-    }
-
     return `Channels: ${parts.join(", ")}`
   }
 

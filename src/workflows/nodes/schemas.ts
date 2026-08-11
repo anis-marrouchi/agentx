@@ -174,12 +174,6 @@ const TIMER_BOUNDARY_OUTPUT: OutputField[] = [
   { path: "scheduledFor", type: "string", description: "ISO-8601 time the timer was originally scheduled for." },
 ]
 
-const USER_TASK_OUTPUT: OutputField[] = [
-  { path: "submission", type: "object", description: "Form values submitted by the assignee, keyed by field id. Shape depends on this userTask's form schema." },
-  { path: "submittedBy", type: "string", description: "Actor id of the user who completed the task." },
-  { path: "submittedAt", type: "string", description: "ISO-8601 submission timestamp." },
-]
-
 const SUB_PROCESS_OUTPUT: OutputField[] = [
   { path: "childRunId", type: "string", description: "Run id of the spawned child workflow." },
   { path: "result", type: "any", description: "Output bundle of the child's terminal `end` node (if any)." },
@@ -234,7 +228,6 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
   "action.callHTTP":    { summary: "Made an outbound HTTP request with templated params.", fields: ACTION_CALL_HTTP_OUTPUT },
   "action.run":         { summary: "Invoked a registered action from the action registry. Output is the full ActionRunResult.", fields: ACTION_RUN_OUTPUT },
   "action.builtin":     { summary: "Invoked a daemon-shipped typed built-in action (improvement plan #6) by name. Output is the built-in's validated response.", fields: ACTION_BUILTIN_OUTPUT },
-  "userTask":           { summary: "Paused for a human to submit a form. Resumes with the submission in this node's output.", fields: USER_TASK_OUTPUT },
   "subProcess":         { summary: "Spawned a child workflow and waited for its completion.", fields: SUB_PROCESS_OUTPUT },
   "signal.emit":        { summary: "Published a signal to the bus. Runs elsewhere can resume on it via `signal.wait`.", fields: SIGNAL_EMIT_OUTPUT },
   "signal.wait":        { summary: "Paused until a matching signal arrives. Resumes with that signal in this node's output.", fields: SIGNAL_WAIT_OUTPUT },

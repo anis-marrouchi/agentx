@@ -20,6 +20,7 @@ import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/reci
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
 import { newEventId } from "@/intent/ulid"
+import { getAttachRegistry } from "@/attach"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -751,6 +752,27 @@ export class AgentRegistry {
    * wrapper that adds intent-ledger resolution recording.
    */
   private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, callerOnEvent?: (event: any) => void): Promise<AgentResponse> {
+    // Attach mode: a live Claude Code session may have claimed this identity.
+    // If so it gets first refusal — but only for a bounded window. When the
+    // human doesn't pick the message up we fall through to the normal spawn
+    // path below, and the offer is atomically expired so a late drain can't
+    // answer it a second time. Attach is a preference, never a black hole.
+    const offered = getAttachRegistry().offer({
+      agentId: task.agentId,
+      text: task.message,
+      channel: task.context?.channel || "api",
+      chatId: String(task.context?.chatId || task.context?.group || "default"),
+      sender: String(task.context?.sender || "unknown"),
+    })
+    if (offered) {
+      const outcome = await offered
+      if (outcome.kind === "answered") {
+        this.log(`[${task.agentId}] answered by attached session ${outcome.sessionId}`)
+        return { content: outcome.text, viaAttachedSession: outcome.sessionId } as AgentResponse
+      }
+      this.log(`[${task.agentId}] attached session did not take it (${outcome.reason}) — spawning`)
+    }
+
     const state = this.agents.get(task.agentId)
     if (!state) {
       // Mesh fallback: the agent isn't local but a healthy peer may host

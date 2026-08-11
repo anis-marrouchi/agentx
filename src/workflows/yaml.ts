@@ -19,7 +19,7 @@ import yaml from "js-yaml"
 // Sugar limits (enforced at parse time so authors get a clear error
 // rather than a strange runtime behaviour):
 //   - flow: cannot include node ids whose type is one of:
-//     branch, gateway.parallel, rule, signal.wait, userTask,
+//     branch, gateway.parallel, rule, signal.wait,
 //     subProcess, timer.boundary, checkpoint.
 //   - flow: ids must reference real nodes in the same file.
 //   - flow: and edges: may coexist; the result is union + dedup.
@@ -33,7 +33,6 @@ const FLOW_FORBIDDEN_TYPES = new Set([
   "gateway.parallel",
   "rule",
   "signal.wait",
-  "userTask",
   "subProcess",
   "timer.boundary",
   "checkpoint",

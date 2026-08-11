@@ -9,6 +9,7 @@ import { db as dbCmd } from "@/commands/db"
 import { ledger as ledgerCmd } from "@/commands/ledger"
 import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
+import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
@@ -21,13 +22,11 @@ import { graph } from "@/commands/graph"
 import { procedure } from "@/commands/procedure"
 import { workflow } from "@/commands/workflow"
 import { webhook } from "@/commands/webhook"
-import { task } from "@/commands/task"
 import { business } from "@/commands/business"
 import { plan } from "@/commands/plan"
 import { notifications } from "@/commands/notifications"
 import { retention } from "@/commands/retention"
 import { actions as actionsCmd } from "@/commands/actions"
-import { actor, role } from "@/commands/actor"
 import { watch } from "@/commands/watch"
 import { tui } from "@/commands/tui"
 import { chat } from "@/commands/chat"
@@ -38,6 +37,7 @@ import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { getPackageInfo } from "@/utils/get-package-info"
+import { commandPath, recordSurfaceUse, shouldRecordCommand } from "@/observability/surface-usage"
 
 /**
  * Build the full commander tree. Shared between the CLI entrypoint and the
@@ -57,6 +57,15 @@ export async function buildProgram(): Promise<Command> {
       "display the version number"
     )
 
+  // Count which commands operators actually run. Names only — never args.
+  // The 46-command surface has no usage data behind it, so decisions about
+  // what to keep are currently opinion; this makes them evidence.
+  // See docs/architecture/surface-reduction.md.
+  program.hook("preAction", (_thisCommand, actionCommand) => {
+    const path = commandPath(actionCommand as any)
+    if (shouldRecordCommand(path)) recordSurfaceUse("cli", path)
+  })
+
   program
     .addCommand(daemon)
     .addCommand(setup)
@@ -73,6 +82,7 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(ledgerCmd)
     .addCommand(traceCmd)
     .addCommand(guardCmd)
+    .addCommand(attachCmd)
     .addCommand(processCmd)
     .addCommand(ragCmd)
     .addCommand(backlog)
@@ -86,14 +96,11 @@ export async function buildProgram(): Promise<Command> {
     .addCommand(procedure)
     .addCommand(workflow)
     .addCommand(webhook)
-    .addCommand(task)
     .addCommand(business)
     .addCommand(plan)
     .addCommand(notifications)
     .addCommand(retention)
     .addCommand(actionsCmd)
-    .addCommand(actor)
-    .addCommand(role)
     .addCommand(watch)
     .addCommand(tui)
     .addCommand(chat)

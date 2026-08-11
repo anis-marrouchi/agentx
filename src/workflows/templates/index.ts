@@ -22,7 +22,6 @@ export type TemplateName =
   | "linear"
   | "branching"
   | "extract"
-  | "human-in-the-loop"
   | "retry"
 
 export interface TemplateMeta {
@@ -35,7 +34,6 @@ export const TEMPLATES: TemplateMeta[] = [
   { name: "linear",            title: "Linear",                description: "Trigger → Agent → End. Smallest workflow that runs." },
   { name: "branching",         title: "Branching",             description: "Classify, then route on the result via a branch node." },
   { name: "extract",           title: "Structured extraction", description: "Pull typed fields from free-form text via extract.structured." },
-  { name: "human-in-the-loop", title: "Human-in-the-loop",     description: "Pause for a userTask form before continuing." },
   { name: "retry",             title: "Retry + fallback",      description: "Per-node retry policy with a branch fallback path." },
 ]
 

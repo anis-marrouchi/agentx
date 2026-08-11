@@ -17,7 +17,6 @@ Where [Workflows](./workflows) is "what definitions exist and how have runs gone
 
 - **Inspect a run** — click into the workflow definition (jumps to [/workflows](./workflows) with the run pre-selected) for the full timeline.
 - **Pause / resume / cancel** an in-flight run from the card menu (matches `agentx workflow pause/resume/cancel`).
-- **Open the user task** that's blocking a run — opens [/inbox](./inbox) with the task pre-selected.
 
 ## Common tasks
 

@@ -236,6 +236,47 @@ agentx trace show abc12345
 agentx trace replay abc12345 --diff
 ```
 
+## Guard
+
+Destructive-action guardrails. Full docs: [Guardrails](/reference/guard).
+
+| Command | Description |
+|---|---|
+| `agentx guard test "<command>" [--agent <id>] [--env <name>]` | Dry-run a command through the policy engine and print the verdict |
+| `agentx guard log [--limit <n>] [--agent <id>]` | Read the audit trail of guard decisions |
+| `agentx guard policy [--agent <id>]` | Show the resolved, deep-merged policy |
+| `agentx guard init` | Scaffold `.agentx/guardrails/` with seed policy |
+| `agentx guard reload` | Ping the daemon to drop its cached policy |
+| `agentx guard check [--agent <id>] [--env <name>]` | `PreToolUse` hook entrypoint (stdin → stdout). Not intended for humans |
+
+The daemon installs the `PreToolUse` hook into every agent workspace on start,
+and answers it in-process over loopback (`POST /guard/check`) so the per-tool-call
+cost is ~1ms rather than ~300ms of CLI boot.
+
+## Attach
+
+Wear an agent identity in a live Claude Code session instead of spawning one.
+Full docs: [Attach mode](/reference/attach) · walkthrough: [Journey 14](/journey/14-wearable-agent).
+
+| Command | Description |
+|---|---|
+| `agentx attach install [--port <n>] [--path <file>] [--no-guard]` | Wire the hooks into `~/.claude/settings.json`. Once per machine. Port defaults to `node.bind` in `agentx.json` |
+| `agentx attach <agent> [--mode manual\|notify\|auto] [--session <id>]` | Bind this session to an agent identity |
+| `agentx attach detach [--agent <id>] [--session <id>]` | Release the identity; queued work falls back to spawned agents |
+| `agentx attach list` (alias `status`) [`--json`] | Show every attached session, its mode, and inbox depth |
+| `agentx attach uninstall [--remove-guard]` | Remove the hooks. Leaves the guard hook unless asked |
+
+The session id comes from `CLAUDE_CODE_SESSION_ID`, which Claude Code exports
+into the shell of every Bash tool call — so `agentx attach cx-agent` binds the
+exact session it ran inside. `--session` is the documented fallback.
+
+```bash
+agentx attach install          # once
+agentx attach cx-agent         # inside a Claude Code session
+agentx attach cx-agent --mode auto   # on call: drain until the inbox is empty
+agentx attach detach
+```
+
 ## Backlog
 
 Manage the structured backlog at `.agentx/backlog.json` used when `business.workSource.type=backlog`. Items can be imported from GitLab/GitHub with a stable source link; mutations push back upstream automatically.
@@ -433,23 +474,6 @@ Manual lifecycle controls for runs. All three require the home-node's run store 
 - `agentx workflow runs --limit 5` is the fastest way to answer "what's the daemon doing right now with workflow X?" — pair it with `agentx daemon logs -f` to watch the corresponding agent dispatches.
 - On multi-node mesh deployments, `runs` is per-node (runs belong to their home node). Use the dashboard `/workflows` page for a cross-node view.
 
-## Tasks (workflow user-task inbox)
-
-When a workflow has a `userTask` node, it pauses until a human fills the form. The dashboard `/inbox` page shows these forms with a click-to-fill UI. This CLI surface is the terminal equivalent — for scripting, headless ops, or quickly resolving a task without opening a browser. Form fields (text, long-text, number, boolean, date, select, multi-select) get prompted one at a time.
-
-| Command | Description |
-|---|---|
-| `agentx task list` | List all open user-tasks (mirrors dashboard `/inbox`) |
-| `agentx task list --actor <id>` | Filter to one actor |
-| `agentx task list --json` | Machine-readable output |
-| `agentx task show <id>` | View a task's form definition (fields, types, validation) |
-| `agentx task submit <id>` | Interactive form submission — prompts one field at a time |
-| `agentx task submit <id> --as <actor>` | Submit as a specific actor (overrides default identity) |
-| `agentx task submit <id> --json '{"values":{"k":"v"}}'` | Non-interactive submission for scripting |
-| `agentx task submit <id> --secondary` | Click the "reject"-style secondary button instead of the primary submit |
-
-`agentx task list` ↔ dashboard `/inbox`. Use the CLI when you're already in a terminal or need to script bulk-resolution; use the dashboard when you want the click-to-fill UI.
-
 ## Actions (reusable invocations)
 
 The action registry — named, parameterized shell or HTTP calls operators register once and invoke from CLI, dashboard, or workflows. Replaces hand-rolled `curl`/`exec` snippets sprinkled across crons and prompts. Storage: one JSON file per action under `.agentx/actions/<id>.json`. See the dedicated [Actions reference](./actions) for the integration cookbook.
@@ -530,24 +554,6 @@ agentx actions run hubspot-create-contact \
 ```
 
 For a richer integration cookbook (CRM, ERP, support, billing) see the [Actions reference](./actions).
-
-## Actors & roles (BPM)
-
-Actors are humans who can be assigned to `userTask` nodes; roles are groups of actors with an assignment strategy.
-
-| Command | Description |
-|---|---|
-| `agentx actor add <id> --name "Alice" --telegram <uid> --email <addr> --prefer <channel>` | Register an actor with one or more channel handles. Use `--prefer` to mark which channel receives task notifications. |
-| `agentx actor list` | List all actors with their channel handles. |
-| `agentx actor show <id>` | Dump the actor record as JSON. |
-| `agentx actor remove <id>` | Delete an actor (does not clean role memberships). |
-| `agentx role create <id> --name "Reviewers" --strategy <s>` | Create a role. Strategy: `first-available`, `round-robin`, `all`, `manager-of`. |
-| `agentx role grant <roleId> <actor:id \| role:id>` | Add an actor or nested role to a role's members. |
-| `agentx role revoke <roleId> <member>` | Remove a member. |
-| `agentx role list` | List roles with member counts. |
-| `agentx role show <id>` | JSON dump including resolved actor ids (walks nested roles). |
-
-`userTask` nodes set `assignTo: "actor:alice"` or `assignTo: "role:reviewers"`. Forms render in the assignee's preferred channel (Telegram/WhatsApp/Slack one-click URLs, or the `/inbox` web UI).
 
 ## Memory (per-agent notes)
 
@@ -704,6 +710,11 @@ Summary — full schemas in [Communication matrix](/reference/communication-matr
 | `GET`  | `/agents/:id` | Resolved agent config (permission, tier, model, persistentProcess, toolUseRequired) |
 | `POST` | `/agents/:id/selftest` | Canary probe — runs a fresh-session task against the agent and returns `{ ok, durationMs, tokens, billedModel, errorKind? }`. Body: `{ message? }` (defaults to a tiny "reply OK" prompt). Use for boot validation, CI, dashboard health badges |
 | `GET`  | `/traces`, `GET /traces/:taskId` | Per-task execution trace — steps, tokens, errors, model, session id. `/traces` accepts `agentId`/`channel`/`chatId`/`workflowRunId`/`status`/`since`/`until`/`limit` filters. Returns 503 when SQLite is unavailable |
+| `POST` | `/guard/check` | `PreToolUse` verdict for a proposed tool call. **Loopback-only** |
+| `POST` | `/attach/session-start`, `/attach/prompt`, `/attach/stop`, `/attach/session-end` | Attach-mode hook receivers. **Loopback-only** |
+| `POST` | `/attach/bind`, `/attach/detach` | Bind/release an agent identity to a Claude Code session. **Loopback-only** |
+| `POST` | `/attach/next`, `/attach/answer` | Drain the queue / send a reply (used by the `agentx_attach_*` MCP tools). **Loopback-only** |
+| `GET`  | `/attach/sessions` | Attached sessions, their bindings and inbox depth. **Loopback-only** |
 | `GET`  | `/api/processes` | Live persistent-claude pool snapshot |
 | `POST` | `/api/processes/kill` | Manually evict a pool slot. Body: `{ agentId, channel, chatId, reason? }` |
 | `GET`  | `/api/actions/builtin`, `POST /api/actions/builtin/:name` | List + invoke daemon-shipped built-in actions (`http.fetch`, `mesh.delegate`, `extract.structured`, `rag.lexical`, ...) |

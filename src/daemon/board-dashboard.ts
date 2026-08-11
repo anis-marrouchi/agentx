@@ -17,14 +17,13 @@ import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
+import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
-import { renderInboxPage } from "./ui/pages/inbox"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
 import { handleWorkflowsApi } from "./workflows-api"
@@ -83,11 +82,8 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
 
-  // Minimal mesh-first nav: Boards/Workflows/Inbox tabs appear only when
-  // the operator configured those surfaces.
+  // Two-tab nav (Live, Settings). Every other surface stays routable by URL.
   setTopbarFeatures({
-    boards: boards.length > 0,
-    workflows: config.workflows?.enabled === true,
     business: config.business?.enabled === true,
   })
 
@@ -116,6 +112,30 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 }
 
+/** Every page a human can land on. Kept explicit rather than inferred from
+ *  "has no file extension" so assets, redirects and API routes can never
+ *  drift into the numbers the reduction decisions are made from. */
+const DASHBOARD_PAGES = new Set([
+  "/",
+  "/live",
+  "/boards",
+  "/glossary",
+  "/workflows",
+  "/procedures",
+  "/processes",
+  "/graph",
+  "/setup",
+  "/admin",
+  "/admin/graph",
+  "/admin/health",
+  "/admin/observability",
+  "/admin/ledger",
+  "/admin/cost",
+  "/admin/projects",
+  "/admin/wiki",
+  "/admin/activity-graph",
+])
+
 interface Ctx {
   boards: BoardConfig[]
   sources: Map<string, WorkSource>
@@ -136,23 +156,36 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
+  // Count which dashboard pages operators actually open. Page paths only —
+  // no query strings, no ids, and nothing under /api (those are XHR from a
+  // page we already counted, so they'd inflate every number).
+  // See docs/architecture/surface-reduction.md.
+  if (method === "GET" && DASHBOARD_PAGES.has(path)) {
+    recordSurfaceUse("page", path)
+  }
+
   if (method === "GET" && path === "/") {
-    // Routing priority:
-    //   1. No agents yet → send operator to the setup wizard.
-    //   2. Agents exist but no boards → live view.
-    //   3. Boards configured → Kanban landing page.
+    // Home is Live, always. It answers the question an operator actually
+    // opens the dashboard for — who is alive and what are they doing.
+    // Boards used to take the root whenever any were configured, which meant
+    // the landing page silently changed identity based on config; now they
+    // live at /boards like every other surface.
+    //
+    // The one exception is a machine with no agents yet, where there is
+    // nothing live to show and the wizard is the only useful destination.
     const wz = wizardState()
     if (!wz.configExists || wz.agentCount === 0) {
       res.writeHead(302, { Location: "/setup" })
       res.end()
       return
     }
-    const peers = buildTopbarPeers(ctx.config)
-    const html = ctx.boards.length === 0
-      ? renderLivePage({ peers })
-      : renderBoardsPage({ peers })
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(html)
+    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/boards") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -168,17 +201,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/workflows/editor") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/inbox") {
-    const actor = url.searchParams.get("actor") || undefined
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderInboxPage({ actor }))
     return
   }
   if (method === "GET" && path === "/procedures") {
@@ -430,12 +452,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
 
   // Serve the web-bundled editor artifact. Built by `tsup --config tsup.web.config.ts`
-  // to dist/web/workflow-editor.js. Any `/assets/<name>` request is mapped
+  // to dist/web/<name>.js. Any `/assets/<name>` request is mapped
   // 1:1 into dist/web so future bundles (graph editor, ...) can live there
   // without another route registration.
   if (method === "GET" && path.startsWith("/assets/")) {
     const rel = path.slice("/assets/".length)
-    // Allow dotted stems (e.g. "workflow-editor.global.js") but keep the
+    // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
     // whitelist narrow to script/map/style files.
     if (!/^[a-zA-Z0-9._-]+\.(js|map|css)$/.test(rel)) {
       sendJson(res, 400, { error: "invalid asset name" }); return
@@ -774,56 +796,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       sendJson(res, r.status, data)
     } catch (e: any) {
       sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // Workflow-builder chat (proxies to main daemon where the dispatcher
-  // + AgentRegistry live). The board-dashboard serves /workflows/editor
-  // but runs its own workflow stores; the chat endpoint needs the
-  // running agent registry, which only the main daemon has.
-  if (method === "POST" && path === "/api/workflows/editor/chat") {
-    try {
-      const body = await readJson(req)
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const r = await fetch(`${daemonUrl}/api/workflows/editor/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body ?? {}),
-      })
-      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
-      sendJson(res, r.status, data)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // /api/workflows/tasks[*] — BPM inbox API lives on the daemon (the
-  // dispatcher owns the TaskStore + run-resume plumbing). Proxy through
-  // so the /inbox page on the dashboard works the same as on the daemon.
-  if (path.startsWith("/api/workflows/tasks") && (method === "GET" || method === "POST")) {
-    try {
-      const t = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(ctx.config.dashboard.token ? { Authorization: `Bearer ${ctx.config.dashboard.token}` } : {}),
-      }
-      const body = method === "POST"
-        ? await new Promise<string>((resolve) => {
-            const chunks: Buffer[] = []
-            req.on("data", (c) => chunks.push(c))
-            req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")))
-          })
-        : undefined
-      const r = await fetch(`${t}${req.url}`, { method, headers, body })
-      const text = await r.text()
-      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json" })
-      res.end(text)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "tasks proxy failed", message: e?.message || String(e) })
     }
     return
   }

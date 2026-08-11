@@ -113,8 +113,6 @@ export const INTEGRATION_KINDS = [
   // Inbound channels
   "telegram-bot",
   "whatsapp",
-  "slack-bot",
-  "discord-bot",
   // Code platforms (user-scoped tokens, not channel routing)
   "gitlab-user",
   "github-user",
@@ -337,19 +335,6 @@ const channelsConfigSchema = z.object({
       /** Purge absorbed raw entries older than this many days. `0` = never. */
       retentionDays: z.number().int().min(0).default(0),
     }).default({}),
-  }).default({}),
-  discord: z.object({
-    enabled: z.boolean().default(false),
-    token: z.string().optional(),
-    agentBinding: z.string().optional(),
-  }).default({}),
-  slack: z.object({
-    enabled: z.boolean().default(false),
-    /** xoxb-... — bot user OAuth token from the Slack app's "OAuth & Permissions" tab. */
-    botToken: z.string().optional(),
-    /** xapp-... — app-level token with connections:write scope (for Socket Mode). */
-    appToken: z.string().optional(),
-    agentBinding: z.string().optional(),
   }).default({}),
   gitlab: z.object({
     enabled: z.boolean().default(false),

@@ -63,7 +63,6 @@ export function renderProceduresPage(opts: ProceduresPageOpts = {}): string {
       <li class="ax-proc__item"><div class="ax-proc__item-head"><strong>linear</strong><span class="hint">trigger → agent → end (smallest valid graph)</span></div></li>
       <li class="ax-proc__item"><div class="ax-proc__item-head"><strong>branching</strong><span class="hint">classify, then route on RESULT to one of N branches</span></div></li>
       <li class="ax-proc__item"><div class="ax-proc__item-head"><strong>extract</strong><span class="hint">extract.structured with a JSON-schema-shaped output</span></div></li>
-      <li class="ax-proc__item"><div class="ax-proc__item-head"><strong>human-in-the-loop</strong><span class="hint">userTask form pause + resume</span></div></li>
       <li class="ax-proc__item"><div class="ax-proc__item-head"><strong>retry</strong><span class="hint">per-node retry policy with a branch fallback path</span></div></li>
     </ul>
   </section>

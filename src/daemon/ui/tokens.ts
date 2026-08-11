@@ -1,40 +1,96 @@
 // --- Design tokens for every dashboard surface ---
 //
-// SINGLE source of truth. Previously each page file (live, boards, admin,
-// graph, agent, setup) carried its own copy of :root + [data-theme=light] +
-// [data-theme=crt] — ~60 lines of CSS duplicated 6 times. Now they import
-// AX_TOKENS_CSS and drop it in their <style> block once.
+// SINGLE source of truth. Every page imports AX_TOKENS_CSS and drops it in
+// its <style> block once, so no page carries its own :root copy.
+//
+// The palette and shape language are ported from the agentina console
+// (packages/console/src/index.ts) — a deliberately plain, friendly system
+// built on three principles worth restating here, because they are as much
+// about what we remove as how it looks:
+//
+//   1. CONTACTS, NOT CONCEPTS — surface the people and agents you work with;
+//      grants, sessions and adapters stay machinery.
+//   2. ONE SCREEN, ONE JOB — a flow is a short wizard with one obvious next
+//      action, not a dense panel of every option.
+//   3. HONEST UI — nothing simulated. Offline is offline, denied is denied.
+//
+// What was ported and what was not:
+//   - Ported: the four-colour brand palette, 2px borders, generous radii,
+//     pill chips, the hard offset shadow (`0 4px 0 <darker>`) that makes
+//     controls read as physical, and Outfit / Roboto Mono.
+//   - NOT ported: light-only. agentina is a consumer console; this is a
+//     dense ops dashboard people read at 2am, so the dark variant stays and
+//     carries the same shape language with the palette lifted for contrast.
+//   - Removed: the `crt` theme. Two well-maintained themes beat three, and
+//     it had no users.
 //
 // Guideline for adding tokens: every token must be page-neutral. Page-
 // specific padding/gaps belong in the page's own CSS file, not here.
 
 export const AX_TOKENS_CSS = `:root {
-  --ax-bg: oklch(0.16 0.010 265);
-  --ax-bg-elev: oklch(0.19 0.012 265);
-  --ax-surface: oklch(0.21 0.012 265);
-  --ax-surface-2: oklch(0.24 0.014 265);
-  --ax-surface-3: oklch(0.27 0.016 265);
-  --ax-border: oklch(0.29 0.014 265);
-  --ax-border-2: oklch(0.35 0.016 265);
-  --ax-text: oklch(0.95 0.005 265);
-  --ax-text-2: oklch(0.80 0.008 265);
-  --ax-muted: oklch(0.60 0.010 265);
-  --ax-accent: oklch(0.78 0.13 165);
-  --ax-accent-2: oklch(0.55 0.11 165);
-  --ax-warn: oklch(0.80 0.14 75);
-  --ax-err: oklch(0.68 0.19 25);
-  --ax-info: oklch(0.78 0.10 220);
-  --ax-radius: 6px;
-  --ax-radius-lg: 8px;
-  --ax-radius-sm: 5px;
+  /* --- Brand (agentina) --------------------------------------------- */
+  --ax-blue: #2979FF;
+  --ax-blue-d: #1B5FD9;
+  --ax-blue-t: #E7F0FF;
+  --ax-blue-e: #A9CBFF;
+  --ax-green: #22B573;
+  --ax-green-d: #178F58;
+  --ax-green-e: #A9E8C9;
+  --ax-amber: #FFB300;
+  --ax-amber-e: #FFE08A;
+  --ax-amber-t: #FFFCF5;
+  --ax-red: #F23A3A;
+  --ax-red-t: #FEECEC;
+  --ax-red-e: #F9C1C1;
+
+  /* --- Surfaces + text ---------------------------------------------- */
+  --ax-bg: #f8f9fa;
+  --ax-bg-elev: #f1f3f4;
+  --ax-surface: #ffffff;
+  --ax-surface-2: #f8f9fa;
+  --ax-surface-3: #f1f3f4;
+  --ax-border: #e8eaed;
+  --ax-border-2: #dadce0;
+  --ax-text: #202124;
+  --ax-text-2: #5f6368;
+  --ax-muted: #9aa0a6;
+
+  /* --- Semantic ------------------------------------------------------ */
+  --ax-accent: var(--ax-blue);
+  --ax-accent-2: var(--ax-blue-d);
+  --ax-accent-t: var(--ax-blue-t);
+  --ax-ok: var(--ax-green);
+  --ax-warn: var(--ax-amber);
+  --ax-err: var(--ax-red);
+  --ax-info: var(--ax-blue);
+
+  /* --- Shape ---------------------------------------------------------
+     The offset shadow is the signature move: a solid, un-blurred drop in a
+     darker shade of the element's own colour. It reads as a physical edge
+     rather than a glow, and it is what stops flat 2px-bordered boxes from
+     looking like a wireframe. */
+  --ax-border-w: 2px;
+  --ax-radius: 16px;
+  --ax-radius-lg: 20px;
+  --ax-radius-sm: 12px;
+  --ax-radius-pill: 999px;
+  --ax-shadow: 0 3px 0 var(--ax-border);
+  --ax-shadow-lg: 0 4px 0 var(--ax-border-2);
+  --ax-shadow-accent: 0 4px 0 var(--ax-blue-d);
+  --ax-shadow-ok: 0 4px 0 var(--ax-green-d);
+
+  /* --- Spacing ------------------------------------------------------- */
   --ax-pad: 16px;
   --ax-pad-sm: 10px;
   --ax-gap: 12px;
-  --ax-font: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
-  --ax-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
-  --ax-fs: 13px;
-  --ax-fs-sm: 12px;
-  --ax-fs-xs: 11px;
+
+  /* --- Type ---------------------------------------------------------- */
+  --ax-font: "Outfit", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ax-mono: "Roboto Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ax-fs: 14px;
+  --ax-fs-sm: 13px;
+  --ax-fs-xs: 12px;
+
   /* Legacy aliases so older CSS blocks keep rendering until they're ported. */
   --bg: var(--ax-bg);
   --card: var(--ax-surface);
@@ -43,40 +99,48 @@ export const AX_TOKENS_CSS = `:root {
   --text: var(--ax-text);
   --muted: var(--ax-muted);
   --accent: var(--ax-accent);
-  --green: var(--ax-accent);
   --yellow: var(--ax-warn);
   --red: var(--ax-err);
   --blue: var(--ax-info);
   --gray: var(--ax-muted);
-  color-scheme: dark;
-}
-[data-theme="light"] {
-  --ax-bg: oklch(0.98 0.002 265);
-  --ax-bg-elev: oklch(0.96 0.003 265);
-  --ax-surface: oklch(0.99 0.002 265);
-  --ax-surface-2: oklch(0.955 0.003 265);
-  --ax-surface-3: oklch(0.92 0.004 265);
-  --ax-border: oklch(0.88 0.006 265);
-  --ax-border-2: oklch(0.78 0.008 265);
-  --ax-text: oklch(0.22 0.010 265);
-  --ax-text-2: oklch(0.36 0.010 265);
-  --ax-muted: oklch(0.54 0.010 265);
-  --ax-accent: oklch(0.55 0.14 165);
   color-scheme: light;
 }
-[data-theme="crt"] {
-  --ax-bg: #05140a;
-  --ax-bg-elev: #061a0d;
-  --ax-surface: #08201f;
-  --ax-surface-2: #0b2922;
-  --ax-surface-3: #0e3329;
-  --ax-border: #164a30;
-  --ax-border-2: #1f6a44;
-  --ax-text: #b7ffcc;
-  --ax-text-2: #83e3a8;
-  --ax-muted: #4f9a73;
-  --ax-accent: #6dff9e;
-  --ax-font: "IBM Plex Mono", ui-monospace, monospace;
+
+/* Dark is not a tint of light — the brand colours are lifted toward their
+   tints so they keep contrast against a dark ground, and the offset shadow
+   goes DARKER than the surface instead of lighter. Same shape language,
+   inverted physics. */
+[data-theme="dark"] {
+  --ax-blue: #6BA5FF;
+  --ax-blue-d: #1B5FD9;
+  --ax-blue-t: #16233d;
+  --ax-blue-e: #2f4d7a;
+  --ax-green: #4ED89B;
+  --ax-green-d: #178F58;
+  --ax-green-e: #1e4a36;
+  --ax-amber: #FFC948;
+  --ax-amber-e: #4a3a12;
+  --ax-amber-t: #2a2313;
+  --ax-red: #FF6B6B;
+  --ax-red-t: #3a1c1c;
+  --ax-red-e: #6b2f2f;
+
+  --ax-bg: #14161a;
+  --ax-bg-elev: #191c21;
+  --ax-surface: #1e2228;
+  --ax-surface-2: #23272e;
+  --ax-surface-3: #2a2f37;
+  --ax-border: #2f353e;
+  --ax-border-2: #3d444f;
+  --ax-text: #f1f3f4;
+  --ax-text-2: #b6bcc4;
+  --ax-muted: #858c96;
+
+  --ax-shadow: 0 3px 0 #0e1013;
+  --ax-shadow-lg: 0 4px 0 #0e1013;
+  --ax-shadow-accent: 0 4px 0 #14396e;
+  --ax-shadow-ok: 0 4px 0 #11402c;
+  color-scheme: dark;
 }
 
 /* Base element resets shared across every page. */
@@ -85,13 +149,13 @@ html, body {
   margin: 0; min-height: 100vh;
   background: var(--ax-bg); color: var(--ax-text);
   font-family: var(--ax-font); font-size: var(--ax-fs);
-  -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv01";
+  -webkit-font-smoothing: antialiased;
 }
 pre, code, .ax-mono {
   font-family: var(--ax-mono); font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
-a { color: var(--ax-accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a { color: var(--ax-accent); text-decoration: none; font-weight: 600; }
+a:hover { color: var(--ax-accent-2); text-decoration: underline; }
 .ax-muted { color: var(--ax-muted); }
 .ax-accent { color: var(--ax-accent); }`
