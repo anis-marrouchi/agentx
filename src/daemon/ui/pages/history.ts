@@ -32,8 +32,20 @@ export function renderHistoryPage(opts: HistoryPageOpts): string {
       <span class="ax-mention">@${esc(opts.agentId)}</span>
       <span class="ax-history__name">${esc(who)}</span>
     </div>
-    <span class="ax-mono ax-muted" id="hist-count"></span>
   </header>
+  <!-- Summary of the list below, not of the agent in general. Three numbers
+       and the channel mix — enough to see "mostly GitLab, two failures" at a
+       glance without reading 50 rows. Cost and health live on their own
+       pages; repeating them here would make this a status report. -->
+  <section class="ax-hist-sum" id="hist-sum" hidden>
+    <div class="ax-hist-sum__nums">
+      <span><b id="hs-total">0</b> tasks</span>
+      <span class="ax-hist-sum__fail" id="hs-fail-wrap" hidden><b id="hs-fail">0</b> failed</span>
+      <span><b id="hs-time">—</b> of agent time</span>
+      <span class="ax-hist-sum__span" id="hs-span"></span>
+    </div>
+    <div class="ax-hist-sum__chips" id="hs-chips"></div>
+  </section>
   <div class="ax-history__list" id="hist-list">
     <div class="ax-history__empty">loading…</div>
   </div>
@@ -57,6 +69,17 @@ const HISTORY_CSS = `
 .ax-history__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .ax-history__back { font-size: var(--ax-fs-sm); font-weight: 600; white-space: nowrap; }
 .ax-history__name { color: var(--ax-text-2); }
+.ax-hist-sum {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ax-gap);
+  flex-wrap: wrap; padding: 10px 14px;
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius);
+}
+.ax-hist-sum__nums { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
+.ax-hist-sum__nums b { color: var(--ax-text); font-family: var(--ax-mono); font-weight: 700; }
+.ax-hist-sum__fail b { color: var(--ax-err); }
+.ax-hist-sum__span { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.ax-hist-sum__chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .ax-history__list { display: flex; flex-direction: column; gap: 8px; }
 .ax-history__empty { color: var(--ax-muted); padding: var(--ax-pad); text-align: center; }
 
@@ -92,7 +115,6 @@ const HISTORY_JS = `
   var agentName = root.getAttribute('data-agent-name');
   var nodeUrl = root.getAttribute('data-node-url');
   var listEl = document.getElementById('hist-list');
-  var countEl = document.getElementById('hist-count');
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -111,7 +133,12 @@ const HISTORY_JS = `
   function dur(ms) {
     if (!ms) return '—';
     var s = Math.round(ms / 1000);
-    return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ' + (s % 60) + 's';
+    // Totals across 50 tasks run to hours — "226m 18s" is arithmetic, not an
+    // answer. Drop seconds once we're past an hour; nobody reads them there.
+    return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
   }
   function taskUrl(id, channel) {
     return '/tasks/' + encodeURIComponent(id)
@@ -122,6 +149,36 @@ const HISTORY_JS = `
       + '&archived=1';
   }
 
+  /** Everything here is derived from the rows we already fetched — no second
+   *  request, and the numbers can never disagree with the list under them. */
+  function summarize(items) {
+    var fails = 0, totalMs = 0, byChannel = {};
+    var oldest = Infinity, newest = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it.ok) fails++;
+      totalMs += it.durationMs || 0;
+      var ch = it.channel || 'other';
+      byChannel[ch] = (byChannel[ch] || 0) + 1;
+      var t = new Date(it.endedAt).getTime();
+      if (t) { if (t < oldest) oldest = t; if (t > newest) newest = t; }
+    }
+    document.getElementById('hs-total').textContent = items.length;
+    document.getElementById('hs-time').textContent = dur(totalMs);
+    if (fails) {
+      document.getElementById('hs-fail').textContent = fails;
+      document.getElementById('hs-fail-wrap').hidden = false;
+    }
+    if (oldest !== Infinity && newest > oldest) {
+      document.getElementById('hs-span').textContent = 'spanning ' + ago(oldest).replace(' ago', '');
+    }
+    var chips = Object.keys(byChannel).sort(function (a, b) { return byChannel[b] - byChannel[a]; });
+    document.getElementById('hs-chips').innerHTML = chips.map(function (c) {
+      return '<span class="ax-chip">' + esc(c) + ' ' + byChannel[c] + '</span>';
+    }).join('');
+    document.getElementById('hist-sum').hidden = false;
+  }
+
   fetch('/api/task/history?node=' + encodeURIComponent(nodeUrl)
         + '&agent=' + encodeURIComponent(agentId) + '&limit=50')
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -130,7 +187,7 @@ const HISTORY_JS = `
         listEl.innerHTML = '<div class="ax-history__empty">No recorded tasks yet.</div>';
         return;
       }
-      countEl.textContent = items.length + ' task' + (items.length === 1 ? '' : 's');
+      summarize(items);
       listEl.innerHTML = items.map(function (it) {
         return '<a class="ax-history__row' + (it.ok ? '' : ' is-err') + '" href="' + esc(taskUrl(it.id, it.channel)) + '">' +
           '<div class="ax-history__top">' +

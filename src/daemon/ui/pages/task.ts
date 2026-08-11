@@ -57,7 +57,15 @@ export function renderTaskPage(opts: TaskPageOpts): string {
     </div>
   </header>
 
-  ${opts.archived ? '<p class="ax-task-page__note">Finished task, read from history. Nothing is streaming.</p>' : ""}
+  <section class="ax-task-page__ask" id="task-ask" hidden>
+    <div class="ax-task-page__ask-head">
+      <span class="ax-ev__label ax-ev__label--soft">request</span>
+      <span class="ax-task-page__ask-who" id="task-ask-who"></span>
+      <span class="ax-task-page__ask-when" id="task-ask-when"></span>
+    </div>
+    <div class="ax-task-page__ask-body" id="task-ask-body"></div>
+  </section>
+
   <div class="ax-task-page__output" id="task-output"></div>
 
   <footer class="ax-task-page__compose"${opts.archived ? " hidden" : ""}>
@@ -121,7 +129,21 @@ const TASK_PAGE_CSS = `
 .ax-task-page__input:focus { outline: none; border-color: var(--ax-accent); }
 .ax-task-page__actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .ax-task-page__hint { flex: 1; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.ax-task-page__note { margin: 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+/* The request that started everything. The page used to render the agent's
+   work with no sign of what it had been asked — you could read a whole
+   transcript without learning why it ran. */
+.ax-task-page__ask {
+  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border);
+  border-left-width: 4px; border-left-color: var(--ax-accent);
+  border-radius: var(--ax-radius); padding: 12px 14px;
+}
+.ax-task-page__ask-head { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); }
+.ax-task-page__ask-who { color: var(--ax-text-2); font-weight: 600; }
+.ax-task-page__ask-when { margin-left: auto; color: var(--ax-muted); font-family: var(--ax-mono); }
+.ax-task-page__ask-body {
+  margin-top: 6px; font-size: var(--ax-fs-sm); line-height: 1.55; color: var(--ax-text);
+  white-space: pre-wrap; word-break: break-word; max-height: 170px; overflow: auto;
+}
 
 /* Markdown inside a reply. Tight vertical rhythm — a reply is a block in a
    stream, not a document, so headings and paragraphs must not push the next
@@ -402,6 +424,21 @@ const TASK_PAGE_JS = `
     renderOpenText();
   }
 
+  /** Render the request that started this run. Hidden until we have one —
+   *  an empty labelled box is worse than no box. */
+  function showAsk(message, sender, startedAt) {
+    var text = (message || '').trim();
+    if (!text) return;
+    document.getElementById('task-ask-body').textContent = text;
+    document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
+    var when = document.getElementById('task-ask-when');
+    if (startedAt) {
+      var d = new Date(startedAt);
+      when.textContent = isNaN(d.getTime()) ? '' : d.toLocaleString();
+    }
+    document.getElementById('task-ask').hidden = false;
+  }
+
   function tickElapsed() {
     if (finished) return;
     var s = Math.floor((Date.now() - startedAt) / 1000);
@@ -424,6 +461,7 @@ const TASK_PAGE_JS = `
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (rec) {
         setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
+        showAsk(rec.message, rec.sender, rec.startedAt);
         var tx = rec.transcript || '';
         if (tx) append(tx);
         // Only append the final reply when the transcript didn't already
@@ -452,6 +490,7 @@ const TASK_PAGE_JS = `
     setStatus('live', 'live');
     try {
       var d = JSON.parse(ev.data);
+      if (d.message || d.sender) showAsk(d.message, d.sender, d.startedAt);
       if (d.initial) append(d.initial);
       if (d.done) { finished = true; setStatus('finished', 'done'); }
     } catch (e) {}
