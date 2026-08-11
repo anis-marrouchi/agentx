@@ -26,7 +26,6 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     <header>
       <h2>Workflows</h2>
       <div class="ax-wf__header-actions">
-        <a id="wf-new" class="ax-wf__icon" href="/workflows/editor?new=1" title="New workflow">+</a>
         <button id="wf-refresh" class="ax-wf__icon" title="Refresh (r)">↻</button>
       </div>
     </header>
@@ -637,7 +636,6 @@ const WORKFLOWS_PAGE_SCRIPT = `
         <span class="hint">\${esc(wf.id)} · v\${wf.version} · trigger: \${esc(triggerSource)}\${trigFilter ? " · " + esc(trigFilter) : ""}</span>
       </div>
       <div class="ax-wf__detail-actions">
-        <a class="ax-wf__btn" href="/workflows/editor?id=\${encodeURIComponent(wf.id)}" title="Open in visual editor">✎ Edit</a>
         <button class="ax-wf__btn primary" id="wf-run-toggle" type="button" title="Trigger this workflow with a JSON payload">▶ Run</button>
       </div>
       <div id="wf-run-form" class="ax-wf__run-form" hidden>
@@ -1080,7 +1078,6 @@ const WORKFLOWS_PAGE_SCRIPT = `
         <span class="hint">\${esc(draft.id)} · status=\${esc(wf.status || "draft")} · state=\${esc(wf.state || "disabled")} · confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
       </div>
       <div class="ax-wf__detail-actions ax-wf__draft-actions">
-        <a class="ax-wf__btn" href="/workflows/editor?draft=\${encodeURIComponent(draft.id)}" title="Open this draft in the visual editor">✎ Edit visually</a>
         <button class="ax-wf__btn" id="wf-draft-validate" type="button">Validate</button>
         <button class="ax-wf__btn" id="wf-draft-save" type="button">Save</button>
         <button class="ax-wf__btn" id="wf-draft-replay" type="button">Save &amp; Replay</button>

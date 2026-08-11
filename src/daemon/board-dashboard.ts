@@ -24,7 +24,6 @@ import { renderLivePage } from "./ui/pages/live"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
 import { renderInboxPage } from "./ui/pages/inbox"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
@@ -120,9 +119,9 @@ export function startBoardDashboard(config: DaemonConfig): void {
 const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
+  "/boards",
   "/glossary",
   "/workflows",
-  "/workflows/editor",
   "/inbox",
   "/procedures",
   "/processes",
@@ -168,22 +167,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
 
   if (method === "GET" && path === "/") {
-    // Routing priority:
-    //   1. No agents yet → send operator to the setup wizard.
-    //   2. Agents exist but no boards → live view.
-    //   3. Boards configured → Kanban landing page.
+    // Home is Live, always. It answers the question an operator actually
+    // opens the dashboard for — who is alive and what are they doing.
+    // Boards used to take the root whenever any were configured, which meant
+    // the landing page silently changed identity based on config; now they
+    // live at /boards like every other surface.
+    //
+    // The one exception is a machine with no agents yet, where there is
+    // nothing live to show and the wizard is the only useful destination.
     const wz = wizardState()
     if (!wz.configExists || wz.agentCount === 0) {
       res.writeHead(302, { Location: "/setup" })
       res.end()
       return
     }
-    const peers = buildTopbarPeers(ctx.config)
-    const html = ctx.boards.length === 0
-      ? renderLivePage({ peers })
-      : renderBoardsPage({ peers })
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(html)
+    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/boards") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/live") {
@@ -199,11 +203,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/workflows/editor") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/inbox") {
@@ -461,12 +460,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
 
   // Serve the web-bundled editor artifact. Built by `tsup --config tsup.web.config.ts`
-  // to dist/web/workflow-editor.js. Any `/assets/<name>` request is mapped
+  // to dist/web/<name>.js. Any `/assets/<name>` request is mapped
   // 1:1 into dist/web so future bundles (graph editor, ...) can live there
   // without another route registration.
   if (method === "GET" && path.startsWith("/assets/")) {
     const rel = path.slice("/assets/".length)
-    // Allow dotted stems (e.g. "workflow-editor.global.js") but keep the
+    // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
     // whitelist narrow to script/map/style files.
     if (!/^[a-zA-Z0-9._-]+\.(js|map|css)$/.test(rel)) {
       sendJson(res, 400, { error: "invalid asset name" }); return
@@ -797,29 +796,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
       const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
       const r = await fetch(`${daemonUrl}/api/workflows/drafts/${encodeURIComponent(draftReplayMatch[1])}/replay`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body ?? {}),
-      })
-      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
-      sendJson(res, r.status, data)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // Workflow-builder chat (proxies to main daemon where the dispatcher
-  // + AgentRegistry live). The board-dashboard serves /workflows/editor
-  // but runs its own workflow stores; the chat endpoint needs the
-  // running agent registry, which only the main daemon has.
-  if (method === "POST" && path === "/api/workflows/editor/chat") {
-    try {
-      const body = await readJson(req)
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const r = await fetch(`${daemonUrl}/api/workflows/editor/chat`, {
         method: "POST",
         headers,
         body: JSON.stringify(body ?? {}),

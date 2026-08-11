@@ -365,7 +365,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   //
   // Deliberately NOT in the nav (all still routable by URL):
   //   /admin/ledger  /admin/cost         what happened, what it cost
-  //   /workflows  /workflows/editor  /inbox   BPM surfaces
+  //   /workflows  /inbox              BPM surfaces
   //   /  (boards)                       Kanban
   //   /admin/health  /admin/activity-graph  /admin/graph  /admin/projects
   //   /procedures  /admin/wiki  /glossary  /processes

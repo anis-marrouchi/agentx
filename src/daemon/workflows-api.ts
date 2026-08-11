@@ -23,7 +23,7 @@ import { formSubmissionSchema } from "@/forms/types"
 
 // --- Workflows HTTP API ---
 //
-// Powers the /workflows dashboard (observability) + /workflows/editor pages.
+// Powers the /workflows dashboard (observability).
 // Reads require `dashboard:read`; writes require `dashboard:write`. The
 // caller passes in a `requireScope(req, res, [...])` shim so this module
 // stays decoupled from src/daemon/token-store.ts. The daemon wires the real
