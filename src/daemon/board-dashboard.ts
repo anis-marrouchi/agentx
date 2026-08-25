@@ -21,6 +21,7 @@ import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
+import { renderMeshPage } from "./ui/pages/mesh"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
@@ -84,7 +85,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
 
-  // Two-tab nav (Live, Settings). Every other surface stays routable by URL.
+  // Compact primary nav. Every other surface stays routable by URL.
   setTopbarFeatures({
     business: config.business?.enabled === true,
   })
@@ -120,6 +121,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
+  "/mesh",
   "/boards",
   "/glossary",
   "/workflows",
@@ -193,6 +195,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/live") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/mesh") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/glossary") {
@@ -523,6 +530,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/api/live") {
     try {
       const snap = await buildLiveSnapshot(ctx.config)
+      sendJson(res, 200, snap)
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+  if (method === "GET" && path === "/api/mesh") {
+    try {
+      const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10)
+      const timezone = url.searchParams.get("timezone") || "UTC"
+      const snap = await buildLiveSnapshot(ctx.config, { date, timezone })
       sendJson(res, 200, snap)
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
@@ -1199,6 +1215,7 @@ interface NodeLive {
     name: string
     tier: string
     model?: string
+    skillCount?: number
     active: number
     total: number
     errors: number
@@ -1228,21 +1245,54 @@ interface NodeLive {
       byChannel?: Record<string, { tasks: number }>
     }>
   }
+  crons?: Array<{
+    id: string
+    enabled: boolean
+    schedule: string
+    timezone?: string
+    agent: string
+    nextRun?: string
+    retryPending?: boolean
+    consecutiveErrors: number
+  }>
+  cronRuns?: Array<{
+    jobId: string
+    startedAt: string
+    completedAt: string
+    duration: number
+    status: "success" | "failed" | "timeout"
+    responseSummary?: string
+    errorSummary?: string
+    isRetry: boolean
+    retryAttempt: number
+    taskId?: string
+    rootTaskId?: string
+    traceId?: string
+    sessionId?: string
+  }>
 }
 interface LiveSnapshot {
   ts: string
   nodes: NodeLive[]
 }
 
-async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSignal): Promise<NodeLive> {
+async function fetchDaemonAgents(
+  url: string,
+  token?: string,
+  signal?: AbortSignal,
+  day?: { date: string; timezone: string },
+): Promise<NodeLive> {
   const headers: Record<string, string> = {}
   if (token) headers["Authorization"] = `Bearer ${token}`
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
-    const [healthRes, agentsRes, meshRes] = await Promise.all([
+    const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes] = await Promise.all([
       fetch(url + "/health", { headers, signal }).catch(() => null),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       fetch(url + "/mesh", { headers, signal }).catch(() => null),
+      fetch(url + "/crons", { headers, signal }).catch(() => null),
+      fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1251,6 +1301,7 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
     const agents: any[] = await agentsRes.json()
     base.agents = agents.map((a) => ({
       id: a.id, name: a.name, tier: a.tier, model: a.model,
+      skillCount: Number.isFinite(a.skillCount) ? a.skillCount : undefined,
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
       lastSummary: a.lastSummary,
@@ -1265,6 +1316,23 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
       // /health already embeds today's usage rollup — reuse it so the
       // dashboard doesn't need a separate /usage call per node.
       if (h.usage) base.usage = h.usage
+    }
+    if (cronsRes && cronsRes.ok) {
+      const jobs: any[] = await cronsRes.json()
+      base.crons = jobs.map((job) => ({
+        id: job.id,
+        enabled: job.enabled === true,
+        schedule: String(job.schedule || ""),
+        timezone: job.timezone,
+        agent: String(job.agent || ""),
+        nextRun: job.nextRun,
+        retryPending: job.retryPending === true,
+        consecutiveErrors: Number(job.consecutiveErrors) || 0,
+      }))
+    }
+    if (cronRunsRes && cronRunsRes.ok) {
+      const history: any = await cronRunsRes.json()
+      base.cronRuns = Array.isArray(history.runs) ? history.runs : []
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
@@ -1320,7 +1388,10 @@ async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: Abort
   } catch { return [] }
 }
 
-async function buildLiveSnapshot(daemon: DaemonConfig): Promise<LiveSnapshot> {
+async function buildLiveSnapshot(
+  daemon: DaemonConfig,
+  day?: { date: string; timezone: string },
+): Promise<LiveSnapshot> {
   const dash = daemon.dashboard
   const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
   const primaryToken = dash.token
@@ -1336,7 +1407,7 @@ async function buildLiveSnapshot(daemon: DaemonConfig): Promise<LiveSnapshot> {
   try {
     const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, ac.signal)
     for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
-    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal)))
+    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal, day)))
     return { ts: new Date().toISOString(), nodes }
   } finally { clearTimeout(timeout) }
 }
@@ -2031,8 +2102,6 @@ function findPeer(id: string, config: DaemonConfig): { url: string; token?: stri
  * first paint (dropped into <head> to avoid FOUC), then wires any segmented
  * control with [data-theme-opt="..."] buttons once the DOM is ready.
  */
-
-
 
 
 

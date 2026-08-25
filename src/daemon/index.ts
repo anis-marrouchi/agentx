@@ -17,6 +17,7 @@ import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
+import { readCronRunHistory } from "@/crons/run-history"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
 import { EventBus, parseKindsParam } from "./event-bus"
@@ -69,6 +70,7 @@ import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
+import { listAgentFiles } from "./file-ops"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -2824,7 +2826,10 @@ export class AgentXDaemon {
           break
 
         case "GET /agents":
-          this.json(res, 200, this.registry.list())
+          this.json(res, 200, this.registry.list().map(agent => ({
+            ...agent,
+            skillCount: listAgentFiles(agent.workspace).skills.length,
+          })))
           break
 
         case "GET /api/admin/projects": {
@@ -3040,6 +3045,15 @@ export class AgentXDaemon {
         case "GET /crons/health":
           this.json(res, 200, this.cron.health())
           break
+
+        case "GET /crons/runs": {
+          const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10)
+          const timezone = url.searchParams.get("timezone") || "UTC"
+          const jobId = url.searchParams.get("jobId") || undefined
+          const runs = await readCronRunHistory({ date, timezone, jobId })
+          this.json(res, 200, { date, timezone, runs })
+          break
+        }
 
         case "GET /mesh":
           this.json(res, 200, this.mesh?.directory() || [])

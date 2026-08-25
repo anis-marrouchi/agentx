@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects"
+export type TopbarTab = "live" | "mesh" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -32,7 +32,7 @@ export interface TopbarFeatures {
 // Set once at server start (board-dashboard + daemon both call it).
 //
 // This used to carry `boards` and `workflows` flags that gated top-level
-// tabs. The nav is now two fixed tabs (Live, Settings), so those flags had
+// tabs. The nav is now fixed (Live, Operations, Settings), so those flags had
 // nothing left to gate and were removed rather than left describing chrome
 // that no longer exists.
 let topbarFeatures: TopbarFeatures = {}
@@ -370,7 +370,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   //   /admin/health  /admin/activity-graph  /admin/graph  /admin/projects
   //   /procedures  /admin/wiki  /glossary  /processes
   //
-  // Two tabs is the whole nav. Every page above is one link away from Live
+  // Three tabs are the whole nav. Every page above is one link away from Live
   // or Settings, and none of them is where an operator starts their day —
   // "who is alive and what are they doing" (Live) and "how is this wired"
   // (Settings) are. A tab bar that lists every surface an app HAS is a site
@@ -385,6 +385,7 @@ export function renderTopbar(opts: TopbarOpts): string {
       name: "Mesh",
       tabs: [
         { id: "live", label: "Live", href: "/live" },
+        { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "admin", label: "Settings", href: "/admin" },
       ],
     },
