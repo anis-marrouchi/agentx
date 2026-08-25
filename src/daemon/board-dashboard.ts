@@ -17,16 +17,18 @@ import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
+import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
+import { renderMeshPage } from "./ui/pages/mesh"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
-import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
-import { renderInboxPage } from "./ui/pages/inbox"
 import { renderProceduresPage } from "./ui/pages/procedures"
 import { renderProcessesPage } from "./ui/pages/processes"
+import { renderTaskPage } from "./ui/pages/task"
+import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
@@ -83,11 +85,8 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
 
-  // Minimal mesh-first nav: Boards/Workflows/Inbox tabs appear only when
-  // the operator configured those surfaces.
+  // Compact primary nav. Every other surface stays routable by URL.
   setTopbarFeatures({
-    boards: boards.length > 0,
-    workflows: config.workflows?.enabled === true,
     business: config.business?.enabled === true,
   })
 
@@ -116,6 +115,31 @@ export function startBoardDashboard(config: DaemonConfig): void {
   })
 }
 
+/** Every page a human can land on. Kept explicit rather than inferred from
+ *  "has no file extension" so assets, redirects and API routes can never
+ *  drift into the numbers the reduction decisions are made from. */
+const DASHBOARD_PAGES = new Set([
+  "/",
+  "/live",
+  "/mesh",
+  "/boards",
+  "/glossary",
+  "/workflows",
+  "/procedures",
+  "/processes",
+  "/graph",
+  "/setup",
+  "/admin",
+  "/admin/graph",
+  "/admin/health",
+  "/admin/observability",
+  "/admin/ledger",
+  "/admin/cost",
+  "/admin/projects",
+  "/admin/wiki",
+  "/admin/activity-graph",
+])
+
 interface Ctx {
   boards: BoardConfig[]
   sources: Map<string, WorkSource>
@@ -136,28 +160,46 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
+  // Count which dashboard pages operators actually open. Page paths only —
+  // no query strings, no ids, and nothing under /api (those are XHR from a
+  // page we already counted, so they'd inflate every number).
+  // See docs/architecture/surface-reduction.md.
+  if (method === "GET" && DASHBOARD_PAGES.has(path)) {
+    recordSurfaceUse("page", path)
+  }
+
   if (method === "GET" && path === "/") {
-    // Routing priority:
-    //   1. No agents yet → send operator to the setup wizard.
-    //   2. Agents exist but no boards → live view.
-    //   3. Boards configured → Kanban landing page.
+    // Home is Live, always. It answers the question an operator actually
+    // opens the dashboard for — who is alive and what are they doing.
+    // Boards used to take the root whenever any were configured, which meant
+    // the landing page silently changed identity based on config; now they
+    // live at /boards like every other surface.
+    //
+    // The one exception is a machine with no agents yet, where there is
+    // nothing live to show and the wizard is the only useful destination.
     const wz = wizardState()
     if (!wz.configExists || wz.agentCount === 0) {
       res.writeHead(302, { Location: "/setup" })
       res.end()
       return
     }
-    const peers = buildTopbarPeers(ctx.config)
-    const html = ctx.boards.length === 0
-      ? renderLivePage({ peers })
-      : renderBoardsPage({ peers })
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(html)
+    res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/boards") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderBoardsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/live") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/mesh") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   if (method === "GET" && path === "/glossary") {
@@ -170,17 +212,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
-  if (method === "GET" && path === "/workflows/editor") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
-    return
-  }
-  if (method === "GET" && path === "/inbox") {
-    const actor = url.searchParams.get("actor") || undefined
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderInboxPage({ actor }))
-    return
-  }
   if (method === "GET" && path === "/procedures") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderProceduresPage({ peers: buildTopbarPeers(ctx.config) }))
@@ -189,6 +220,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/processes") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderProcessesPage({}))
+    return
+  }
+  // /tasks/:id — watching an agent work is a place, not a popup. Replaces the
+  // full-screen modal on Live and the right-hand drawer on the agent page,
+  // both of which streamed this same task into something you couldn't link
+  // to, reload, or keep open beside anything else.
+  const taskPage = method === "GET" && path.match(/^\/tasks\/([^/]+)$/)
+  if (taskPage) {
+    const agentId = url.searchParams.get("agent") || ""
+    const nodeUrl = url.searchParams.get("node") || ctx.config.dashboard.daemonUrl
+    if (!agentId) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
+      res.end("<p>Missing <code>?agent=</code>. Open this task from the Live page.</p>")
+      return
+    }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderTaskPage({
+      taskId: decodeURIComponent(taskPage[1]),
+      agentId,
+      agentName: url.searchParams.get("name") || undefined,
+      channel: url.searchParams.get("channel") || undefined,
+      archived: url.searchParams.get("archived") === "1",
+      ask: url.searchParams.get("ask") || undefined,
+      askAt: url.searchParams.get("at") || undefined,
+      nodeUrl,
+      peers: buildTopbarPeers(ctx.config),
+    }))
+    return
+  }
+  // /agents/:id/history — was a 360px drawer sliding over Live. The list is
+  // what you came to read, it wants width, and every row leads somewhere, so
+  // it needs to be linkable and back-navigable.
+  const histPage = method === "GET" && path.match(/^\/agents\/([^/]+)\/history$/)
+  if (histPage) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderHistoryPage({
+      agentId: decodeURIComponent(histPage[1]),
+      agentName: url.searchParams.get("name") || undefined,
+      nodeUrl: url.searchParams.get("node") || ctx.config.dashboard.daemonUrl,
+      peers: buildTopbarPeers(ctx.config),
+    }))
     return
   }
   // /graph is the canonical doc path; the page itself lives at /admin/graph.
@@ -430,12 +502,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
 
   // Serve the web-bundled editor artifact. Built by `tsup --config tsup.web.config.ts`
-  // to dist/web/workflow-editor.js. Any `/assets/<name>` request is mapped
+  // to dist/web/<name>.js. Any `/assets/<name>` request is mapped
   // 1:1 into dist/web so future bundles (graph editor, ...) can live there
   // without another route registration.
   if (method === "GET" && path.startsWith("/assets/")) {
     const rel = path.slice("/assets/".length)
-    // Allow dotted stems (e.g. "workflow-editor.global.js") but keep the
+    // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
     // whitelist narrow to script/map/style files.
     if (!/^[a-zA-Z0-9._-]+\.(js|map|css)$/.test(rel)) {
       sendJson(res, 400, { error: "invalid asset name" }); return
@@ -458,6 +530,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/api/live") {
     try {
       const snap = await buildLiveSnapshot(ctx.config)
+      sendJson(res, 200, snap)
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+  if (method === "GET" && path === "/api/mesh") {
+    try {
+      const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10)
+      const timezone = url.searchParams.get("timezone") || "UTC"
+      const snap = await buildLiveSnapshot(ctx.config, { date, timezone })
       sendJson(res, 200, snap)
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
@@ -774,56 +855,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       sendJson(res, r.status, data)
     } catch (e: any) {
       sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // Workflow-builder chat (proxies to main daemon where the dispatcher
-  // + AgentRegistry live). The board-dashboard serves /workflows/editor
-  // but runs its own workflow stores; the chat endpoint needs the
-  // running agent registry, which only the main daemon has.
-  if (method === "POST" && path === "/api/workflows/editor/chat") {
-    try {
-      const body = await readJson(req)
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const r = await fetch(`${daemonUrl}/api/workflows/editor/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body ?? {}),
-      })
-      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
-      sendJson(res, r.status, data)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
-
-  // /api/workflows/tasks[*] — BPM inbox API lives on the daemon (the
-  // dispatcher owns the TaskStore + run-resume plumbing). Proxy through
-  // so the /inbox page on the dashboard works the same as on the daemon.
-  if (path.startsWith("/api/workflows/tasks") && (method === "GET" || method === "POST")) {
-    try {
-      const t = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(ctx.config.dashboard.token ? { Authorization: `Bearer ${ctx.config.dashboard.token}` } : {}),
-      }
-      const body = method === "POST"
-        ? await new Promise<string>((resolve) => {
-            const chunks: Buffer[] = []
-            req.on("data", (c) => chunks.push(c))
-            req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")))
-          })
-        : undefined
-      const r = await fetch(`${t}${req.url}`, { method, headers, body })
-      const text = await r.text()
-      res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json" })
-      res.end(text)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "tasks proxy failed", message: e?.message || String(e) })
     }
     return
   }
@@ -1184,6 +1215,7 @@ interface NodeLive {
     name: string
     tier: string
     model?: string
+    skillCount?: number
     active: number
     total: number
     errors: number
@@ -1213,21 +1245,54 @@ interface NodeLive {
       byChannel?: Record<string, { tasks: number }>
     }>
   }
+  crons?: Array<{
+    id: string
+    enabled: boolean
+    schedule: string
+    timezone?: string
+    agent: string
+    nextRun?: string
+    retryPending?: boolean
+    consecutiveErrors: number
+  }>
+  cronRuns?: Array<{
+    jobId: string
+    startedAt: string
+    completedAt: string
+    duration: number
+    status: "success" | "failed" | "timeout"
+    responseSummary?: string
+    errorSummary?: string
+    isRetry: boolean
+    retryAttempt: number
+    taskId?: string
+    rootTaskId?: string
+    traceId?: string
+    sessionId?: string
+  }>
 }
 interface LiveSnapshot {
   ts: string
   nodes: NodeLive[]
 }
 
-async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSignal): Promise<NodeLive> {
+async function fetchDaemonAgents(
+  url: string,
+  token?: string,
+  signal?: AbortSignal,
+  day?: { date: string; timezone: string },
+): Promise<NodeLive> {
   const headers: Record<string, string> = {}
   if (token) headers["Authorization"] = `Bearer ${token}`
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
-    const [healthRes, agentsRes, meshRes] = await Promise.all([
+    const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes] = await Promise.all([
       fetch(url + "/health", { headers, signal }).catch(() => null),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       fetch(url + "/mesh", { headers, signal }).catch(() => null),
+      fetch(url + "/crons", { headers, signal }).catch(() => null),
+      fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1236,6 +1301,7 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
     const agents: any[] = await agentsRes.json()
     base.agents = agents.map((a) => ({
       id: a.id, name: a.name, tier: a.tier, model: a.model,
+      skillCount: Number.isFinite(a.skillCount) ? a.skillCount : undefined,
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
       lastSummary: a.lastSummary,
@@ -1250,6 +1316,23 @@ async function fetchDaemonAgents(url: string, token?: string, signal?: AbortSign
       // /health already embeds today's usage rollup — reuse it so the
       // dashboard doesn't need a separate /usage call per node.
       if (h.usage) base.usage = h.usage
+    }
+    if (cronsRes && cronsRes.ok) {
+      const jobs: any[] = await cronsRes.json()
+      base.crons = jobs.map((job) => ({
+        id: job.id,
+        enabled: job.enabled === true,
+        schedule: String(job.schedule || ""),
+        timezone: job.timezone,
+        agent: String(job.agent || ""),
+        nextRun: job.nextRun,
+        retryPending: job.retryPending === true,
+        consecutiveErrors: Number(job.consecutiveErrors) || 0,
+      }))
+    }
+    if (cronRunsRes && cronRunsRes.ok) {
+      const history: any = await cronRunsRes.json()
+      base.cronRuns = Array.isArray(history.runs) ? history.runs : []
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
@@ -1305,7 +1388,10 @@ async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: Abort
   } catch { return [] }
 }
 
-async function buildLiveSnapshot(daemon: DaemonConfig): Promise<LiveSnapshot> {
+async function buildLiveSnapshot(
+  daemon: DaemonConfig,
+  day?: { date: string; timezone: string },
+): Promise<LiveSnapshot> {
   const dash = daemon.dashboard
   const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
   const primaryToken = dash.token
@@ -1321,7 +1407,7 @@ async function buildLiveSnapshot(daemon: DaemonConfig): Promise<LiveSnapshot> {
   try {
     const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, ac.signal)
     for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
-    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal)))
+    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal, day)))
     return { ts: new Date().toISOString(), nodes }
   } finally { clearTimeout(timeout) }
 }
@@ -2016,8 +2102,6 @@ function findPeer(id: string, config: DaemonConfig): { url: string; token?: stri
  * first paint (dropped into <head> to avoid FOUC), then wires any segmented
  * control with [data-theme-opt="..."] buttons once the DOM is ready.
  */
-
-
 
 
 

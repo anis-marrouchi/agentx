@@ -17,13 +17,10 @@ import {
   writeWorkflowDraft,
 } from "@/workflows/absorb"
 import type { WorkflowDispatcher } from "@/workflows/dispatcher"
-import type { TaskStore } from "@/workflows/task-store"
-import type { ActorStore } from "@/actors/store"
-import { formSubmissionSchema } from "@/forms/types"
 
 // --- Workflows HTTP API ---
 //
-// Powers the /workflows dashboard (observability) + /workflows/editor pages.
+// Powers the /workflows dashboard (observability).
 // Reads require `dashboard:read`; writes require `dashboard:write`. The
 // caller passes in a `requireScope(req, res, [...])` shim so this module
 // stays decoupled from src/daemon/token-store.ts. The daemon wires the real
@@ -56,11 +53,6 @@ export interface WorkflowsApiDeps {
   store: WorkflowStore
   runs: RunStore
   layouts: LayoutStore
-  /** Optional task store + dispatcher for the BPM /tasks + /inbox endpoints.
-   *  Passing the live dispatcher lets the API drive run resumes from form
-   *  submissions. */
-  tasks?: TaskStore
-  actors?: ActorStore
   dispatcher?: WorkflowDispatcher
   /** Gate the request; write the 401/403 response and return falsy on failure. */
   requireScope: (req: IncomingMessage, res: ServerResponse, scopes: string[]) => unknown
@@ -107,87 +99,6 @@ export function handleWorkflowsApi(req: IncomingMessage, res: ServerResponse, de
   if (url.startsWith("/api/workflows/runs")) {
     if (method === "GET" && !deps.requireScope(req, res, ["dashboard:read"])) return true
     return handleRuns(req, res, deps, url)
-  }
-
-  // /api/workflows/tasks[...]               (BPM inbox + submission)
-  // Must run BEFORE the /:id regex below — otherwise "tasks" gets matched
-  // as a workflow id and the GET handler returns 404 "workflow not found".
-  if (url.startsWith("/api/workflows/tasks")) {
-    if (!deps.tasks || !deps.dispatcher) return sendJson(res, 501, { error: "task engine not enabled" })
-    const trail = url.replace(/^\/api\/workflows\/tasks/, "")
-    if (trail === "/history" || trail.startsWith("/history?")) {
-      if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
-      if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-      const q = new URL(url, "http://_").searchParams
-      const limitRaw = parseInt(q.get("limit") || "50", 10)
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 50
-      const archived = deps.tasks.listArchived()
-      // Newest first; cap at limit. Compute duration + SLA breach inline so
-      // the client doesn't need a third round-trip.
-      const rows = archived
-        .filter((t) => !!t.submittedAt)
-        .sort((a, b) => (a.submittedAt! < b.submittedAt! ? 1 : -1))
-        .slice(0, limit)
-        .map((t) => {
-          const created = Date.parse(t.createdAt)
-          const submitted = Date.parse(t.submittedAt!)
-          const due = t.dueAt ? Date.parse(t.dueAt) : null
-          const breachedSla = due !== null && submitted > due
-          return {
-            id: t.id,
-            runId: t.runId,
-            workflowId: t.workflowId,
-            title: t.title,
-            assignee: t.assignee,
-            submittedBy: t.submittedBy,
-            submittedAt: t.submittedAt,
-            submittedAction: t.submittedAction,
-            createdAt: t.createdAt,
-            dueAt: t.dueAt ?? null,
-            durationMs: Number.isFinite(submitted - created) ? submitted - created : null,
-            breachedSla,
-            status: t.status,
-          }
-        })
-      return sendJson(res, 200, { rows })
-    }
-    if (trail === "" || trail.startsWith("?")) {
-      if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" })
-      if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-      const q = new URL(url, "http://_").searchParams
-      const actor = q.get("actor") || undefined
-      const tasks = actor ? deps.tasks.listForActor(actor) : deps.tasks.listOpen()
-      return sendJson(res, 200, { tasks })
-    }
-    const taskMatch = trail.match(/^\/([^\/?]+)(\/submit)?$/)
-    if (taskMatch) {
-      const taskId = decodeURIComponent(taskMatch[1])
-      if (taskMatch[2]) {
-        if (method !== "POST") return sendJson(res, 405, { error: "method not allowed" })
-        if (!deps.requireScope(req, res, ["dashboard:write"])) return true
-        return withBody(req, res, async (body) => {
-          const parsed = formSubmissionSchema.safeParse(body && typeof body === "object" && "submission" in (body as object)
-            ? (body as { submission: unknown }).submission
-            : body)
-          if (!parsed.success) {
-            return sendJson(res, 400, {
-              error: "invalid submission",
-              issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-            })
-          }
-          const submittedBy = typeof (body as any)?.submittedBy === "string" ? (body as any).submittedBy : "anonymous"
-          const result = await deps.dispatcher!.submitTask(taskId, parsed.data, submittedBy)
-          if (!result.ok) return sendJson(res, 400, { error: result.error, fieldErrors: result.fieldErrors })
-          return sendJson(res, 200, { ok: true, runId: result.runId })
-        })
-      }
-      if (method === "GET") {
-        if (!deps.requireScope(req, res, ["dashboard:read"])) return true
-        const task = deps.tasks.get(taskId)
-        if (!task) return sendJson(res, 404, { error: "task not found" })
-        return sendJson(res, 200, { task })
-      }
-    }
   }
 
   // /api/workflows/signal/:name        — POST manual signal emission.

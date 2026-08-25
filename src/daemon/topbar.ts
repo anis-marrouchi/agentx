@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "live" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects"
+export type TopbarTab = "live" | "mesh" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -25,16 +25,16 @@ export interface TopbarPeer {
 }
 
 export interface TopbarFeatures {
-  /** Show the Boards tab — set when config.boards is non-empty. */
-  boards?: boolean
-  /** Show Workflows + Inbox tabs — set when config.workflows.enabled. */
-  workflows?: boolean
   /** Show the Team/Business Settings sub-tabs — config.business.enabled. */
   business?: boolean
 }
 
-// Set once at server start (board-dashboard + daemon both call it). The
-// nav must stay minimal by default, so unset flags mean hidden tabs.
+// Set once at server start (board-dashboard + daemon both call it).
+//
+// This used to carry `boards` and `workflows` flags that gated top-level
+// tabs. The nav is now fixed (Live, Operations, Settings), so those flags had
+// nothing left to gate and were removed rather than left describing chrome
+// that no longer exists.
 let topbarFeatures: TopbarFeatures = {}
 
 export function setTopbarFeatures(features: TopbarFeatures): void {
@@ -63,10 +63,17 @@ export interface TopbarOpts {
 /**
  * Font link tags + tiny inline bootstrap script. Callers drop this in <head>.
  */
+// Fonts degrade to the system stack when the box is offline or air-gapped —
+// the tokens list real fallbacks, so a failed font fetch costs typography,
+// never layout.
+//
+// The theme bootstrap runs before first paint to avoid a flash. A stored
+// "crt" from before that theme was removed falls back to dark rather than
+// leaving data-theme set to a value no stylesheet defines.
 export const TOPBAR_HEAD = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script>(function(){try{var t=localStorage.getItem('ax-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>`
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`
 
 /**
  * CSS for topbar + subheader + theme switch + mesh selector. No token
@@ -356,36 +363,32 @@ export function renderTopbar(opts: TopbarOpts): string {
   // actually configured that surface (boards / workflows) — flags are
   // set once per process via setTopbarFeatures().
   //
-  // Deliberately NOT in the nav (still routable by URL):
-  //   /admin/health            SRE platform-health
-  //   /admin/activity-graph    ledger lens (heavy React bundle)
-  //   /admin/graph             intent taxonomy triage
-  //   /admin/projects          PM aggregation
-  //   /procedures  /admin/wiki  /glossary
-  // They stay linked from contextual pages, not from the top chrome —
-  // the trending-launch dashboard story is the mesh, not the suite.
+  // Deliberately NOT in the nav (all still routable by URL):
+  //   /admin/ledger  /admin/cost         what happened, what it cost
+  //   /workflows  /inbox              BPM surfaces
+  //   /  (boards)                       Kanban
+  //   /admin/health  /admin/activity-graph  /admin/graph  /admin/projects
+  //   /procedures  /admin/wiki  /glossary  /processes
+  //
+  // Three tabs are the whole nav. Every page above is one link away from Live
+  // or Settings, and none of them is where an operator starts their day —
+  // "who is alive and what are they doing" (Live) and "how is this wired"
+  // (Settings) are. A tab bar that lists every surface an app HAS is a site
+  // map, not navigation; it makes the two answers people actually want
+  // harder to find, which is the opposite of what chrome is for.
+  //
+  // Removing a tab does not remove the page. If view counts later show a
+  // surface earning its place, adding a tab back is one line.
   type Tab = { id: TopbarTab; label: string; href: string; external?: boolean }
-  const features = topbarFeatures
-  const workTabs: Tab[] = [
-    ...(features.boards ? [{ id: "boards" as const, label: "Boards", href: "/" }] : []),
-    ...(features.workflows
-      ? [
-          { id: "workflows" as const, label: "Workflows", href: "/workflows" },
-          { id: "inbox" as const, label: "Inbox", href: "/inbox" },
-        ]
-      : []),
-  ]
   const groups: Array<{ name: string; tabs: Tab[] }> = [
     {
       name: "Mesh",
       tabs: [
         { id: "live", label: "Live", href: "/live" },
-        { id: "graph", label: "Ledger", href: "/admin/ledger" },
-        { id: "cost", label: "Cost", href: "/admin/cost" },
+        { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "admin", label: "Settings", href: "/admin" },
       ],
     },
-    ...(workTabs.length ? [{ name: "Work", tabs: workTabs }] : []),
   ]
 
   const tabs = groups.map((g) => {
@@ -413,7 +416,6 @@ export function renderTopbar(opts: TopbarOpts): string {
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
       <button data-theme-opt="light">Light</button>
-      <button data-theme-opt="crt">CRT</button>
     </div>
   </div>
 </header>${opts.subheader ? `<div class="ax-subheader">${opts.subheader}</div>` : ""}`

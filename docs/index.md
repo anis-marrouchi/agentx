@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "AgentX"
   text: "AI operations layer for your team"
-  tagline: For small & medium businesses. Plug in Telegram, WhatsApp, Slack, Discord, or GitLab, set schedules, and watch your agents work — on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.
+  tagline: For small & medium businesses. Plug in Telegram, WhatsApp, GitLab, or GitHub, set schedules, and watch your agents work — on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.
   actions:
     - theme: brand
       text: Get started
@@ -20,7 +20,7 @@ features:
       width: 32
       height: 32
     title: Every channel, one router
-    details: Telegram, WhatsApp, Slack, Discord, GitLab, webhooks, HTTP — built in. Agents reply on the channel they received on, or push to any other via cross-channel /send.
+    details: Telegram, WhatsApp, GitLab, GitHub, webhooks, HTTP — built in. Agents reply on the channel they received on, or push to any other via cross-channel /send.
     link: /journey/01-telegram-qa-bot
     linkText: Build a Telegram bot
   - icon:
@@ -144,6 +144,8 @@ features:
 **I'm running a services team and want AI agents with KPIs.** → [Journey 7 — Business layer](/journey/07-business-layer)
 
 **I want to drive AgentX from Cursor / Claude Code.** → [Journey 10 — MCP server](/journey/10-mcp-server)
+
+**I live in Claude Code and want my agents to reach me there.** → [Journey 14 — Wearable agents](/journey/14-wearable-agent)
 
 **I'm putting agents into production.** → [Journey 11 — Production hardening](/journey/11-production-hardening)
 

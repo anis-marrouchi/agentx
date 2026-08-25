@@ -4,7 +4,7 @@
 // the orchestrator tier's backend.
 
 export interface ProviderInfo {
-  id: "claude" | "codex" | "anthropic" | "deepseek" | "openai" | "gemini" | "orchestrator" | "unknown"
+  id: "claude" | "codex" | "opencode" | "anthropic" | "deepseek" | "openai" | "gemini" | "orchestrator" | "unknown"
   /** Short label shown in the UI, e.g. "claude". */
   label: string
   /** The underlying command/SDK, e.g. "claude", "codex", "@anthropic-ai/sdk". */
@@ -22,6 +22,8 @@ export function resolveProvider(tier: string, model?: string): ProviderInfo {
       return { id: "claude", label: "claude", command: "claude", color: "yellow", glyph: "✦" }
     case "codex-cli":
       return { id: "codex", label: "codex", command: "codex", color: "green", glyph: "✳" }
+    case "opencode":
+      return { id: "opencode", label: "opencode", command: "opencode", color: "cyan", glyph: "◆" }
     case "sdk":
       return { id: "anthropic", label: "anthropic", command: "@anthropic-ai/sdk", color: "yellow", glyph: "✦" }
     case "orchestrator": {

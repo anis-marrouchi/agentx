@@ -21,7 +21,7 @@ function instantiate(text: string, id: string): string {
 describe("workflow templates", () => {
   it("ships exactly the documented set", () => {
     const names = TEMPLATES.map((t) => t.name).sort()
-    expect(names).toEqual(["branching", "extract", "human-in-the-loop", "linear", "retry"])
+    expect(names).toEqual(["branching", "extract", "linear", "retry"])
   })
 
   it.each(TEMPLATES)("template '$name' round-trips through parse → schema → lint clean", ({ name }) => {

@@ -192,6 +192,7 @@ const AGENT_PAGE_BODY = `
             <select class="inp" id="f-tier">
               <option value="claude-code">Claude Code (recommended)</option>
               <option value="codex-cli">Codex CLI</option>
+              <option value="opencode">OpenCode</option>
               <option value="sdk">Anthropic API (SDK)</option>
               <option value="orchestrator">Orchestrator (any LLM)</option>
             </select>

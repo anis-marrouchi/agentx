@@ -31,34 +31,7 @@ export function renderLivePage(opts: LivePageOpts = {}): string {
   <section id="statstrip" class="ax-statstrip"></section>
   <main id="grid" class="ax-live__body"></main>
 </div>
-<aside id="history-panel" class="history-panel hidden" aria-hidden="true">
-  <header>
-    <h2 id="history-panel-title">${esc(UI_LABELS.historyPanelTitle)}</h2>
-    <span class="history-panel-source" id="history-panel-source"></span>
-    <button class="history-panel-close" id="history-panel-close" aria-label="Close">×</button>
-  </header>
-  <div id="history-panel-body" class="history-panel-body"></div>
-</aside>
-<div id="task-modal" class="task-modal hidden" aria-hidden="true">
-  <div class="task-modal-backdrop"></div>
-  <div class="task-modal-card" role="dialog" aria-modal="true">
-    <header>
-      <span class="task-modal-channel" id="task-modal-channel"></span>
-      <h2 id="task-modal-title">${esc(UI_LABELS.taskModalTitle)}</h2>
-      <span class="task-modal-status" id="task-modal-status">${esc(UI_LABELS.taskModalConnecting)}</span>
-      <button class="task-modal-close" id="task-modal-close" aria-label="Close">×</button>
-    </header>
-    <div id="task-modal-output" class="task-modal-output"></div>
-    <footer class="task-modal-compose" id="task-modal-compose">
-      <textarea id="task-modal-input" class="task-modal-input" rows="2" placeholder="Send a message to this chat (current turn keeps running; your message dispatches as the next turn). ⌘/Ctrl+Enter to send."></textarea>
-      <div class="task-modal-compose-actions">
-        <span class="task-modal-compose-hint" id="task-modal-compose-hint"></span>
-        <button type="button" id="task-modal-stop" class="task-modal-btn task-modal-btn--stop" title="Stop the current turn">✕ stop</button>
-        <button type="button" id="task-modal-send" class="task-modal-btn task-modal-btn--send" title="Send the message">send →</button>
-      </div>
-    </footer>
-  </div>
-</div>`
+`
 
   return renderShell({
     title: `${UI_LABELS.brand} · ${UI_LABELS.subtitle}`,
@@ -127,6 +100,30 @@ const LIVE_PAGE_CSS = `
   display: flex; flex-direction: column; gap: 10px;
   transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
+/* Idle agents are context, not content: tighter padding, muted, no shadow.
+   A working agent should be visibly heavier than a resting one. */
+.ax-agent.is-collapsed {
+  gap: 6px; padding: 12px 14px; box-shadow: none;
+  background: var(--ax-surface-2); opacity: 0.78;
+}
+.ax-agent.is-collapsed:hover { opacity: 1; }
+.ax-agent.is-collapsed .ax-agent__foot { border-top: none; padding-top: 0; }
+.ax-agent__spark { color: var(--ax-accent); }
+.ax-agent__spark svg { display: block; width: 100%; height: 22px; }
+.ax-agent__spark-caption {
+  display: flex; justify-content: space-between; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ax-muted); margin-top: 1px;
+}
+.ax-agent.is-collapsed .ax-agent__spark { opacity: 0.75; }
+
+/* Active agents inside the "running now" tile — each row opens that
+   conversation. */
+.ax-stat__running { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.ax-stat__running-row { display: block; text-decoration: none; color: inherit; border-radius: 8px; padding: 3px 6px; margin: 0 -6px; }
+.ax-stat__running-row:hover { background: var(--ax-surface-2); text-decoration: none; }
+.ax-stat__running-line { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); min-width: 0; }
+.ax-stat__running-ch { color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; }
+.ax-stat__running-el { margin-left: auto; color: var(--ax-muted); }
 .ax-agent.is-handling {
   border-color: color-mix(in oklch, var(--ax-accent) 75%, var(--ax-border));
   background: linear-gradient(180deg,
@@ -166,33 +163,6 @@ const LIVE_PAGE_CSS = `
   font-size: var(--ax-fs-xs); color: var(--ax-muted);
   font-family: var(--ax-mono); margin-top: -4px;
 }
-.ax-agent__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.ax-ministat {
-  padding: 8px 10px; background: var(--ax-bg);
-  border: 1px solid var(--ax-border); border-radius: 4px;
-}
-.ax-ministat__label {
-  display: flex; align-items: center; gap: 4px; font-size: 10px;
-  color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.06em;
-}
-.ax-ministat__value {
-  font-size: 18px; font-weight: 600; margin-top: 2px;
-  letter-spacing: -0.02em; font-family: var(--ax-mono);
-  font-variant-numeric: tabular-nums;
-}
-.ax-ministat--live .ax-ministat__value { color: var(--ax-accent); }
-.ax-ministat--warn .ax-ministat__value { color: var(--ax-warn); }
-.ax-ministat--err .ax-ministat__value { color: var(--ax-err); }
-.ax-agent__spark {
-  border-top: 1px dashed var(--ax-border); padding-top: 8px;
-  color: var(--ax-accent);
-}
-.ax-agent__spark-caption {
-  display: flex; justify-content: space-between; font-size: 10px;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--ax-muted); margin-top: 2px;
-}
-.ax-agent__spark svg { display: block; width: 100%; height: 28px; }
 .ax-agent__running { display: flex; flex-direction: column; gap: 6px; }
 .ax-agent__task {
   text-align: left; background: var(--ax-bg);
@@ -251,107 +221,6 @@ const LIVE_PAGE_CSS = `
 }
 
 /* --- History panel (right-docked sheet) --- */
-.history-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 360px;
-  background: var(--node); border-left: 1px solid var(--border); z-index: 900;
-  display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,0.4);
-  transition: transform 0.2s ease;
-}
-.history-panel.hidden { transform: translateX(100%); pointer-events: none; }
-.history-panel > header {
-  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-  background: var(--ax-bg-elev); border-bottom: 1px solid var(--border);
-}
-.history-panel > header h2 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; color: var(--text); }
-.history-panel-source { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
-.history-panel-close {
-  background: transparent; border: none; color: var(--muted); font-size: 20px;
-  cursor: pointer; padding: 0 6px; line-height: 1;
-}
-.history-panel-close:hover { color: var(--text); }
-.history-panel-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.history-item {
-  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
-  padding: 9px 11px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
-}
-.history-item:hover { border-color: var(--accent); }
-.history-item .top { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
-.history-item .top .channel {
-  background: color-mix(in oklch, var(--ax-accent) 16%, transparent); color: var(--accent);
-  font-size: 9px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px;
-  letter-spacing: 0.5px;
-}
-.history-item .top .ok { color: var(--green); }
-.history-item .top .err { color: var(--red); }
-.history-item .top .when { margin-left: auto; font-family: ui-monospace, monospace; }
-.history-item .preview { color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-item .duration { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
-.history-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 8px; font-style: italic; }
-
-/* --- Task modal (full transcript view) --- */
-.task-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.task-modal.hidden { display: none; }
-.task-modal-backdrop { position: absolute; inset: 0; background: color-mix(in oklch, var(--ax-bg) 60%, black); }
-.task-modal-card {
-  position: relative; width: min(900px, 92vw); height: min(640px, 86vh);
-  background: var(--ax-surface); border: 1px solid var(--ax-border-2); border-radius: 8px;
-  display: flex; flex-direction: column; box-shadow: 0 18px 48px rgba(0,0,0,0.5); overflow: hidden;
-}
-.task-modal-card > header {
-  display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-  border-bottom: 1px solid var(--ax-border); background: var(--ax-bg-elev);
-}
-.task-modal-card > header h2 {
-  margin: 0; font-size: 14px; font-weight: 600; flex: 1;
-  color: var(--ax-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  letter-spacing: -0.005em;
-}
-.task-modal-channel {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
-  background: color-mix(in oklch, var(--ax-accent) 14%, transparent); color: var(--ax-accent);
-  padding: 2px 7px; border-radius: 3px; font-family: var(--ax-mono);
-}
-.task-modal-status { font-size: 11px; color: var(--ax-muted); font-family: var(--ax-mono); }
-.task-modal-status.live { color: var(--ax-accent); }
-.task-modal-status.done { color: var(--ax-accent); opacity: 0.75; }
-.task-modal-status.err { color: var(--ax-err); }
-.task-modal-close {
-  background: transparent; border: none; color: var(--ax-muted); font-size: 22px;
-  cursor: pointer; padding: 0 6px; line-height: 1;
-}
-.task-modal-close:hover { color: var(--ax-text); }
-.task-modal-compose {
-  border-top: 1px solid var(--ax-border); padding: 10px 14px 12px;
-  display: flex; flex-direction: column; gap: 6px; background: var(--ax-bg-2);
-}
-.task-modal-compose.is-disabled { opacity: 0.55; pointer-events: none; }
-.task-modal-input {
-  width: 100%; resize: vertical; min-height: 44px; max-height: 180px;
-  font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text);
-  background: var(--ax-bg); border: 1px solid var(--ax-border);
-  border-radius: 4px; padding: 8px 10px; box-sizing: border-box;
-}
-.task-modal-input:focus { outline: none; border-color: var(--ax-accent); }
-.task-modal-compose-actions { display: flex; align-items: center; gap: 8px; }
-.task-modal-compose-hint { flex: 1; font-size: 11px; color: var(--ax-muted); font-family: var(--ax-mono); min-height: 1em; }
-.task-modal-compose-hint.is-ok { color: var(--ax-accent); }
-.task-modal-compose-hint.is-err { color: var(--ax-err); }
-.task-modal-btn {
-  font: inherit; font-size: 12px; line-height: 1; padding: 6px 12px;
-  border-radius: 3px; cursor: pointer; border: 1px solid var(--ax-border);
-  background: transparent; color: var(--ax-muted);
-}
-.task-modal-btn:hover { border-color: var(--ax-accent); color: var(--ax-text); }
-.task-modal-btn--send { background: var(--ax-accent); color: var(--ax-bg); border-color: var(--ax-accent); }
-.task-modal-btn--send:hover { color: var(--ax-bg); opacity: 0.85; }
-.task-modal-btn--stop:hover { border-color: #d33; color: #d33; }
-.task-modal-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
-
-/* --- Event timeline (inside task modal) --- */
-.task-modal-output {
-  margin: 0; flex: 1; overflow: auto; padding: 16px 20px;
-  background: var(--ax-bg); display: flex; flex-direction: column; gap: 14px;
-}
 .ax-ev { border-left: 2px solid var(--ax-border-2); padding: 2px 0 2px 12px; }
 .ax-ev--tool { border-color: var(--ax-info); }
 .ax-ev--tool-result { border-color: var(--ax-border-2); }
@@ -453,68 +322,104 @@ function renderStatStrip(snapshot, summary) {
   const strip = document.getElementById('statstrip');
   if (!strip) return;
   const L = window.UI_LABELS || {};
-  let tasks = 0, durationMs = 0, errors = 0, inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreate = 0;
+  // Only what the two tiles need: the error count, and which channels are
+  // carrying the currently-running work. Token and duration totals moved out
+  // with the cost tiles.
+  let errors = 0;
   const byChannel = {};
   for (const node of snapshot.nodes) {
     if (!node.usage || !node.usage.agents) continue;
     for (const agentId of Object.keys(node.usage.agents)) {
       const u = node.usage.agents[agentId];
-      tasks += u.tasks || 0;
-      durationMs += u.totalDuration || 0;
       errors += u.errors || 0;
-      inputTokens += u.inputTokens || 0;
-      outputTokens += u.outputTokens || 0;
-      cacheRead += u.cacheReadTokens || 0;
-      cacheCreate += u.cacheCreateTokens || 0;
       if (u.byChannel) for (const ch of Object.keys(u.byChannel)) {
         byChannel[ch] = (byChannel[ch] || 0) + (u.byChannel[ch].tasks || 0);
       }
     }
   }
-  const totalTokens = inputTokens + outputTokens + cacheRead + cacheCreate;
-  const topChannels = Object.keys(byChannel).sort((a, b) => byChannel[b] - byChannel[a]).slice(0, 3)
-    .map(ch => ch + ' (' + byChannel[ch] + ')').join(' · ');
 
+  // Two tiles, because this page answers one question: who is alive, and what
+  // are they doing right now. "tasks today" and "tokens today" answer a cost
+  // question that /admin/cost owns; "failed" answers a health question that
+  // /admin/health owns. Five tiles made the page look like a status report
+  // and buried the two numbers someone opening Live actually came for.
+  const failing = errors + summary.errors;
+  const runningRows = collectRunning(snapshot);
   strip.innerHTML =
     stat({ label: 'agents online', value: summary.reachable + '/' + summary.nodes + ' machines',
            sub: summary.agents + ' agents', variant: 'live', pulse: summary.reachable > 0 }) +
+    // The busy COUNT and the running-task LIST come from different parts of
+    // the snapshot and can lag each other by a poll: an agent flips to active
+    // before its task appears, and the task disappears before the count drops.
+    // Without a fallback the tile then renders a number and nothing else,
+    // which reads as broken. Never let this tile be blank.
     stat({ label: 'running now', value: summary.busy,
-           sub: summary.busy === 0 ? 'nothing active' : 'across ' + Object.keys(byChannel).length + ' channels',
+           sub: runningRows.length ? '' :
+                (summary.busy > 0 ? 'starting…' : 'nothing active'),
+           bodyHtml: runningRows.length ? runningBodyHtml(runningRows) : '',
            variant: summary.busy > 0 ? 'live' : '' }) +
-    stat({ label: 'tasks today', value: tasks, sub: topChannels || 'no activity yet' }) +
-    stat({ label: 'tokens today', value: fmtTokens(totalTokens),
-           sub: fmtDuration(durationMs) + ' of agent time' }) +
-    stat({ label: L.errorsCount || 'failed', value: errors + summary.errors,
-           sub: (errors + summary.errors) === 0 ? 'all clean' : 'check history',
-           variant: (errors + summary.errors) > 0 ? 'err' : '' });
+    // Failures are the one exception: they earn a tile only when non-zero,
+    // because a silent failure is the thing you most need pulled forward.
+    (failing > 0
+      ? stat({ label: L.errorsCount || 'failed', value: failing,
+               sub: 'see health →', variant: 'err' })
+      : '');
 }
 
-function stat({ label, value, sub, variant, pulse }) {
+function stat({ label, value, sub, variant, pulse, bodyHtml }) {
   const cls = 'ax-stat' + (variant ? ' ax-stat--' + variant : '');
   const dot = pulse ? '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' : '';
   return '<div class="' + cls + '">' +
     '<div class="ax-stat__label">' + dot + escapeHtml(String(label)) + '</div>' +
     '<div class="ax-stat__value">' + escapeHtml(String(value)) + '</div>' +
-    (sub ? '<div class="ax-stat__sub">' + escapeHtml(String(sub)) + '</div>' : '') +
+    (bodyHtml || (sub ? '<div class="ax-stat__sub">' + escapeHtml(String(sub)) + '</div>' : '')) +
   '</div>';
 }
 
-function fmtDuration(ms) {
-  if (!ms) return '0s';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + 'm';
-  const h = Math.floor(m / 60);
-  const rm = m % 60;
-  return h + 'h ' + (rm < 10 ? '0' : '') + rm + 'm';
+/** The "running now" tile, when something IS running, lists who — each a link
+ *  straight into that conversation.
+ *
+ *  A count alone made you hunt: read "2", then scan 31 cards for the two that
+ *  are lit. The tile already knows which agents they are, so it should hand
+ *  them over. This is the page's one shortcut — everything else is a roster. */
+function collectRunning(snapshot) {
+  const rows = [];
+  for (const node of (snapshot && snapshot.nodes) || []) {
+    for (const a of (node.agents || [])) {
+      for (const t of (a.runningTasks || [])) {
+        rows.push({
+          agentId: a.id,
+          agentName: a.name || a.id,
+          nodeUrl: (node && node.url) || '',
+          taskId: t.id,
+          channel: t.channel || '',
+          preview: t.messagePreview || '',
+          startedAt: t.startedAt,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
-function fmtTokens(n) {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'k';
-  return (n / 1_000_000).toFixed(2).replace(/\\.00$/, '') + 'M';
+function runningBodyHtml(rows) {
+  if (!rows.length) return '';
+  return '<div class="ax-stat__running">' + rows.slice(0, 4).map(function (r) {
+    const href = r.taskId ? taskPageUrl(r) : '';  // r carries preview + startedAt
+    const elapsed = r.startedAt ? fmtElapsed(Date.now() - new Date(r.startedAt).getTime()) : '';
+    const inner =
+      '<span class="ax-mention">@' + escapeHtml(r.agentId) + '</span>' +
+      (r.channel ? '<span class="ax-stat__running-ch">' + escapeHtml(r.channel) + '</span>' : '') +
+      '<span class="ax-stat__running-el ax-mono">' + escapeHtml(elapsed) + '</span>';
+    const line = '<div class="ax-stat__running-line" title="' + escapeHtml(r.preview) + '">' + inner + '</div>';
+    return href ? '<a class="ax-stat__running-row" href="' + escapeHtml(href) + '">' + line + '</a>'
+                : '<div class="ax-stat__running-row">' + line + '</div>';
+  }).join('') +
+  (rows.length > 4 ? '<div class="ax-stat__sub">+' + (rows.length - 4) + ' more</div>' : '') +
+  '</div>';
 }
+
+
 
 function renderNode(node) {
   const sec = document.createElement('section');
@@ -591,30 +496,6 @@ function renderAgent(a, node) {
       '</div>'
     : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
 
-  // Sparkline — last 24 hourly task counts
-  const sparkBlock = (Array.isArray(a.hourlyTasks) && a.hourlyTasks.length)
-    ? '<div class="ax-agent__spark">' + renderSpark(a.hourlyTasks) +
-        '<div class="ax-agent__spark-caption"><span>tasks · last 24h</span><span class="ax-mono">' +
-          a.hourlyTasks.reduce(function(s,v){return s+v}, 0) + ' total</span></div>' +
-      '</div>'
-    : '';
-
-  // Mini stats row
-  const miniStats = '<div class="ax-agent__stats">' +
-    '<div class="ax-ministat' + (busy ? ' ax-ministat--live' : '') + '">' +
-      '<div class="ax-ministat__label">handling</div>' +
-      '<div class="ax-ministat__value">' + (a.active || 0) + '</div>' +
-    '</div>' +
-    '<div class="ax-ministat">' +
-      '<div class="ax-ministat__label">today</div>' +
-      '<div class="ax-ministat__value">' + (a.total || 0) + '</div>' +
-    '</div>' +
-    '<div class="ax-ministat' + (errored ? ' ax-ministat--err' : '') + '">' +
-      '<div class="ax-ministat__label">failed</div>' +
-      '<div class="ax-ministat__value">' + (a.errors || 0) + '</div>' +
-    '</div>' +
-  '</div>';
-
   const lastActiveText = a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
   const lastActiveAttr = a.lastActive ? ' data-last-active="' + escapeHtml(a.lastActive) + '"' : '';
   const recentLink = nodeUrl
@@ -628,26 +509,52 @@ function renderAgent(a, node) {
     : (errored ? '<span class="ax-badge ax-badge--mono ax-badge--warn">errored</span>' : '<span class="ax-badge ax-badge--mono ax-badge--ghost">idle</span>');
   const tierBadge = tierDisplay ? '<span class="ax-badge ax-badge--mono ax-badge--ghost" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' : '';
 
-  card.innerHTML =
+  const head =
     '<div class="ax-agent__head">' +
       '<div class="ax-agent__id">' +
         '<span class="ax-mention">' + escapeHtml(mention) + '</span>' +
         '<span class="ax-agent__name">' + escapeHtml(a.name || a.id) + '</span>' +
       '</div>' +
       '<div class="ax-agent__tier">' + tierBadge + liveBadge + '</div>' +
-    '</div>' +
+    '</div>';
+
+  // An idle agent collapses to one line.
+  //
+  // The page's job is "who is alive and what are they doing RIGHT NOW". Giving
+  // an idle agent the same real estate as a working one — model, last-reply
+  // excerpt, footer — is exactly backwards: it makes the answer harder to see
+  // the more agents you run. On clawd (22 agents) the busy ones were lost in a
+  // wall of identical idle cards.
+  //
+  // Collapsed still carries what the question needs: who, engine, and when it
+  // was last active. Everything else is one click away in history.
+  if (!busy) {
+    card.className += ' is-collapsed';
+    card.innerHTML = head + sparkBlockFor(a) +
+      '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' +
+        escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
+    return card;
+  }
+
+  card.innerHTML =
+    head +
     (a.model ? '<div class="ax-agent__model">' + escapeHtml(shortenModel(a.model)) + '</div>' : '') +
-    miniStats +
-    sparkBlock +
+    sparkBlockFor(a) +
     runningBlock +
     summaryBlock +
     '<div class="ax-agent__foot"' + lastActiveAttr + '><span class="last-active">' + escapeHtml(lastActiveText) + '</span>' + recentLink + '</div>';
   return card;
 }
 
-/** Inline SVG sparkline — polyline + dot on the last point. 100% width, 28px high. */
+/** Inline SVG sparkline of the last 24 hourly task counts.
+ *
+ *  This came out with the per-agent stat boxes and shouldn't have. The stat
+ *  boxes were three numbers restating what the row already said; the chart is
+ *  the one thing on the card that carries information nothing else does — the
+ *  SHAPE of an agent's day. A flat line beside a busy one is a real signal,
+ *  and it costs 22px. */
 function renderSpark(data) {
-  const w = 280, h = 28;
+  const w = 280, h = 22;
   const max = Math.max.apply(null, data.concat([1]));
   const step = w / Math.max(data.length - 1, 1);
   let pts = '';
@@ -662,6 +569,15 @@ function renderSpark(data) {
     '<polyline points="' + pts + '" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />' +
     '<circle cx="' + lastX + '" cy="' + lastY + '" r="2" fill="currentColor" />' +
   '</svg>';
+}
+
+function sparkBlockFor(a) {
+  if (!Array.isArray(a.hourlyTasks) || !a.hourlyTasks.length) return '';
+  const total = a.hourlyTasks.reduce(function (s, v) { return s + v; }, 0);
+  if (!total) return '';
+  return '<div class="ax-agent__spark">' + renderSpark(a.hourlyTasks) +
+    '<div class="ax-agent__spark-caption"><span>last 24h</span>' +
+    '<span class="ax-mono">' + total + '</span></div></div>';
 }
 
 function shortenModel(m) {
@@ -727,401 +643,22 @@ setInterval(() => {
 }, 1000);
 connect();
 
-// --- Task output modal ---
-// Per-modal parser state so consecutive chunks coalesce cleanly.
-const taskModal = {
-  el: document.getElementById('task-modal'),
-  output: document.getElementById('task-modal-output'),
-  title: document.getElementById('task-modal-title'),
-  status: document.getElementById('task-modal-status'),
-  channel: document.getElementById('task-modal-channel'),
-  closeBtn: document.getElementById('task-modal-close'),
-  compose: document.getElementById('task-modal-compose'),
-  input: document.getElementById('task-modal-input'),
-  sendBtn: document.getElementById('task-modal-send'),
-  stopBtn: document.getElementById('task-modal-stop'),
-  hint: document.getElementById('task-modal-compose-hint'),
-  backdrop: null,
-  es: null,
-  currentTaskId: null,
-  currentNodeUrl: null,
-  /** Trailing line fragment from the last chunk (completes on next newline). */
-  lineBuf: '',
-  /** Active text event DOM node — consecutive plain-text lines coalesce into it. */
-  openTextEv: null,
-};
-taskModal.backdrop = taskModal.el && taskModal.el.querySelector('.task-modal-backdrop');
-
-function setStatus(label, kind) {
-  if (!taskModal.status) return;
-  taskModal.status.textContent = label;
-  taskModal.status.className = 'task-modal-status' + (kind ? ' ' + kind : '');
+/** Navigate to a task's own page. Watching an agent work is a place — it gets
+ *  a URL you can share, reload and keep open beside other things. */
+function taskPageUrl(d) {
+  // Carry the request preview across. A LIVE task's SSE stream only sends the
+  // agent's output — the daemon never replays what was asked — so without this
+  // the request card stays hidden for exactly the tasks you're most likely to
+  // be watching. Capped so a long GitLab comment can't blow the URL.
+  const ask = (d.preview || '').slice(0, 400);
+  return '/tasks/' + encodeURIComponent(d.taskId)
+    + '?agent=' + encodeURIComponent(d.agentId || '')
+    + '&node=' + encodeURIComponent(d.nodeUrl || '')
+    + (d.channel ? '&channel=' + encodeURIComponent(d.channel) : '')
+    + (d.agentName ? '&name=' + encodeURIComponent(d.agentName) : '')
+    + (ask ? '&ask=' + encodeURIComponent(ask) : '')
+    + (d.startedAt ? '&at=' + encodeURIComponent(d.startedAt) : '');
 }
-
-function resetOutput() {
-  if (!taskModal.output) return;
-  taskModal.output.innerHTML = '';
-  taskModal.lineBuf = '';
-  taskModal.openTextEv = null;
-}
-
-function resetCompose() {
-  if (!taskModal.input) return;
-  taskModal.input.value = '';
-  setComposeHint('', '');
-  if (taskModal.compose) taskModal.compose.classList.remove('is-disabled');
-  if (taskModal.sendBtn) taskModal.sendBtn.disabled = false;
-  if (taskModal.stopBtn) taskModal.stopBtn.disabled = false;
-}
-
-function setComposeHint(text, kind) {
-  if (!taskModal.hint) return;
-  taskModal.hint.textContent = text || '';
-  taskModal.hint.className = 'task-modal-compose-hint' + (kind ? ' is-' + kind : '');
-}
-
-/**
- * Feed a raw transcript chunk to the event renderer. Handles partial lines
- * (buffered until the next newline) and coalesces bare text lines into a
- * single "assistant text" event until a structured marker arrives.
- *
- * Prefixes emitted by the backend formatter (src/agents/registry.ts):
- *   '· '        system (init, done)
- *   '→ '        tool_use
- *   '← '        tool_result   (or '← [error] ' for is_error)
- *   '💭 '       thinking / thought block
- *   anything    assistant text
- */
-function appendOutput(text) {
-  if (!text || !taskModal.output) return;
-  const atBottom = taskModal.output.scrollTop + taskModal.output.clientHeight >= taskModal.output.scrollHeight - 30;
-  taskModal.lineBuf += text;
-  const lines = taskModal.lineBuf.split('\\n');
-  taskModal.lineBuf = lines.pop();
-  for (const line of lines) processStreamLine(line);
-  if (atBottom) taskModal.output.scrollTop = taskModal.output.scrollHeight;
-}
-
-/** Flush any trailing partial line left in lineBuf. Called at the end of an
- *  archived-task render so transcripts that don't end with a newline still
- *  surface their last line. */
-function flushOutput() {
-  if (!taskModal.output) return;
-  if (taskModal.lineBuf && taskModal.lineBuf.length) {
-    processStreamLine(taskModal.lineBuf);
-    taskModal.lineBuf = '';
-  }
-}
-
-function processStreamLine(line) {
-  if (line.startsWith('· ')) { closeOpenText(); renderSystemEvent(line.slice(2)); return; }
-  if (line.startsWith('→ ')) { closeOpenText(); renderToolUseEvent(line.slice(2)); return; }
-  if (line.startsWith('← ')) { closeOpenText(); renderToolResultEvent(line.slice(2)); return; }
-  if (line.startsWith('💭 ')) { closeOpenText(); renderThoughtEvent(line.slice(2)); return; }
-  if (line.startsWith('[error] ')) { closeOpenText(); renderErrorEvent(line.slice(8)); return; }
-  if (line.startsWith('[task finished]')) { closeOpenText(); renderSystemEvent('task finished', true); return; }
-  if (line === '') {
-    // Blank line = paragraph break in assistant text. Keep the block open but
-    // insert a blank line so long replies stay readable.
-    if (taskModal.openTextEv) {
-      const body = taskModal.openTextEv.querySelector('.ax-ev__text');
-      if (body) body.appendChild(document.createTextNode('\\n\\n'));
-    }
-    return;
-  }
-  appendToOpenText(line);
-}
-
-function closeOpenText() { taskModal.openTextEv = null; }
-
-function appendToOpenText(line) {
-  if (!taskModal.openTextEv) {
-    const ev = document.createElement('div');
-    ev.className = 'ax-ev ax-ev--text';
-    ev.innerHTML = '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--text">response</span></div><div class="ax-ev__text"></div>';
-    taskModal.output.appendChild(ev);
-    taskModal.openTextEv = ev;
-  }
-  const body = taskModal.openTextEv.querySelector('.ax-ev__text');
-  if (body.childNodes.length > 0) body.appendChild(document.createTextNode('\\n'));
-  body.appendChild(document.createTextNode(line));
-}
-
-function renderSystemEvent(text, done) {
-  const ev = document.createElement('div');
-  ev.className = 'ax-ev ax-ev--system' + (done ? ' is-done' : '');
-  ev.innerHTML = '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--soft">system</span>' +
-    '<span>' + escapeHtml(text) + '</span></div>';
-  taskModal.output.appendChild(ev);
-}
-
-function renderToolUseEvent(text) {
-  // text looks like 'ToolName({...input...})' — best-effort split on the first paren.
-  const openIdx = text.indexOf('(');
-  const closeIdx = text.lastIndexOf(')');
-  const name = openIdx > 0 ? text.slice(0, openIdx) : text;
-  const args = (openIdx > 0 && closeIdx > openIdx) ? text.slice(openIdx + 1, closeIdx) : '';
-  const ev = document.createElement('div');
-  ev.className = 'ax-ev ax-ev--tool';
-  const head =
-    '<div class="ax-ev__head">' +
-      '<span class="ax-ev__label ax-ev__label--tool">tool call</span>' +
-      '<span class="ax-ev__tool">' + escapeHtml(name) + '</span>' +
-    '</div>';
-  const body = args ? '<pre class="ax-ev__code">' + escapeHtml(args) + '</pre>' : '';
-  ev.innerHTML = head + body;
-  taskModal.output.appendChild(ev);
-}
-
-function renderToolResultEvent(text) {
-  const isErr = text.startsWith('[error] ');
-  const body = isErr ? text.slice('[error] '.length) : text;
-  const ev = document.createElement('div');
-  ev.className = 'ax-ev ax-ev--tool-result' + (isErr ? ' is-err' : '');
-  ev.innerHTML =
-    '<div class="ax-ev__head">' +
-      '<span class="ax-ev__label ax-ev__label--result">' + (isErr ? 'tool error' : 'tool result') + '</span>' +
-    '</div>' +
-    '<pre class="ax-ev__code ' + (isErr ? 'ax-ev__code--err' : 'ax-ev__code--muted') + '">' + escapeHtml(body) + '</pre>';
-  taskModal.output.appendChild(ev);
-}
-
-function renderThoughtEvent(text) {
-  const ev = document.createElement('div');
-  ev.className = 'ax-ev ax-ev--thought';
-  ev.innerHTML =
-    '<div class="ax-ev__head">' +
-      '<span class="ax-ev__label ax-ev__label--soft">internal</span>' +
-    '</div>' +
-    '<div class="ax-ev__thought">' + escapeHtml(text) + '</div>';
-  taskModal.output.appendChild(ev);
-}
-
-function renderErrorEvent(text) {
-  const ev = document.createElement('div');
-  ev.className = 'ax-ev ax-ev--error';
-  ev.innerHTML =
-    '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--error">error</span></div>' +
-    '<pre class="ax-ev__code ax-ev__code--err">' + escapeHtml(text) + '</pre>';
-  taskModal.output.appendChild(ev);
-}
-
-function closeTaskModal() {
-  if (!taskModal.el) return;
-  taskModal.el.classList.add('hidden');
-  taskModal.el.setAttribute('aria-hidden', 'true');
-  if (taskModal.es) { try { taskModal.es.close(); } catch {} taskModal.es = null; }
-  taskModal.currentTaskId = null;
-}
-
-function openTaskModal(opts) {
-  if (!taskModal.el || !opts.taskId || !opts.nodeUrl) return;
-  if (taskModal.currentTaskId === opts.taskId) {
-    taskModal.el.classList.remove('hidden');
-    if (opts.focusInput && taskModal.input) taskModal.input.focus();
-    return;
-  }
-  const L = window.UI_LABELS || {};
-  closeTaskModal();
-  taskModal.currentTaskId = opts.taskId;
-  taskModal.currentNodeUrl = opts.nodeUrl;
-  taskModal.el.classList.remove('hidden');
-  taskModal.el.setAttribute('aria-hidden', 'false');
-  taskModal.title.textContent = opts.agentName + ' · ' + (opts.preview || 'task ' + opts.taskId);
-  taskModal.title.title = opts.preview || '';
-  taskModal.channel.textContent = opts.channel || '—';
-  resetOutput();
-  resetCompose();
-  setStatus(L.taskModalConnecting || 'connecting…', '');
-  if (opts.focusInput && taskModal.input) setTimeout(() => taskModal.input.focus(), 0);
-  const url = '/api/task/stream?node=' + encodeURIComponent(opts.nodeUrl)
-    + '&agent=' + encodeURIComponent(opts.agentId)
-    + '&task=' + encodeURIComponent(opts.taskId);
-  let es;
-  try { es = new EventSource(url); } catch (e) { setStatus('connect failed', 'err'); return; }
-  taskModal.es = es;
-  es.addEventListener('start', (ev) => {
-    setStatus(L.taskModalLive || 'live', 'live');
-    try { const data = JSON.parse(ev.data); if (data.initial) appendOutput(data.initial); if (data.done) setStatus(L.taskModalFinished || 'finished', 'done'); } catch {}
-  });
-  es.addEventListener('chunk', (ev) => {
-    try { const data = JSON.parse(ev.data); appendOutput(data.text || ''); } catch {}
-  });
-  es.addEventListener('end', () => {
-    setStatus(L.taskModalFinished || 'finished', 'done');
-    try { es.close(); } catch {}
-    taskModal.es = null;
-    flushOutput();
-  });
-  es.addEventListener('error', () => {
-    if (es.readyState === 2) {
-      setStatus('disconnected', 'err');
-      taskModal.es = null;
-    }
-  });
-}
-
-if (taskModal.closeBtn) taskModal.closeBtn.addEventListener('click', closeTaskModal);
-if (taskModal.backdrop) taskModal.backdrop.addEventListener('click', closeTaskModal);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && taskModal.el && !taskModal.el.classList.contains('hidden')) closeTaskModal(); });
-
-function submitComposeMessage() {
-  if (!taskModal.input || !taskModal.currentTaskId) return;
-  const msg = (taskModal.input.value || '').trim();
-  if (!msg) { setComposeHint('Empty message — nothing sent.', 'err'); return; }
-  taskAction(taskModal.currentNodeUrl, taskModal.currentTaskId, 'followup', { message: msg, sender: 'dashboard' }, {
-    onStart: () => { taskModal.sendBtn.disabled = true; setComposeHint('sending…', ''); },
-    onOk: (body) => {
-      taskModal.input.value = '';
-      taskModal.sendBtn.disabled = false;
-      const edited = body && body.edited ? ' (replaced cancelled turn)' : '';
-      setComposeHint('queued, will run at first chance' + edited, 'ok');
-    },
-    onErr: (err) => { taskModal.sendBtn.disabled = false; setComposeHint('send failed: ' + err, 'err'); },
-  });
-}
-function submitComposeStop() {
-  if (!taskModal.currentTaskId) return;
-  taskAction(taskModal.currentNodeUrl, taskModal.currentTaskId, 'cancel', { reason: 'dashboard-stop' }, {
-    onStart: () => { taskModal.stopBtn.disabled = true; setComposeHint('stopping…', ''); },
-    onOk: () => { setComposeHint('stopped — type a new message and send to inject as the next turn', 'ok'); taskModal.stopBtn.disabled = false; if (taskModal.input) taskModal.input.focus(); },
-    onErr: (err) => { taskModal.stopBtn.disabled = false; setComposeHint('stop failed: ' + err, 'err'); },
-  });
-}
-if (taskModal.sendBtn) taskModal.sendBtn.addEventListener('click', submitComposeMessage);
-if (taskModal.stopBtn) taskModal.stopBtn.addEventListener('click', submitComposeStop);
-if (taskModal.input) {
-  taskModal.input.addEventListener('keydown', (e) => {
-    // Cmd/Ctrl+Enter sends — bare Enter still inserts a newline so multi-line
-    // corrections are easy to type.
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitComposeMessage(); }
-  });
-}
-
-// --- History panel ---
-const historyPanel = {
-  el: document.getElementById('history-panel'),
-  body: document.getElementById('history-panel-body'),
-  title: document.getElementById('history-panel-title'),
-  source: document.getElementById('history-panel-source'),
-  closeBtn: document.getElementById('history-panel-close'),
-  current: null,
-};
-
-function closeHistoryPanel() {
-  if (!historyPanel.el) return;
-  historyPanel.el.classList.add('hidden');
-  historyPanel.el.setAttribute('aria-hidden', 'true');
-  historyPanel.current = null;
-}
-
-async function openHistoryPanel(opts) {
-  if (!historyPanel.el) return;
-  const L = window.UI_LABELS || {};
-  historyPanel.current = { agentId: opts.agentId, nodeUrl: opts.nodeUrl };
-  historyPanel.title.textContent = (opts.agentName || opts.agentId) + ' · ' + (L.historyPanelTitle || 'Recent activities');
-  historyPanel.source.textContent = opts.nodeUrl;
-  historyPanel.body.innerHTML = '<div class="history-empty">' + escapeHtml(L.historyLoading || 'loading…') + '</div>';
-  historyPanel.el.classList.remove('hidden');
-  historyPanel.el.setAttribute('aria-hidden', 'false');
-  const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
-    + '&agent=' + encodeURIComponent(opts.agentId) + '&limit=50';
-  try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const items = await r.json();
-    renderHistoryList(items, opts);
-  } catch (e) {
-    historyPanel.body.innerHTML = '<div class="history-empty" style="color:var(--red)">' + escapeHtml(e.message) + '</div>';
-  }
-}
-
-function renderHistoryList(items, opts) {
-  const L = window.UI_LABELS || {};
-  if (!Array.isArray(items) || items.length === 0) {
-    historyPanel.body.innerHTML = '<div class="history-empty">' + escapeHtml(L.historyEmpty || 'No recorded tasks yet.') + '</div>';
-    return;
-  }
-  historyPanel.body.innerHTML = '';
-  for (const it of items) {
-    const div = document.createElement('div');
-    div.className = 'history-item';
-    div.dataset.taskId = it.id;
-    const flag = it.ok ? '<span class="ok">✓</span>' : '<span class="err">✗</span>';
-    const dur = it.durationMs ? fmtElapsed(it.durationMs) : '—';
-    const when = it.endedAt ? fmtAgoShort(it.endedAt) : '';
-    const channel = '<span class="channel">' + escapeHtml(it.channel || '—') + '</span>';
-    const sender = it.sender ? ' · ' + escapeHtml(it.sender) : '';
-    div.innerHTML =
-      '<div class="top">' + flag + channel + sender + '<span class="when">' + escapeHtml(when) + '</span></div>' +
-      '<div class="preview">' + escapeHtml((it.message || '').slice(0, 200)) + '</div>' +
-      '<div class="duration">' + escapeHtml(dur) + (it.error ? ' · ' + escapeHtml(it.error.slice(0, 80)) : '') + '</div>';
-    div.addEventListener('click', () => openTaskRecord({
-      taskId: it.id, agentId: opts.agentId, nodeUrl: opts.nodeUrl,
-      channel: it.channel, agentName: opts.agentName,
-      preview: it.message || '',
-    }));
-    historyPanel.body.appendChild(div);
-  }
-}
-
-function fmtAgoShort(iso) {
-  const t = new Date(iso).getTime();
-  if (!t) return '';
-  const s = Math.floor((Date.now() - t) / 1000);
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60); if (m < 60) return m + 'm';
-  const h = Math.floor(m / 60); if (h < 24) return h + 'h';
-  return Math.floor(h / 24) + 'd';
-}
-
-// Open the task modal in "history" mode — fetch the stored record once,
-// dump the transcript + final response, no SSE.
-async function openTaskRecord(opts) {
-  if (!taskModal.el) return;
-  const L = window.UI_LABELS || {};
-  closeTaskModal();
-  taskModal.currentTaskId = opts.taskId;
-  taskModal.el.classList.remove('hidden');
-  taskModal.el.setAttribute('aria-hidden', 'false');
-  taskModal.title.textContent = (opts.agentName || opts.agentId) + ' · ' + (opts.preview || 'task ' + opts.taskId);
-  taskModal.title.title = opts.preview || '';
-  taskModal.channel.textContent = opts.channel || '—';
-  resetOutput();
-  setStatus(L.historyLoading || 'loading…', '');
-  const url = '/api/task/history?node=' + encodeURIComponent(opts.nodeUrl)
-    + '&agent=' + encodeURIComponent(opts.agentId) + '&task=' + encodeURIComponent(opts.taskId);
-  try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const rec = await r.json();
-    setStatus(rec.ok ? (L.taskModalArchived || 'archived') : (L.taskModalFinished || 'failed'), rec.ok ? 'done' : 'err');
-    const tx = rec.transcript || '';
-    if (tx) appendOutput(tx);
-    // Only append the "Final reply" block if the transcript didn't already
-    // carry it. Guard against a missing transcript (indexOf would throw).
-    if (rec.responseText && (!tx || tx.indexOf(rec.responseText) === -1)) {
-      appendOutput('\\n\\n--- ' + (L.taskModalFinalResponse || 'Final reply') + ' ---\\n' + rec.responseText);
-    }
-    if (rec.error) appendOutput('\\n\\n[error] ' + rec.error);
-    flushOutput();
-    // If the record returned nothing renderable, show an explicit empty
-    // state so the modal doesn't look broken.
-    if (!taskModal.output.children.length) {
-      taskModal.output.innerHTML =
-        '<div class="ax-ev ax-ev--system">' +
-          '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--soft">empty</span>' +
-          '<span>This task has no recorded transcript. It may have finished before history capture kicked in, or the archive file was pruned.</span></div>' +
-        '</div>';
-    }
-  } catch (e) {
-    setStatus(L.taskModalLoadFailed || "couldn't load", 'err');
-    appendOutput('Error: ' + e.message);
-    flushOutput();
-  }
-}
-
-if (historyPanel.closeBtn) historyPanel.closeBtn.addEventListener('click', closeHistoryPanel);
 
 // Click delegation on the agent grid — opens the modal for any task card,
 // or the history panel for the "history →" link. Task action buttons
@@ -1140,19 +677,15 @@ document.getElementById('grid').addEventListener('click', (e) => {
       if (!confirm('Stop this running task?')) return;
       taskAction(nodeUrl, taskId, 'cancel', {});
     } else if (action === 'followup') {
-      // Open the live-stream modal and focus its compose box. The modal
-      // hosts the textarea + Send/Stop controls — no more native prompt()
-      // (which was single-line, blocked by some browsers, and didn't give
-      // operators streaming context while typing the correction).
+      // Both actions land on the task's page, which hosts the compose box
+      // and the Stop control alongside the live stream.
       const card = actionEl.closest('.ax-agent__task[data-task-id]');
-      openTaskModal({
+      location.href = taskPageUrl({
         taskId,
         agentId: card && card.dataset.agentId,
         nodeUrl,
         channel: card && card.dataset.channel,
         agentName: (card && (card.dataset.agentName || card.dataset.agentId)) || '',
-        preview: (card && card.getAttribute('title')) || '',
-        focusInput: true,
       });
     }
     return;
@@ -1160,24 +693,23 @@ document.getElementById('grid').addEventListener('click', (e) => {
   const taskEl = e.target.closest('.ax-agent__task[data-task-id]');
   if (taskEl) {
     e.preventDefault();
-    openTaskModal({
+    location.href = taskPageUrl({
       taskId: taskEl.dataset.taskId,
       agentId: taskEl.dataset.agentId,
       nodeUrl: taskEl.dataset.nodeUrl,
       channel: taskEl.dataset.channel,
       agentName: taskEl.dataset.agentName || taskEl.dataset.agentId,
-      preview: taskEl.getAttribute('title') || taskEl.textContent || '',
+      preview: taskEl.getAttribute('title') || '',
+      startedAt: taskEl.dataset.startedAt,
     });
     return;
   }
   const recentEl = e.target.closest('[data-recent]');
   if (recentEl) {
     e.preventDefault();
-    openHistoryPanel({
-      agentId: recentEl.dataset.agentId,
-      agentName: recentEl.dataset.agentName,
-      nodeUrl: recentEl.dataset.nodeUrl,
-    });
+    location.href = '/agents/' + encodeURIComponent(recentEl.dataset.agentId || '')
+      + '/history?node=' + encodeURIComponent(recentEl.dataset.nodeUrl || '')
+      + '&name=' + encodeURIComponent(recentEl.dataset.agentName || '');
   }
 });
 

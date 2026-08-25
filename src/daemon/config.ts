@@ -113,8 +113,6 @@ export const INTEGRATION_KINDS = [
   // Inbound channels
   "telegram-bot",
   "whatsapp",
-  "slack-bot",
-  "discord-bot",
   // Code platforms (user-scoped tokens, not channel routing)
   "gitlab-user",
   "github-user",
@@ -147,7 +145,7 @@ export const INTEGRATION_KINDS = [
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
-  tier: z.enum(["claude-code", "codex-cli", "sdk", "orchestrator"]).default("claude-code"),
+  tier: z.enum(["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"]).default("claude-code"),
   provider: z.string().optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -337,19 +335,6 @@ const channelsConfigSchema = z.object({
       /** Purge absorbed raw entries older than this many days. `0` = never. */
       retentionDays: z.number().int().min(0).default(0),
     }).default({}),
-  }).default({}),
-  discord: z.object({
-    enabled: z.boolean().default(false),
-    token: z.string().optional(),
-    agentBinding: z.string().optional(),
-  }).default({}),
-  slack: z.object({
-    enabled: z.boolean().default(false),
-    /** xoxb-... — bot user OAuth token from the Slack app's "OAuth & Permissions" tab. */
-    botToken: z.string().optional(),
-    /** xapp-... — app-level token with connections:write scope (for Socket Mode). */
-    appToken: z.string().optional(),
-    agentBinding: z.string().optional(),
   }).default({}),
   gitlab: z.object({
     enabled: z.boolean().default(false),
@@ -880,10 +865,10 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
     // Check provider availability
     const providerName = agent.provider || "claude"
     const providerConfig = config.providers[providerName]
-    if (!["claude-code", "codex-cli"].includes(agent.tier) && (!providerConfig || !providerConfig.apiKey)) {
+    if (!["claude-code", "codex-cli", "opencode"].includes(agent.tier) && (!providerConfig || !providerConfig.apiKey)) {
       warnings.push(
         `Agent "${id}": provider "${providerName}" has no API key configured. ` +
-          `Set providers.${providerName}.apiKey in config or use a CLI-backed tier ("claude-code" or "codex-cli").`
+          `Set providers.${providerName}.apiKey in config or use a CLI-backed tier ("claude-code", "codex-cli", or "opencode").`
       )
     }
   }

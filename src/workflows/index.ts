@@ -34,7 +34,6 @@ export { render, renderParams } from "./template"
 export { createWorkflowHookHandlers } from "./hooks"
 export { startWorkflowTriggers, type CronTriggerOptions } from "./triggers"
 export * as correlator from "./correlator"
-export { TaskStore, userTaskRecordSchema, computeKpis, type UserTaskRecord, type TaskStatus, type ActorKpi, type WorkflowKpis } from "./task-store"
 export { TimerService, timerRecordSchema, type TimerRecord, type TimerCallback, type TimerServiceOptions } from "./timers"
 export { SignalBus, matchesSignal, type SignalEmission, type SignalHandler } from "./signals"
 export {

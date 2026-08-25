@@ -14,6 +14,7 @@ The tier changes only the execution backend. A tier should not change which chan
 |---|---|---|---|---|---|
 | `claude-code` | `claude` CLI | Claude Code subscription/OAuth | Native Claude session id, optional persistent process, rotation on stale/max-turn/tier-2 | Claude Code tools, workspace files, MCP, skills/hooks from the workspace | Primary tool-using production agents |
 | `codex-cli` | `codex exec` / `codex exec resume` | Codex CLI auth | Native Codex `thread_id` persisted as `codexSessionId`; compact AgentX context to avoid prompt bloat | Codex CLI tools, workspace files, AgentX MCP config override | Coding agents that should use OpenAI Codex models |
+| `opencode` | `opencode run --format json` | OpenCode configured providers | Native OpenCode session id persisted as `opencodeSessionId` | OpenCode tools, workspace files, configured MCP servers, AgentX MCP | Agents that should use any provider configured in OpenCode |
 | `sdk` | `@anthropic-ai/claude-agent-sdk` `query()` | Provider API key, currently Anthropic-shaped | AgentX text history only; no native persisted CLI session | SDK-supported agent behavior; currently less integrated with AgentX usage/session metadata | API-key deployments that want Anthropic Agent SDK without spawning `claude` |
 | `orchestrator` | AgentX `generate()` loop | Configured provider API key | AgentX text history only | AgentX provider abstraction; can target non-Claude providers supported by the local generator | Provider-flexible chat or automation where CLI-native tools are not required |
 
@@ -21,7 +22,7 @@ The tier changes only the execution backend. A tier should not change which chan
 
 `sdk` is a direct call into Anthropic's Agent SDK. In code, AgentX imports `@anthropic-ai/claude-agent-sdk`, builds the same prompt/context string, and calls `query({ prompt, options: { model, cwd, permissionMode } })`. It is provider-specific and is intended for teams that want Anthropic's programmatic agent runtime with an API key instead of the Claude Code CLI.
 
-`orchestrator` calls AgentX's own `generate()` function. That path is provider-abstracted: the agent's `provider` selects the configured backend (`openai`, `ollama`, `mistral`, `claude-code`, etc. depending on local provider support). It is useful when the model backend should be swappable, but it does not currently have the same native CLI session semantics as `claude-code` or `codex-cli`.
+`orchestrator` calls AgentX's own `generate()` function. That path is provider-abstracted: the agent's `provider` selects the configured backend (`openai`, `ollama`, `mistral`, `claude-code`, etc. depending on local provider support). It is useful when the model backend should be swappable, but it does not currently have the same native CLI session semantics as the CLI-backed tiers.
 
 In short: use `sdk` when you specifically want Anthropic Agent SDK behavior; use `orchestrator` when you want AgentX's provider-agnostic loop.
 
@@ -47,8 +48,9 @@ Implemented:
 - `claude-code` persistent process option
 - `codex-cli` native session persistence via `codexSessionId`
 - `codex-cli` compact context path, AgentX MCP config override, stderr capture, usage extraction, and no-output watchdog
+- `opencode` native session persistence, JSON streaming, usage extraction, model selection, and OpenCode-compatible MCP injection
 - shared registry routing, queueing, channel delivery, task history, traces, and session storage
-- setup/admin UI support for all four tier values
+- setup/admin UI support for all five tier values
 
 Known gaps:
 

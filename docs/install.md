@@ -61,6 +61,7 @@ This creates:
 - **Node.js 20+** — `node --version`
 - **Claude Code CLI** (for `claude-code` tier agents) — [install guide](https://docs.anthropic.com/en/docs/claude-code).
 - **Codex CLI** (for `codex-cli` tier agents) — install with `npm i -g @openai/codex`, then verify with `codex --version`.
+- **OpenCode CLI** (for `opencode` tier agents) — follow the [OpenCode install guide](https://opencode.ai/docs/), authenticate a provider, then verify with `opencode --version`.
 - A channel credential: a Telegram bot token from [@BotFather](https://t.me/BotFather), a Discord bot token, a GitLab API token, or a WhatsApp session. Telegram is the fastest to get started.
 
 ## 3. Add your first agent
@@ -76,7 +77,7 @@ You'll be asked for:
 | ID | Short slug, e.g. `support` |
 | Name | Display name, e.g. `Support Assistant` |
 | Workspace | Directory for this agent's instructions, skills, MCP config. Defaults to `./agents/<id>` |
-| Tier | `claude-code` uses the `claude` CLI; `codex-cli` uses the `codex` CLI; `sdk` uses the Anthropic Agent SDK; `orchestrator` uses AgentX's built-in provider loop. See [Agent execution tiers](/reference/tiers) |
+| Tier | `claude-code` uses `claude`; `codex-cli` uses `codex`; `opencode` uses your OpenCode provider configuration; `sdk` uses the Anthropic Agent SDK; `orchestrator` uses AgentX's provider loop. See [Agent execution tiers](/reference/tiers) |
 | Model | e.g. `claude-sonnet-4-6`, `claude-haiku-4-5` |
 | Mentions | Handles that route to this agent, e.g. `@support_bot`, `@support` |
 

@@ -33,7 +33,6 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
       <button data-theme-opt="light">Light</button>
-      <button data-theme-opt="crt">CRT</button>
     </div>
   </div>
 </header>`
@@ -69,6 +68,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
         options: [
           { value: "claude-code", label: "Claude Code (recommended)", selected: true },
           { value: "codex-cli", label: "Codex CLI" },
+          { value: "opencode", label: "OpenCode CLI" },
           { value: "sdk", label: "Anthropic API (BYO key)" },
           { value: "orchestrator", label: "Orchestrator (any provider)" },
         ],

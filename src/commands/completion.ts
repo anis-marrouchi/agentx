@@ -156,7 +156,13 @@ function subcommandsOf(cmd: Command): Command[] {
     const n = cmdName(c)
     if (!n) return false
     if (n === "help") return false
-    if ((c as any)._hidden) return false
+    // Hidden commands ARE completed on purpose.
+    //
+    // `hidden` exists to shorten `agentx --help` — 30 advanced commands are
+    // registered but kept out of the default listing. Dropping them from
+    // completion too would turn "not advertised" into "hard to use", which is
+    // the opposite of the intent: someone who already knows `agentx ledger`
+    // should still get its subcommands on Tab.
     return true
   })
 }

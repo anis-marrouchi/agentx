@@ -1,6 +1,6 @@
 # Concepts
 
-Run a team of AI agents on Telegram, WhatsApp, Slack, GitLab, and cron schedules — all from one place. The dashboard looks like Slack or Trello, but the cards are tasks your agents are working on, the channels are real chat apps, and the schedules fire prompts instead of meetings.
+Run a team of AI agents on Telegram, WhatsApp, GitLab, and cron schedules — all from one place. The dashboard looks like Slack or Trello, but the cards are tasks your agents are working on, the channels are real chat apps, and the schedules fire prompts instead of meetings.
 
 This is for operators, project managers, and small teams running AI in production. You don't need to be a developer to use it — the dashboard covers the common settings — but you can drop into the CLI and `agentx.json` whenever you want full control. AgentX behaves more like an operating-system service (think `systemd`, `cron`, webhooks) than a Python framework: it doesn't try to think for you, it gives your agents a place to live, work, and talk to people.
 
@@ -12,7 +12,6 @@ The rest of this page introduces the **seven primitives** every AgentX install i
 graph LR
   T[Telegram] --> R(Router)
   W[WhatsApp] --> R
-  D[Discord] --> R
   G[GitLab] --> R
   C[Cron] --> R
   H[Webhook] --> R
@@ -39,16 +38,19 @@ agents/support/
 └── .mcp.json             # MCP servers
 ```
 
-Four execution tiers:
+Five execution tiers:
 
 | Tier | Runs via | When |
 |---|---|---|
 | `claude-code` | `claude` CLI | You want full Claude Code behavior: native sessions, workspace tools, skills, MCP. |
 | `codex-cli` | `codex exec` / `codex exec resume` | You want OpenAI Codex CLI behavior with native Codex thread reuse and workspace tools. |
+| `opencode` | `opencode run` | You want OpenCode's configured providers, workspace tools, MCP servers, and native session reuse. |
 | `sdk` | Anthropic Agent SDK | You want Anthropic's programmatic agent runtime with an API key instead of the CLI. |
 | `orchestrator` | AgentX's own `generate()` loop | You want AgentX's provider-agnostic path for OpenAI/Ollama/Mistral/etc. |
 
 All tiers pass through the same AgentX registry first: channel routing, queueing, session reset, context assembly, task history, traces, and final delivery are tier-independent. The tier only chooses the execution backend. See [Agent execution tiers](/reference/tiers) for the exact contract and current parity gaps.
+
+There is also a fourth shape that isn't a tier, because nothing is spawned at all: **attach mode**. A Claude Code session you already have open registers with the daemon and wears an agent's identity, so messages for that agent are answered in the session in front of you rather than by a new subprocess. Same routing, same guardrails, same channels — different loop. Unclaimed messages fall back to spawning after 90 seconds, so it's a preference, never a dependency. See [Attach mode](/reference/attach).
 
 ### 2. Channel
 
@@ -58,7 +60,6 @@ The thing messages come in on. One message-in, one reply-out, or a proactive pus
 |---|---|---|
 | Telegram | DM + group mention | streaming edits, typing indicators |
 | WhatsApp | contact / group route | text, human-paced chunks |
-| Discord | DM + mention | text |
 | GitLab | webhook on MR/issue comment | comments via per-agent token |
 | Webhook | `POST /webhook/:agent[/:source]` | — |
 | HTTP | `POST /send`, `POST /task` | JSON |

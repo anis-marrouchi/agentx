@@ -3,17 +3,14 @@ import { defineConfig } from "tsup"
 // --- Web bundle config ---
 //
 // Separate from the main tsup.config.ts which builds the server (Node ESM).
-// This entry bundles the workflow visual editor as a browser IIFE that loads
-// directly via <script src="/assets/workflow-editor.js"></script> — no
-// module resolution, no additional fetches, no separate CSS file.
+// Each entry bundles a browser IIFE that loads directly via
+// <script src="/assets/<name>.js"></script> — no module resolution, no
+// additional fetches, no separate CSS file.
 //
-// Uses esbuild (via tsup) under the hood. React Flow's CSS is injected via
-// the `styles.ts` helper that re-imports the package CSS as a string so it
-// ends up inline in the bundle.
+// Uses esbuild (via tsup) under the hood.
 
 export default defineConfig({
   entry: {
-    "workflow-editor": "src/web/workflow-editor/main.tsx",
     "activity-graph": "src/web/activity-graph/main.tsx",
   },
   outDir: "dist/web",

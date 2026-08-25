@@ -7,6 +7,8 @@ describe("resolveProvider", () => {
     expect(resolveProvider("claude-code").label).toBe("claude")
     expect(resolveProvider("codex-cli").command).toBe("codex")
     expect(resolveProvider("codex-cli").label).toBe("codex")
+    expect(resolveProvider("opencode").command).toBe("opencode")
+    expect(resolveProvider("opencode").label).toBe("opencode")
     expect(resolveProvider("sdk").command).toBe("@anthropic-ai/sdk")
   })
 

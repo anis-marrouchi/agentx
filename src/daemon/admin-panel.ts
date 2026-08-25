@@ -96,13 +96,6 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "PUT /api/admin/files": () => writeFileForAgent(body),
       "POST /api/admin/files/skill": () => addSkillForAgent(body),
       "DELETE /api/admin/files/skill": () => removeSkillForAgent(body),
-      // Actors / roles — mirrors `agentx actor` + `agentx role` CLI.
-      "POST /api/admin/actors":   () => upsertActor(body),
-      "DELETE /api/admin/actors": () => deleteActorById(body),
-      "POST /api/admin/roles":    () => upsertRole(body),
-      "DELETE /api/admin/roles":  () => deleteRoleById(body),
-      "POST /api/admin/roles/grant":  () => grantRoleMember(body),
-      "POST /api/admin/roles/revoke": () => revokeRoleMember(body),
       // Business layer — orgChart / projects / contactMap (mirrors `agentx business`).
       "POST /api/admin/business/orgchart":     () => upsertOrgEntry(body),
       "DELETE /api/admin/business/orgchart":   () => deleteOrgEntry(body),
@@ -299,22 +292,6 @@ function getAdminState() {
   }
   // Daemon URL — used by the admin UI to compose full webhook URLs for copy.
   const daemonUrl = cfg.dashboard?.daemonUrl || "http://localhost:18800"
-  // Actors and roles — read directly from .agentx/actors and .agentx/roles
-  // so this stays in lockstep with `agentx actor`/`agentx role` CLI
-  // mutations without coupling to the ActorStore class (which lives in
-  // a chunk loaded only on the BPM dispatcher path).
-  const actors = readJsonDir(".agentx/actors").map((a: any) => ({
-    id: a.id, name: a.name, email: a.email,
-    channels: Array.isArray(a.channels) ? a.channels.map((c: any) => ({
-      channel: c.channel, handle: c.handle, preferredForTasks: !!c.preferredForTasks,
-    })) : [],
-    timezone: a.timezone,
-  })).sort((a: any, b: any) => a.id.localeCompare(b.id))
-  const roles = readJsonDir(".agentx/roles").map((r: any) => ({
-    id: r.id, name: r.name,
-    members: Array.isArray(r.members) ? r.members : [],
-    assignmentStrategy: r.assignmentStrategy || "first-available",
-  })).sort((a: any, b: any) => a.id.localeCompare(b.id))
   // Business layer — read straight off the config so the panel stays in
   // sync with `agentx business` CLI mutations.
   const businessCfg = (cfg.business || {}) as any
@@ -363,7 +340,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, actors, roles, business, boards, notifications, actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, actions }
 }
 
 // ========================================================================
@@ -463,7 +440,7 @@ async function testDriveAgent(body: any) {
 function addAgent(body: any) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
-  const tier = body?.tier === "sdk" ? "sdk" : body?.tier === "codex-cli" ? "codex-cli" : "claude-code"
+  const tier = ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(body?.tier) ? body.tier : "claude-code"
   const mentions = normaliseMentions(body?.triggerWords)
   const model = body?.model ? String(body.model).trim() : undefined
   const personality = body?.personality ? String(body.personality).trim() : undefined
@@ -506,7 +483,7 @@ function editAgent(body: any) {
     // silently nuking nested config shapes.
     if (typeof patch.name === "string" && patch.name.trim()) a.name = patch.name.trim()
     if (typeof patch.model === "string") a.model = patch.model.trim() || undefined
-    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
+    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
     if (typeof patch.systemPrompt === "string") a.systemPrompt = patch.systemPrompt.trim() || undefined
     if (Array.isArray(patch.mentions)) {
       a.mentions = patch.mentions.map((m: any) => String(m).trim()).filter(Boolean)
@@ -1101,99 +1078,6 @@ function normaliseMentions(s: any): string[] {
     .map((m) => m.trim())
     .filter(Boolean)
     .filter((m, i, a) => a.indexOf(m) === i)
-}
-
-// ========================================================================
-// Actors & Roles — admin write handlers (mirrors `agentx actor` / `agentx role`)
-// ========================================================================
-
-async function loadActorStore(): Promise<typeof import("@/actors/store").ActorStore.prototype> {
-  const { ActorStore } = await import("@/actors/store")
-  return new ActorStore()
-}
-
-async function upsertActor(body: any) {
-  const id = String(body?.id || "").trim()
-  const name = String(body?.name || "").trim()
-  if (!id.startsWith("actor:")) throw new Error("id must start with 'actor:'")
-  if (!name) throw new Error("name required")
-  const channels = Array.isArray(body?.channels) ? body.channels : []
-  if (channels.length === 0) throw new Error("at least one channel handle required")
-  const store = await loadActorStore()
-  const saved = store.saveActor({
-    id, name,
-    email: body?.email || undefined,
-    channels: channels.map((c: any) => ({
-      channel: c.channel,
-      handle: String(c.handle || "").trim(),
-      preferredForTasks: !!c.preferredForTasks,
-    })).filter((c: any) => c.handle),
-    timezone: body?.timezone || undefined,
-  })
-  return { summary: `Actor ${saved.id} saved`, actor: saved }
-}
-
-async function deleteActorById(body: any) {
-  const id = String(body?.id || "").trim()
-  if (!id) throw new Error("id required")
-  const store = await loadActorStore()
-  if (!store.deleteActor(id)) throw new Error(`actor ${id} not found`)
-  return { summary: `Actor ${id} deleted` }
-}
-
-async function upsertRole(body: any) {
-  const id = String(body?.id || "").trim()
-  const name = String(body?.name || "").trim()
-  if (!id.startsWith("role:")) throw new Error("id must start with 'role:'")
-  if (!name) throw new Error("name required")
-  const strategy = body?.assignmentStrategy || "first-available"
-  const store = await loadActorStore()
-  const existing = store.getRole(id)
-  const saved = store.saveRole({
-    id, name,
-    members: Array.isArray(body?.members) ? body.members : (existing?.members || []),
-    assignmentStrategy: strategy,
-    rotationCursor: existing?.rotationCursor ?? 0,
-  })
-  return { summary: `Role ${saved.id} saved`, role: saved }
-}
-
-async function deleteRoleById(body: any) {
-  const id = String(body?.id || "").trim()
-  if (!id) throw new Error("id required")
-  const store = await loadActorStore()
-  if (!store.deleteRole(id)) throw new Error(`role ${id} not found`)
-  return { summary: `Role ${id} deleted` }
-}
-
-async function grantRoleMember(body: any) {
-  const roleId = String(body?.role || "").trim()
-  const member = String(body?.member || "").trim()  // "actor:xyz" or "role:abc"
-  if (!roleId.startsWith("role:")) throw new Error("role required")
-  if (!member.startsWith("actor:") && !member.startsWith("role:")) throw new Error("member must be actor:<id> or role:<id>")
-  const store = await loadActorStore()
-  const role = store.getRole(roleId)
-  if (!role) throw new Error(`role ${roleId} not found`)
-  const next = member.startsWith("actor:")
-    ? { actor: member }
-    : { role: member }
-  const dup = role.members.some((m) => ("actor" in m ? m.actor : m.role) === member)
-  if (dup) return { summary: `${member} already in ${roleId}`, role }
-  const saved = store.saveRole({ ...role, members: [...role.members, next] })
-  return { summary: `${member} granted to ${roleId}`, role: saved }
-}
-
-async function revokeRoleMember(body: any) {
-  const roleId = String(body?.role || "").trim()
-  const member = String(body?.member || "").trim()
-  if (!roleId.startsWith("role:")) throw new Error("role required")
-  const store = await loadActorStore()
-  const role = store.getRole(roleId)
-  if (!role) throw new Error(`role ${roleId} not found`)
-  const filtered = role.members.filter((m) => ("actor" in m ? m.actor : m.role) !== member)
-  if (filtered.length === role.members.length) return { summary: `${member} not in ${roleId}`, role }
-  const saved = store.saveRole({ ...role, members: filtered })
-  return { summary: `${member} revoked from ${roleId}`, role: saved }
 }
 
 // ========================================================================

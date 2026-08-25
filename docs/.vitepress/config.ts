@@ -3,7 +3,7 @@ import { withMermaid } from "vitepress-plugin-mermaid"
 
 export default withMermaid(defineConfig({
   title: "AgentX",
-  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, Slack, Discord, GitLab, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
+  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, GitLab, GitHub, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
   lastUpdated: true,
   cleanUrls: true,
 
@@ -12,7 +12,7 @@ export default withMermaid(defineConfig({
     ["meta", { name: "theme-color", content: "#0ea5e9" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:title", content: "AgentX — a self-hosted mesh of AI agents for your team" }],
-    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, Slack, Discord, or GitLab. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
+    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, GitLab, or GitHub. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
   ],
 
   themeConfig: {
@@ -51,8 +51,8 @@ export default withMermaid(defineConfig({
             { text: "9. Deterministic services", link: "/journey/09-deterministic-services" },
             { text: "10. MCP server", link: "/journey/10-mcp-server" },
             { text: "11. Production hardening", link: "/journey/11-production-hardening" },
-            { text: "12. BPM — grant application", link: "/journey/12-bpm-grant-application" },
             { text: "13. Authoring a typed workflow", link: "/journey/13-typed-workflow" },
+            { text: "14. Wearable agents", link: "/journey/14-wearable-agent" },
           ],
         },
         {
@@ -82,7 +82,6 @@ export default withMermaid(defineConfig({
             { text: "Live activity", link: "/reference/dashboard/live" },
             { text: "Boards (Kanban)", link: "/reference/dashboard/boards" },
             { text: "Workflows", link: "/reference/dashboard/workflows" },
-            { text: "Inbox", link: "/reference/dashboard/inbox" },
             { text: "Procedures", link: "/reference/dashboard/procedures" },
             { text: "Processes", link: "/reference/dashboard/processes" },
             { text: "Intent graph", link: "/reference/dashboard/graph" },
@@ -90,7 +89,6 @@ export default withMermaid(defineConfig({
             { text: "Admin panel", link: "/reference/dashboard/admin" },
             { text: "Cost", link: "/reference/dashboard/cost" },
             { text: "Health", link: "/reference/dashboard/health" },
-            { text: "Team (actors & roles)", link: "/reference/dashboard/team" },
             { text: "Usage dashboard (legacy)", link: "/reference/dashboard/usage" },
           ],
         },
@@ -98,13 +96,14 @@ export default withMermaid(defineConfig({
           text: "Reference",
           items: [
             { text: "CLI", link: "/reference/cli" },
+            { text: "Attach mode", link: "/reference/attach" },
+            { text: "Guardrails", link: "/reference/guard" },
             { text: "Config schema", link: "/reference/config-schema" },
             { text: "Communication matrix", link: "/reference/communication-matrix" },
             { text: "Context strategies", link: "/reference/context-strategies" },
             { text: "WhatsApp as a data source", link: "/reference/whatsapp-ingest" },
             { text: "Telegram without the jargon", link: "/reference/telegram-setup" },
             { text: "Boards (Kanban)", link: "/reference/boards" },
-            { text: "Slack channel", link: "/reference/slack" },
             { text: "Scoped API tokens", link: "/reference/tokens" },
             { text: "Public agents", link: "/reference/public-agents" },
             { text: "Intent knowledge graph", link: "/reference/graph" },
@@ -120,6 +119,8 @@ export default withMermaid(defineConfig({
           text: "Architecture",
           items: [
             { text: "Three-tier model", link: "/architecture/three-tier" },
+            { text: "Surface reduction", link: "/architecture/surface-reduction" },
+            { text: "Design system", link: "/architecture/design-system" },
             { text: "Plugins", link: "/architecture/plugins" },
             { text: "Workflows YAML", link: "/architecture/workflows-yaml" },
             { text: "Workflow absorb plan", link: "/architecture/workflow-absorb-plan" },

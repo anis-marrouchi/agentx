@@ -10,7 +10,6 @@ The dashboard is agentx's web UI — a single HTTP surface served by the daemon 
 | `/live` | [Live activity](./live) | Real-time view of every reachable daemon's agents and recent tasks |
 | `/boards` | [Boards (Kanban)](./boards) | Column-based view over GitLab/GitHub/local sources with drag-drop |
 | `/workflows` | [Workflows](./workflows) | Workflow definition list, per-run timeline, optional visual editor |
-| `/inbox` | [Inbox](./inbox) | Open user-tasks for the signed-in actor (or all actors) with form renderer |
 | `/processes` | [Processes](./processes) | Live view of in-flight workflow runs with composition-tree + SLA indicators |
 | `/graph` | [Intent graph](./graph) | Triage queue + taxonomy tree + schema editor for the intent classifier |
 | `/admin` | [Admin panel](./admin) | Settings: Agents / Channels / Schedules / Webhooks / Mesh / Team / Business / Boards / Tokens / Advanced |

@@ -311,7 +311,7 @@ const MEANINGFUL_NODE_TYPES = new Set<string>([
   "action.editMessage", "action.logTime",
   "transform", "extract.structured",
   "branch", "rule",
-  "userTask", "subProcess",
+  "subProcess",
 ])
 
 /** True if a draft captures an actual procedure worth keeping. Rejects

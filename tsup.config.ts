@@ -20,7 +20,7 @@ export default defineConfig({
     const src = resolve("src/workflows/templates")
     const dst = resolve("dist/workflows/templates")
     mkdirSync(dst, { recursive: true })
-    for (const name of ["linear", "branching", "extract", "human-in-the-loop", "retry"]) {
+    for (const name of ["linear", "branching", "extract", "retry"]) {
       cpSync(resolve(src, `${name}.yaml`), resolve(dst, `${name}.yaml`))
     }
   },

@@ -3,13 +3,9 @@ import { resolveHandler } from "./nodes/handlers"
 import type { AgentExecuteRequest, AgentExecuteResponse, NodeResult } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import type { WorkflowStore } from "./store"
-import { TaskStore } from "./task-store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
 import type { EventBus } from "../daemon/event-bus"
-import { ActorStore } from "../actors/store"
-import { validateSubmission } from "../forms/validator"
-import type { FormSubmission } from "../forms/types"
 import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
@@ -77,17 +73,6 @@ export interface DispatcherOptions {
   channels: Record<string, unknown>
   agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   log?: (msg: string) => void
-  /** Optional Actor/Role store. If omitted, constructed with defaults so
-   *  userTask handlers still work out of the box (reads from .agentx/actors/
-   *  and .agentx/roles/). */
-  actors?: ActorStore
-  /** Optional user-task store. If omitted, constructed with defaults
-   *  (.agentx/workflows/_tasks/). */
-  tasks?: TaskStore
-  /** Optional form-renderer hook for user tasks. Called after a userTask
-   *  record is persisted — the hook delivers the form to the assignee's
-   *  preferred channel(s). Best-effort; failures are logged. */
-  renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
   /** Optional timer service. When provided, `timer.boundary` nodes
    *  schedule against it and resume on fire. When omitted, a default is
    *  constructed but its loop is NOT started — callers can start it via
@@ -128,12 +113,9 @@ export class WorkflowDispatcher {
   private readonly channels: Record<string, unknown>
   private readonly agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   private readonly log: (msg: string) => void
-  readonly actors: ActorStore
-  readonly tasks: TaskStore
   readonly timers: TimerService
   readonly signals: SignalBus
   readonly events?: EventBus
-  private readonly renderUserTask?: (task: import("./task-store").UserTaskRecord) => Promise<void> | void
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
    *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
@@ -157,12 +139,9 @@ export class WorkflowDispatcher {
     this.channels = opts.channels
     this.agents = opts.agents
     this.log = opts.log ?? (() => {})
-    this.actors = opts.actors ?? new ActorStore()
-    this.tasks = opts.tasks ?? new TaskStore()
     this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
     this.signals = opts.signals ?? new SignalBus()
     this.events = opts.events
-    this.renderUserTask = opts.renderUserTask
 
     // Register the timer-fire callback once. TimerService is a per-node
     // singleton; re-registration would clobber prior instances, but the
@@ -759,8 +738,6 @@ export class WorkflowDispatcher {
           workflow, run, node,
           channels: this.channels,
           agents: this.agents,
-          actors: this.actors,
-          tasks: this.tasks,
           forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
           log: this.log,
         })
@@ -856,21 +833,6 @@ export class WorkflowDispatcher {
             })
           } catch (e: any) {
             this.log(`[workflow:${workflow.id}] timer schedule failed: ${e.message}`)
-          }
-        }
-        if (pausedAt.kind === "userTask") {
-          const taskRecord = this.tasks.get(pausedAt.taskId)
-          if (taskRecord && this.events) {
-            try {
-              this.events.publish({
-                kind: "task", taskId: taskRecord.id, workflowId: workflow.id, runId,
-                phase: "created", title: taskRecord.title, assignedTo: taskRecord.assignedTo,
-              })
-            } catch { /* ignore */ }
-          }
-          if (taskRecord && this.renderUserTask) {
-            try { await this.renderUserTask(taskRecord) }
-            catch (e: any) { this.log(`[workflow:${workflow.id}] userTask render failed: ${e.message}`) }
           }
         }
         return
@@ -1047,80 +1009,6 @@ export class WorkflowDispatcher {
     void this.walk(parentWf, args.parentRunId, `child:${args.childRun.id}`)
   }
 
-  // ---------------- User-task submit / resume ----------------
-
-  async submitTask(taskId: string, submission: FormSubmission, submittedBy: string): Promise<
-    { ok: true; runId: string } | { ok: false; error: string; fieldErrors?: Array<{ field: string; message: string }> }
-  > {
-    const task = this.tasks.get(taskId)
-    if (!task) return { ok: false, error: `task not found: ${taskId}` }
-    if (task.status !== "open") return { ok: false, error: `task is ${task.status}` }
-
-    const validated = validateSubmission(task.form, submission)
-    if (!validated.ok) return { ok: false, error: "form validation failed", fieldErrors: validated.errors }
-
-    const preliminary = this.runs.get(task.runId)
-    if (!preliminary) return { ok: false, error: `run ${task.runId} not found` }
-    const parentWf = this.store.list().find((w) => w.id === preliminary.workflowId)
-    if (!parentWf) return { ok: false, error: `workflow ${preliminary.workflowId} not found` }
-
-    const commitResult = await this.commit(task.runId, ():
-      | { ok: true; runId: string }
-      | { ok: false; error: string } => {
-      const parent = this.runs.get(task.runId)
-      if (!parent || parent.status !== "paused") return { ok: false, error: `run ${task.runId} is not paused` }
-      if (!parent.pausedAt || parent.pausedAt.kind !== "userTask" || parent.pausedAt.taskId !== taskId) {
-        return { ok: false, error: `run ${task.runId} is not waiting on task ${taskId}` }
-      }
-      const node = findNode(parentWf, task.nodeId)
-      const successors = node ? parentWf.edges.filter((e) => e.from === node.id).map((e) => e.to) : []
-      const output: Record<string, unknown> = {
-        submittedBy,
-        submittedAt: new Date().toISOString(),
-        values: validated.values,
-        action: submission.action,
-      }
-      this.runs.recordExecution({
-        runId: parent.id,
-        entry: {
-          at: new Date().toISOString(),
-          nodeId: task.nodeId,
-          inputKeys: [],
-          status: "resumed",
-          output,
-          idempotencyKey: idempotencyKey(parent.id, task.nodeId, `task:${taskId}:${submission.action}`),
-        },
-        nextPending: successors,
-        status: "running",
-        pausedAt: null,
-        context: { ...parent.context, [task.nodeId]: output },
-      })
-      this.tasks.save({
-        ...task,
-        status: "completed",
-        submittedBy,
-        submittedAt: output.submittedAt as string,
-        submittedValues: validated.values,
-        submittedAction: submission.action,
-      })
-      this.log(`[workflow:${parentWf.id}] run ${parent.id} resumed from userTask ${taskId}`)
-      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: task.nodeId, phase: "resumed", status: "running", note: `task:${taskId}` })
-      if (this.events) {
-        try {
-          this.events.publish({
-            kind: "task",
-            taskId, workflowId: parentWf.id, runId: parent.id,
-            phase: "submitted", submittedBy,
-            title: task.title, assignedTo: task.assignedTo,
-          })
-        } catch { /* ignore */ }
-      }
-      return { ok: true, runId: parent.id }
-    })
-    if (!commitResult.ok) return commitResult
-    void this.walk(parentWf, task.runId, `task:${taskId}`)
-    return commitResult
-  }
 }
 
 /** Pick the most informative output bundle from a child run's history as

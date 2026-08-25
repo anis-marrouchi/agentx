@@ -25,7 +25,7 @@
 
 ---
 
-Most agent tools give you **one agent in one chat app**. AgentX runs a **network**: agents on your laptop, your VPS, and your teammates' machines pair with one link, talk over the open [A2A protocol](https://github.com/a2aproject/A2A) (Linux Foundation), and answer on the channels your team already uses — Telegram, WhatsApp, Slack, Discord, GitLab, GitHub.
+Most agent tools give you **one agent in one chat app**. AgentX runs a **network**: agents on your laptop, your VPS, and your teammates' machines pair with one link, talk over the open [A2A protocol](https://github.com/a2aproject/A2A) (Linux Foundation), and answer on the channels your team already uses — Telegram, WhatsApp, GitLab, GitHub.
 
 ```
 You (Telegram): "@cx CI is red on gitlab — fix it and ship a patch"
@@ -68,14 +68,15 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 
 ## What you get
 
-- **Channels** — Telegram, WhatsApp (QR pair in the browser), Slack, Discord, GitLab, GitHub, generic webhooks. Agents reply where they were asked, or push anywhere.
+- **Channels** — Telegram, WhatsApp (QR pair in the browser), GitLab, GitHub, generic webhooks. Agents reply where they were asked, or push anywhere.
 - **Mesh federation** — pair nodes over Tailscale/VPN with one link; manage any peer's config from one dashboard; GitLab mentions route across nodes with peer-owned tokens.
-- **Agents are folders, not code** — persona, knowledge, and tools in plain Markdown (`CLAUDE.md`, skills, references). Bring Claude Code (subscription), Anthropic/OpenAI APIs, or any OpenAI-compatible endpoint (vLLM, OpenRouter, Ollama's compat API).
+- **Agents are folders, not code** — persona, knowledge, and tools in plain Markdown (`CLAUDE.md`, skills, references). Bring Claude Code, Codex CLI, OpenCode with any configured provider, Anthropic/OpenAI APIs, or an OpenAI-compatible endpoint.
 - **Operator surface** — browser setup wizard + 11-page admin dashboard: live activity, Kanban boards synced two-way with GitLab/GitHub issues, token-cost accounting, scoped API tokens.
 - **Scheduled work** — plain-English cron: `agentx schedule "every Monday at 9am" --agent sales`, with failure alerts and auto-disable.
 - **Workflows & procedures** — declarative YAML state machines with a visual editor for the flows that must survive restarts; versioned SOPs agents cite at runtime; deterministic no-LLM handlers for canonical answers.
 - **Compounding memory** — conversations absorb into a shared wiki (typed articles, `[[wikilinks]]`, versioned) that every agent queries — also exposed to Cursor/Claude Code via MCP (`agentx serve --stdio`).
-- **Governance** — intent ledger + replay, PM gating, typed capabilities, delegation-depth caps.
+- **Wearable agents** — `agentx attach <agent>` makes the Claude Code session you already have open answer as that agent, so a Telegram or GitLab message reaches you where you're already working instead of spawning a subprocess. Unclaimed messages fall back to a spawned agent, so it's a preference, never a dependency.
+- **Governance** — intent ledger + replay, PM gating, typed capabilities, delegation-depth caps, destructive-action guardrails that hold even under `bypassPermissions`.
 
 ## How it compares
 
@@ -88,7 +89,7 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 | Audit ledger + replay | ✅ append-only, deterministic replay | ❌ | ❌ | ❌ |
 | GitLab-native (boards, MRs, cross-node mentions) | ✅ | ❌ | ❌ | ❌ |
 | Chat channels | 6 + webhooks + plugins | ~24 | multiple | terminal |
-| LLM providers | Claude Code, Anthropic, OpenAI-compatible | Claude-first | model-agnostic | Claude |
+| LLM providers | Claude Code, Codex CLI, OpenCode, Anthropic, OpenAI-compatible | Claude-first | model-agnostic | Claude |
 | Self-hosted, no telemetry | ✅ | ✅ | ✅ | n/a |
 
 *(As of July 2026 — corrections welcome via PR.)*
@@ -118,8 +119,6 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 graph LR
   T[Telegram] --> R(Router)
   W[WhatsApp] --> R
-  S[Slack] --> R
-  D[Discord] --> R
   G[GitLab] --> R
   GH[GitHub] --> R
   C[Cron] --> R
@@ -129,9 +128,9 @@ graph LR
   R --> LDG[(Intent Ledger<br/>append-only)]
   LDG --> CTX[Context Engine]
   CTX --> AG[Agent workspace]
-  AG --> P1[Claude Code]
-  AG --> P2[Anthropic / OpenAI API]
-  AG --> P3[OpenAI-compatible<br/>vLLM · OpenRouter · Ollama]
+    AG --> P1[Claude Code]
+    AG --> P2[Codex CLI / OpenCode]
+    AG --> P3[Anthropic / OpenAI-compatible API]
   AG -.-> MEM[(Wiki + Graph + Memory)]
   AG -.-> WF[Workflows + Procedures]
   AG -.-> R
@@ -142,7 +141,7 @@ Each agent = a workspace directory (`CLAUDE.md`, `.claude/skills/`, hooks, MCP s
 ## Docs
 
 Full documentation: **[agentx-docs.pages.dev](https://agentx-docs.pages.dev)** — including the worked journey from a one-agent Telegram bot to a hardened multi-node mesh:
-[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md) → [Authoring a typed workflow](docs/journey/13-typed-workflow.md)
+[Telegram Q&A bot](docs/journey/01-telegram-qa-bot.md) → [scheduled reports](docs/journey/02-scheduled-reports.md) → [multi-agent groups](docs/journey/03-multi-agent-group.md) → [cross-channel](docs/journey/04-cross-channel.md) → [hooks](docs/journey/05-hooks-webhooks.md) → [shared wiki](docs/journey/06-shared-wiki.md) → [mesh federation](docs/journey/08-mesh-federation.md) → [deterministic services](docs/journey/09-deterministic-services.md) → [MCP server](docs/journey/10-mcp-server.md) → [production hardening](docs/journey/11-production-hardening.md) → [BPM](docs/journey/12-bpm-grant-application.md) → [wearable agents](docs/journey/14-wearable-agent.md)
 
 Reference: [CLI](docs/reference/cli.md) · [Config schema](docs/reference/config-schema.md) · [Dashboard](docs/reference/dashboard/) · [Tokens](docs/reference/tokens.md) · [Tailscale](docs/reference/tailscale-setup.md)
 
