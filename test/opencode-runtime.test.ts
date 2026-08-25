@@ -44,6 +44,7 @@ const fs = require("fs");
 const args = process.argv.slice(2);
 fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify({ args, config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) }));
 console.log(JSON.stringify({ type: "text", sessionID: "ses-next", part: { text: "hel" } }));
+console.log(JSON.stringify({ type: "reasoning", sessionID: "ses-next", part: { text: "brief thought" } }));
 console.log(JSON.stringify({ type: "text", sessionID: "ses-next", part: { text: "lo" } }));
 console.log(JSON.stringify({ type: "step_finish", sessionID: "ses-next", part: { tokens: { input: 12, output: 3, cache: { read: 4, write: 1 } } } }));
 `)
@@ -52,17 +53,30 @@ console.log(JSON.stringify({ type: "step_finish", sessionID: "ses-next", part: {
 
     const task: AgentTask = { message: "hello", agentId: "opencode", systemPromptAppend: "system prompt" }
     const deltas: string[] = []
-    const result = await executeTask(agent(tmp), task, {}, (delta) => deltas.push(delta), undefined, "ses-old")
+    const thoughts: string[] = []
+    const result = await executeTask(
+      agent(tmp),
+      task,
+      {},
+      (delta) => deltas.push(delta),
+      undefined,
+      "ses-old",
+      undefined,
+      undefined,
+      (thought) => thoughts.push(thought),
+    )
 
     expect(result.error).toBeUndefined()
     expect(result.content).toBe("hello")
     expect(deltas).toEqual(["hel", "lo"])
+    expect(thoughts).toEqual(["brief thought"])
     expect(result.opencodeSessionId).toBe("ses-next")
     expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 3, cacheReadTokens: 4, cacheCreateTokens: 1 })
 
     const capture = JSON.parse(readFileSync(argsFile, "utf8"))
     const args = capture.args
     expect(args.slice(0, 3)).toEqual(["run", "--format", "json"])
+    expect(args).toContain("--thinking")
     expect(args).toContain("--model")
     expect(args).toContain("openai/gpt-test")
     expect(args).toContain("--session")

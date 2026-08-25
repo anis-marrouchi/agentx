@@ -346,7 +346,7 @@ function buildOpenCodeArgs(
   systemPromptAppend?: string,
   resumeSessionId?: string,
 ): string[] {
-  const args = ["run", "--format", "json"]
+  const args = ["run", "--format", "json", "--thinking"]
   const model = modelOverride || agent.model
   if (model) args.push("--model", model)
   if (resumeSessionId) args.push("--session", resumeSessionId)
@@ -1307,6 +1307,7 @@ export async function executeOpenCodeCli(
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
   abortSignal?: AbortSignal,
+  onThinking?: ThinkingCallback,
 ): Promise<AgentResponse> {
   const start = Date.now()
   if (abortSignal?.aborted) {
@@ -1357,6 +1358,8 @@ export async function executeOpenCodeCli(
           fullText += text
           onDelta?.(text, fullText)
         }
+        const reasoning = event.type === "reasoning" && typeof event.part?.text === "string" ? event.part.text : undefined
+        if (reasoning) onThinking?.(reasoning)
         const tokens = event.type === "step_finish" ? event.part?.tokens : undefined
         if (tokens) {
           usage = {
@@ -1932,7 +1935,7 @@ export async function executeTask(
       return executeCodexCli(agent, task, historyContext, resumeSessionId)
 
     case "opencode":
-      return executeOpenCodeCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+      return executeOpenCodeCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal, onThinking)
 
     case "sdk": {
       const providerName = agent.provider || "claude"
