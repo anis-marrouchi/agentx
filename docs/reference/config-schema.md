@@ -56,7 +56,7 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 |---|---|---|---|
 | `name` | string | — | Display name |
 | `workspace` | string | — | Directory with agent instructions, skills, MCP config |
-| `tier` | `claude-code` \| `codex-cli` \| `sdk` \| `orchestrator` | `claude-code` | Execution strategy |
+| `tier` | `claude-code` \| `codex-cli` \| `opencode` \| `sdk` \| `orchestrator` | `claude-code` | Execution strategy |
 | `provider` | string | — | For `sdk`/`orchestrator`: which `providers[]` entry |
 | `model` | string | — | Model id |
 | `systemPrompt` | string | — | Inline override (normally lives in `CLAUDE.md`) |
@@ -82,6 +82,7 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 |---|---|---|---|
 | `claude-code` | Claude Code CLI | `claudeSessionId`, optional persistent process | Best-supported tool-using path. Uses workspace `.claude/`, MCP, skills/hooks where present |
 | `codex-cli` | Codex CLI | `codexSessionId` from Codex `thread_id` | Uses `codex exec` for fresh runs and `codex exec resume` for warm runs. AgentX sends a compact context budget to avoid prompt bloat |
+| `opencode` | OpenCode CLI | `opencodeSessionId` | Uses `opencode run --format json`; set `model` to an OpenCode model id such as `openai/gpt-5.6-sol`, or omit it to use OpenCode's default |
 | `sdk` | Anthropic Agent SDK | AgentX-rendered bounded history | API-key path for Anthropic Agent SDK; less native-session/usage metadata than CLI tiers today |
 | `orchestrator` | AgentX `generate()` loop | AgentX-rendered bounded history | Provider-agnostic path for supported non-CLI providers |
 

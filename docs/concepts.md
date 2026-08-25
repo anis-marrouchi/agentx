@@ -38,12 +38,13 @@ agents/support/
 └── .mcp.json             # MCP servers
 ```
 
-Four execution tiers:
+Five execution tiers:
 
 | Tier | Runs via | When |
 |---|---|---|
 | `claude-code` | `claude` CLI | You want full Claude Code behavior: native sessions, workspace tools, skills, MCP. |
 | `codex-cli` | `codex exec` / `codex exec resume` | You want OpenAI Codex CLI behavior with native Codex thread reuse and workspace tools. |
+| `opencode` | `opencode run` | You want OpenCode's configured providers, workspace tools, MCP servers, and native session reuse. |
 | `sdk` | Anthropic Agent SDK | You want Anthropic's programmatic agent runtime with an API key instead of the CLI. |
 | `orchestrator` | AgentX's own `generate()` loop | You want AgentX's provider-agnostic path for OpenAI/Ollama/Mistral/etc. |
 

@@ -440,7 +440,7 @@ async function testDriveAgent(body: any) {
 function addAgent(body: any) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
-  const tier = body?.tier === "sdk" ? "sdk" : body?.tier === "codex-cli" ? "codex-cli" : "claude-code"
+  const tier = ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(body?.tier) ? body.tier : "claude-code"
   const mentions = normaliseMentions(body?.triggerWords)
   const model = body?.model ? String(body.model).trim() : undefined
   const personality = body?.personality ? String(body.personality).trim() : undefined
@@ -483,7 +483,7 @@ function editAgent(body: any) {
     // silently nuking nested config shapes.
     if (typeof patch.name === "string" && patch.name.trim()) a.name = patch.name.trim()
     if (typeof patch.model === "string") a.model = patch.model.trim() || undefined
-    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
+    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
     if (typeof patch.systemPrompt === "string") a.systemPrompt = patch.systemPrompt.trim() || undefined
     if (Array.isArray(patch.mentions)) {
       a.mentions = patch.mentions.map((m: any) => String(m).trim()).filter(Boolean)

@@ -28,6 +28,7 @@ import { effectiveMcpConfig } from "./codegraph-bootstrap"
 // Routes agent tasks to the correct execution tier:
 // - claude-code: spawns claude CLI (subscription, full features)
 // - codex-cli: spawns codex CLI (OpenAI Codex, full CLI agent)
+// - opencode: spawns OpenCode CLI (uses the operator's configured providers)
 // - sdk: uses Claude Agent SDK (API key, programmatic)
 // - orchestrator: uses agentx's own agentic loop (any provider)
 
@@ -48,6 +49,13 @@ function codexMissingMessage(): string {
     `Codex CLI not found on PATH. Install it before starting an agent: ` +
     `npm i -g @openai/codex then verify with  codex --version. ` +
     `If you don't intend to use the codex-cli engine, set the agent's tier to "claude-code", "sdk", or "orchestrator" in agentx.json.`
+  )
+}
+
+function openCodeMissingMessage(): string {
+  return (
+    `OpenCode CLI not found on PATH. Install it from https://opencode.ai/docs/ and verify with  opencode --version. ` +
+    `If you don't intend to use the opencode engine, set the agent's tier to "claude-code", "codex-cli", "sdk", or "orchestrator" in agentx.json.`
   )
 }
 
@@ -166,6 +174,7 @@ export interface AgentResponse {
   duration?: number
   claudeSessionId?: string
   codexSessionId?: string
+  opencodeSessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
   /** End-of-turn context size: the LAST API call's (input + cacheRead +
    *  cacheCreate) inside this turn, captured from the final assistant
@@ -330,6 +339,28 @@ function buildCodexPrompt(prompt: string, systemPromptAppend?: string): string {
   return `[System]\n${systemPromptAppend.trim()}\n\n[User]\n${prompt}`
 }
 
+function buildOpenCodeArgs(
+  agent: AgentDef,
+  prompt: string,
+  modelOverride?: string,
+  systemPromptAppend?: string,
+  resumeSessionId?: string,
+): string[] {
+  const args = ["run", "--format", "json"]
+  const model = modelOverride || agent.model
+  if (model) args.push("--model", model)
+  if (resumeSessionId) args.push("--session", resumeSessionId)
+  if (agent.permissionMode === "bypassPermissions") args.push("--auto")
+  args.push(buildCodexPrompt(prompt, systemPromptAppend))
+  return args
+}
+
+function extractOpenCodeError(event: any): string | undefined {
+  if (!event || typeof event !== "object" || event.type !== "error") return undefined
+  const value = event.error?.message ?? event.error ?? event.message ?? event.part?.error?.message
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
 function tomlString(value: string): string {
   return JSON.stringify(value)
 }
@@ -387,6 +418,7 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
     env.PATH || "",
     home ? `${home}/.bun/bin` : "",
     home ? `${home}/.local/bin` : "",
+    home ? `${home}/.opencode/bin` : "",
     "/opt/homebrew/bin",
     "/usr/local/bin",
   ].filter(Boolean)
@@ -394,6 +426,29 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
+  return env
+}
+
+function buildOpenCodeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
+  const env = buildRuntimeEnv(agent, task)
+  let config: Record<string, any> = {}
+  if (env.OPENCODE_CONFIG_CONTENT) {
+    try { config = JSON.parse(env.OPENCODE_CONFIG_CONTENT) } catch { /* replace invalid inherited content */ }
+  }
+
+  const mcp: Record<string, any> = { ...(config.mcp || {}) }
+  for (const [name, server] of Object.entries(agent.mcp || {}) as Array<[string, any]>) {
+    mcp[name] = server.type === "http"
+      ? { type: "remote", url: server.url, headers: server.headers }
+      : { type: "local", command: [server.command, ...(server.args || [])], environment: server.env }
+  }
+
+  const cli = process.argv[1] || "dist/cli.js"
+  mcp.agentx = {
+    type: "local",
+    command: [process.execPath, cli, "serve", "--stdio", "--cwd", process.cwd()],
+  }
+  env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...config, mcp })
   return env
 }
 
@@ -1244,6 +1299,112 @@ export async function executeCodexCliStreaming(
   }
 }
 
+export async function executeOpenCodeCli(
+  agent: AgentDef,
+  task: AgentTask,
+  onDelta?: StreamCallback,
+  historyContext?: string,
+  resumeSessionId?: string,
+  onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  if (abortSignal?.aborted) {
+    return { content: "", error: "task cancelled by operator", errorKind: "cancelled", duration: 0 }
+  }
+
+  const prompt = buildPrompt(agent, task, historyContext)
+  const args = buildOpenCodeArgs(agent, prompt, task.model, task.systemPromptAppend, resumeSessionId)
+  let fullText = ""
+  let usage: TokenUsage | undefined
+  let sessionId = resumeSessionId
+  let apiError: string | undefined
+
+  try {
+    const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    const proc = execa("opencode", args, {
+      cwd: agent.workspace,
+      timeout: timeoutMs,
+      reject: false,
+      env: buildOpenCodeEnv(agent, task),
+      extendEnv: false,
+      buffer: false,
+      stdin: "ignore",
+    })
+    try { onEvent?.({ type: "opencode.spawned", model: task.model || agent.model, resumeSessionId }) } catch { /* */ }
+
+    let cancelled = false
+    let cancelReason: string | undefined
+    const onAbort = () => {
+      cancelled = true
+      cancelReason = (abortSignal?.reason as any)?.message || (typeof abortSignal?.reason === "string" ? abortSignal.reason : "task cancelled by operator")
+      try { proc.kill("SIGTERM", { forceKillAfterTimeout: 3_000 }) } catch { /* */ }
+    }
+    if (abortSignal) abortSignal.addEventListener("abort", onAbort, { once: true })
+
+    let lineBuffer = ""
+    let stderrText = ""
+    const decoder = new StringDecoder("utf8")
+    const stderrDecoder = new StringDecoder("utf8")
+    const consumeLine = (line: string) => {
+      if (!line.trim()) return
+      try {
+        const event = JSON.parse(line)
+        try { onEvent?.(event) } catch { /* */ }
+        if (typeof event.sessionID === "string") sessionId = event.sessionID
+        const text = event.type === "text" && typeof event.part?.text === "string" ? event.part.text : undefined
+        if (text) {
+          fullText += text
+          onDelta?.(text, fullText)
+        }
+        const tokens = event.type === "step_finish" ? event.part?.tokens : undefined
+        if (tokens) {
+          usage = {
+            inputTokens: firstNumber(tokens.input),
+            outputTokens: firstNumber(tokens.output),
+            cacheReadTokens: firstNumber(tokens.cache?.read),
+            cacheCreateTokens: firstNumber(tokens.cache?.write),
+          }
+        }
+        apiError = extractOpenCodeError(event) || apiError
+      } catch {
+        fullText += line + "\n"
+        onDelta?.(line + "\n", fullText)
+      }
+    }
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      lineBuffer += decoder.write(chunk)
+      const lines = lineBuffer.split("\n")
+      lineBuffer = lines.pop() || ""
+      for (const line of lines) consumeLine(line)
+    })
+    proc.stderr?.on("data", (chunk: Buffer) => { stderrText += stderrDecoder.write(chunk) })
+
+    const result = await proc
+    if (abortSignal) abortSignal.removeEventListener("abort", onAbort)
+    lineBuffer += decoder.end()
+    if (lineBuffer.trim()) consumeLine(lineBuffer)
+    stderrText += stderrDecoder.end()
+
+    if (cancelled) {
+      return { content: "", error: cancelReason || "task cancelled by operator", errorKind: "cancelled", duration: Date.now() - start, opencodeSessionId: sessionId }
+    }
+    if (result.exitCode !== 0 || apiError) {
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
+      let errMsg: string
+      if (r.timedOut) errMsg = `OpenCode timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      else if (apiError) errMsg = apiError
+      else if (r.code === "ENOENT" || /ENOENT|spawn opencode/i.test((r.shortMessage || "") + " " + stderrText)) errMsg = openCodeMissingMessage()
+      else errMsg = stderrText.trim() || `OpenCode exited with code ${r.exitCode ?? "unknown"}`
+      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start, usage, opencodeSessionId: sessionId }
+    }
+    return { content: fullText.trim(), duration: Date.now() - start, usage, billedModel: task.model || agent.model, opencodeSessionId: sessionId }
+  } catch (error: any) {
+    const raw = /ENOENT|spawn opencode/i.test(error?.message || "") ? openCodeMissingMessage() : error?.message
+    return { content: fullText, ...buildErrorEnvelope(raw || "OpenCode failed"), duration: Date.now() - start, usage, opencodeSessionId: sessionId }
+  }
+}
+
 /**
  * Execute a task using the Claude Agent SDK (tier: "sdk").
  */
@@ -1769,6 +1930,9 @@ export async function executeTask(
         return executeCodexCliStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
       return executeCodexCli(agent, task, historyContext, resumeSessionId)
+
+    case "opencode":
+      return executeOpenCodeCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
 
     case "sdk": {
       const providerName = agent.provider || "claude"

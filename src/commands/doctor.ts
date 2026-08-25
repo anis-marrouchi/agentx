@@ -121,6 +121,21 @@ async function runEnvChecks(checks: Check[]): Promise<void> {
     })
   }
 
+  const openCodePath = which("opencode")
+  if (openCodePath) {
+    let ver: string | undefined
+    try { ver = execFileSync("opencode", ["--version"], { encoding: "utf-8", timeout: 3000 }).trim() } catch { /* */ }
+    checks.push({ severity: "ok", group: "Environment", title: `opencode CLI ${ver || "installed"}`, detail: openCodePath })
+  } else {
+    checks.push({
+      severity: "warn",
+      group: "Environment",
+      title: "opencode CLI not on PATH",
+      detail: "Only required for agents on the opencode tier.",
+      fix: "Install from https://opencode.ai/docs/.",
+    })
+  }
+
   try {
     createRequire(import.meta.url)("better-sqlite3")
     checks.push({
@@ -198,6 +213,21 @@ function runConfigChecks(checks: Check[]): any {
         title: `${codexCliAgents.length} agent(s) use codex-cli tier but codex CLI is missing`,
         detail: codexCliAgents.map(([id]) => id).join(", "),
         fix: "Install Codex CLI with `npm i -g @openai/codex` or switch these agents to tier=claude-code.",
+      })
+    }
+  }
+  const openCodeAgents = Object.entries(cfg.agents || {}).filter(([, a]: [string, any]) => a.tier === "opencode")
+  if (openCodeAgents.length > 0) {
+    const hasOpenCode = (() => {
+      try { execFileSync(process.platform === "win32" ? "where" : "which", ["opencode"], { stdio: "ignore" }); return true } catch { return false }
+    })()
+    if (!hasOpenCode) {
+      checks.push({
+        severity: "fail",
+        group: "Config",
+        title: `${openCodeAgents.length} agent(s) use opencode tier but OpenCode CLI is missing`,
+        detail: openCodeAgents.map(([id]) => id).join(", "),
+        fix: "Install OpenCode from https://opencode.ai/docs/ or switch these agents to another tier.",
       })
     }
   }

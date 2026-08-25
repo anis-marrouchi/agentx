@@ -34,7 +34,7 @@ export interface WizardPayload {
     id: string
     name: string
     triggerWords: string   // comma/space separated; we normalise on the server
-    tier: "claude-code" | "codex-cli" | "sdk" | "orchestrator"
+    tier: "claude-code" | "codex-cli" | "opencode" | "sdk" | "orchestrator"
     model?: string
     personality?: string   // short free text → CLAUDE.md
   }
@@ -87,10 +87,11 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   if (
     payload.agent.tier !== "claude-code" &&
     payload.agent.tier !== "codex-cli" &&
+    payload.agent.tier !== "opencode" &&
     payload.agent.tier !== "sdk" &&
     payload.agent.tier !== "orchestrator"
   ) {
-    throw new Error("AI engine must be claude-code, codex-cli, sdk, or orchestrator.")
+    throw new Error("AI engine must be claude-code, codex-cli, opencode, sdk, or orchestrator.")
   }
 
   const configPath = resolve(baseDir, "agentx.json")
@@ -155,6 +156,9 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
   }
   if (payload.agent.tier === "codex-cli") {
     nextSteps.push("Run  codex --version  to confirm Codex CLI is installed (needed for the codex-cli engine)")
+  }
+  if (payload.agent.tier === "opencode") {
+    nextSteps.push("Run  opencode --version  to confirm OpenCode is installed and authenticated")
   }
   nextSteps.push("Start the daemon:  agentx daemon start")
   nextSteps.push("Open the dashboard:  http://127.0.0.1:4202")

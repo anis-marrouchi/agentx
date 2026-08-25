@@ -72,6 +72,8 @@ agent
       { type: "text", name: "workspace", message: "Workspace path", initial: resolve(process.cwd(), "agents/") },
       { type: "select", name: "tier", message: "Execution tier", choices: [
         { title: "claude-code (subscription, full features)", value: "claude-code" },
+        { title: "codex-cli (OpenAI Codex CLI)", value: "codex-cli" },
+        { title: "opencode (configured OpenCode providers)", value: "opencode" },
         { title: "sdk (API key, programmatic)", value: "sdk" },
         { title: "orchestrator (any provider)", value: "orchestrator" },
       ]},

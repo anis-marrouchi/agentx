@@ -49,6 +49,21 @@ describe("daemonConfigSchema", () => {
     expect(result.success).toBe(true)
   })
 
+  it("validates opencode agent config", () => {
+    const result = daemonConfigSchema.safeParse({
+      node: { id: "test", name: "Test" },
+      agents: {
+        "opencode-agent": {
+          name: "OpenCode Agent",
+          workspace: "/tmp/workspace",
+          tier: "opencode",
+          model: "openai/gpt-5.6-sol",
+        },
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
   it("validates telegram config", () => {
     const result = daemonConfigSchema.safeParse({
       node: { id: "test", name: "Test" },

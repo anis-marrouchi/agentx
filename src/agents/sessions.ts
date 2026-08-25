@@ -32,6 +32,7 @@ export interface Session {
   day: string          // YYYY-MM-DD
   claudeSessionId?: string  // Claude Code native session ID (for --resume)
   codexSessionId?: string   // Codex CLI thread/session ID (for exec resume)
+  opencodeSessionId?: string // OpenCode native session ID (for run --session)
   messages: SessionMessage[]
   createdAt: string
   updatedAt: string
@@ -464,6 +465,18 @@ export class SessionStore {
     this.save(session)
   }
 
+  getOpenCodeSessionId(agentId: string, channel: string, chatId: string): string | undefined {
+    const session = this.getSession(agentId, channel, chatId)
+    return session.opencodeSessionId
+  }
+
+  setOpenCodeSessionId(agentId: string, channel: string, chatId: string, opencodeSessionId: string): void {
+    const session = this.getSession(agentId, channel, chatId)
+    session.opencodeSessionId = opencodeSessionId
+    session.updatedAt = new Date().toISOString()
+    this.save(session)
+  }
+
   /**
    * Build conversation history string to prepend to the prompt.
    * Returns empty string if no history.
@@ -758,7 +771,7 @@ export class SessionStore {
    */
   isSessionStale(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId && !session.codexSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false
     const elapsed = Date.now() - new Date(session.updatedAt).getTime()
     return elapsed > this.staleMinutes * 60 * 1000
   }
@@ -893,6 +906,7 @@ export class SessionStore {
     const session = this.getSession(agentId, channel, chatId)
     delete session.claudeSessionId
     delete session.codexSessionId
+    delete session.opencodeSessionId
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens
@@ -911,6 +925,7 @@ export class SessionStore {
     session.messages = []
     delete session.claudeSessionId
     delete session.codexSessionId
+    delete session.opencodeSessionId
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens
@@ -924,7 +939,7 @@ export class SessionStore {
    */
   shouldRotateByTurns(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId && !session.codexSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false
     return (session.turnCount ?? 0) >= this.maxTurnsPerSession
   }
 
@@ -940,7 +955,7 @@ export class SessionStore {
    */
   shouldRotateByTierTwo(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
-    if (!session.claudeSessionId && !session.codexSessionId) return false
+    if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false
     const contextSize = session.lastTurnContextTokens ?? session.lastTurnInputTokens ?? 0
     return contextSize >= this.tierTwoThresholdTokens
   }

@@ -68,7 +68,7 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 
 - **Channels** — Telegram, WhatsApp (QR pair in the browser), GitLab, GitHub, generic webhooks. Agents reply where they were asked, or push anywhere.
 - **Mesh federation** — pair nodes over Tailscale/VPN with one link; manage any peer's config from one dashboard; GitLab mentions route across nodes with peer-owned tokens.
-- **Agents are folders, not code** — persona, knowledge, and tools in plain Markdown (`CLAUDE.md`, skills, references). Bring Claude Code (subscription), Anthropic/OpenAI APIs, or any OpenAI-compatible endpoint (vLLM, OpenRouter, Ollama's compat API).
+- **Agents are folders, not code** — persona, knowledge, and tools in plain Markdown (`CLAUDE.md`, skills, references). Bring Claude Code, Codex CLI, OpenCode with any configured provider, Anthropic/OpenAI APIs, or an OpenAI-compatible endpoint.
 - **Operator surface** — browser setup wizard + 11-page admin dashboard: live activity, Kanban boards synced two-way with GitLab/GitHub issues, token-cost accounting, scoped API tokens.
 - **Scheduled work** — plain-English cron: `agentx schedule "every Monday at 9am" --agent sales`, with failure alerts and auto-disable.
 - **Workflows & procedures** — declarative YAML state machines with a visual editor for the flows that must survive restarts; versioned SOPs agents cite at runtime; deterministic no-LLM handlers for canonical answers.
@@ -87,7 +87,7 @@ Then open the dashboard at **http://127.0.0.1:4202**. Pair a second machine with
 | Audit ledger + replay | ✅ append-only, deterministic replay | ❌ | ❌ | ❌ |
 | GitLab-native (boards, MRs, cross-node mentions) | ✅ | ❌ | ❌ | ❌ |
 | Chat channels | 6 + webhooks + plugins | ~24 | multiple | terminal |
-| LLM providers | Claude Code, Anthropic, OpenAI-compatible | Claude-first | model-agnostic | Claude |
+| LLM providers | Claude Code, Codex CLI, OpenCode, Anthropic, OpenAI-compatible | Claude-first | model-agnostic | Claude |
 | Self-hosted, no telemetry | ✅ | ✅ | ✅ | n/a |
 
 *(As of July 2026 — corrections welcome via PR.)*
@@ -126,9 +126,9 @@ graph LR
   R --> LDG[(Intent Ledger<br/>append-only)]
   LDG --> CTX[Context Engine]
   CTX --> AG[Agent workspace]
-  AG --> P1[Claude Code]
-  AG --> P2[Anthropic / OpenAI API]
-  AG --> P3[OpenAI-compatible<br/>vLLM · OpenRouter · Ollama]
+    AG --> P1[Claude Code]
+    AG --> P2[Codex CLI / OpenCode]
+    AG --> P3[Anthropic / OpenAI-compatible API]
   AG -.-> MEM[(Wiki + Graph + Memory)]
   AG -.-> WF[Workflows + Procedures]
   AG -.-> R

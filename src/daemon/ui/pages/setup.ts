@@ -68,6 +68,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
         options: [
           { value: "claude-code", label: "Claude Code (recommended)", selected: true },
           { value: "codex-cli", label: "Codex CLI" },
+          { value: "opencode", label: "OpenCode CLI" },
           { value: "sdk", label: "Anthropic API (BYO key)" },
           { value: "orchestrator", label: "Orchestrator (any provider)" },
         ],

@@ -110,7 +110,7 @@ export type { DaemonConfig, AgentDef, CronJobDef, MeshPeer } from "./daemon/conf
 
 // Agent Registry
 export { AgentRegistry } from "./agents/registry"
-export { executeTask, executeClaudeCode, executeSdk, executeOrchestrator } from "./agents/runtime"
+export { executeTask, executeClaudeCode, executeOpenCodeCli, executeSdk, executeOrchestrator } from "./agents/runtime"
 export type { AgentTask, AgentResponse } from "./agents/runtime"
 
 // Channels

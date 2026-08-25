@@ -1098,7 +1098,9 @@ export class AgentRegistry {
       ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
       : state.def.tier === "codex-cli"
         ? this.sessions.getCodexSessionId(task.agentId, channel, chatId)
-        : undefined
+        : state.def.tier === "opencode"
+          ? this.sessions.getOpenCodeSessionId(task.agentId, channel, chatId)
+          : undefined
 
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
@@ -1879,13 +1881,16 @@ export class AgentRegistry {
         if (response.codexSessionId) {
           this.sessions.setCodexSessionId(task.agentId, channel, chatId, response.codexSessionId)
         }
+        if (response.opencodeSessionId) {
+          this.sessions.setOpenCodeSessionId(task.agentId, channel, chatId, response.opencodeSessionId)
+        }
 
         // Record this turn's usage so next task can decide whether to rotate:
         // turnCount + cumulative lastTurnInputTokens (observability) +
         // per-request lastTurnContextTokens (the actual rotation metric).
         // Only meaningful when we kept a claude session — skip otherwise so the
         // counter isn't incremented for tiers that don't use --resume.
-        if ((response.claudeSessionId || response.codexSessionId) && response.usage) {
+        if ((response.claudeSessionId || response.codexSessionId || response.opencodeSessionId) && response.usage) {
           this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage, response.contextTokens)
         }
 
