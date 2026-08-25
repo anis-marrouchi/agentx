@@ -1251,6 +1251,7 @@ interface NodeLive {
     schedule: string
     timezone?: string
     agent: string
+    model?: string
     nextRun?: string
     retryPending?: boolean
     consecutiveErrors: number
@@ -1325,6 +1326,7 @@ async function fetchDaemonAgents(
         schedule: String(job.schedule || ""),
         timezone: job.timezone,
         agent: String(job.agent || ""),
+        model: job.model,
         nextRun: job.nextRun,
         retryPending: job.retryPending === true,
         consecutiveErrors: Number(job.consecutiveErrors) || 0,
@@ -2102,6 +2104,5 @@ function findPeer(id: string, config: DaemonConfig): { url: string; token?: stri
  * first paint (dropped into <head> to avoid FOUC), then wires any segmented
  * control with [data-theme-opt="..."] buttons once the DOM is ready.
  */
-
 
 
