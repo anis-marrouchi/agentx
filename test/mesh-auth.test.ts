@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { decideMeshAuth } from "../src/daemon/mesh-auth"
+import { decideMeshAuth, collectAcceptedMeshTokens } from "../src/daemon/mesh-auth"
 
 const TOKENS = new Set(["shared-mesh-token", "peer-b-token"])
 
@@ -85,5 +85,34 @@ describe("decideMeshAuth", () => {
       enforcementDisabled: true,
     })
     expect(d).toEqual({ allowed: true, reason: "disabled" })
+  })
+})
+
+describe("collectAcceptedMeshTokens", () => {
+  const config = {
+    mesh: { peers: [{ token: "peer-a" }, { token: "peer-b" }, {}] },
+    dashboard: { token: "agx_dash_secret" },
+  }
+
+  it("accepts MESH_TOKEN and every per-peer token", () => {
+    const got = collectAcceptedMeshTokens(config, { MESH_TOKEN: "env-token" })
+    expect([...got].sort()).toEqual(["env-token", "peer-a", "peer-b"])
+  })
+
+  it("never accepts dashboard.token on a write path", () => {
+    // Regression guard. dashboard.token used to be accepted here, which made
+    // the dashboard secret sufficient to POST /task, /channel/send, and the
+    // GitLab/GitHub peer-identity forwards that post as this node's bot.
+    const got = collectAcceptedMeshTokens(config, { MESH_TOKEN: "env-token" })
+    expect(got.has("agx_dash_secret")).toBe(false)
+  })
+
+  it("returns an empty set when nothing is configured, so the grace path still applies", () => {
+    expect(collectAcceptedMeshTokens({}, {}).size).toBe(0)
+  })
+
+  it("ignores peers with no token rather than adding undefined", () => {
+    const got = collectAcceptedMeshTokens({ mesh: { peers: [{}, { token: "" }] } }, {})
+    expect(got.size).toBe(0)
   })
 })

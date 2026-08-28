@@ -43,3 +43,34 @@ export function decideMeshAuth(req: MeshAuthRequest): MeshAuthDecision {
 
   return { allowed: false, reason: "missing-or-invalid-token" }
 }
+
+/** Config shape this module needs. Structural so callers can pass a full
+ *  DaemonConfig without this module importing it. */
+export interface MeshTokenSources {
+  mesh?: { peers?: Array<{ token?: string }> }
+  dashboard?: { token?: string }
+}
+
+/**
+ * Every token accepted on a mesh WRITE path.
+ *
+ * MESH_TOKEN and per-peer tokens only. `dashboard.token` is deliberately
+ * NOT included: it is the most widely handled secret in the config — it
+ * sits in dashboard settings and travels alongside peer entries — and
+ * accepting it here made it sufficient to POST /task, /channel/send, and
+ * the peer-identity forwards that make the daemon act as its own GitLab
+ * and GitHub bot.
+ *
+ * A dashboard on the same host reaches the daemon over loopback, which
+ * decideMeshAuth exempts before tokens are consulted. A dashboard on a
+ * different host needs a real mesh credential instead.
+ */
+export function collectAcceptedMeshTokens(
+  config: MeshTokenSources,
+  env: Record<string, string | undefined> = process.env,
+): Set<string> {
+  const accepted = new Set<string>()
+  if (env.MESH_TOKEN) accepted.add(env.MESH_TOKEN)
+  for (const p of config.mesh?.peers || []) if (p.token) accepted.add(p.token)
+  return accepted
+}

@@ -41,7 +41,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
-import { decideMeshAuth, isLoopback } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -1883,10 +1883,9 @@ export class AgentXDaemon {
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
    *  logging, and the 401 response. */
   private checkMeshAuth(req: IncomingMessage, res: ServerResponse, path: string): boolean {
-    const accepted = new Set<string>()
-    if (process.env.MESH_TOKEN) accepted.add(process.env.MESH_TOKEN)
-    for (const p of this.config.mesh?.peers || []) if (p.token) accepted.add(p.token)
-    if (this.config.dashboard?.token) accepted.add(this.config.dashboard.token)
+    // MESH_TOKEN and per-peer tokens only — see collectAcceptedMeshTokens
+    // for why dashboard.token is deliberately not among them.
+    const accepted = collectAcceptedMeshTokens(this.config)
 
     const addr = req.socket?.remoteAddress || ""
     const decision = decideMeshAuth({
