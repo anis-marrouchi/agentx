@@ -42,11 +42,11 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
       });
       var cols=d.days.map(function(day,i){
         var total=ok[i]+fail[i];
-        if(!total)return '<button class="mx-col" type="button" data-lane="'+lane.id+'" data-i="'+i+'" aria-label="'+MX.esc(day.day)+': no runs"><i class="is-empty"></i></button>';
+        if(!total)return '<button class="mx-col" type="button" data-lane="'+lane.id+'" data-i="'+i+'" aria-label="'+MX.esc(day.day)+': no runs. Open this day"><i class="is-empty"></i></button>';
         var hOk=Math.max(total?2:0,Math.round(ok[i]/peak*54));
         var hFail=fail[i]?Math.max(2,Math.round(fail[i]/peak*54)):0;
         return '<button class="mx-col" type="button" data-lane="'+lane.id+'" data-i="'+i+'"'
-          +' aria-label="'+MX.esc(day.day)+': '+total+' runs, '+fail[i]+' failed">'
+          +' aria-label="'+MX.esc(day.day)+': '+total+' runs, '+fail[i]+' failed. Open this day">'
           +(hFail?'<i class="is-fail" style="height:'+hFail+'px"></i>':'')
           +'<i class="is-base" style="height:'+hOk+'px;background:var(--mx-lane-'+lane.id+')"></i>'
           +'</button>';
@@ -62,11 +62,13 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
       function show(ev){
         var lane=b.dataset.lane,day=d.days[Number(b.dataset.i)],v=day[lane]||[0,0];
         showTip(b,'<b>'+MX.esc(day.day)+'</b><dl><dt>Ran</dt><dd>'+MX.num(v[0]+v[1])+'</dd>'
-          +'<dt>Failed</dt><dd>'+MX.num(v[1])+'</dd><dt>Origin</dt><dd>'+MX.esc(lane)+'</dd></dl>',ev);
+          +'<dt>Failed</dt><dd>'+MX.num(v[1])+'</dd><dt>Origin</dt><dd>'+MX.esc(lane)+'</dd></dl>'
+          +'<p class="mx-tip__hint">Select for the full day</p>',ev);
       }
       b.addEventListener('mousemove',show);
       b.addEventListener('focus',function(){var r=b.getBoundingClientRect();show({clientX:r.left,clientY:r.top})});
       b.addEventListener('mouseleave',hideTip);b.addEventListener('blur',hideTip);
+      b.addEventListener('click',function(){hideTip();MXD.openDay(d.days[Number(b.dataset.i)].day,b.dataset.lane)});
     });
   }
 
@@ -90,7 +92,7 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
         MX.open('Origin',o.channel,'<div class="mx-detail">'+MX.fields([
           ['Runs',MX.num(o.runs)],['Failed',MX.num(o.errors)],
           ['Failure rate',MX.pct(o.errors,o.runs)],['Runtime',MX.hours(o.hours)],
-          ['Window','last '+d.windowDays+' days']
+          ['Window',d.windowDays===0?'today so far':'last '+d.windowDays+' days']
         ])+'<p class="mx-note">Failure rate is computed over every recorded attempt on this channel, retries included. Runtime is the sum of measured task durations, not wall-clock.</p></div>');
       });
     });
@@ -216,29 +218,11 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
       gEl.addEventListener('mousemove',show);
       gEl.addEventListener('mouseleave',hideTip);gEl.addEventListener('blur',hideTip);
       gEl.addEventListener('focus',function(){var r=gEl.getBoundingClientRect();show({clientX:r.left,clientY:r.top})});
-      gEl.addEventListener('click',function(){openJob(j)});
-      gEl.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();openJob(j)}});
+      gEl.addEventListener('click',function(){MXD.openJob(j)});
+      gEl.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();MXD.openJob(j)}});
     });
   }
 
-  function openJob(j){
-    var m=MX.verdict(j.verdict);
-    MX.open('Recurring job',j.label,'<div class="mx-detail">'
-      +'<div>'+MX.verdictChip(j.verdict)+'<p class="mx-note">'+MX.esc(m.why)+'</p></div>'
-      +MX.fields([['Node',j.node],['Agent',j.agent],['Kind',j.kind],
-        ['Runs',MX.num(j.runs)],['Succeeded',MX.num(j.okRuns)],['Failed',MX.num(j.errors)],
-        ['Runtime',MX.hours(j.hours)],['Avg run',j.avgMinutes+' min'],
-        ['Avg output',MX.num(Math.round(j.avgOutput))+' tokens'],['Last run',MX.when(j.lastAt)]])
-      +'<div id="mx-drill">'+MX.section('Attempts','<div class="mx-empty">Loading attempts...</div>')+'</div></div>');
-    MX.get('/api/mesh/job?node='+encodeURIComponent(j.nodeUrl)+'&kind='+encodeURIComponent(j.kind)
-      +'&key='+encodeURIComponent(j.label)+'&limit=150')
-      .then(function(r){renderRunGrid(j.nodeUrl,r.runs||[])})
-      .catch(function(e){var t=el('mx-drill');if(t)t.innerHTML=MX.section('Attempts','<div class="mx-empty">'+MX.esc(e.message)+'</div>')});
-  }
-
-  // --- Thread lifetimes. One row per (agent, channel, chat): the bar is
-  // the thread's real first-to-last span inside the window, and each tick
-  // is a recorded session cut.
   function renderThreads(d){
     var root=el('mx-threads');
     var chans=['all'].concat(d.origins.map(function(o){return o.channel}));
@@ -280,77 +264,8 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
       });
     }
     root.querySelectorAll('[data-thread]').forEach(function(b){
-      b.addEventListener('click',function(){openThread(shown[Number(b.dataset.thread)],d)});
+      b.addEventListener('click',function(){MXD.openConversation(shown[Number(b.dataset.thread)])});
     });
-  }
-
-  function openThread(t,d){
-    MX.open('Thread',t.agent,'<div class="mx-detail">'
-      +MX.fields([['Node',t.node],['Channel',t.channel],['Conversation',t.chatId],
-        ['Runs',MX.num(t.runs)],['Failed',MX.num(t.errors)],['Runtime',MX.hours(t.hours)],
-        ['First seen',MX.when(t.firstAt)],['Last seen',MX.when(t.lastAt)],
-        ['Session cuts',MX.num(t.rotations)+(t.rotationReasons.length?' ('+t.rotationReasons.map(function(r){return r.reason+' '+r.count}).join(', ')+')':'')],
-        ['Cuts plotted',t.rotations>t.cutsShown?MX.num(t.cutsShown)+' sampled across the span':'all']])
-      +'<div id="mx-drill">'+MX.section('Runs','<div class="mx-empty">Loading runs...</div>')+'</div></div>');
-    MX.get('/api/mesh/thread?node='+encodeURIComponent(t.nodeUrl)+'&agent='+encodeURIComponent(t.agent)
-      +'&channel='+encodeURIComponent(t.channel)+'&chat='+encodeURIComponent(t.chatId)+'&limit=150')
-      .then(function(r){renderRunGrid(t.nodeUrl,r.runs||[])})
-      .catch(function(e){var x=el('mx-drill');if(x)x.innerHTML=MX.section('Runs','<div class="mx-empty">'+MX.esc(e.message)+'</div>')});
-    void d;
-  }
-
-  // --- One cell per run, newest first. Colour is status only.
-  function renderRunGrid(nodeUrl,runs){
-    var host=el('mx-drill');if(!host)return;
-    if(!runs.length){host.innerHTML=MX.section('Attempts','<div class="mx-empty">No individual attempts retained.</div>');return}
-    var cells=runs.map(function(r,i){
-      var c=r.status==='ok'?'var(--mx-good)':r.status==='timeout'?'var(--mx-warn)':'var(--mx-crit)';
-      return '<button class="mx-run" type="button" data-run="'+i+'" aria-pressed="false" style="background:'+c+'"'
-        +' title="'+MX.esc(new Date(r.startedAt).toLocaleString()+' · '+r.status+' · '+MX.dur(r.durationMs))+'"'
-        +' aria-label="'+MX.esc(new Date(r.startedAt).toLocaleString()+', '+r.status)+'"></button>';
-    }).join('');
-    // The attempt list is deliberately NOT windowed: "has this ever
-    // succeeded?" is a question about all of history, not the last 30 days.
-    // Say so, because the counters above it ARE windowed.
-    var capped=runs.length>=150;
-    host.innerHTML=MX.section('Attempts ('+(capped?'latest 150':runs.length)+', newest first)',
-      '<div class="mx-runs">'+cells+'</div>'
-      +'<p class="mx-note">Full recorded history, not limited to the selected window. Select an attempt to see what it touched.</p>')
-      +'<div id="mx-run-detail"></div>';
-    host.querySelectorAll('[data-run]').forEach(function(b){
-      b.addEventListener('click',function(){
-        host.querySelectorAll('[data-run]').forEach(function(o){o.setAttribute('aria-pressed','false')});
-        b.setAttribute('aria-pressed','true');
-        openRun(nodeUrl,runs[Number(b.dataset.run)]);
-      });
-    });
-  }
-
-  function openRun(nodeUrl,run){
-    var host=el('mx-run-detail');if(!host)return;
-    host.innerHTML=MX.section('Run','<div class="mx-empty">Loading steps...</div>');
-    MX.get('/api/mesh/run?node='+encodeURIComponent(nodeUrl)+'&task='+encodeURIComponent(run.taskId))
-      .then(function(s){
-        var touched='<div class="mx-touch">'
-          +'<span'+(s.reads?'':' class="is-zero"')+'>'+s.reads+' read</span>'
-          +'<span'+(s.writes?'':' class="is-zero"')+'>'+s.writes+' write</span>'
-          +'<span'+(s.sends?'':' class="is-zero"')+'>'+s.sends+' send</span>'
-          +s.tools.map(function(t){return '<span>'+MX.esc(t.tool)+' x'+t.used+(t.failed?' ('+t.failed+' failed)':'')+'</span>'}).join('')
-          +'</div>';
-        var steps=s.steps.length
-          ? '<ul class="mx-steps">'+s.steps.map(function(st){
-              return '<li data-err="'+(st.status==='error'?1:0)+'"><span class="mx-seq">'+st.seq+'</span>'
-                +'<span>'+MX.esc(st.action||st.name)+'</span><span>'+(st.ms==null?'':MX.dur(st.ms))+'</span></li>'}).join('')+'</ul>'
-          : '<div class="mx-empty">Steps for this run were pruned by retention. Its totals above are still exact.</div>';
-        host.innerHTML=MX.section('Run '+run.taskId.slice(-8),
-          MX.fields([['Started',MX.when(s.startedAt)],['Duration',MX.dur(s.durationMs)],
-            ['Status',s.status],['Model',s.model||'default'],
-            ['Output',MX.num(s.outputTokens||0)+' tokens'],
-            ['Cause',s.cause?MX.causeLabel(s.cause):'-']])
-          +'<p class="mx-note">What this run touched</p>'+touched)
-          +MX.section('Steps',steps);
-      })
-      .catch(function(e){host.innerHTML=MX.section('Run','<div class="mx-empty">'+MX.esc(e.message)+'</div>')});
   }
 
   function renderRotations(d){
@@ -370,7 +285,8 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
   function renderNodes(d){
     var down=d.nodes.filter(function(n){return !n.ok});
     var txt='Merged from '+d.nodes.filter(function(n){return n.ok}).length+' of '+d.nodes.length+' nodes'
-      +' · last '+d.windowDays+' days · '+MX.num(d.totals.runs)+' runs, '+MX.num(d.totals.errors)+' failed'
+      +' · '+(d.windowDays===0?'today so far':'last '+d.windowDays+' days')
+      +' · '+MX.num(d.totals.runs)+' runs, '+MX.num(d.totals.errors)+' failed'
       +' · steps retained for '+MX.num(d.retention.tracesWithSteps)+' of '+MX.num(d.retention.traces)+' runs';
     if(down.length)txt+=' · UNREACHABLE: '+down.map(function(n){return n.name+' ('+(n.error||'no answer')+')'}).join(', ');
     el('mx-analytics-updated').textContent=txt;

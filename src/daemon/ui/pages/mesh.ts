@@ -7,6 +7,7 @@ import {
 } from "../index"
 import { MESH_CSS } from "./mesh.css"
 import { MESH_SHARED_SCRIPT } from "./mesh-shared.client"
+import { MESH_DRILL_SCRIPT } from "./mesh-drill.client"
 import { MESH_ANALYTICS_SCRIPT } from "./mesh-analytics.client"
 import { MESH_OPS_SCRIPT } from "./mesh-ops.client"
 
@@ -45,7 +46,14 @@ const TABS: Array<{ id: string; label: string }> = [
   { id: "ops", label: "Operations" },
 ]
 
-const RANGES = [7, 30, 90]
+// "Today" is a range like any other, but it is the one the page gets opened
+// for — a 30-day default answers "is this fleet healthy", not "what just ran".
+const RANGES: Array<{ days: number; label: string }> = [
+  { days: 0, label: "Today" },
+  { days: 7, label: "7d" },
+  { days: 30, label: "30d" },
+  { days: 90, label: "90d" },
+]
 
 export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
   const chrome =
@@ -66,17 +74,17 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
       ${TABS.map((t, i) => `<button class="mx-tab" type="button" role="tab" id="mx-tab-${t.id}" aria-controls="mx-view-${t.id}" aria-selected="${i === 0}" data-view="${t.id}">${t.label}</button>`).join("")}
     </div>
     <div class="mx-range" id="mx-range" role="group" aria-label="History window">
-      ${RANGES.map((d) => `<button type="button" data-days="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
+      ${RANGES.map((r) => `<button type="button" data-days="${r.days}" aria-pressed="${r.days === 30}">${r.label}</button>`).join("")}
     </div>
   </div>
   <p id="mx-analytics-updated" class="mx-updated" aria-live="polite">Reading node histories...</p>`
 
   const activityView = `<div class="mx-view" id="mx-view-activity" role="tabpanel" aria-labelledby="mx-tab-activity">
     <section class="mx-section" aria-labelledby="mx-lanes-title">
-      ${head(ICONS.activity, "What ran", "One lane per origin. Each lane is scaled to its own peak so a quiet channel stays readable next to a busy one.", "mx-lanes-title")}
+      ${head(ICONS.activity, "What ran", "One lane per origin. Each lane is scaled to its own peak so a quiet channel stays readable next to a busy one. Select a column for the day behind it.", "mx-lanes-title")}
       <div id="mx-lanes"><div class="mx-empty">Loading activity...</div></div>
       <div class="mx-axis" id="mx-axis"></div>
-      <p class="mx-note">Coloured bars are runs that finished; the red cap on a column is the failures inside that day.</p>
+      <p class="mx-note">Coloured bars are runs that finished; the red cap on a column is the failures inside that day. Select any column for what ran that day, down to a single conversation.</p>
     </section>
 
     <div class="mx-two">
@@ -101,7 +109,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
 
   const lifetimeView = `<div class="mx-view" id="mx-view-lifetime" role="tabpanel" aria-labelledby="mx-tab-lifetime" hidden>
     <section class="mx-section" aria-labelledby="mx-threads-title">
-      ${head(ICONS.lifetime, "Thread lifetimes", "A thread is one agent talking on one channel in one conversation. The bar is its real first-to-last span; each tick is a session cut.", "mx-threads-title")}
+      ${head(ICONS.lifetime, "Thread lifetimes", "A thread is one agent talking on one channel in one conversation. The bar is its real first-to-last span; each tick is a session cut. Select one for its turns, tokens and time.", "mx-threads-title")}
       <div class="mx-chips" id="mx-thread-chips"></div>
       <div id="mx-threads"><div class="mx-empty">Loading threads...</div></div>
       <p class="mx-note">Select a thread to walk its runs, then a run to see which tools it touched. Grey ticks are stale cuts, amber ticks are context-full cuts.</p>
@@ -162,7 +170,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
     noMain: true,
     body,
     css: MESH_CSS,
-    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_OPS_SCRIPT,
+    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_OPS_SCRIPT,
   })
 }
 

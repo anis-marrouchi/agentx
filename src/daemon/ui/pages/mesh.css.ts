@@ -108,8 +108,22 @@ export const MESH_CSS = `
 .mx-chip{border:var(--ax-border-w) solid var(--ax-border);background:var(--ax-surface);color:var(--ax-text-2);font:600 11px var(--ax-font);padding:4px 11px;border-radius:var(--ax-radius-pill);cursor:pointer}
 .mx-chip[aria-pressed="true"]{border-color:var(--ax-accent);color:var(--ax-accent)}
 
+/* --- drawer: stat tiles, conversation list ------------------------- */
+.mx-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.mx-stat{padding:9px 11px;border:1px solid var(--ax-border);border-radius:var(--ax-radius-sm);background:var(--ax-surface-2)}
+.mx-stat b{display:block;font:10px var(--ax-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--ax-muted);font-weight:400}
+.mx-stat span{display:block;margin-top:3px;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.mx-convs{display:grid;gap:4px;max-height:300px;overflow:auto}
+.mx-conv{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:8px 10px;border:1px solid var(--ax-border);border-radius:var(--ax-radius-sm);background:var(--ax-surface);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.mx-conv:hover,.mx-conv:focus-visible{border-color:var(--ax-accent);outline:none}
+.mx-conv__id{min-width:0}
+.mx-conv__id b{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mx-conv__id span{display:block;font:10px var(--ax-mono);color:var(--ax-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mx-conv__meta{flex:0 0 auto;text-align:right;font:10px var(--ax-mono);color:var(--ax-text-2);line-height:1.5}
+.mx-tip__hint{margin:6px 0 0;padding-top:5px;border-top:1px solid var(--ax-border);font-size:10px;color:var(--ax-muted)}
+
 /* --- run grid + step list (drawer) --------------------------------- */
-#mx-drill{display:grid;gap:16px}
+#mx-drill,#mx-day,#mx-conv{display:grid;gap:16px}
 .mx-runs{display:flex;flex-wrap:wrap;gap:3px;margin:6px 0 4px}
 .mx-run{width:15px;height:15px;border-radius:3px;border:0;padding:0;cursor:pointer}
 .mx-run:focus-visible{outline:2px solid var(--ax-accent);outline-offset:2px}

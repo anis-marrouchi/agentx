@@ -9,6 +9,8 @@ window.MX=(function(){
   var ENT={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return ENT[c]})}
   function num(v){return Number(v||0).toLocaleString()}
+  /** "1 turn" / "2 turns" — a count reads as sloppy without it. */
+  function plural(n,one,many){return num(n)+' '+(Number(n)===1?one:(many||one+'s'))}
   function pct(part,total){return total?Math.round(part/total*1000)/10+'%':'0%'}
   function age(v){if(!v)return 'unknown';var s=Math.max(0,(Date.now()-new Date(v).getTime())/1000);
     if(s<60)return Math.floor(s)+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';
@@ -106,7 +108,7 @@ window.MX=(function(){
   }
 
   mount();
-  return {esc:esc,num:num,pct:pct,age:age,dur:dur,hours:hours,day:day,when:when,
+  return {esc:esc,num:num,plural:plural,pct:pct,age:age,dur:dur,hours:hours,day:day,when:when,
     open:open,close:close,body:body,fields:fields,section:section,
     verdict:verdict,verdictChip:verdictChip,mark:mark,causeLabel:causeLabel,
     setHealth:setHealth,get:get};
