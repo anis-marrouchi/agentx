@@ -4,76 +4,146 @@ import {
   renderShell,
   sectionHead,
   type TopbarPeer,
-} from "../index";
+} from "../index"
+import { MESH_CSS } from "./mesh.css"
+import { MESH_SHARED_SCRIPT } from "./mesh-shared.client"
+import { MESH_ANALYTICS_SCRIPT } from "./mesh-analytics.client"
+import { MESH_OPS_SCRIPT } from "./mesh-ops.client"
+
+// --- /mesh — three views over one fleet -------------------------------
+//
+//   Activity   what ran, where it breaks, and which recurring jobs burn
+//              runtime without producing anything.
+//   Lifetime   how long a thread lives, where its sessions were cut, and
+//              the thread → run → step drill behind any of it.
+//   Operations the live snapshot: today's schedules, current work, node
+//              reachability, agent inventory.
+//
+// The split exists because those are three different questions asked at
+// three different moments, and answering them on one scroll was the thing
+// that made the old page a wall of reading. Only the Operations view
+// polls; the analytics views load once per selected window.
 
 const ICONS = {
-  schedules: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   activity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg>`,
+  breakage: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6l-3 3 3 3v6"/><path d="M5 5l14 14"/></svg>`,
+  effort: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><circle cx="9" cy="15" r="2"/><circle cx="15" cy="8" r="2"/></svg>`,
+  lifetime: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M7 8v8M13 8v8M19 8v8"/></svg>`,
+  cuts: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 8l12 10M8 16L20 6"/></svg>`,
+  schedules: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   nodes: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 6h8M7 8l4 8M17 8l-4 8"/></svg>`,
   agents: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>`,
-};
+}
+
+function head(icon: string, title: string, lead: string, id: string, action = ""): string {
+  return sectionHead({ icon, title, lead, actionHtml: action }).replace("<h2>", `<h2 id="${id}">`)
+}
+
+const TABS: Array<{ id: string; label: string }> = [
+  { id: "activity", label: "Activity" },
+  { id: "lifetime", label: "Lifetime" },
+  { id: "ops", label: "Operations" },
+]
+
+const RANGES = [7, 30, 90]
 
 export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
   const chrome =
     pageHead({
       kicker: "Operations",
       title: "Mesh operations",
-      lead: `Fleet health, active work, and today's scheduled outcomes across every reachable AgentX node.`,
+      lead: `What the fleet actually did, how long it lived, and which of it was worth running.`,
     }) +
     healthStrip([
       { kind: "off", num: "-", label: "Nodes online" },
       { kind: "off", num: "-", label: "Tasks running" },
       { kind: "off", num: "-", label: "Failed today" },
-      { kind: "off", num: "-", label: "Skills installed" },
-    ]).replace(
-      '<div class="ax-health-strip">',
-      `<div class="ax-health-strip" id="mx-health">`,
-    );
+      { kind: "off", num: "-", label: "Jobs needing review" },
+    ]).replace('<div class="ax-health-strip">', `<div class="ax-health-strip" id="mx-health">`)
+
+  const toolbar = `<div class="mx-toolbar">
+    <div class="mx-tabs" role="tablist" aria-label="Mesh views">
+      ${TABS.map((t, i) => `<button class="mx-tab" type="button" role="tab" id="mx-tab-${t.id}" aria-controls="mx-view-${t.id}" aria-selected="${i === 0}" data-view="${t.id}">${t.label}</button>`).join("")}
+    </div>
+    <div class="mx-range" id="mx-range" role="group" aria-label="History window">
+      ${RANGES.map((d) => `<button type="button" data-days="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
+    </div>
+  </div>
+  <p id="mx-analytics-updated" class="mx-updated" aria-live="polite">Reading node histories...</p>`
+
+  const activityView = `<div class="mx-view" id="mx-view-activity" role="tabpanel" aria-labelledby="mx-tab-activity">
+    <section class="mx-section" aria-labelledby="mx-lanes-title">
+      ${head(ICONS.activity, "What ran", "One lane per origin. Each lane is scaled to its own peak so a quiet channel stays readable next to a busy one.", "mx-lanes-title")}
+      <div id="mx-lanes"><div class="mx-empty">Loading activity...</div></div>
+      <div class="mx-axis" id="mx-axis"></div>
+      <p class="mx-note">Coloured bars are runs that finished; the red cap on a column is the failures inside that day.</p>
+    </section>
+
+    <div class="mx-two">
+      <section class="mx-section" aria-labelledby="mx-origins-title">
+        ${head(ICONS.breakage, "Where it breaks", "Attempts per origin, with the failed share marked on the same bar.", "mx-origins-title")}
+        <div class="mx-bars" id="mx-origins"><div class="mx-empty">Loading...</div></div>
+      </section>
+      <section class="mx-section" aria-labelledby="mx-causes-title">
+        ${head(ICONS.breakage, "Why it fails", "Failures grouped by cause class, matched from the recorded error text.", "mx-causes-title")}
+        <div class="mx-bars" id="mx-causes"><div class="mx-empty">Loading...</div></div>
+        <p class="mx-note" id="mx-cause-note"></p>
+      </section>
+    </div>
+
+    <section class="mx-section" aria-labelledby="mx-scatter-title">
+      ${head(ICONS.effort, "Effort against output", "Every recurring job, plotted as runtime spent against tokens produced on its successful runs. Both axes are logarithmic.", "mx-scatter-title")}
+      <div class="mx-scatter" id="mx-scatter"><div class="mx-empty">Loading jobs...</div></div>
+      <div class="mx-legend" id="mx-scatter-legend"></div>
+      <p class="mx-note">Bubble size is the number of runs. Anything not healthy is labelled on the chart; select it for the attempt history behind the verdict.</p>
+    </section>
+  </div>`
+
+  const lifetimeView = `<div class="mx-view" id="mx-view-lifetime" role="tabpanel" aria-labelledby="mx-tab-lifetime" hidden>
+    <section class="mx-section" aria-labelledby="mx-threads-title">
+      ${head(ICONS.lifetime, "Thread lifetimes", "A thread is one agent talking on one channel in one conversation. The bar is its real first-to-last span; each tick is a session cut.", "mx-threads-title")}
+      <div class="mx-chips" id="mx-thread-chips"></div>
+      <div id="mx-threads"><div class="mx-empty">Loading threads...</div></div>
+      <p class="mx-note">Select a thread to walk its runs, then a run to see which tools it touched. Grey ticks are stale cuts, amber ticks are context-full cuts.</p>
+    </section>
+
+    <section class="mx-section" aria-labelledby="mx-rot-title">
+      ${head(ICONS.cuts, "Session cuts", "Why threads lost their session, across the fleet.", "mx-rot-title")}
+      <div class="mx-bars" id="mx-rotations"><div class="mx-empty">Loading...</div></div>
+      <p class="mx-note" id="mx-rot-note"></p>
+    </section>
+  </div>`
+
+  const opsView = `<div class="mx-view" id="mx-view-ops" role="tabpanel" aria-labelledby="mx-tab-ops" hidden>
+    <p id="mx-updated" class="mx-updated" aria-live="polite">Connecting to the fleet...</p>
+
+    <section class="mx-section" aria-labelledby="mx-auto-title">
+      ${head(ICONS.schedules, "Today's automations", "Persisted attempts are authoritative. Select a schedule to inspect its latest result and runtime.", "mx-auto-title", `<div class="mx-section-actions"><span class="ax-tab-count" id="mx-run-count">0 schedules</span><button class="ax-btn ax-btn--ghost mx-show-all" id="mx-show-all" type="button" hidden>Show all</button></div>`)}
+      <div class="ax-stack" id="mx-runs"><div class="mx-empty">Loading schedules...</div></div>
+    </section>
+
+    <div class="mx-columns">
+      <section class="mx-section" aria-labelledby="mx-active-title">
+        ${head(ICONS.activity, "Activity provenance", "Who initiated current work and where it is running.", "mx-active-title", `<span class="ax-tab-count" id="mx-active-count">0 active</span>`)}
+        <div class="ax-stack" id="mx-active"><div class="mx-empty">No activity loaded.</div></div>
+      </section>
+      <section class="mx-section" aria-labelledby="mx-nodes-title">
+        ${head(ICONS.nodes, "Nodes", "Reachability and capacity across the fleet.", "mx-nodes-title", `<span class="ax-tab-count" id="mx-node-count">0 nodes</span>`)}
+        <div class="ax-stack" id="mx-nodes"><div class="mx-empty">No nodes loaded.</div></div>
+      </section>
+    </div>
+
+    <section class="mx-section" aria-labelledby="mx-agents-title">
+      ${head(ICONS.agents, "Agents and skills", "Runtime, model, installed skills, and task totals by node.", "mx-agents-title", `<span class="ax-tab-count" id="mx-agent-count">0 agents</span>`)}
+      <div class="mx-agent-grid" id="mx-agents"><div class="mx-empty">No agents loaded.</div></div>
+    </section>
+  </div>`
 
   const body = `${chrome}<main class="mx-content">
-  <p id="mx-updated" class="mx-updated" aria-live="polite">Connecting to the fleet...</p>
-
-  <section class="mx-section" aria-labelledby="mx-auto-title">
-    ${sectionHead({
-      icon: ICONS.schedules,
-      title: "Today's automations",
-      lead: "Persisted attempts are authoritative. Select a schedule to inspect its latest result and runtime.",
-      actionHtml: `<div class="mx-section-actions"><span class="ax-tab-count" id="mx-run-count">0 schedules</span><button class="ax-btn ax-btn--ghost mx-show-all" id="mx-show-all" type="button" hidden>Show all</button></div>`,
-    }).replace("<h2>", `<h2 id="mx-auto-title">`)}
-    <div class="ax-stack" id="mx-runs"><div class="mx-empty">Loading schedules...</div></div>
-  </section>
-
-  <div class="mx-columns">
-    <section class="mx-section" aria-labelledby="mx-active-title">
-      ${sectionHead({
-        icon: ICONS.activity,
-        title: "Activity provenance",
-        lead: "Who initiated current work and where it is running.",
-        actionHtml: `<span class="ax-tab-count" id="mx-active-count">0 active</span>`,
-      }).replace("<h2>", `<h2 id="mx-active-title">`)}
-      <div class="ax-stack" id="mx-active"><div class="mx-empty">No activity loaded.</div></div>
-    </section>
-
-    <section class="mx-section" aria-labelledby="mx-nodes-title">
-      ${sectionHead({
-        icon: ICONS.nodes,
-        title: "Nodes",
-        lead: "Reachability and capacity across the fleet.",
-        actionHtml: `<span class="ax-tab-count" id="mx-node-count">0 nodes</span>`,
-      }).replace("<h2>", `<h2 id="mx-nodes-title">`)}
-      <div class="ax-stack" id="mx-nodes"><div class="mx-empty">No nodes loaded.</div></div>
-    </section>
-  </div>
-
-  <section class="mx-section" aria-labelledby="mx-agents-title">
-    ${sectionHead({
-      icon: ICONS.agents,
-      title: "Agents and skills",
-      lead: "Runtime, model, installed skills, and task totals by node.",
-      actionHtml: `<span class="ax-tab-count" id="mx-agent-count">0 agents</span>`,
-    }).replace("<h2>", `<h2 id="mx-agents-title">`)}
-    <div class="mx-agent-grid" id="mx-agents"><div class="mx-empty">No agents loaded.</div></div>
-  </section>
+  ${toolbar}
+  ${activityView}
+  ${lifetimeView}
+  ${opsView}
 </main>
 <div class="mx-scrim" id="mx-scrim" hidden></div>
 <aside class="mx-drawer" id="mx-drawer" aria-labelledby="mx-drawer-title" aria-hidden="true">
@@ -82,7 +152,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
     <button class="ax-btn ax-btn--ghost" id="mx-close" type="button" aria-label="Close details">Close</button>
   </header>
   <div class="mx-drawer__body" id="mx-drawer-body"></div>
-</aside>`;
+</aside>`
 
   return renderShell({
     title: "AgentX · Mesh Operations",
@@ -92,60 +162,38 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
     noMain: true,
     body,
     css: MESH_CSS,
-    scripts: MESH_SCRIPT,
-  });
+    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_OPS_SCRIPT,
+  })
 }
 
-const MESH_CSS = `
-.mx-content{max-width:1040px;margin:0 auto;padding:0 24px 56px}
-.mx-updated{margin:0 0 24px;color:var(--ax-muted);font-size:11px;font-family:var(--ax-mono)}
-.mx-section{margin-bottom:32px}.mx-section .ax-section-head{margin-bottom:14px}
-.mx-section-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.mx-show-all{padding:4px 9px;font-size:11px;border-radius:var(--ax-radius-sm)}
-.mx-columns{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:24px}
-.mx-agent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.mx-item{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;text-align:left;color:var(--ax-text);font:inherit;text-decoration:none;cursor:pointer}
-.mx-item:hover,.mx-item:focus-visible{border-color:var(--ax-accent);text-decoration:none;outline:none}
-.mx-item[hidden]{display:none}.mx-item .ax-avatar{width:34px;height:34px;border-radius:var(--ax-radius-sm)}
-.mx-item .ax-row-card__actions{flex-shrink:0}.mx-item .ax-sub{min-width:0}.mx-item .ax-sub code{font:11px var(--ax-mono);color:var(--ax-muted)}
-.mx-summary{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ax-muted)}
-.mx-node-meta{font:11px var(--ax-mono);color:var(--ax-muted)}
-.mx-empty{padding:28px 18px;text-align:center;color:var(--ax-muted);font-size:12px;border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);background:var(--ax-surface)}
-.mx-link{display:inline-block;margin-top:14px;color:var(--ax-accent);font-size:12px;font-weight:600;text-decoration:none}.mx-link:hover{text-decoration:underline}
-.mx-scrim{position:fixed;inset:0;background:color-mix(in oklch,var(--ax-bg) 55%,black);z-index:29}
-.mx-drawer{position:fixed;z-index:30;top:0;right:0;width:min(440px,calc(100vw - 20px));height:100vh;box-sizing:border-box;background:var(--ax-surface);border-left:var(--ax-border-w) solid var(--ax-border-2);transform:translateX(102%);transition:transform 180ms ease;overflow:auto;box-shadow:-12px 0 36px rgba(0,0,0,.2)}
-.mx-drawer.is-open{transform:translateX(0)}.mx-drawer__head{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;background:var(--ax-surface);border-bottom:var(--ax-border-w) solid var(--ax-border);z-index:1}
-.mx-drawer__head .ax-kicker{font:10px var(--ax-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ax-muted);margin-bottom:4px}.mx-drawer__head h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}.mx-drawer__head .ax-btn{padding:6px 10px;font-size:11px;box-shadow:none}
-.mx-drawer__body{padding:20px}.mx-detail{display:grid;gap:16px}.mx-detail dl{display:grid;grid-template-columns:100px 1fr;gap:9px 12px;margin:0;font-size:12px}.mx-detail dt{color:var(--ax-muted);font-family:var(--ax-mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.mx-detail dd{margin:0;word-break:break-word}.mx-detail pre{margin:0;padding:14px;background:var(--ax-bg);border:var(--ax-border-w) solid var(--ax-border);border-radius:var(--ax-radius-sm);white-space:pre-wrap;font:11px/1.55 var(--ax-mono)}
-@media(max-width:760px){.mx-content{padding:0 16px 40px}.mx-columns,.mx-agent-grid{grid-template-columns:1fr}.mx-section{margin-bottom:26px}.mx-section .ax-section-head{gap:12px}.mx-section .ax-section-head__icon{width:38px;height:38px}.mx-section .ax-section-head__text .ax-lead{display:none}.mx-item .ax-row-card__actions{align-self:flex-start}.mx-summary{max-width:56vw}}
-@media(prefers-reduced-motion:reduce){.mx-drawer{transition:none}}
-`;
-
-const MESH_SCRIPT = `<script>
+// The history window only affects the two analytics views, so it is hidden
+// while Operations is showing rather than sitting there doing nothing.
+const MESH_TABS_SCRIPT = `<script>
 (function(){
-  var drawer=document.getElementById('mx-drawer'),scrim=document.getElementById('mx-scrim'),close=document.getElementById('mx-close'),showAll=document.getElementById('mx-show-all'),expanded=false;
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function age(v){if(!v)return 'unknown';var s=Math.max(0,(Date.now()-new Date(v).getTime())/1000);if(s<60)return Math.floor(s)+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago'}
-  function duration(ms){if(!Number.isFinite(ms))return '-';return ms<1000?ms+'ms':(ms/1000).toFixed(ms<10000?1:0)+'s'}
-  function initials(v){return String(v||'?').split(/[-_ ]+/).slice(0,2).map(function(x){return x.charAt(0)}).join('').toUpperCase()}
-  function badge(status){var kind=(status==='success'||status==='active'||status==='online')?'ax-badge--live':(status==='failed'||status==='timeout'||status==='offline')?'ax-badge--err':status==='retrying'?'ax-badge--warn':'ax-badge--ghost';return '<span class="ax-badge '+kind+'">'+esc(status)+'</span>'}
-  function avatar(text,variant){return '<span class="ax-avatar '+(variant?'ax-avatar--'+variant:'')+'">'+esc(initials(text))+'</span>'}
-  function item(info,actions,attrs,variant){return '<'+(info.href?'a':'button')+' class="ax-row-card mx-item" '+(info.href?'href="'+info.href+'"':'type="button"')+' '+(attrs||'')+'>'+avatar(info.avatar||info.title,variant)+'<span class="ax-row-card__info"><span class="ax-name">'+esc(info.title)+(info.slug?' <span class="ax-slug">'+esc(info.slug)+'</span>':'')+'</span><span class="ax-sub">'+info.sub+'</span></span><span class="ax-row-card__actions">'+(actions||'')+'</span></'+(info.href?'a':'button')+'>'}
-  function openDrawer(kicker,title,html){document.getElementById('mx-drawer-kicker').textContent=kicker;document.getElementById('mx-drawer-title').textContent=title;document.getElementById('mx-drawer-body').innerHTML=html;drawer.classList.add('is-open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;close.focus()}
-  function closeDrawer(){drawer.classList.remove('is-open');drawer.setAttribute('aria-hidden','true');scrim.hidden=true}
-  close.addEventListener('click',closeDrawer);scrim.addEventListener('click',closeDrawer);document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDrawer()});
-  showAll.addEventListener('click',function(){expanded=!expanded;document.querySelectorAll('#mx-runs .mx-item').forEach(function(el,i){el.hidden=!expanded&&i>=8});showAll.textContent=expanded?'Show less':'Show all'});
-  function detail(data){var fields=data.fields.map(function(f){return '<dt>'+esc(f[0])+'</dt><dd>'+esc(f[1])+'</dd>'}).join('');var note=data.note?'<pre>'+esc(data.note)+'</pre>':'';return '<div class="mx-detail"><dl>'+fields+'</dl>'+note+'</div>'}
-  function setHealth(index,num,kind){var card=document.querySelectorAll('#mx-health .ax-health-card')[index];if(!card)return;card.querySelector('.ax-hc-num').textContent=String(num);card.querySelector('.ax-hc-dot').className='ax-hc-dot ax-hc-dot--'+kind}
-  function render(s){var nodes=s.nodes||[],reachable=nodes.filter(function(n){return n.reachable}),agents=reachable.flatMap(function(n){return (n.agents||[]).map(function(a){return {node:n,agent:a}})}),tasks=agents.flatMap(function(x){return (x.agent.runningTasks||[]).map(function(t){return {node:x.node,agent:x.agent,task:t}})}),runs=reachable.flatMap(function(n){return (n.cronRuns||[]).map(function(r){return {node:n,run:r}})}),failed=runs.filter(function(x){return x.run.status!=='success'}).length,skills=agents.reduce(function(v,x){return v+(x.agent.skillCount||0)},0);
-    setHealth(0,reachable.length+'/'+nodes.length,reachable.length===nodes.length?'ok':'warn');setHealth(1,tasks.length,tasks.length?'ok':'off');setHealth(2,failed,failed?'warn':'off');setHealth(3,skills,skills?'ok':'off');
-    document.getElementById('mx-updated').textContent='Last fleet snapshot '+new Date(s.ts).toLocaleTimeString()+' · '+Intl.DateTimeFormat().resolvedOptions().timeZone;
-    document.getElementById('mx-active-count').textContent=tasks.length+' active';document.getElementById('mx-node-count').textContent=nodes.length+' nodes';document.getElementById('mx-agent-count').textContent=agents.length+' agents';renderRuns(reachable);renderTasks(tasks);renderNodes(nodes);renderAgents(agents);
+  var tabs=Array.prototype.slice.call(document.querySelectorAll('.mx-tab'));
+  var range=document.getElementById('mx-range');
+  var stamp=document.getElementById('mx-analytics-updated');
+  function select(id){
+    tabs.forEach(function(t){
+      var on=t.dataset.view===id;
+      t.setAttribute('aria-selected',String(on));
+      document.getElementById('mx-view-'+t.dataset.view).hidden=!on;
+    });
+    var analytics=id!=='ops';
+    range.hidden=!analytics;stamp.hidden=!analytics;
+    try{localStorage.setItem('mx-view',id)}catch(e){}
   }
-  function renderRuns(nodes){var cards=[];nodes.forEach(function(n){(n.crons||[]).forEach(function(job){var history=(n.cronRuns||[]).filter(function(r){return r.jobId===job.id}),latest=history[0],status=!job.enabled?'disabled':latest?latest.status:job.retryPending?'retrying':'waiting',summary=latest?(latest.errorSummary||latest.responseSummary||'No summary'):(job.enabled?'No attempt persisted today':'Schedule disabled'),agent=(n.agents||[]).find(function(a){return a.id===job.agent});cards.push({node:n,job:job,run:latest,status:status,summary:summary,agent:agent})})});var root=document.getElementById('mx-runs');document.getElementById('mx-run-count').textContent=cards.length+' schedules';showAll.hidden=cards.length<=8;if(!cards.length){root.innerHTML='<div class="mx-empty">No schedules reported by reachable nodes.</div>';return}root.innerHTML=cards.map(function(x,i){var sub='<code>'+esc(x.job.agent)+'</code><span>'+esc(x.job.schedule)+'</span><span class="mx-summary">'+esc(x.summary)+'</span>';return item({title:x.job.id,slug:x.node.name,sub:sub},badge(x.status),'data-run="'+i+'"'+(!expanded&&i>=8?' hidden':''),x.status==='success'?'teal':(x.status==='failed'||x.status==='timeout')?'coral':'plain')}).join('');root.querySelectorAll('[data-run]').forEach(function(el){el.addEventListener('click',function(){var x=cards[Number(el.dataset.run)],runtime=x.agent&&x.agent.tier||'unknown',model=x.job.model||(x.agent&&x.agent.model),modelLabel=x.job.model?model:model+' (inherited)';openDrawer('Automation',x.job.id,detail({fields:[['Node',x.node.name],['Agent',x.job.agent],['Runtime',runtime],['Model',modelLabel||'default'],['Status',x.status],['Schedule',x.job.schedule],['Timezone',x.job.timezone||'local'],['Started',x.run?new Date(x.run.startedAt).toLocaleString():'Not today'],['Duration',x.run?duration(x.run.duration):'-'],['Retry',x.run&&x.run.isRetry?'Attempt '+x.run.retryAttempt:'No'],['Task ID',x.run&&x.run.taskId||'-'],['Session ID',x.run&&x.run.sessionId||'-']],note:x.summary}))})})}
-  function renderTasks(tasks){var root=document.getElementById('mx-active');if(!tasks.length){root.innerHTML='<div class="mx-empty">The mesh is idle.</div>';return}root.innerHTML=tasks.map(function(x){var href='/tasks/'+encodeURIComponent(x.task.id)+'?node='+encodeURIComponent(x.node.url)+'&agent='+encodeURIComponent(x.agent.id)+'&name='+encodeURIComponent(x.agent.name)+'&channel='+encodeURIComponent(x.task.channel||'unknown'),sub='<code>'+esc(x.node.name)+' / '+esc(x.task.channel||'unknown')+'</code><span class="mx-summary">'+esc(x.task.messagePreview||'Working')+'</span>';return item({href:href,title:x.agent.name,slug:x.task.sender?'by '+x.task.sender:'',sub:sub},'<span class="mx-node-meta">'+esc(age(x.task.startedAt))+'</span>','', 'blue')}).join('')}
-  function renderNodes(nodes){var root=document.getElementById('mx-nodes');root.innerHTML=nodes.map(function(n,i){var active=(n.agents||[]).reduce(function(v,a){return v+(a.active||0)},0),sub='<span>'+esc(n.reachable?n.agents.length+' agents · '+active+' active':n.error||'unreachable')+'</span>',status=n.reachable?(active?'active':'online'):'offline';return item({title:n.name,slug:n.id,sub:sub},badge(status),'data-node="'+i+'"',n.reachable?'teal':'coral')}).join('');root.querySelectorAll('[data-node]').forEach(function(el){el.addEventListener('click',function(){var n=nodes[Number(el.dataset.node)];openDrawer('Fleet node',n.name,detail({fields:[['Status',n.reachable?'Reachable':'Unreachable'],['URL',n.url],['Agents',(n.agents||[]).length],['Schedules',(n.crons||[]).length],['Uptime',n.uptimeSec?Math.floor(n.uptimeSec/60)+' minutes':'-']],note:n.error||''}))})})}
-  function renderAgents(items){var root=document.getElementById('mx-agents');if(!items.length){root.innerHTML='<div class="mx-empty">No agent inventory available.</div>';return}root.innerHTML=items.map(function(x,i){var a=x.agent,sub='<code>'+esc(a.tier)+' · '+esc(a.model||'default model')+'</code><span>'+esc(a.skillCount==null?'skills unavailable':a.skillCount+' skills')+' · '+esc(a.total||0)+' tasks</span>';return item({title:a.name,slug:x.node.name,sub:sub},badge(a.active?'active':'idle'),'data-agent="'+i+'"',a.active?'blue':'plain')}).join('');root.querySelectorAll('[data-agent]').forEach(function(el){el.addEventListener('click',function(){var x=items[Number(el.dataset.agent)],a=x.agent,history='/agents/'+encodeURIComponent(a.id)+'/history?node='+encodeURIComponent(x.node.url)+'&name='+encodeURIComponent(a.name);openDrawer('Agent inventory',a.name,detail({fields:[['Node',x.node.name],['Agent ID',a.id],['Runtime',a.tier],['Model',a.model||'default'],['Skills',a.skillCount==null?'Unavailable until node upgrade':a.skillCount],['Active tasks',a.active||0],['Total tasks',a.total||0],['Errors',a.errors||0]],note:a.lastSummary&&a.lastSummary.text||''})+'<a class="mx-link" href="'+history+'">Open activity history</a>')})})}
-  function load(){var date=new Date().toLocaleDateString('en-CA'),tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';fetch('/api/mesh?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent(tz)).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(render).catch(function(e){document.getElementById('mx-updated').textContent='Fleet snapshot unavailable: '+e.message})}
-  load();setInterval(load,5000);
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){select(t.dataset.view)});
+    t.addEventListener('keydown',function(e){
+      var d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;
+      if(!d)return;
+      e.preventDefault();
+      var next=tabs[(i+d+tabs.length)%tabs.length];
+      next.focus();select(next.dataset.view);
+    });
+  });
+  var saved=null;try{saved=localStorage.getItem('mx-view')}catch(e){}
+  select(tabs.some(function(t){return t.dataset.view===saved})?saved:'activity');
 })();
-</script>`;
+</script>`
