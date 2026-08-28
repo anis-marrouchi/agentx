@@ -24,6 +24,10 @@ export interface NodeTarget { name: string; url: string; token?: string }
 export interface MergedAnalytics {
   generatedAt: number
   windowDays: number
+  /** Actual window start in epoch ms, taken from the nodes rather than
+   *  recomputed by the client. `days` alone cannot express it: days:0
+   *  means "since local midnight", and generatedAt - 0 is not that. */
+  since: number
   nodes: Array<{ name: string; url: string; ok: boolean; error?: string; runs: number }>
   totals: MeshAnalytics["totals"]
   days: MeshAnalytics["days"]
@@ -116,9 +120,11 @@ export function mergeMeshAnalytics(
     for (const t of data.threads) threads.push({ ...t, node: node.name, nodeUrl: node.url })
   }
 
+  const sinces = results.filter((r) => r.data).map((r) => r.data!.since).filter((n) => Number.isFinite(n))
   return {
     generatedAt: Date.now(),
     windowDays,
+    since: sinces.length ? Math.min(...sinces) : Date.now() - windowDays * 86_400_000,
     nodes: results.map((r) => ({
       name: r.node.name, url: r.node.url, ok: !!r.data,
       error: r.error, runs: r.data?.totals.runs || 0,

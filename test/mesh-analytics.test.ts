@@ -308,6 +308,14 @@ describe("mergeMeshAnalytics", () => {
     expect(m.rotations.byReason.map((r) => r.reason).sort()).toEqual(["stale", "tier-2"])
   })
 
+  it("carries the real window start rather than making the client derive it", () => {
+    const m = mergeMeshAnalytics([
+      { node: node("n1"), data: payload({ since: 5000 }) },
+      { node: node("n2"), data: payload({ since: 7000 }) },
+    ], 30)
+    expect(m.since).toBe(5000)
+  })
+
   it("reports an unreachable node instead of dropping it", () => {
     const m = mergeMeshAnalytics([
       { node: node("n1"), data: payload() },

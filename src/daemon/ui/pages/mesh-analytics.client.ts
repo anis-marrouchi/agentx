@@ -296,7 +296,10 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
 
   function render(d){
     state.data=d;
-    d.windowStart=d.generatedAt-d.windowDays*86400000;
+    // The server knows where the window really starts; deriving it from
+    // windowDays here breaks the Today range, whose start is local
+    // midnight rather than a whole number of days back.
+    d.windowStart=Number.isFinite(d.since)?d.since:(d.generatedAt-d.windowDays*86400000);
     renderNodes(d);renderLanes(d);renderOrigins(d);renderCauses(d);
     renderScatter(d);renderThreads(d);renderRotations(d);
   }
