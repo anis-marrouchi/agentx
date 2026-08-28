@@ -29,7 +29,7 @@ import { attachProcedureWatcher } from "./procedure-watcher"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
-import { listThreadRuns, listJobRuns, getRunShape } from "@/storage/mesh-drill"
+import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
 import { ProcessRegistry } from "@/agents/process-registry"
 import { ClaudeProcessFactory, readClaudeMdHashSafe } from "@/agents/claude-process-factory"
 import { setProcessRegistry } from "@/agents/process-registry-instance"
@@ -2655,6 +2655,36 @@ export class AgentXDaemon {
         }
         const limit = parseInt(url.searchParams.get("limit") || "120", 10)
         this.json(res, 200, { runs: listJobRuns(this.db, { kind, key, limit }) })
+        return
+      }
+      if (req.method === "GET" && path === "/analytics/day") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const day = url.searchParams.get("day") || ""
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          this.json(res, 400, { error: "day=YYYY-MM-DD query param required" })
+          return
+        }
+        const tz = parseInt(url.searchParams.get("tzOffset") || "0", 10)
+        const limit = parseInt(url.searchParams.get("limit") || "40", 10)
+        this.json(res, 200, getDayActivity(this.db, {
+          day, tzOffsetMinutes: Number.isFinite(tz) ? tz : 0, limit,
+        }))
+        return
+      }
+      if (req.method === "GET" && path === "/analytics/conversation") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const agent = url.searchParams.get("agent")
+        const channel = url.searchParams.get("channel")
+        const chat = url.searchParams.get("chat")
+        if (!agent || !channel || !chat) {
+          this.json(res, 400, { error: "agent, channel and chat query params required" })
+          return
+        }
+        const tz = parseInt(url.searchParams.get("tzOffset") || "0", 10)
+        const summary = getConversationSummary(this.db, {
+          agent, channel, chatId: chat, tzOffsetMinutes: Number.isFinite(tz) ? tz : 0,
+        })
+        this.json(res, summary.found ? 200 : 404, summary)
         return
       }
       const runShapeMatch = req.method === "GET" && path.match(/^\/analytics\/run\/([^/]+)$/)

@@ -22,7 +22,7 @@ import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStre
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderMeshPage } from "./ui/pages/mesh"
-import { fetchMeshAnalytics, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
+import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
@@ -556,9 +556,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     try {
       const targets = await resolveNodeTargets(ctx.config)
       sendJson(res, 200, await fetchMeshAnalytics(targets, {
-        days: num("days", 30, 1, 180),
+        days: num("days", 30, 0, 180),
         tzOffsetMinutes: num("tzOffset", 0, -840, 840),
         limit: num("limit", 60, 1, 200),
+      }))
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+
+  // One activity column, across the fleet.
+  //   GET /api/mesh/day?day=YYYY-MM-DD&tzOffset=<minutes>&limit=40
+  if (method === "GET" && path === "/api/mesh/day") {
+    const day = url.searchParams.get("day") || ""
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      sendJson(res, 400, { error: "day=YYYY-MM-DD query param required" }); return
+    }
+    const num = (k: string, d: number, lo: number, hi: number): number => {
+      const v = parseInt(url.searchParams.get(k) || "", 10)
+      return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d
+    }
+    try {
+      const targets = await resolveNodeTargets(ctx.config)
+      sendJson(res, 200, await fetchMeshDay(targets, {
+        day,
+        tzOffsetMinutes: num("tzOffset", 0, -840, 840),
+        limit: num("limit", 40, 1, 200),
       }))
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
@@ -569,7 +591,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   //   GET /api/mesh/thread?node=&agent=&channel=&chat=&limit=
   //   GET /api/mesh/job?node=&kind=cron|workflow&key=&limit=
   //   GET /api/mesh/run?node=&task=
-  if (method === "GET" && (path === "/api/mesh/thread" || path === "/api/mesh/job" || path === "/api/mesh/run")) {
+  //   GET /api/mesh/conversation?node=&agent=&channel=&chat=&tzOffset=
+  if (method === "GET" && (path === "/api/mesh/thread" || path === "/api/mesh/job"
+      || path === "/api/mesh/run" || path === "/api/mesh/conversation")) {
     const nodeUrl = url.searchParams.get("node")
     if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
     const q = url.searchParams
@@ -584,6 +608,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       if (!kind || !key) { sendJson(res, 400, { error: "kind and key required" }); return }
       upstream = `/analytics/job?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`
         + `&limit=${encodeURIComponent(q.get("limit") || "120")}`
+    } else if (path === "/api/mesh/conversation") {
+      const [agent, channel, chat] = [q.get("agent"), q.get("channel"), q.get("chat")]
+      if (!agent || !channel || !chat) { sendJson(res, 400, { error: "agent, channel, chat required" }); return }
+      upstream = `/analytics/conversation?agent=${encodeURIComponent(agent)}&channel=${encodeURIComponent(channel)}`
+        + `&chat=${encodeURIComponent(chat)}&tzOffset=${encodeURIComponent(q.get("tzOffset") || "0")}`
     } else {
       const task = q.get("task")
       if (!task) { sendJson(res, 400, { error: "task required" }); return }

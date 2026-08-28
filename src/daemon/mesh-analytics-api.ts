@@ -1,5 +1,6 @@
 import type { ServerResponse } from "http"
 import type { MeshAnalytics, CauseId } from "@/storage/mesh-analytics"
+import type { DayActivity, DayConversation } from "@/storage/mesh-drill"
 
 // --- Mesh-wide analytics fan-out + merge ------------------------------
 //
@@ -170,5 +171,84 @@ export async function proxyNodeAnalytics(
   } catch (e: any) {
     res.writeHead(502, { "Content-Type": "application/json" })
     res.end(JSON.stringify({ error: e?.message || "upstream fetch failed" }))
+  }
+}
+
+
+// --- One day, across the fleet ----------------------------------------
+//
+// Clicking an activity column asks a fleet question, so this fans out the
+// same way the window query does. Conversations keep their node, for the
+// same reason jobs do: you act on them per node.
+
+export interface MergedDay {
+  day: string
+  nodes: Array<{ name: string; url: string; ok: boolean; error?: string; runs: number }>
+  totals: DayActivity["totals"]
+  origins: DayActivity["origins"]
+  causes: DayActivity["causes"]
+  conversations: Array<DayConversation & { node: string; nodeUrl: string }>
+}
+
+export async function fetchMeshDay(
+  nodes: NodeTarget[],
+  q: { day: string; tzOffsetMinutes: number; limit: number },
+  timeoutMs = 6000,
+): Promise<MergedDay> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  const qs = `?day=${encodeURIComponent(q.day)}&tzOffset=${q.tzOffsetMinutes}&limit=${q.limit}`
+  let results: Array<{ node: NodeTarget; data?: DayActivity; error?: string }>
+  try {
+    results = await Promise.all(nodes.map(async (node) => {
+      const headers: Record<string, string> = { Accept: "application/json" }
+      if (node.token) headers["Authorization"] = `Bearer ${node.token}`
+      try {
+        const r = await fetch(node.url + "/analytics/day" + qs, { headers, signal: ac.signal })
+        if (!r.ok) return { node, error: `HTTP ${r.status}` }
+        return { node, data: (await r.json()) as DayActivity }
+      } catch (e: any) {
+        return { node, error: e?.name === "AbortError" ? "timeout" : (e?.message || "unreachable") }
+      }
+    }))
+  } finally { clearTimeout(timer) }
+  return mergeMeshDay(results, q.day)
+}
+
+export function mergeMeshDay(
+  results: Array<{ node: NodeTarget; data?: DayActivity; error?: string }>,
+  day: string,
+): MergedDay {
+  const totals = { runs: 0, errors: 0, ms: 0, inputTokens: 0, outputTokens: 0 }
+  const origins = new Map<string, { channel: string; runs: number; errors: number; ms: number }>()
+  const causes = new Map<CauseId, number>()
+  const conversations: MergedDay["conversations"] = []
+
+  for (const { node, data } of results) {
+    if (!data) continue
+    totals.runs += data.totals.runs
+    totals.errors += data.totals.errors
+    totals.ms += data.totals.ms
+    totals.inputTokens += data.totals.inputTokens
+    totals.outputTokens += data.totals.outputTokens
+    for (const o of data.origins) {
+      const cur = origins.get(o.channel) || { channel: o.channel, runs: 0, errors: 0, ms: 0 }
+      cur.runs += o.runs; cur.errors += o.errors; cur.ms += o.ms
+      origins.set(o.channel, cur)
+    }
+    for (const c of data.causes) causes.set(c.cause, (causes.get(c.cause) || 0) + c.count)
+    for (const c of data.conversations) conversations.push({ ...c, node: node.name, nodeUrl: node.url })
+  }
+
+  return {
+    day,
+    nodes: results.map((r) => ({
+      name: r.node.name, url: r.node.url, ok: !!r.data,
+      error: r.error, runs: r.data?.totals.runs || 0,
+    })),
+    totals,
+    origins: [...origins.values()].sort((a, b) => b.runs - a.runs),
+    causes: [...causes.entries()].map(([cause, count]) => ({ cause, count })).sort((a, b) => b.count - a.count),
+    conversations: conversations.sort((a, b) => b.ms - a.ms || b.turns - a.turns),
   }
 }

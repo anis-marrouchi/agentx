@@ -130,11 +130,17 @@ type Row = Record<string, any>
  *  minutes. Avoids depending on the daemon host's TZ, which differs across
  *  mesh nodes and would make merged day buckets disagree. */
 function dayExpr(col: string): string {
-  return `date((${col} - @tzOffsetMs) / 1000, 'unixepoch')`
+  // ADD the offset: local time is UTC plus minutes-east, so a Tunis (UTC+1)
+  // caller at 23:30 UTC is already on the next local day. Subtracting here
+  // is wrong for only one hour a day, which is exactly why it survives
+  // eyeballing — the unit test is what catches it.
+  return `date((${col} + @tzOffsetMs) / 1000, 'unixepoch')`
 }
 
 export interface AnalyticsOpts {
-  /** Days of history to include. Clamped 1..180. */
+  /** Days of history to include, clamped 0..180. Zero is a real value and
+   *  means "since local midnight" — a Today button that quietly showed the
+   *  last 24 hours would span two calendar days and misname itself. */
   days?: number
   /** Minutes east of UTC, i.e. `-new Date().getTimezoneOffset()`. */
   tzOffsetMinutes?: number
@@ -143,11 +149,13 @@ export interface AnalyticsOpts {
 }
 
 export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = {}): MeshAnalytics {
-  const days = Math.max(1, Math.min(180, Math.floor(opts.days ?? 30)))
+  const days = Math.max(0, Math.min(180, Math.floor(opts.days ?? 30)))
   const limit = Math.max(1, Math.min(200, Math.floor(opts.limit ?? 60)))
   const tzOffsetMs = (opts.tzOffsetMinutes ?? 0) * 60_000
   const now = Date.now()
-  const since = now - days * 86_400_000
+  const since = days === 0
+    ? Math.floor((now + tzOffsetMs) / 86_400_000) * 86_400_000 - tzOffsetMs
+    : now - days * 86_400_000
   const p = { since, tzOffsetMs, limit }
 
   const totals = db.prepare(`
@@ -168,7 +176,14 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
     GROUP BY 1, 2 ORDER BY 1
   `).all(p) as Row[]
 
+  // Seed every day in the window, including today and any day nothing ran.
+  // GROUP BY only emits days that have rows, and rendering that sparse list
+  // as evenly spaced columns silently relabels the axis — a quiet Sunday
+  // would vanish and every later column would shift left by one.
   const byDay = new Map<string, MeshAnalytics["days"][number]>()
+  for (const day of dayKeysBetween(since, now, tzOffsetMs)) {
+    byDay.set(day, { day, cron: [0, 0], workflow: [0, 0], direct: [0, 0] })
+  }
   for (const r of dayRows) {
     let d = byDay.get(r.day)
     if (!d) { d = { day: r.day, cron: [0, 0], workflow: [0, 0], direct: [0, 0] }; byDay.set(r.day, d) }
@@ -308,7 +323,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
       hours: round((totals.ms || 0) / 3_600_000, 2),
       agents: totals.agents || 0, threads: totals.threads || 0,
     },
-    days: [...byDay.values()],
+    days: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
     origins,
     causes,
     jobs,
@@ -337,6 +352,25 @@ function toJob(r: Row, kind: "cron" | "workflow", label: string): JobRow {
     lastAt: r.lastAt ?? null,
     verdict: verdictFor(r.runs, r.errors, avgSec, avgOutput),
   }
+}
+
+/** Every local calendar day touched by [from, to], inclusive of today.
+ *  A fixed UTC offset makes "local day" a pure shift, so the whole range
+ *  is one integer loop and every node in the mesh agrees on the buckets. */
+export function dayKeysBetween(from: number, to: number, tzOffsetMs: number): string[] {
+  const first = Math.floor((from + tzOffsetMs) / 86_400_000)
+  const last = Math.floor((to + tzOffsetMs) / 86_400_000)
+  const out: string[] = []
+  for (let d = first; d <= last && out.length <= 400; d++) {
+    out.push(new Date(d * 86_400_000).toISOString().slice(0, 10))
+  }
+  return out
+}
+
+/** Local-day boundaries for one YYYY-MM-DD key under the same fixed offset. */
+export function dayBounds(day: string, tzOffsetMs: number): { start: number; end: number } {
+  const start = Date.parse(day + "T00:00:00Z") - tzOffsetMs
+  return { start, end: start + 86_400_000 }
 }
 
 /** Evenly sample `max` items out of `list`, preserving order and endpoints.
