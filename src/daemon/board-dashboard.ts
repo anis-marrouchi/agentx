@@ -22,6 +22,7 @@ import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStre
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderMeshPage } from "./ui/pages/mesh"
+import { fetchMeshAnalytics, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
@@ -540,6 +541,56 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       const timezone = url.searchParams.get("timezone") || "UTC"
       const snap = await buildLiveSnapshot(ctx.config, { date, timezone })
       sendJson(res, 200, snap)
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+
+  // Mesh analytics — fleet-wide activity, failure causes, zombie jobs and
+  // thread lifetimes. Fans out to every node's /analytics/mesh and merges.
+  //   GET /api/mesh/analytics?days=30&tzOffset=<minutes>&limit=60
+  if (method === "GET" && path === "/api/mesh/analytics") {
+    const num = (k: string, d: number, lo: number, hi: number): number => {
+      const v = parseInt(url.searchParams.get(k) || "", 10)
+      return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d
+    }
+    try {
+      const targets = await resolveNodeTargets(ctx.config)
+      sendJson(res, 200, await fetchMeshAnalytics(targets, {
+        days: num("days", 30, 1, 180),
+        tzOffsetMinutes: num("tzOffset", 0, -840, 840),
+        limit: num("limit", 60, 1, 200),
+      }))
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+
+  // Drill-down proxies. The node URL comes from the merged analytics
+  // payload and is re-checked against the allowlist before forwarding.
+  //   GET /api/mesh/thread?node=&agent=&channel=&chat=&limit=
+  //   GET /api/mesh/job?node=&kind=cron|workflow&key=&limit=
+  //   GET /api/mesh/run?node=&task=
+  if (method === "GET" && (path === "/api/mesh/thread" || path === "/api/mesh/job" || path === "/api/mesh/run")) {
+    const nodeUrl = url.searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    const q = url.searchParams
+    let upstream: string
+    if (path === "/api/mesh/thread") {
+      const [agent, channel, chat] = [q.get("agent"), q.get("channel"), q.get("chat")]
+      if (!agent || !channel || !chat) { sendJson(res, 400, { error: "agent, channel, chat required" }); return }
+      upstream = `/analytics/thread?agent=${encodeURIComponent(agent)}&channel=${encodeURIComponent(channel)}`
+        + `&chat=${encodeURIComponent(chat)}&limit=${encodeURIComponent(q.get("limit") || "120")}`
+    } else if (path === "/api/mesh/job") {
+      const [kind, key] = [q.get("kind"), q.get("key")]
+      if (!kind || !key) { sendJson(res, 400, { error: "kind and key required" }); return }
+      upstream = `/analytics/job?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`
+        + `&limit=${encodeURIComponent(q.get("limit") || "120")}`
+    } else {
+      const task = q.get("task")
+      if (!task) { sendJson(res, 400, { error: "task required" }); return }
+      upstream = `/analytics/run/${encodeURIComponent(task)}`
+    }
+    try {
+      await proxyNodeAnalytics(res, await resolveNodeTargets(ctx.config), nodeUrl, upstream)
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
   }
@@ -1390,26 +1441,34 @@ async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: Abort
   } catch { return [] }
 }
 
-async function buildLiveSnapshot(
-  daemon: DaemonConfig,
-  day?: { date: string; timezone: string },
-): Promise<LiveSnapshot> {
+/** Every daemon this dashboard is allowed to read: the primary, the
+ *  explicitly configured extras, and whatever the primary's /mesh reports.
+ *  Shared by the live snapshot and the analytics fan-out so both agree on
+ *  what "the fleet" means, and so the analytics drill-down proxy has the
+ *  same allowlist as the task proxies. */
+async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSignal): Promise<NodeTarget[]> {
   const dash = daemon.dashboard
   const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
-  const primaryToken = dash.token
-  // Sources: primary + configured extras + auto-discovered mesh peers.
-  const seen = new Map<string, { name: string; url: string; token?: string }>()
-  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: primaryToken })
+  const seen = new Map<string, NodeTarget>()
+  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: dash.token })
   for (const d of dash.daemons) {
     const key = d.url.replace(/\/+$/, "")
     if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: d.token })
   }
+  const meshPeers = await fetchMeshPeers(primaryUrl, dash.token, signal)
+  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
+  return [...seen.values()]
+}
+
+async function buildLiveSnapshot(
+  daemon: DaemonConfig,
+  day?: { date: string; timezone: string },
+): Promise<LiveSnapshot> {
   const ac = new AbortController()
   const timeout = setTimeout(() => ac.abort(), 3000)
   try {
-    const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, ac.signal)
-    for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
-    const nodes = await Promise.all([...seen.values()].map((d) => fetchDaemonAgents(d.url, d.token, ac.signal, day)))
+    const targets = await resolveNodeTargets(daemon, ac.signal)
+    const nodes = await Promise.all(targets.map((d) => fetchDaemonAgents(d.url, d.token, ac.signal, day)))
     return { ts: new Date().toISOString(), nodes }
   } finally { clearTimeout(timeout) }
 }

@@ -28,6 +28,8 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
+import { buildMeshAnalytics } from "@/storage/mesh-analytics"
+import { listThreadRuns, listJobRuns, getRunShape } from "@/storage/mesh-drill"
 import { ProcessRegistry } from "@/agents/process-registry"
 import { ClaudeProcessFactory, readClaudeMdHashSafe } from "@/agents/claude-process-factory"
 import { setProcessRegistry } from "@/agents/process-registry-instance"
@@ -2606,6 +2608,63 @@ export class AgentXDaemon {
       //   GET /traces?agentId=&channel=&chatId=&workflowRunId=&status=
       //              &since=<msEpoch>&until=<msEpoch>&limit=N
       //   GET /traces/:taskId
+      // --- Mesh analytics — bounded, content-free aggregates ---------
+      //
+      // The mesh dashboard fans these out to every reachable node and
+      // merges the results, so each response must be small and safe to
+      // cross a node boundary: aggregates, classified failure causes and
+      // tool NAMES only. Anything carrying a prompt or a response body
+      // stays behind /traces/:taskId on the owning node.
+      //   GET /analytics/mesh?days=30&tzOffset=<minutes east of UTC>
+      //   GET /analytics/thread?agent=&channel=&chat=&limit=
+      //   GET /analytics/job?kind=cron|workflow&key=&limit=
+      //   GET /analytics/run/:taskId
+      if (req.method === "GET" && path === "/analytics/mesh") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const num = (k: string, d: number): number => {
+          const v = parseInt(url.searchParams.get(k) || "", 10)
+          return Number.isFinite(v) ? v : d
+        }
+        this.json(res, 200, buildMeshAnalytics(this.db, {
+          days: num("days", 30),
+          tzOffsetMinutes: num("tzOffset", 0),
+          limit: num("limit", 60),
+        }))
+        return
+      }
+      if (req.method === "GET" && path === "/analytics/thread") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const agent = url.searchParams.get("agent")
+        const channel = url.searchParams.get("channel")
+        const chat = url.searchParams.get("chat")
+        if (!agent || !channel || !chat) {
+          this.json(res, 400, { error: "agent, channel and chat query params required" })
+          return
+        }
+        const limit = parseInt(url.searchParams.get("limit") || "120", 10)
+        this.json(res, 200, { runs: listThreadRuns(this.db, { agent, channel, chatId: chat, limit }) })
+        return
+      }
+      if (req.method === "GET" && path === "/analytics/job") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const kind = url.searchParams.get("kind")
+        const key = url.searchParams.get("key")
+        if ((kind !== "cron" && kind !== "workflow") || !key) {
+          this.json(res, 400, { error: "kind=cron|workflow and key query params required" })
+          return
+        }
+        const limit = parseInt(url.searchParams.get("limit") || "120", 10)
+        this.json(res, 200, { runs: listJobRuns(this.db, { kind, key, limit }) })
+        return
+      }
+      const runShapeMatch = req.method === "GET" && path.match(/^\/analytics\/run\/([^/]+)$/)
+      if (runShapeMatch) {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const shape = getRunShape(this.db, runShapeMatch[1])
+        this.json(res, shape.found ? 200 : 404, shape)
+        return
+      }
+
       const traceListMatch = req.method === "GET" && path === "/traces"
       if (traceListMatch) {
         if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
