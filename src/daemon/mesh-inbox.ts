@@ -99,6 +99,18 @@ export function relayChatId(inboxName: string, principal: string): string {
   return `relay:${inboxName}:${principal}`
 }
 
+/** Inboxes whose agent is not on THIS node. A relay must never fall through
+ *  to mesh forwarding: the operator declared a destination here, and
+ *  silently hopping foreign content to another node crosses a boundary
+ *  they did not authorise, executes it under an unrelated channel, and
+ *  leaves the receiving node with no audit row. */
+export function unresolvableInboxes(
+  config: InboxSources,
+  hasAgent: (agentId: string) => boolean,
+): MeshInbox[] {
+  return (config.mesh?.inboxes || []).filter((i) => i.enabled !== false && !hasAgent(i.agent))
+}
+
 export type RelayValidation =
   | { ok: true; inbox: MeshInbox; message: string; principal: string; node: string }
   | { ok: false; status: number; error: string }
@@ -106,6 +118,7 @@ export type RelayValidation =
 export function validateRelayRequest(
   config: InboxSources,
   body: Record<string, unknown>,
+  hasAgent: (agentId: string) => boolean,
 ): RelayValidation {
   const name = typeof body.inbox === "string" ? body.inbox : ""
   if (!name) return { ok: false, status: 400, error: "inbox is required" }
@@ -124,6 +137,15 @@ export function validateRelayRequest(
   // Same answer for "no such inbox" and "not accepting": a remote caller
   // should not be able to probe which names exist but are switched off.
   if (!inbox) return { ok: false, status: 404, error: "no such inbox, or it is not accepting" }
+
+  // The bound agent must be LOCAL. Without this, registry.execute falls
+  // through to mesh fallback and forwards the message to whichever peer
+  // hosts that agent id — an onward hop the operator never declared. The
+  // error deliberately does not name the agent: which identity sits behind
+  // an inbox is not part of the published surface.
+  if (!hasAgent(inbox.agent)) {
+    return { ok: false, status: 503, error: "inbox is misconfigured on this node and cannot accept messages" }
+  }
 
   const from = (body.from || {}) as Record<string, unknown>
   return {

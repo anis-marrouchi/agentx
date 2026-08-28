@@ -5,11 +5,15 @@ import {
   listPublishedInboxes,
   resolveInbox,
   renderRelayMessage,
+  unresolvableInboxes,
   sanitizePrincipal,
   relayChatId,
   validateRelayRequest,
   MAX_RELAY_MESSAGE_BYTES,
 } from "../src/daemon/mesh-inbox"
+
+const LOCAL_AGENTS = new Set(["devops-agent", "coo-agent"])
+const hasAgent = (id: string) => LOCAL_AGENTS.has(id)
 
 const config = {
   mesh: {
@@ -52,7 +56,7 @@ describe("relay request validation", () => {
     const v = validateRelayRequest(config, {
       inbox: "anis-desk", message: "build is red on main",
       from: { principal: "alice", node: "her-laptop" },
-    })
+    }, hasAgent)
     expect(v.ok).toBe(true)
     if (!v.ok) return
     expect(v.inbox.agent).toBe("devops-agent")
@@ -62,28 +66,28 @@ describe("relay request validation", () => {
 
   it("gives the same answer for an unknown inbox and a disabled one", () => {
     // Otherwise a remote caller could probe which names exist but are off.
-    const missing = validateRelayRequest(config, { inbox: "nope", message: "x" })
-    const disabled = validateRelayRequest(config, { inbox: "ops-oncall", message: "x" })
+    const missing = validateRelayRequest(config, { inbox: "nope", message: "x" }, hasAgent)
+    const disabled = validateRelayRequest(config, { inbox: "ops-oncall", message: "x" }, hasAgent)
     expect(missing).toEqual(disabled)
     expect(missing.ok).toBe(false)
   })
 
   it("requires an inbox and a non-empty message", () => {
-    expect(validateRelayRequest(config, { message: "x" })).toMatchObject({ ok: false, status: 400 })
-    expect(validateRelayRequest(config, { inbox: "anis-desk" })).toMatchObject({ ok: false, status: 400 })
-    expect(validateRelayRequest(config, { inbox: "anis-desk", message: "   " })).toMatchObject({ ok: false, status: 400 })
+    expect(validateRelayRequest(config, { message: "x" }, hasAgent)).toMatchObject({ ok: false, status: 400 })
+    expect(validateRelayRequest(config, { inbox: "anis-desk" }, hasAgent)).toMatchObject({ ok: false, status: 400 })
+    expect(validateRelayRequest(config, { inbox: "anis-desk", message: "   " }, hasAgent)).toMatchObject({ ok: false, status: 400 })
   })
 
   it("refuses an oversized message rather than truncating it", () => {
     // Truncation could silently drop the half that changes the meaning.
     const big = "a".repeat(MAX_RELAY_MESSAGE_BYTES + 1)
-    expect(validateRelayRequest(config, { inbox: "anis-desk", message: big }))
+    expect(validateRelayRequest(config, { inbox: "anis-desk", message: big }, hasAgent))
       .toMatchObject({ ok: false, status: 413 })
   })
 
   it("counts bytes, not characters, so multibyte content can't slip past the cap", () => {
     const justOver = "é".repeat(MAX_RELAY_MESSAGE_BYTES / 2 + 1) // 2 bytes each
-    const v = validateRelayRequest(config, { inbox: "anis-desk", message: justOver })
+    const v = validateRelayRequest(config, { inbox: "anis-desk", message: justOver }, hasAgent)
     expect(v.ok).toBe(false)
   })
 })
@@ -166,5 +170,39 @@ describe("no Claude Code session key custody", () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe("relay never hops to another node", () => {
+  // registry.execute falls through to mesh fallback for an agent that is not
+  // local, which would forward relayed foreign content to whichever peer
+  // hosts that agent id. Caught in production verification: a clawd inbox
+  // pointing at a MacBook-only agent reported delivered:true, executed on
+  // the other node under channel "api", and left no audit row behind.
+  const strayConfig = {
+    mesh: { inboxes: [{ name: "ops-oncall", agent: "not-on-this-node", enabled: true }] },
+  }
+
+  it("refuses an inbox whose agent is not local", () => {
+    const v = validateRelayRequest(strayConfig, { inbox: "ops-oncall", message: "hi" }, hasAgent)
+    expect(v).toMatchObject({ ok: false, status: 503 })
+  })
+
+  it("does not name the agent in the refusal", () => {
+    // Which identity sits behind an inbox is not part of the published surface.
+    const v = validateRelayRequest(strayConfig, { inbox: "ops-oncall", message: "hi" }, hasAgent)
+    expect(v.ok).toBe(false)
+    if (v.ok) return
+    expect(v.error).not.toContain("not-on-this-node")
+  })
+
+  it("lists mis-declared inboxes so boot can warn about them", () => {
+    expect(unresolvableInboxes(strayConfig, hasAgent).map((i) => i.name)).toEqual(["ops-oncall"])
+    expect(unresolvableInboxes(config, hasAgent)).toEqual([])
+  })
+
+  it("ignores a disabled inbox when reporting mis-declarations", () => {
+    const disabled = { mesh: { inboxes: [{ name: "x", agent: "nope", enabled: false }] } }
+    expect(unresolvableInboxes(disabled, hasAgent)).toEqual([])
   })
 })

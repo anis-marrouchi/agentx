@@ -30,7 +30,7 @@ import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import {
   listPublishedInboxes, validateRelayRequest, renderRelayMessage,
-  relayChatId, relayRateLimiter, RELAY_CHANNEL,
+  relayChatId, relayRateLimiter, unresolvableInboxes, RELAY_CHANNEL,
 } from "@/daemon/mesh-inbox"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
 import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
@@ -1691,6 +1691,12 @@ export class AgentXDaemon {
 
     this.httpServer.listen(port, host || "0.0.0.0", () => {
       this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
+      // Surface a mis-declared inbox at boot rather than at the first
+      // foreign message, when the sender would just see a 503.
+      const broken = unresolvableInboxes(this.config, (id) => !!this.registry.getAgent(id))
+      for (const i of broken) {
+        this.log(`  [mesh-relay] ⚠ inbox "${i.name}" names agent "${i.agent}", which is not on this node — it will refuse messages`)
+      }
     })
 
     // Attach-mode deadlines. Sweeping on an interval rather than scheduling a
@@ -2067,7 +2073,11 @@ export class AgentXDaemon {
       //   body: { inbox, message, from?: { principal?, node? } }
       if (req.method === "POST" && path === "/mesh/inbox/send") {
         const body = await readBody(req).catch(() => ({} as Record<string, unknown>))
-        const v = validateRelayRequest(this.config, body as Record<string, unknown>)
+        const v = validateRelayRequest(
+          this.config,
+          body as Record<string, unknown>,
+          (id) => !!this.registry.getAgent(id),
+        )
         if (!v.ok) { this.json(res, v.status, { error: v.error }); return }
 
         // Keyed by inbox, not by claimed principal: the principal is
@@ -2089,6 +2099,13 @@ export class AgentXDaemon {
         }
         try {
           const response = await this.registry.execute(task, () => {})
+          // Defence in depth: if this somehow left the node, it is not a
+          // delivery to the declared inbox and must not be reported as one.
+          if ((response as { viaMesh?: string }).viaMesh) {
+            this.log(`[mesh-relay] REFUSED to report success: inbox="${v.inbox.name}" was forwarded to peer "${(response as { viaMesh?: string }).viaMesh}" instead of being handled locally`)
+            this.json(res, 503, { error: "inbox is misconfigured on this node and cannot accept messages" })
+            return
+          }
           // registry.execute stamps the trace id onto the task, so the
           // caller gets an audit handle into task_traces without us
           // inventing one.
