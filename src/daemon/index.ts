@@ -5,7 +5,7 @@ import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
-import { resolvePermission } from "@/agents/runtime"
+import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
@@ -28,6 +28,10 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
+import {
+  listPublishedInboxes, validateRelayRequest, renderRelayMessage,
+  relayChatId, relayRateLimiter, RELAY_CHANNEL,
+} from "@/daemon/mesh-inbox"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
 import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
 import { ProcessRegistry } from "@/agents/process-registry"
@@ -1867,6 +1871,7 @@ export class AgentXDaemon {
   private static readonly MESH_PROTECTED_PATHS = new Set([
     "/task",
     "/mesh/task",
+    "/mesh/inbox/send",
     "/workflow/event",
     "/workflow/transition",
     "/channel/send",
@@ -2039,6 +2044,65 @@ export class AgentXDaemon {
         // through, so it must be a bare decision object or nothing at all.
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(out)
+        return
+      }
+
+      // --- Published mesh inboxes -------------------------------------
+      //
+      // GET is unauthenticated, matching /mesh, /agents and /crons, because
+      // the response contains only what an operator explicitly declared:
+      // names and whether each accepts. No live state is projected, so
+      // there is nothing here to redact. See mesh-inbox.ts for why this is
+      // a published set rather than a session listing.
+      if (req.method === "GET" && path === "/mesh/inboxes") {
+        this.json(res, 200, { inboxes: listPublishedInboxes(this.config) })
+        return
+      }
+
+      // POST /mesh/inbox/send — deliver foreign content through a relay
+      // agent that speaks as ITSELF. The daemon never writes to a native
+      // Claude Code session socket and never reads a session key: a message
+      // that arrived over the network must not be able to present itself to
+      // a local session as a same-machine peer.
+      //   body: { inbox, message, from?: { principal?, node? } }
+      if (req.method === "POST" && path === "/mesh/inbox/send") {
+        const body = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        const v = validateRelayRequest(this.config, body as Record<string, unknown>)
+        if (!v.ok) { this.json(res, v.status, { error: v.error }); return }
+
+        // Keyed by inbox, not by claimed principal: the principal is
+        // attacker-controlled, so rate-limiting on it would let one sender
+        // mint unlimited buckets.
+        const limit = relayRateLimiter.check(`inbox:${v.inbox.name}`)
+        if (!limit.allowed) {
+          res.setHeader("Retry-After", String(Math.ceil((limit.waitMs || 1000) / 1000)))
+          this.json(res, 429, { error: limit.reason || "rate limited" })
+          return
+        }
+
+        const chatId = relayChatId(v.inbox.name, v.principal)
+        this.log(`[mesh-relay] inbox="${v.inbox.name}" -> agent="${v.inbox.agent}" claimed-sender="${v.principal}@${v.node}" bytes=${Buffer.byteLength(v.message, "utf8")}`)
+        const task: AgentTask = {
+          agentId: v.inbox.agent,
+          message: renderRelayMessage({ message: v.message, principal: v.principal, node: v.node }),
+          context: { channel: RELAY_CHANNEL, chatId, sender: v.principal },
+        }
+        try {
+          const response = await this.registry.execute(task, () => {})
+          // registry.execute stamps the trace id onto the task, so the
+          // caller gets an audit handle into task_traces without us
+          // inventing one.
+          this.json(res, response.error ? 502 : 200, {
+            delivered: !response.error,
+            inbox: v.inbox.name,
+            taskId: task.taskId,
+            channel: RELAY_CHANNEL,
+            chatId,
+            error: response.error,
+          })
+        } catch (e: any) {
+          this.json(res, 502, { error: e?.message || "relay delivery failed" })
+        }
         return
       }
 

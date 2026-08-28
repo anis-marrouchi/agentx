@@ -494,9 +494,22 @@ const meshPeerSchema = z.object({
   token: z.string().optional(),
 })
 
+/** A named, operator-declared destination that remote mesh nodes may send
+ *  to. Deliberately minimal: the published surface is the name and whether
+ *  it accepts, so there is nothing here that could leak local state if it
+ *  were echoed back. Which agent handles it stays private to this node. */
+const meshInboxSchema = z.object({
+  name: z.string(),
+  agent: z.string(),
+  enabled: z.boolean().default(true),
+})
+
 const meshConfigSchema = z.object({
   enabled: z.boolean().default(false),
   peers: z.array(meshPeerSchema).default([]),
+  /** Empty by default — a node publishes no inboxes until an operator
+   *  declares one, so this feature is opt-in per node. */
+  inboxes: z.array(meshInboxSchema).default([]),
   discovery: z.enum(["static", "mdns"]).default("static"),
   healthCheck: z.object({
     interval: z.number().default(60),
