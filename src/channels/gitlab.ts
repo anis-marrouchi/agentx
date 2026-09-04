@@ -160,7 +160,7 @@ export class GitLabAdapter implements ChannelAdapter {
    *  state/author and resolves a runbook path for the agent. Optional;
    *  unset = legacy behaviour (no filtering, no runbook injection). */
   private rules?: import("@/projects/rules").ProjectRulesStore
-  private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>
+  private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string, name: string) => Promise<void>
   private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
   private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>
@@ -181,7 +181,7 @@ export class GitLabAdapter implements ChannelAdapter {
     this.mesh = mesh
   }
 
-  setReactForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string) => Promise<void>): void {
+  setReactForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string, name: string) => Promise<void>): void {
     this.reactForwarder = fn
   }
 
@@ -1649,15 +1649,16 @@ export class GitLabAdapter implements ChannelAdapter {
   }
 
   /**
-   * React to a GitLab note with an emoji (👀 eyes) to acknowledge receipt.
-   * ONLY uses the agent's own token — never the global token (which may
-   * belong to a different agent user, causing the wrong identity to react).
+   * React to a GitLab note with an emoji to acknowledge receipt (👀) or
+   * report an outcome (❌ / ✅ / ⚠️). ONLY uses the agent's own token —
+   * never the global token (which may belong to a different agent user,
+   * causing the wrong identity to react). `name` is a gemoji shortcode.
    */
-  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string, node?: string, agentId?: string): Promise<void> {
+  private async reactToNote(project: string, noteableType: string, noteableIid: string, noteId: number, agentToken?: string, node?: string, agentId?: string, name: string = "eyes"): Promise<void> {
     // Agent lives on a remote mesh peer — forward the reaction request there
     if (!agentToken && node && agentId && this.reactForwarder) {
-      this.log(`Forwarding 👀 reaction for "${agentId}" to mesh peer "${node}"`)
-      await this.reactForwarder(node, project, noteableType, noteableIid, noteId, agentId)
+      this.log(`Forwarding "${name}" reaction for "${agentId}" to mesh peer "${node}"`)
+      await this.reactForwarder(node, project, noteableType, noteableIid, noteId, agentId, name)
       return
     }
 
@@ -1676,14 +1677,24 @@ export class GitLabAdapter implements ChannelAdapter {
           "Content-Type": "application/json",
           "PRIVATE-TOKEN": agentToken,
         },
-        body: JSON.stringify({ name: "eyes" }),
+        body: JSON.stringify({ name }),
       })
       if (!res.ok) {
-        this.log(`Reaction failed on note ${noteId}: ${res.status}`)
+        this.log(`Reaction "${name}" failed on note ${noteId}: ${res.status}`)
       }
     } catch (e: any) {
       this.log(`Failed to react to note ${noteId}: ${e.message}`)
     }
+  }
+
+  /** Map the few unicode emoji the router sends to GitLab gemoji shortcodes.
+   *  Unknown input passes through (GitLab rejects it; the caller logs). */
+  private awardName(emoji: string): string {
+    return emoji === "👀" ? "eyes" :
+      emoji === "❌" ? "x" :
+      emoji === "✅" ? "white_check_mark" :
+      emoji === "⚠️" ? "warning" :
+      emoji
   }
 
   private buildAwardEndpoint(project: string, noteableType: string, noteableIid: string, noteId: number): string | undefined {
@@ -1700,17 +1711,21 @@ export class GitLabAdapter implements ChannelAdapter {
   /**
    * Public ChannelAdapter.react — emoji acknowledgement of a note. Used by
    * the router on transient mesh failures (❌) so the operator sees the
-   * outcome on the thread without a noisy bot comment. Identity is the
-   * global token (the error happens *before* an agent attribution is
-   * meaningful), so this never piggy-backs on a per-agent PAT.
+   * outcome on the thread without a noisy bot comment.
+   *
+   * Identity: when the caller knows which agent the note was routed to, the
+   * reaction posts as THAT agent (its `agentMappings` token, or forwarded to
+   * the mesh peer that holds it). Only when no agent is known do we fall back
+   * to the global token. Previously every outcome emoji used the global token,
+   * so a failure on a thread that @-mentioned one bot showed up as a ❌ from
+   * whichever user owns `channels.gitlab.token` — a different bot entirely.
+   * Reporters read that as "the wrong bot is ignoring me".
    */
-  async react(chatId: string, messageId: string, emoji: string = "👀"): Promise<void> {
+  async react(chatId: string, messageId: string, emoji: string = "👀", agentId?: string): Promise<void> {
     // 👀 acks are posted by handleNote with the resolved agent's own token
     // (deterministic identity). The router ALSO fires a generic 👀 through
-    // this method when it routes the task — posting that one with the
-    // global token double-reacts under the wrong user, so drop it here.
-    // Outcome signals (❌ / ✅ / ⚠️) still post with the global token:
-    // they fire when no agent identity is meaningful (e.g. mesh errors).
+    // this method when it routes the task — posting that one would double-react,
+    // so drop it here.
     if (emoji === "👀") return
     const parts = chatId.split(":")
     if (parts.length < 3) return
@@ -1718,18 +1733,26 @@ export class GitLabAdapter implements ChannelAdapter {
     const noteableType = parts.pop()!
     const project = parts.join(":")
     const noteId = Number(messageId)
-    if (!noteId || !this.config.token) return
+    if (!noteId) return
+    // GitLab uses gemoji shortcodes for award_emoji; map the few unicodes the
+    // router actually sends. Unknown emoji → the literal unicode (GitLab will
+    // reject; logged).
+    const name = this.awardName(emoji)
+
+    // Preferred path — react as the agent that actually handled the note.
+    const target = this.resolvePostTarget(agentId)
+    if (target.token || target.node) {
+      try {
+        await this.reactToNote(project, noteableType, iid, noteId, target.token, target.node, agentId, name)
+        return
+      } catch (e: any) {
+        this.log(`React "${emoji}" as "${agentId}" failed (${e.message}) — falling back to global token`)
+      }
+    }
+
+    if (!this.config.token) return
     const endpoint = this.buildAwardEndpoint(project, noteableType, iid, noteId)
     if (!endpoint) return
-    // GitLab uses gemoji shortcodes for award_emoji; map the few unicodes the
-    // router actually sends. Unknown emoji → request body with the literal
-    // unicode (GitLab will reject; logged).
-    const name =
-      emoji === "👀" ? "eyes" :
-      emoji === "❌" ? "x" :
-      emoji === "✅" ? "white_check_mark" :
-      emoji === "⚠️" ? "warning" :
-      emoji
     try {
       const res = await fetch(endpoint, {
         method: "POST",

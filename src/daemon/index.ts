@@ -1184,7 +1184,7 @@ export class AgentXDaemon {
         // becomes reachable via @-mention without operators having to mirror
         // an `agentMappings` entry on every node.
         gitlab.setMesh(this.mesh)
-        gitlab.setReactForwarder(async (node, project, noteableType, noteableIid, noteId, agentId) => {
+        gitlab.setReactForwarder(async (node, project, noteableType, noteableIid, noteId, agentId, name) => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
           if (!peer) {
             this.log(`[gitlab] react forward: peer "${node}" not found or unhealthy`)
@@ -1195,7 +1195,7 @@ export class AgentXDaemon {
             const r = await fetch(url, {
               method: "POST",
               headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId }),
+              body: JSON.stringify({ project, noteableType, noteableIid, noteId, agentId, name }),
             })
             const respText = await r.text().catch(() => "")
             this.log(`[gitlab] react forward -> ${url} : ${r.status} ${respText.slice(0, 200)}`)
@@ -3254,7 +3254,11 @@ export class AgentXDaemon {
         case "POST /gitlab/react": {
           // Forwarded from a mesh peer: perform a 👀 reaction using local agent token
           const body = await readBody(req)
+          // `name` is a gemoji shortcode. Older peers don't send it — default
+          // to "eyes" so a mixed-version fleet keeps working (an outcome
+          // reaction from such a peer degrades to an ack, never a wrong glyph).
           const { project, noteableType, noteableIid, noteId, agentId } = body as any
+          const name: string = typeof (body as any).name === "string" && (body as any).name ? (body as any).name : "eyes"
           const resolved = this.resolveGitlabTokenForAgent(agentId)
           const token = resolved.token
           const host = this.config.channels.gitlab?.host
@@ -3274,10 +3278,10 @@ export class AgentXDaemon {
             const glRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
-              body: JSON.stringify({ name: "eyes" }),
+              body: JSON.stringify({ name }),
             })
             const respBody = await glRes.text().catch(() => "")
-            this.log(`[gitlab/react] -> POST ${ep} : ${glRes.status} ${respBody.slice(0, 120)}`)
+            this.log(`[gitlab/react] "${name}" -> POST ${ep} : ${glRes.status} ${respBody.slice(0, 120)}`)
             this.json(res, 200, { ok: glRes.ok, status: glRes.status, gitlabResponse: respBody.slice(0, 200) })
           } catch (e: any) {
             this.log(`[gitlab/react] FETCH ERROR: ${e.message}`)

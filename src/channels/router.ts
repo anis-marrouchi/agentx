@@ -3,6 +3,7 @@ import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage } from "./types"
 import type { TelegramAdapter } from "./telegram"
+import type { GitLabAdapter } from "./gitlab"
 import type { HookRegistry } from "@/hooks"
 import { GroupLog } from "./group-log"
 import { HandoverStore, type HandoverOverride } from "./handover-store"
@@ -123,6 +124,32 @@ class InflightLog {
 
 const STREAM_EDIT_INTERVAL_MS = 1500
 const TYPING_INTERVAL_MS = 4000
+
+/**
+ * Strip mesh plumbing from an error so a thread sees the real cause and not
+ * our internal peer names / status codes. Mesh errors arrive nested — a
+ * fallback hop wraps the origin peer's message, e.g.
+ *   Peer "a" /task error: 500: mesh fallback failed: Peer "b" /task error: 500: <real cause>
+ * so the peel runs until it stops making progress.
+ *
+ * Also drops the friendly "AgentX will retry in a moment" tail: by the time we
+ * post a failure notice the per-task attempts are already spent, and promising
+ * a retry that will not happen is worse than saying nothing. Other `fix`
+ * clauses (enable overage, top up credits) are genuinely actionable, so they
+ * stay.
+ */
+export function cleanMeshError(raw: string): string {
+  let out = (raw || "").trim()
+  for (let i = 0; i < 5; i++) {
+    const before = out
+    out = out
+      .replace(/^Peer\s+"[^"]*"\s+\/task error:\s*\d{3}:\s*/i, "")
+      .replace(/^mesh fallback failed:\s*/i, "")
+      .trim()
+    if (out === before) break
+  }
+  return out.replace(/\s*[—-]\s*AgentX will retry[^.]*\.?\s*$/i, "").trim()
+}
 
 export class MessageRouter {
   private registry: AgentRegistry
@@ -1287,12 +1314,72 @@ export class MessageRouter {
     messageId: string,
     emoji: string,
     accountId?: string,
+    agentId?: string,
   ): void {
     if (adapter.name === "telegram" && accountId) {
       (adapter as unknown as TelegramAdapter).react(chatId, messageId, emoji, accountId)
+    } else if (adapter.name === "gitlab" && agentId) {
+      // GitLab reactions carry an identity — post outcome emoji as the agent
+      // the note was routed to, not as whoever owns the global token.
+      (adapter as unknown as GitLabAdapter).react(chatId, messageId, emoji, agentId)
     } else {
       adapter.react?.(chatId, messageId, emoji)
     }
+  }
+
+  /**
+   * Threads that have already been told about a mesh failure, keyed
+   * `${channel}:${chatId}`. Cleared on the next success for that thread, so a
+   * fresh outage notifies again but a burst inside one outage does not.
+   */
+  private meshFailureNotified = new Set<string>()
+
+  /**
+   * A mesh-routed task failed. React ❌ (as the agent, where the channel
+   * supports identity) and — the FIRST time this thread fails — post one
+   * short comment saying so.
+   *
+   * Why a comment at all: this used to be ❌-only, on the reasoning that
+   * transient failures would pollute the thread. In practice a reporter who
+   * @-mentions a bot and gets 👀 then silence assumes the bot is ignoring
+   * them and keeps re-pinging — on noqta/minbar#46 that was 9 mentions over
+   * 74 minutes of upstream 529s, every one of them silently dropped. One
+   * comment per outage is far cheaper than that. Nothing retries on its own,
+   * so the text says plainly that a re-mention is what resumes it.
+   */
+  private notifyMeshFailure(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    chatId: string,
+    agentId: string,
+    error: string,
+    replyAccountId?: string,
+  ): void {
+    this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId, agentId)
+
+    const key = `${msg.channel}:${chatId}`
+    if (this.meshFailureNotified.has(key)) {
+      this.log(`Mesh failure on ${key} already announced — suppressing repeat comment`)
+      return
+    }
+    this.meshFailureNotified.add(key)
+
+    const reason = cleanMeshError(error) || "an upstream error"
+    const text = `⚠️ I couldn't complete that — ${reason}\n\nNothing is retrying in the background. Mention me again and I'll pick it up.`
+    this.adapterSend(adapter, {
+      channel: msg.channel,
+      chatId,
+      text,
+      replyTo: msg.id,
+      parseMode: "plain",
+      accountId: replyAccountId,
+      agentId,
+    }).catch((e: any) => this.log(`Mesh failure notice failed to post on ${key}: ${e.message}`))
+  }
+
+  /** A mesh-routed task succeeded — re-arm the failure notice for this thread. */
+  private clearMeshFailure(channel: string, chatId: string): void {
+    this.meshFailureNotified.delete(`${channel}:${chatId}`)
   }
 
   private startTypingLoop(
@@ -1433,6 +1520,7 @@ export class MessageRouter {
             })
 
             clearInterval(typingTimer)
+            this.clearMeshFailure(msg.channel, chatId)
 
             if (response) {
               // Prefix with remote agent name so user knows who's responding
@@ -1450,9 +1538,9 @@ export class MessageRouter {
           } catch (e: any) {
             clearInterval(typingTimer)
             // Same policy as handleViaMeshByAgentId/handleViaMeshByPeer —
-            // react ❌, log the real reason locally, do not spam the channel.
+            // react ❌ as the agent and announce once per thread.
             this.log(`Mesh routing error for ${peer.peer}/${skill.id}: ${e.message}`)
-            this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
+            this.notifyMeshFailure(adapter, msg, chatId, skill.id, e.message, replyAccountId)
             return true
           }
         }
@@ -1494,6 +1582,7 @@ export class MessageRouter {
           context: this.buildMeshContext(msg, chatId),
         })
         clearInterval(typingTimer)
+        this.clearMeshFailure(msg.channel, chatId)
 
         if (response) {
           await this.adapterSend(adapter, {
@@ -1508,13 +1597,11 @@ export class MessageRouter {
         return true
       } catch (e: any) {
         clearInterval(typingTimer)
-        // Surface the real error in the local log (mesh.ts now includes the
-        // peer's response body), but do NOT post a public comment — most
-        // mesh failures are transient (timeout, Anthropic overload, mid-turn
-        // process death) and noisy "Error from X" comments pollute the thread.
-        // The ❌ reaction is the operator-visible signal.
+        // Surface the real error in the local log (mesh.ts includes the peer's
+        // response body) and tell the thread once — see notifyMeshFailure for
+        // why ❌-only silence was worse than one comment.
         this.log(`Mesh routing error for ${peer.peer}/${agentId}: ${e.message}`)
-        this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
+        this.notifyMeshFailure(adapter, msg, chatId, agentId, e.message, replyAccountId)
         return true
       }
     }
@@ -1555,6 +1642,7 @@ export class MessageRouter {
       })
       const duration = Date.now() - start
       clearInterval(typingTimer)
+      this.clearMeshFailure(msg.channel, chatId)
 
       if (response) {
         await this.adapterSend(adapter, {
@@ -1579,11 +1667,10 @@ export class MessageRouter {
       return true
     } catch (e: any) {
       clearInterval(typingTimer)
-      // See handleViaMeshByAgentId — log the full error (now includes peer's
-      // response body via mesh.ts) and react ❌ on the source message instead
-      // of posting a noisy "Error from X" comment for transient failures.
+      // See notifyMeshFailure — log the full error (includes the peer's
+      // response body via mesh.ts), react ❌ as the agent, and announce once.
       this.log(`Mesh routing error for ${peerName}/${agentId}: ${e.message}`)
-      this.adapterReact(adapter, chatId, msg.id, "❌", replyAccountId)
+      this.notifyMeshFailure(adapter, msg, chatId, agentId, e.message, replyAccountId)
       return true
     } finally {
       this.activeMeshForwards--
