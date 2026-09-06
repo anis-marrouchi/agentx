@@ -41,7 +41,18 @@ function runCli(args: string[]): { stdout: string; status: number } {
     const stdout = execFileSync(
       "npx",
       ["tsx", cliPath, ...args, "--cwd", tmp],
-      { cwd: projectRoot, encoding: "utf8", env: { ...process.env, FORCE_COLOR: "0" }, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        // Put the RUNNER's Node first on PATH so npx/tsx spawn the same
+        // version vitest is on. Otherwise the child picks up whatever `node`
+        // the shell has, and better-sqlite3's prebuilt addon (built for the
+        // Node in .nvmrc) fails the ABI check inside the child only.
+        env: {
+          ...process.env,
+          FORCE_COLOR: "0",
+          PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH,
+        },
+      },
     )
     return { stdout, status: 0 }
   } catch (e: any) {

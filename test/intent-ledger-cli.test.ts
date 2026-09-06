@@ -34,7 +34,9 @@ afterEach(() => {
 })
 
 function run(args: string): string {
-  return execSync(`node ${cliPath} ledger ${args} --path ${ledgerPath} --cwd ${tmp} --json`, {
+  // process.execPath, not `node`: the child must run the same Node as the
+  // test runner or better-sqlite3's prebuilt addon fails its ABI check.
+  return execSync(`"${process.execPath}" ${cliPath} ledger ${args} --path ${ledgerPath} --cwd ${tmp} --json`, {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
   })

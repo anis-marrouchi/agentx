@@ -1,5 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import { resolve } from "path"
+import { loadEnvFileIntoProcess } from "@/utils/workspace-env"
 import { loadDaemonConfig } from "@/daemon/config"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 
@@ -15,6 +17,10 @@ board
   .option("--bind <host>", "override dashboard.bind (e.g. 0.0.0.0)")
   .action(async (opts) => {
     try {
+      // Must precede loadDaemonConfig(): agentx.json expands ${VAR} at load
+      // time, so without .env the dashboard's peer tokens resolve to "" and
+      // every proxied mesh call is rejected 401. Same load the daemon does.
+      try { loadEnvFileIntoProcess(resolve(process.cwd(), ".env")) } catch { /* best effort */ }
       const config = resolveServerConfig(opts.port, opts.bind)
       const { startBoardDashboard } = await import("@/daemon/board-dashboard")
       startBoardDashboard(config)

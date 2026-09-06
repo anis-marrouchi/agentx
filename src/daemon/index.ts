@@ -1,3 +1,4 @@
+import { SessionMonitor, discoverClis, readMonitorBody } from "./session-monitor"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { createReadStream } from "fs"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
@@ -115,6 +116,7 @@ export class AgentXDaemon {
   private contacts!: ContactDirectory
   /** Persistent-claude process registry. Null when no agent has
    *  persistentProcess: true (legacy spawn-per-task path). */
+  private sessionMonitor?: SessionMonitor
   private processRegistry: ProcessRegistry | null = null
   /** Unified observability bus. Publishers (workflow engine, mesh,
    *  channels, signals) emit here; subscribers (SSE, CLI, board
@@ -290,6 +292,8 @@ export class AgentXDaemon {
           this.log(`  Traces: canceled ${cleaned} orphaned in-flight row(s) from prior run`)
         }
         attachSqliteSubscribers(db)
+        this.sessionMonitor = new SessionMonitor(db)
+        this.sessionMonitor.start()
         this.log(`  SQLite: ${db.name}`)
         // Procedure miner's on-task trigger — counts recurring activity
         // patterns after each successful task (no-op unless
@@ -684,6 +688,7 @@ export class AgentXDaemon {
     }
 
     try {
+      this.sessionMonitor?.stop()
       if (this.processRegistry) {
         this.log("  Stopping persistent claude processes...")
         await this.processRegistry.stop()
@@ -1927,6 +1932,34 @@ export class AgentXDaemon {
         if (!this.checkMeshAuth(req, res, path)) return
       }
 
+      if (path === "/monitor" || path.startsWith("/monitor/")) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        if (!this.sessionMonitor) { this.json(res, 503, { error: "Session monitor requires SQLite" }); return }
+        if (req.method === "GET" && path === "/monitor") {
+          this.json(res, 200, this.sessionMonitor.snapshot()); return
+        }
+        if (req.method === "GET" && path === "/monitor/actions") {
+          const offset = Math.max(0, Math.min(1000000, parseInt(url.searchParams.get("offset") || "0", 10) || 0))
+          this.json(res, 200, this.sessionMonitor.openActions(offset)); return
+        }
+        if (req.method === "GET" && path === "/monitor/discover") {
+          this.json(res, 200, { processes: await discoverClis(), sessions: getAttachRegistry().list().map(s => ({ id: s.sessionId, label: s.cwd, runtime: "claude" })) }); return
+        }
+        if (req.method === "POST") {
+          try {
+            const body = await readMonitorBody(req)
+            if (path === "/monitor/register") this.sessionMonitor.register(body)
+            else if (path === "/monitor/ended") this.sessionMonitor.ended(body)
+            else if (path === "/monitor/action") this.sessionMonitor.action(body)
+            else if (path === "/monitor/retry" && typeof body.id === "string") this.sessionMonitor.retry(body.id)
+            else { this.json(res, 404, { error: "Unknown monitor operation" }); return }
+            this.json(res, 200, { ok: true })
+          } catch (e: any) { this.json(res, 400, { error: e.message }) }
+          return
+        }
+        this.json(res, 405, { error: "Method not allowed" }); return
+      }
+
       // Destructive-action guard (PreToolUse hook). Loopback ONLY: the hook
       // always runs on this host, and the verdict text names protected
       // hostnames, so it must never be reachable off-box. Answering here
@@ -1967,9 +2000,11 @@ export class AgentXDaemon {
             out = onSessionStart(payload)
             break
           case "/attach/prompt":
+            try { if (payload.session_id) this.sessionMonitor?.externalPrompt(payload.session_id, payload.prompt || payload.user_input || "") } catch { /* monitoring must not block hooks */ }
             out = onPrompt(payload)
             break
           case "/attach/stop":
+            try { if (payload.session_id && payload.last_assistant_message) this.sessionMonitor?.externalStop(payload.session_id, payload.last_assistant_message) } catch { /* monitoring must not block hooks */ }
             out = onStop(payload)
             break
           case "/attach/session-end":

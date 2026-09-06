@@ -26,6 +26,7 @@ export interface HookPayload {
   last_assistant_message?: string
   /** Stop only: true when we are already inside a Stop-hook continuation. */
   stop_hook_active?: boolean
+  prompt?: string
   user_input?: string
 }
 

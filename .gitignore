@@ -37,3 +37,6 @@ docs/architecture/*
 
 src/web/workflow-editor/HANDOFF.md
 docs/prd
+
+# Design canvas working files (published as an Artifact, not product code)
+.design/

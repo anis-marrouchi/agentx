@@ -1,3 +1,4 @@
+import { monitor as monitorCmd } from "@/commands/monitor"
 import { Command } from "commander"
 import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
@@ -74,7 +75,7 @@ export async function buildProgram(): Promise<Command> {
     setup, init, connect,        // get running
     daemon, doctor,              // operate
     agent, channel, schedule,    // configure the things that carry work
-    attachCmd,                   // wear an agent in your editor
+    attachCmd, monitorCmd,       // connect editor sessions
     guardCmd,                    // safety
     usage,                       // what it cost, what gets used
     serve,                       // MCP

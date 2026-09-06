@@ -1,3 +1,5 @@
+import { readMonitorBody, monitorTargets } from "./session-monitor"
+import { renderMonitorPage } from "./ui/pages/monitor"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
@@ -123,6 +125,7 @@ const DASHBOARD_PAGES = new Set([
   "/",
   "/live",
   "/mesh",
+  "/monitor",
   "/boards",
   "/glossary",
   "/workflows",
@@ -196,6 +199,39 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   if (method === "GET" && path === "/live") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (method === "GET" && path === "/monitor") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if (path === "/api/monitor" || path.startsWith("/api/monitor/")) {
+    const ac = new AbortController()
+    const timeout = setTimeout(() => ac.abort(), 8000)
+    try {
+      const targets = monitorTargets(await resolveNodeTargets(ctx.config, ac.signal), ctx.config.mesh.peers)
+      if (method === "GET" && path === "/api/monitor") {
+        const nodes = await Promise.all(targets.map(async node => {
+          try {
+            const r = await fetch(node.url + "/monitor", { headers: node.token ? { Authorization: `Bearer ${node.token}` } : {}, signal: ac.signal })
+            if (!r.ok) throw new Error(`HTTP ${r.status}`)
+            return { name: node.name, url: node.url, ok: true, data: await r.json() }
+          } catch (e: any) { return { name: node.name, url: node.url, ok: false, error: e.message } }
+        }))
+        sendJson(res, 200, { nodes }); return
+      }
+      const node = targets.find(n => n.url === url.searchParams.get("node"))
+      if (!node) { sendJson(res, 400, { error: "Select a known node" }); return }
+      const op = path.slice("/api/monitor/".length)
+      if (!((method === "GET" && ["discover", "actions"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry"].includes(op)))) {
+        sendJson(res, 405, { error: "Unknown monitor operation" }); return
+      }
+      const body = method === "POST" ? JSON.stringify(await readMonitorBody(req)) : undefined
+      const r = await fetch(node.url + "/monitor/" + op + (op === "actions" ? "?offset=" + encodeURIComponent(url.searchParams.get("offset") || "0") : ""), { method, body, signal: ac.signal, headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) } })
+      sendJson(res, r.status, await r.json())
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    finally { clearTimeout(timeout) }
     return
   }
   if (method === "GET" && path === "/mesh") {

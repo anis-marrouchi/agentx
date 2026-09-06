@@ -120,3 +120,18 @@ export function stripAnthropicApiKey(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   delete env.ANTHROPIC_API_KEY_OLD
   return env
 }
+
+/**
+ * Load a dotenv file into process.env for the CURRENT process. Variables
+ * already present win, so a systemd/launchd override always beats the file.
+ *
+ * `agentx daemon start` has always done this; `agentx board serve` did not,
+ * so `${MESH_TOKEN}` in agentx.json expanded to "" inside the dashboard and
+ * every proxied mesh call went out with an empty Bearer (401 from peers).
+ */
+export function loadEnvFileIntoProcess(path: string): void {
+  if (!existsSync(path)) return
+  for (const [key, value] of parseDotEnv(readFileSync(path, "utf-8"))) {
+    if (process.env[key] === undefined) process.env[key] = value
+  }
+}
