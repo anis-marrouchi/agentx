@@ -1,5 +1,6 @@
 import { readMonitorBody, monitorTargets } from "./session-monitor"
 import { renderMonitorPage } from "./ui/pages/monitor"
+import { renderActivityPage } from "./ui/pages/activity"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
@@ -126,6 +127,7 @@ const DASHBOARD_PAGES = new Set([
   "/live",
   "/mesh",
   "/monitor",
+  "/activity",
   "/boards",
   "/glossary",
   "/workflows",
@@ -201,6 +203,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
+  if (method === "GET" && path === "/activity") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
   if (method === "GET" && path === "/monitor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderMonitorPage({ peers: buildTopbarPeers(ctx.config) }))
@@ -224,11 +231,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       const node = targets.find(n => n.url === url.searchParams.get("node"))
       if (!node) { sendJson(res, 400, { error: "Select a known node" }); return }
       const op = path.slice("/api/monitor/".length)
-      if (!((method === "GET" && ["discover", "actions"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry"].includes(op)))) {
+      if (!((method === "GET" && ["discover", "actions", "activity"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry"].includes(op)))) {
         sendJson(res, 405, { error: "Unknown monitor operation" }); return
       }
       const body = method === "POST" ? JSON.stringify(await readMonitorBody(req)) : undefined
-      const r = await fetch(node.url + "/monitor/" + op + (op === "actions" ? "?offset=" + encodeURIComponent(url.searchParams.get("offset") || "0") : ""), { method, body, signal: ac.signal, headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) } })
+      const r = await fetch(node.url + "/monitor/" + op + (op === "actions" ? "?offset=" + encodeURIComponent(url.searchParams.get("offset") || "0")
+        : op === "activity" ? "?hours=" + encodeURIComponent(url.searchParams.get("hours") || "24") : ""), { method, body, signal: ac.signal, headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) } })
       sendJson(res, r.status, await r.json())
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     finally { clearTimeout(timeout) }

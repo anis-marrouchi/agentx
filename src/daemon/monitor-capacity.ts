@@ -28,15 +28,15 @@ export interface Decay {
   overdue: boolean
 }
 
-const DAY = 86_400_000
-
 export function decayOf(action: DecayAction, clocks: ClientClocks, now = Date.now()): Decay {
   const ageMs = Math.max(0, now - (action.updatedAt || now))
   const clockMinutes = action.clientId ? clocks[action.clientId] : undefined
   if (!clockMinutes) {
     // Flat cost. Age still breaks ties, but this can never outrank someone
     // who is genuinely waiting on an answer.
-    return { score: ageMs / DAY, ageMs, rising: false, overdue: false }
+    // One day in ms, inlined: decayOf is stringified and shipped to the
+    // browser, where a module-scope constant would be unbound.
+    return { score: ageMs / 86_400_000, ageMs, rising: false, overdue: false }
   }
   const ratio = ageMs / (clockMinutes * 60_000)
   return { score: 1000 + ratio, ageMs, rising: true, overdue: ratio >= 1 }

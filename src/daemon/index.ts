@@ -1966,6 +1966,19 @@ export class AgentXDaemon {
             workflows: this.workflowHealth(),
           }); return
         }
+        if (req.method === "GET" && path === "/monitor/activity") {
+          const hours = Math.max(1, Math.min(168, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
+          const business = ((this.config as any).business ?? {}) as BusinessShape
+          const data = this.sessionMonitor.activity(Date.now() - hours * 3600_000)
+          this.json(res, 200, {
+            ...data,
+            node: this.config.node.name || this.config.node.id,
+            runs: data.runs.map(r => {
+              const project = (r.channel === "gitlab" || r.channel === "github") ? String(r.chatId || "").split(":")[0] : undefined
+              return { ...r, project, clientId: resolveClient({ agentId: r.agentId, channel: r.channel || undefined, project, chatId: r.chatId || undefined }, business) }
+            }),
+          }); return
+        }
         if (req.method === "GET" && path === "/monitor/actions") {
           const offset = Math.max(0, Math.min(1000000, parseInt(url.searchParams.get("offset") || "0", 10) || 0))
           this.json(res, 200, this.sessionMonitor.openActions(offset)); return

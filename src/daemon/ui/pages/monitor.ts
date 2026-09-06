@@ -1,5 +1,6 @@
 import { rankByDecay, decayOf } from "../../monitor-capacity"
 import { renderShell, type TopbarPeer } from ".."
+import { injectFns } from "../inject"
 
 /** Feather-style 24x24 stroked glyphs, sized at the call site. */
 const ICON = {
@@ -50,6 +51,7 @@ export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
   </div>
   <div class="bf-sync">
     <span class="bf-sync__t" id="synced">Gathering&hellip;</span>
+    <a class="ax-btn ax-btn--sm" href="/activity" title="What ran, and when">${svg(ICON.pulse, 13)} Activity</a>
     <button class="ax-btn" id="refresh" title="Refresh now">${svg(ICON.refresh)} Refresh</button>
   </div>
 </div>
@@ -130,7 +132,7 @@ ${secLabel(ICON.file, "Session briefings", "brief-count")}
 </section>
 </div>`,
     css: MONITOR_CSS,
-    scripts: `<script>const rankByDecay = ${rankByDecay.toString()};const decayOf = ${decayOf.toString()};const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
+    scripts: `<script>${injectFns({ decayOf, rankByDecay })}const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
   })
 }
 

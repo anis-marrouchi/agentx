@@ -231,6 +231,32 @@ export class SessionMonitor {
     return { items: items.map(a => { const action = JSON.parse(a.action)
       return { ...a, action, key: commitmentKey(action.text) } }), total: (this.db.prepare(`SELECT COUNT(*) AS n ${from}`).get() as { n: number }).n }
   }
+  /** Raw material for the activity view: every run in the window, plus the
+   *  findings each one produced. Lane assignment is deliberately left to the
+   *  caller so the browser can re-lane by a different perspective without
+   *  going back to the server. */
+  activity(sinceMs: number, limit = 400) {
+    const rows = this.db.prepare(`SELECT task_id AS id, agent_id AS agentId, channel, chat_id AS chatId,
+      status, started_at AS startedAt, duration_ms AS durationMs, message_preview AS preview
+      FROM task_traces WHERE started_at >= ? ORDER BY started_at DESC LIMIT ?`).all(sinceMs, limit) as Array<{
+        id: string; agentId: string; channel: string | null; chatId: string | null
+        status: string; startedAt: number; durationMs: number | null; preview: string | null }>
+    const ids = new Set(rows.map(r => r.id))
+    const marks: Array<{ runId: string; kind: string; text: string }> = []
+    for (const r of this.db.prepare("SELECT id, result FROM session_reviews WHERE status='ready'").all() as Array<{ id: string; result: string }>) {
+      if (!ids.has(r.id)) continue
+      let parsed: any
+      try { parsed = JSON.parse(r.result) } catch { continue }
+      const push = (kind: string, list: any[], cap: number) =>
+        (list || []).slice(0, cap).forEach(x => marks.push({ runId: r.id, kind, text: String(x?.text ?? "").slice(0, 240) }))
+      push("warning", parsed.warnings, 3)
+      push("decision", parsed.decisions, 3)
+      push("recommendation", parsed.friction, 2)
+      push("later", (parsed.actions || []).filter((a: any) => a?.when === "later"), 2)
+    }
+    return { runs: rows.reverse(), marks, since: sinceMs }
+  }
+
   snapshot() {
     const reviews = (this.db.prepare("SELECT id,session_id,agent,source,status,updated_at,model,result,error FROM session_reviews ORDER BY updated_at DESC LIMIT 100").all() as ReviewRow[])
       .map(r => ({ ...r, result: r.result ? JSON.parse(r.result) : null }))

@@ -93,6 +93,19 @@ describe("cost of delay", () => {
     expect(rankByDecay([same, same, same], {}, now)).toEqual([0, 1, 2])
   })
 
+  it("ships ordering to the browser with every helper it calls", async () => {
+    const { rankByDecay, decayOf } = await import("../src/daemon/monitor-capacity")
+    const { injectFns } = await import("../src/daemon/ui/inject")
+    // new Function() cannot see this module, so a helper or constant left
+    // behind is a ReferenceError here exactly as it would be in the browser.
+    const src = injectFns({ decayOf, rankByDecay })
+    const order = new Function(src + `return rankByDecay([
+      {needsHuman:true,clientId:"flat",updatedAt:0},
+      {needsHuman:true,clientId:"clocked",updatedAt:9000000}
+    ],{clocked:240},10000000)`)()
+    expect(order).toEqual([1, 0])
+  })
+
   it("renders the three buckets and ships syntactically valid browser code", () => {
     expect(renderMonitorPage()).toContain("Only you")
     expect(renderMonitorPage()).toContain("Agents can handle")
