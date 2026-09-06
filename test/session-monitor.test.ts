@@ -67,26 +67,36 @@ describe("session monitor", () => {
     await monitor.tick()
     expect(reviewer).not.toHaveBeenCalled()
   })
-  it("renders capacity controls and ships syntactically valid browser code", () => {
-    expect(renderMonitorPage()).toContain("Time available")
-    expect(() => new Function(MONITOR_SCRIPT)).not.toThrow()
-  })
 })
 
-describe("human capacity", () => {
-  it("caps attention at three actions and never silently drops urgent overflow", async () => {
-    const { fitCapacity } = await import("../src/daemon/monitor-capacity")
-    const urgent = { when: "now" as const, minutes: 5, effort: "low" as const, needsHuman: true }
-    const fit = fitCapacity(Array(5).fill(urgent), 60, "high")
-    expect(fit.selected).toHaveLength(3)
-    expect(fit.urgentDeferred).toBe(2)
-    expect(fit.deferred).toHaveLength(2)
+describe("cost of delay", () => {
+  it("puts the client who is actually waiting above work with no clock", async () => {
+    const { rankByDecay, decayOf } = await import("../src/daemon/monitor-capacity")
+    const now = Date.UTC(2026, 8, 7)
+    const hour = 3600_000
+    const clocks = { hasanah: 240, noqta: undefined }
+    const list = [
+      { needsHuman: true, clientId: "noqta", updatedAt: now - 200 * hour },   // ancient, but nobody waits
+      { needsHuman: true, clientId: "hasanah", updatedAt: now - 2 * hour },   // inside the clock
+      { needsHuman: true, clientId: "hasanah", updatedAt: now - 9 * hour },   // past the clock
+    ]
+    expect(rankByDecay(list, clocks, now)).toEqual([2, 1, 0])
+    expect(decayOf(list[2], clocks, now)).toMatchObject({ rising: true, overdue: true })
+    expect(decayOf(list[1], clocks, now)).toMatchObject({ rising: true, overdue: false })
+    expect(decayOf(list[0], clocks, now)).toMatchObject({ rising: false, overdue: false })
   })
-  it("respects time, effort, and human ownership without losing the backlog", async () => {
-    const { fitCapacity } = await import("../src/daemon/monitor-capacity")
-    const urgent = { when: "now" as const, minutes: 5, effort: "low" as const, needsHuman: true }
-    const fit = fitCapacity([urgent, { ...urgent, minutes: 30 }, { ...urgent, effort: "high" }, { ...urgent, needsHuman: false }, { ...urgent, when: "later" }], 10, "low")
-    expect(fit.selected).toEqual([0]); expect(fit.deferred).toEqual([1, 2, 3, 4]); expect(fit.urgentDeferred).toBe(2)
+
+  it("keeps the order stable when nothing distinguishes two actions", async () => {
+    const { rankByDecay } = await import("../src/daemon/monitor-capacity")
+    const now = Date.now()
+    const same = { needsHuman: true, clientId: "x", updatedAt: now }
+    expect(rankByDecay([same, same, same], {}, now)).toEqual([0, 1, 2])
+  })
+
+  it("renders the three buckets and ships syntactically valid browser code", () => {
+    expect(renderMonitorPage()).toContain("Only you")
+    expect(renderMonitorPage()).toContain("Agents can handle")
+    expect(() => new Function(MONITOR_SCRIPT)).not.toThrow()
   })
 })
 

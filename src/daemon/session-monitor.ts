@@ -236,6 +236,9 @@ export class SessionMonitor {
       .map(r => ({ ...r, result: r.result ? JSON.parse(r.result) : null }))
     return {
       model: this.model, reviews, actions: this.openActions(),
+      // Cleared work, for the "Handled" count. Kept as a number rather than a
+      // list: it exists to show the backlog is moving, not to be read.
+      doneCount: (this.db.prepare("SELECT COUNT(*) AS n FROM monitor_action_states WHERE state='done'").get() as { n: number }).n,
       counts: this.db.prepare("SELECT status, COUNT(*) AS count FROM session_reviews GROUP BY status").all(),
       running: listTraces(this.db, { status: "in-flight", limit: 100 }).map(t => ({ taskId: t.taskId, agentId: t.agentId, sessionId: t.resumeSessionId, messagePreview: t.messagePreview })),
       registrations: this.db.prepare("SELECT * FROM monitored_cli_sessions ORDER BY updated_at DESC LIMIT 200").all(),

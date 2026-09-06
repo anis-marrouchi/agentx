@@ -1,4 +1,4 @@
-import { fitCapacity } from "../../monitor-capacity"
+import { rankByDecay, decayOf } from "../../monitor-capacity"
 import { renderShell, type TopbarPeer } from ".."
 
 /** Feather-style 24x24 stroked glyphs, sized at the call site. */
@@ -34,13 +34,6 @@ const svg = (d: string, size = 14) =>
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="' + size + '" height="' + size + '" aria-hidden="true">' + d + "</svg>"
 
 /** Segmented radio group. Values carry the payload; labels stay human. */
-const seg = (id: string, label: string, opts: Array<[string, string]>, on: string) =>
-  '<div class="bf-seg" id="' + id + '" role="radiogroup" aria-label="' + label + '">' +
-  opts.map(([value, text]) =>
-    '<button type="button" role="radio" data-value="' + value + '" aria-checked="' + (value === on) + '"' +
-    (value === on ? ' class="is-on"' : "") + ">" + text + "</button>").join("") +
-  "</div>"
-
 const secLabel = (icon: string, text: string, countId?: string, rightHtml = "") =>
   '<div class="ax-sec-label"><h3>' + svg(icon, 13) + text +
   (countId ? '<span class="ax-sec-label__n" id="' + countId + '"></span>' : "") + "</h3>" + rightHtml + "</div>"
@@ -67,38 +60,18 @@ export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
 <div id="automation"></div>
 <div id="principals"></div>
 
-<section class="bf-cap" aria-label="Your capacity">
-  <div class="bf-cap__grp">
-    <span class="bf-cap__lbl">Time</span>
-    ${seg("minutes", "Time available", [["5", "5m"], ["15", "15m"], ["30", "30m"], ["60", "60m"]], "15")}
-  </div>
-  <div class="bf-cap__grp">
-    <span class="bf-cap__lbl">Focus</span>
-    ${seg("focus", "Focus today", [["low", "Light"], ["medium", "Normal"], ["high", "Deep"]], "medium")}
-  </div>
-  <div class="bf-budget">
-    <div class="bf-budget__row">
-      <span class="bf-cap__lbl">Planned</span>
-      <span class="bf-budget__v" id="budget">&mdash;</span>
-    </div>
-    <div class="bf-meter"><span class="bf-meter__fill" id="meter" style="width:0%"></span></div>
-  </div>
-</section>
-
 <p id="notice" role="status" aria-live="polite"></p>
 
 <div class="bf-grid">
   <section class="bf-col">
-    ${secLabel(ICON.alert, "For now", "now-count")}
-    <div id="now" class="bf-col"></div>
-    <details id="later-wrap">
-      <summary class="bf-defer">${svg(ICON.chevr)}
-        <span class="bf-defer__t">Later &amp; agent follow-ups</span>
-        <span class="bf-defer__n" id="later-count"></span>
-      </summary>
-      <div id="later" class="bf-col"></div>
-      <button class="ax-btn ax-btn--sm" id="more-actions" hidden></button>
-    </details>
+    ${secLabel(ICON.alert, "Only you", "you-count", '<span class="bf-why">needs your authority, your relationship, or something the system cannot know</span>')}
+    <div id="you" class="bf-col"></div>
+
+    ${secLabel(ICON.plug, "Agents can handle", "agents-count", '<span class="bf-why">no human needed &mdash; not yet automatic</span>')}
+    <div id="agents" class="bf-col"></div>
+    <button class="ax-btn ax-btn--sm" id="more-actions" hidden></button>
+
+    <div id="handled"></div>
   </section>
   <aside class="bf-col">
     ${secLabel(ICON.pulse, "In motion", "run-count")}
@@ -157,7 +130,7 @@ ${secLabel(ICON.file, "Session briefings", "brief-count")}
 </section>
 </div>`,
     css: MONITOR_CSS,
-    scripts: `<script>const fitCapacity = ${fitCapacity.toString()};const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
+    scripts: `<script>const rankByDecay = ${rankByDecay.toString()};const decayOf = ${decayOf.toString()};const ICON = ${JSON.stringify(ICON)};${MONITOR_SCRIPT}</script>`,
   })
 }
 
@@ -187,32 +160,28 @@ export const MONITOR_CSS = `
   background:color-mix(in oklch,var(--ax-err) 5%,var(--ax-bg-elev))}
 .bf-callout--err .ax-callout__icon{background:color-mix(in oklch,var(--ax-err) 18%,transparent);color:var(--ax-err)}
 
-/* Capacity band */
-.bf-cap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;background:var(--ax-surface);
-  border:var(--ax-border-w) solid var(--ax-border);border-radius:var(--ax-radius-lg);
-  padding:12px 18px;box-shadow:var(--ax-shadow);margin-bottom:14px}
-.bf-cap__grp{display:flex;flex-direction:column;gap:6px}
-.bf-cap__lbl{font-size:10px;color:var(--ax-muted);text-transform:uppercase;letter-spacing:0.08em;
-  font-weight:600;font-family:var(--ax-mono)}
-.bf-seg{display:flex;border:var(--ax-border-w) solid var(--ax-border-2);border-radius:var(--ax-radius);
-  overflow:hidden;background:var(--ax-bg)}
-.bf-seg button{background:transparent;border:none;border-right:1px solid var(--ax-border);
-  color:var(--ax-text-2);font:inherit;font-size:var(--ax-fs-sm);font-weight:600;padding:5px 13px;
-  cursor:pointer;white-space:nowrap}
-.bf-seg button:last-child{border-right:none}
-.bf-seg button:hover{color:var(--ax-text);background:var(--ax-surface-2)}
-.bf-seg button.is-on{background:color-mix(in oklch,var(--ax-accent) 15%,var(--ax-surface));color:var(--ax-accent)}
-.bf-budget{flex:1;min-width:200px;display:flex;flex-direction:column;gap:6px}
-.bf-budget__row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-.bf-budget__v{font-family:var(--ax-mono);font-size:var(--ax-fs-sm);color:var(--ax-text-2)}
-.bf-budget__v b{color:var(--ax-text);font-weight:600}
-.bf-meter{height:8px;border-radius:var(--ax-radius-pill);background:var(--ax-surface-3);
-  border:1px solid var(--ax-border);overflow:hidden;display:flex}
-.bf-meter__fill{background:var(--ax-accent);transition:width 160ms ease}
-.bf-meter__fill.is-over{background:var(--ax-warn)}
 #notice{margin:0 0 14px;font-size:12.5px;color:var(--ax-text-2)}
 #notice:not(:empty){padding:9px 13px;border-radius:var(--ax-radius-sm);background:var(--ax-surface-2);
   border:var(--ax-border-w) solid var(--ax-border)}
+
+/* Cost of delay — replaces the old minutes estimate */
+.bf-cost{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;
+  color:var(--ax-text-2)}
+.bf-cost--rise{color:var(--ax-err)}
+.bf-cost--rise.is-over{padding:2px 9px;border-radius:var(--ax-radius-pill);
+  background:color-mix(in oklch,var(--ax-err) 9%,var(--ax-surface));
+  border:1px solid color-mix(in oklch,var(--ax-err) 32%,var(--ax-border))}
+.bf-act.is-snoozed{opacity:0.62}
+.bf-why{font-size:12px;color:var(--ax-text-2);font-weight:400;margin-left:2px}
+.ax-sec-label h3 .bf-why{margin-left:8px}
+
+/* Handled — a count, not a list: it shows the backlog moving, nothing to decide */
+.bf-done{display:flex;align-items:center;gap:10px;margin-top:14px;padding:11px 15px;
+  border-radius:var(--ax-radius-lg);border:var(--ax-border-w) solid var(--ax-border);
+  background:var(--ax-surface-2);font-size:12.5px;color:var(--ax-text-2)}
+.bf-done b{font-family:var(--ax-mono);font-size:15px;color:var(--ax-text);font-weight:600}
+.bf-done svg{color:var(--ax-ok);flex:none}
+.bf-done span{margin-left:auto}
 
 /* Principals */
 .bf-pr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:14px}
@@ -446,7 +415,7 @@ button.bf-tag.is-on{background:color-mix(in oklch,var(--ax-accent) 14%,transpare
 .bf-bar{display:block;height:10px;border-radius:var(--ax-radius-pill);background:var(--ax-surface-3);
   animation:bf-pulse 1.4s ease-in-out infinite}
 @keyframes bf-pulse{0%,100%{opacity:1}50%{opacity:0.45}}
-@media (prefers-reduced-motion:reduce){.bf-bar{animation:none}.bf-meter__fill{transition:none}}
+@media (prefers-reduced-motion:reduce){.bf-bar{animation:none}}
 
 @media(max-width:980px){
   .bf-grid{grid-template-columns:1fr}
@@ -457,29 +426,17 @@ button.bf-tag.is-on{background:color-mix(in oklch,var(--ax-accent) 14%,transpare
   .bf{padding:16px 14px 36px}
   .bf-head{flex-direction:column;gap:14px;align-items:stretch}
   .bf-sync{justify-content:space-between}
-  .bf-cap{flex-direction:column;align-items:stretch;gap:14px}
-  .bf-seg{width:100%}
-  .bf-seg button{flex:1;min-height:44px;padding:6px 8px}
-  .bf-act__foot .ax-btn{flex:1;justify-content:center;min-height:44px}
-  .bf-form__row{grid-template-columns:1fr}
-  .bf-search{flex:1 1 100%}
-  .bf-lnk{max-width:100%}
-}`
+    }`
 
 export const MONITOR_SCRIPT = String.raw`
 (function(){
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=(n,s)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="'+(s||14)+'" height="'+(s||14)+'" aria-hidden="true">'+ICON[n]+'</svg>';
 let nodes=[], actions=[], busy=false, expandedActions=false;
-let minutes='15', focus='medium';
 let filter={kind:'all',agent:null,node:null};
-try{const p=JSON.parse(localStorage.getItem('ax-monitor-capacity')||'{}');if(p.minutes)minutes=String(p.minutes);if(p.focus)focus=String(p.focus);}catch{}
-function paintSeg(id,value){for(const b of $(id).children){const on=b.dataset.value===value;b.classList.toggle('is-on',on);b.setAttribute('aria-checked',String(on));}}
-paintSeg('minutes',minutes);paintSeg('focus',focus);
 async function api(op,node,body){const r=await fetch('/api/monitor/'+op+'?node='+encodeURIComponent(node),{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
 function message(s){$('notice').textContent=s;}
 let clientFilter='';
-function save(){try{localStorage.setItem('ax-monitor-capacity',JSON.stringify({minutes,focus}));}catch{}renderActions();}
 
 /* --- Who and where ------------------------------------------------------
    session_id is "<agent>:<channel>:<target>" for trace-sourced reviews, e.g.
@@ -619,23 +576,30 @@ $('coverage-note').innerHTML=failed.length
 }
 
 /* --- Actions ------------------------------------------------------------ */
-function card(a,i,later){
+function card(a,i,clocks){
+/* The cost of waiting, not an estimate of the work. A client with a stated
+   clock accrues against it; everything else is flat and says so. */
+const d=decayOf(a,clocks||{});
+const age=a.updatedAt?relTime(a.updatedAt).replace(' ago',''):'';
+const cost=d.rising
+ ?'<span class="bf-cost bf-cost--rise'+(d.overdue?' is-over':'')+'">'+ic('pulse',12)+esc(age)+(d.overdue?' &middot; past the clock':' &middot; rising')+'</span>'
+ :'<span class="bf-cost">'+ic('clock',12)+esc(age)+' &middot; flat</span>';
 const pill=a.needsHuman
  ?'<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>Needs you</span>'
  :'<span class="ax-pill ax-pill--info"><span class="ax-pill__dot"></span>Agent</span>';
 const done='<button class="ax-btn ax-btn--sm ax-btn--primary" data-action="done" data-index="'+i+'">'+ic('check',13)+' Done</button>';
-const foot=later
+const foot=a.snoozed
  ?done+'<button class="ax-btn ax-btn--sm ax-btn--ghost" data-action="open" data-index="'+i+'">Bring back</button>'
- :done+'<button class="ax-btn ax-btn--sm ax-btn--ghost" data-action="later" data-index="'+i+'">Later</button>';
+ :done+'<button class="ax-btn ax-btn--sm ax-btn--ghost" data-action="later" data-index="'+i+'">Snooze</button>';
 const src=a.sources[0];
 const links=(src && !String(src.reviewId).startsWith('external:'))?tracePanel(src.node,src.reviewId):'';
-return '<article class="bf-act'+(!later&&a.when==='now'&&a.needsHuman?' bf-act--now':'')+'">'
+return '<article class="bf-act'+(d.overdue&&a.needsHuman?' bf-act--now':'')+(a.snoozed?' is-snoozed':'')+'">'
  +idBlock(a.agent,a.nodes.join(' / '),src?src.node:'',a.sessionId,'',relTime(a.updatedAt),absTime(a.updatedAt))
  +'<p class="bf-act__text">'+esc(a.text)+'</p>'
  +'<div class="bf-links">'+pill
  +(a.sources.length>1?'<span class="bf-dupe" title="Re-derived by this many session reviews">'+ic('loop',12)+'seen '+a.sources.length+'&times;</span>':'')
- +'<span class="bf-act__cost">'+ic('clock',12)+'~'+esc(a.minutes)+' min</span>'
- +'<span class="bf-eff bf-eff--'+esc(a.effort)+'"><i></i><i></i><i></i>'+esc(a.effort)+'</span></div>'
+ +cost
+ +(a.snoozed?'<span class="ax-pill ax-pill--off">snoozed</span>':'')+'</div>'
  +links
  +'<div class="bf-act__foot">'+foot+'</div>'
  +(a.evidence?'<details class="bf-why"><summary>'+ic('chev',12)+'Evidence</summary><p class="bf-ev">'+esc(a.evidence)+'</p></details>':'')
@@ -711,27 +675,28 @@ function renderActions(){
 const merged=new Map();
 for(const n of nodes.filter(n=>n.ok))for(const entry of n.data.actions?.items||[]){
 const a=entry.action,saved=entry.state;const key=entry.key||JSON.stringify([n.url,entry.sessionId,a.text.toLowerCase().replace(/\s+/g,' ').trim()]);const source={node:n.url,reviewId:entry.reviewId,index:entry.actionIndex};
-if(merged.has(key)){const m=merged.get(key);m.sources.push(source);if(!m.nodes.includes(n.name))m.nodes.push(n.name);if(saved==='open'&&a.when==='now')m.when='now';if(entry.updatedAt>m.updatedAt){m.updatedAt=entry.updatedAt;m.text=a.text;m.evidence=a.evidence;}}
-else merged.set(key,{...a,when:saved==='later'?'later':a.when,sources:[source],nodes:[n.name],agent:entry.agent,sessionId:entry.sessionId,updatedAt:entry.updatedAt,clientId:entry.clientId});
+if(merged.has(key)){const m=merged.get(key);m.sources.push(source);if(!m.nodes.includes(n.name))m.nodes.push(n.name);if(saved==='open')m.snoozed=false;if(entry.updatedAt>m.updatedAt){m.updatedAt=entry.updatedAt;m.text=a.text;m.evidence=a.evidence;}}
+else merged.set(key,{...a,snoozed:saved==='later',sources:[source],nodes:[n.name],agent:entry.agent,sessionId:entry.sessionId,updatedAt:entry.updatedAt,clientId:entry.clientId});
 }
 const unloaded=nodes.filter(n=>n.ok).reduce((s,n)=>s+Math.max(0,(n.data.actions?.total||0)-(n.data.actions?.items.length||0)),0);
 $('more-actions').hidden=!unloaded;$('more-actions').textContent='Load '+unloaded+' older';
 actions=[...merged.values()];
+/* Each client's stated respondWithin is what makes a wait cost something.
+   Work for a client with no clock is flat and can never outrank someone who
+   is actually waiting. */
+const clocks={};
+for(const n of nodes.filter(n=>n.ok))for(const c of n.data.clients||[])clocks[c.id]=c.respondWithinMinutes;
 const shown=clientFilter?actions.filter(a=>(a.clientId||'unmapped')===clientFilter):actions;
-const budget=Number(minutes)||15;
-const fitted=fitCapacity(shown,budget,focus);
-const idx=a=>actions.indexOf(a);
-const now=fitted.selected.map(i=>card(shown[i],idx(shown[i]),false)),later=fitted.deferred.map(i=>card(shown[i],idx(shown[i]),true));
-$('now').innerHTML=now.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing needs you in '+budget+' minutes</h4><p>Raise the budget to see deferred work, or go back to your own.</p></div>';
-$('now-count').textContent=now.length?String(now.length):'';
-const pct=budget>0?Math.min(100,Math.round(fitted.usedMinutes/budget*100)):0;
-$('meter').style.width=pct+'%';
-$('meter').className='bf-meter__fill'+(fitted.urgentDeferred?' is-over':'');
-$('budget').innerHTML='<b>'+fitted.usedMinutes+'</b> of '+budget+' min &middot; '+now.length+' action'+(now.length===1?'':'s');
-$('later-count').innerHTML=(fitted.urgentDeferred?'<span class="ax-pill ax-pill--warn"><span class="ax-pill__dot"></span>'+fitted.urgentDeferred+' urgent</span>':'')
- +'<span class="ax-pill ax-pill--off">'+later.length+' waiting</span>'
- +(unloaded?'<span class="ax-pill ax-pill--off">'+unloaded+' not loaded</span>':'');
-$('later').innerHTML=later.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing waiting</h4><p>No deferred actions or agent follow-ups.</p></div>';
+const order=rankByDecay(shown,clocks)
+ .sort((x,y)=>(shown[x].snoozed?1:0)-(shown[y].snoozed?1:0));
+const you=[],agents=[];
+for(const i of order)(shown[i].needsHuman?you:agents).push(card(shown[i],actions.indexOf(shown[i]),clocks));
+$('you').innerHTML=you.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing needs you</h4><p>Everything open can be finished without your authority.</p></div>';
+$('you-count').textContent=you.length?String(you.length):'';
+$('agents').innerHTML=agents.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing queued for agents</h4><p>No open action was marked as needing no human.</p></div>';
+$('agents-count').innerHTML=String(agents.length)+(unloaded?'<span class="ax-pill ax-pill--off">'+unloaded+' not loaded</span>':'');
+const done=nodes.filter(n=>n.ok).reduce((t,n)=>t+(n.data.doneCount||0),0);
+$('handled').innerHTML=done?'<div class="bf-done">'+ic('check',17)+'<b>'+done+'</b> handled<span>cleared by you or by an agent &mdash; no decision in here</span></div>':'';
 }
 
 /* --- Session briefings + filters ---------------------------------------- */
@@ -819,8 +784,6 @@ message('');
 finally{busy=false;$('refresh').disabled=false;$('refresh').removeAttribute('aria-busy');}
 }
 $('more-actions').onclick=async()=>{try{for(const n of nodes.filter(n=>n.ok&&n.data.actions.items.length<n.data.actions.total)){const r=await fetch('/api/monitor/actions?node='+encodeURIComponent(n.url)+'&offset='+n.data.actions.items.length);if(!r.ok)throw Error('Could not load older actions');const d=await r.json();n.data.actions.items.push(...d.items);n.data.actions.total=d.total;}expandedActions=true;renderActions();message('Older actions loaded. Auto-refresh paused until you press Refresh.');}catch(e){message(e.message);}};
-for(const [id,set] of [['minutes',v=>minutes=v],['focus',v=>focus=v]])
-$(id).addEventListener('click',e=>{const b=e.target.closest('button[data-value]');if(!b)return;set(b.dataset.value);paintSeg(id,b.dataset.value);save();});
 $('search').oninput=renderReviews;$('refresh').onclick=refresh;$('node').onchange=registrations;
 document.addEventListener('click',async e=>{
 const tr=e.target.closest('.bf-trace>summary');
