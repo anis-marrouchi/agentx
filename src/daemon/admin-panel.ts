@@ -101,6 +101,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "DELETE /api/admin/business/orgchart":   () => deleteOrgEntry(body),
       "POST /api/admin/business/project":      () => upsertProject(body),
       "DELETE /api/admin/business/project":    () => deleteProject(body),
+      "POST /api/admin/business/client":       () => upsertClient(body),
+      "DELETE /api/admin/business/client":     () => deleteClient(body),
       "POST /api/admin/business/contact":      () => upsertContact(body),
       "DELETE /api/admin/business/contact":    () => deleteContact(body),
       // Boards — mirrors `agentx board` + `agentx board column` CLI.
@@ -301,6 +303,7 @@ function getAdminState() {
     orgChart: businessCfg.orgChart || {},
     projects: Array.isArray(businessCfg.projects) ? businessCfg.projects : [],
     contactMap: Array.isArray(businessCfg.contactMap) ? businessCfg.contactMap : [],
+    clients: businessCfg.clients && typeof businessCfg.clients === "object" ? businessCfg.clients : {},
   }
   // Notifications — destination + event toggles + long-task threshold.
   const notificationsCfg = (cfg.notifications || {}) as any
@@ -1136,6 +1139,47 @@ async function upsertProject(body: any) {
     if (idx >= 0) cfg.business.projects[idx] = { ...cfg.business.projects[idx], ...next }
     else cfg.business.projects.push(next)
     return idx >= 0 ? `project "${id}" updated` : `project "${id}" added`
+  })
+  return { summary }
+}
+
+/** Clients are derived from projects and contacts, so this only stores
+ *  overrides: a display name, what kind of relationship it is, how fast a
+ *  wait costs, and what agents may do for it unattended. Writing an entry
+ *  never creates a client — it annotates one that already resolves. */
+async function upsertClient(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("client id required")
+  const kind = String(body?.kind || "").trim()
+  if (kind && !["client", "internal", "own"].includes(kind)) throw new Error('kind must be client, internal or own')
+  const respondWithin = String(body?.respondWithin || "").trim()
+  if (respondWithin && !/^\d+\s*[mhd]$/.test(respondWithin)) throw new Error('respondWithin must look like "4h", "90m" or "2d"')
+  const standing = Array.isArray(body?.standing)
+    ? body.standing.map((x: any) => String(x).trim()).filter(Boolean)
+    : String(body?.standing || "").split(",").map(x => x.trim()).filter(Boolean)
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.business = cfg.business || {}
+    cfg.business.clients = cfg.business.clients || {}
+    const had = Boolean(cfg.business.clients[id])
+    cfg.business.clients[id] = {
+      ...(cfg.business.clients[id] || {}),
+      ...(body?.name ? { name: String(body.name).trim() } : {}),
+      ...(kind ? { kind } : {}),
+      ...(respondWithin ? { respondWithin } : {}),
+      standing,
+    }
+    return had ? `client "${id}" updated` : `client "${id}" configured`
+  })
+  return { summary }
+}
+
+async function deleteClient(body: any) {
+  const id = String(body?.id || "").trim()
+  if (!id) throw new Error("client id required")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    if (!cfg.business?.clients?.[id]) throw new Error(`no client override "${id}"`)
+    delete cfg.business.clients[id]
+    return `client "${id}" reset to defaults`
   })
   return { summary }
 }

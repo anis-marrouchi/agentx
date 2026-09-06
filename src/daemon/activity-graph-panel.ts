@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { clientFromProject, agentClients, matchContact as matchContactRule, type ContactRule } from "@/business/clients"
 import { resolve, join } from "path"
 import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
@@ -209,105 +210,14 @@ function isSystemAgent(agentId: string, daemonConfig: DaemonConfig | null): bool
   return false
 }
 
-function clientFromProject(project: string | null | undefined, projectsConfig?: Array<{ id: string; client?: string }>): string {
-  if (!project) return "unmapped"
-  // Explicit client mapping in business.projects[] wins.
-  if (projectsConfig) {
-    const hit = projectsConfig.find((p) => p.id === project)
-    if (hit?.client) return hit.client
-  }
-  const slash = project.indexOf("/")
-  return slash > 0 ? project.slice(0, slash) : project
-}
-
-interface ContactMapEntry {
-  channel?: string
-  chatId?: string
-  username?: string
-  senderId?: string
-  client: string
-  project?: string
-  displayName?: string
-}
-
-/** Build a map of agent id -> default client by walking the orgChart.
- *  Sources:
- *    1. business.projects[] declares { id, pm } — the pm gets that
- *       project's client (via the leading-segment heuristic, or
- *       project.client when set).
- *    2. business.orgChart[] declares reportsTo edges — every direct
- *       or transitive report of an agent inherits their client.
- *
- *  Why this matters: a mesh dispatch to `mtgl-v2` carries no project
- *  metadata. Without this map, we'd attribute it to "unmapped".
- *  With it, we look up mtgl-v2 -> reportsTo pm-mtgl -> default client
- *  mtgl, and the dispatch lands in the right bucket.
- */
-function buildAgentToClientMap(daemonConfig: DaemonConfig | null): Map<string, string> {
-  const out = new Map<string, string>()
-  if (!daemonConfig) return out
-  const business: any = (daemonConfig as any).business
-  if (!business) return out
-
-  const projectsCfg: Array<{ id: string; pm?: string; client?: string }> = business.projects ?? []
-  const orgChart: Record<string, { reportsTo?: string }> = business.orgChart ?? {}
-
-  // Step 1: PMs declared on projects get their project's client.
-  for (const p of projectsCfg) {
-    if (!p.pm) continue
-    const c = p.client || (p.id.includes("/") ? p.id.slice(0, p.id.indexOf("/")) : p.id)
-    // First win — if a PM is on multiple projects of different clients
-    // we take the first; multi-client PMs are an explicit-config case
-    // for contactMap or business.projects[].client to disambiguate.
-    if (!out.has(p.pm)) out.set(p.pm, c)
-  }
-
-  // Step 2: Walk orgChart — for every agent, climb reportsTo until we
-  // hit one that has a client mapping. Cache as we go.
-  function clientFor(agentId: string, seen: Set<string> = new Set()): string | undefined {
-    if (out.has(agentId)) return out.get(agentId)
-    if (seen.has(agentId)) return undefined
-    seen.add(agentId)
-    const entry = orgChart[agentId]
-    if (!entry?.reportsTo) return undefined
-    const c = clientFor(entry.reportsTo, seen)
-    if (c) out.set(agentId, c)
-    return c
-  }
-  for (const agentId of Object.keys(orgChart)) clientFor(agentId)
-
-  return out
-}
-
-/** Find a contact-map entry that matches the (source, sender, chatId)
- *  tuple. Match priority: chatId > username > senderId > channel-default.
- *  Returns undefined when no rule matches; the caller falls back to the
- *  default "unmapped" / project-derived client. */
-function matchContact(
-  source: string,
-  raw: any,
-  contactMap: ContactMapEntry[],
-): ContactMapEntry | undefined {
-  if (!contactMap.length) return undefined
-  const chatId = String(raw?.chatId ?? raw?.message?.chat?.id ?? "")
-  const username = String(raw?.sender?.username ?? raw?.message?.from?.username ?? "")
-  const senderId = String(raw?.sender?.id ?? raw?.message?.from?.id ?? "")
-
-  const candidates = contactMap.filter((m) => !m.channel || m.channel === source)
-  // Specific match orders: by chatId, then username, then senderId, then channel-only fallback.
-  for (const m of candidates) {
-    if (m.chatId && chatId && m.chatId === chatId) return m
-  }
-  for (const m of candidates) {
-    if (m.username && username && m.username === username) return m
-  }
-  for (const m of candidates) {
-    if (m.senderId && senderId && m.senderId === senderId) return m
-  }
-  for (const m of candidates) {
-    if (!m.chatId && !m.username && !m.senderId && m.channel === source) return m
-  }
-  return undefined
+/** Pull the identity fields out of a raw channel payload, then defer to the
+ *  shared matcher so the graph and the monitor agree on attribution. */
+function matchContact(source: string, raw: any, contactMap: ContactRule[]): ContactRule | undefined {
+  return matchContactRule(source, {
+    chatId: String(raw?.chatId ?? raw?.message?.chat?.id ?? ""),
+    username: String(raw?.sender?.username ?? raw?.message?.from?.username ?? ""),
+    senderId: String(raw?.sender?.id ?? raw?.message?.from?.id ?? ""),
+  }, contactMap)
 }
 
 // Best-effort initiator extraction per source. The raw_json shape differs:
@@ -614,8 +524,8 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
 
   // Pull config knobs once per snapshot.
   const businessProjects = (daemonConfig as any)?.business?.projects ?? []
-  const contactMap: ContactMapEntry[] = (daemonConfig as any)?.business?.contactMap ?? []
-  const agentToClient = buildAgentToClientMap(daemonConfig)
+  const contactMap: ContactRule[] = (daemonConfig as any)?.business?.contactMap ?? []
+  const agentToClient = agentClients(((daemonConfig as any)?.business) ?? {})
 
   for (const ev of events) {
     let raw: any = null
@@ -1031,8 +941,8 @@ export async function handleActivityGraphDetail(req: IncomingMessage, res: Serve
     // particular client was assigned. Same precedence the snapshot uses;
     // we just record which step won.
     const businessProjects = (_daemonConfigRef as any)?.business?.projects ?? []
-    const contactMap: ContactMapEntry[] = (_daemonConfigRef as any)?.business?.contactMap ?? []
-    const agentToClient = buildAgentToClientMap(_daemonConfigRef)
+    const contactMap: ContactRule[] = (_daemonConfigRef as any)?.business?.contactMap ?? []
+    const agentToClient = agentClients(((_daemonConfigRef as any)?.business) ?? {})
     let attribution: { client: string; project: string; via: string } = { client: "unmapped", project: `unmapped/_${ev.source}`, via: "fallback" }
     const contact = matchContact(ev.source, raw, contactMap)
     if (contact) {

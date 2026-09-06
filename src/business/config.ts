@@ -100,6 +100,25 @@ const contactMapSchema = z.object({
   displayName: z.string().optional(),
 })
 
+/** Per-client policy. Clients are DERIVED from `projects` and `contactMap`
+ *  — one exists the moment either mentions it — so nothing needs declaring
+ *  up front. This record only carries overrides for the two things a
+ *  heuristic cannot know: how fast a delay costs you, and what an agent may
+ *  do for this client without asking first. */
+const clientPolicySchema = z.object({
+  /** Display name. Defaults to the client id. */
+  name: z.string().optional(),
+  /** "client" is someone who is waiting on you and can be let down; "own"
+   *  is your own product; "internal" is machinery with no external clock. */
+  kind: z.enum(["client", "internal", "own"]).optional(),
+  /** How long a wait may last before it starts costing: "4h", "90m", "2d".
+   *  Unset means no external clock, so delay is flat. */
+  respondWithin: z.string().optional(),
+  /** Capabilities an agent may exercise unattended. "*" means all. Ignored
+   *  for kind "client" — see mayProceedUnattended(). */
+  standing: z.array(z.string()).default([]),
+})
+
 export const businessConfigSchema = z.object({
   enabled: z.boolean().default(false),
   timezone: z.string().default("UTC"),
@@ -114,6 +133,10 @@ export const businessConfigSchema = z.object({
    *  graph can attribute Telegram/WhatsApp/etc. to the right client
    *  instead of the catch-all "internal" bucket. */
   contactMap: z.array(contactMapSchema).default([]),
+  /** Overrides for derived clients. Keyed by client id; absent entries get
+   *  defaults, so this stays empty until you need a clock or an
+   *  authorization. */
+  clients: z.record(z.string(), clientPolicySchema).default({}),
   /** Work-tick cadence in minutes during business hours. Default 15. */
   workTickMinutes: z.number().int().min(1).max(60).default(15),
   /** Max queue depth for an idle agent before skipping the work tick (avoids piling up). */

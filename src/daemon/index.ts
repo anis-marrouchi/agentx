@@ -1,4 +1,6 @@
 import { SessionMonitor, discoverClis, readMonitorBody } from "./session-monitor"
+import { workflowHealth, scanRuns } from "./workflow-health"
+import { resolveClient, parseWorkRef, listClients, type BusinessShape } from "@/business/clients"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { createReadStream } from "fs"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
@@ -110,6 +112,20 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
+  private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
+
+  /** Workflow health for the monitor. Cached for a minute: the dashboard
+   *  polls every 15s and dormancy does not change on that timescale. */
+  private workflowHealth() {
+    if (!this.workflowStore || !this.workflowRuns) return []
+    if (this.wfHealth && Date.now() - this.wfHealth.at < 60_000) return this.wfHealth.rows
+    try {
+      const defs = this.workflowStore.list().map((w: { id: string; name?: string }) => ({ id: w.id, name: w.name }))
+      const rows = workflowHealth(defs, scanRuns(this.workflowRuns.runsDir))
+      this.wfHealth = { at: Date.now(), rows }
+      return rows
+    } catch { return [] }
+  }
   private db: import("better-sqlite3").Database | null = null
   private loadedPlugins: LoadedPlugin[] = []
   private readonly agentMemory: AgentMemory = new AgentMemory()
@@ -1936,7 +1952,19 @@ export class AgentXDaemon {
         if (!this.checkMeshAuth(req, res, path)) return
         if (!this.sessionMonitor) { this.json(res, 503, { error: "Session monitor requires SQLite" }); return }
         if (req.method === "GET" && path === "/monitor") {
-          this.json(res, 200, this.sessionMonitor.snapshot()); return
+          // Attribute every action and review to the client it is for, using
+          // the same resolver the activity graph uses. Grouping by principal
+          // is what turns a flat action list into "who is waiting on you".
+          const business = ((this.config as any).business ?? {}) as BusinessShape
+          const snap = this.sessionMonitor.snapshot()
+          const clientOf = (sessionId: string, agent: string) => resolveClient(parseWorkRef(sessionId, agent), business)
+          this.json(res, 200, {
+            ...snap,
+            actions: { ...snap.actions, items: snap.actions.items.map(a => ({ ...a, clientId: clientOf(a.sessionId, a.agent) })) },
+            reviews: snap.reviews.map(r => ({ ...r, clientId: clientOf(r.session_id, r.agent) })),
+            clients: listClients(business),
+            workflows: this.workflowHealth(),
+          }); return
         }
         if (req.method === "GET" && path === "/monitor/actions") {
           const offset = Math.max(0, Math.min(1000000, parseInt(url.searchParams.get("offset") || "0", 10) || 0))

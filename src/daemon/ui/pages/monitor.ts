@@ -64,6 +64,8 @@ export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
 <p id="coverage" class="bf-sr" role="status">Gathering session reviews across your mesh&hellip;</p>
 <div class="bf-strip" id="strip"></div>
 <div id="coverage-note"></div>
+<div id="automation"></div>
+<div id="principals"></div>
 
 <section class="bf-cap" aria-label="Your capacity">
   <div class="bf-cap__grp">
@@ -211,6 +213,42 @@ export const MONITOR_CSS = `
 #notice{margin:0 0 14px;font-size:12.5px;color:var(--ax-text-2)}
 #notice:not(:empty){padding:9px 13px;border-radius:var(--ax-radius-sm);background:var(--ax-surface-2);
   border:var(--ax-border-w) solid var(--ax-border)}
+
+/* Principals */
+.bf-pr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:14px}
+.bf-pr__c{display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;cursor:pointer;
+  background:var(--ax-surface);border:var(--ax-border-w) solid var(--ax-border);
+  border-radius:var(--ax-radius-lg);box-shadow:var(--ax-shadow);padding:11px 14px;color:var(--ax-text)}
+.bf-pr__c:hover{background:var(--ax-surface-2)}
+.bf-pr__c.is-on{border-color:var(--ax-accent);box-shadow:var(--ax-shadow-accent)}
+.bf-pr__c--client{border-left:4px solid var(--ax-accent)}
+.bf-pr__n{font-size:13.5px;font-weight:600;letter-spacing:-0.005em}
+.bf-pr__k{font-size:10.5px;color:var(--ax-text-2);font-family:var(--ax-mono)}
+.bf-pr__s{display:flex;align-items:baseline;gap:8px;font-size:11.5px;color:var(--ax-text-2);margin-top:3px}
+.bf-pr__s b{font-family:var(--ax-mono);font-size:17px;font-weight:600;color:var(--ax-text-2)}
+.bf-pr__s b.bf-pr__you{color:var(--ax-err)}
+.bf-pr__s i{font-style:normal}
+.bf-pr__o{font-size:10.5px;color:var(--ax-text-2)}
+
+/* Automation health */
+.bf-wf{background:var(--ax-surface);border:var(--ax-border-w) solid var(--ax-border);
+  border-radius:var(--ax-radius-lg);box-shadow:var(--ax-shadow);padding:12px 16px;margin-bottom:14px}
+.bf-wf__h{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.bf-wf__h h3{font-size:13px;font-weight:600;margin:0}
+.bf-wf__lead{font-size:12px;color:var(--ax-err);font-weight:600}
+.bf-wf__all{margin-left:auto;font-size:12px}
+.bf-wf__list{display:flex;flex-direction:column;gap:2px}
+.bf-wf__row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--ax-radius-sm);
+  font-size:12.5px}
+.bf-wf__row:hover{background:var(--ax-surface-2)}
+.bf-wf__row b{font-weight:600;flex:none}
+.bf-wf__st{font-size:11px;font-weight:600;padding:1px 8px;border-radius:var(--ax-radius-pill);
+  border:1px solid var(--ax-border-2);background:var(--ax-surface-2);color:var(--ax-text-2);flex:none}
+.bf-wf__meta{color:var(--ax-text-2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bf-wf__node{margin-left:auto;font-family:var(--ax-mono);font-size:10.5px;color:var(--ax-text-2);flex:none}
+.wf--dormant{color:var(--ax-err)}
+.wf--dormant .bf-wf__st{border-color:var(--ax-red-e);background:var(--ax-red-t);color:var(--ax-err)}
+.wf--failing .bf-wf__st{border-color:var(--ax-amber-e);background:var(--ax-amber-t);color:var(--ax-text)}
 
 /* Triage columns */
 .bf-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:22px;
@@ -440,6 +478,7 @@ function paintSeg(id,value){for(const b of $(id).children){const on=b.dataset.va
 paintSeg('minutes',minutes);paintSeg('focus',focus);
 async function api(op,node,body){const r=await fetch('/api/monitor/'+op+'?node='+encodeURIComponent(node),{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
 function message(s){$('notice').textContent=s;}
+let clientFilter='';
 function save(){try{localStorage.setItem('ax-monitor-capacity',JSON.stringify({minutes,focus}));}catch{}renderActions();}
 
 /* --- Who and where ------------------------------------------------------
@@ -602,19 +641,87 @@ return '<article class="bf-act'+(!later&&a.when==='now'&&a.needsHuman?' bf-act--
  +(a.evidence?'<details class="bf-why"><summary>'+ic('chev',12)+'Evidence</summary><p class="bf-ev">'+esc(a.evidence)+'</p></details>':'')
  +'</article>';
 }
+/* --- Principals ---------------------------------------------------------- */
+/* Who the work is for. Clients are derived from business.projects and
+   business.contactMap, so this fills itself in; it is only empty when no
+   project or contact has ever been configured. Clicking one filters the
+   action list — the fastest way to answer "what does this client need". */
+const KIND_LABEL={client:'client',own:'own product',internal:'internal'};
+function renderPrincipals(){
+const policy={};
+for(const n of nodes.filter(n=>n.ok))for(const c of n.data.clients||[])policy[c.id]=c;
+const by={};
+for(const a of actions){
+ const id=a.clientId||'unmapped';
+ const g=by[id]||(by[id]={id:id,you:0,agents:0,oldest:0});
+ if(a.needsHuman)g.you++;else g.agents++;
+ if(a.updatedAt&&(!g.oldest||a.updatedAt<g.oldest))g.oldest=a.updatedAt;
+}
+const rows=Object.values(by).sort((x,y)=>y.you-x.you||y.agents-x.agents);
+if(!rows.length){$('principals').innerHTML='';return;}
+$('principals').innerHTML='<section class="bf-pr" aria-label="Who the work is for">'
+ +rows.map(g=>{
+  const p=policy[g.id]||{name:g.id,kind:'internal',declared:false};
+  const on=clientFilter===g.id;
+  return '<button class="bf-pr__c'+(on?' is-on':'')+(p.kind==='client'?' bf-pr__c--client':'')+'"'
+   +' data-client="'+esc(g.id)+'" aria-pressed="'+(on?'true':'false')+'">'
+   +'<span class="bf-pr__n">'+esc(p.name||g.id)+'</span>'
+   +'<span class="bf-pr__k">'+esc(KIND_LABEL[p.kind]||'internal')+(p.respondWithinMinutes?' &middot; '+p.respondWithinMinutes+'m clock':'')+'</span>'
+   +'<span class="bf-pr__s"><b class="'+(g.you?'bf-pr__you':'')+'">'+g.you+'</b> on you'
+   +'<i>'+g.agents+' on agents</i></span>'
+   +(g.oldest?'<span class="bf-pr__o">oldest '+relTime(g.oldest)+'</span>':'')
+   +'</button>';
+ }).join('')+'</section>';
+$('principals').querySelectorAll('[data-client]').forEach(b=>b.onclick=()=>{
+ clientFilter=clientFilter===b.dataset.client?'':b.dataset.client;renderPrincipals();renderActions();});
+}
+
+/* --- Automation health -------------------------------------------------- */
+/* A workflow that stops firing reports nothing anywhere else in the product,
+   so absence is what this renders. Healthy and never-run workflows are not
+   shown at all — the block disappears when there is nothing to say. */
+const WF_STATE={dormant:['stopped firing','alert','wf--dormant'],failing:['failing','alert','wf--failing'],
+ active:['running','check','wf--active'],quiet:['idle','clock','wf--quiet'],never:['never run','clock','wf--quiet']};
+function renderAutomation(){
+const rows=[];
+for(const n of nodes.filter(n=>n.ok))for(const w of n.data.workflows||[])
+ if(w.state==='dormant'||w.state==='failing'||w.paused>0)rows.push({...w,node:n.name});
+if(!rows.length){$('automation').innerHTML='';return;}
+const stopped=rows.filter(w=>w.state==='dormant').length,broken=rows.filter(w=>w.state==='failing').length;
+const lead=[stopped?stopped+' stopped firing':'',broken?broken+' failing':''].filter(Boolean).join(' &middot; ');
+$('automation').innerHTML='<section class="bf-wf" aria-label="Automation health">'
+ +'<div class="bf-wf__h">'+ic('route',14)+'<h3>Automation</h3>'
+ +'<span class="bf-wf__lead">'+lead+'</span>'
+ +'<a class="bf-wf__all" href="/workflows">All workflows</a></div>'
+ +'<div class="bf-wf__list">'+rows.map(w=>{
+   const [label,icon,cls]=WF_STATE[w.state]||WF_STATE.quiet;
+   const when=w.lastRunAt?'last run '+relTime(w.lastRunAt):'never run';
+   const was=w.state==='dormant'?' &middot; '+w.prior+' in the week before':'';
+   const bad=w.failed?' &middot; '+w.failed+' failed':'';
+   const held=w.paused?' &middot; '+w.paused+' waiting on a human':'';
+   return '<div class="bf-wf__row '+cls+'">'+ic(icon,13)
+    +'<b>'+esc(w.name)+'</b>'
+    +'<span class="bf-wf__st">'+label+'</span>'
+    +'<span class="bf-wf__meta">'+esc(when)+was+bad+held+'</span>'
+    +'<span class="bf-wf__node">'+esc(w.node)+'</span></div>';
+ }).join('')+'</div></section>';
+}
+
 function renderActions(){
 const merged=new Map();
 for(const n of nodes.filter(n=>n.ok))for(const entry of n.data.actions?.items||[]){
 const a=entry.action,saved=entry.state;const key=entry.key||JSON.stringify([n.url,entry.sessionId,a.text.toLowerCase().replace(/\s+/g,' ').trim()]);const source={node:n.url,reviewId:entry.reviewId,index:entry.actionIndex};
 if(merged.has(key)){const m=merged.get(key);m.sources.push(source);if(!m.nodes.includes(n.name))m.nodes.push(n.name);if(saved==='open'&&a.when==='now')m.when='now';if(entry.updatedAt>m.updatedAt){m.updatedAt=entry.updatedAt;m.text=a.text;m.evidence=a.evidence;}}
-else merged.set(key,{...a,when:saved==='later'?'later':a.when,sources:[source],nodes:[n.name],agent:entry.agent,sessionId:entry.sessionId,updatedAt:entry.updatedAt});
+else merged.set(key,{...a,when:saved==='later'?'later':a.when,sources:[source],nodes:[n.name],agent:entry.agent,sessionId:entry.sessionId,updatedAt:entry.updatedAt,clientId:entry.clientId});
 }
 const unloaded=nodes.filter(n=>n.ok).reduce((s,n)=>s+Math.max(0,(n.data.actions?.total||0)-(n.data.actions?.items.length||0)),0);
 $('more-actions').hidden=!unloaded;$('more-actions').textContent='Load '+unloaded+' older';
 actions=[...merged.values()];
+const shown=clientFilter?actions.filter(a=>(a.clientId||'unmapped')===clientFilter):actions;
 const budget=Number(minutes)||15;
-const fitted=fitCapacity(actions,budget,focus);
-const now=fitted.selected.map(i=>card(actions[i],i,false)),later=fitted.deferred.map(i=>card(actions[i],i,true));
+const fitted=fitCapacity(shown,budget,focus);
+const idx=a=>actions.indexOf(a);
+const now=fitted.selected.map(i=>card(shown[i],idx(shown[i]),false)),later=fitted.deferred.map(i=>card(shown[i],idx(shown[i]),true));
 $('now').innerHTML=now.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing needs you in '+budget+' minutes</h4><p>Raise the budget to see deferred work, or go back to your own.</p></div>';
 $('now-count').textContent=now.length?String(now.length):'';
 const pct=budget>0?Math.min(100,Math.round(fitted.usedMinutes/budget*100)):0;
@@ -705,7 +812,7 @@ renderCoverage();
 const selected=$('node').value;
 $('node').innerHTML=nodes.map(n=>'<option value="'+esc(n.url)+'">'+esc(n.name)+(n.ok?'':' — unavailable')+'</option>').join('');
 if(nodes.some(n=>n.url===selected))$('node').value=selected;
-registrations();renderActions();renderReviews();renderRunning();
+registrations();renderAutomation();renderActions();renderPrincipals();renderReviews();renderRunning();
 $('synced').textContent='Synced '+new Date().toLocaleTimeString();
 message('');
 }catch(e){$('synced').textContent='Refresh failed';message(e.message);}

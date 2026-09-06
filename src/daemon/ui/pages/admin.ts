@@ -604,6 +604,28 @@ const ADMIN_PAGE_BODY = `
     </div>
 
     <div class="ax-stack" style="margin-top:24px">
+      <h3 style="margin:0 0 6px;font-size:13px">Clients</h3>
+      <p class="hint" style="margin:0 0 8px">Clients are derived from projects and the contact map &mdash; one exists as soon as either mentions it. Everything below is optional: set it only when you want the monitor to treat a client differently.</p>
+      <div id="business-client-list"></div>
+      <details class="add-form" style="margin-top:10px">
+        <summary class="primary">+ Configure a client</summary>
+        <div style="margin-top:10px">
+          <label>Client id<span class="hint">(as it already appears on a project or contact)</span></label>
+          <input id="bc-id" placeholder="mtgl" />
+          <label>Display name <span class="hint">(optional)</span></label>
+          <input id="bc-name" placeholder="MTGL" />
+          <label>Kind <span class="hint">(client = someone waiting on you; own = your product; internal = machinery)</span></label>
+          <select id="bc-kind"><option value="">(default)</option><option value="client">client</option><option value="own">own</option><option value="internal">internal</option></select>
+          <label>Respond within <span class="hint">(<code>4h</code>, <code>90m</code>, <code>2d</code> &mdash; blank means no clock, delay stays flat)</span></label>
+          <input id="bc-respond" placeholder="4h" />
+          <label>Standing authorizations <span class="hint">(comma-separated; <code>*</code> for all. Ignored for kind <code>client</code> &mdash; agents never act unattended on a client's work)</span></label>
+          <input id="bc-standing" placeholder="rebase-branch, open-followup-issue" />
+          <div class="actions"><button class="primary" onclick="upsertClient()">Save client</button><div id="bc-msg" class="msg"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="ax-stack" style="margin-top:24px">
       <h3 style="margin:0 0 6px;font-size:13px">Contact map</h3>
       <div id="business-contact-list"></div>
       <details class="add-form" style="margin-top:10px">
@@ -1368,6 +1390,37 @@ function renderBusiness() {
     }
   }
 
+  const clientsCfg = (state.business && state.business.clients) || {};
+  // Show every client that resolves, not just the configured ones, so the
+  // operator can see what exists before deciding to override anything.
+  const derived = {};
+  projects.forEach(function(p){ derived[p.client || (p.id.indexOf('/') > 0 ? p.id.slice(0, p.id.indexOf('/')) : p.id)] = true; });
+  ((state.business && state.business.contactMap) || []).forEach(function(c){ if (c.client) derived[c.client] = true; });
+  Object.keys(clientsCfg).forEach(function(id){ derived[id] = true; });
+  const clientIds = Object.keys(derived).sort();
+  const kl = $('business-client-list');
+  if (kl) {
+    if (clientIds.length === 0) {
+      kl.innerHTML = '<div class="ax-empty-card" style="text-align:center;padding:18px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:6px;color:var(--ax-muted);font-size:12px">no clients yet &mdash; add a project or a contact mapping</div>';
+    } else {
+      kl.innerHTML = clientIds.map(function(id){
+        const c = clientsCfg[id] || {};
+        const tag = function(t){ return '<span style="font-size:11px;color:var(--ax-muted)">' + t + '</span>'; };
+        const bits = [
+          tag(c.kind ? 'kind=' + escapeHtml(c.kind) : 'kind=client (default)'),
+          c.respondWithin ? tag('within=' + escapeHtml(c.respondWithin)) : '',
+          (c.standing && c.standing.length) ? tag('standing=' + escapeHtml(c.standing.join(' '))) : '',
+          c.name ? tag('"' + escapeHtml(c.name) + '"') : '',
+          clientsCfg[id] ? '' : tag('derived'),
+        ].filter(Boolean).join('');
+        return '<div class="ax-row-card" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--ax-border);border-radius:6px;margin-bottom:5px">' +
+          '<div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><code style="font-size:12px">' + escapeHtml(id) + '</code>' + bits + '</div>' +
+          (clientsCfg[id] ? '<button class="ghost danger" data-act="biz-client-rm" data-id="' + escapeHtml(id) + '">Reset</button>' : '') +
+        '</div>';
+      }).join('');
+    }
+  }
+
   const cl = $('business-contact-list');
   if (cl) {
     if (contactMap.length === 0) {
@@ -1406,6 +1459,11 @@ function wireBusinessHandlers() {
       if (!confirm('Remove project ' + id + '?')) return;
       try { await req('DELETE', '/api/admin/business/project', { id }); await load(); }
       catch (e) { showMsg($('global-msg'), 'err', e.message); }
+    } else if (act === 'biz-client-rm') {
+      const id = t.getAttribute('data-id');
+      if (!confirm('Reset ' + id + ' to derived defaults?')) return;
+      try { await req('DELETE', '/api/admin/business/client', { id }); await load(); }
+      catch (e) { showMsg($('global-msg'), 'err', e.message); }
     } else if (act === 'biz-contact-rm') {
       const idx = parseInt(t.getAttribute('data-idx') || '-1', 10);
       const list = (state.business && state.business.contactMap) || [];
@@ -1435,6 +1493,23 @@ window.upsertOrgEntry = async function() {
     showMsg($('bo-msg'), 'ok', 'Entry saved');
     await load();
   } catch (e) { showMsg($('bo-msg'), 'err', e.message); }
+}
+
+window.upsertClient = async function() {
+  const id = $('bc-id').value.trim();
+  const body = {
+    id: id,
+    name: $('bc-name').value.trim(),
+    kind: $('bc-kind').value,
+    respondWithin: $('bc-respond').value.trim(),
+    standing: $('bc-standing').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+  };
+  try {
+    await req('POST', '/api/admin/business/client', body);
+    $('bc-id').value = ''; $('bc-name').value = ''; $('bc-respond').value = ''; $('bc-standing').value = '';
+    showMsg($('bc-msg'), 'ok', 'Client saved');
+    await load();
+  } catch (e) { showMsg($('bc-msg'), 'err', e.message); }
 }
 
 window.upsertProject = async function() {
