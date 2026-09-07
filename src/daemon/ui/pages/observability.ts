@@ -246,17 +246,17 @@ const OBS_PAGE_CSS = `
 .ax-obs__pill--idle { background: rgba(218, 119, 6, 0.15); color: #bf8700; }
 .ax-obs__empty { color: var(--ax-muted); font-style: italic; padding: 18px 0; margin: 0; }
 .ax-obs__logs-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-.ax-obs__logs-toolbar input[type="text"] { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 5px 9px; min-width: 220px; background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-fg); }
-.ax-obs__logs-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-obs__logs-toolbar input[type="text"] { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 5px 9px; min-width: 220px; background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-text); }
+.ax-obs__logs-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; }
 .ax-obs__logs-toolbar button:hover { background: var(--ax-surface); }
 .ax-obs__inline { font-size: 11px; color: var(--ax-muted); display: inline-flex; align-items: center; gap: 4px; }
 .ax-obs__logs-body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; line-height: 1.45; height: calc(100vh - 320px); min-height: 360px; overflow-y: auto; background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 4px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word; }
 .ax-obs__logs-body .err { color: var(--ax-err, #e74c3c); }
 .ax-obs__logs-body .warn { color: #d4ac0d; }
-.ax-obs__logs-body .info { color: var(--ax-fg); }
+.ax-obs__logs-body .info { color: var(--ax-text); }
 .ax-obs__logs-body .dim { color: var(--ax-muted); }
 .ax-obs__doctor-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.ax-obs__doctor-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-obs__doctor-toolbar button { font-size: 11px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; }
 .ax-obs__doctor-toolbar button:hover { background: var(--ax-surface); }
 .ax-obs__doctor-body { display: flex; flex-direction: column; gap: 10px; }
 .ax-obs__doctor-group { background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 6px; padding: 10px 14px; }

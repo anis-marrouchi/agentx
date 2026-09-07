@@ -71,7 +71,7 @@ const PROC_PAGE_CSS = `
 .ax-proc__list > header h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .ax-proc__filter { padding: 10px 14px; border-bottom: 1px solid var(--ax-border); }
 .ax-proc__filter label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ax-muted); }
-.ax-proc__filter select { font: inherit; padding: 6px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-bg); color: var(--ax-fg); }
+.ax-proc__filter select { font: inherit; padding: 6px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-bg); color: var(--ax-text); }
 .ax-proc__cards { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
 .ax-proc__card { padding: 10px 12px; border-radius: 6px; margin-bottom: 4px; cursor: pointer; border: 1px solid transparent; }
 .ax-proc__card:hover { background: var(--ax-surface-2, rgba(127,127,127,0.08)); }
@@ -98,9 +98,9 @@ const PROC_PAGE_CSS = `
 .ax-proc__history { border-top: 1px solid var(--ax-border); padding-top: 12px; }
 .ax-proc__history table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ax-proc__history th, .ax-proc__history td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--ax-border); }
-.ax-proc__icon { background: none; border: 1px solid transparent; color: var(--ax-fg); cursor: pointer; font-size: 14px; padding: 4px 8px; border-radius: 4px; }
+.ax-proc__icon { background: none; border: 1px solid transparent; color: var(--ax-text); cursor: pointer; font-size: 14px; padding: 4px 8px; border-radius: 4px; }
 .ax-proc__icon:hover { background: var(--ax-surface-2); }
-.ax-proc__toast { position: fixed; bottom: 16px; right: 16px; padding: 10px 14px; background: var(--ax-fg); color: var(--ax-bg); border-radius: 6px; font-size: 13px; z-index: 100; }
+.ax-proc__toast { position: fixed; bottom: 16px; right: 16px; padding: 10px 14px; background: var(--ax-text); color: var(--ax-bg); border-radius: 6px; font-size: 13px; z-index: 100; }
 .ax-proc__kpis {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--ax-border);

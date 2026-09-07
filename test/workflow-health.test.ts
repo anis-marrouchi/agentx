@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync, utimesSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { workflowHealth, scanRuns, type RunSummary } from "../src/daemon/workflow-health"
-import { MONITOR_SCRIPT, renderMonitorPage } from "../src/daemon/ui/pages/monitor"
+import { renderMonitorPage } from "../src/daemon/ui/pages/monitor"
+import { renderWorkflowsPage } from "../src/daemon/ui/pages/workflows"
 
 const NOW = Date.UTC(2026, 8, 6)
 const DAY = 86_400_000
@@ -63,12 +64,11 @@ describe("workflow health", () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
-  it("gives the monitor page somewhere to report it, and stays parseable", () => {
-    expect(renderMonitorPage()).toContain('id="automation"')
-    expect(MONITOR_SCRIPT).toContain("renderAutomation")
-    // The block must render nothing when every workflow is healthy, so the
-    // overview stays compact on a normal day.
-    expect(MONITOR_SCRIPT).toContain("if(!rows.length){$('automation').innerHTML='';return;}")
-    expect(() => new Function(MONITOR_SCRIPT)).not.toThrow()
+  it("is reported where automation lives, not on the briefing", () => {
+    // Moved deliberately: a workflow that stopped is an automation concern.
+    // The briefing is for work that needs a person, and mixing the two put
+    // five dormant MTGL jobs above the actions that actually needed one.
+    expect(renderWorkflowsPage()).toContain("stopped running")
+    expect(renderMonitorPage()).not.toContain('id="automation"')
   })
 })

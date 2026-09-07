@@ -31,6 +31,11 @@ export const HOOK_EVENTS = [
   "on:github-issue",
   "on:github-pr",
   "on:github-push",
+  // n8n and anything else that can POST: /webhook/n8n/<topic> raises this,
+  // so a workflow subscribes with trigger.hook { event: "on:n8n" } and
+  // filters on `topic`. Keeps the 400+ integrations n8n already maintains
+  // on the n8n side, and the agents on ours.
+  "on:n8n",
   // External-service events — fired by the generic webhook handler after
   // signature verification. Workflows subscribe via trigger.hook.
   "on:stripe-event",

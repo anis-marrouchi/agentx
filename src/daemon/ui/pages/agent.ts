@@ -1013,7 +1013,7 @@ async function loadAgent(){
     const msg = document.getElementById('mcp-msg');
     try {
       await req('POST', '/api/admin/agent/' + AGENT_ID + '/mcp', body);
-      if (msg) { msg.textContent = '✓ saved — agent picks it up at next daemon boot'; msg.style.color = 'var(--ax-success)'; }
+      if (msg) { msg.textContent = '✓ saved — agent picks it up at next daemon boot'; msg.style.color = 'var(--ax-ok)'; }
       ['mcp-name','mcp-command','mcp-args','mcp-env'].forEach(function(id){ document.getElementById(id).value = ''; });
       await loadAgent();
     } catch (e) {
@@ -1042,7 +1042,7 @@ async function loadAgent(){
     const msg = document.getElementById('cap-msg');
     try {
       await req('PATCH', '/api/admin/agent/' + AGENT_ID + '/capability', body);
-      if (msg) { msg.textContent = '✓ saved — restart the daemon for changes to take effect'; msg.style.color = 'var(--ax-success)'; }
+      if (msg) { msg.textContent = '✓ saved — restart the daemon for changes to take effect'; msg.style.color = 'var(--ax-ok)'; }
       await loadAgent();
     } catch (e) {
       if (msg) { msg.textContent = e.message; msg.style.color = 'var(--ax-err)'; }

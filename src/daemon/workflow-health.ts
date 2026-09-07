@@ -33,15 +33,15 @@ export interface WorkflowHealth {
   paused: number
 }
 
-const DAY = 86_400_000
-
 export function workflowHealth(
   workflows: Array<{ id: string; name?: string }>,
   runs: RunSummary[],
   now = Date.now(),
   windowDays = 7,
 ): WorkflowHealth[] {
-  const span = windowDays * DAY
+  // One day in ms, inlined: workflowHealth is stringified and shipped to the
+  // workflows page, where a module-scope constant would be unbound.
+  const span = windowDays * 86_400_000
   const byId = new Map<string, RunSummary[]>()
   for (const r of runs) {
     const list = byId.get(r.workflowId)

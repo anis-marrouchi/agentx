@@ -2668,6 +2668,23 @@ export class AgentXDaemon {
       }
 
       // Dynamic routes (before static switch)
+      // n8n (or anything that can POST JSON) hands work to agentx here. We do
+      // not reimplement n8n's connectors: it keeps the integrations, we keep
+      // the agents, and this is the seam. Auth is the same mesh token every
+      // other write path uses.
+      const n8nHook = req.method === "POST" && path.match(/^\/webhook\/n8n\/([A-Za-z0-9._:-]{1,64})$/)
+      if (n8nHook) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        let payload: unknown
+        try { payload = await readJsonBody(req) } catch { payload = {} }
+        const topic = n8nHook[1]
+        try {
+          await this.hooks.execute("on:n8n", { topic, payload, source: "n8n" } as any)
+          this.json(res, 200, { ok: true, topic }); return
+        } catch (e: any) {
+          this.json(res, 500, { error: "hook failed", message: String(e?.message || e) }); return
+        }
+      }
       if (req.method === "POST" && path.startsWith("/webhook/")) {
         // GitHub channel adapter: intercept webhooks with X-GitHub-Event header
         // when the GitHub channel is enabled — routes internally by repo.

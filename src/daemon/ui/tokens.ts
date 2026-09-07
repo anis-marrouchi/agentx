@@ -43,6 +43,12 @@ export const AX_TOKENS_CSS = `:root {
   --ax-red-t: #FEECEC;
   --ax-red-e: #F9C1C1;
 
+  /* Ink steps. Amber and red are legible as FILLS, not as small text:
+     #FFB300 on white is ~1.8:1 and #F23A3A ~3.6:1, both under 4.5:1. Use
+     these wherever the colour carries words rather than area. */
+  --ax-amber-ink: #8a5a00;
+  --ax-red-ink: #a52020;
+
   /* --- Surfaces + text ---------------------------------------------- */
   --ax-bg: #f8f9fa;
   --ax-bg-elev: #f1f3f4;
@@ -124,6 +130,8 @@ export const AX_TOKENS_CSS = `:root {
   --ax-red: #FF6B6B;
   --ax-red-t: #3a1c1c;
   --ax-red-e: #6b2f2f;
+  --ax-amber-ink: #FFC948;
+  --ax-red-ink: #FF8A8A;
 
   --ax-bg: #14161a;
   --ax-bg-elev: #191c21;

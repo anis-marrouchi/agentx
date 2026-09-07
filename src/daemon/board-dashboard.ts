@@ -203,6 +203,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     res.end(renderLivePage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
+  // n8n posts here. It is forwarded to the local node rather than served
+  // from the dashboard so the operator has ONE address to paste into n8n —
+  // the one they are already looking at — instead of learning which port the
+  // daemon happens to be on.
+  const n8nIn = method === "POST" && path.match(/^\/webhook\/n8n\/[A-Za-z0-9._:-]{1,64}$/)
+  if (n8nIn) {
+    try {
+      const [node] = await resolveNodeTargets(ctx.config)
+      if (!node) { sendJson(res, 503, { error: "no node available" }); return }
+      const body = await new Promise<string>(resolve => {
+        let d = ""; req.on("data", c => (d += c)); req.on("end", () => resolve(d)); req.on("error", () => resolve(""))
+      })
+      const r = await fetch(node.url + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) },
+        body: body || "{}",
+      })
+      res.writeHead(r.status, { "Content-Type": "application/json" })
+      res.end(await r.text())
+    } catch (e: any) {
+      sendJson(res, 502, { error: "could not reach the node", message: String(e?.message || e) })
+    }
+    return
+  }
+
   if (method === "GET" && path === "/activity") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config) }))

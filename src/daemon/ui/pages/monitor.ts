@@ -59,7 +59,6 @@ export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
 <p id="coverage" class="bf-sr" role="status">Gathering session reviews across your mesh&hellip;</p>
 <div class="bf-strip" id="strip"></div>
 <div id="coverage-note"></div>
-<div id="automation"></div>
 <div id="principals"></div>
 
 <p id="notice" role="status" aria-live="polite"></p>
@@ -200,26 +199,6 @@ export const MONITOR_CSS = `
 .bf-pr__s b.bf-pr__you{color:var(--ax-err)}
 .bf-pr__s i{font-style:normal}
 .bf-pr__o{font-size:10.5px;color:var(--ax-text-2)}
-
-/* Automation health */
-.bf-wf{background:var(--ax-surface);border:var(--ax-border-w) solid var(--ax-border);
-  border-radius:var(--ax-radius-lg);box-shadow:var(--ax-shadow);padding:12px 16px;margin-bottom:14px}
-.bf-wf__h{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-.bf-wf__h h3{font-size:13px;font-weight:600;margin:0}
-.bf-wf__lead{font-size:12px;color:var(--ax-err);font-weight:600}
-.bf-wf__all{margin-left:auto;font-size:12px}
-.bf-wf__list{display:flex;flex-direction:column;gap:2px}
-.bf-wf__row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--ax-radius-sm);
-  font-size:12.5px}
-.bf-wf__row:hover{background:var(--ax-surface-2)}
-.bf-wf__row b{font-weight:600;flex:none}
-.bf-wf__st{font-size:11px;font-weight:600;padding:1px 8px;border-radius:var(--ax-radius-pill);
-  border:1px solid var(--ax-border-2);background:var(--ax-surface-2);color:var(--ax-text-2);flex:none}
-.bf-wf__meta{color:var(--ax-text-2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bf-wf__node{margin-left:auto;font-family:var(--ax-mono);font-size:10.5px;color:var(--ax-text-2);flex:none}
-.wf--dormant{color:var(--ax-err)}
-.wf--dormant .bf-wf__st{border-color:var(--ax-red-e);background:var(--ax-red-t);color:var(--ax-err)}
-.wf--failing .bf-wf__st{border-color:var(--ax-amber-e);background:var(--ax-amber-t);color:var(--ax-text)}
 
 /* Triage columns */
 .bf-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:22px;
@@ -638,37 +617,6 @@ $('principals').querySelectorAll('[data-client]').forEach(b=>b.onclick=()=>{
  clientFilter=clientFilter===b.dataset.client?'':b.dataset.client;renderPrincipals();renderActions();});
 }
 
-/* --- Automation health -------------------------------------------------- */
-/* A workflow that stops firing reports nothing anywhere else in the product,
-   so absence is what this renders. Healthy and never-run workflows are not
-   shown at all — the block disappears when there is nothing to say. */
-const WF_STATE={dormant:['stopped firing','alert','wf--dormant'],failing:['failing','alert','wf--failing'],
- active:['running','check','wf--active'],quiet:['idle','clock','wf--quiet'],never:['never run','clock','wf--quiet']};
-function renderAutomation(){
-const rows=[];
-for(const n of nodes.filter(n=>n.ok))for(const w of n.data.workflows||[])
- if(w.state==='dormant'||w.state==='failing'||w.paused>0)rows.push({...w,node:n.name});
-if(!rows.length){$('automation').innerHTML='';return;}
-const stopped=rows.filter(w=>w.state==='dormant').length,broken=rows.filter(w=>w.state==='failing').length;
-const lead=[stopped?stopped+' stopped firing':'',broken?broken+' failing':''].filter(Boolean).join(' &middot; ');
-$('automation').innerHTML='<section class="bf-wf" aria-label="Automation health">'
- +'<div class="bf-wf__h">'+ic('route',14)+'<h3>Automation</h3>'
- +'<span class="bf-wf__lead">'+lead+'</span>'
- +'<a class="bf-wf__all" href="/workflows">All workflows</a></div>'
- +'<div class="bf-wf__list">'+rows.map(w=>{
-   const [label,icon,cls]=WF_STATE[w.state]||WF_STATE.quiet;
-   const when=w.lastRunAt?'last run '+relTime(w.lastRunAt):'never run';
-   const was=w.state==='dormant'?' &middot; '+w.prior+' in the week before':'';
-   const bad=w.failed?' &middot; '+w.failed+' failed':'';
-   const held=w.paused?' &middot; '+w.paused+' waiting on a human':'';
-   return '<div class="bf-wf__row '+cls+'">'+ic(icon,13)
-    +'<b>'+esc(w.name)+'</b>'
-    +'<span class="bf-wf__st">'+label+'</span>'
-    +'<span class="bf-wf__meta">'+esc(when)+was+bad+held+'</span>'
-    +'<span class="bf-wf__node">'+esc(w.node)+'</span></div>';
- }).join('')+'</div></section>';
-}
-
 function renderActions(){
 const merged=new Map();
 for(const n of nodes.filter(n=>n.ok))for(const entry of n.data.actions?.items||[]){
@@ -775,7 +723,7 @@ renderCoverage();
 const selected=$('node').value;
 $('node').innerHTML=nodes.map(n=>'<option value="'+esc(n.url)+'">'+esc(n.name)+(n.ok?'':' — unavailable')+'</option>').join('');
 if(nodes.some(n=>n.url===selected))$('node').value=selected;
-registrations();renderAutomation();renderActions();renderPrincipals();renderReviews();renderRunning();
+registrations();renderActions();renderPrincipals();renderReviews();renderRunning();
 $('synced').textContent='Synced '+new Date().toLocaleTimeString();
 message('');
 }catch(e){$('synced').textContent='Refresh failed';message(e.message);}

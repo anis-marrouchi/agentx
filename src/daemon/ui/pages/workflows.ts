@@ -14,6 +14,8 @@
 // "workflows" to src/daemon/topbar.ts:TopbarTab and this switches over.
 
 import { renderShell, esc, type TopbarPeer } from ".."
+import { injectFns } from "../inject"
+import { workflowHealth } from "../../workflow-health"
 
 export interface WorkflowsPageOpts {
   peers?: TopbarPeer[]
@@ -37,9 +39,18 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     </div>
     <ul id="wf-list" class="ax-wf__cards" aria-live="polite"></ul>
     <div id="wf-empty" class="ax-wf__empty" hidden>
-      <p>No workflows defined.</p>
-      <p class="hint">Add a definition under <code>.agentx/workflows/*.json</code>, validate with <code>agentx workflow validate</code>, and reload.</p>
+      <p><b>No automations yet.</b></p>
+      <p class="hint">An automation watches for something &mdash; a merge request, a message, a time of day &mdash; and puts an agent on it. Ask an agent to draft one for you, or connect n8n below and let it hand work over.</p>
     </div>
+    <section class="ax-wf__n8n">
+      <header><h3>Connected to n8n</h3></header>
+      <p class="hint">n8n already speaks to hundreds of services. Let it do that, and hand the work to your agents here &mdash; no connector to rebuild on this side.</p>
+      <label class="ax-wf__n8n-lbl">n8n calls this URL to start an automation</label>
+      <code class="ax-wf__n8n-url" id="wf-n8n-in">&hellip;</code>
+      <button class="ax-wf__n8n-copy" id="wf-n8n-copy" type="button">Copy</button>
+      <p class="hint">Then give the automation a <b>when n8n calls</b> trigger and it runs. To go the other way, add a <b>call a web address</b> step pointing at your n8n webhook.</p>
+    </section>
+
     <section class="ax-wf__drafts">
       <header>
         <h3>Drafts</h3>
@@ -87,7 +98,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     currentPeerId: opts.currentPeerId,
     body,
     css: WORKFLOWS_PAGE_CSS,
-    scripts: `<script>${WORKFLOWS_PAGE_SCRIPT}</script>`,
+    scripts: `<script>${injectFns({ workflowHealth })}${WORKFLOWS_PAGE_SCRIPT}</script>`,
   })
 }
 
@@ -137,6 +148,39 @@ const WORKFLOWS_PAGE_CSS = `
   border: 1px solid var(--ax-border); border-radius: 4px;
   font-family: inherit;
 }
+.ax-wf__state {
+  font-size: 11.5px; font-weight: 600; margin-top: 4px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.ax-wf__state::before { content: ""; width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.ax-wf__state--dormant { color: var(--ax-red-ink); }
+.ax-wf__state--failing { color: var(--ax-amber-ink); }
+.ax-wf__state--active  { color: var(--ax-green-d); }
+.ax-wf__state--quiet,
+.ax-wf__state--never   { color: var(--ax-text-2); }
+
+.ax-wf__n8n {
+  border-top: var(--ax-border-w) solid var(--ax-border);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.ax-wf__n8n h3 { font-size: 13px; font-weight: 600; margin: 0; }
+.ax-wf__n8n-lbl {
+  font-size: 10px; font-family: var(--ax-mono); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--ax-text-2); font-weight: 600;
+}
+.ax-wf__n8n-url {
+  font-family: var(--ax-mono); font-size: 11px; word-break: break-all;
+  background: var(--ax-surface-2); border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm); padding: 8px 10px; color: var(--ax-text);
+}
+.ax-wf__n8n-copy {
+  align-self: flex-start; font: inherit; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: var(--ax-radius-sm);
+  border: var(--ax-border-w) solid var(--ax-border-2);
+  background: var(--ax-surface); color: var(--ax-text); cursor: pointer;
+}
+.ax-wf__n8n-copy:hover { background: var(--ax-surface-2); }
+
 .ax-wf__cards {
   list-style: none; margin: 0; padding: 8px 0;
   overflow-y: auto; flex: 1 1 auto; min-height: 140px;
@@ -364,7 +408,7 @@ const WORKFLOWS_PAGE_CSS = `
   border: 1px solid var(--ax-border);
   border-radius: 4px;
   background: var(--ax-bg);
-  color: var(--ax-fg);
+  color: var(--ax-text);
   margin-top: 6px;
   width: 100%;
 }
@@ -436,7 +480,7 @@ details.ax-wf__panel pre { margin: 0; padding: 10px 14px; }
 .ax-wf__status-pill.completed { color: var(--ax-muted); background: var(--ax-surface); }
 .ax-wf__status-pill.failed { color: var(--ax-err); background: color-mix(in oklch, var(--ax-err) 15%, transparent); }
 .ax-wf__run-actions { display: flex; gap: 4px; margin-left: auto; }
-.ax-wf__run-actions button { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-fg); cursor: pointer; }
+.ax-wf__run-actions button { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; }
 .ax-wf__run-actions button:hover { background: var(--ax-surface); }
 .ax-wf__run-actions button.danger:hover { background: color-mix(in oklch, var(--ax-err) 15%, transparent); border-color: var(--ax-err); color: var(--ax-err); }
 
@@ -469,7 +513,7 @@ details.ax-wf__panel pre { margin: 0; padding: 10px 14px; }
 // Kept inline in the module per the existing page convention. All endpoints
 // assumed by this script are wired by daemon/workflows-api.ts.
 
-const WORKFLOWS_PAGE_SCRIPT = `
+export const WORKFLOWS_PAGE_SCRIPT = `
 (() => {
   const $ = (sel) => document.querySelector(sel)
   const $$ = (sel) => Array.from(document.querySelectorAll(sel))
@@ -532,11 +576,38 @@ const WORKFLOWS_PAGE_SCRIPT = `
       + (hasGlobal ? '<option value="__none__"' + (current === "__none__" ? ' selected' : '') + '>(no project)</option>' : "")
   }
 
+  const FRIENDLY_TRIGGER = { gitlab: "on GitLab activity", github: "on GitHub activity", cron: "on a schedule",
+    manual: "when you run it", hook: "when something calls in", channel: "on a message", form: "from a form", n8n: "when n8n calls" }
+  // Plain words for what the operator needs to know, in the order they care:
+  // has it stopped, is it breaking, is anyone blocked, is it fine.
+  const STATE_LABEL = { dormant: "stopped running", failing: "failing", active: "running normally",
+    quiet: "idle", never: "never run yet" }
+  const STATE_RANK = { dormant: 0, failing: 1, active: 2, quiet: 3, never: 4 }
+  function healthOf(id, myRuns) {
+    const rows = (myRuns || []).map(r => ({ workflowId: id, status: r.status, at: new Date(r.updatedAt).getTime() }))
+    const h = workflowHealth([{ id: id }], rows)[0]
+    return { state: h.state, label: STATE_LABEL[h.state] || h.state, rank: STATE_RANK[h.state] }
+  }
+
+  // The URL n8n posts to. Shown rather than documented: the operator needs to
+  // paste it into an n8n HTTP Request node, not read about it.
+  (function n8nPanel() {
+    const el = document.getElementById("wf-n8n-in")
+    if (!el) return
+    el.textContent = location.origin + "/webhook/n8n/<topic>"
+    const btn = document.getElementById("wf-n8n-copy")
+    if (btn) btn.onclick = async () => {
+      try { await navigator.clipboard.writeText(el.textContent); btn.textContent = "Copied" }
+      catch { btn.textContent = "Copy failed" }
+      setTimeout(() => { btn.textContent = "Copy" }, 1600)
+    }
+  })()
+
   function renderList() {
     renderProjectFilter()
     const needle = state.filter.toLowerCase()
     const projectFilter = state.projectFilter || ""
-    const filtered = state.workflows.filter(wf => {
+    let filtered = state.workflows.filter(wf => {
       const matchesText = !needle || wf.id.toLowerCase().includes(needle) || (wf.title || "").toLowerCase().includes(needle)
       // projectFilter values:
       //   ""           — no filter (all projects + global)
@@ -559,6 +630,12 @@ const WORKFLOWS_PAGE_SCRIPT = `
     }
     $("#wf-empty").hidden = true
 
+    // Anything that stopped or is failing comes first: a list sorted by name
+    // hides the one workflow you needed to know about.
+    filtered = filtered.slice().sort((a, b) =>
+      healthOf(a.id, runsByWorkflow[a.id]).rank - healthOf(b.id, runsByWorkflow[b.id]).rank
+      || String(a.title || a.id).localeCompare(String(b.title || b.id)))
+
     $("#wf-list").innerHTML = filtered.map(wf => {
       const myRuns = runsByWorkflow[wf.id] || []
       const live = myRuns.filter(r => r.status === "running").length
@@ -567,13 +644,15 @@ const WORKFLOWS_PAGE_SCRIPT = `
       // V2: trigger is a node inside wf.nodes, not a workflow-level field.
       const triggerNode = (wf.nodes || []).find(n => n && n.type && n.type.indexOf("trigger.") === 0)
       const triggerSource = triggerNode ? (triggerNode.config && triggerNode.config.source) || triggerNode.type.replace("trigger.", "") : "?"
+      const health = healthOf(wf.id, myRuns)
       return \`
         <li class="ax-wf__card \${isActive ? "is-active" : ""}" data-id="\${wf.id}">
           <div class="ax-wf__card-title">\${esc(wf.title || wf.id)}</div>
-          <div class="ax-wf__card-id">\${esc(wf.id)} · v\${wf.version}</div>
+          <div class="ax-wf__card-id">\${esc(wf.id)}</div>
+          <div class="ax-wf__state ax-wf__state--\${health.state}">\${esc(health.label)}</div>
           <div class="ax-wf__card-meta">
             \${wf.project ? \`<span class="tag tag--project" title="Project">\${esc(wf.project)}</span>\` : ""}
-            <span class="tag">\${esc(triggerSource)}</span>
+            <span class="tag" title="What starts it">\${esc(FRIENDLY_TRIGGER[triggerSource] || triggerSource)}</span>
             \${live > 0 ? \`<span class="tag live">\${live} running</span>\` : ""}
             \${lastRun
               ? \`<span class="tag tag--\${esc(lastRun.status)}" title="\${esc(lastRun.id)} · \${esc(new Date(lastRun.updatedAt).toLocaleString())}">last: \${esc(lastRun.status)} · \${relTime(lastRun.updatedAt)}</span>\`
