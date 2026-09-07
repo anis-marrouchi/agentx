@@ -8,6 +8,7 @@
 // component styles we don't want on the canvas.
 
 import { renderShell, type TopbarPeer } from ".."
+import { assetUrl } from "../asset-url"
 
 export interface WorkflowEditorPageOpts {
   peers?: TopbarPeer[]
@@ -29,7 +30,7 @@ export function renderWorkflowEditorPage(opts: WorkflowEditorPageOpts = {}): str
     // by `tsup --config tsup.web.config.ts` to dist/web/workflow-editor.js.
     // `defer` keeps the script out of the head-blocking path; the bundle
     // itself waits for DOMContentLoaded before mounting.
-    scripts: `<script src="/assets/workflow-editor.global.js" defer></script>`,
+    scripts: `<script src="${assetUrl("workflow-editor.global.js")}" defer></script>`,
     noMain: true,
   })
 }

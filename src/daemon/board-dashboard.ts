@@ -632,7 +632,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       const ct = rel.endsWith(".map") ? "application/json; charset=utf-8"
         : rel.endsWith(".css") ? "text/css; charset=utf-8"
         : "application/javascript; charset=utf-8"
-      res.writeHead(200, { "Content-Type": ct, "Cache-Control": "public, max-age=60" })
+      // A hashed URL names exactly one build, so it can be cached hard; a bare
+      // one must keep revalidating because its bytes change under it.
+      const immutable = url.searchParams.has("v")
+      res.writeHead(200, {
+        "Content-Type": ct,
+        "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "public, max-age=60",
+      })
       res.end(buf)
     } catch {
       sendJson(res, 404, { error: "asset not found", hint: "run: npm run build:web" })

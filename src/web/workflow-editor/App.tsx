@@ -306,13 +306,17 @@ export function App() {
   useEffect(() => { stateRef.current = state }, [state])
 
   // --- Persisted UI prefs -------------------------------------------------
-  const [theme, setThemeState] = useState<"dark" | "light">(() => (localStorage.getItem("wfe.theme") as "dark" | "light") ?? "dark")
+  // Follow the dashboard. The shell sets data-theme from `ax-theme` before
+  // this bundle mounts; keeping a second store here meant two writers on one
+  // attribute and an editor that could disagree with the rest of the product.
+  const [theme, setThemeState] = useState<"dark" | "light">(
+    () => (document.documentElement.getAttribute("data-theme") as "dark" | "light") ?? "dark")
   const [density, setDensity] = useState<"compact" | "cozy" | "roomy">(() => (localStorage.getItem("wfe.density") as "compact" | "cozy" | "roomy") ?? "cozy")
   const [hue, setHue] = useState<number>(() => Number(localStorage.getItem("wfe.hue") ?? 255))
   const [paletteOpen, setPaletteOpen] = useState<boolean>(() => localStorage.getItem("wfe.paletteOpen") !== "0")
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => localStorage.getItem("wfe.inspectorOpen") !== "0")
   const [viewBox, setViewBox] = useState<ViewBox>({ zoom: 0.75, tx: 40, ty: 60 })
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("wfe.theme", theme) }, [theme])
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("ax-theme", theme) }, [theme])
   useEffect(() => { localStorage.setItem("wfe.density", density) }, [density])
   useEffect(() => { document.documentElement.style.setProperty("--accent-hue", String(hue)); localStorage.setItem("wfe.hue", String(hue)) }, [hue])
   useEffect(() => { localStorage.setItem("wfe.paletteOpen", paletteOpen ? "1" : "0") }, [paletteOpen])

@@ -91,4 +91,28 @@ describe("n8n inside the builder", () => {
     expect(nodeSummary("trigger.manual", {})).toBe("")
     expect(nodeSummary("end", {})).toBe("")
   })
+
+  it("follows the dashboard theme instead of keeping its own", async () => {
+    const app = (await import("fs")).readFileSync("src/web/workflow-editor/App.tsx", "utf-8")
+    // Two stores writing one data-theme attribute meant opening the editor
+    // could flip the whole product's theme under the user.
+    expect(app).not.toContain("wfe.theme")
+    expect(app).toContain('localStorage.setItem("ax-theme", theme)')
+    expect(app).toContain('document.documentElement.getAttribute("data-theme")')
+  })
+
+  it("wears no colour the design system does not define", async () => {
+    const css = (await import("fs")).readFileSync("src/web/workflow-editor/redesign.css", "utf-8")
+    // Variable definitions may hold literals; rules must not, or they render
+    // an off-system colour whenever the variable they name does not exist.
+    const rules = css.replace(/:root[^{]*\{[^}]*\}/g, "")
+    expect(rules.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull()
+  })
+
+  it("gives each build its own asset URL so a deploy invalidates the cache", async () => {
+    const { assetUrl } = await import("../src/daemon/ui/asset-url")
+    const url = assetUrl("workflow-editor.global.js")
+    expect(url).toMatch(/^\/assets\/workflow-editor\.global\.js(\?v=[0-9a-f]+)?$/)
+    expect(renderWorkflowEditorPage()).toContain(url)
+  })
 })

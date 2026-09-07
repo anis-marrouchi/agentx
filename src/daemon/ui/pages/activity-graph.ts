@@ -1,4 +1,5 @@
 import { renderShell, type TopbarPeer } from ".."
+import { assetUrl } from "../asset-url"
 
 // --- /admin/activity-graph — Fleet Activity perspective view ---
 //
@@ -24,7 +25,7 @@ export function renderActivityGraphPage(opts: ActivityGraphPageOpts = {}): strin
     currentPeerId: opts.currentPeerId,
     body,
     css: HOST_CSS,
-    scripts: `<script src="/assets/activity-graph.global.js" defer></script>`,
+    scripts: `<script src="${assetUrl("activity-graph.global.js")}" defer></script>`,
     noMain: true,
   })
 }
