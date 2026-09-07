@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ASSISTANT_HTML, ASSISTANT_SCRIPT } from "../src/daemon/ui/assistant"
+import { ASSISTANT_CSS, ASSISTANT_HTML, ASSISTANT_SCRIPT } from "../src/daemon/ui/assistant"
 import { renderMonitorPage, MONITOR_SCRIPT } from "../src/daemon/ui/pages/monitor"
 import { renderWorkflowsPage } from "../src/daemon/ui/pages/workflows"
 
@@ -44,5 +44,32 @@ describe("action paging", () => {
     // Changing the principal filter starts the paging over, or the button
     // would offer to reveal rows that are no longer in the set.
     expect(MONITOR_SCRIPT).toContain("shown={you:PAGE,agents:PAGE};renderPrincipals()")
+  })
+
+  it("puts a composer on the page, not just inside the drawer", () => {
+    // Asking should cost no clicks: the drawer's own input is only reachable
+    // once you have already opened it.
+    expect(ASSISTANT_HTML).toContain('id="ax-as-bar"')
+    expect(ASSISTANT_HTML).toContain('id="ax-as-bar-input"')
+    // One composer at a time — the bar hides while the drawer is open.
+    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-bar{display:none}")
+    // ...and the page keeps its last row clear of it.
+    expect(ASSISTANT_CSS).toContain("body:not(.ax-as-open){padding-bottom:72px}")
+  })
+
+  it("sends from the bar through the same conversation as the drawer", () => {
+    expect(ASSISTANT_SCRIPT).toContain("$('ax-as-bar').addEventListener('submit'")
+    // It reuses send() rather than posting on its own, so a question asked
+    // from the page continues the thread rather than starting a stray one.
+    expect(ASSISTANT_SCRIPT).toContain("open(true);\nsend();")
+  })
+
+  it("still loads its pickers, and says so when it cannot", () => {
+    // These once vanished in an edit and the picker sat on "Loading agents…"
+    // forever, so a question silently did nothing.
+    expect(ASSISTANT_SCRIPT).toContain("fetch('/api/agents')")
+    expect(ASSISTANT_SCRIPT).toContain("no agents on this node")
+    expect(ASSISTANT_SCRIPT).toContain("agents unavailable")
+    expect(ASSISTANT_SCRIPT).toContain("function add(kind,text)")
   })
 })

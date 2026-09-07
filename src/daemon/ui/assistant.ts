@@ -12,6 +12,20 @@
 // that do not still get the path and tab.
 
 export const ASSISTANT_CSS = `
+.ax-as-bar{position:fixed;right:18px;bottom:18px;z-index:59;display:flex;gap:8px;
+  align-items:center;width:min(520px,calc(100vw - 36px));padding:8px;
+  background:var(--ax-surface);border:var(--ax-border-w) solid var(--ax-border);
+  border-radius:var(--ax-radius-lg);box-shadow:var(--ax-shadow-lg)}
+.ax-as-bar input{flex:1;min-width:0;font:inherit;font-size:13px;padding:7px 10px;
+  border-radius:var(--ax-radius-sm);border:var(--ax-border-w) solid var(--ax-border-2);
+  background:var(--ax-bg);color:var(--ax-text)}
+.ax-as-bar button{flex:none}
+/* One composer at a time: the drawer has its own, and two inputs for the same
+   conversation is a question about which one you are typing into. */
+body.ax-as-open .ax-as-bar{display:none}
+/* Keep the last row of a page clear of the bar. */
+body:not(.ax-as-open){padding-bottom:72px}
+@media (max-width:640px){.ax-as-bar{right:12px;left:12px;width:auto}}
 .ax-as-handle{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:60;
   display:flex;align-items:center;gap:6px;writing-mode:vertical-rl;
   background:var(--ax-surface);color:var(--ax-text);cursor:pointer;
@@ -77,6 +91,10 @@ body.ax-as-open{padding-right:var(--ax-as-w)}
 `
 
 export const ASSISTANT_HTML = `
+<form class="ax-as-bar" id="ax-as-bar">
+  <input id="ax-as-bar-input" autocomplete="off" placeholder="Ask an agent about this page&hellip;" aria-label="Ask an agent about this page">
+  <button class="ax-btn ax-btn--primary ax-btn--sm" type="submit" id="ax-as-bar-send">Ask</button>
+</form>
 <button class="ax-as-handle" id="ax-as-handle" aria-expanded="false" aria-controls="ax-as">Ask an agent</button>
 <aside class="ax-as" id="ax-as" aria-label="Ask an agent" aria-hidden="true">
   <div class="ax-as__grip" id="ax-as-grip" role="separator" aria-orientation="vertical"
@@ -151,6 +169,31 @@ const bits=Object.entries(shownCtx).filter(([k,v])=>v!=null&&v!=='').slice(0,4)
  .map(([k,v])=>'<code>'+esc(k)+'='+esc(typeof v==='object'?(Array.isArray(v)?v.length+' items':JSON.stringify(v).slice(0,28)):v)+'</code>');
 $('ax-as-ctx').innerHTML='Sending with your question: '+(bits.join(' ')||'<code>this page</code>');
 }
+
+/* A one-off line in the log, for errors raised before a thread exists. */
+function add(kind,text){
+const log=$('ax-as-log');
+const empty=log.querySelector('.ax-as__empty'); if(empty)empty.remove();
+const el=document.createElement('div');
+el.className='ax-as__msg ax-as__msg--'+kind;
+el.textContent=text;
+log.appendChild(el); log.scrollTop=log.scrollHeight;
+return el;
+}
+
+/* Who can answer, and where. Both pickers degrade to a plain statement
+   rather than an empty dropdown that looks like it is still loading. */
+fetch('/api/agents').then(r=>r.json()).then(d=>{
+const list=(Array.isArray(d)?d:(d.agents||[])).map(a=>a.id||a.name).filter(Boolean);
+$('ax-as-agent').innerHTML=list.length
+ ?list.map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('')
+ :'<option value="">no agents on this node</option>';
+}).catch(()=>{$('ax-as-agent').innerHTML='<option value="">agents unavailable</option>';});
+
+fetch('/api/monitor').then(r=>r.json()).then(d=>{
+const ns=(d.nodes||[]).filter(n=>n.ok);
+if(ns.length>1)$('ax-as-node').innerHTML=ns.map(n=>'<option value="'+esc(n.url)+'">'+esc(n.name)+'</option>').join('');
+}).catch(()=>{});
 
 /* --- Conversation state ---------------------------------------------------
    The thread lives on the daemon; the page only remembers which one it was
@@ -256,6 +299,20 @@ try{
 }catch(e){add('err',e.message);}
 finally{busy=false;$('ax-as-send').disabled=false;input.focus();}
 }
+
+/* The floating bar is the fast path: type from anywhere on the page, and the
+   drawer opens to show the answer arriving. It shares one send(), so a
+   question asked here continues the same conversation as one asked there. */
+$('ax-as-bar').addEventListener('submit',e=>{
+e.preventDefault();
+const bar=$('ax-as-bar-input');
+const text=bar.value.trim();
+if(!text)return;
+bar.value='';
+$('ax-as-input').value=text;
+open(true);
+send();
+});
 
 $('ax-as-send').onclick=send;
 $('ax-as-input').addEventListener('keydown',e=>{
