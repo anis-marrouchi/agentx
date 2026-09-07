@@ -3,6 +3,7 @@ import { renderWorkflowsPage, WORKFLOWS_PAGE_SCRIPT } from "../src/daemon/ui/pag
 import { renderMonitorPage } from "../src/daemon/ui/pages/monitor"
 import { injectFns } from "../src/daemon/ui/inject"
 import { workflowHealth } from "../src/daemon/workflow-health"
+import { renderTopbar } from "../src/daemon/topbar"
 
 describe("workflows page", () => {
   it("ships workflow health with every helper it calls", () => {
@@ -39,5 +40,22 @@ describe("workflows page", () => {
     const html = renderMonitorPage()
     expect(html).not.toContain('id="automation"')
     expect(html).not.toContain("stopped firing")
+  })
+
+  it("is reachable from the nav on every page that has one", () => {
+    // A surface with no tab is a surface nobody opens. Workflow dormancy
+    // reports nowhere else, so this link is load-bearing.
+    for (const tab of ["live", "monitor", "workflows"] as const) {
+      const bar = renderTopbar({ activeTab: tab, subtitle: "t" })
+      expect(bar).toContain('href="/workflows"')
+    }
+    expect(renderTopbar({ activeTab: "workflows", subtitle: "t" }))
+      .toMatch(/href="\/workflows" class="ax-topbar__tab is-active"/)
+  })
+
+  it("calls the thing one name", () => {
+    const html = renderWorkflowsPage()
+    expect(html).toContain("No workflows yet")
+    expect(html).not.toContain("No automations yet")
   })
 })

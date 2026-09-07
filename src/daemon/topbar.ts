@@ -370,8 +370,11 @@ export function renderTopbar(opts: TopbarOpts): string {
   //   /admin/health  /admin/activity-graph  /admin/graph  /admin/projects
   //   /procedures  /admin/wiki  /glossary  /processes
   //
-  // Three tabs are the whole nav. Every page above is one link away from Live
-  // or Settings, and none of them is where an operator starts their day —
+  // The nav is the set of surfaces an operator opens on purpose, not a site
+  // map. Workflows earned its way back: automation that stops running reports
+  // nothing anywhere else, so it needs somewhere to be found. Every page still
+  // listed above is one link away from Live or Settings, and none of them is
+  // where an operator starts their day —
   // "who is alive and what are they doing" (Live) and "how is this wired"
   // (Settings) are. A tab bar that lists every surface an app HAS is a site
   // map, not navigation; it makes the two answers people actually want
@@ -388,6 +391,7 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Briefing", href: "/monitor" },
         { id: "activity", label: "Activity", href: "/activity" },
+        { id: "workflows", label: "Workflows", href: "/workflows" },
         { id: "admin", label: "Settings", href: "/admin" },
       ],
     },

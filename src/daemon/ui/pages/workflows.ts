@@ -39,8 +39,8 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     </div>
     <ul id="wf-list" class="ax-wf__cards" aria-live="polite"></ul>
     <div id="wf-empty" class="ax-wf__empty" hidden>
-      <p><b>No automations yet.</b></p>
-      <p class="hint">An automation watches for something &mdash; a merge request, a message, a time of day &mdash; and puts an agent on it. Ask an agent to draft one for you, or connect n8n below and let it hand work over.</p>
+      <p><b>No workflows yet.</b></p>
+      <p class="hint">A workflow watches for something &mdash; a merge request, a message, a time of day &mdash; and puts an agent on it. Ask an agent to draft one for you, or connect n8n below and let it hand work over.</p>
     </div>
     <section class="ax-wf__n8n">
       <header><h3>Connected to n8n</h3></header>
