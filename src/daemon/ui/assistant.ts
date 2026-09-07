@@ -38,6 +38,23 @@ body.ax-as-open{padding-right:var(--ax-as-w)}
 .ax-as__title{font-size:13px;font-weight:600;flex:1}
 .ax-as__x{background:none;border:none;color:var(--ax-text-2);cursor:pointer;font:inherit;
   font-size:18px;line-height:1;padding:0 4px}
+.ax-as__icon{background:var(--ax-surface-2);border:1px solid var(--ax-border-2);color:var(--ax-text-2);
+  cursor:pointer;font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;
+  border-radius:var(--ax-radius-pill)}
+.ax-as__icon:hover{color:var(--ax-text);background:var(--ax-surface-3)}
+.ax-as__icon.is-on{background:var(--ax-blue-t);border-color:var(--ax-blue-e);color:var(--ax-blue-d)}
+.ax-as__hist{border-bottom:var(--ax-border-w) solid var(--ax-border);max-height:44vh;overflow:auto}
+.ax-as__hist-empty{padding:12px 14px;font-size:12px;color:var(--ax-text-2)}
+.ax-as__hist-list{list-style:none;margin:0;padding:0}
+.ax-as__hist-list li{display:flex;align-items:center;gap:8px;padding:9px 14px;
+  border-bottom:1px solid var(--ax-border);cursor:pointer}
+.ax-as__hist-list li:hover{background:var(--ax-surface-2)}
+.ax-as__hist-list li.is-on{background:var(--ax-blue-t)}
+.ax-as__hist-t{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ax-as__hist-m{font-family:var(--ax-mono);font-size:10.5px;color:var(--ax-text-2);flex:none}
+.ax-as__hist-x{background:none;border:none;color:var(--ax-text-2);cursor:pointer;font-size:15px;
+  line-height:1;padding:0 2px;flex:none}
+.ax-as__pending{opacity:0.75}
 .ax-as__pick{display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--ax-border)}
 .ax-as__pick select{flex:1;min-width:0;font:inherit;font-size:12px;padding:5px 8px;
   border-radius:var(--ax-radius-sm);border:var(--ax-border-w) solid var(--ax-border-2);
@@ -65,8 +82,14 @@ export const ASSISTANT_HTML = `
   <div class="ax-as__grip" id="ax-as-grip" role="separator" aria-orientation="vertical"
        tabindex="0" aria-label="Resize panel — arrow keys adjust"></div>
   <div class="ax-as__head">
-    <span class="ax-as__title">Ask an agent</span>
+    <span class="ax-as__title" id="ax-as-title">Ask an agent</span>
+    <button class="ax-as__icon" id="ax-as-hist" title="Past conversations">History</button>
+    <button class="ax-as__icon" id="ax-as-new" title="Start a new conversation">New</button>
     <button class="ax-as__x" id="ax-as-close" title="Close">&times;</button>
+  </div>
+  <div class="ax-as__hist" id="ax-as-hist-panel" hidden>
+    <div class="ax-as__hist-empty" id="ax-as-hist-empty">No past conversations yet.</div>
+    <ul class="ax-as__hist-list" id="ax-as-hist-list"></ul>
   </div>
   <div class="ax-as__pick">
     <select id="ax-as-agent" aria-label="Agent"><option value="">Loading agents&hellip;</option></select>
@@ -129,59 +152,116 @@ const bits=Object.entries(shownCtx).filter(([k,v])=>v!=null&&v!=='').slice(0,4)
 $('ax-as-ctx').innerHTML='Sending with your question: '+(bits.join(' ')||'<code>this page</code>');
 }
 
-function add(kind,text){
-const log=$('ax-as-log');
-const empty=log.querySelector('.ax-as__empty'); if(empty)empty.remove();
-const el=document.createElement('div');
-el.className='ax-as__msg ax-as__msg--'+kind;
-el.textContent=text;
-log.appendChild(el); log.scrollTop=log.scrollHeight;
-return el;
+/* --- Conversation state ---------------------------------------------------
+   The thread lives on the daemon; the page only remembers which one it was
+   looking at. That is what survives a navigation: a turn started here keeps
+   running even after this page is gone, and the answer is waiting in the
+   thread when you come back. */
+let threadId=null, poll=null;
+try{threadId=localStorage.getItem('ax-assistant-thread')||null}catch{}
+function setThread(id){
+threadId=id;
+try{id?localStorage.setItem('ax-assistant-thread',id):localStorage.removeItem('ax-assistant-thread')}catch{}
 }
 
-fetch('/api/agents').then(r=>r.json()).then(d=>{
-const list=(d.agents||d||[]).map(a=>a.id||a.name).filter(Boolean);
-$('ax-as-agent').innerHTML=list.length
- ?list.map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('')
- :'<option value="">no agents</option>';
-}).catch(()=>{$('ax-as-agent').innerHTML='<option value="">agents unavailable</option>';});
+function bubble(m){
+const el=document.createElement('div');
+const kind=m.role==='user'?'me':(m.status==='error'?'err':'them');
+el.className='ax-as__msg ax-as__msg--'+kind+(m.status==='pending'?' ax-as__pending':'');
+el.textContent=m.status==='pending'?'Thinking…':(m.content||'(no reply)');
+return el;
+}
+function renderMessages(msgs){
+const log=$('ax-as-log');
+log.innerHTML='';
+if(!msgs.length){
+ log.innerHTML='<p class="ax-as__empty">Ask about what is on this page. What you are looking at &mdash; the page, its filters and the rows in view &mdash; goes with the question.</p>';
+ return;
+}
+for(const m of msgs)log.appendChild(bubble(m));
+log.scrollTop=log.scrollHeight;
+}
 
-fetch('/api/monitor').then(r=>r.json()).then(d=>{
-const ns=(d.nodes||[]).filter(n=>n.ok);
-if(ns.length>1)$('ax-as-node').innerHTML=ns.map(n=>'<option value="'+esc(n.url)+'">'+esc(n.name)+'</option>').join('');
-}).catch(()=>{});
+async function loadThread(id,{quiet}={}){
+if(!id){renderMessages([]);$('ax-as-title').textContent='Ask an agent';return;}
+try{
+ const r=await fetch('/api/assistant/thread?id='+encodeURIComponent(id));
+ if(!r.ok){setThread(null);renderMessages([]);return;}
+ const d=await r.json();
+ $('ax-as-title').textContent=d.thread.title||'Ask an agent';
+ if(d.thread.agentId)$('ax-as-agent').value=d.thread.agentId;
+ renderMessages(d.messages||[]);
+ const pending=(d.messages||[]).some(m=>m.status==='pending');
+ clearTimeout(poll);
+ if(pending)poll=setTimeout(()=>loadThread(id,{quiet:true}),1500);
+ else if(!quiet)loadHistory();
+}catch(e){}
+}
+
+async function loadHistory(){
+try{
+ const r=await fetch('/api/assistant/threads');
+ const d=await r.json();
+ const list=d.threads||[];
+ $('ax-as-hist-empty').hidden=list.length>0;
+ $('ax-as-hist-list').innerHTML=list.map(t=>
+  '<li data-thread="'+esc(t.id)+'"'+(t.id===threadId?' class="is-on"':'')+'>'
+  +'<span class="ax-as__hist-t">'+esc(t.title)+'</span>'
+  +'<span class="ax-as__hist-m">'+esc(t.agentId)+'</span>'
+  +'<button class="ax-as__hist-x" data-del="'+esc(t.id)+'" title="Delete">&times;</button></li>').join('');
+}catch(e){}
+}
+
+$('ax-as-hist').onclick=()=>{
+const panel2=$('ax-as-hist-panel');
+const show=panel2.hidden;
+panel2.hidden=!show;
+$('ax-as-hist').classList.toggle('is-on',show);
+if(show)loadHistory();
+};
+$('ax-as-new').onclick=()=>{
+setThread(null);renderMessages([]);$('ax-as-title').textContent='Ask an agent';
+$('ax-as-hist-panel').hidden=true;$('ax-as-hist').classList.remove('is-on');
+$('ax-as-input').focus();
+};
+$('ax-as-hist-list').addEventListener('click',async e=>{
+const del=e.target.closest('[data-del]');
+if(del){e.stopPropagation();
+ await fetch('/api/assistant/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({threadId:del.dataset.del})});
+ if(del.dataset.del===threadId){setThread(null);renderMessages([]);}
+ loadHistory();return;}
+const li=e.target.closest('[data-thread]');
+if(!li)return;
+setThread(li.dataset.thread);
+$('ax-as-hist-panel').hidden=true;$('ax-as-hist').classList.remove('is-on');
+loadThread(threadId);loadHistory();
+});
 
 async function send(){
 const input=$('ax-as-input'); const text=input.value.trim();
 if(!text||busy)return;
 const agent=$('ax-as-agent').value;
-if(!agent){add('err','Pick an agent first.');return;}
+if(!agent&&!threadId){add('err','Pick an agent first.');return;}
 busy=true; $('ax-as-send').disabled=true;
-add('me',text); input.value='';
-const pending=add('them','Thinking…');
+input.value='';
 try{
  const r=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({agentId:agent,node:$('ax-as-node').value||undefined,message:text,context:pageContext()})});
+  body:JSON.stringify({threadId:threadId||undefined,agentId:agent,node:$('ax-as-node').value||undefined,
+   message:text,context:pageContext()})});
  const d=await r.json();
  if(!r.ok||d.error)throw new Error(d.error||('HTTP '+r.status));
- pending.textContent=d.reply||'(no reply)';
-}catch(e){pending.className='ax-as__msg ax-as__msg--err';pending.textContent=e.message;}
+ setThread(d.threadId);
+ await loadThread(d.threadId);
+}catch(e){add('err',e.message);}
 finally{busy=false;$('ax-as-send').disabled=false;input.focus();}
 }
-/* Drag the left edge; arrow keys do the same for keyboard users. */
-const grip=$('ax-as-grip');
-grip.addEventListener('pointerdown',e=>{
-e.preventDefault();grip.setPointerCapture(e.pointerId);
-const move=ev=>setWidth(window.innerWidth-ev.clientX);
-const up=()=>{grip.removeEventListener('pointermove',move);grip.removeEventListener('pointerup',up);};
-grip.addEventListener('pointermove',move);grip.addEventListener('pointerup',up);});
-grip.addEventListener('keydown',e=>{
-const cur=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ax-as-w'))||420;
-if(e.key==='ArrowLeft'){e.preventDefault();setWidth(cur+24);}
-if(e.key==='ArrowRight'){e.preventDefault();setWidth(cur-24);}});
 
 $('ax-as-send').onclick=send;
 $('ax-as-input').addEventListener('keydown',e=>{
 if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();send();}});
+
+/* Restore whatever was in flight when the last page unloaded. */
+loadThread(threadId);loadHistory();
 })();
 `

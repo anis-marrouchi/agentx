@@ -234,18 +234,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // + AgentRegistry live). The board-dashboard serves /workflows/editor
   // but runs its own workflow stores; the chat endpoint needs the
   // running agent registry, which only the main daemon has.
-  // Ask-an-agent drawer. `node` picks which mesh node answers; without it the
-  // local daemon does, which is what a single-node install wants.
-  if (method === "POST" && path === "/api/assistant") {
+  // Ask-an-agent drawer. Every verb proxies to one node: `node` picks which,
+  // and a conversation belongs to the node that holds it.
+  if (path === "/api/assistant" || path.startsWith("/api/assistant/")) {
     try {
-      const body: any = await readJson(req)
       const targets = await resolveNodeTargets(ctx.config)
-      const node = body?.node ? targets.find(n => n.url === body.node) : targets[0]
+      const wanted = method === "POST" ? undefined : url.searchParams.get("node")
+      const body: any = method === "POST" ? await readJson(req) : undefined
+      const pick = body?.node ?? wanted
+      const node = pick ? targets.find(n => n.url === pick) : targets[0]
       if (!node) { sendJson(res, 400, { error: "unknown node" }); return }
-      const r = await fetch(node.url + "/api/assistant", {
-        method: "POST",
+      const qs = url.search ? url.search.replace(/([?&])node=[^&]*/, "$1").replace(/[?&]$/, "") : ""
+      const r = await fetch(node.url + path + qs, {
+        method,
         headers: { "Content-Type": "application/json", ...(node.token ? { Authorization: `Bearer ${node.token}` } : {}) },
-        body: JSON.stringify({ ...body, node: undefined }),
+        ...(method === "POST" ? { body: JSON.stringify({ ...body, node: undefined }) } : {}),
       })
       sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))
     } catch (e: any) {
