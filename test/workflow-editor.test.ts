@@ -116,3 +116,14 @@ describe("n8n inside the builder", () => {
     expect(renderWorkflowEditorPage()).toContain(url)
   })
 })
+
+describe("n8n topic routing", () => {
+  it("lets one address address one workflow", async () => {
+    const src = (await import("fs")).readFileSync("src/workflows/triggers.ts", "utf-8")
+    // Without a topic gate every workflow listening on on:n8n woke for every
+    // call, so the topic in the URL was decoration.
+    expect(src).toContain("filter.topic")
+    expect(src).toContain("topic?: string[]")
+    expect(src).toContain("cfg.filter.topic")
+  })
+})

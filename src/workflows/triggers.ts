@@ -65,6 +65,10 @@ export function startWorkflowTriggers(args: {
         event?: string
         passthrough?: boolean
         filter?: {
+          /** Restrict on:n8n to specific topics — the last path segment of
+           *  POST /webhook/n8n/<topic>. Without it EVERY workflow listening
+           *  on on:n8n runs for every call, whatever the caller meant. */
+          topic?: string[]
           /** Restrict to specific actions (gitlab-issue / gitlab-mr).
            *  Example: ["open", "reopen"] keeps the workflow off update/close events. */
           action?: string[]
@@ -117,6 +121,13 @@ export function startWorkflowTriggers(args: {
           // which means the agent isn't woken up + billed for a turn just
           // to print "exit cleanly".
           if (cfg.filter) {
+            // filter.topic — on:n8n topic gate. The topic is the path segment
+            // n8n posted to, so this is what makes one URL address one
+            // workflow instead of waking all of them.
+            if (Array.isArray(cfg.filter.topic) && cfg.filter.topic.length > 0) {
+              const topic = typeof ctx.topic === "string" ? ctx.topic.toLowerCase() : undefined
+              if (!topic || !cfg.filter.topic.map((t) => t.toLowerCase()).includes(topic)) return {}
+            }
             // filter.action — gitlab-issue / gitlab-mr action gate.
             if (Array.isArray(cfg.filter.action) && cfg.filter.action.length > 0) {
               const action = typeof ctx.action === "string" ? ctx.action : undefined

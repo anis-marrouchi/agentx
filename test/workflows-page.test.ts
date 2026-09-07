@@ -35,7 +35,7 @@ describe("workflows page", () => {
   })
 
   it("exposes the n8n seam on the page instead of in a doc", () => {
-    expect(renderWorkflowsPage()).toContain("Connected to n8n")
+    expect(renderWorkflowsPage()).toContain("Hand work over from n8n")
     expect(WORKFLOWS_PAGE_SCRIPT).toContain("/webhook/n8n/")
   })
 
@@ -82,5 +82,19 @@ describe("workflows page", () => {
     const html = renderWorkflowsPage()
     expect(html).not.toContain("ax-wf__drafts")
     expect(WORKFLOWS_PAGE_SCRIPT).not.toContain("/api/workflows/drafts")
+  })
+
+  it("explains what a topic is and what it takes to use the address", () => {
+    const html = renderWorkflowsPage()
+    // The panel used to show an address containing a literal <topic> with no
+    // definition and no prerequisites — nothing you could act on.
+    expect(html).not.toContain("&lt;topic&gt;")
+    expect(html).toContain("invoice-received")          // a topic, by example
+    expect(html).toContain("HTTP Request")              // where it goes in n8n
+    expect(html).toContain("n8n hands work over")       // the matching trigger
+    // ...and the address it copies is pasteable, not a placeholder.
+    expect(WORKFLOWS_PAGE_SCRIPT).toContain('base + "your-topic"')
+    // Auth is stated rather than discovered as a 401 inside n8n.
+    expect(WORKFLOWS_PAGE_SCRIPT).toContain("MESH_TOKEN")
   })
 })

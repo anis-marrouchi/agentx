@@ -44,12 +44,30 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
       <p class="hint">A workflow watches for something &mdash; a merge request, a message, a time of day &mdash; and puts an agent on it. Ask an agent to draft one for you, or connect n8n below and let it hand work over.</p>
     </div>
     <section class="ax-wf__n8n">
-      <header><h3>Connected to n8n</h3></header>
-      <p class="hint">n8n already speaks to hundreds of services. Let it do that, and hand the work to your agents here &mdash; no connector to rebuild on this side.</p>
-      <label class="ax-wf__n8n-lbl">n8n calls this URL to start an automation</label>
-      <code class="ax-wf__n8n-url" id="wf-n8n-in">&hellip;</code>
-      <button class="ax-wf__n8n-copy" id="wf-n8n-copy" type="button">Copy</button>
-      <p class="hint">Then give the automation a <b>when n8n calls</b> trigger and it runs. To go the other way, add a <b>call a web address</b> step pointing at your n8n webhook.</p>
+      <header><h3>Hand work over from n8n</h3></header>
+      <p class="hint">n8n already talks to hundreds of services. Let it keep doing that, and have it call a workflow here when it needs an agent.</p>
+
+      <ol class="ax-wf__n8n-steps">
+        <li>
+          <b>Name the job.</b> Pick a short word for what n8n is handing over &mdash;
+          <code>invoice-received</code>, <code>lead-signed-up</code>. That word is the
+          <i>topic</i>, and it is the last part of the address below.
+        </li>
+        <li>
+          <b>In n8n</b>, add an <b>HTTP Request</b> node: method <code>POST</code>, this address
+          with your topic on the end, and send whatever JSON the workflow should read.
+          <div class="ax-wf__n8n-url" id="wf-n8n-in">&hellip;</div>
+          <button class="ax-wf__n8n-copy" id="wf-n8n-copy" type="button">Copy address</button>
+          <span class="hint" id="wf-n8n-auth"></span>
+        </li>
+        <li>
+          <b>Here</b>, build a workflow that starts with <b>n8n hands work over</b> and set its
+          topic to the same word. Without that, every workflow listening for n8n runs on
+          every call.
+        </li>
+      </ol>
+
+      <p class="hint">Going the other way is one step: add <b>Call a web address</b> and point it at an n8n webhook &mdash; or connect n8n in Settings and pick one of your n8n workflows straight from the palette.</p>
     </section>
 
   </aside>
@@ -162,6 +180,19 @@ const WORKFLOWS_PAGE_CSS = `
   font-size: 10px; font-family: var(--ax-mono); text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--ax-text-2); font-weight: 600;
 }
+.ax-wf__n8n-steps {
+  margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px;
+  font-size: 12px; line-height: 1.5; color: var(--ax-text-2);
+}
+.ax-wf__n8n-steps b { color: var(--ax-text); font-weight: 600; }
+.ax-wf__n8n-steps i { font-style: normal; color: var(--ax-text); font-weight: 600; }
+.ax-wf__n8n-steps code {
+  font-family: var(--ax-mono); font-size: 11px; background: var(--ax-surface-2);
+  border: 1px solid var(--ax-border); border-radius: 4px; padding: 0 4px;
+}
+.ax-wf__n8n-steps > li { padding-left: 2px; }
+.ax-wf__n8n-steps .ax-wf__n8n-url { margin: 7px 0 6px; }
+
 .ax-wf__n8n-url {
   font-family: var(--ax-mono); font-size: 11px; word-break: break-all;
   background: var(--ax-surface-2); border: 1px solid var(--ax-border);
@@ -550,17 +581,25 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     return { state: h.state, label: STATE_LABEL[h.state] || h.state, rank: STATE_RANK[h.state] }
   }
 
-  // The URL n8n posts to. Shown rather than documented: the operator needs to
-  // paste it into an n8n HTTP Request node, not read about it.
+  // The address n8n posts to. Shown, and copyable with a real topic already
+  // in it — a placeholder like <topic> is not something you can paste.
   (function n8nPanel() {
     const el = document.getElementById("wf-n8n-in")
     if (!el) return
-    el.textContent = location.origin + "/webhook/n8n/<topic>"
+    const base = location.origin + "/webhook/n8n/"
+    el.textContent = base + "your-topic"
+    // Loopback is exempt from mesh auth; anything else needs the token, and
+    // saying so here saves a silent 401 inside n8n.
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+    const auth = document.getElementById("wf-n8n-auth")
+    if (auth) auth.textContent = local
+      ? "n8n on this machine needs no key."
+      : "n8n is off-box, so add the header Authorization: Bearer <your MESH_TOKEN>."
     const btn = document.getElementById("wf-n8n-copy")
     if (btn) btn.onclick = async () => {
       try { await navigator.clipboard.writeText(el.textContent); btn.textContent = "Copied" }
       catch { btn.textContent = "Copy failed" }
-      setTimeout(() => { btn.textContent = "Copy" }, 1600)
+      setTimeout(() => { btn.textContent = "Copy address" }, 1600)
     }
   })()
 
