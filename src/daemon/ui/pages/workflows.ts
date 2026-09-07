@@ -28,6 +28,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
     <header>
       <h2>Workflows</h2>
       <div class="ax-wf__header-actions">
+        <a id="wf-new" class="ax-wf__icon" href="/workflows/editor?new=1" title="Build a new workflow">+</a>
         <button id="wf-refresh" class="ax-wf__icon" title="Refresh (r)">↻</button>
       </div>
     </header>
@@ -712,6 +713,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     $("#wf-detail-head").innerHTML = \`
       <div class="ax-wf__detail-title">
         <h2>\${esc(wf.title || wf.id)}</h2>
+        <a class="ax-wf__btn" href="/workflows/editor?id=\${encodeURIComponent(wf.id)}" title="Open on the canvas">Edit on canvas</a>
         <span class="hint">\${esc(wf.id)} · v\${wf.version} · trigger: \${esc(triggerSource)}\${trigFilter ? " · " + esc(trigFilter) : ""}</span>
       </div>
       <div class="ax-wf__detail-actions">
@@ -1154,6 +1156,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     $("#wf-detail-head").innerHTML = \`
       <div class="ax-wf__detail-title">
         <h2>\${esc(wf.title || draft.id)}</h2>
+        <a class="ax-wf__btn" href="/workflows/editor?draft=\${encodeURIComponent(draft.id)}" title="Open on the canvas">Edit on canvas</a>
         <span class="hint">\${esc(draft.id)} · status=\${esc(wf.status || "draft")} · state=\${esc(wf.state || "disabled")} · confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
       </div>
       <div class="ax-wf__detail-actions ax-wf__draft-actions">

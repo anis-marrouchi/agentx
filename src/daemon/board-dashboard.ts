@@ -1,6 +1,7 @@
 import { readMonitorBody, monitorTargets } from "./session-monitor"
 import { renderMonitorPage } from "./ui/pages/monitor"
 import { renderActivityPage } from "./ui/pages/activity"
+import { renderWorkflowEditorPage } from "./ui/pages/workflow-editor"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { appendFileSync, existsSync, mkdirSync } from "fs"
 import { readFile } from "fs/promises"
@@ -131,6 +132,7 @@ const DASHBOARD_PAGES = new Set([
   "/boards",
   "/glossary",
   "/workflows",
+  "/workflows/editor",
   "/procedures",
   "/processes",
   "/graph",
@@ -228,6 +230,34 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Workflow-builder chat (proxies to main daemon where the dispatcher
+  // + AgentRegistry live). The board-dashboard serves /workflows/editor
+  // but runs its own workflow stores; the chat endpoint needs the
+  // running agent registry, which only the main daemon has.
+  if (method === "POST" && path === "/api/workflows/editor/chat") {
+    try {
+      const body = await readJson(req)
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const r = await fetch(`${daemonUrl}/api/workflows/editor/chat`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body ?? {}),
+      })
+      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+      sendJson(res, r.status, data)
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
+    return
+  }
+
+  if (method === "GET" && path === "/workflows/editor") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
   if (method === "GET" && path === "/activity") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config) }))

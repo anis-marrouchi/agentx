@@ -12,6 +12,7 @@ import { defineConfig } from "tsup"
 export default defineConfig({
   entry: {
     "activity-graph": "src/web/activity-graph/main.tsx",
+    "workflow-editor": "src/web/workflow-editor/main.tsx",
   },
   outDir: "dist/web",
   format: ["iife"],
