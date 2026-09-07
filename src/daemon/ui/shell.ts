@@ -21,6 +21,8 @@
 
 import { AX_TOKENS_CSS } from "./tokens"
 import { ASSISTANT_CSS, ASSISTANT_HTML, ASSISTANT_SCRIPT } from "./assistant"
+import { injectFns } from "./inject"
+import { markdownToHtml } from "@/utils/markdown-html"
 import { AX_COMPONENTS_CSS } from "./components.css"
 import {
   TOPBAR_HEAD,
@@ -102,7 +104,7 @@ ${main}
 ${opts.noAssistant ? "" : ASSISTANT_HTML}
 ${TOPBAR_SCRIPT}
 ${opts.scripts || ""}
-${opts.noAssistant ? "" : `<script>${ASSISTANT_SCRIPT}</script>`}
+${opts.noAssistant ? "" : `<script>${injectFns({ markdownToHtml })}${ASSISTANT_SCRIPT}</script>`}
 </body>
 </html>`
 }

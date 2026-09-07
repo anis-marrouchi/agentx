@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
+import { markdownToHtml } from "@/utils/markdown-html"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
 import { MeshWikiClient } from "./mesh"
@@ -69,104 +70,16 @@ function resolveWikilink(target: string, wikiArticles: Map<string, string>): str
   return undefined
 }
 
+/** Wiki-flavoured markdown: the shared renderer plus [[wikilink]] resolution
+ *  and section-tag stripping, which only articles carry. */
 function md(text: string, wikiArticles: Map<string, string>, agentPrefix: string = ""): string {
-  // Strip section-tag HTML comments before escaping so they don't render
-  // as literal "<!-- tags: ... -->" in the output.
-  let html = escapeHtml(stripSectionTags(text))
-
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
-    `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`)
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-  // Tables
-  html = html.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)*)/gm, (_m, header, _sep, body) => {
-    const ths = header.split("|").filter((c: string) => c.trim()).map((c: string) => `<th>${c.trim()}</th>`).join("")
-    const rows = body.trim().split("\n").map((row: string) => {
-      const tds = row.split("|").filter((c: string) => c.trim()).map((c: string) => `<td>${c.trim()}</td>`).join("")
-      return `<tr>${tds}</tr>`
-    }).join("")
-    return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`
+  return markdownToHtml(stripSectionTags(text), {
+    wikilink: (target, display) => {
+      const path = resolveWikilink(target, wikiArticles)
+      if (path) return `<a href="${agentPrefix}/article/${encodeURIComponent(path)}" class="wikilink">${display}</a>`
+      return `<a href="${agentPrefix}/search?q=${encodeURIComponent(target)}" class="wikilink broken" title="Not found — click to search">${display}</a>`
+    },
   })
-
-  // Headings
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-
-  // Bold and italic
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-
-  // Wikilinks — support three forms for the [[...]] body:
-  //   [[Title]]                        exact article title
-  //   [[path/to/article]]              path without .md (e.g. "people/anis")
-  //   [[path/to/article.md]]           full relative path
-  //   [[Title|custom display text]]    optional display override (Obsidian-style)
-  html = html.replace(/\[\[([^\]]+)\]\]/g, (_m, body: string) => {
-    const [rawTarget, rawDisplay] = body.split("|", 2)
-    const target = rawTarget.trim().replace(/^\//, "")
-    const display = (rawDisplay || rawTarget).trim()
-    const path = resolveWikilink(target, wikiArticles)
-    if (path) {
-      return `<a href="${agentPrefix}/article/${encodeURIComponent(path)}" class="wikilink">${display}</a>`
-    }
-    return `<a href="${agentPrefix}/search?q=${encodeURIComponent(target)}" class="wikilink broken" title="Not found — click to search">${display}</a>`
-  })
-
-  // External links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-
-  // Blockquotes (consecutive `> ` lines → one <blockquote>)
-  html = html.replace(/^(>\s?.*(?:\n>\s?.*)*)/gm, (block: string) => {
-    const inner = block.split("\n").map(l => l.replace(/^>\s?/, "")).join("<br>")
-    return `<blockquote>${inner}</blockquote>`
-  })
-
-  // Task-list items (render as plain text with unicode checkbox)
-  html = html.replace(/^[-*] \[( |x|X)\] (.+)$/gm, (_m, chk, rest) =>
-    `<li class="task">${chk.toLowerCase() === "x" ? "☑" : "☐"} ${rest}</li>`)
-
-  // Unordered lists
-  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-
-  // Ordered lists — match lines like "1. foo" (number, dot, space)
-  html = html.replace(/^\d+\. (.+)$/gm, '<li data-ordered="1">$1</li>')
-
-  // Wrap consecutive ordered <li>s into <ol>. Keep the data-ordered marker
-  // on each <li> inside the <ol> so the subsequent <ul> regex below can
-  // correctly skip them via negative lookahead. Marker is stripped once all
-  // list-wrapping is done.
-  html = html.replace(/(<li data-ordered="1">.*?<\/li>(?:\n?<li data-ordered="1">.*?<\/li>)*)/g, '<ol>$1</ol>')
-
-  // Wrap consecutive unordered <li>s — the negative lookahead `(?! data-ordered)`
-  // ensures ordered <li>s inside the <ol> above are NOT re-wrapped in <ul>.
-  html = html.replace(/((?:<li(?! data-ordered)[^>]*>.*?<\/li>\n?)+)/g, '<ul>$1</ul>')
-
-  // Clean up the ordered marker now that wrapping is settled.
-  html = html.replace(/ data-ordered="1"/g, "")
-
-  // Horizontal rules
-  html = html.replace(/^---$/gm, '<hr>')
-
-  // Paragraphs — only wrap non-block lines. A paragraph is a run of
-  // text that isn't already wrapped in a block-level tag.
-  html = html.replace(/\n\n+/g, '</p><p>')
-  html = `<p>${html}</p>`
-  // Unwrap <p>...</p> that now contain block-level elements.
-  html = html.replace(/<p>\s*(<(?:h[1-6]|ul|ol|blockquote|table|pre|hr)\b[^>]*>[\s\S]*?<\/(?:h[1-6]|ul|ol|blockquote|table|pre)>)\s*<\/p>/g, "$1")
-  html = html.replace(/<p>\s*<hr>\s*<\/p>/g, "<hr>")
-  // Drop empty paragraphs that remain.
-  html = html.replace(/<p>\s*<\/p>/g, "")
-
-  html = html.replace(/<p>(<(?:h[1-4]|pre|table|ul|hr|div))/g, '$1')
-  html = html.replace(/(<\/(?:h[1-4]|pre|table|ul|hr|div)>)<\/p>/g, '$1')
-  html = html.replace(/<p>\s*<\/p>/g, '')
-
-  return html
 }
 
 // --- CSS ---

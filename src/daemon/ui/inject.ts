@@ -12,8 +12,12 @@
 // uses, and its own `.name`, which is whatever the minifier chose.
 
 export function injectFns(fns: Record<string, Function>): string {
-  const bind = "const __bind=(n,f)=>{globalThis[f.name]=f;globalThis[n]=f;return f};"
+  // A page can carry more than one of these — its own helpers plus whatever
+  // the shell injects — and two top-level `const __bind` declarations in one
+  // document is a SyntaxError that kills both scripts. Hang it off globalThis
+  // instead, and only once.
+  const bind = "globalThis.__axBind=globalThis.__axBind||((n,f)=>{globalThis[f.name]=f;globalThis[n]=f;return f});"
   return bind + Object.entries(fns)
-    .map(([name, fn]) => `const ${name}=__bind(${JSON.stringify(name)},${fn.toString()});`)
+    .map(([name, fn]) => `const ${name}=globalThis.__axBind(${JSON.stringify(name)},${fn.toString()});`)
     .join("")
 }

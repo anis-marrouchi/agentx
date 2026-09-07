@@ -31,7 +31,9 @@ describe("ask-an-agent drawer", () => {
 
   it("keeps the drawer usable by keyboard", () => {
     expect(ASSISTANT_SCRIPT).toContain("e.key==='Escape'")
-    expect(ASSISTANT_SCRIPT).toContain("e.metaKey||e.ctrlKey")
+    // The composer is a <form>, so Enter submits without a key handler.
+    expect(ASSISTANT_HTML).toContain('<form class="ax-as-bar"')
+    expect(ASSISTANT_HTML).toContain('type="submit"')
     expect(ASSISTANT_HTML).toContain('aria-expanded="false"')
     expect(ASSISTANT_HTML).toContain('aria-hidden="true"')
   })
@@ -46,24 +48,6 @@ describe("action paging", () => {
     expect(MONITOR_SCRIPT).toContain("shown={you:PAGE,agents:PAGE};renderPrincipals()")
   })
 
-  it("puts a composer on the page, not just inside the drawer", () => {
-    // Asking should cost no clicks: the drawer's own input is only reachable
-    // once you have already opened it.
-    expect(ASSISTANT_HTML).toContain('id="ax-as-bar"')
-    expect(ASSISTANT_HTML).toContain('id="ax-as-bar-input"')
-    // One composer at a time — the bar hides while the drawer is open.
-    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-bar{display:none}")
-    // ...and the page keeps its last row clear of it.
-    expect(ASSISTANT_CSS).toContain("body:not(.ax-as-open){padding-bottom:72px}")
-  })
-
-  it("sends from the bar through the same conversation as the drawer", () => {
-    expect(ASSISTANT_SCRIPT).toContain("$('ax-as-bar').addEventListener('submit'")
-    // It reuses send() rather than posting on its own, so a question asked
-    // from the page continues the thread rather than starting a stray one.
-    expect(ASSISTANT_SCRIPT).toContain("open(true);\nsend();")
-  })
-
   it("still loads its pickers, and says so when it cannot", () => {
     // These once vanished in an edit and the picker sat on "Loading agents…"
     // forever, so a question silently did nothing.
@@ -71,5 +55,55 @@ describe("action paging", () => {
     expect(ASSISTANT_SCRIPT).toContain("no agents on this node")
     expect(ASSISTANT_SCRIPT).toContain("agents unavailable")
     expect(ASSISTANT_SCRIPT).toContain("function add(kind,text)")
+  })
+
+  it("puts one composer on the page, centred, and no second one in the drawer", () => {
+    expect(ASSISTANT_HTML).toContain('id="ax-as-dock"')
+    expect(ASSISTANT_HTML).toContain('id="ax-as-bar-input"')
+    // The drawer is the transcript; two inputs for one conversation is a
+    // question about which one you are typing into.
+    expect(ASSISTANT_HTML).not.toContain('id="ax-as-input"')
+    expect(ASSISTANT_CSS).toContain(".ax-as-dock{position:fixed;bottom:0;left:50%;transform:translateX(-50%)")
+    // Centred in the space that is left, not the space the drawer covers.
+    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-dock{left:calc((100vw - var(--ax-as-w)) / 2)}")
+  })
+
+  it("slides away and leaves something to bring it back", () => {
+    expect(ASSISTANT_HTML).toContain('id="ax-as-bar-toggle"')
+    // Tucked by its own height minus the grip, or nothing is clickable.
+    expect(ASSISTANT_CSS).toContain("translateY(calc(100% - 26px))")
+    expect(ASSISTANT_SCRIPT).toContain("localStorage.setItem('ax-assistant-bar'")
+  })
+
+  it("opens on focus and on a running answer, but never over a deliberate close", () => {
+    expect(ASSISTANT_SCRIPT).toContain("$('ax-as-bar-input').addEventListener('focus',()=>{if(!userHid())open(true);});")
+    // '0' is set only by open(false) — a close the operator chose. Absent
+    // means they have simply not opened it yet, and auto-open is welcome.
+    expect(ASSISTANT_SCRIPT).toContain("localStorage.getItem('ax-assistant-open')==='0'")
+    expect(ASSISTANT_SCRIPT).toContain("if(threadId&&!userHid()&&$('ax-as-log').querySelector('.ax-as__pending'))open(true);")
+  })
+})
+
+describe("rendering what agents write", () => {
+  it("renders markdown in the drawer, tables included", async () => {
+    const { markdownToHtml } = await import("../src/utils/markdown-html")
+    // The reply arrives as markdown; showing the asterisks is showing the
+    // workings.
+    const out = markdownToHtml("**Saber is active** — `last_activity_on` = today\n\n| who | when |\n|---|---|\n| saber | 17:20 |")
+    expect(out).toContain("<strong>Saber is active</strong>")
+    expect(out).toContain("<code>last_activity_on</code>")
+    expect(out).toContain("<td>saber</td>")
+    expect(ASSISTANT_SCRIPT).toContain("markdownToHtml(body)")
+    // A wide table must scroll inside the bubble, not stretch the drawer.
+    expect(ASSISTANT_CSS).toContain(".ax-as__md table{display:block;overflow-x:auto")
+  })
+
+  it("carries the whole request to a live task page", async () => {
+    const reg = (await import("fs")).readFileSync("src/agents/registry.ts", "utf-8")
+    const dmn = (await import("fs")).readFileSync("src/daemon/index.ts", "utf-8")
+    // The page seeded its request card from a 200-char preview, so a live
+    // task showed a request cut off mid-JSON.
+    expect(reg).toContain("message: task.message || \"\",")
+    expect(dmn).toContain("message: live.message, sender: live.sender")
   })
 })

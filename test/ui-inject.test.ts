@@ -23,4 +23,37 @@ describe("shipping server functions to the browser", () => {
     Object.defineProperty(anon, "name", { value: "" })
     expect(new Function(injectFns({ bump: anon }) + "return bump(1)")()).toBe(2)
   })
+
+  it("survives a page injecting more than one set", () => {
+    // The shell injects its own helpers on top of whatever the page injects.
+    // Two `const __bind` declarations in one document was a SyntaxError that
+    // took both scripts down with it.
+    function one() { return 1 }
+    function two() { return 2 }
+    const src = injectFns({ one }) + injectFns({ two })
+    expect(() => new Function(src)).not.toThrow()
+    expect(new Function(src + "return one() + two()")()).toBe(3)
+  })
+})
+
+describe("markdown travels to the browser", () => {
+  it("renders with no helper left behind in module scope", async () => {
+    const { markdownToHtml } = await import("../src/utils/markdown-html")
+    const { injectFns } = await import("../src/daemon/ui/inject")
+    // new Function() cannot see the module, so a helper the minifier renamed
+    // — escapeHtml became "$" in the bundle — fails here exactly as it did
+    // in the drawer.
+    const out = new Function(injectFns({ markdownToHtml }) +
+      "return markdownToHtml('**b** `c`\\n\\n| a |\\n|---|\\n| 1 |')")()
+    expect(out).toContain("<strong>b</strong>")
+    expect(out).toContain("<code>c</code>")
+    expect(out).toContain("<table>")
+  })
+
+  it("escapes before it marks up, because the text is not ours", async () => {
+    const { markdownToHtml } = await import("../src/utils/markdown-html")
+    const out = markdownToHtml('<img src=x onerror=alert(1)> [x](javascript:alert(1))')
+    expect(out).not.toContain("<img")
+    expect(out).toContain("&lt;img")
+  })
 })

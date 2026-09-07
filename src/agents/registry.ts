@@ -61,8 +61,11 @@ export function getGlobalRegistry(): AgentRegistry | undefined {
 export interface RunningTask {
   /** Unique id for this execution (timestamp-based). */
   id: string
-  /** First 200 chars of the user message, for display. */
+  /** First 200 chars of the user message, for dense lists. */
   messagePreview: string
+  /** The whole request. A task page shows what was actually asked, and the
+   *  preview cuts mid-sentence — or mid-JSON, which reads as a bug. */
+  message: string
   /** Origin channel (telegram, whatsapp, gitlab, api, cron, business, a2a, …). */
   channel: string
   /** Group / chat / issue id from which the task arrived. */
@@ -878,6 +881,7 @@ export class AgentRegistry {
     const runningTask: RunningTask = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       messagePreview: (task.message || "").slice(0, 200),
+      message: task.message || "",
       channel: task.context?.channel || "api",
       chatId: task.context?.chatId || task.context?.group,
       sender: task.context?.sender,

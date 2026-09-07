@@ -1839,7 +1839,14 @@ export class AgentXDaemon {
       res.end()
       return
     }
-    send("start", { taskId, initial: sub.initial, done: sub.done })
+    // The page seeds its request card from a URL-carried preview, which is
+    // capped at 200 chars; hand it the real thing so a live task does not
+    // show a request cut off mid-sentence.
+    const live = this.registry.list().flatMap(a => a.runningTasks).find(t => t.id === taskId)
+    send("start", {
+      taskId, initial: sub.initial, done: sub.done,
+      ...(live ? { message: live.message, sender: live.sender, startedAt: live.startedAt } : {}),
+    })
     if (sub.done) {
       send("end", { reason: "already finished" })
       res.end()
