@@ -9,9 +9,14 @@ describe("workflows page", () => {
   it("ships workflow health with every helper it calls", () => {
     // new Function() cannot see the module, so a missing dependency throws
     // here exactly as it would in the browser.
+    // TWO workflows, deliberately: Array.sort never calls its comparator on a
+    // one-element list, so a single-item probe missed an unbound constant in
+    // the sort and the page died on any fleet with more than one workflow.
     const out = new Function(injectFns({ workflowHealth }) + `return workflowHealth(
-      [{id:"w"}], [{workflowId:"w",status:"completed",at:Date.now()-9*86400000}], Date.now())[0].state`)()
-    expect(out).toBe("dormant")
+      [{id:"a"},{id:"b"}],
+      [{workflowId:"a",status:"completed",at:Date.now()-9*86400000},
+       {workflowId:"b",status:"completed",at:Date.now()-86400000}], Date.now()).map(h => h.state)`)()
+    expect(out).toEqual(["dormant", "active"])
   })
 
   it("touches no element the page does not render", () => {
@@ -57,5 +62,25 @@ describe("workflows page", () => {
     const html = renderWorkflowsPage()
     expect(html).toContain("No workflows yet")
     expect(html).not.toContain("No automations yet")
+  })
+
+  it("ships browser code that actually parses", () => {
+    // This page had no such check, so a bad edit shipped a SyntaxError and
+    // the whole page — list, detail, n8n panel — rendered blank with only a
+    // console error to show for it.
+    expect(() => new Function(WORKFLOWS_PAGE_SCRIPT)).not.toThrow()
+  })
+
+  it("touches no element the page does not render", () => {
+    const html = renderWorkflowsPage()
+    const missing = [...new Set([...WORKFLOWS_PAGE_SCRIPT.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)].map(m => m[1]))]
+      .filter(id => !html.includes(`id="${id}"`))
+    expect(missing).toEqual([])
+  })
+
+  it("has no generated-draft surface left", () => {
+    const html = renderWorkflowsPage()
+    expect(html).not.toContain("ax-wf__drafts")
+    expect(WORKFLOWS_PAGE_SCRIPT).not.toContain("/api/workflows/drafts")
   })
 })

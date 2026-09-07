@@ -64,10 +64,16 @@ export function workflowHealth(
       : recent.length > 0 ? "active"
       : "quiet"
     return { id: w.id, name: w.name || w.id, state, lastRunAt, recent: recent.length, prior: prior.length, failed, paused }
-  }).sort((a, b) => RANK[a.state] - RANK[b.state] || (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0))
+  }).sort((a, b) => {
+    // Inlined rather than a module constant: workflowHealth is stringified
+    // and shipped to the workflows page, where module scope does not travel.
+    // A hoisted RANK only failed with two or more workflows, because Array
+    // .sort never calls the comparator on a single-element list.
+    const rank: Record<string, number> = { dormant: 0, failing: 1, active: 2, quiet: 3, never: 4 }
+    return rank[a.state] - rank[b.state] || (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0)
+  })
 }
 
-const RANK: Record<WorkflowState, number> = { dormant: 0, failing: 1, active: 2, quiet: 3, never: 4 }
 
 const cache = new Map<string, { mtime: number; summary: RunSummary | null }>()
 

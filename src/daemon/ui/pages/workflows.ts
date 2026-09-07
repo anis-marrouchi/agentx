@@ -485,7 +485,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     workflows: [],
     runs: [],
     selectedId: null,
-    selectedDraftId: null,
     filter: "",
     /** Project filter — "" = all (incl. workflows without project),
      *  "__none__" = only workflows missing the project field,
@@ -628,25 +627,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     })
   }
 
-  function renderDraftList() {
-      return
-    }
-      const wf = d.workflow || {}
-      const isActive = state.selectedDraftId === d.id
-      const issues = Array.isArray(d.issues) ? d.issues.length : 0
-          <span>\${esc(d.id)}</span>
-          <span>confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
-          <span>\${issues ? issues + " issue" + (issues === 1 ? "" : "s") : "valid"}</span>
-        </div>
-      </li>\`
-    }).join("")
-    })
-  }
-
   function renderDetail() {
-    if (state.selectedDraftId) {
-      return
-    }
     const wf = state.workflows.find(w => w.id === state.selectedId)
     if (!wf) {
       $("#wf-detail-head").innerHTML = \`<span class="hint">Select a workflow to inspect.</span>\`
@@ -1094,7 +1075,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     }
   }
 
-
   // --- Run drawer ------------------------------------------------------
 
   async function openRun(runId) {
@@ -1155,16 +1135,13 @@ export const WORKFLOWS_PAGE_SCRIPT = `
 
   async function select(id) {
     state.selectedId = id
-    state.selectedDraftId = null
     // Keep URL hash in sync so refreshes and editor deep-links stay on the
     // same workflow. Use replaceState so the browser's back button doesn't
     // accumulate selection history.
     try { history.replaceState(null, "", "#" + encodeURIComponent(id)) } catch (_) { /* */ }
     renderList()
-    renderDraftList()
     renderDetail()
   }
-
 
   async function refresh() {
     try {
@@ -1172,6 +1149,7 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       // 10-50KB each — at limit=100 the listing was multi-MB and gating
       // first paint behind the slowest serialization path). Run-detail
       // and SSE stream still return the full shape unchanged.
+      const [workflows, runs] = await Promise.all([
         fetchJSON("/api/workflows"),
         fetchJSON("/api/workflows/runs?limit=100&summary=1"),
       ])
@@ -1182,62 +1160,12 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       // button links here with the hash, so users land on the right detail.
       if (!state.selectedId && location.hash) {
         const fromHash = decodeURIComponent(location.hash.slice(1))
-        else if (state.workflows.some(w => w.id === fromHash)) state.selectedId = fromHash
+        if (state.workflows.some(w => w.id === fromHash)) state.selectedId = fromHash
       }
       renderList()
-      renderDraftList()
-      // Don't re-render the detail panel when the user is actively editing
-      // a draft — the periodic 15s refresh would otherwise reset their
-      // unsaved textarea on every tick. Resume rendering as soon as focus
-      // leaves the editor.
-      if (!editing) renderDetail()
+      renderDetail()
     } catch (e) {
       toast("Failed to load workflows: " + e.message)
-    }
-  }
-
-
-
-
-  /** Read the textarea, parse as JSON (the editor is JSON; the server
-  async function persistDraftFromEditor(id) {
-    if (!el) throw new Error("editor not mounted")
-    let workflow
-    try {
-      workflow = JSON.parse(el.value)
-    } catch (e) {
-      throw new Error("editor JSON is invalid: " + e.message)
-    }
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers() },
-      credentials: "same-origin",
-      body: JSON.stringify({ workflow }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const issues = Array.isArray(data.issues) ? "\\n  - " + data.issues.join("\\n  - ") : ""
-      throw new Error((data.error || "save failed") + issues)
-    }
-    return data
-  }
-
-
-  async function replayDraft(id) {
-    try {
-      await persistDraftFromEditor(id)
-    } catch (e) {
-      toast("save failed: " + e.message)
-      return
-    }
-    try {
-      toast("replay started: " + (res.runId || "?").slice(0, 8))
-      if (res.runId) {
-        await openRun(res.runId)
-      } else {
-        await refresh()
-      }
-    } catch (e) {
-      toast("replay failed: " + e.message)
     }
   }
 
