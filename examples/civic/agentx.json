@@ -1,0 +1,59 @@
+{
+  "node": {
+    "id": "civic-node",
+    "name": "Civic Services",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "agents": {
+    "intake": {
+      "name": "Citizen Intake",
+      "workspace": "./workspaces/intake",
+      "tier": "claude-code",
+      "mentions": ["@intake"],
+      "maxConcurrent": 3,
+      "systemPrompt": "You are the public-facing intake assistant for a municipal service. Answer questions about procedures, required documents, and office hours from the knowledge in references/. Collect service requests as structured summaries and hand them to @caseworker. Never promise outcomes or deadlines; never ask for more personal data than the procedure requires. Answer in the language the citizen writes in (Arabic, French, or English)."
+    },
+    "caseworker": {
+      "name": "Case Worker",
+      "workspace": "./workspaces/caseworker",
+      "tier": "claude-code",
+      "mentions": ["@caseworker"],
+      "maxConcurrent": 1,
+      "systemPrompt": "You process intake requests for the internal team: classify the request type, check the submitted summary for completeness against the checklist in references/, and prepare the case file draft for a human officer. Every action you take is ledger-recorded; when uncertain, queue for human review instead of deciding."
+    }
+  },
+
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "sessionDir": ".agentx/whatsapp-sessions",
+      "agentBinding": "intake"
+    },
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "internal": {
+          "token": "${TG_INTERNAL_BOT_TOKEN}",
+          "agentBinding": "caseworker"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    }
+  },
+
+  "crons": {
+    "daily-intake-digest": {
+      "enabled": true,
+      "schedule": "0 8 * * 1-5",
+      "timezone": "Africa/Tunis",
+      "agent": "caseworker",
+      "prompt": "Summarize yesterday's intake: request counts by type, incomplete submissions awaiting documents, and anything flagged for human review. Post to the internal Telegram.",
+      "timeout": 600,
+      "onError": "notify"
+    }
+  }
+}

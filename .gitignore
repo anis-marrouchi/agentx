@@ -5,8 +5,10 @@ node_modules/
 
 # AgentX runtime data
 .agentx/
-agentx.json
-agentx.json.*
+# Root-anchored: a bare pattern matches at any depth and silently excluded
+# examples/*/agentx.json, so CI had no scenarios to validate.
+/agentx.json
+/agentx.json.*
 .env
 .env.*
 

@@ -1060,13 +1060,23 @@ describe("BPM Phase 2: gateway.parallel (fanOut + join)", () => {
     const runs = new RunStore({ baseDir: TEST_DIR, nodeId: "node-a" })
     // Each send takes 80ms. Serial execution would be 3*80 = 240ms; parallel
     // execution is ~80ms (the walk loop dispatches the whole batch at once).
+    // Count overlap rather than stopwatch the run: "concurrently, not
+    // serially" is a claim about whether two sends are ever in flight at
+    // once, and asserting it directly is immune to how loaded the machine is.
+    let inFlight = 0
+    let maxInFlight = 0
     const channels = {
-      slow: { send: async () => { await new Promise((r) => setTimeout(r, 80)); return "m" } },
+      slow: { send: async () => {
+        inFlight++
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise((r) => setTimeout(r, 80))
+        inFlight--
+        return "m"
+      } },
     }
     const agents = { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) }
     const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "node-a", channels, agents })
 
-    const start = Date.now()
     await dispatcher.dispatch({
       trigger: { source: "manual" },
       entityRef: { backend: "manual", id: "e-timing" },
@@ -1074,15 +1084,13 @@ describe("BPM Phase 2: gateway.parallel (fanOut + join)", () => {
     })
     // Wait until the run finishes — the walk loop is async-kicked.
     let final = runs.list({ workflowId: "parallel-timing" })[0]
-    for (let i = 0; i < 40 && (!final || final.status === "running"); i++) {
+    for (let i = 0; i < 300 && (!final || final.status === "running"); i++) {
       await new Promise((r) => setTimeout(r, 10))
       final = runs.list({ workflowId: "parallel-timing" })[0]
     }
-    const elapsed = Date.now() - start
     expect(final.status).toBe("completed")
-    // Parallel: ~80ms + walk overhead. Give it generous headroom (180ms)
-    // but still well below serial (240ms+overhead).
-    expect(elapsed).toBeLessThan(180)
+    // Serial execution would never have two sends open at the same moment.
+    expect(maxInFlight).toBeGreaterThan(1)
   })
 
   it("no duplicate exec entries or stale joinCounters under 6-way fan-out", async () => {
@@ -1125,7 +1133,7 @@ describe("BPM Phase 2: gateway.parallel (fanOut + join)", () => {
       event: { id: "evt-1", payload: {} },
     })
     let final = runs.list({ workflowId: "parallel-race" })[0]
-    for (let i = 0; i < 40 && (!final || final.status === "running"); i++) {
+    for (let i = 0; i < 300 && (!final || final.status === "running"); i++) {
       await new Promise((r) => setTimeout(r, 10))
       final = runs.list({ workflowId: "parallel-race" })[0]
     }

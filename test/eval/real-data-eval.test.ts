@@ -158,12 +158,19 @@ const REAL_CASES: RealTestCase[] = [
   },
 ]
 
-describe("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles", () => {
+// This grades retrieval against the operator's OWN wiki, so it only means
+// anything on a machine that has one. A clean checkout (CI, a new clone) has
+// no .agentx/wiki and the walk threw ENOENT, failing the build for the
+// absence of data the repo deliberately does not ship.
+const WIKI_DIR = join(process.cwd(), ".agentx/wiki")
+const hasWiki = existsSync(WIKI_DIR)
+
+describe.skipIf(!hasWiki)("Real Data Eval: BM25 vs Word-Overlap on Wiki Articles", () => {
   let articles: Article[] = []
   let docs: string[] = []
 
   beforeAll(() => {
-    const wikiBase = join(process.cwd(), ".agentx/wiki")
+    const wikiBase = WIKI_DIR
     walkDir(wikiBase, (filePath) => {
       if (!filePath.endsWith(".md")) return
       const rel = relative(wikiBase, filePath)

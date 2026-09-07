@@ -1,0 +1,79 @@
+{
+  "node": {
+    "id": "agency-server",
+    "name": "Agency Server",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "agents": {
+    "acme-dev": {
+      "name": "ACME Dev",
+      "workspace": "./workspaces/acme",
+      "tier": "claude-code",
+      "mentions": ["@acme-dev"],
+      "maxConcurrent": 1,
+      "systemPrompt": "You work exclusively on the ACME account. Repo access and credentials are scoped to ACME projects only — if a task references another client, refuse and flag it."
+    },
+    "globex-dev": {
+      "name": "Globex Dev",
+      "workspace": "./workspaces/globex",
+      "tier": "claude-code",
+      "mentions": ["@globex-dev"],
+      "maxConcurrent": 1,
+      "systemPrompt": "You work exclusively on the Globex account. Repo access and credentials are scoped to Globex projects only — if a task references another client, refuse and flag it."
+    },
+    "pm": {
+      "name": "PM",
+      "workspace": "./workspaces/pm",
+      "tier": "claude-code",
+      "mentions": ["@pm"],
+      "maxConcurrent": 2,
+      "systemPrompt": "You coordinate the client agents: assign incoming work to @acme-dev or @globex-dev, track status across boards, and compile the per-client weekly summary with cost figures from the usage dashboard."
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          "token": "${TG_BOT_TOKEN}",
+          "agentBinding": "pm"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    },
+    "gitlab": {
+      "enabled": true,
+      "host": "https://gitlab.com",
+      "webhookSecret": "${GITLAB_WEBHOOK_SECRET}",
+      "agentMappings": [
+        {
+          "agentId": "acme-dev",
+          "gitlabUsernames": ["acme-bot"],
+          "token": "${GITLAB_TOKEN_ACME}"
+        },
+        {
+          "agentId": "globex-dev",
+          "gitlabUsernames": ["globex-bot"],
+          "token": "${GITLAB_TOKEN_GLOBEX}"
+        }
+      ]
+    }
+  },
+
+  "crons": {
+    "client-weekly": {
+      "enabled": true,
+      "schedule": "0 17 * * 5",
+      "timezone": "Africa/Tunis",
+      "agent": "pm",
+      "prompt": "Compile the per-client weekly: shipped MRs, open items, and token cost per agent. One section per client, ready to paste into the client channel.",
+      "timeout": 900,
+      "onError": "notify"
+    }
+  }
+}

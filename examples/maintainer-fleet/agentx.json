@@ -1,0 +1,62 @@
+{
+  "node": {
+    "id": "maintainer-node",
+    "name": "Maintainer Fleet",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "agents": {
+    "triage": {
+      "name": "Triage",
+      "workspace": "./workspaces/triage",
+      "tier": "claude-code",
+      "mentions": ["@triage"],
+      "maxConcurrent": 2,
+      "systemPrompt": "You triage new issues on my open-source repos: label by area and kind, detect duplicates (search closed issues first), ask for missing repro info using the issue template checklist, and flag security-sounding reports for private handling. Be brief and kind; first-time reporters get a warmer tone."
+    },
+    "repro": {
+      "name": "Repro",
+      "workspace": "./workspaces/repro",
+      "tier": "claude-code",
+      "mentions": ["@repro"],
+      "maxConcurrent": 1,
+      "systemPrompt": "Given a triaged bug report, attempt a minimal reproduction in a scratch checkout of the repo. Report exact steps, environment, and whether it reproduces — as an issue comment draft. Never push code or open PRs."
+    }
+  },
+
+  "channels": {
+    "github": {
+      "enabled": true,
+      "token": "${GITHUB_TOKEN}",
+      "webhookSecret": "${GITHUB_WEBHOOK_SECRET}",
+      "routes": [
+        { "repo": "*", "agent": "triage" }
+      ]
+    },
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          "token": "${TG_BOT_TOKEN}",
+          "agentBinding": "triage"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    }
+  },
+
+  "crons": {
+    "stale-sweep": {
+      "enabled": true,
+      "schedule": "0 7 * * 1",
+      "timezone": "UTC",
+      "agent": "triage",
+      "prompt": "Weekly sweep: list issues waiting on reporter response for more than 14 days, and PRs with no review activity for more than 7 days. Send the digest to my Telegram — do not close anything yourself.",
+      "timeout": 900,
+      "onError": "notify"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "node": {
+    "id": "founder-laptop",
+    "name": "Founder Laptop",
+    "bind": "127.0.0.1:18800"
+  },
+
+  "agents": {
+    "ops": {
+      "name": "Ops",
+      "workspace": "./workspaces/ops",
+      "tier": "claude-code",
+      "mentions": ["@ops", "ops"],
+      "maxConcurrent": 1,
+      "systemPrompt": "You run day-to-day operations for a one-person company: triage inbound messages, draft replies for approval, keep the task list current, and prepare the weekly report. Ask before sending anything external."
+    },
+    "books": {
+      "name": "Bookkeeper",
+      "workspace": "./workspaces/books",
+      "tier": "claude-code",
+      "mentions": ["@books"],
+      "maxConcurrent": 1,
+      "systemPrompt": "You handle invoices and payment follow-ups. Draft invoices from the templates in references/, track due dates, and prepare polite reminder messages. Never send money-related messages without explicit approval."
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          "token": "${TG_BOT_TOKEN}",
+          "agentBinding": "ops"
+        }
+      },
+      "policy": {
+        "dm": "pair",
+        "group": "mention-required"
+      }
+    }
+  },
+
+  "crons": {
+    "monday-report": {
+      "enabled": true,
+      "schedule": "0 9 * * 1",
+      "timezone": "Africa/Tunis",
+      "agent": "ops",
+      "prompt": "Compile the weekly status: open tasks, stalled follow-ups, and invoices due this week (ask @books). Send it to my Telegram.",
+      "timeout": 600,
+      "onError": "notify"
+    },
+    "invoice-chase": {
+      "enabled": true,
+      "schedule": "0 10 * * 2,4",
+      "timezone": "Africa/Tunis",
+      "agent": "books",
+      "prompt": "List overdue invoices and draft reminder messages for each. Post the drafts to my Telegram for approval — do not send them yourself.",
+      "timeout": 600,
+      "onError": "notify"
+    }
+  }
+}
