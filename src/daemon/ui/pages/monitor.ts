@@ -418,6 +418,8 @@ let filter={kind:'all',agent:null,node:null};
 async function api(op,node,body){const r=await fetch('/api/monitor/'+op+'?node='+encodeURIComponent(node),{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
 function message(s){$('notice').textContent=s;}
 let clientFilter='';
+const PAGE=25;
+let shown={you:PAGE,agents:PAGE};
 
 /* --- Who and where ------------------------------------------------------
    session_id is "<agent>:<channel>:<target>" for trace-sourced reviews, e.g.
@@ -618,7 +620,7 @@ $('principals').innerHTML='<section class="bf-pr" aria-label="Who the work is fo
    +'</button>';
  }).join('')+'</section>';
 $('principals').querySelectorAll('[data-client]').forEach(b=>b.onclick=()=>{
- clientFilter=clientFilter===b.dataset.client?'':b.dataset.client;renderPrincipals();renderActions();});
+ clientFilter=clientFilter===b.dataset.client?'':b.dataset.client;shown={you:PAGE,agents:PAGE};renderPrincipals();renderActions();});
 }
 
 function renderActions(){
@@ -636,14 +638,18 @@ actions=[...merged.values()];
    is actually waiting. */
 const clocks={};
 for(const n of nodes.filter(n=>n.ok))for(const c of n.data.clients||[])clocks[c.id]=c.respondWithinMinutes;
-const shown=clientFilter?actions.filter(a=>(a.clientId||'unmapped')===clientFilter):actions;
-const order=rankByDecay(shown,clocks)
- .sort((x,y)=>(shown[x].snoozed?1:0)-(shown[y].snoozed?1:0));
+const list=clientFilter?actions.filter(a=>(a.clientId||'unmapped')===clientFilter):actions;
+const order=rankByDecay(list,clocks)
+ .sort((x,y)=>(list[x].snoozed?1:0)-(list[y].snoozed?1:0));
 const you=[],agents=[];
-for(const i of order)(shown[i].needsHuman?you:agents).push(card(shown[i],actions.indexOf(shown[i]),clocks));
-$('you').innerHTML=you.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing needs you</h4><p>Everything open can be finished without your authority.</p></div>';
+for(const i of order)(list[i].needsHuman?you:agents).push(list[i]);
+const page=(items,key)=>items.slice(0,shown[key]).map(a=>card(a,actions.indexOf(a),clocks)).join('')
+ +(items.length>shown[key]
+   ?'<button class="ax-btn ax-btn--sm bf-more" data-more="'+key+'">Show '+Math.min(PAGE,items.length-shown[key])+' more of '+(items.length-shown[key])+'</button>'
+   :'');
+$('you').innerHTML=page(you,'you')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing needs you</h4><p>Everything open can be finished without your authority.</p></div>';
 $('you-count').textContent=you.length?String(you.length):'';
-$('agents').innerHTML=agents.join('')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing queued for agents</h4><p>No open action was marked as needing no human.</p></div>';
+$('agents').innerHTML=page(agents,'agents')||'<div class="bf-empty">'+ic('check',22)+'<h4>Nothing queued for agents</h4><p>No open action was marked as needing no human.</p></div>';
 $('agents-count').innerHTML=String(agents.length)+(unloaded?'<span class="ax-pill ax-pill--off">'+unloaded+' not loaded</span>':'');
 const done=nodes.filter(n=>n.ok).reduce((t,n)=>t+(n.data.doneCount||0),0);
 $('handled').innerHTML=done?'<div class="bf-done">'+ic('check',17)+'<b>'+done+'</b> handled<span>cleared by you or by an agent &mdash; no decision in here</span></div>':'';
@@ -734,6 +740,23 @@ message('');
 finally{busy=false;$('refresh').disabled=false;$('refresh').removeAttribute('aria-busy');}
 }
 $('more-actions').onclick=async()=>{try{for(const n of nodes.filter(n=>n.ok&&n.data.actions.items.length<n.data.actions.total)){const r=await fetch('/api/monitor/actions?node='+encodeURIComponent(n.url)+'&offset='+n.data.actions.items.length);if(!r.ok)throw Error('Could not load older actions');const d=await r.json();n.data.actions.items.push(...d.items);n.data.actions.total=d.total;}expandedActions=true;renderActions();message('Older actions loaded. Auto-refresh paused until you press Refresh.');}catch(e){message(e.message);}};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-more]');if(!b)return;
+shown[b.dataset.more]+=PAGE;renderActions();});
+/* What this page is showing, for the ask-an-agent drawer. Kept small and
+   factual: the filter in force, what the buckets hold, and the handful of
+   items actually on screen — not the whole backlog. */
+window.axPageContext=()=>{
+const vis=actions.filter(a=>!clientFilter||(a.clientId||'unmapped')===clientFilter);
+return {
+ page:'monitor',
+ client:clientFilter||'all',
+ onlyYou:vis.filter(a=>a.needsHuman).length,
+ forAgents:vis.filter(a=>!a.needsHuman).length,
+ topItems:vis.filter(a=>a.needsHuman).slice(0,8).map(a=>({
+  text:String(a.text||'').slice(0,140),client:a.clientId||'unmapped',agent:a.agent,
+  where:a.sessionId,seen:a.sources?a.sources.length:1})),
+};};
+
 $('clear-actions').onclick=async()=>{
 const open=actions.length;
 if(!open){message('Nothing open to clear.');return;}

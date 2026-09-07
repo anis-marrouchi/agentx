@@ -20,6 +20,7 @@
 // topbar) can pass `renderHeader: "custom"` and provide their own <header>.
 
 import { AX_TOKENS_CSS } from "./tokens"
+import { ASSISTANT_CSS, ASSISTANT_HTML, ASSISTANT_SCRIPT } from "./assistant"
 import { AX_COMPONENTS_CSS } from "./components.css"
 import {
   TOPBAR_HEAD,
@@ -42,6 +43,8 @@ export interface ShellOpts {
   subtitle: string
   /** Page body HTML — everything inside <main>. */
   body: string
+  /** Opt out of the ask-an-agent drawer (used by full-canvas surfaces). */
+  noAssistant?: boolean
   /** Optional HTML inserted as a second row under the topbar. */
   subheader?: string
   /**
@@ -68,7 +71,7 @@ export interface ShellOpts {
 }
 
 export function renderShell(opts: ShellOpts): string {
-  const css = `${AX_TOKENS_CSS}\n${AX_COMPONENTS_CSS}\n${TOPBAR_CSS}${opts.css ? "\n" + opts.css : ""}`
+  const css = `${AX_TOKENS_CSS}\n${AX_COMPONENTS_CSS}\n${TOPBAR_CSS}\n${ASSISTANT_CSS}${opts.css ? "\n" + opts.css : ""}`
 
   const header = opts.customHeader
     ?? (opts.activeTab === "custom"
@@ -96,8 +99,10 @@ ${opts.headExtras || ""}
 <body>
 ${header}
 ${main}
+${opts.noAssistant ? "" : ASSISTANT_HTML}
 ${TOPBAR_SCRIPT}
 ${opts.scripts || ""}
+${opts.noAssistant ? "" : `<script>${ASSISTANT_SCRIPT}</script>`}
 </body>
 </html>`
 }
