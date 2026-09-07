@@ -253,6 +253,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  if (method === "GET" && path === "/api/n8n/workflows") {
+    try {
+      const [node] = await resolveNodeTargets(ctx.config)
+      if (!node) { sendJson(res, 200, { configured: false, workflows: [] }); return }
+      const r = await fetch(node.url + "/api/n8n/workflows", {
+        headers: node.token ? { Authorization: `Bearer ${node.token}` } : {},
+      })
+      sendJson(res, r.status, await r.json().catch(() => ({ configured: false, workflows: [] })))
+    } catch {
+      sendJson(res, 200, { configured: false, workflows: [] })
+    }
+    return
+  }
+
   if (method === "GET" && path === "/workflows/editor") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowEditorPage({ peers: buildTopbarPeers(ctx.config) }))

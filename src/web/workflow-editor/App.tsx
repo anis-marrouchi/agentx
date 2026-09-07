@@ -123,6 +123,8 @@ function reducer(state: EditorState, action: Action): EditorState {
 }
 
 function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
+  // A dynamic palette item brings its own config; nothing to guess.
+  if (item.config) return { ...item.config }
   // Each V2 node type has a minimal sane default config so dragging from
   // the palette gives the author a working starting point they can edit.
   switch (item.type) {
@@ -136,7 +138,7 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
     }
     case "trigger.cron":   return { spec: "0 * * * *" }
     case "trigger.manual": return {}
-    case "trigger.hook":   return { event: "on:hook" }
+    case "trigger.hook":   return { event: item.id.endsWith(".n8n") ? "on:n8n" : "on:hook" }
     case "trigger.form":   return { form: { title: "New request", fields: [], submitLabel: "Submit" } }
     case "agent":          return { agentId: "", prompt: "", resultParser: "noqta-result-token" }
     case "transform":      return { expr: "" }

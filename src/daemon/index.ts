@@ -1966,57 +1966,6 @@ export class AgentXDaemon {
             workflows: this.workflowHealth(),
           }); return
         }
-        // POST /api/workflows/editor/chat — author chat dispatched to an agent.
-      //
-      // Body: { messages: [{role, content}], currentWorkflow?, agentId?, context? }
-      // Returns: { reply, workflow? | null, error? }
-      //
-      // The endpoint packs the full V2 schema + environment (available
-      // agents, actors, roles, channels, existing workflows) into the
-      // agent's prompt so a generic agent with no special training can
-      // still produce a valid workflow JSON.
-      if (req.method === "POST" && path === "/api/workflows/editor/chat" && this.workflowDispatcher) {
-        let body: any
-        try { body = await readJsonBody(req) } catch (e: any) {
-          this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
-        }
-        const messages = Array.isArray(body?.messages) ? body.messages as Array<{ role: string; content: string }> : []
-        if (!messages.length) { this.json(res, 400, { error: "messages array required" }); return }
-        const normMessages = messages
-          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
-        if (!normMessages.length) { this.json(res, 400, { error: "messages must contain at least one {role: 'user'|'assistant', content}" }); return }
-
-        const agentId = typeof body?.agentId === "string" && body.agentId
-          ? body.agentId
-          : (process.env.AGENTX_WORKFLOW_AUTHOR_AGENT || this.registry.list()[0]?.id)
-        if (!agentId) { this.json(res, 503, { error: "no authoring agent available — register an agent or set AGENTX_WORKFLOW_AUTHOR_AGENT" }); return }
-
-        const { buildWorkflowAuthorPrompt, extractWorkflowJson } = await import("@/workflows/editor-chat")
-        const availableChannels = Object.keys(this.workflowDispatcher["channels"] as Record<string, unknown>).sort()
-        const availableAgents = this.registry.list().map((a) => ({ id: a.id, description: a.name }))
-        const prompt = buildWorkflowAuthorPrompt({
-          messages: normMessages,
-          store: this.workflowStore!,
-          availableAgents,
-          availableChannels,
-          currentWorkflow: body?.currentWorkflow,
-        })
-        try {
-          const resp = await this.registry.execute({
-            agentId,
-            message: prompt,
-            context: { channel: "workflow-editor", chatId: "editor", sender: "editor" } as any,
-          })
-          if (resp.error) { this.json(res, 502, { error: resp.error, agentId }); return }
-          const reply = resp.content ?? ""
-          const workflow = extractWorkflowJson(reply)
-          this.json(res, 200, { reply, workflow, agentId })
-        } catch (e: any) {
-          this.json(res, 500, { error: "agent execute failed", message: e.message })
-        }
-        return
-      }
       if (req.method === "GET" && path === "/monitor/activity") {
           const hours = Math.max(1, Math.min(168, parseInt(url.searchParams.get("hours") || "24", 10) || 24))
           const business = ((this.config as any).business ?? {}) as BusinessShape
@@ -2337,6 +2286,88 @@ export class AgentXDaemon {
       //   DELETE /api/memory/<name>?agent=<id>   → remove
       if (path.startsWith("/api/memory")) {
         if (await this.handleMemoryApi(req, res, path, url)) return
+      }
+
+        // GET /api/n8n/workflows — the operator's own n8n workflows, so the
+      // builder can offer them as steps instead of asking for a URL. Never
+      // forwards the API key; only id, name, active and the webhook path a
+      // workflow exposes.
+      if (req.method === "GET" && path === "/api/n8n/workflows") {
+        const cfg = (this.config.workflows as any)?.n8n ?? {}
+        const baseUrl = String(cfg.baseUrl || "").replace(/\/+$/, "")
+        if (!baseUrl) { this.json(res, 200, { configured: false, workflows: [] }); return }
+        try {
+          const r = await fetch(`${baseUrl}/api/v1/workflows`, {
+            headers: cfg.apiKey ? { "X-N8N-API-KEY": String(cfg.apiKey) } : {},
+            signal: AbortSignal.timeout(6000),
+          })
+          if (!r.ok) { this.json(res, 200, { configured: true, error: `n8n replied ${r.status}`, workflows: [] }); return }
+          const body = await r.json() as { data?: Array<Record<string, any>> }
+          const workflows = (body?.data ?? []).map(w => {
+            // A workflow is callable from here only if it has a webhook node;
+            // anything else can be listed but not handed work.
+            const hook = (w.nodes ?? []).find((n: any) => typeof n?.type === "string" && n.type.includes("webhook"))
+            const p = hook?.parameters?.path
+            return {
+              id: String(w.id), name: String(w.name ?? w.id), active: Boolean(w.active),
+              webhookUrl: p ? `${baseUrl}/webhook/${String(p).replace(/^\/+/, "")}` : null,
+            }
+          })
+          this.json(res, 200, { configured: true, baseUrl, workflows }); return
+        } catch (e: any) {
+          this.json(res, 200, { configured: true, error: String(e?.message || e), workflows: [] }); return
+        }
+      }
+      // POST /api/workflows/editor/chat — author chat dispatched to an agent.
+      //
+      // Body: { messages: [{role, content}], currentWorkflow?, agentId?, context? }
+      // Returns: { reply, workflow? | null, error? }
+      //
+      // The endpoint packs the full V2 schema + environment (available
+      // agents, actors, roles, channels, existing workflows) into the
+      // agent's prompt so a generic agent with no special training can
+      // still produce a valid workflow JSON.
+      if (req.method === "POST" && path === "/api/workflows/editor/chat" && this.workflowDispatcher) {
+        let body: any
+        try { body = await readJsonBody(req) } catch (e: any) {
+          this.json(res, 400, { error: "invalid JSON body", message: e.message }); return
+        }
+        const messages = Array.isArray(body?.messages) ? body.messages as Array<{ role: string; content: string }> : []
+        if (!messages.length) { this.json(res, 400, { error: "messages array required" }); return }
+        const normMessages = messages
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+        if (!normMessages.length) { this.json(res, 400, { error: "messages must contain at least one {role: 'user'|'assistant', content}" }); return }
+
+        const agentId = typeof body?.agentId === "string" && body.agentId
+          ? body.agentId
+          : (process.env.AGENTX_WORKFLOW_AUTHOR_AGENT || this.registry.list()[0]?.id)
+        if (!agentId) { this.json(res, 503, { error: "no authoring agent available — register an agent or set AGENTX_WORKFLOW_AUTHOR_AGENT" }); return }
+
+        const { buildWorkflowAuthorPrompt, extractWorkflowJson } = await import("@/workflows/editor-chat")
+        const availableChannels = Object.keys(this.workflowDispatcher["channels"] as Record<string, unknown>).sort()
+        const availableAgents = this.registry.list().map((a) => ({ id: a.id, description: a.name }))
+        const prompt = buildWorkflowAuthorPrompt({
+          messages: normMessages,
+          store: this.workflowStore!,
+          availableAgents,
+          availableChannels,
+          currentWorkflow: body?.currentWorkflow,
+        })
+        try {
+          const resp = await this.registry.execute({
+            agentId,
+            message: prompt,
+            context: { channel: "workflow-editor", chatId: "editor", sender: "editor" } as any,
+          })
+          if (resp.error) { this.json(res, 502, { error: resp.error, agentId }); return }
+          const reply = resp.content ?? ""
+          const workflow = extractWorkflowJson(reply)
+          this.json(res, 200, { reply, workflow, agentId })
+        } catch (e: any) {
+          this.json(res, 500, { error: "agent execute failed", message: e.message })
+        }
+        return
       }
 
       // GET /api/workflows/runs[?limit=&workflowId=] + /runs/:id

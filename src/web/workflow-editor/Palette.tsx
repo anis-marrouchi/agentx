@@ -1,6 +1,6 @@
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { Icon } from "./Icons"
-import { PALETTE, TEMPLATES, type PaletteItem, type TemplateCard } from "./data"
+import { PALETTE, TEMPLATES, type PaletteItem, type PaletteSection, type TemplateCard } from "./data"
 
 // --- Palette ---
 // Drag-and-drop source for adding nodes, plus template cards that replace
@@ -12,11 +12,41 @@ export interface PaletteProps {
 
 export function Palette({ onLoadTemplate }: PaletteProps) {
   const [q, setQ] = useState("")
+  const [n8n, setN8n] = useState<PaletteSection[]>([])
+
+  // Your own n8n workflows, listed as steps. n8n already talks to hundreds
+  // of services; rather than rebuild any of that, each workflow it exposes
+  // over a webhook becomes something you can drop onto the canvas — already
+  // pointing at the right URL. Silent when n8n is not configured.
+  useEffect(() => {
+    let alive = true
+    fetch("/api/n8n/workflows")
+      .then((r) => r.json())
+      .then((d: { workflows?: Array<{ id: string; name: string; active: boolean; webhookUrl: string | null }> }) => {
+        if (!alive) return
+        const items: PaletteItem[] = (d.workflows ?? [])
+          .filter((w) => w.webhookUrl)
+          .map((w) => ({
+            id: "n8n." + w.id,
+            type: "action.callHTTP" as const,
+            label: w.name,
+            hint: w.active ? "Hands this over to n8n" : "In n8n, but switched off there",
+            glyph: "g-action",
+            icon: "globe" as const,
+            config: { url: w.webhookUrl, method: "POST", body: "{{trigger}}" },
+          }))
+        setN8n(items.length ? [{ section: "From your n8n", items }] : [])
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  const all = useMemo(() => [...PALETTE, ...n8n], [n8n])
 
   const sections = useMemo(() => {
-    if (!q.trim()) return PALETTE
+    if (!q.trim()) return all
     const needle = q.toLowerCase()
-    return PALETTE.map((s) => ({
+    return all.map((s) => ({
       ...s,
       items: s.items.filter((i) =>
         i.label.toLowerCase().includes(needle) ||
@@ -24,7 +54,7 @@ export function Palette({ onLoadTemplate }: PaletteProps) {
         i.type.includes(needle),
       ),
     })).filter((s) => s.items.length > 0)
-  }, [q])
+  }, [q, all])
 
   return (
     <aside className="pal">

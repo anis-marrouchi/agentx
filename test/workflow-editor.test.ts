@@ -57,3 +57,38 @@ describe("workflow editor", () => {
     expect(css).toContain("--ink:        var(--ax-text)")
   })
 })
+
+describe("n8n inside the builder", () => {
+  it("lets a palette item arrive preconfigured, so nobody copies a URL", async () => {
+    const { PALETTE } = await import("../src/web/workflow-editor/data")
+    // Static items carry no config; the n8n ones the palette fetches do, and
+    // defaultConfigFor prefers it over its own guesswork.
+    const src = (await import("fs")).readFileSync("src/web/workflow-editor/App.tsx", "utf-8")
+    expect(src).toContain("if (item.config) return { ...item.config }")
+    const pal = (await import("fs")).readFileSync("src/web/workflow-editor/Palette.tsx", "utf-8")
+    expect(pal).toContain("/api/n8n/workflows")
+    // Only workflows n8n actually exposes over a webhook can be handed work.
+    expect(pal).toContain("filter((w) => w.webhookUrl)")
+    expect(PALETTE.every(s => s.items.every(i => i.config === undefined))).toBe(true)
+  })
+
+  it("asks for things in words a non-engineer can answer", async () => {
+    const insp = (await import("fs")).readFileSync("src/web/workflow-editor/Inspector.tsx", "utf-8")
+    for (const jargon of ["Cron spec", "Result parser", "Passthrough", "Entity kind", "Input expressions"]) {
+      expect(insp).not.toContain(`label="${jargon}"`)
+    }
+    expect(insp).toContain('label="When it runs"')
+    expect(insp).toContain('label="What to ask for"')
+  })
+
+  it("describes a node by what it does, never by its id alone", async () => {
+    const { nodeSummary } = await import("../src/web/workflow-editor/data")
+    expect(nodeSummary("agent", { agentId: "atlas", prompt: "Review the MR" })).toBe("ask atlas — Review the MR")
+    expect(nodeSummary("trigger.hook", { event: "on:n8n" })).toBe("when n8n calls")
+    expect(nodeSummary("action.callHTTP", { url: "http://localhost:5678/webhook/deploy" }))
+      .toBe("http://localhost:5678/webhook/deploy")
+    // Nothing to say means no row at all, rather than an empty one.
+    expect(nodeSummary("trigger.manual", {})).toBe("")
+    expect(nodeSummary("end", {})).toBe("")
+  })
+})

@@ -11,7 +11,7 @@ import {
 } from "react"
 import { Icon, type IconName } from "./Icons"
 import type { GraphEdge, GraphNode } from "./graph"
-import { friendlyKind } from "./data"
+import { friendlyKind, nodeSummary } from "./data"
 import type { PaletteItem } from "./data"
 
 // --- Canvas ---
@@ -76,6 +76,7 @@ function NodeView(props: NodeViewProps) {
   const { n, selected, state } = props
   const { w } = nodeSize(n)
   const cat = nodeCategory(n.type)   // trigger / action / agent / branch / checkpoint / transform / end
+  const summary = nodeSummary(n.type, (n.config ?? {}) as Record<string, unknown>)
   const cfg = n.config as Record<string, unknown>
 
   const iconName: IconName =
@@ -110,6 +111,8 @@ function NodeView(props: NodeViewProps) {
       <div className="node__head">
         <div className="node__icon"><I /></div>
         <div className="node__meta">
+          {/* Lead with what it does; keep the id, because templates reference
+              it as {{id.path}}, but stop making it the headline. */}
           <div className="node__kind">{friendlyKind(n.type)}</div>
           <div className="node__name">{n.id}</div>
         </div>
@@ -118,49 +121,11 @@ function NodeView(props: NodeViewProps) {
         )}
       </div>
 
-      {cat === "agent" && (
+      {/* One line of plain description, and NOTHING when there is nothing to
+          say — the old bodies rendered an empty row for every trigger. */}
+      {summary && (
         <div className="node__body">
-          {agent
-            ? <div className="node__row"><Icon.users /><span className="mono">{agent}</span></div>
-            : <div className="node__row" style={{ color: "var(--muted-2)" }}>no agent</div>}
-          {prompt && (
-            <div className="node__row" style={{ alignItems: "flex-start", lineHeight: 1.4 }}>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--ink-2)", fontSize: 11 }}>
-                {prompt}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {cat === "branch" && (
-        <div className="node__body">
-          <div className="node__row">
-            <span className="mono" style={{ color: "var(--ink-2)" }}>
-              {Array.isArray(cfg.cases) ? (cfg.cases as unknown[]).length : 0} case{Array.isArray(cfg.cases) && (cfg.cases as unknown[]).length === 1 ? "" : "s"} · default: <span className="node__tag mono">{String(cfg.default ?? "—")}</span>
-            </span>
-          </div>
-        </div>
-      )}
-
-      {cat === "action" && (
-        <div className="node__body">
-          <div className="node__row">
-            <span className="mono" style={{ color: "var(--t-action)" }}>{n.type.replace(/^action\./, "")}</span>
-          </div>
-          <div className="node__row">
-            <span style={{ fontSize: 11, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {String(cfg.text ?? cfg.body ?? cfg.title ?? cfg.url ?? "")}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {cat === "trigger" && (
-        <div className="node__body">
-          <div className="node__row">
-            <span className="mono" style={{ color: "var(--t-trigger)" }}>{String(cfg.source ?? "")}</span>
-          </div>
+          <div className="node__row node__row--summary">{summary}</div>
         </div>
       )}
 

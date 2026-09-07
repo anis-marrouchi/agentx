@@ -8,6 +8,10 @@ export type { NodeType }
 
 export interface PaletteItem {
   id: string
+  /** Preset config for a dropped node. Dynamic items — your own n8n
+   *  workflows — arrive already pointing at the right webhook, so nobody
+   *  copies a URL between two browser tabs. */
+  config?: Record<string, unknown>
   /** V2 NodeType (e.g. "trigger.channel", "action.send"). Palette items
    *  drop onto the canvas with this type. */
   type: NodeType
@@ -144,4 +148,42 @@ export function friendlyKind(type: string): string {
     if (hit) return hit.label
   }
   return type
+}
+
+
+/** One line describing what THIS node will actually do, from its config.
+ *  The canvas used to print the node id and the machine type — "review",
+ *  "callHTTP" — which tells you what it is called, never what it does.
+ *  Returns "" when there is genuinely nothing to say, so the caller can
+ *  render no row rather than an empty one. */
+export function nodeSummary(type: string, cfg: Record<string, unknown>): string {
+  const str = (k: string) => (typeof cfg[k] === "string" ? (cfg[k] as string).trim() : "")
+  const clip = (v: string, n = 70) => (v.length > n ? v.slice(0, n - 1) + "…" : v)
+  switch (type) {
+    case "trigger.channel": return str("source") ? `when ${str("source")} has activity` : ""
+    case "trigger.cron":    return str("schedule") ? `at ${str("schedule")}` : ""
+    case "trigger.hook":    return str("event") === "on:n8n" ? "when n8n calls" : str("event") ? `on ${str("event")}` : ""
+    case "trigger.form":    return str("formId") ? `form: ${str("formId")}` : ""
+    case "agent": {
+      const who = str("agentId") || str("agent")
+      const ask = str("prompt") || str("message")
+      return [who && `ask ${who}`, ask && clip(ask)].filter(Boolean).join(" — ")
+    }
+    case "action.send":      return clip(str("text") || str("body")) || (str("channel") && `to ${str("channel")}`)
+    case "action.callHTTP":  return clip(str("url"))
+    case "action.builtin":   return str("name")
+    case "action.run":       return str("action") || str("name")
+    case "action.createIssue": return clip(str("title"))
+    case "action.setLabel":  return str("label") ? `label: ${str("label")}` : ""
+    case "subProcess":       return str("workflowId") ? `runs ${str("workflowId")}` : ""
+    case "signal.emit":
+    case "signal.wait":      return str("signal") ? `signal: ${str("signal")}` : ""
+    case "timer.boundary":   return str("duration") ? `waits ${str("duration")}` : ""
+    case "userTask":         return str("assignTo") ? `asks ${str("assignTo")}` : ""
+    case "branch": {
+      const n = Array.isArray(cfg.cases) ? (cfg.cases as unknown[]).length : 0
+      return n ? `${n} way${n === 1 ? "" : "s"} out` : ""
+    }
+    default: return ""
+  }
 }

@@ -604,6 +604,13 @@ export const daemonConfigSchema = z.object({
   workflows: z.object({
     enabled: z.boolean().default(false),
     dir: z.string().default(".agentx/workflows"),
+    /** n8n keeps its several hundred connectors; we keep the agents. Point
+     *  this at your n8n and the workflow builder lists YOUR n8n workflows as
+     *  steps, so nobody has to copy a webhook URL by hand. */
+    n8n: z.object({
+      baseUrl: z.string().default(""),
+      apiKey: z.string().default(""),
+    }).default({ baseUrl: "", apiKey: "" }),
     matching: z.object({
       enabled: z.boolean().default(false),
       mode: z.enum(["suggest", "auto"]).default("suggest"),

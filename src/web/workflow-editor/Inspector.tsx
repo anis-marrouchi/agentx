@@ -704,7 +704,7 @@ function TriggerChannelForm({ node, patchData }: FormProps) {
       {isChannelMsg && (
         <Section title="Routing" defaultOpen={false}>
           <Field
-            label="Passthrough"
+            label="Pass data straight through"
             hint="When on, the default agent router ALSO replies alongside this workflow. Use for observability-only workflows (tag, log, forward) that shouldn't own the conversation."
           >
             <Check checked={!!cfg.passthrough} onChange={(v) => patchData({ passthrough: v })} label="Let the default agent also reply" />
@@ -719,7 +719,7 @@ function TriggerCronForm({ node, patchData }: FormProps) {
   const cfg = node.config as { spec?: string; timezone?: string }
   return (
     <Section title="Schedule">
-      <Field label="Cron spec" hint="5 fields: minute hour day month weekday. E.g. '0 9 * * 1-5' = 9am Mon–Fri.">
+      <Field label="When it runs" hint="5 fields: minute hour day month weekday. E.g. '0 9 * * 1-5' = 9am Mon–Fri.">
         <Input mono value={String(cfg.spec ?? "0 * * * *")} onChange={(v) => patchData({ spec: v })} placeholder="0 9 * * *" />
       </Field>
       <Field label="Timezone" hint="IANA timezone (e.g. Africa/Tunis, America/New_York). Defaults to UTC.">
@@ -869,7 +869,7 @@ function AgentForm({ node, patchData, agents }: FormProps) {
         <Field label="Which agent runs">
           <AgentCombo value={cfg.agentId} onChange={(id) => patchData({ agentId: id })} agents={agents} />
         </Field>
-        <Field label="Prompt" hint="Supports {{nodeId.path}} variables from upstream context">
+        <Field label="What to ask for" hint="Supports {{nodeId.path}} variables from upstream context">
           <ExprField
             value={cfg.prompt ?? ""}
             onChange={(v) => patchData({ prompt: v })}
@@ -879,7 +879,7 @@ function AgentForm({ node, patchData, agents }: FormProps) {
         </Field>
       </Section>
       <Section title="Behavior" defaultOpen={false}>
-        <Field label="Result parser" hint="How to extract a routing token from the agent's reply">
+        <Field label="How to read the reply" hint="How to extract a routing token from the agent's reply">
           <Select
             value={String(cfg.resultParser ?? "noqta-result-token")}
             onChange={(v) => patchData({ resultParser: v })}
@@ -890,7 +890,7 @@ function AgentForm({ node, patchData, agents }: FormProps) {
             ]}
           />
         </Field>
-        <Field label="Timeout (minutes)">
+        <Field label="Give up after (minutes)">
           <NumInput value={cfg.timeoutMinutes} onChange={(v) => patchData({ timeoutMinutes: v })} placeholder="5" />
         </Field>
       </Section>
@@ -1004,7 +1004,7 @@ function BranchForm({ node, patchData }: FormProps) {
         </button>
       </Section>
       <Section title="Fallback" defaultOpen={false}>
-        <Field label="Default port" hint="Used when no case matches. Leave blank to drop the event.">
+        <Field label="If nothing matches, go to" hint="Used when no case matches. Leave blank to drop the event.">
           <Input mono value={String(cfg.default ?? "fallback")} onChange={(v) => patchData({ default: v })} />
         </Field>
       </Section>
@@ -1051,7 +1051,7 @@ function CheckpointForm({ node, patchData }: FormProps) {
         </Field>
       </Section>
       <Section title="Advanced match" defaultOpen={false}>
-        <Field label="Event id contains" hint="Optional substring match on the incoming event's id">
+        <Field label="Only if the event mentions" hint="Optional substring match on the incoming event's id">
           <Input mono value={String(resumeMatch.eventIdLike ?? "")} onChange={(v) => patchData({ resumeMatch: { ...resumeMatch, eventIdLike: v || undefined } })} />
         </Field>
       </Section>
@@ -1076,7 +1076,7 @@ function EndForm({ node, patchData }: FormProps) {
           ]}
         />
       </Field>
-      <Field label="Summary (optional)" hint="Surfaced in run history + notifications">
+      <Field label="Short summary" hint="Surfaced in run history + notifications">
         <Area value={String(cfg.summary ?? "")} onChange={(v) => patchData({ summary: v })} rows={2} />
       </Field>
     </Section>
@@ -1183,13 +1183,13 @@ function ActionSendForm({ node, patchData, nodes }: FormProps) {
         <Input mono value={String(cfg.accountId ?? "")} onChange={(v) => patchData({ accountId: v })} placeholder={`(inherit from ${tmpl("accountId")})`} />
       </Field>
       <Field
-        label="Reply to message id"
+        label="Reply to which message"
         hint="Optional. When set, the platform threads this reply under the referenced message."
       >
         <Input mono value={String(cfg.replyTo ?? "")} onChange={(v) => patchData({ replyTo: v })} placeholder={tmpl("event.id")} />
       </Field>
       <Field
-        label="Parse mode"
+        label="Text formatting"
         hint={
           cfg.channel === "telegram"
             ? `Telegram default is "markdown" (Telegram-flavoured HTML conversion). Use "plain" to send raw text without escaping.`
@@ -1244,13 +1244,13 @@ function ActionSetLabelForm({ node, patchData }: FormProps) {
         <Field label="Channel">
           <Select value={String(cfg.channel ?? "gitlab")} onChange={(v) => patchData({ channel: v })} options={["gitlab", "github"]} />
         </Field>
-        <Field label="Entity kind">
+        <Field label="What it is about">
           <Select value={String(cfg.kind ?? "issue")} onChange={(v) => patchData({ kind: v })} options={["issue", "merge_request"]} />
         </Field>
         <Field label="Project">
           <Input mono value={String(cfg.project ?? "")} onChange={(v) => patchData({ project: v })} placeholder="{{trigger.project}}" />
         </Field>
-        <Field label="iid">
+        <Field label="Issue number">
           <Input mono value={String(cfg.iid ?? "")} onChange={(v) => patchData({ iid: v })} placeholder="{{trigger.issue.iid}}" />
         </Field>
       </Section>
@@ -1273,11 +1273,11 @@ function ActionReadLabelForm({ node, patchData }: FormProps) {
       <Field label="Channel">
         <Select value={String(cfg.channel ?? "gitlab")} onChange={(v) => patchData({ channel: v })} options={["gitlab", "github"]} />
       </Field>
-      <Field label="Entity kind">
+      <Field label="What it is about">
         <Select value={String(cfg.kind ?? "issue")} onChange={(v) => patchData({ kind: v })} options={["issue", "merge_request"]} />
       </Field>
       <Field label="Project"><Input mono value={String(cfg.project ?? "")} onChange={(v) => patchData({ project: v })} /></Field>
-      <Field label="iid"><Input mono value={String(cfg.iid ?? "")} onChange={(v) => patchData({ iid: v })} /></Field>
+      <Field label="Issue number"><Input mono value={String(cfg.iid ?? "")} onChange={(v) => patchData({ iid: v })} /></Field>
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
         Output bundle: <span className="mono">{"{{ <nodeId>.labels }}"}</span> = string[]
       </div>
@@ -1308,8 +1308,8 @@ function ActionEditMessageForm({ node, patchData }: FormProps) {
       </Field>
       <Field label="Chat id"><Input mono value={String(cfg.chatId ?? "")} onChange={(v) => patchData({ chatId: v })} /></Field>
       <Field label="Message id"><Input mono value={String(cfg.messageId ?? "")} onChange={(v) => patchData({ messageId: v })} /></Field>
-      <Field label="New text"><ExprField value={String(cfg.text ?? "")} onChange={(v) => patchData({ text: v })} rows={3} /></Field>
-      <Field label="Parse mode">
+      <Field label="Replace the text with"><ExprField value={String(cfg.text ?? "")} onChange={(v) => patchData({ text: v })} rows={3} /></Field>
+      <Field label="Text formatting">
         <Select value={String(cfg.parseMode ?? "plain")} onChange={(v) => patchData({ parseMode: v })} options={["plain", "markdown", "html"]} />
       </Field>
     </Section>
@@ -1326,7 +1326,7 @@ function ActionLogTimeForm({ node, patchData }: FormProps) {
       <Field label="Chat id" hint={`"project:issue:42" or "project:merge_request:7"`}>
         <Input mono value={String(cfg.chatId ?? "")} onChange={(v) => patchData({ chatId: v })} placeholder="{{trigger.chatId}}" />
       </Field>
-      <Field label="Duration (ms)">
+      <Field label="How long to wait">
         <NumInput value={cfg.durationMs} onChange={(v) => patchData({ durationMs: v })} placeholder="900000" />
       </Field>
     </Section>
@@ -1338,7 +1338,7 @@ function ActionRunForm({ node, patchData }: FormProps) {
   return (
     <>
       <Section title="Action">
-        <Field label="Action id" hint="Slug of a registered action (.agentx/actions/<id>.json). Manage in Settings → Actions or via `agentx actions`.">
+        <Field label="Which saved action" hint="Slug of a registered action (.agentx/actions/<id>.json). Manage in Settings → Actions or via `agentx actions`.">
           <Input mono value={String(cfg.actionId ?? "")} onChange={(v) => patchData({ actionId: v })} placeholder="deploy-staging" />
         </Field>
       </Section>
@@ -1542,7 +1542,7 @@ function TriggerFormForm({ node, patchData }: FormProps) {
   return (
     <>
       <Section title="Start conditions">
-        <Field label="Startable by" hint="actor:<id> or role:<id> — who is allowed to initiate a new run">
+        <Field label="Who can start it" hint="actor:<id> or role:<id> — who is allowed to initiate a new run">
           <Input mono value={String(cfg.startableBy ?? "")} onChange={(v) => patchData({ startableBy: v })} placeholder="role:public" />
         </Field>
       </Section>
@@ -1555,10 +1555,10 @@ function SubProcessForm({ node, patchData }: FormProps) {
   const cfg = node.config as { workflowId?: string; inputMap?: unknown; awaitCompletion?: boolean }
   return (
     <Section title="Sub-process">
-      <Field label="Workflow id" hint="id of another workflow definition — it runs to completion, then parent resumes">
+      <Field label="Which workflow" hint="id of another workflow definition — it runs to completion, then parent resumes">
         <Input mono value={String(cfg.workflowId ?? "")} onChange={(v) => patchData({ workflowId: v })} placeholder="child-workflow-id" />
       </Field>
-      <Field label="Input map" hint='Map child-context keys → templated values. Use a single key "*" for full inheritance.'>
+      <Field label="Values to pass on" hint='Map child-context keys → templated values. Use a single key "*" for full inheritance.'>
         <KeyValueEditor
           value={(cfg.inputMap ?? {}) as Record<string, unknown>}
           onChange={(next) => patchData({ inputMap: next })}
@@ -1604,7 +1604,7 @@ function SignalWaitForm({ node, patchData }: FormProps) {
       <Field label="Scope">
         <Select value={String(cfg.scope ?? "workflow")} onChange={(v) => patchData({ scope: v })} options={["workflow", "global"]} />
       </Field>
-      <Field label="Match filter" hint="Only resume when every key here matches the emitted payload. Empty = match any payload.">
+      <Field label="Only when" hint="Only resume when every key here matches the emitted payload. Empty = match any payload.">
         <KeyValueEditor
           value={(cfg.match ?? {}) as Record<string, unknown>}
           onChange={(next) => patchData({ match: next })}
@@ -1658,7 +1658,7 @@ function RuleForm({ node, patchData }: FormProps) {
   return (
     <>
       <Section title="Inputs">
-        <Field label="Input expressions" hint="Comma-separated; each is a template evaluated per-run against the run context">
+        <Field label="Values to read" hint="Comma-separated; each is a template evaluated per-run against the run context">
           <ListInput mono value={inputs} onChange={patchInputs} placeholder="{{classify.result}}, {{trigger.values.amount}}" />
         </Field>
       </Section>
@@ -1666,12 +1666,12 @@ function RuleForm({ node, patchData }: FormProps) {
         {rules.map((r, idx) => (
           <div key={idx} style={{ border: "1px solid var(--ax-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "end" }}>
-              <Field label="Port (to)" hint="Outgoing edge port taken when this row matches">
+              <Field label="Goes to" hint="Outgoing edge port taken when this row matches">
                 <Input mono value={String(r.to ?? "")} onChange={(v) => patchRule(idx, { to: v })} />
               </Field>
               <button className="fld__btn" type="button" onClick={() => removeRule(idx)}>✕</button>
             </div>
-            <Field label="When (per-input cells)" hint={`One per input. "*" wildcard, "x" equals, ">10" numeric, "!=x", "/regex/"`}>
+            <Field label="When these are true" hint={`One per input. "*" wildcard, "x" equals, ">10" numeric, "!=x", "/regex/"`}>
               <ListInput mono value={(Array.isArray(r.when) ? r.when : []).map(String)} onChange={(v) => patchRule(idx, { when: v })} placeholder="gold, >100" />
             </Field>
             <Field label="Output" hint="Fields written when this rule matches.">
@@ -1688,7 +1688,7 @@ function RuleForm({ node, patchData }: FormProps) {
         <button className="fld__btn" type="button" onClick={addRule}>+ Add rule</button>
       </Section>
       <Section title="Default">
-        <Field label="Port (to)">
+        <Field label="Goes to">
           <Input mono value={String(cfg.default?.to ?? "fallback")} onChange={(v) => patchData({ default: { ...(cfg.default ?? {}), to: v } })} />
         </Field>
       </Section>
@@ -2057,15 +2057,15 @@ function WorkflowPane({ meta, patchMeta, onDeleteWorkflow, isNew }: {
                    onChange={(v) => patchMeta({ fanOut: v })}
                    label="Fan out — let multiple workflows match the same trigger event" />
           </Field>
-          <Field label="Allowed env vars" hint="Comma-separated. Only these env names are exposed to actions/agents in this flow.">
+          <Field label="Secrets this flow may use" hint="Comma-separated. Only these env names are exposed to actions/agents in this flow.">
             <ListInput mono value={meta.envAllow ?? []} onChange={(v) => patchMeta({ envAllow: v })} placeholder="GITLAB_TOKEN, SLACK_WEBHOOK" />
           </Field>
         </Section>
         <Section title="Retention" defaultOpen={false}>
-          <Field label="Max runs to keep">
+          <Field label="How many runs to keep">
             <NumInput value={retention.maxRuns} onChange={(v) => patchMeta({ retention: { ...retention, maxRuns: v ?? 0 } })} placeholder="500" />
           </Field>
-          <Field label="Max age (days)">
+          <Field label="Keep runs for (days)">
             <NumInput value={retention.maxDays} onChange={(v) => patchMeta({ retention: { ...retention, maxDays: v ?? 0 } })} placeholder="90" />
           </Field>
         </Section>
@@ -2106,7 +2106,7 @@ function EdgePane({ edge, patch, onDelete }: { edge: GraphEdge & { id: string };
           </Field>
         </Section>
         <Section title="Port" defaultOpen={false}>
-          <Field label="fromPort" hint="Set when the source is a branch node. Must match a case's `to` field or the default port.">
+          <Field label="Leaves from" hint="Set when the source is a branch node. Must match a case's `to` field or the default port.">
             <Input mono value={edge.fromPort ?? ""} onChange={(v) => patch({ fromPort: v || undefined })} />
           </Field>
         </Section>
