@@ -52,13 +52,6 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
       <p class="hint">Then give the automation a <b>when n8n calls</b> trigger and it runs. To go the other way, add a <b>call a web address</b> step pointing at your n8n webhook.</p>
     </section>
 
-    <section class="ax-wf__drafts">
-      <header>
-        <h3>Drafts</h3>
-        <span id="wf-draft-count" class="hint">0</span>
-      </header>
-      <ul id="wf-draft-list" class="ax-wf__draft-list" aria-live="polite"></ul>
-    </section>
   </aside>
 
   <section class="ax-wf__detail">
@@ -212,37 +205,6 @@ const WORKFLOWS_PAGE_CSS = `
   color: var(--ax-accent);
   border-color: color-mix(in oklch, var(--ax-accent) 50%, transparent);
 }
-.ax-wf__drafts {
-  border-top: 1px solid var(--ax-border);
-  flex: 0 0 min(34vh, 260px);
-  display: flex; flex-direction: column;
-  background: color-mix(in oklch, var(--ax-bg-elev) 92%, var(--ax-bg));
-}
-.ax-wf__drafts > header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 18px 8px;
-}
-.ax-wf__drafts h3 {
-  margin: 0; font-size: 11px; font-weight: 650;
-  letter-spacing: 0.04em; text-transform: uppercase; color: var(--ax-muted);
-}
-.ax-wf__draft-list {
-  list-style: none; margin: 0; padding: 0 0 8px;
-  overflow: auto;
-}
-.ax-wf__draft {
-  padding: 9px 18px; cursor: pointer;
-  border-top: 1px solid color-mix(in oklch, var(--ax-border) 55%, transparent);
-}
-.ax-wf__draft:hover { background: var(--ax-surface); }
-.ax-wf__draft.is-active { background: var(--ax-surface); box-shadow: inset 3px 0 0 var(--ax-warn); }
-.ax-wf__draft-title { font-size: 12px; font-weight: 600; color: var(--ax-text); margin-bottom: 2px; }
-.ax-wf__draft-meta {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  font-family: var(--ax-mono); font-size: 10px; color: var(--ax-muted);
-}
-.ax-wf__draft-empty { padding: 10px 18px 16px; color: var(--ax-muted); font-size: 11px; }
-.ax-wf__draft-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ax-wf__btn.danger:hover { background: color-mix(in oklch, var(--ax-err) 13%, transparent); border-color: var(--ax-err); color: var(--ax-err); }
 .ax-wf__btn.primary { border-color: color-mix(in oklch, var(--ax-accent) 55%, var(--ax-border)); color: var(--ax-accent); }
 
@@ -521,7 +483,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
 
   const state = {
     workflows: [],
-    drafts: [],
     runs: [],
     selectedId: null,
     selectedDraftId: null,
@@ -668,32 +629,22 @@ export const WORKFLOWS_PAGE_SCRIPT = `
   }
 
   function renderDraftList() {
-    $("#wf-draft-count").textContent = String(state.drafts.length)
-    if (!state.drafts.length) {
-      $("#wf-draft-list").innerHTML = \`<li class="ax-wf__draft-empty">No drafts pending review.</li>\`
       return
     }
-    $("#wf-draft-list").innerHTML = state.drafts.map(d => {
       const wf = d.workflow || {}
       const isActive = state.selectedDraftId === d.id
       const issues = Array.isArray(d.issues) ? d.issues.length : 0
-      return \`<li class="ax-wf__draft \${isActive ? "is-active" : ""}" data-draft="\${esc(d.id)}">
-        <div class="ax-wf__draft-title">\${esc(wf.title || d.id)}</div>
-        <div class="ax-wf__draft-meta">
           <span>\${esc(d.id)}</span>
           <span>confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
           <span>\${issues ? issues + " issue" + (issues === 1 ? "" : "s") : "valid"}</span>
         </div>
       </li>\`
     }).join("")
-    $$(".ax-wf__draft").forEach(el => {
-      el.addEventListener("click", () => selectDraft(el.dataset.draft))
     })
   }
 
   function renderDetail() {
     if (state.selectedDraftId) {
-      renderDraftDetail()
       return
     }
     const wf = state.workflows.find(w => w.id === state.selectedId)
@@ -1143,69 +1094,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     }
   }
 
-  function renderDraftDetail() {
-    const draft = state.drafts.find(d => d.id === state.selectedDraftId)
-    if (!draft) {
-      $("#wf-detail-head").innerHTML = \`<span class="hint">Select a workflow to inspect.</span>\`
-      $("#wf-detail-body").innerHTML = ""
-      return
-    }
-    const wf = draft.workflow || {}
-    const issues = Array.isArray(draft.issues) ? draft.issues : []
-    const sourceIds = Array.isArray(wf.sourceTaskIds) ? wf.sourceTaskIds : []
-    $("#wf-detail-head").innerHTML = \`
-      <div class="ax-wf__detail-title">
-        <h2>\${esc(wf.title || draft.id)}</h2>
-        <a class="ax-wf__btn" href="/workflows/editor?draft=\${encodeURIComponent(draft.id)}" title="Open on the canvas">Edit on canvas</a>
-        <span class="hint">\${esc(draft.id)} · status=\${esc(wf.status || "draft")} · state=\${esc(wf.state || "disabled")} · confidence=\${wf.confidence == null ? "—" : Number(wf.confidence).toFixed(2)}</span>
-      </div>
-      <div class="ax-wf__detail-actions ax-wf__draft-actions">
-        <button class="ax-wf__btn" id="wf-draft-validate" type="button">Validate</button>
-        <button class="ax-wf__btn" id="wf-draft-save" type="button">Save</button>
-        <button class="ax-wf__btn" id="wf-draft-replay" type="button">Save &amp; Replay</button>
-        <button class="ax-wf__btn primary" id="wf-draft-promote" type="button">Promote</button>
-        <button class="ax-wf__btn danger" id="wf-draft-reject" type="button">Reject</button>
-      </div>\`
-
-    const issueHtml = issues.length
-      ? issues.map(i => \`<div class="ax-wf__trans"><span class="cond">\${esc(i)}</span></div>\`).join("")
-      : \`<span class="hint">Draft validates against the workflow schema and lint rules.</span>\`
-    const tags = Array.isArray(wf.tags) ? wf.tags : []
-    $("#wf-detail-body").innerHTML = \`
-      <div class="ax-wf__panel">
-        <h3>Review state</h3>
-        <div class="ax-wf__trans">
-          <div>owner: \${esc(wf.ownerAgent || "—")}</div>
-          <div>entity: \${esc(wf.entity || "—")}</div>
-          <div>generatedFrom: \${esc(wf.generatedFrom || "—")}</div>
-          <div>path: \${esc(draft.path || "—")}</div>
-        </div>
-      </div>
-      <div class="ax-wf__panel">
-        <h3>Signals</h3>
-        <div class="ax-wf__states">
-          \${tags.length ? tags.map(t => \`<span class="ax-wf__state">\${esc(t)}</span>\`).join("") : \`<span class="hint">No tags.</span>\`}
-        </div>
-      </div>
-      <div class="ax-wf__panel ax-wf__panel--full">
-        <h3>Source task ids (\${sourceIds.length})</h3>
-        <div class="ax-wf__trans">\${sourceIds.length ? sourceIds.slice(0, 25).map(esc).join("<br>") : \`<span class="hint">No source task ids.</span>\`}</div>
-      </div>
-      <div class="ax-wf__panel ax-wf__panel--full">
-        <h3>Validation</h3>
-        \${issueHtml}
-      </div>
-      <div class="ax-wf__panel ax-wf__panel--full">
-        <h3>Definition <span class="hint">(JSON; saved as YAML on disk)</span></h3>
-        <textarea id="wf-draft-editor" class="ax-wf__editor" spellcheck="false">\${esc(JSON.stringify(wf, null, 2))}</textarea>
-      </div>\`
-
-    $("#wf-draft-validate").addEventListener("click", () => validateDraft(draft.id))
-    $("#wf-draft-save").addEventListener("click", () => saveDraft(draft.id))
-    $("#wf-draft-replay").addEventListener("click", () => replayDraft(draft.id))
-    $("#wf-draft-promote").addEventListener("click", () => promoteDraft(draft.id))
-    $("#wf-draft-reject").addEventListener("click", () => rejectDraft(draft.id))
-  }
 
   // --- Run drawer ------------------------------------------------------
 
@@ -1277,14 +1165,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     renderDetail()
   }
 
-  async function selectDraft(id) {
-    state.selectedDraftId = id
-    state.selectedId = null
-    try { history.replaceState(null, "", "#draft:" + encodeURIComponent(id)) } catch (_) { /* */ }
-    renderList()
-    renderDraftList()
-    renderDetail()
-  }
 
   async function refresh() {
     try {
@@ -1292,20 +1172,16 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       // 10-50KB each — at limit=100 the listing was multi-MB and gating
       // first paint behind the slowest serialization path). Run-detail
       // and SSE stream still return the full shape unchanged.
-      const [workflows, runs, drafts] = await Promise.all([
         fetchJSON("/api/workflows"),
         fetchJSON("/api/workflows/runs?limit=100&summary=1"),
-        fetchJSON("/api/workflows/drafts"),
       ])
       state.workflows = workflows.workflows || workflows
       state.runs = runs.runs || runs
-      state.drafts = drafts.drafts || drafts
       // If the URL hash names a workflow (e.g. /workflows#my-workflow)
       // and nothing is selected yet, auto-select it. Editor's "History"
       // button links here with the hash, so users land on the right detail.
       if (!state.selectedId && location.hash) {
         const fromHash = decodeURIComponent(location.hash.slice(1))
-        if (fromHash.startsWith("draft:") && state.drafts.some(d => d.id === fromHash.slice(6))) state.selectedDraftId = fromHash.slice(6)
         else if (state.workflows.some(w => w.id === fromHash)) state.selectedId = fromHash
       }
       renderList()
@@ -1314,53 +1190,17 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       // a draft — the periodic 15s refresh would otherwise reset their
       // unsaved textarea on every tick. Resume rendering as soon as focus
       // leaves the editor.
-      const editing = state.selectedDraftId && document.activeElement && document.activeElement.id === "wf-draft-editor"
       if (!editing) renderDetail()
     } catch (e) {
       toast("Failed to load workflows: " + e.message)
     }
   }
 
-  async function validateDraft(id) {
-    try {
-      const res = await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/validate")
-      toast(res.ok ? "draft is valid" : "draft has validation issues")
-      await refresh()
-      state.selectedDraftId = id
-      renderDetail()
-    } catch (e) {
-      toast("validate failed: " + e.message)
-    }
-  }
 
-  async function promoteDraft(id) {
-    if (!confirm("Promote this draft into the active workflow store?")) return
-    try {
-      await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/promote", { format: "yaml" })
-      toast("draft promoted")
-      state.selectedDraftId = null
-      await refresh()
-    } catch (e) {
-      toast("promote failed: " + e.message)
-    }
-  }
 
-  async function rejectDraft(id) {
-    if (!confirm("Reject and archive this draft?")) return
-    try {
-      await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/reject")
-      toast("draft rejected")
-      state.selectedDraftId = null
-      await refresh()
-    } catch (e) {
-      toast("reject failed: " + e.message)
-    }
-  }
 
   /** Read the textarea, parse as JSON (the editor is JSON; the server
-   *  re-serialises to YAML on disk), and PUT to the drafts endpoint. */
   async function persistDraftFromEditor(id) {
-    const el = $("#wf-draft-editor")
     if (!el) throw new Error("editor not mounted")
     let workflow
     try {
@@ -1368,7 +1208,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     } catch (e) {
       throw new Error("editor JSON is invalid: " + e.message)
     }
-    const res = await fetch("/api/workflows/drafts/" + encodeURIComponent(id), {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board", ...headers() },
       credentials: "same-origin",
@@ -1382,18 +1221,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     return data
   }
 
-  async function saveDraft(id) {
-    try {
-      const res = await persistDraftFromEditor(id)
-      const lint = Array.isArray(res.issues) && res.issues.length ? \` (\${res.issues.length} lint warning\${res.issues.length === 1 ? "" : "s"})\` : ""
-      toast("draft saved" + lint)
-      await refresh()
-      state.selectedDraftId = id
-      renderDetail()
-    } catch (e) {
-      toast("save failed: " + e.message)
-    }
-  }
 
   async function replayDraft(id) {
     try {
@@ -1403,7 +1230,6 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       return
     }
     try {
-      const res = await postJSON("/api/workflows/drafts/" + encodeURIComponent(id) + "/replay", {})
       toast("replay started: " + (res.runId || "?").slice(0, 8))
       if (res.runId) {
         await openRun(res.runId)

@@ -1030,27 +1030,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Draft replay — fires an ad-hoc workflow run on the daemon. Lives on
   // the daemon (not in workflows-api.ts) because it needs the dispatcher
-  // and the trace store. The dashboard saves drafts directly to disk via
-  // PUT /api/workflows/drafts/:id, then proxies the replay through here.
-  const draftReplayMatch = method === "POST" && path.match(/^\/api\/workflows\/drafts\/([^/]+)\/replay$/)
-  if (draftReplayMatch) {
-    try {
-      const body = await readJson(req).catch(() => ({}))
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      const r = await fetch(`${daemonUrl}/api/workflows/drafts/${encodeURIComponent(draftReplayMatch[1])}/replay`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body ?? {}),
-      })
-      const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
-      sendJson(res, r.status, data)
-    } catch (e: any) {
-      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
-    }
-    return
-  }
 
   // Workflow API — read (dashboard:read) / write (dashboard:write). Fine-
   // grained scope checks let read-only scoped tokens still populate the

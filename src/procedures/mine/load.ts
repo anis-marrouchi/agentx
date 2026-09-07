@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
 import { getTrace } from "@/storage/traces"
-import { loadSuccessfulTraces } from "@/workflows/absorb"
+import { loadSuccessfulTraces } from "./traces"
 import type { SessionStore } from "@/agents/sessions"
 
 // --- Episode loading ---

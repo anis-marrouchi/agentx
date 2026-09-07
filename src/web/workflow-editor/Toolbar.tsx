@@ -28,10 +28,6 @@ export interface ToolbarProps {
   setInspectorOpen: (v: boolean) => void
   /** True when editing a draft — gates the "Promote" button and changes the
    *  brand label so the operator sees they're not on the active store. */
-  isDraft?: boolean
-  /** Move this draft into the active workflow store. Only invoked when
-   *  isDraft is true. */
-  onPromote?: () => void
 }
 
 export function Toolbar(p: ToolbarProps) {
@@ -40,7 +36,7 @@ export function Toolbar(p: ToolbarProps) {
       <div className="tb__brand">
         <div className="tb__mark">✦</div>
         <div>
-          <div className="tb__brand-label">Workflow Editor{p.isDraft ? <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>· draft</span> : null}</div>
+          <div className="tb__brand-label">Workflow Editor</div>
           <div className="tb__brand-sub">{p.workflowIdLabel}</div>
         </div>
       </div>
@@ -77,11 +73,9 @@ export function Toolbar(p: ToolbarProps) {
 
       <div className="tb__actions">
         <button className="btn btn--outline" onClick={p.onSave}><Icon.save /> Save</button>
-        {p.isDraft && p.onPromote
-          ? <button className="btn btn--primary" onClick={p.onPromote} title="Move this draft into the active workflow store">Promote</button>
-          : <button className="btn btn--primary" onClick={p.onRun}>
-              {p.running ? <><Icon.stop2 /> Stop</> : <><Icon.run /> Run preview</>}
-            </button>}
+        <button className="btn btn--primary" onClick={p.onRun}>
+          {p.running ? <><Icon.stop2 /> Stop</> : <><Icon.run /> Run preview</>}
+        </button>
       </div>
     </div>
   )
