@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
-import { SessionMonitor, parseReview, commitmentKey } from "../src/daemon/session-monitor"
+import { SessionMonitor, parseReview, commitmentKey, REVIEW_PROMPT } from "../src/daemon/session-monitor"
 import { MONITOR_SCRIPT, renderMonitorPage } from "../src/daemon/ui/pages/monitor"
 
 let dir: string
@@ -106,6 +106,52 @@ describe("cost of delay", () => {
     expect(order).toEqual([1, 0])
   })
 
+  it("drops actions nobody touched, so the list stays a working set", async () => {
+    const { db, monitor } = fixture()
+    const day = 86_400_000
+    const mk = (id: string, ageDays: number) =>
+      db.prepare("INSERT INTO session_reviews (id,session_id,agent,source,status,updated_at,model,input,result) VALUES (?,?,?,'trace','ready',?,?,'',?)")
+        .run(id, "s" + id, "atlas", Date.now() - ageDays * day, "opus", JSON.stringify(result))
+    mk("fresh", 0)
+    mk("stale", 30)
+    const ids = monitor.openActions().items.map(a => a.reviewId)
+    expect(ids).toContain("fresh")
+    // Still in the database and still in its review — just not competing for
+    // attention on a page whose whole job is "what needs me now".
+    expect(ids).not.toContain("stale")
+    expect(db.prepare("SELECT COUNT(*) AS n FROM session_reviews").get()).toEqual({ n: 2 })
+  })
+
+  it("does not review a scheduled job that worked", async () => {
+    const { db, reviewer, monitor } = fixture()
+    recordTraceStart(db, { agentId: "atlas", channel: "cron", chatId: "cron:nightly", messagePreview: "nightly" }, "ok-cron")
+    recordTraceEnd(db, "ok-cron", { status: "ok", finalResponse: "done" })
+    recordTraceStart(db, { agentId: "atlas", channel: "cron", chatId: "cron:nightly", messagePreview: "nightly" }, "bad-cron")
+    recordTraceEnd(db, "bad-cron", { status: "error", finalResponse: "boom" })
+    await monitor.tick(); await monitor.tick()
+    // Nobody is waiting on a cron that succeeded; its failure is another matter.
+    expect(db.prepare("SELECT id FROM session_reviews ORDER BY id").all()).toEqual([{ id: "bad-cron" }])
+  })
+
+  it("asks the reviewer for at most two actions, and for a strict needsHuman", () => {
+    expect(REVIEW_PROMPT).toContain("AT MOST 2 actions")
+    expect(REVIEW_PROMPT).toContain("needsHuman is true ONLY when no agent could do it")
+  })
+
+  it("can clear the whole backlog without losing the reviews", async () => {
+    const { db, monitor } = fixture()
+    for (const id of ["a", "b", "c"]) {
+      db.prepare("INSERT INTO session_reviews (id,session_id,agent,source,status,updated_at,model,input,result) VALUES (?,?,?,'trace','ready',?,?,'',?)")
+        .run(id, "s" + id, "atlas", Date.now(), "opus", JSON.stringify(result))
+    }
+    expect(monitor.openActions().total).toBe(3)
+    expect(monitor.clearOpenActions()).toBe(3)
+    expect(monitor.openActions().total).toBe(0)
+    // Findings are evidence, not to-dos: clearing the list keeps them.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM session_reviews").get()).toEqual({ n: 3 })
+    expect(monitor.snapshot().reviews).toHaveLength(3)
+  })
+
   it("touches no element the page does not render", () => {
     // new Function() proves the script parses, not that it can run: a renamed
     // container leaves $('old-id') returning null and the whole script aborts
@@ -142,7 +188,7 @@ describe("external hooks and action retention", () => {
   })
   it("keeps open commitments beyond the recent-review limit and filters completed actions", async () => {
     const { monitor, db } = fixture()
-    for (let i = 0; i < 105; i++) db.prepare("INSERT INTO session_reviews (id,session_id,agent,source,status,updated_at,model,input,result) VALUES (?,?,?,'external','ready',?,'opus','',?)").run(String(i), "s", "dev", i, JSON.stringify(result))
+    for (let i = 0; i < 105; i++) db.prepare("INSERT INTO session_reviews (id,session_id,agent,source,status,updated_at,model,input,result) VALUES (?,?,?,'external','ready',?,'opus','',?)").run(String(i), "s", "dev", Date.now() - i, JSON.stringify(result))
     expect(monitor.snapshot().reviews).toHaveLength(100)
     expect(monitor.openActions().total).toBe(105)
     monitor.action({ reviewId: "0", index: 0, state: "done" })
@@ -241,7 +287,7 @@ describe("commitment key", () => {
     const { db, monitor } = fixture()
     for (const [i, text] of ["Rotate the GitLab PAT glpat-x", "Rotate the GitLab PAT in the trace"].entries()) {
       db.prepare("INSERT INTO session_reviews (id,session_id,agent,source,status,updated_at,model,input,result) VALUES (?,?,?,?,'ready',?,?,'',?)")
-        .run(String(i), `s${i}`, "atlas", "trace", i, "opus",
+        .run(String(i), `s${i}`, "atlas", "trace", Date.now() - i, "opus",
           JSON.stringify({ ...result, actions: [{ ...result.actions[0], text }] }))
     }
     const keys = monitor.openActions().items.map(a => a.key)

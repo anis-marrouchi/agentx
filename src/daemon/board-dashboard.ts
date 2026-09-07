@@ -300,7 +300,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       const node = targets.find(n => n.url === url.searchParams.get("node"))
       if (!node) { sendJson(res, 400, { error: "Select a known node" }); return }
       const op = path.slice("/api/monitor/".length)
-      if (!((method === "GET" && ["discover", "actions", "activity"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry"].includes(op)))) {
+      if (!((method === "GET" && ["discover", "actions", "activity"].includes(op)) || (method === "POST" && ["register", "ended", "action", "retry", "clear"].includes(op)))) {
         sendJson(res, 405, { error: "Unknown monitor operation" }); return
       }
       const body = method === "POST" ? JSON.stringify(await readMonitorBody(req)) : undefined

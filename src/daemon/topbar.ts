@@ -389,7 +389,7 @@ export function renderTopbar(opts: TopbarOpts): string {
       tabs: [
         { id: "live", label: "Live", href: "/live" },
         { id: "mesh", label: "Operations", href: "/mesh" },
-        { id: "monitor", label: "Briefing", href: "/monitor" },
+        { id: "monitor", label: "Monitor", href: "/monitor" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
         { id: "admin", label: "Settings", href: "/admin" },

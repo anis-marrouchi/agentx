@@ -1991,6 +1991,7 @@ export class AgentXDaemon {
             if (path === "/monitor/register") this.sessionMonitor.register(body)
             else if (path === "/monitor/ended") this.sessionMonitor.ended(body)
             else if (path === "/monitor/action") this.sessionMonitor.action(body)
+            else if (path === "/monitor/clear") { this.json(res, 200, { ok: true, cleared: this.sessionMonitor.clearOpenActions() }); return }
             else if (path === "/monitor/retry" && typeof body.id === "string") this.sessionMonitor.retry(body.id)
             else { this.json(res, 404, { error: "Unknown monitor operation" }); return }
             this.json(res, 200, { ok: true })

@@ -41,7 +41,7 @@ const secLabel = (icon: string, text: string, countId?: string, rightHtml = "") 
 
 export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
   return renderShell({
-    title: "AgentX · Briefing", activeTab: "monitor", subtitle: "Session briefing", peers: opts.peers,
+    title: "AgentX · Monitor", activeTab: "monitor", subtitle: "Monitor", peers: opts.peers,
     body: `<div class="bf">
 
 <div class="bf-head">
@@ -65,7 +65,9 @@ export function renderMonitorPage(opts: { peers?: TopbarPeer[] } = {}): string {
 
 <div class="bf-grid">
   <section class="bf-col">
-    ${secLabel(ICON.alert, "Only you", "you-count", '<span class="bf-why">needs your authority, your relationship, or something the system cannot know</span>')}
+    ${secLabel(ICON.alert, "Only you", "you-count",
+      '<span class="bf-why">needs your authority, your relationship, or something the system cannot know</span>'
+      + '<button class="ax-btn ax-btn--sm" id="clear-actions" title="Mark every open action done on every node">Clear all</button>')}
     <div id="you" class="bf-col"></div>
 
     ${secLabel(ICON.plug, "Agents can handle", "agents-count", '<span class="bf-why">no human needed &mdash; not yet automatic</span>')}
@@ -175,6 +177,8 @@ export const MONITOR_CSS = `
 .bf-act.is-snoozed{opacity:0.62}
 .bf-why{font-size:12px;color:var(--ax-text-2);font-weight:400;margin-left:2px}
 .ax-sec-label h3 .bf-why{margin-left:8px}
+#clear-actions{margin-left:auto}
+.bf .ax-sec-label h3{flex:1}
 
 /* Handled — a count, not a list: it shows the backlog moving, nothing to decide */
 .bf-done{display:flex;align-items:center;gap:10px;margin-top:14px;padding:11px 15px;
@@ -730,6 +734,14 @@ message('');
 finally{busy=false;$('refresh').disabled=false;$('refresh').removeAttribute('aria-busy');}
 }
 $('more-actions').onclick=async()=>{try{for(const n of nodes.filter(n=>n.ok&&n.data.actions.items.length<n.data.actions.total)){const r=await fetch('/api/monitor/actions?node='+encodeURIComponent(n.url)+'&offset='+n.data.actions.items.length);if(!r.ok)throw Error('Could not load older actions');const d=await r.json();n.data.actions.items.push(...d.items);n.data.actions.total=d.total;}expandedActions=true;renderActions();message('Older actions loaded. Auto-refresh paused until you press Refresh.');}catch(e){message(e.message);}};
+$('clear-actions').onclick=async()=>{
+const open=actions.length;
+if(!open){message('Nothing open to clear.');return;}
+if(!confirm('Mark all '+open+' open actions done on every node? The reviews and their findings stay; only the open flags move.'))return;
+try{let n=0;
+for(const nd of nodes.filter(n=>n.ok)){const r=await api('clear',nd.url,{});n+=r.cleared||0;}
+message('Cleared '+n+'. New actions keep arriving as sessions end.');await refresh();
+}catch(e){message(e.message);}};
 $('search').oninput=renderReviews;$('refresh').onclick=refresh;$('node').onchange=registrations;
 document.addEventListener('click',async e=>{
 const tr=e.target.closest('.bf-trace>summary');
