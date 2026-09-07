@@ -289,10 +289,6 @@ button.bf-tag.is-on{background:color-mix(in oklch,var(--ax-accent) 14%,transpare
   border-left:2px solid var(--ax-border-2);padding-left:12px;overflow-wrap:anywhere}
 
 /* Deferred band */
-#later-wrap{border:none;padding:0}
-#later-wrap>summary{list-style:none}
-#later-wrap>summary::-webkit-details-marker{display:none}
-#later-wrap[open]>summary svg{transform:rotate(90deg)}
 .bf-defer{background:var(--ax-surface-2);border:var(--ax-border-w) solid var(--ax-border);
   border-radius:var(--ax-radius-lg);padding:12px 16px;display:flex;align-items:center;gap:10px;
   flex-wrap:wrap;cursor:pointer}
@@ -555,7 +551,7 @@ const bar=w=>'<i class="bf-bar" style="width:'+w+'"></i>';
 const card='<div class="bf-skel">'+bar('40%')+bar('100%')+bar('64%')+'</div>';
 $('strip').innerHTML=('<div class="ax-stat-inline"><div class="ax-stat-inline__icon"></div>'
  +'<div class="bf-skel" style="flex:1;gap:6px">'+bar('46px')+bar('76px')+'</div></div>').repeat(4);
-$('now').innerHTML=card+card;$('reviews').innerHTML=card;$('running').innerHTML=card;
+$('you').innerHTML=card+card;$('agents').innerHTML=card;$('reviews').innerHTML=card;$('running').innerHTML=card;
 }
 
 /* --- Coverage ----------------------------------------------------------- */

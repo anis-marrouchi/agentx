@@ -106,6 +106,16 @@ describe("cost of delay", () => {
     expect(order).toEqual([1, 0])
   })
 
+  it("touches no element the page does not render", () => {
+    // new Function() proves the script parses, not that it can run: a renamed
+    // container leaves $('old-id') returning null and the whole script aborts
+    // at load, which is how the briefing went blank after the bucket rewrite.
+    const html = renderMonitorPage()
+    const missing = [...new Set([...MONITOR_SCRIPT.matchAll(/\$\('([a-zA-Z0-9_-]+)'\)/g)].map(m => m[1]))]
+      .filter(id => !html.includes(`id="${id}"`))
+    expect(missing).toEqual([])
+  })
+
   it("renders the three buckets and ships syntactically valid browser code", () => {
     expect(renderMonitorPage()).toContain("Only you")
     expect(renderMonitorPage()).toContain("Agents can handle")

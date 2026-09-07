@@ -99,4 +99,11 @@ describe("activity timeline", () => {
     ]).lanes[0].tracks`)()
     expect(out).toBe(2)
   })
+
+  it("touches no element the activity page does not render", () => {
+    const html = renderActivityPage()
+    const missing = [...new Set([...ACTIVITY_SCRIPT.matchAll(/\$\('([a-zA-Z0-9_-]+)'\)/g)].map(m => m[1]))]
+      .filter(id => !html.includes(`id="${id}"`))
+    expect(missing).toEqual([])
+  })
 })
