@@ -86,6 +86,9 @@ export const AX_TOKENS_CSS = `:root {
   --ax-shadow-ok: 0 4px 0 var(--ax-green-d);
 
   /* --- Spacing ------------------------------------------------------- */
+  /* Width of the ask-an-agent drawer. Lives here because pages reflow
+     around it; the drawer overwrites it on :root when resized. */
+  --ax-as-w: 420px;
   --ax-pad: 16px;
   --ax-pad-sm: 10px;
   --ax-gap: 12px;

@@ -177,8 +177,12 @@ export const MONITOR_CSS = `
 .bf-act.is-snoozed{opacity:0.62}
 .bf-why{font-size:12px;color:var(--ax-text-2);font-weight:400;margin-left:2px}
 .ax-sec-label h3 .bf-why{margin-left:8px}
-#clear-actions{margin-left:auto}
-.bf .ax-sec-label h3{flex:1}
+/* The hint wraps under the heading on a narrow column instead of running
+   beneath the button that used to sit on top of it. */
+.bf .ax-sec-label{flex-wrap:wrap;gap:8px 12px;align-items:baseline}
+.bf .ax-sec-label h3{flex-wrap:wrap;row-gap:2px;min-width:0}
+.bf .ax-sec-label h3 .bf-why{flex:1 1 260px;min-width:0;white-space:normal}
+#clear-actions{flex:none;margin-left:auto}
 
 /* Handled — a count, not a list: it shows the backlog moving, nothing to decide */
 .bf-done{display:flex;align-items:center;gap:10px;margin-top:14px;padding:11px 15px;
@@ -189,7 +193,9 @@ export const MONITOR_CSS = `
 .bf-done span{margin-left:auto}
 
 /* Principals */
-.bf-pr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:14px}
+.bf-pr{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px}
+.bf-pr__c{min-width:0}
+.bf-pr__n,.bf-pr__k,.bf-pr__o{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bf-pr__c{display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;cursor:pointer;
   background:var(--ax-surface);border:var(--ax-border-w) solid var(--ax-border);
   border-radius:var(--ax-radius-lg);box-shadow:var(--ax-shadow);padding:11px 14px;color:var(--ax-text)}

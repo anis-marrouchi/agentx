@@ -198,9 +198,12 @@ export class SessionMonitor {
       // Durable outbox: runs completed during a restart or review are picked up here.
       // Two exclusions. workflow:* spans are internal orchestration steps —
       // 1-82ms, no model, no tokens — so reviewing one spends an opus call to
-      // summarise a function call. And a cron run that succeeded is scheduled
-      // work nobody is waiting on; only its failures are worth a human's time.
-      const missing = this.db.prepare(`SELECT task_id FROM task_traces WHERE finished_at >= (SELECT value FROM session_monitor_meta WHERE key='started_at') AND agent_id NOT LIKE 'workflow:%' AND NOT (channel = 'cron' AND status = 'ok') AND task_id NOT IN (SELECT id FROM session_reviews) ORDER BY finished_at ASC LIMIT 25`).all() as { task_id: string }[]
+      // summarise a function call. A cron run that succeeded is scheduled work
+      // nobody is waiting on; only its failures are worth a human's time. And
+      // a question asked in the dashboard drawer is the operator talking to
+      // their own fleet — reviewing it turns "why is this stuck?" into a
+      // to-do about having asked.
+      const missing = this.db.prepare(`SELECT task_id FROM task_traces WHERE finished_at >= (SELECT value FROM session_monitor_meta WHERE key='started_at') AND agent_id NOT LIKE 'workflow:%' AND NOT (channel = 'cron' AND status = 'ok') AND NOT (channel = 'dashboard' AND chat_id = 'assistant') AND task_id NOT IN (SELECT id FROM session_reviews) ORDER BY finished_at ASC LIMIT 25`).all() as { task_id: string }[]
       for (const { task_id } of missing) {
         const trace = getTrace(this.db, task_id)
         if (!trace) continue

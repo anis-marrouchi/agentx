@@ -19,12 +19,20 @@ export const ASSISTANT_CSS = `
   border-radius:var(--ax-radius) 0 0 var(--ax-radius);padding:14px 7px;
   font:inherit;font-size:12px;font-weight:600;box-shadow:var(--ax-shadow)}
 .ax-as-handle:hover{background:var(--ax-surface-2)}
-.ax-as{position:fixed;top:0;right:0;height:100vh;width:min(420px,92vw);z-index:61;
+/* Open pushes the page over rather than covering it: a drawer that hides the
+   rows you are asking about is worse than no drawer. Below 900px there is no
+   room to give, so it overlays. */
+body.ax-as-open{padding-right:var(--ax-as-w)}
+@media (max-width:900px){body.ax-as-open{padding-right:0}}
+.ax-as{position:fixed;top:0;right:0;height:100vh;width:var(--ax-as-w);max-width:92vw;z-index:61;
   display:flex;flex-direction:column;background:var(--ax-surface);
   border-left:var(--ax-border-w) solid var(--ax-border);
   transform:translateX(100%);transition:transform 160ms ease}
 .ax-as.is-open{transform:translateX(0)}
 @media (prefers-reduced-motion:reduce){.ax-as{transition:none}}
+.ax-as__grip{position:absolute;left:0;top:0;bottom:0;width:6px;cursor:col-resize;
+  background:transparent}
+.ax-as__grip:hover,.ax-as__grip:focus-visible{background:var(--ax-accent)}
 .ax-as__head{display:flex;align-items:center;gap:8px;padding:12px 14px;
   border-bottom:var(--ax-border-w) solid var(--ax-border)}
 .ax-as__title{font-size:13px;font-weight:600;flex:1}
@@ -54,6 +62,8 @@ export const ASSISTANT_CSS = `
 export const ASSISTANT_HTML = `
 <button class="ax-as-handle" id="ax-as-handle" aria-expanded="false" aria-controls="ax-as">Ask an agent</button>
 <aside class="ax-as" id="ax-as" aria-label="Ask an agent" aria-hidden="true">
+  <div class="ax-as__grip" id="ax-as-grip" role="separator" aria-orientation="vertical"
+       tabindex="0" aria-label="Resize panel — arrow keys adjust"></div>
   <div class="ax-as__head">
     <span class="ax-as__title">Ask an agent</span>
     <button class="ax-as__x" id="ax-as-close" title="Close">&times;</button>
@@ -80,7 +90,16 @@ if(!panel||!handle)return;
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
 
+const WMIN=320,WMAX=760;
+function setWidth(px){
+const w=Math.max(WMIN,Math.min(WMAX,Math.round(px)));
+document.documentElement.style.setProperty('--ax-as-w',w+'px');
+try{localStorage.setItem('ax-assistant-w',String(w))}catch{}
+}
+try{const w=Number(localStorage.getItem('ax-assistant-w'));if(w)setWidth(w)}catch{}
+
 function open(v){
+document.body.classList.toggle('ax-as-open',v);
 panel.classList.toggle('is-open',v);
 panel.setAttribute('aria-hidden',String(!v));
 handle.setAttribute('aria-expanded',String(v));
@@ -101,7 +120,11 @@ return base;
 }
 function paintCtx(){
 const c=pageContext();
-const bits=Object.entries(c).filter(([k,v])=>v!=null&&v!=='').slice(0,4)
+// A page that names itself makes the raw path noise, and tab just
+// repeats the nav — so drop both when the page supplies its own name.
+const shownCtx={...c};
+if(shownCtx.page){delete shownCtx.path;delete shownCtx.tab;}
+const bits=Object.entries(shownCtx).filter(([k,v])=>v!=null&&v!=='').slice(0,4)
  .map(([k,v])=>'<code>'+esc(k)+'='+esc(typeof v==='object'?(Array.isArray(v)?v.length+' items':JSON.stringify(v).slice(0,28)):v)+'</code>');
 $('ax-as-ctx').innerHTML='Sending with your question: '+(bits.join(' ')||'<code>this page</code>');
 }
@@ -145,6 +168,18 @@ try{
 }catch(e){pending.className='ax-as__msg ax-as__msg--err';pending.textContent=e.message;}
 finally{busy=false;$('ax-as-send').disabled=false;input.focus();}
 }
+/* Drag the left edge; arrow keys do the same for keyboard users. */
+const grip=$('ax-as-grip');
+grip.addEventListener('pointerdown',e=>{
+e.preventDefault();grip.setPointerCapture(e.pointerId);
+const move=ev=>setWidth(window.innerWidth-ev.clientX);
+const up=()=>{grip.removeEventListener('pointermove',move);grip.removeEventListener('pointerup',up);};
+grip.addEventListener('pointermove',move);grip.addEventListener('pointerup',up);});
+grip.addEventListener('keydown',e=>{
+const cur=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ax-as-w'))||420;
+if(e.key==='ArrowLeft'){e.preventDefault();setWidth(cur+24);}
+if(e.key==='ArrowRight'){e.preventDefault();setWidth(cur-24);}});
+
 $('ax-as-send').onclick=send;
 $('ax-as-input').addEventListener('keydown',e=>{
 if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();send();}});

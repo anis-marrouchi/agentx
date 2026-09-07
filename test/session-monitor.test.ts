@@ -133,6 +133,15 @@ describe("cost of delay", () => {
     expect(db.prepare("SELECT id FROM session_reviews ORDER BY id").all()).toEqual([{ id: "bad-cron" }])
   })
 
+  it("does not review the operator asking a question", async () => {
+    const { db, monitor } = fixture()
+    recordTraceStart(db, { agentId: "atlas", channel: "dashboard", chatId: "assistant", messagePreview: "why is this stuck?" }, "ask")
+    recordTraceEnd(db, "ask", { status: "ok", finalResponse: "because…" })
+    await monitor.tick(); await monitor.tick()
+    // Otherwise the drawer's own turn comes back as work to do about itself.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM session_reviews").get()).toEqual({ n: 0 })
+  })
+
   it("asks the reviewer for at most two actions, and for a strict needsHuman", () => {
     expect(REVIEW_PROMPT).toContain("AT MOST 2 actions")
     expect(REVIEW_PROMPT).toContain("needsHuman is true ONLY when no agent could do it")
