@@ -3232,6 +3232,10 @@ export class AgentXDaemon {
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
+            // Messages held for a peer that was unreachable when they
+            // arrived. Normally absent; a non-empty map means a peer is
+            // down and its mentions are queued rather than lost.
+            deferredMesh: this.router.getDeferredMeshCounts(),
             projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
             usage: this.resolveTodayUsage(),
           })
