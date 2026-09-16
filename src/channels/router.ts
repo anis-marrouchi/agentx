@@ -151,6 +151,18 @@ export function cleanMeshError(raw: string): string {
   return out.replace(/\s*[—-]\s*AgentX will retry[^.]*\.?\s*$/i, "").trim()
 }
 
+/** One inbound message held while its target mesh peer is unreachable.
+ *  Keeps the adapter reference so replay can answer on the original
+ *  channel/thread without re-resolving it. */
+interface DeferredMeshMessage {
+  key: string
+  adapter: ChannelAdapter
+  msg: IncomingMessage
+  agentId: string
+  peerName: string
+  deferredAt: number
+}
+
 export class MessageRouter {
   private registry: AgentRegistry
   private config: DaemonConfig
@@ -212,6 +224,23 @@ export class MessageRouter {
    *  inflight-replay re-runs the task on the peer. */
   private activeMeshForwards = 0
   getActiveMeshForwardCount(): number { return this.activeMeshForwards }
+
+  /** Messages addressed to an agent on a mesh peer that was unreachable at
+   *  the moment they arrived, keyed by peer name, replayed when the peer
+   *  comes back.
+   *
+   *  Before this existed a peer flap was silently destructive: the routing
+   *  pipeline saw an agent that no healthy peer advertised, called it
+   *  `unknown_agent`, and dropped the message for good. The mesh recovers on
+   *  its own within a probe cycle (~60s), but nothing replayed what was lost
+   *  in between, so the person who @-mentioned the agent just watched it
+   *  ignore them. Deliberately in-memory: a daemon restart drops the queue,
+   *  which is the safe direction — a stale replay is worse than a miss.
+   *  Bounded by both age and count so a peer that never returns cannot grow
+   *  it without limit. */
+  private deferredByPeer: Map<string, DeferredMeshMessage[]> = new Map()
+  private readonly MESH_DEFER_TTL_MS = 30 * 60 * 1000
+  private readonly MESH_DEFER_MAX_PER_PEER = 50
 
   constructor(
     registry: AgentRegistry,
@@ -297,6 +326,12 @@ export class MessageRouter {
 
   setMesh(mesh: A2AMesh): void {
     this.mesh = mesh
+    // Replay anything that arrived while this peer was unreachable. The
+    // mesh fans out to every listener, so this coexists with the daemon's
+    // EventBus bridge.
+    mesh.onPeerChange((e) => {
+      if (e.delta === "recovered") void this.replayDeferred(e.peer)
+    })
   }
 
   setServiceMatcher(matcher: ServiceMatcher): void {
@@ -728,6 +763,7 @@ export class MessageRouter {
       const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, msg.preferNode)
       if (!routed) {
         this.log(`Mesh peer "${msg.preferNode}" not found or unhealthy for agent "${agentId}"`)
+        this.deferForPeer(adapter, msg, agentId, msg.preferNode)
       }
       return
     }
@@ -738,7 +774,15 @@ export class MessageRouter {
     if (!agentDef) {
       const routed = await this.handleViaMeshByAgentId(adapter, msg, agentId)
       if (!routed) {
-        this.log(`Agent "${agentId}" not found locally or on any mesh peer`)
+        // Not reachable right now. If some peer we have seen up advertises
+        // this agent, its node is down rather than the agent unknown — hold
+        // the message for replay instead of discarding it.
+        const known = this.mesh?.findAgentPeer(agentId)
+        if (known && !known.healthy) {
+          this.deferForPeer(adapter, msg, agentId, known.peer)
+        } else {
+          this.log(`Agent "${agentId}" not found locally or on any mesh peer`)
+        }
       }
       return
     }
@@ -1449,10 +1493,11 @@ export class MessageRouter {
       registry: this.registry,
       handoverStore: this.handoverStore,
       hasAgent: (id) => !!this.registry.getAgent(id),
-      hasMeshAgent: (id) => {
-        if (!this.mesh) return false
-        return this.mesh.directory().some((p) => p.healthy && p.skills.some((s) => s.id === id))
-      },
+      // An agent hosted on a peer that is merely *down* is still a known
+      // agent. Treating it as unknown is what turned a 24-minute peer flap
+      // into permanently dropped @-mentions; the message now matches here
+      // and is deferred downstream instead.
+      hasMeshAgent: (id) => !!this.mesh?.findAgentPeer(id),
     })
   }
 
@@ -1607,6 +1652,96 @@ export class MessageRouter {
     }
 
     return false
+  }
+
+  // --- Deferred mesh delivery ---
+
+  /**
+   * Hold a message addressed to an agent on an unreachable peer.
+   *
+   * Deduped by the same `<channel>:<accountId>:<id>` key the inbound dedupe
+   * uses, because the upstream that delivered the message often redelivers it
+   * while the peer is still down (GitLab retries its webhook), and we do not
+   * want the agent to answer the same mention twice on recovery.
+   */
+  private deferForPeer(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    agentId: string,
+    peerName: string,
+  ): void {
+    const queue = this.deferredByPeer.get(peerName) || []
+    const key = `${msg.channel}:${msg.accountId || "default"}:${msg.id}`
+
+    if (queue.some((d) => d.key === key)) {
+      this.log(`[mesh-defer] duplicate for peer "${peerName}" agent "${agentId}" (${key}) — already held`)
+      return
+    }
+
+    if (queue.length >= this.MESH_DEFER_MAX_PER_PEER) {
+      const dropped = queue.shift()
+      this.log(
+        `[mesh-defer] queue for peer "${peerName}" full (${this.MESH_DEFER_MAX_PER_PEER}) — ` +
+        `discarding oldest (${dropped?.key})`,
+      )
+    }
+
+    queue.push({ key, adapter, msg, agentId, peerName, deferredAt: Date.now() })
+    this.deferredByPeer.set(peerName, queue)
+    this.log(
+      `[mesh-defer] holding message for agent "${agentId}" until peer "${peerName}" returns ` +
+      `(${queue.length} held, TTL ${Math.round(this.MESH_DEFER_TTL_MS / 60000)}m)`,
+    )
+  }
+
+  /**
+   * Replay everything held for a peer that just came back.
+   *
+   * Runs sequentially: each entry is a real agent turn on the remote node,
+   * and firing a backlog at it in parallel would spike a node that has only
+   * just recovered. Entries older than the TTL are dropped rather than
+   * answered — a reply to a 40-minute-old mention is noise.
+   */
+  private async replayDeferred(peerName: string): Promise<void> {
+    const queue = this.deferredByPeer.get(peerName)
+    if (!queue?.length) return
+    this.deferredByPeer.delete(peerName)
+
+    const now = Date.now()
+    const live = queue.filter((d) => now - d.deferredAt < this.MESH_DEFER_TTL_MS)
+    const stale = queue.length - live.length
+    if (stale > 0) {
+      this.log(`[mesh-defer] peer "${peerName}" back — discarding ${stale} message(s) past TTL`)
+    }
+    if (!live.length) return
+
+    this.log(`[mesh-defer] peer "${peerName}" back — replaying ${live.length} held message(s)`)
+
+    for (const d of live) {
+      try {
+        const routed = await this.handleViaMeshByPeer(d.adapter, d.msg, d.agentId, peerName)
+        if (routed) {
+          this.log(`[mesh-defer] replayed ${d.key} -> "${d.agentId}" on "${peerName}"`)
+        } else {
+          // Went down again mid-drain. Put it back so the next recovery
+          // picks it up; the TTL still bounds how long that can repeat.
+          this.log(`[mesh-defer] peer "${peerName}" unavailable again — re-holding ${d.key}`)
+          this.deferForPeer(d.adapter, d.msg, d.agentId, peerName)
+        }
+      } catch (e: any) {
+        this.log(`[mesh-defer] replay failed for ${d.key}: ${e?.message || e}`)
+      }
+    }
+  }
+
+  /** Held-message counts by peer — surfaced to the daemon for /health and
+   *  the dashboard so a growing backlog is visible rather than inferred. */
+  getDeferredMeshCounts(): Record<string, number> {
+    const out: Record<string, number> = {}
+    for (const [peer, queue] of this.deferredByPeer) {
+      if (queue.length) out[peer] = queue.length
+    }
+    return out
   }
 
   /**

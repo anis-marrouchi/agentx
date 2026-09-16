@@ -27,6 +27,11 @@ export interface PeerState {
   consecutiveFailures: number
   /** Last probe error message — surfaced for debugging via /mesh. */
   lastError?: string
+  /** True once the peer has answered at least one probe in this process.
+   *  Distinguishes "temporarily unreachable node we know hosts these
+   *  agents" from "peer configured but never seen" — only the former is
+   *  worth deferring messages for. */
+  everHealthy: boolean
 }
 
 /** Number of consecutive failed probes required before we mark a peer
@@ -42,18 +47,35 @@ export class A2AMesh {
   private healthTimer?: ReturnType<typeof setInterval>
   private config: DaemonConfig
   private log: (...args: unknown[]) => void
-  /** Optional callback fired on peer state transitions (recovered /
-   *  lost / skills changed). Daemon wires this to the event bus for
-   *  live operator visibility. */
-  private peerChangeCallback?: (event: {
+  /** Listeners fired on peer state transitions (recovered / lost /
+   *  skills changed). The daemon bridges these into the EventBus for
+   *  live operator visibility; the router uses them to replay messages
+   *  it deferred while a peer was unreachable. */
+  private peerChangeCallbacks: Array<(event: {
     peer: string; healthy: boolean; skills: string[]; delta: "recovered" | "lost" | "skills-changed"
-  }) => void
+  }) => void> = []
 
-  /** Register a listener for peer state transitions. Only one listener
-   *  is kept — repeat calls overwrite. Used by the daemon to bridge
-   *  into the EventBus without introducing a circular dependency. */
-  onPeerChange(cb: typeof A2AMesh.prototype.peerChangeCallback): void {
-    this.peerChangeCallback = cb
+  /** Register a listener for peer state transitions. Every registered
+   *  listener is called — an earlier single-callback field meant the
+   *  daemon's EventBus bridge silently displaced any other subscriber,
+   *  which is why the router could not learn about peer recovery.
+   *  Used to reach the daemon/router without a circular dependency. */
+  onPeerChange(cb: (event: {
+    peer: string; healthy: boolean; skills: string[]; delta: "recovered" | "lost" | "skills-changed"
+  }) => void): void {
+    this.peerChangeCallbacks.push(cb)
+  }
+
+  /** Fan a transition out to every listener. One throwing listener must
+   *  not stop the others or abort the discovery loop. */
+  private emitPeerChange(event: {
+    peer: string; healthy: boolean; skills: string[]; delta: "recovered" | "lost" | "skills-changed"
+  }): void {
+    for (const cb of this.peerChangeCallbacks) {
+      try { cb(event) } catch (e: any) {
+        this.log(`peer-change listener failed for "${event.peer}": ${e?.message || e}`)
+      }
+    }
   }
 
   constructor(
@@ -70,6 +92,7 @@ export class A2AMesh {
         healthy: false,
         agents: [],
         consecutiveFailures: 0,
+        everHealthy: false,
       })
     }
   }
@@ -126,6 +149,7 @@ export class A2AMesh {
           healthy: false,
           agents: [],
           consecutiveFailures: 0,
+          everHealthy: false,
         }
         this.peers.set(id, state)
         added.push(id)
@@ -222,16 +246,17 @@ export class A2AMesh {
       state.agents = card.skills || []
       state.consecutiveFailures = 0
       state.lastError = undefined
+      state.everHealthy = true
       const nextSkills = new Set(state.agents.map((a) => a.id))
       const skillsChanged = prevSkills.size !== nextSkills.size || [...nextSkills].some((s) => !prevSkills.has(s))
 
       if (wasDown) {
         this.log(`Peer "${name}" recovered: ${card.name} (${state.agents.length} skills)`)
-        this.peerChangeCallback?.({ peer: name, healthy: true, skills: [...nextSkills], delta: "recovered" })
+        this.emitPeerChange({ peer: name, healthy: true, skills: [...nextSkills], delta: "recovered" })
       } else {
         this.log(`Peer "${name}" healthy: ${card.name} (${state.agents.length} skills)`)
         if (skillsChanged) {
-          this.peerChangeCallback?.({ peer: name, healthy: true, skills: [...nextSkills], delta: "skills-changed" })
+          this.emitPeerChange({ peer: name, healthy: true, skills: [...nextSkills], delta: "skills-changed" })
         }
       }
     } catch (e: any) {
@@ -244,7 +269,7 @@ export class A2AMesh {
       if (state.consecutiveFailures >= UNHEALTHY_AFTER && state.healthy) {
         state.healthy = false
         this.log(`Peer "${name}" unreachable (${state.consecutiveFailures} consecutive failures): ${e.message}`)
-        this.peerChangeCallback?.({ peer: name, healthy: false, skills: state.agents.map((a) => a.id), delta: "lost" })
+        this.emitPeerChange({ peer: name, healthy: false, skills: state.agents.map((a) => a.id), delta: "lost" })
       } else if (state.consecutiveFailures < UNHEALTHY_AFTER) {
         this.log(`Peer "${name}" probe failed (${state.consecutiveFailures}/${UNHEALTHY_AFTER}): ${e.message}`)
       }
@@ -559,6 +584,24 @@ export class A2AMesh {
   authHeaders(peerName: string): Record<string, string> {
     const token = this.peers.get(peerName)?.peer.token
     return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
+  /**
+   * Find the peer that hosts `agentId`, including peers that are currently
+   * unreachable but were healthy earlier in this process (their last-known
+   * skill list is retained across a failed probe).
+   *
+   * Routing uses this to tell a genuinely unknown agent apart from one whose
+   * node is simply down: the first is a drop, the second is a deferral.
+   */
+  findAgentPeer(agentId: string): { peer: string; healthy: boolean } | undefined {
+    for (const [name, state] of this.peers) {
+      if (!state.healthy && !state.everHealthy) continue
+      if (state.agents.some((a) => a.id === agentId)) {
+        return { peer: name, healthy: state.healthy }
+      }
+    }
+    return undefined
   }
 
   directory(): Array<{
