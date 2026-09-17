@@ -113,7 +113,7 @@ export class ClaudeProvider implements AgentProvider {
       body.temperature = options.temperature
     }
 
-    const response = await this.callApi(body)
+    const response = await this.callApi(body, options)
 
     return this.parseResponse(response)
   }
@@ -139,7 +139,7 @@ export class ClaudeProvider implements AgentProvider {
       body.temperature = options.temperature
     }
 
-    const response = await this.callApi(body)
+    const response = await this.callApi(body, options)
 
     // Map response content blocks to our ContentBlock type
     const content: ContentBlock[] = response.content.map((block) => {
@@ -197,6 +197,7 @@ export class ClaudeProvider implements AgentProvider {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: options?.abortSignal,
     })
 
     if (!res.ok) {
@@ -478,6 +479,7 @@ export class ClaudeProvider implements AgentProvider {
         method: "POST",
         headers,
         body: JSON.stringify(body),
+        signal: options?.abortSignal,
       })
     } catch (err: any) {
       yield { type: "error", error: `Anthropic stream init failed: ${err?.message ?? err}` }
@@ -614,13 +616,22 @@ export class ClaudeProvider implements AgentProvider {
     return headers
   }
 
-  private async callApi(body: Record<string, unknown>): Promise<AnthropicResponse> {
+  private async callApi(
+    body: Record<string, unknown>,
+    options?: ProviderOptions,
+  ): Promise<AnthropicResponse> {
     const headers = this.buildHeaders()
 
+    // Every request here is cancellable. Without the signal an operator
+    // cancel only marks the task aborted in the registry while the HTTP
+    // request runs to completion, and a caller's own AbortController — the
+    // shape used by src/graph/classifier.ts and src/agents/context-planner.ts
+    // — does nothing at all.
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: options?.abortSignal,
     })
 
     if (!res.ok) {
