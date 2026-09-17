@@ -562,6 +562,55 @@ const graphConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+// --- Typed-decision seats (src/decisions) ---
+//
+// Everything here defaults off. A seat in "shadow" runs alongside the
+// incumbent and only records; "active" lets its answer steer behaviour, and
+// no seat should reach it before its calibration report says what threshold
+// to use and what that threshold costs.
+const decisionSeatSchema = z.object({
+  /** off: the seat is unreachable. shadow: runs and records, incumbent stays
+   *  authoritative. active: the answer is used. */
+  mode: z.enum(["off", "shadow", "active"]).default("off"),
+  /** Backend name from the decisions registry. Per-seat, so one seat can be
+   *  graded against a different backend than another at the same time. */
+  backend: z.string().optional(),
+  model: z.string().optional(),
+  timeoutMs: z.number().int().min(100).default(10_000),
+  /** Post-hoc temperature fitted on this seat's own labeled rows. 1 means
+   *  "not calibrated yet", which is where every seat starts — see
+   *  `agentx decisions calibrate`. */
+  temperature: z.number().min(0.01).default(1),
+}).default({})
+
+const decisionsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  dbPath: z.string().default(".agentx/decisions/decisions.sqlite"),
+  /** State can contain message text. With this on, only the hash is kept,
+   *  which costs the ability to replay a decision offline. */
+  redactState: z.boolean().default(false),
+  /** Keep the serialized state for this many rows per seat, then prune to
+   *  hashes. Enough to replay and to grade an alternative backend on
+   *  identical inputs, without growing without bound. */
+  keepStateRows: z.number().int().min(0).default(2000),
+  defaultBackend: z.string().default("local"),
+  backends: z.object({
+    local: z.object({
+      provider: z.string().default("claude-code"),
+      model: z.string().default("claude-haiku-4-5-20251001"),
+      /** auto resolves to a forced tool where the provider guarantees one,
+       *  and JSON-in-text otherwise (claude-code on OAuth cannot force a
+       *  tool). Never resolves to logprobs: that costs one call per
+       *  question, so it has to be asked for. */
+      structureMode: z.enum(["auto", "tool", "text"]).default("auto"),
+      normalizeProbabilities: z.boolean().default(true),
+      nRetryMalformedStructure: z.number().int().min(0).max(3).default(1),
+      maxStateChars: z.number().int().min(500).default(24_000),
+    }).default({}),
+  }).default({}),
+  seats: z.record(z.string(), decisionSeatSchema).default({}),
+}).default({})
+
 const notificationsSchema = z.object({
   /** Send notification when task takes longer than this (seconds). 0 = disabled. */
   longTaskThreshold: z.number().default(30),
@@ -598,6 +647,7 @@ export const daemonConfigSchema = z.object({
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
   graph: graphConfigSchema,
+  decisions: decisionsConfigSchema,
   /** Workflow engine — declarative state machines that bind channel events
    *  to agents. Off by default; existing installs see no change until
    *  flipped. Definitions live under `dir` (default .agentx/workflows/). */
