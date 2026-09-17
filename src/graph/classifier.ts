@@ -1,4 +1,5 @@
 import { createHash } from "crypto"
+import { extractJson } from "@/utils/extract-json"
 import { GraphStore } from "./store"
 import {
   type GraphSchema,
@@ -472,39 +473,3 @@ export function ancestryScore(a: string[], b: string[]): number {
   return shared / depth
 }
 
-// --- tiny JSON extractor (agents wrap output in fences sometimes) ---
-
-function extractJson(text: string): any {
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    /* fall through */
-  }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenced) {
-    try {
-      return JSON.parse(fenced[1])
-    } catch {
-      /* fall through */
-    }
-  }
-  // Last-ditch: grab the first balanced {...}.
-  const start = text.indexOf("{")
-  if (start < 0) return null
-  let depth = 0
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === "{") depth++
-    else if (text[i] === "}") {
-      depth--
-      if (depth === 0) {
-        try {
-          return JSON.parse(text.slice(start, i + 1))
-        } catch {
-          return null
-        }
-      }
-    }
-  }
-  return null
-}

@@ -22,6 +22,7 @@
 // whole 12K-char session blob.
 
 import type { SessionStore, SessionMessage } from "./sessions"
+import { extractJson } from "@/utils/extract-json"
 import type { MemoryStore } from "./memory-store"
 
 /** Planner output. When `null`, the caller falls back to the layered
@@ -229,26 +230,6 @@ function sessionTail(
 /** Extract the first JSON object from a text response. Haiku sometimes
  *  wraps output in backticks or prose despite the instructions, so we
  *  scan for the first `{...}` span. */
-function extractJson(text: string): unknown {
-  if (!text) return null
-  const trimmed = text.trim()
-  // Fast path — clean JSON.
-  try { return JSON.parse(trimmed) } catch { /* fall through */ }
-  // Fallback — first balanced object.
-  const start = trimmed.indexOf("{")
-  if (start < 0) return null
-  let depth = 0
-  for (let i = start; i < trimmed.length; i++) {
-    if (trimmed[i] === "{") depth++
-    else if (trimmed[i] === "}") {
-      depth--
-      if (depth === 0) {
-        try { return JSON.parse(trimmed.slice(start, i + 1)) } catch { return null }
-      }
-    }
-  }
-  return null
-}
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === "number" ? Math.floor(v) : Number.parseInt(String(v ?? ""), 10)

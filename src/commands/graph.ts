@@ -1,4 +1,5 @@
 import { Command } from "commander"
+import { extractJson } from "@/utils/extract-json"
 import chalk from "chalk"
 import { resolve } from "path"
 import { existsSync } from "fs"
@@ -377,23 +378,6 @@ function commitApproved(
   store.setFingerprint(c.msgHash, { path: c.path, leaf: c.leaf || {} })
 }
 
-function extractJson(text: string): any {
-  if (!text) return null
-  try { return JSON.parse(text) } catch {}
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenced) { try { return JSON.parse(fenced[1]) } catch {} }
-  const start = text.indexOf("{")
-  if (start < 0) return null
-  let depth = 0
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === "{") depth++
-    else if (text[i] === "}") {
-      depth--
-      if (depth === 0) { try { return JSON.parse(text.slice(start, i + 1)) } catch { return null } }
-    }
-  }
-  return null
-}
 
 // Suppress unused-import warning — hashPath is exported via the types; we don't
 // need it in this file but keep the dependency explicit in case future
