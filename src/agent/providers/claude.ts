@@ -139,6 +139,10 @@ export class ClaudeProvider implements AgentProvider {
       body.temperature = options.temperature
     }
 
+    if (options?.toolChoice) {
+      body.tool_choice = { type: "tool", name: options.toolChoice.name }
+    }
+
     const response = await this.callApi(body, options)
 
     // Map response content blocks to our ContentBlock type

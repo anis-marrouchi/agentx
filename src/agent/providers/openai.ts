@@ -382,6 +382,23 @@ export class OpenAIProvider implements AgentProvider {
       tool_choice: "auto",
     }
     if (options?.temperature !== undefined) body.temperature = options.temperature
+    if (options?.toolChoice) {
+      body.tool_choice = { type: "function", function: { name: options.toolChoice.name } }
+    }
+    if (options?.responseFormat) {
+      body.response_format = {
+        type: "json_schema",
+        json_schema: {
+          name: options.responseFormat.name,
+          schema: options.responseFormat.schema,
+          strict: true,
+        },
+      }
+    }
+    if (options?.logprobs?.enabled) {
+      body.logprobs = true
+      body.top_logprobs = options.logprobs.topK
+    }
     return body
   }
 

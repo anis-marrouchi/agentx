@@ -32,6 +32,25 @@ export interface ProviderOptions {
    *  marks the task aborted in the registry; the underlying request
    *  can hang for hours waiting for the model to finish thinking. */
   abortSignal?: AbortSignal
+  /** Force the model to call one specific tool, making its whole reply the
+   *  tool's structured `input`. Anthropic renders this as
+   *  `tool_choice: {type:"tool", name}`; OpenAI as
+   *  `tool_choice: {type:"function", function:{name}}`. Providers that
+   *  can't force a tool (the claude-code CLI on OAuth) ignore it — callers
+   *  must check `PROVIDER_CAPABILITIES[name].structuredOutput` first. */
+  toolChoice?: { type: "tool"; name: string }
+  /** OpenAI-compatible structured-output passthrough. Anthropic ignores it;
+   *  use `toolChoice` there instead. */
+  responseFormat?: {
+    type: "json_schema"
+    name: string
+    schema: Record<string, unknown>
+  }
+  /** Ask for the token distribution behind the answer. Only meaningful on
+   *  OpenAI-compatible providers, and only useful when the answer is a
+   *  single token — see src/decisions/backends/local-llm.ts, which is the
+   *  one caller that has a use for it. */
+  logprobs?: { enabled: true; topK: number }
 }
 
 export type StreamEvent =

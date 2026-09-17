@@ -86,4 +86,28 @@ describe("ClaudeProvider honours abortSignal", () => {
     expect(Date.now() - started).toBeLessThan(2_000)
   })
 
+  it("forwards a forced tool choice to the API body", async () => {
+    let body: any = null
+    globalThis.fetch = vi.fn(async (_url: any, init: any) => {
+      body = JSON.parse(init.body)
+      return new Response(
+        JSON.stringify({
+          content: [{ type: "tool_use", id: "t", name: "pick", input: { ok: true } }],
+          stop_reason: "tool_use",
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as any
+
+    const provider = new ClaudeProvider("sk-test-fake")
+    await provider.generateRaw(
+      [{ role: "user", content: "hi" }],
+      "system",
+      [{ name: "pick", description: "d", input_schema: { type: "object" } }],
+      { toolChoice: { type: "tool", name: "pick" } },
+    )
+
+    expect(body.tool_choice).toEqual({ type: "tool", name: "pick" })
+  })
 })
