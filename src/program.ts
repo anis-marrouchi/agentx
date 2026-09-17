@@ -8,6 +8,7 @@ import { doctor } from "@/commands/doctor"
 import { agent, channel, cron, mesh, skillCmd, references, hook, migrate, configCmd } from "@/commands/manage"
 import { db as dbCmd } from "@/commands/db"
 import { ledger as ledgerCmd } from "@/commands/ledger"
+import { decisions as decisionsCmd } from "@/commands/decisions"
 import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
 import { attach as attachCmd } from "@/commands/attach"
@@ -119,7 +120,7 @@ const ADVANCED = [
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
   // Observability + forensics
-  ledgerCmd, traceCmd, processCmd, watch, dbCmd,
+  ledgerCmd, decisionsCmd, traceCmd, processCmd, watch, dbCmd,
   // Fleet + extension
   mesh, skillCmd, pluginCmd, hook, actionsCmd,
   // Scheduling internals (`schedule` is the friendly front door)
