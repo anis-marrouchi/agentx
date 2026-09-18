@@ -196,10 +196,17 @@ describe("buildMeshAnalytics", () => {
   it("days:0 means since local midnight, not the last 24 hours", () => {
     const db = openTmp()
     const tzOffsetMinutes = 0
-    const midnight = Math.floor(Date.now() / 86_400_000) * 86_400_000
-    // 30 minutes before local midnight — yesterday, and must be excluded.
+    const now = Date.now()
+    const midnight = Math.floor(now / 86_400_000) * 86_400_000
+    // Just before local midnight — yesterday, and must be excluded by days:0.
+    //
+    // Clamped into the rolling 24h window that days:1 uses, or the last
+    // assertion is a time-of-day flake: a fixed "midnight - 30min" falls
+    // outside `now - 24h` whenever the suite runs after 23:30 UTC, which
+    // is 00:30 local in UTC+1. It failed exactly that way at 23:51 UTC.
+    const yesterday = Math.max(midnight - 30 * 60_000, now - 86_400_000 + 60_000)
     db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
-                VALUES ('Y','a','cron','ok',?,1000)`).run(midnight - 30 * 60_000)
+                VALUES ('Y','a','cron','ok',?,1000)`).run(yesterday)
     // 30 minutes after local midnight — today.
     db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
                 VALUES ('N','a','cron','ok',?,1000)`).run(midnight + 30 * 60_000)
