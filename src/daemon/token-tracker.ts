@@ -33,11 +33,18 @@ import { resolve } from "path"
 //   cache write (5-min ephemeral) = 1.25 × input
 //   cache read                    = 0.10 × input
 export const CACHE_AWARE_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheCreate: number }> = {
-  // Opus 4.6 / 4.5 — $5/$25 per MTok
+  // Fable 5.1 / 5 — $10/$50 per MTok
+  "claude-fable":     { input: 10,   output: 50,   cacheRead: 1,     cacheCreate: 12.5 },
+  // Opus 5 / 4.8 / 4.7 / 4.6 / 4.5 — $5/$25 per MTok
+  "claude-opus-5":    { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
+  "claude-opus-4-8":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
+  "claude-opus-4-7":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
   "claude-opus-4-6":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
   "claude-opus-4-5":  { input: 5,    output: 25,   cacheRead: 0.5,   cacheCreate: 6.25 },
   // Opus 4.1 and earlier — $15/$75 per MTok (legacy, keep for historical runs)
   "claude-opus":      { input: 15,   output: 75,   cacheRead: 1.5,   cacheCreate: 18.75 },
+  // Sonnet 5 — $2/$10 per MTok
+  "claude-sonnet-5":  { input: 2,    output: 10,   cacheRead: 0.2,   cacheCreate: 2.5 },
   // Sonnet 4.6 / 4.5 — $3/$15 per MTok
   "claude-sonnet":    { input: 3,    output: 15,   cacheRead: 0.3,   cacheCreate: 3.75 },
   // Haiku 4.5 — $1/$5 per MTok (more expensive than Haiku 3.5)
@@ -50,15 +57,39 @@ export const CACHE_AWARE_PRICING: Record<string, { input: number; output: number
 export const CONTEXT_TIER_THRESHOLD = 200_000
 export const TIER2_MULTIPLIER = 1.5
 
+/** Map a model id onto a pricing family.
+ *
+ *  Version matching is explicit and most-specific-first. Getting this wrong
+ *  is not a rounding error: an Opus id that falls through to the legacy
+ *  4.1 family is priced at $15/$75 instead of $5/$25 and every cost figure
+ *  derived from it is inflated 3×. That is exactly what happened to the
+ *  whole fleet once it moved to claude-opus-5 — "opus" matched, no version
+ *  branch did, and the legacy fallback caught it silently.
+ *
+ *  So an UNRECOGNISED Opus version now resolves to the current $5/$25 tier
+ *  rather than the legacy one. Every Opus from 4.5 onward has been $5/$25;
+ *  treating tomorrow's release as 4.1-era is the more likely and more
+ *  expensive mistake, and the genuinely old ids still match explicitly. */
 export function getModelFamily(model: string): string {
   const lower = model.toLowerCase()
+  const has = (...needles: string[]) => needles.some((n) => lower.includes(n))
+
+  if (has("fable", "mythos")) return "claude-fable"
+
   if (lower.includes("opus")) {
-    // Opus 4.6 and 4.5 are 3× cheaper than 4.1 — must distinguish.
-    if (lower.includes("4-6") || lower.includes("4.6") || lower.includes("opus-4-6")) return "claude-opus-4-6"
-    if (lower.includes("4-5") || lower.includes("4.5") || lower.includes("opus-4-5")) return "claude-opus-4-5"
-    return "claude-opus" // legacy 4.1 and earlier
+    if (has("opus-5", "opus5", "opus-5-")) return "claude-opus-5"
+    if (has("4-8", "4.8")) return "claude-opus-4-8"
+    if (has("4-7", "4.7")) return "claude-opus-4-7"
+    if (has("4-6", "4.6")) return "claude-opus-4-6"
+    if (has("4-5", "4.5")) return "claude-opus-4-5"
+    // Named legacy generations, which really are $15/$75.
+    if (has("4-1", "4.1", "opus-3", "opus3", "-3-")) return "claude-opus"
+    // Unknown/new Opus — assume the current tier, not the legacy one.
+    return "claude-opus-5"
   }
+
   if (lower.includes("haiku")) return "claude-haiku"
+  if (has("sonnet-5", "sonnet5")) return "claude-sonnet-5"
   return "claude-sonnet"
 }
 
