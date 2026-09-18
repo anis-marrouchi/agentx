@@ -7,6 +7,8 @@ import { calibrationReport, coverageCurve } from "@/decisions/calibration"
 import { getDecisionBackend, listDecisionBackends } from "@/decisions/backend"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { choice, noul } from "@/decisions/questions"
+import { backfillMonitorLabels } from "@/decisions/seats/monitor-prefilter"
+import Database from "better-sqlite3"
 
 // --- agentx decisions ---
 //
@@ -223,6 +225,37 @@ decisions
       opts.json,
     )
     store.close()
+  })
+
+decisions
+  .command("backfill-labels")
+  .description("derive ground truth from what actually happened (monitor-prefilter seat)")
+  .option("--path <file>", "store path", DEFAULT_PATH)
+  .option("--db <file>", "observability db holding session_reviews", ".agentx/db.sqlite")
+  .action((opts) => {
+    const store = open(opts, true)
+    const dbPath = resolve(process.cwd(), opts.db)
+    if (!existsSync(dbPath)) {
+      console.log(chalk.red(`  No observability db at ${dbPath}`))
+      store.close()
+      process.exit(1)
+    }
+    const db = new Database(dbPath, { readonly: true })
+    try {
+      const n = backfillMonitorLabels(db, store)
+      console.log(chalk.green(`  wrote ${n} label(s)`))
+      if (n === 0) {
+        console.log(
+          chalk.dim(
+            "  Rows whose outcome is genuinely ambiguous stay unlabeled on purpose —\n" +
+              "  label those by hand: agentx decisions unlabeled --seat monitor-prefilter",
+          ),
+        )
+      }
+    } finally {
+      db.close()
+      store.close()
+    }
   })
 
 decisions
