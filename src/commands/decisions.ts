@@ -4,6 +4,7 @@ import { existsSync } from "fs"
 import { resolve } from "path"
 import { DecisionStore, type GradedRowFilter } from "@/decisions/store"
 import { calibrationReport, coverageCurve } from "@/decisions/calibration"
+import { compareCalibrators } from "@/decisions/recalibrate"
 import { getDecisionBackend, listDecisionBackends } from "@/decisions/backend"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { choice, noul } from "@/decisions/questions"
@@ -382,6 +383,73 @@ decisions
       })),
       false,
     )
+    store.close()
+  })
+
+decisions
+  .command("recalibrate")
+  .description("is one global temperature enough, or does calibration differ by group?")
+  .option("--path <file>", "store path", DEFAULT_PATH)
+  .requiredOption("--seat <seat>")
+  .option("--question <name>")
+  .option("--since <window>")
+  .option("--by <names>", "comma-separated covariates", "agent,question")
+  .option("--folds <n>", "cross-validation folds", "5")
+  .option("--min-n <n>", "default 100", "100")
+  .option("--json")
+  .action((opts) => {
+    const store = open(opts)
+    const rows = store.gradedRows(filterFrom(opts))
+    const covariates = String(opts.by).split(",").map((c: string) => c.trim()).filter(Boolean)
+    const result = compareCalibrators(rows, { covariates }, {
+      folds: Number(opts.folds),
+      minN: Number(opts.minN),
+    })
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2))
+      store.close()
+      return
+    }
+
+    if (result.insufficient) {
+      console.log(
+        chalk.yellow(`  ${result.n} labeled rows, need ${result.minN}.`),
+      )
+      store.close()
+      return
+    }
+
+    console.log(chalk.bold(`\n  ${opts.seat} — held-out comparison (${result.folds}-fold, n=${result.n})`))
+    console.log(chalk.dim("  Cross-validated, because more parameters always fit training data better.\n"))
+    emit(
+      result.scores.map((s) => ({
+        model: s.name,
+        logLoss: s.logLoss.toFixed(4),
+        brier: s.brier.toFixed(4),
+        best: s.name === result.best ? "<-" : "",
+      })),
+      false,
+    )
+
+    if (result.best === "covariate") {
+      console.log(
+        chalk.green(
+          `\n  Calibration differs by ${covariates.join("/")} — a single temperature averages groups`,
+        ),
+      )
+      console.log(chalk.dim("  that need different corrections."))
+    } else if (result.best === "temperature") {
+      console.log(
+        chalk.dim(
+          `\n  One global temperature is enough. ${covariates.join("/")} carries no calibration signal here.`,
+        ),
+      )
+    } else {
+      console.log(
+        chalk.dim("\n  Neither correction beats the raw confidence out of sample. Leave it alone."),
+      )
+    }
     store.close()
   })
 
