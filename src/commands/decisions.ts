@@ -493,6 +493,7 @@ decisions
       const caps = getDecisionBackend(name).capabilities
       return {
         backend: name,
+        source: caps.probabilitySource,
         calibrated: caps.calibratedProbabilities ? "yes" : "no",
         maxOptions: caps.maxChoiceOptions,
         maxStateChars: caps.maxStateChars,
@@ -501,9 +502,14 @@ decisions
     emit(rows, false)
     console.log(
       chalk.dim(
-        `\n  "calibrated: no" is the honest value for any backend that asks a chat model to\n` +
-          `  write out its own probabilities. Calibration comes from a temperature fitted on\n` +
-          `  your own labeled rows — see \`agentx decisions calibrate\`.`,
+        `\n  source     where the numbers come from. "verbalized" means the model wrote them\n` +
+          `             into its answer; "logits" means they were read off its next-token\n` +
+          `             distribution. Logits are the model's actual posterior — verbalized\n` +
+          `             ones are quantized at round values and are not.\n` +
+          `  calibrated whether an answer given 0.8 is right about 80% of the time ON YOUR\n` +
+          `             traffic. Reading real logits does not buy this: a posterior can be\n` +
+          `             confidently wrong. It comes from a recalibrator fitted on your own\n` +
+          `             labeled rows — see \`agentx decisions recalibrate\`.`,
       ),
     )
   })
