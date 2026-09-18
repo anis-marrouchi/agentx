@@ -9,6 +9,15 @@ import { join } from "path"
 import { z } from "zod"
 import { getTrace, listTraces } from "@/storage/traces"
 import { stripAnthropicApiKey } from "@/utils/workspace-env"
+import { askSeat } from "@/decisions/seat"
+import {
+  MONITOR_PREFILTER_SEAT,
+  monitorPrefilterQuestions,
+  prefilterState,
+  runFailed,
+  shouldSkip,
+  type MonitorPrefilterAnswers,
+} from "@/decisions/seats/monitor-prefilter"
 
 const exec = promisify(execFile)
 const item = z.object({ text: z.string().max(2000), evidence: z.string().max(1000) })
@@ -216,6 +225,14 @@ export class SessionMonitor {
       if (!next) return
       this.db.prepare("UPDATE session_reviews SET status='reviewing' WHERE id=?").run(next.id)
       try {
+        if (await this.prefilter(next)) {
+          // `input` is deliberately NOT cleared here, unlike the success
+          // path. A skipped review has never been written, so POST
+          // /monitor/retry has to be able to actually run it — and that
+          // escape hatch is the entire safety story for active mode.
+          this.db.prepare("UPDATE session_reviews SET status='skipped', error=NULL, updated_at=? WHERE id=?").run(Date.now(), next.id)
+          return
+        }
         const review = parseReview(await this.reviewer(next.input, next.model, this.abort.signal))
         const allowed = new Set((JSON.parse(next.input).running || []).map((r: any) => r.taskId))
         review.relatedTaskIds = review.relatedTaskIds.filter(id => allowed.has(id))
@@ -324,8 +341,50 @@ export class SessionMonitor {
     return rows.length
   }
 
+  /** Ask the pre-filter seat whether this review is worth writing.
+   *
+   *  Returns false — review it — for every reason other than an explicit,
+   *  confident, active-mode skip on a run that did not fail. Off returns
+   *  false. Shadow returns false after recording. A backend error returns
+   *  false. Unparseable evidence returns false. The expensive path is the
+   *  default and the cheap path has to earn it.
+   *
+   *  Never throws: askSeat is fail-open by contract and the only other
+   *  operation here is a guarded JSON.parse. */
+  private async prefilter(next: ReviewRow & { input: string }): Promise<boolean> {
+    let evidence: any
+    try {
+      evidence = JSON.parse(next.input)
+    } catch {
+      return false
+    }
+
+    const failed = runFailed(evidence)
+    const result = await askSeat(MONITOR_PREFILTER_SEAT, prefilterState(evidence), monitorPrefilterQuestions, {
+      // What this code does today, on every run, without exception.
+      incumbent: { worthReviewing: "yes", runHitAnError: failed ? "yes" : "no" },
+      links: [{ kind: "review", id: next.id }],
+      signal: this.abort.signal,
+    })
+    if (!result || result.mode !== "active") return false
+
+    return shouldSkip(result.answers as MonitorPrefilterAnswers, {
+      runFailed: failed,
+      minConfidence: this.skipMinConfidence,
+      maxWorth: this.skipMaxWorth,
+    })
+  }
+
+  /** Thresholds for an active-mode skip. Conservative on purpose: a wrong
+   *  skip means a real problem nobody hears about, while a wrong review
+   *  costs one call. Move these only once
+   *  `agentx decisions coverage --seat monitor-prefilter` says what the
+   *  move costs. */
+  readonly skipMinConfidence = Number(process.env.AGENTX_MONITOR_SKIP_MIN_CONFIDENCE || 0.8)
+  readonly skipMaxWorth = Number(process.env.AGENTX_MONITOR_SKIP_MAX_WORTH || 0.2)
+
   retry(id: string) {
-    this.db.prepare("UPDATE session_reviews SET status='pending',error=NULL WHERE id=? AND status='failed'").run(id)
+    this.db.prepare("UPDATE session_reviews SET status='pending',error=NULL WHERE id=? AND status IN ('failed','skipped')").run(id)
   }
 }
 

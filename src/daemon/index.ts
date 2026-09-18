@@ -11,6 +11,9 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
+import { registerBuiltinDecisionBackends } from "@/decisions"
+import { configureDecisions } from "@/decisions/seat"
+import { DecisionStore } from "@/decisions/store"
 import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter } from "@/channels/telegram"
@@ -311,6 +314,12 @@ export class AgentXDaemon {
           this.log(`  Traces: canceled ${cleaned} orphaned in-flight row(s) from prior run`)
         }
         attachSqliteSubscribers(db)
+        // Typed-decision seats. Registering a backend is lazy and opening
+        // the shadow store is cheap, but neither happens unless the
+        // operator turned decisions on: every seat resolves to "off"
+        // otherwise and askSeat is a null-returning no-op. Wired BEFORE
+        // the session monitor, whose pre-filter seat calls askSeat.
+        this.initDecisions()
         this.sessionMonitor = new SessionMonitor(db)
         this.sessionMonitor.start()
         this._assistant = new AssistantStore(db)
@@ -800,6 +809,50 @@ export class AgentXDaemon {
    * reload cron jobs + in-memory config. Channels / agents / mesh changes
    * still require a restart — we log a warning so the operator knows.
    */
+  /** Bring up the typed-decision seat: register in-tree backends, open the
+   *  shadow store, and hand the runtime its config. Best-effort — a seat
+   *  that cannot record still answers, and a seat that cannot answer
+   *  returns null and leaves its call site's existing behaviour alone. */
+  private initDecisions(): void {
+    const cfg = this.config.decisions
+    if (!cfg?.enabled) return
+    try {
+      registerBuiltinDecisionBackends({
+        provider: cfg.backends.local.provider as any,
+        model: cfg.backends.local.model,
+        structureMode: cfg.backends.local.structureMode,
+        normalizeProbabilities: cfg.backends.local.normalizeProbabilities,
+        nRetryMalformedStructure: cfg.backends.local.nRetryMalformedStructure,
+        maxStateChars: cfg.backends.local.maxStateChars,
+      })
+      let store: DecisionStore | null = null
+      try {
+        store = new DecisionStore({ path: cfg.dbPath })
+      } catch (e: any) {
+        this.log(`  Decisions: store unavailable (${e.message}) — seats answer but do not record`)
+      }
+      configureDecisions({
+        enabled: true,
+        defaultBackend: cfg.defaultBackend,
+        store,
+        seats: Object.fromEntries(
+          Object.entries(cfg.seats).map(([name, seat]) => [
+            name,
+            { ...seat, redactState: cfg.redactState, keepStateRows: cfg.keepStateRows },
+          ]),
+        ),
+      })
+      const on = Object.entries(cfg.seats).filter(([, seat]) => seat.mode !== "off")
+      this.log(
+        on.length > 0
+          ? `  Decisions: ${on.map(([n, seat]) => `${n}=${seat.mode}`).join(", ")} (backend ${cfg.defaultBackend})`
+          : "  Decisions: enabled, no seat is on",
+      )
+    } catch (e: any) {
+      this.log(`  Decisions: init failed (${e.message})`)
+    }
+  }
+
   private startConfigWatcher(): void {
     const path = this.configPath || resolve(process.cwd(), "agentx.json")
     if (!existsSync(path)) return
