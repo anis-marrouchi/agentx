@@ -80,7 +80,8 @@ export function createLocalDecisionBackend(opts: LocalBackendOptions = {}): Deci
 
   const maxStateChars = opts.maxStateChars ?? DEFAULT_MAX_STATE_CHARS
   const capabilities: DecisionBackendCapabilities = {
-    calibratedProbabilities: false,
+    probabilitySource: "verbalized",
+  calibratedProbabilities: false,
     maxChoiceOptions: 255,
     maxStateChars,
     parallelQuestions: true,

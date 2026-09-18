@@ -28,6 +28,7 @@ export interface MockBackendOptions {
 }
 
 const capabilities: DecisionBackendCapabilities = {
+  probabilitySource: "synthetic",
   calibratedProbabilities: false,
   maxChoiceOptions: 255,
   maxStateChars: 24_000,

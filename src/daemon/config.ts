@@ -613,6 +613,20 @@ const decisionsConfigSchema = z.object({
       nRetryMalformedStructure: z.number().int().min(0).max(3).default(1),
       maxStateChars: z.number().int().min(500).default(24_000),
     }).default({}),
+    /** A simple-jev server (featherless-ai/simple-jev). Reads the model's
+     *  next-token logits rather than asking it to write a probability, so
+     *  the distribution is the model's posterior instead of a number it
+     *  chose. Still not calibrated to correctness — that comes from
+     *  `agentx decisions recalibrate`. */
+    simpleJev: z.object({
+      baseUrl: z.string().default("http://127.0.0.1:8000/v1"),
+      model: z.string().optional(),
+      apiKeyEnv: z.string().optional(),
+      timeoutMs: z.number().int().min(100).default(30_000),
+      maxStateChars: z.number().int().min(500).default(6_000),
+      /** Their Choice takes 2-50 candidates, well under Jev's 255. */
+      maxChoiceOptions: z.number().int().min(2).max(255).default(50),
+    }).default({}),
   }).default({}),
   seats: z.record(z.string(), decisionSeatSchema).default({}),
 }).default({})

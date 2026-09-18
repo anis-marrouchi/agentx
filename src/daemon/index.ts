@@ -824,6 +824,13 @@ export class AgentXDaemon {
         normalizeProbabilities: cfg.backends.local.normalizeProbabilities,
         nRetryMalformedStructure: cfg.backends.local.nRetryMalformedStructure,
         maxStateChars: cfg.backends.local.maxStateChars,
+      }, {
+        baseUrl: cfg.backends.simpleJev.baseUrl,
+        model: cfg.backends.simpleJev.model,
+        apiKeyEnv: cfg.backends.simpleJev.apiKeyEnv,
+        timeoutMs: cfg.backends.simpleJev.timeoutMs,
+        maxStateChars: cfg.backends.simpleJev.maxStateChars,
+        maxChoiceOptions: cfg.backends.simpleJev.maxChoiceOptions,
       })
       let store: DecisionStore | null = null
       try {

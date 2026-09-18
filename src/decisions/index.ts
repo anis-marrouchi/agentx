@@ -24,14 +24,21 @@ export { createMockDecisionBackend } from "./backends/mock"
 export type { MockBackendOptions } from "./backends/mock"
 export { createLocalDecisionBackend } from "./backends/local-llm"
 export type { LocalBackendOptions } from "./backends/local-llm"
+export { createSimpleJevBackend } from "./backends/simple-jev"
+export type { SimpleJevOptions } from "./backends/simple-jev"
 
 import { registerDecisionBackend } from "./backend"
 import { createMockDecisionBackend } from "./backends/mock"
 import { createLocalDecisionBackend, type LocalBackendOptions } from "./backends/local-llm"
+import { createSimpleJevBackend, type SimpleJevOptions } from "./backends/simple-jev"
 
 /** Register the backends that ship in-tree. Explicit rather than
  *  import-time so tests can start from an empty registry. */
-export function registerBuiltinDecisionBackends(local: LocalBackendOptions = {}): void {
+export function registerBuiltinDecisionBackends(
+  local: LocalBackendOptions = {},
+  simpleJev: SimpleJevOptions = {},
+): void {
   registerDecisionBackend("mock", () => createMockDecisionBackend())
   registerDecisionBackend("local", () => createLocalDecisionBackend(local))
+  registerDecisionBackend("simple-jev", () => createSimpleJevBackend(simpleJev))
 }

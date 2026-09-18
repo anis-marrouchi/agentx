@@ -64,10 +64,26 @@ export interface DecisionResponse<Q extends Questions> {
   meta: DecisionMeta
 }
 
+/** Where the numbers come from. Factual, not a judgement of quality.
+ *
+ *  verbalized  the model wrote the probability into its answer. Well-formed,
+ *              quantized at round values, and not the model's own posterior.
+ *  logits      read off the next-token distribution at the answer position.
+ *              This IS the model's posterior over the label set.
+ *  native      a model whose training objective targeted the distribution. */
+export type ProbabilitySource = "verbalized" | "logits" | "native" | "synthetic"
+
 export interface DecisionBackendCapabilities {
-  /** True only when probabilities come from token logprobs or a natively
-   *  calibrated engine. A probability the model wrote out in its answer is
-   *  well-formed, not calibrated, and reports `false` here. */
+  probabilitySource: ProbabilitySource
+  /** Calibrated to CORRECTNESS on your traffic — i.e. an answer given 0.8
+   *  is right about 80% of the time here.
+   *
+   *  This is not the same as reading real logits. A token posterior is the
+   *  model's own belief, which can be confidently wrong; simple-jev makes
+   *  exactly this point about its own output. Correctness calibration comes
+   *  from a recalibrator fitted on your labeled rows, not from a backend,
+   *  so every backend reports false until one is demonstrably trained for
+   *  it. Prefer `probabilitySource` when choosing a backend. */
   calibratedProbabilities: boolean
   maxChoiceOptions: number
   maxStateChars: number
