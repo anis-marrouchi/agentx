@@ -252,6 +252,9 @@ describe("as a generic System One endpoint", () => {
     const res = await backend.decide({ state: "x", questions })
     expect(url).toBe("https://openrouter.ai/api/alpha/decisions")
     expect(res.meta.backend).toBe("jev")
+    // structure_mode must track the mechanism, or calibration pools a
+    // trained decision model with logit-reading over an untrained one.
+    expect(res.meta.structureMode).toBe("native")
   })
 
   it("names itself in an error rather than saying simple-jev", async () => {

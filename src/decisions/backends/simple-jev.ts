@@ -161,8 +161,12 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
           },
           meta: {
             backend: name,
-            // Never pooled with verbalized rows when computing calibration.
-            structureMode: "logprobs",
+            // Mirrors probabilitySource, because structure_mode is what keeps
+            // incomparable rows out of one calibration pool. Hardcoding
+            // "logprobs" here quietly pooled Jev — a model claiming a trained
+            // objective — with logit-reading over an untrained open model.
+            // Different mechanisms, different miscalibration curves.
+            structureMode: capabilities.probabilitySource === "native" ? "native" : "logprobs",
             answerMode: "probabilities",
             repaired,
             retries: 0,
