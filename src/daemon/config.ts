@@ -627,14 +627,15 @@ const decisionsConfigSchema = z.object({
       /** Their Choice takes 2-50 candidates, well under Jev's 255. */
       maxChoiceOptions: z.number().int().min(2).max(255).default(50),
     }).default({}),
-    /** TypeSafe Jev through OpenRouter's alpha decisions endpoint. The
-     *  route exists and takes a normal bearer token, but its shape is
-     *  unverified here and the model is absent from OpenRouter's public
-     *  list — treat as experimental until a real key confirms it. */
+    /** TypeSafe Jev through OpenRouter's alpha decisions endpoint.
+     *  Verified live 2026-09-19 — resolves to typesafe/jev-1.13-20260917,
+     *  provider "TypeSafe", ~0.5s round trip. The id is "jev-latest";
+     *  the namespaced "typesafe/jev-latest" 400s, and neither appears in
+     *  OpenRouter's public model list. Needs OPENROUTER_API_KEY. */
     jev: z.object({
       baseUrl: z.string().default("https://openrouter.ai/api/alpha"),
       path: z.string().default("/decisions"),
-      model: z.string().default("typesafe/jev-latest"),
+      model: z.string().default("jev-latest"),
       apiKeyEnv: z.string().default("OPENROUTER_API_KEY"),
       timeoutMs: z.number().int().min(100).default(30_000),
       maxStateChars: z.number().int().min(500).default(24_000),

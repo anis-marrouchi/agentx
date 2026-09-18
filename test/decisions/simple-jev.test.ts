@@ -235,7 +235,7 @@ describe("as a generic System One endpoint", () => {
       name: "jev",
       baseUrl: "https://openrouter.ai/api/alpha",
       path: "/decisions",
-      model: "typesafe/jev-latest",
+      model: "jev-latest",
       probabilitySource: "native",
       maxChoiceOptions: 255,
       fetchImpl: mockFetch((u) => {
@@ -298,5 +298,38 @@ describe.skipIf(!live)("simple-jev — live demo", () => {
     // A verbalized distribution lands on round numbers; a logit one does not.
     expect(Object.values(cause.probabilities).some((p) => p > 0 && p < 0.001)).toBe(true)
     expect(res.usage.outputTokens).toBeLessThan(10)
+  }, 90_000)
+})
+
+// Live check against Jev through OpenRouter. Off by default: it costs real
+// money (about $2e-05 a call) and needs OPENROUTER_API_KEY. The state is
+// synthetic on purpose — no fleet data goes to a third party.
+const liveJev = process.env.AGENTX_JEV_LIVE === "1" && Boolean(process.env.OPENROUTER_API_KEY)
+describe.skipIf(!liveJev)("jev via OpenRouter — live", () => {
+  it("answers all three primitives and is the real TypeSafe model", async () => {
+    _resetDecisionBackendsForTesting()
+    registerBuiltinDecisionBackends()
+    const backend = getDecisionBackend("jev")
+
+    const res = await backend.decide({
+      state: "The nightly deploy cron has failed four days running with exit code 1, but every run record says success:true",
+      questions: {
+        cause: choice({
+          infrastructure: "The machine or network is at fault",
+          "application-bug": "The deployed code is at fault",
+          "monitoring-gap": "The failure is real but reported as success",
+        }),
+        page: noul("Should a human be paged right now?"),
+        severity: score(["trivial", "annoying", "serious", "critical"]),
+      },
+      timeoutMs: 60_000,
+    })
+
+    expect(res.model).toMatch(/jev/i)
+    expect((res.answers.cause as ChoiceAnswer).choice).toBe("monitoring-gap")
+    expect((res.answers.page as NoulAnswer).noul).toBeGreaterThan(0.5)
+    expect((res.answers.severity as ScoreAnswer).score).toBeGreaterThan(1)
+    expect(res.meta.backend).toBe("jev")
+    _resetDecisionBackendsForTesting()
   }, 90_000)
 })

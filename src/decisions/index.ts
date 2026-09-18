@@ -42,19 +42,23 @@ export function registerBuiltinDecisionBackends(
   registerDecisionBackend("mock", () => createMockDecisionBackend())
   registerDecisionBackend("local", () => createLocalDecisionBackend(local))
   registerDecisionBackend("simple-jev", () => createSimpleJevBackend(simpleJev))
-  // Jev via OpenRouter. UNVERIFIED: the endpoint exists and takes a normal
-  // bearer token (a bogus key returns the same "User not found" as
-  // /v1/chat/completions), but its request and response shape have not been
-  // checked against a real key, and typesafe/jev-latest does not appear in
-  // OpenRouter's public model list. If the shape differs, the call fails
-  // with the backend's contract-drift error rather than silently
-  // misinterpreting a response.
+  // Jev via OpenRouter's alpha decisions endpoint. Verified against a live
+  // key on 2026-09-19: POST /api/alpha/decisions with model "jev-latest"
+  // resolves to typesafe/jev-1.13-20260917 with provider "TypeSafe", so
+  // this is the real model rather than a proxy to something else. All
+  // three primitives round-tripped in 0.49s from Tunisia at a cost of
+  // $1.8e-05 for 429 input tokens.
+  //
+  // The model id is "jev-latest", NOT "typesafe/jev-latest" — the
+  // namespaced form 400s with "does not exist", and the endpoint accepts
+  // no generative models at all. It does not appear in OpenRouter's public
+  // model list either, so the id cannot be discovered from /v1/models.
   registerDecisionBackend("jev", () =>
     createSimpleJevBackend({
       name: "jev",
       baseUrl: "https://openrouter.ai/api/alpha",
       path: "/decisions",
-      model: "typesafe/jev-latest",
+      model: "jev-latest",
       apiKeyEnv: "OPENROUTER_API_KEY",
       // TypeSafe's claim is a model trained for calibrated decisions. The
       // claim is what this records; whether it holds on our traffic is what
