@@ -3,6 +3,7 @@ import type {
   DecisionBackendCapabilities,
   DecisionRequest,
   DecisionResponse,
+  ProbabilitySource,
 } from "../backend"
 import { finalizeAnswer } from "../normalize"
 import { validateQuestions } from "../questions"
@@ -48,6 +49,14 @@ import type { z } from "zod"
 export interface SimpleJevOptions {
   /** Server root, e.g. http://127.0.0.1:8000/v1 */
   baseUrl?: string
+  /** Route under baseUrl. simple-jev serves /classifier (and /systemone as
+   *  an alias); other System One-shaped endpoints differ. */
+  path?: string
+  /** Reported in capabilities and used to keep incomparable rows out of one
+   *  calibration pool. Does not change behaviour. */
+  probabilitySource?: ProbabilitySource
+  /** Name this backend reports. Rows are grouped by it in the store. */
+  name?: string
   model?: string
   apiKeyEnv?: string
   timeoutMs?: number
@@ -64,11 +73,13 @@ const DEFAULT_MAX_CHOICE_OPTIONS = 50
 
 export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBackend {
   const baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
+  const path = opts.path ?? "/classifier"
+  const name = opts.name ?? "simple-jev"
   const maxStateChars = opts.maxStateChars ?? DEFAULT_MAX_STATE_CHARS
   const maxChoiceOptions = opts.maxChoiceOptions ?? DEFAULT_MAX_CHOICE_OPTIONS
 
   const capabilities: DecisionBackendCapabilities = {
-    probabilitySource: "logits",
+    probabilitySource: opts.probabilitySource ?? "logits",
     calibratedProbabilities: false,
     maxChoiceOptions,
     maxStateChars,
@@ -77,7 +88,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
   }
 
   return {
-    name: "simple-jev",
+    name,
     capabilities,
     async decide<Q extends Questions>(
       request: DecisionRequest<Q>,
@@ -102,7 +113,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
         const apiKey = opts.apiKeyEnv ? process.env[opts.apiKeyEnv] : undefined
         if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-        const res = await doFetch(`${baseUrl}/classifier`, {
+        const res = await doFetch(`${baseUrl}${path}`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -115,7 +126,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
 
         if (!res.ok) {
           const detail = await res.text().catch(() => "")
-          throw new Error(`simple-jev ${res.status}: ${detail.slice(0, 300)}`)
+          throw new Error(`${name} ${res.status}: ${detail.slice(0, 300)}`)
         }
 
         const body = (await res.json()) as {
@@ -127,7 +138,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
         const parsed = rawAnswersSchema(request.questions).safeParse(body.answers)
         if (!parsed.success) {
           throw new Error(
-            "simple-jev returned a response that does not match the requested questions " +
+            `${name} returned a response that does not match the requested questions ` +
               `(contract drift, not a model slip — retrying will not help):\n${describeIssues(parsed.error as z.ZodError)}`,
           )
         }
@@ -149,7 +160,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
             outputTokens: body.usage?.output_tokens ?? 0,
           },
           meta: {
-            backend: "simple-jev",
+            backend: name,
             // Never pooled with verbalized rows when computing calibration.
             structureMode: "logprobs",
             answerMode: "probabilities",
@@ -193,17 +204,17 @@ function withInstructions(questions: Questions): Questions {
 }
 
 function assertChoiceCardinality(questions: Questions, max: number): void {
-  for (const [name, question] of Object.entries(questions)) {
+  for (const [questionName, question] of Object.entries(questions)) {
     if (question.type === "choice") {
       const n = Object.keys(question.criteria).length
       if (n > max) {
         throw new Error(
-          `question "${name}": simple-jev accepts at most ${max} choice options, got ${n}`,
+          `question "${questionName}": accepts at most ${max} choice options, got ${n}`,
         )
       }
     } else if (question.type === "score" && question.criteria.length > max) {
       throw new Error(
-        `question "${name}": simple-jev accepts at most ${max} score levels, got ${question.criteria.length}`,
+        `question "${questionName}": accepts at most ${max} score levels, got ${question.criteria.length}`,
       )
     }
   }
@@ -215,7 +226,7 @@ function deadline(
 ): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController()
   const timer = setTimeout(
-    () => controller.abort(new Error(`simple-jev timed out after ${timeoutMs}ms`)),
+    () => controller.abort(new Error(`decision timed out after ${timeoutMs}ms`)),
     timeoutMs,
   )
   const onCallerAbort = () => controller.abort(caller?.reason)

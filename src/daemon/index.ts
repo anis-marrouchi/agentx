@@ -831,6 +831,14 @@ export class AgentXDaemon {
         timeoutMs: cfg.backends.simpleJev.timeoutMs,
         maxStateChars: cfg.backends.simpleJev.maxStateChars,
         maxChoiceOptions: cfg.backends.simpleJev.maxChoiceOptions,
+      }, {
+        baseUrl: cfg.backends.jev.baseUrl,
+        path: cfg.backends.jev.path,
+        model: cfg.backends.jev.model,
+        apiKeyEnv: cfg.backends.jev.apiKeyEnv,
+        timeoutMs: cfg.backends.jev.timeoutMs,
+        maxStateChars: cfg.backends.jev.maxStateChars,
+        maxChoiceOptions: cfg.backends.jev.maxChoiceOptions,
       })
       let store: DecisionStore | null = null
       try {

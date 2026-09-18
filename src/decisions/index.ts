@@ -37,8 +37,33 @@ import { createSimpleJevBackend, type SimpleJevOptions } from "./backends/simple
 export function registerBuiltinDecisionBackends(
   local: LocalBackendOptions = {},
   simpleJev: SimpleJevOptions = {},
+  jev: SimpleJevOptions = {},
 ): void {
   registerDecisionBackend("mock", () => createMockDecisionBackend())
   registerDecisionBackend("local", () => createLocalDecisionBackend(local))
   registerDecisionBackend("simple-jev", () => createSimpleJevBackend(simpleJev))
+  // Jev via OpenRouter. UNVERIFIED: the endpoint exists and takes a normal
+  // bearer token (a bogus key returns the same "User not found" as
+  // /v1/chat/completions), but its request and response shape have not been
+  // checked against a real key, and typesafe/jev-latest does not appear in
+  // OpenRouter's public model list. If the shape differs, the call fails
+  // with the backend's contract-drift error rather than silently
+  // misinterpreting a response.
+  registerDecisionBackend("jev", () =>
+    createSimpleJevBackend({
+      name: "jev",
+      baseUrl: "https://openrouter.ai/api/alpha",
+      path: "/decisions",
+      model: "typesafe/jev-latest",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+      // TypeSafe's claim is a model trained for calibrated decisions. The
+      // claim is what this records; whether it holds on our traffic is what
+      // `agentx decisions recalibrate` is for, and calibratedProbabilities
+      // stays false until it is measured.
+      probabilitySource: "native",
+      maxChoiceOptions: 255,
+      maxStateChars: 24_000,
+      ...jev,
+    }),
+  )
 }

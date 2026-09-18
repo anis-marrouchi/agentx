@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest"
 import { createSimpleJevBackend } from "../../src/decisions/backends/simple-jev"
+import { registerBuiltinDecisionBackends } from "../../src/decisions"
+import {
+  _resetDecisionBackendsForTesting,
+  getDecisionBackend,
+} from "../../src/decisions/backend"
 import { choice, noul, score } from "../../src/decisions/questions"
 import { normalizedNegEntropy } from "../../src/decisions/normalize"
 import type { ChoiceAnswer, NoulAnswer, ScoreAnswer } from "../../src/decisions/types"
@@ -220,6 +225,50 @@ describe("simple-jev backend", () => {
     const assertion = expect(pending).rejects.toThrow(/Abort/i)
     controller.abort()
     await assertion
+  })
+})
+
+describe("as a generic System One endpoint", () => {
+  it("targets a different route and reports its own name", async () => {
+    let url = ""
+    const backend = createSimpleJevBackend({
+      name: "jev",
+      baseUrl: "https://openrouter.ai/api/alpha",
+      path: "/decisions",
+      model: "typesafe/jev-latest",
+      probabilitySource: "native",
+      maxChoiceOptions: 255,
+      fetchImpl: mockFetch((u) => {
+        url = u
+        return ok(body)
+      }),
+    })
+
+    expect(backend.name).toBe("jev")
+    expect(backend.capabilities.probabilitySource).toBe("native")
+    // A claimed training objective is not a measured property.
+    expect(backend.capabilities.calibratedProbabilities).toBe(false)
+
+    const res = await backend.decide({ state: "x", questions })
+    expect(url).toBe("https://openrouter.ai/api/alpha/decisions")
+    expect(res.meta.backend).toBe("jev")
+  })
+
+  it("names itself in an error rather than saying simple-jev", async () => {
+    const backend = createSimpleJevBackend({
+      name: "jev", baseUrl: "https://openrouter.ai/api/alpha", path: "/decisions", model: "m",
+      fetchImpl: mockFetch(() => new Response("nope", { status: 500 })),
+    })
+    await expect(backend.decide({ state: "x", questions })).rejects.toThrow(/^jev 500: nope/)
+  })
+
+  it("registers as a distinct backend with its own limits", async () => {
+    _resetDecisionBackendsForTesting()
+    registerBuiltinDecisionBackends()
+    const jev = getDecisionBackend("jev")
+    expect(jev.capabilities.maxChoiceOptions).toBe(255)
+    expect(getDecisionBackend("simple-jev").capabilities.maxChoiceOptions).toBe(50)
+    _resetDecisionBackendsForTesting()
   })
 })
 
