@@ -858,9 +858,14 @@ export class AgentXDaemon {
         ),
       })
       const on = Object.entries(cfg.seats).filter(([, seat]) => seat.mode !== "off")
+      // Name the EFFECTIVE backend per seat. Printing the default here was
+      // actively misleading once per-seat overrides existed: a seat pointed
+      // at another backend still reported the default.
       this.log(
         on.length > 0
-          ? `  Decisions: ${on.map(([n, seat]) => `${n}=${seat.mode}`).join(", ")} (backend ${cfg.defaultBackend})`
+          ? `  Decisions: ${on
+              .map(([n, seat]) => `${n}=${seat.mode}/${seat.backend ?? cfg.defaultBackend}`)
+              .join(", ")}`
           : "  Decisions: enabled, no seat is on",
       )
     } catch (e: any) {
