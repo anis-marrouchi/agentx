@@ -62,7 +62,7 @@ describe("DecisionStore", () => {
   })
 
   it("creates its schema and is idempotent on reopen", () => {
-    expect(store.schemaVersion()).toBe(1)
+    expect(store.schemaVersion()).toBe(2)
     const tables = store.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all()
@@ -78,7 +78,7 @@ describe("DecisionStore", () => {
 
     store.close()
     const reopened = new DecisionStore({ path: path.join(tmp, "decisions.sqlite") })
-    expect(reopened.schemaVersion()).toBe(1)
+    expect(reopened.schemaVersion()).toBe(2)
     reopened.close()
     store = new DecisionStore({ path: path.join(tmp, "decisions.sqlite") })
   })
@@ -184,5 +184,37 @@ describe("answerView", () => {
     )
     expect(view.expectedScore).toBeCloseTo(1.6, 10)
     expect(view.predicted).toBe("2")
+  })
+})
+
+describe("policy outcomes", () => {
+  let tmp2: string
+  let s2: DecisionStore
+  beforeEach(() => {
+    tmp2 = mkdtempSync(path.join(tmpdir(), "agentx-outcome-"))
+    s2 = new DecisionStore({ path: path.join(tmp2, "d.sqlite") })
+  })
+  afterEach(() => {
+    s2.close()
+    rmSync(tmp2, { recursive: true, force: true })
+  })
+
+  it("defaults to no recorded action, because askSeat cannot know one", () => {
+    s2.recordCall(baseCall())
+    const row = s2.gradedRows({})[0]
+    expect(row.action).toBeUndefined()
+    expect(row.explored).toBe(false)
+    expect(row.mode).toBe("shadow")
+  })
+
+  it("records what the caller did and makes it filterable", () => {
+    const skipped = s2.recordCall(baseCall({ ts: 1000 }))
+    const reviewed = s2.recordCall(baseCall({ ts: 2000 }))
+    s2.recordOutcome(skipped, "skip", true)
+    s2.recordOutcome(reviewed, "review")
+
+    expect(s2.gradedRows({ action: "skip" }).every((r) => r.callId === skipped)).toBe(true)
+    expect(s2.gradedRows({ exploredOnly: true }).every((r) => r.explored)).toBe(true)
+    expect(s2.gradedRows({ action: "review" })[0].explored).toBe(false)
   })
 })

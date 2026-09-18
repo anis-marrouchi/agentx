@@ -6,8 +6,10 @@ import { openDb, closeDb } from "../../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "../../src/storage/traces"
 import { SessionMonitor } from "../../src/daemon/session-monitor"
 import {
+  DEFAULT_EXPLORE_RATE,
   MONITOR_PREFILTER_SEAT,
   backfillMonitorLabels,
+  chooseAction,
   labelFromOutcome,
   monitorPrefilterQuestions,
   prefilterState,
@@ -37,8 +39,13 @@ const emptyReview = { ...review, actions: [], warnings: [] }
 let dir: string
 let store: DecisionStore
 
+const origExplore = process.env.AGENTX_MONITOR_EXPLORE_RATE
+
 beforeEach(() => {
   closeDb()
+  // Exploration is random by design. Every test that asserts on a skip
+  // pins the rate, or it is flaky 15% of the time.
+  process.env.AGENTX_MONITOR_EXPLORE_RATE = "0"
   dir = mkdtempSync(join(tmpdir(), "prefilter-test-"))
   store = new DecisionStore({ path: join(dir, "decisions.sqlite") })
   _resetDecisionBackendsForTesting()
@@ -47,6 +54,8 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDb()
+  if (origExplore === undefined) delete process.env.AGENTX_MONITOR_EXPLORE_RATE
+  else process.env.AGENTX_MONITOR_EXPLORE_RATE = origExplore
   resetDecisionsRuntime()
   store.close()
   rmSync(dir, { recursive: true, force: true })
@@ -326,5 +335,112 @@ describe("backfillMonitorLabels", () => {
     expect(rows.find((r) => r.question === "runHitAnError")!.truth).toBe("no")
 
     expect(backfillMonitorLabels(db, store)).toBe(0)
+  })
+})
+
+describe("chooseAction — exploration", () => {
+  const answers = (worth: number): MonitorPrefilterAnswers =>
+    ({
+      worthReviewing: finalizeAnswer(monitorPrefilterQuestions.worthReviewing, { noul: worth }).answer,
+      runHitAnError: finalizeAnswer(monitorPrefilterQuestions.runHitAnError, { noul: 0.1 }).answer,
+    }) as MonitorPrefilterAnswers
+
+  const skipWorthy = answers(0.02)
+  const reviewWorthy = answers(0.95)
+
+  it("a review verdict never explores — there is nothing to explore", () => {
+    expect(chooseAction(reviewWorthy, { active: true, runFailed: false, rng: () => 0 })).toEqual({
+      action: "review",
+      skip: false,
+      explored: false,
+    })
+  })
+
+  it("shadow records the skip verdict but never skips, so the row is gradeable", () => {
+    expect(chooseAction(skipWorthy, { active: false, runFailed: false })).toEqual({
+      action: "skip",
+      skip: false,
+      explored: true,
+    })
+  })
+
+  it("active explores when the draw lands under the rate", () => {
+    expect(
+      chooseAction(skipWorthy, { active: true, runFailed: false, explore: 0.15, rng: () => 0.05 }),
+    ).toEqual({ action: "skip", skip: false, explored: true })
+  })
+
+  it("active skips when the draw lands over the rate", () => {
+    expect(
+      chooseAction(skipWorthy, { active: true, runFailed: false, explore: 0.15, rng: () => 0.9 }),
+    ).toEqual({ action: "skip", skip: true, explored: false })
+  })
+
+  it("explore=0 always skips, which is what makes the metrics untrustworthy", () => {
+    expect(
+      chooseAction(skipWorthy, { active: true, runFailed: false, explore: 0, rng: () => 0 }).skip,
+    ).toBe(true)
+  })
+
+  it("defaults to a non-zero rate rather than silently never exploring", () => {
+    expect(DEFAULT_EXPLORE_RATE).toBeGreaterThan(0)
+    let explored = 0
+    for (let i = 0; i < 1000; i++) {
+      const r = i / 1000
+      if (chooseAction(skipWorthy, { active: true, runFailed: false, rng: () => r }).explored) explored++
+    }
+    expect(explored / 1000).toBeCloseTo(DEFAULT_EXPLORE_RATE, 2)
+  })
+})
+
+describe("exploration, end to end", () => {
+  it("shadow records the counterfactual skip verdict on a real review", async () => {
+    seatBackend(0.02) // the policy would skip this
+    enableSeat("shadow")
+    const { db, reviewer, monitor } = fixture()
+    await runOne(monitor, db)
+
+    expect(reviewer).toHaveBeenCalledTimes(1) // shadow never skips
+    const row = store.db
+      .prepare("SELECT action, explored FROM decision_calls")
+      .get() as { action: string; explored: number }
+    expect(row.action).toBe("skip")
+    expect(row.explored).toBe(1)
+  })
+
+  it("an explored skip is gradeable; a real skip never is", async () => {
+    seatBackend(0.02)
+
+    // Exploration forces the review, so the outcome labels it.
+    process.env.AGENTX_MONITOR_EXPLORE_RATE = "1"
+    enableSeat("active")
+    const a = fixture(emptyReview)
+    await runOne(a.monitor, a.db, "explored-task")
+    expect(a.reviewer).toHaveBeenCalledTimes(1)
+
+    // Without exploration the review never runs, so nothing can label it.
+    process.env.AGENTX_MONITOR_EXPLORE_RATE = "0"
+    const b = new SessionMonitor(a.db, a.reviewer)
+    await runOne(b, a.db, "skipped-task")
+    expect(a.reviewer).toHaveBeenCalledTimes(1) // still one — the second was skipped
+
+    backfillMonitorLabels(a.db, store)
+    const rows = store.gradedRows({ question: "worthReviewing" })
+    expect(rows).toHaveLength(2)
+
+    expect(rows.find((r) => r.explored)!.truth).toBe("no") // gradeable
+    expect(rows.find((r) => !r.explored)!.truth).toBeUndefined() // permanently unlabelable
+  })
+
+  it("the unbiased skip-region sample is queryable on its own", async () => {
+    seatBackend(0.02)
+    enableSeat("shadow")
+    const { db, monitor } = fixture()
+    await runOne(monitor, db, "t1")
+    await runOne(monitor, db, "t2")
+
+    expect(store.gradedRows({ exploredOnly: true })).toHaveLength(4) // 2 runs x 2 questions
+    expect(store.gradedRows({ action: "skip" })).toHaveLength(4)
+    expect(store.gradedRows({ action: "review" })).toHaveLength(0)
   })
 })

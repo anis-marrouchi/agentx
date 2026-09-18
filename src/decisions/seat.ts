@@ -1,5 +1,5 @@
 import { getDecisionBackend } from "./backend"
-import { DecisionStore, type SeatMode } from "./store"
+import { DecisionStore, type DecisionAction, type SeatMode } from "./store"
 import type { AnswersFor, Questions, StateValue } from "./types"
 
 // askSeat — the only entry point a call site should use.
@@ -32,6 +32,10 @@ export interface SeatSettings {
   /** Stop persisting state once this many rows exist for the seat. */
   keepStateRows?: number
   redactState?: boolean
+  /** Fraction of would-be-skips to run anyway, keeping an unbiased sample
+   *  of the skip region. See DEFAULT_EXPLORE_RATE — this is a correctness
+   *  requirement, not a tuning knob. */
+  explore?: number
 }
 
 export interface DecisionsRuntime {
@@ -112,6 +116,25 @@ export interface SeatResult<Q extends Questions> {
   answers: AnswersFor<Q>
   callId: string | null
   mode: SeatMode
+}
+
+/** Record what the caller did with an answer.
+ *
+ *  Separate from askSeat because the seat owns the answer and the CALLER
+ *  owns the policy: askSeat cannot know whether its caller acted. Silent
+ *  no-op when there is no store or no call id, like every other recording
+ *  path here — observability never breaks the thing it observes. */
+export function recordSeatOutcome(
+  callId: string | null,
+  action: DecisionAction,
+  explored = false,
+): void {
+  if (!callId || !runtime.store) return
+  try {
+    runtime.store.recordOutcome(callId, action, explored)
+  } catch {
+    /* observability never breaks the caller */
+  }
 }
 
 let lastWarnAt = 0

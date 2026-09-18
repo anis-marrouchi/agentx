@@ -36,6 +36,10 @@ export interface OpenStoreOptions {
 export type SeatMode = "off" | "shadow" | "active"
 export type LabelKind = "human" | "outcome" | "replay"
 
+/** What the policy decided to do with the answer. Recorded in shadow too,
+ *  where it is the counterfactual rather than the action taken. */
+export type DecisionAction = "review" | "skip"
+
 export interface RecordCallInput {
   seat: string
   mode: SeatMode
@@ -76,6 +80,14 @@ export interface GradedRow {
   probabilities: Record<string, number>
   incumbent?: string
   truth?: string
+  mode: SeatMode
+  /** What the policy decided. Undefined for calls whose caller never
+   *  recorded one. */
+  action?: DecisionAction
+  /** True when the policy said skip and exploration overrode it, so the
+   *  expensive path ran anyway. These rows are the unbiased sample of the
+   *  skip region — the only place a skip decision can ever be graded. */
+  explored: boolean
 }
 
 export interface GradedRowFilter {
@@ -88,6 +100,11 @@ export interface GradedRowFilter {
   since?: number
   /** Only rows that have a ground-truth label. */
   labeledOnly?: boolean
+  /** Only rows where exploration forced the expensive path. Calibration on
+   *  these alone is the unbiased estimate of how the policy performs on the
+   *  decisions it wants to skip. */
+  exploredOnly?: boolean
+  action?: DecisionAction
   limit?: number
 }
 
@@ -232,6 +249,15 @@ export class DecisionStore {
     return id
   }
 
+  /** Record what the policy did with an answer. Separate from recordCall
+   *  because the seat records the answer and the CALLER owns the policy —
+   *  askSeat cannot know whether its caller acted on what it returned. */
+  recordOutcome(callId: string, action: DecisionAction, explored = false): void {
+    this.db
+      .prepare("UPDATE decision_calls SET action = ?, explored = ? WHERE id = ?")
+      .run(action, explored ? 1 : 0, callId)
+  }
+
   findCallsByLink(kind: string, id: string): string[] {
     const rows = this.db
       .prepare(`SELECT call_id FROM decision_links WHERE ref_kind = ? AND ref_id = ?`)
@@ -248,11 +274,14 @@ export class DecisionStore {
     if (filter.model) (where.push("c.model = ?"), params.push(filter.model))
     if (filter.structureMode) (where.push("c.structure_mode = ?"), params.push(filter.structureMode))
     if (filter.since !== undefined) (where.push("c.ts >= ?"), params.push(filter.since))
+    if (filter.action) (where.push("c.action = ?"), params.push(filter.action))
+    if (filter.exploredOnly) where.push("c.explored = 1")
 
     // The newest label per (call, question) wins; ULIDs sort by time, so
     // MAX(id) is the newest without a second timestamp comparison.
     const sql = `
       SELECT c.id AS call_id, c.seat, c.ts, c.backend, c.model, c.structure_mode,
+             c.mode, c.action, c.explored,
              a.question, a.type, a.answer_json, a.top_label, a.expected_score, a.neg_entropy,
              i.value AS incumbent,
              (SELECT l.value FROM decision_labels l
@@ -285,6 +314,9 @@ export class DecisionStore {
           probabilities: view.probabilities,
           incumbent: r.incumbent ?? undefined,
           truth: r.truth ?? undefined,
+          mode: r.mode as SeatMode,
+          action: (r.action ?? undefined) as GradedRow["action"],
+          explored: r.explored === 1,
         } as GradedRow
       })
       .filter((row) => !filter.labeledOnly || row.truth !== undefined)
@@ -369,6 +401,25 @@ function runMigrations(db: Database.Database): void {
   const current =
     (db.prepare("SELECT MAX(v) AS v FROM schema_version").get() as { v: number | null }).v ?? 0
   if (current < 1) migrationV1(db)
+  if (current < 2) migrationV2(db)
+}
+
+/** What the policy decided, and whether exploration overrode it.
+ *
+ *  Recorded in every mode, including shadow, so the counterfactual is
+ *  measurable before anything is ever actually skipped: "the policy would
+ *  have skipped 40% of these, and here is how it did on them."
+ *
+ *  Without this the labeled sample under active mode is the set of reviews
+ *  the policy chose to run, which is exactly the biased subsample its own
+ *  metrics would then be computed on. */
+function migrationV2(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE decision_calls ADD COLUMN action TEXT;
+    ALTER TABLE decision_calls ADD COLUMN explored INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX IF NOT EXISTS idx_decision_calls_action ON decision_calls (seat, action, explored);
+    INSERT INTO schema_version (v) VALUES (2);
+  `)
 }
 
 function migrationV1(db: Database.Database): void {

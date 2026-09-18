@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
 import { noul } from "../questions"
-import type { DecisionStore } from "../store"
+import type { DecisionAction, DecisionStore } from "../store"
 import type { AnswersFor, NoulAnswer, StateValue } from "../types"
 
 // The monitor pre-filter seat.
@@ -97,6 +97,20 @@ export function prefilterState(evidence: any): StateValue {
   }
 }
 
+/** How often to run the expensive path anyway when the policy says skip.
+ *
+ *  This is not a tuning knob, it is a correctness requirement. A skipped
+ *  review is never written, so `labelFromOutcome` can never decide whether
+ *  it was worth writing — every skip is permanently unlabelable. Without
+ *  exploration the labeled set becomes "reviews the policy chose to run",
+ *  and the policy's own metrics are then computed on the biased subsample
+ *  it produced. The miscalibration would grow and the dashboard would not
+ *  show it.
+ *
+ *  15% is a starting point: enough to keep an unbiased trickle of
+ *  skip-region labels, cheap enough that the seat still pays for itself. */
+export const DEFAULT_EXPLORE_RATE = 0.15
+
 export interface SkipPolicy {
   /** Confidence floor on the yes/no call before a skip is permitted. */
   minConfidence?: number
@@ -114,6 +128,46 @@ export interface SkipPolicy {
  * The runFailed override is not a confidence threshold and cannot be tuned
  * away: a run that errored gets reviewed no matter what any model says.
  */
+export interface ActionPolicy extends SkipPolicy {
+  /** False in shadow: the policy's verdict is recorded as a counterfactual
+   *  but the expensive path always runs. */
+  active: boolean
+  explore?: number
+  rng?: () => number
+}
+
+export interface SeatAction {
+  /** What the policy decided, recorded even when it was not acted on. */
+  action: DecisionAction
+  /** What the caller should actually do. */
+  skip: boolean
+  /** The policy wanted to skip and the expensive path ran anyway, so this
+   *  row is gradeable. Always true for a shadow-mode skip, since shadow
+   *  never skips. These rows are the only unbiased sample of the skip
+   *  region that will ever exist. */
+  explored: boolean
+}
+
+/** The policy verdict plus the exploration coin-flip. Keep `shouldSkip`
+ *  pure and deterministic; all the randomness lives here. */
+export function chooseAction(
+  answers: MonitorPrefilterAnswers,
+  policy: ActionPolicy,
+): SeatAction {
+  if (!shouldSkip(answers, policy)) {
+    return { action: "review", skip: false, explored: false }
+  }
+  if (!policy.active) {
+    // Shadow: the verdict is recorded, the review runs regardless, so the
+    // row lands in the gradeable skip region for free.
+    return { action: "skip", skip: false, explored: true }
+  }
+  const rate = policy.explore ?? DEFAULT_EXPLORE_RATE
+  const rng = policy.rng ?? Math.random
+  const explored = rate > 0 && rng() < rate
+  return { action: "skip", skip: !explored, explored }
+}
+
 export function shouldSkip(answers: MonitorPrefilterAnswers, policy: SkipPolicy): boolean {
   if (policy.runFailed) return false
 

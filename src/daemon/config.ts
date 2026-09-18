@@ -581,6 +581,12 @@ const decisionSeatSchema = z.object({
    *  "not calibrated yet", which is where every seat starts — see
    *  `agentx decisions calibrate`. */
   temperature: z.number().min(0.01).default(1),
+  /** Fraction of would-be-skips to run anyway. Not a tuning knob: a skipped
+   *  decision can never be graded, so without exploration an active seat's
+   *  metrics are computed on the biased sample it selected for itself.
+   *  Setting this to 0 in active mode means the calibration report stops
+   *  being trustworthy the day you promote the seat. */
+  explore: z.number().min(0).max(1).default(0.15),
 }).default({})
 
 const decisionsConfigSchema = z.object({

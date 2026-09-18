@@ -9,13 +9,13 @@ import { join } from "path"
 import { z } from "zod"
 import { getTrace, listTraces } from "@/storage/traces"
 import { stripAnthropicApiKey } from "@/utils/workspace-env"
-import { askSeat } from "@/decisions/seat"
+import { askSeat, recordSeatOutcome } from "@/decisions/seat"
 import {
   MONITOR_PREFILTER_SEAT,
+  chooseAction,
   monitorPrefilterQuestions,
   prefilterState,
   runFailed,
-  shouldSkip,
   type MonitorPrefilterAnswers,
 } from "@/decisions/seats/monitor-prefilter"
 
@@ -366,13 +366,22 @@ export class SessionMonitor {
       links: [{ kind: "review", id: next.id }],
       signal: this.abort.signal,
     })
-    if (!result || result.mode !== "active") return false
+    if (!result) return false
 
-    return shouldSkip(result.answers as MonitorPrefilterAnswers, {
+    // The verdict is computed and recorded in shadow too. That makes the
+    // counterfactual measurable before anything is ever actually skipped —
+    // "the policy would have skipped 40% of these, and here is how it did
+    // on exactly those" — which is the evidence promotion needs.
+    const choice = chooseAction(result.answers as MonitorPrefilterAnswers, {
+      active: result.mode === "active",
       runFailed: failed,
       minConfidence: this.skipMinConfidence,
       maxWorth: this.skipMaxWorth,
+      explore: this.exploreRate,
     })
+    recordSeatOutcome(result.callId, choice.action, choice.explored)
+
+    return choice.skip
   }
 
   /** Thresholds for an active-mode skip. Conservative on purpose: a wrong
@@ -382,6 +391,12 @@ export class SessionMonitor {
    *  move costs. */
   readonly skipMinConfidence = Number(process.env.AGENTX_MONITOR_SKIP_MIN_CONFIDENCE || 0.8)
   readonly skipMaxWorth = Number(process.env.AGENTX_MONITOR_SKIP_MAX_WORTH || 0.2)
+  /** Undefined defers to DEFAULT_EXPLORE_RATE. Override only to raise it;
+   *  lowering it to zero makes an active seat's own calibration report
+   *  untrustworthy, because a skipped review can never be graded. */
+  readonly exploreRate = process.env.AGENTX_MONITOR_EXPLORE_RATE
+    ? Number(process.env.AGENTX_MONITOR_EXPLORE_RATE)
+    : undefined
 
   retry(id: string) {
     this.db.prepare("UPDATE session_reviews SET status='pending',error=NULL WHERE id=? AND status IN ('failed','skipped')").run(id)
