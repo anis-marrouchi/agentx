@@ -53,6 +53,11 @@ export interface RecordCallInput {
   /** What the code would have done without the seat, per question. */
   incumbent?: Record<string, { value?: string | number; score?: number; source?: string }>
   links?: Array<{ kind: string; id: string }>
+  /** Low-cardinality covariates for recalibration: agent, channel, and
+   *  anything else that plausibly shifts the miscalibration curve. Keep
+   *  these categorical and few — this is a calibration model fitted on
+   *  hundreds of rows, not thousands. */
+  features?: Record<string, string | number | boolean | null>
   /** A failed call is still a row. The failure rate is a measured quantity,
    *  not a hunch, and a seat that only records its successes flatters
    *  itself exactly where it matters. */
@@ -80,6 +85,7 @@ export interface GradedRow {
   probabilities: Record<string, number>
   incumbent?: string
   truth?: string
+  features: Record<string, string | number | boolean | null>
   mode: SeatMode
   /** What the policy decided. Undefined for calls whose caller never
    *  recorded one. */
@@ -149,8 +155,8 @@ export class DecisionStore {
           `INSERT INTO decision_calls
              (id, ts, seat, mode, backend, model, structure_mode, answer_mode,
               state_hash, state_json, questions_json, latency_ms,
-              input_tokens, output_tokens, retries, truncated, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              input_tokens, output_tokens, retries, truncated, error, features_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           callId,
@@ -170,6 +176,7 @@ export class DecisionStore {
           input.meta.retries,
           input.meta.stateTruncated ? 1 : 0,
           input.error ?? null,
+          input.features ? JSON.stringify(input.features) : null,
         )
 
       const insertAnswer = this.db.prepare(
@@ -281,7 +288,7 @@ export class DecisionStore {
     // MAX(id) is the newest without a second timestamp comparison.
     const sql = `
       SELECT c.id AS call_id, c.seat, c.ts, c.backend, c.model, c.structure_mode,
-             c.mode, c.action, c.explored,
+             c.mode, c.action, c.explored, c.features_json,
              a.question, a.type, a.answer_json, a.top_label, a.expected_score, a.neg_entropy,
              i.value AS incumbent,
              (SELECT l.value FROM decision_labels l
@@ -314,6 +321,7 @@ export class DecisionStore {
           probabilities: view.probabilities,
           incumbent: r.incumbent ?? undefined,
           truth: r.truth ?? undefined,
+          features: parseFeatures(r.features_json),
           mode: r.mode as SeatMode,
           action: (r.action ?? undefined) as GradedRow["action"],
           explored: r.explored === 1,
@@ -396,12 +404,38 @@ export function answerView(answer: AnyAnswer): {
   }
 }
 
+function parseFeatures(raw: unknown): Record<string, string | number | boolean | null> {
+  if (typeof raw !== "string" || raw.length === 0) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function runMigrations(db: Database.Database): void {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_version (v INTEGER PRIMARY KEY);`)
   const current =
     (db.prepare("SELECT MAX(v) AS v FROM schema_version").get() as { v: number | null }).v ?? 0
   if (current < 1) migrationV1(db)
   if (current < 2) migrationV2(db)
+  if (current < 3) migrationV3(db)
+}
+
+/** Caller-supplied covariates for recalibration.
+ *
+ *  A single global temperature assumes one miscalibration curve for the
+ *  whole seat. That is usually false: a chatty support agent and a cron
+ *  runner are different distributions, and a model can be well calibrated
+ *  on one while badly overconfident on the other. Storing a few
+ *  low-cardinality covariates per call is what lets that be fitted instead
+ *  of assumed away. */
+function migrationV3(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE decision_calls ADD COLUMN features_json TEXT;
+    INSERT INTO schema_version (v) VALUES (3);
+  `)
 }
 
 /** What the policy decided, and whether exploration overrode it.

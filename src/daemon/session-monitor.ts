@@ -364,6 +364,13 @@ export class SessionMonitor {
       // What this code does today, on every run, without exception.
       incumbent: { worthReviewing: "yes", runHitAnError: failed ? "yes" : "no" },
       links: [{ kind: "review", id: next.id }],
+      // Covariates for recalibration. A cron runner and a chat agent are
+      // different distributions; one global temperature would average them.
+      features: {
+        agent: String(evidence?.task?.agentId ?? next.agent ?? "unknown").slice(0, 80),
+        channel: String(evidence?.task?.channel ?? "unknown").slice(0, 40),
+        source: next.source,
+      },
       signal: this.abort.signal,
     })
     if (!result) return false

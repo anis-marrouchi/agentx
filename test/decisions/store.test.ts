@@ -62,7 +62,7 @@ describe("DecisionStore", () => {
   })
 
   it("creates its schema and is idempotent on reopen", () => {
-    expect(store.schemaVersion()).toBe(2)
+    expect(store.schemaVersion()).toBe(3)
     const tables = store.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all()
@@ -78,7 +78,7 @@ describe("DecisionStore", () => {
 
     store.close()
     const reopened = new DecisionStore({ path: path.join(tmp, "decisions.sqlite") })
-    expect(reopened.schemaVersion()).toBe(2)
+    expect(reopened.schemaVersion()).toBe(3)
     reopened.close()
     store = new DecisionStore({ path: path.join(tmp, "decisions.sqlite") })
   })

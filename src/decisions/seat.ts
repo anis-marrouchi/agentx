@@ -106,6 +106,9 @@ export interface AskSeatOptions<Q extends Questions> {
    *  what makes agreement and the eventual promotion decision measurable. */
   incumbent?: Partial<Record<keyof Q & string, string | number>>
   links?: Array<{ kind: string; id: string }>
+  /** Covariates for recalibration — agent, channel, anything categorical
+   *  that plausibly shifts how well calibrated this seat is. */
+  features?: Record<string, string | number | boolean | null>
   signal?: AbortSignal
   timeoutMs?: number
   backend?: string
@@ -194,6 +197,7 @@ function record<Q extends Questions>(
       usage: response.usage,
       incumbent: toIncumbent(opts.incumbent),
       links: opts.links,
+      features: opts.features,
       keepState: !settings.redactState,
     })
   } catch {
@@ -232,6 +236,7 @@ function recordFailure<Q extends Questions>(
       answers: {},
       incumbent: toIncumbent(opts.incumbent),
       links: opts.links,
+      features: opts.features,
       error: String(err?.message ?? err).slice(0, 500),
       keepState: !settings.redactState,
     })
