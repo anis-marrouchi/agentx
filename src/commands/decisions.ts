@@ -98,6 +98,7 @@ function filterFrom(opts: any): GradedRowFilter {
     structureMode: opts.structureMode,
     since: parseSince(opts.since),
     labeledOnly: Boolean(opts.labeled),
+    exploredOnly: Boolean(opts.explored),
     limit: opts.limit ? Number(opts.limit) : undefined,
   }
 }
@@ -127,6 +128,24 @@ decisions
       )
       .all(since)
     emit(rows, opts.json)
+
+    const policy = store.db
+      .prepare(
+        `SELECT seat, mode, COALESCE(action,'(none)') AS action, explored, COUNT(*) AS calls
+           FROM decision_calls WHERE ts >= ? GROUP BY seat, mode, action, explored
+          ORDER BY calls DESC`,
+      )
+      .all(since) as Array<Record<string, unknown>>
+    if (!opts.json && policy.length > 0) {
+      console.log(chalk.bold("\n  policy"))
+      emit(policy, false)
+      console.log(
+        chalk.dim(
+          "\n  explored=1 means the policy wanted to skip and the expensive path ran anyway.\n" +
+            "  Those are the only rows in the skip region that can ever be graded.",
+        ),
+      )
+    }
     store.close()
   })
 
@@ -268,6 +287,7 @@ decisions
   .option("--model <id>")
   .option("--structure-mode <mode>", "never pool verbalized and logprob rows")
   .option("--since <window>")
+  .option("--explored", "only rows the policy wanted to skip — the unbiased skip-region sample")
   .option("--min-n <n>", "refuse to report below this many labeled rows", "100")
   .option("--bins <n>", "default 10", "10")
   .option("--json")
@@ -332,6 +352,25 @@ decisions
       )
     }
 
+    const skipRegion = rows.filter((r) => r.action === "skip")
+    const gradeable = skipRegion.filter((r) => r.explored && r.truth !== undefined)
+    if (skipRegion.length > 0) {
+      console.log(
+        `\n  skip region   ${skipRegion.length} answers ` +
+          `(${((skipRegion.length / rows.length) * 100).toFixed(1)}% of traffic), ` +
+          `${gradeable.length} gradeable`,
+      )
+      if (gradeable.length === 0) {
+        console.log(
+          chalk.yellow(
+            "  Nothing in the skip region has been graded. Everything below describes\n" +
+              "  only the decisions this policy chose NOT to skip — it cannot tell you\n" +
+              "  what skipping would cost. Raise decisions.seats.<seat>.explore.",
+          ),
+        )
+      }
+    }
+
     console.log(chalk.bold("\n  reliability (equal-width bins)"))
     emit(
       report.bins!.map((b) => ({
@@ -353,6 +392,7 @@ decisions
   .requiredOption("--seat <seat>")
   .option("--question <name>")
   .option("--since <window>")
+  .option("--explored", "only rows the policy wanted to skip")
   .option("--steps <n>", "default 20", "20")
   .option("--json")
   .action((opts) => {
