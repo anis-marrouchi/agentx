@@ -1930,6 +1930,92 @@ wiki
 // → synthesizes an answer with citations. This is the Farzapedia-faithful
 // retrieval path; `wiki search` stays as the raw BM25 escape hatch.
 wiki
+  .command("grade")
+  .description("grade absorbed articles with the article-quality seat")
+  .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph | unified | flat", "graph")
+  .option("--agent <id>", "grade only this agent's wiki")
+  .option("--limit <n>", "articles to grade", "20")
+  .option("--min <n>", "only show articles scoring below this", "3")
+  .option("--fields", "also check the required fields for each article's type")
+  .option("--type <t>", "grade only articles of this type (person, place, project, …)")
+  .option("--json")
+  .action(async (opts) => {
+    const { articleQualityQuestionsFor, articleQualityState, gradeArticle, ARTICLE_QUALITY_SEAT } =
+      await import("@/decisions/seats/article-quality")
+    const { fieldQuestions, reportFields } = await import("@/decisions/seats/article-fields")
+    const { askSeat } = await import("@/decisions/seat")
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const limit = parseInt(opts.limit)
+    const min = parseFloat(opts.min)
+
+    const rows: any[] = []
+    outer: for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      for (const meta of store.listArticles(agentId)) {
+        if (rows.length >= limit) break outer
+        const article = store.readArticle(meta.path)
+        if (!article) continue
+        if (opts.type && article.meta.type !== opts.type) continue
+        // One state, every question. The rubric and the per-type field
+        // checklist ride in the same call — a Jev fan-out costs the same
+        // whether it answers four questions or seventeen.
+        const questions = {
+          ...articleQualityQuestionsFor(article.meta.type),
+          ...(opts.fields ? fieldQuestions(article.meta.type) : {}),
+        }
+        const res = await askSeat(
+          ARTICLE_QUALITY_SEAT,
+          articleQualityState({
+            path: meta.path, title: article.meta.title,
+            type: article.meta.type, tags: article.meta.tags, body: article.content,
+          }),
+          questions,
+          { links: [{ kind: "article", id: meta.path }], features: { agent: agentId, type: article.meta.type ?? "?" } },
+        )
+        if (!res) {
+          console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.article-quality.mode"))
+          return
+        }
+        const v = gradeArticle(res.answers as never)
+        const fr = opts.fields ? reportFields(article.meta.type, res.answers as never) : null
+        // A missing critical field is a finding regardless of the score:
+        // an article can read well, score 2.8, and still lack the one
+        // fact it exists to carry.
+        if (v.completeness >= min && !(fr && !fr.fit)) continue
+        rows.push({
+          agent: agentId, type: article.meta.type ?? "?",
+          score: v.completeness.toFixed(2),
+          standsAlone: v.standsAlone.toFixed(2),
+          gap: v.biggestGap,
+          ...(fr ? { missing: fr.missingCritical.join(",") || "-", cov: `${Math.round(fr.coverage * 100)}%` } : {}),
+          title: article.meta.title.slice(0, 44),
+        })
+      }
+    }
+    if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return }
+    if (rows.length === 0) { console.log(chalk.green("  no articles below the threshold")); return }
+    rows.sort((a, b) => parseFloat(a.score) - parseFloat(b.score))
+    const cols = opts.fields
+      ? ["score", "cov", "missing", "type", "gap", "agent", "title"]
+      : ["score", "standsAlone", "type", "gap", "agent", "title"]
+    const w = cols.map((c) => Math.max(c.length, ...rows.map((r) => String(r[c]).length)))
+    const fmt = (cells: any[]) => cells.map((v, i) => String(v).padEnd(w[i])).join("  ")
+    console.log()
+    console.log(chalk.bold(fmt(cols)))
+    for (const r of rows) console.log(fmt(cols.map((c) => r[c])))
+    if (opts.fields) {
+      const unfit = rows.filter((r) => r.missing !== "-").length
+      console.log(chalk.dim(`\n  ${rows.length} article(s) flagged; ${unfit} missing a required field.`))
+      console.log(chalk.dim("  'missing' is the actionable column — a named field beats a score."))
+    } else {
+      console.log(chalk.dim(`\n  ${rows.length} article(s) below ${min}. standsAlone is the one that matters:`))
+      console.log(chalk.dim("  an article can open with a tidy identity line and still send the reader back to the source."))
+    }
+  })
+
+wiki
   .command("query <question>")
   .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
   .option("--dir <path>", "wiki directory")
