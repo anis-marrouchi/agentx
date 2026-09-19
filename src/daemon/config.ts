@@ -396,6 +396,23 @@ const channelsConfigSchema = z.object({
       node: z.string().optional(),
     })).default([]),
   }).default({}),
+  /** ntfy push notifications — outbound only. The operator-facing tap on
+   *  the shoulder: cron failures, task errors, and anything an agent decides
+   *  is worth interrupting a human for. `chatId` on an outgoing message is
+   *  the topic; empty falls back to `topic` here. */
+  ntfy: z.object({
+    enabled: z.boolean().default(false),
+    /** Self-hosted ntfy base URL. Defaults to the public server. */
+    server: z.string().default("https://ntfy.sh"),
+    /** Default topic. Treat it as a secret — on ntfy.sh, knowing the topic
+     *  is the only thing needed to read or publish to it. */
+    topic: z.string().optional(),
+    /** Access token for protected topics. */
+    token: z.string().optional(),
+    /** 1 (min) .. 5 (max). ntfy's own default is 3. */
+    defaultPriority: z.number().int().min(1).max(5).default(3),
+    defaultTitle: z.string().optional(),
+  }).default({}),
   webrtc: z.object({
     enabled: z.boolean().default(false),
     /** ICE STUN servers for NAT discovery. Default is Google's public STUN. */
