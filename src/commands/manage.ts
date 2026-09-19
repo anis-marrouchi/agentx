@@ -589,7 +589,7 @@ channel
             { title: "Contact (phone number)", value: "contact" },
             { title: "Group (name match)", value: "group" },
           ]},
-          { type: "text", name: "value", message: (prev: string) => prev === "contact" ? "Phone number (e.g. +21624309128)" : "Group name (partial match)" },
+          { type: "text", name: "value", message: (prev: string) => prev === "contact" ? "Phone number (e.g. +21600000000)" : "Group name (partial match)" },
           { type: "select", name: "agent", message: "Route to agent", choices: agentChoices },
           { type: "confirm", name: "more", message: "Add another route?", initial: false },
         ])

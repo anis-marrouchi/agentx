@@ -52,8 +52,8 @@ describe("client resolution", () => {
     expect(tg.chatId).toBe("1816212449")
     expect(resolveClient(tg, business)).toBe("noqta")
 
-    const wa = parseWorkRef("atlas:whatsapp:21624309128@s.whatsapp.net")
-    expect(wa.chatId).toBe("21624309128")
+    const wa = parseWorkRef("atlas:whatsapp:21600000000@s.whatsapp.net")
+    expect(wa.chatId).toBe("21600000000")
 
     // api and cron carry nothing addressable, so the agent's org seat decides.
     expect(resolveClient(parseWorkRef("hasanah-coding:api:default"), business)).toBe("hasanah")

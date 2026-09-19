@@ -1059,9 +1059,9 @@ function matchesResume(
 }
 
 /** Normalize a chat identifier for filter comparison. Channel-aware: WhatsApp
- *  ids drift between formats (raw digits "21624309128", JID
- *  "21624309128@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
- *  "+216 24 309 128") depending on whether they came from the adapter's
+ *  ids drift between formats (raw digits "21600000000", JID
+ *  "21600000000@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
+ *  "+216 00 000 000") depending on whether they came from the adapter's
  *  payload, a copy-paste from the WA UI, or an editor field. We collapse all
  *  of these to the canonical bare-id form before equality so authors can write
  *  filters in whichever form is convenient. Other channels (Telegram, GitLab,

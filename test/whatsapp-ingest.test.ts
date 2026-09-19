@@ -20,8 +20,8 @@ import type { WikiEntry } from "../src/wiki/types"
 // --- Test fixtures ---
 
 const contactAnis: ContactRead = {
-  jid: "21624309128@s.whatsapp.net",
-  phone: "21624309128",
+  jid: "21600000000@s.whatsapp.net",
+  phone: "21600000000",
   pushName: "Anis",
   savedName: "Anis Marrouchi",
   status: "Doing AgentX work",
@@ -191,14 +191,16 @@ describe("resolveScope", () => {
   })
 
   it("includes a contact matched by phone substring", () => {
-    const cfg = { ...baseConfig, allowContacts: ["24309"] }
+    // A substring of the first fixture's number only — the second is
+    // 216888… so a match here proves substring matching, not "any contact".
+    const cfg = { ...baseConfig, allowContacts: ["00000"] }
     const targets = resolveScope(cfg, source)
     expect(targets).toHaveLength(1)
     expect(targets[0].jid).toBe(contactAnis.jid)
   })
 
   it("respects `+` prefix in allowlist entries", () => {
-    const cfg = { ...baseConfig, allowContacts: ["+21624309128"] }
+    const cfg = { ...baseConfig, allowContacts: ["+21600000000"] }
     const targets = resolveScope(cfg, source)
     expect(targets).toHaveLength(1)
   })
@@ -206,8 +208,8 @@ describe("resolveScope", () => {
   it("deny wins over allow", () => {
     const cfg = {
       ...baseConfig,
-      allowContacts: ["21624309128"],
-      denyContacts: ["21624309128"],
+      allowContacts: ["21600000000"],
+      denyContacts: ["21600000000"],
     }
     expect(resolveScope(cfg, source)).toHaveLength(0)
   })
@@ -228,7 +230,7 @@ describe("runSweep", () => {
       source, store, agentId: "devops-agent", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21624309128"],
+        allowContacts: ["21600000000"],
         allowGroups: ["120363000000000001"],
       },
     })
@@ -245,7 +247,7 @@ describe("runSweep", () => {
     const store = new MemoryStore()
     const report = await runSweep({
       source, store, agentId: "devops-agent", now: tsNow(), dryRun: true,
-      config: { ...baseConfig, allowContacts: ["21624309128"] },
+      config: { ...baseConfig, allowContacts: ["21600000000"] },
     })
     expect(store.entries).toHaveLength(0)
     expect(report.dryRunEntries).toHaveLength(1)
@@ -269,7 +271,7 @@ describe("runSweep", () => {
     const store = new MemoryStore()
     const report = await runSweep({
       source, store, agentId: "a", now: tsNow(),
-      config: { ...baseConfig, mode: "messages", allowContacts: ["21624309128"], historyDays: 10_000 },
+      config: { ...baseConfig, mode: "messages", allowContacts: ["21600000000"], historyDays: 10_000 },
     })
     expect(report.wroteDmWindows).toBe(1)
     expect(store.entries).toHaveLength(2)
@@ -284,7 +286,7 @@ describe("runSweep", () => {
       source, store, agentId: "a", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21624309128", "21688888888"],
+        allowContacts: ["21600000000", "21688888888"],
         allowGroups: ["120363000000000001"],
         throttle: { ...baseConfig.throttle, maxChatsPerSweep: 2 },
       },
@@ -302,7 +304,7 @@ describe("runSweep", () => {
       source, store, agentId: "a", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21624309128"],
+        allowContacts: ["21600000000"],
         allowGroups: ["120363000000000001"],
       },
     })

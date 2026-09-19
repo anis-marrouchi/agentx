@@ -349,7 +349,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
           const me = this.sock?.user
           const remoteJid = msg.key.remoteJid || ""
           // Self-chat: remoteJid matches our JID or LID
-          const myJid = me?.id?.replace(/:.*/, "") || ""     // 21624309128
+          const myJid = me?.id?.replace(/:.*/, "") || ""     // 21600000000
           const myLid = me?.lid?.replace(/:.*/, "") || ""     // 214997540012179
           const chatUser = remoteJid.replace(/:.*/, "").replace(/@.*/, "")
           const isSelfChat = (chatUser === myJid) || (chatUser === myLid)

@@ -231,7 +231,7 @@ describe("recordRouterDispatch — multi-channel coverage", () => {
     const waMsg: RouterMessageProjection = {
       id: "wa-msg-1",
       channel: "whatsapp",
-      sender: { id: "21621624309128@s.whatsapp.net" },
+      sender: { id: "21621600000000@s.whatsapp.net" },
     }
     recordRouterDispatch(
       ledger, waMsg, "whatsapp", "{}",

@@ -54,7 +54,7 @@ export interface NodeOutputSchema {
 
 const TRIGGER_CHANNEL_COMMON: OutputField[] = [
   { path: "channel", type: "string", description: "Channel name that received the event.", example: `"whatsapp"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
-  { path: "chatId", type: "string", description: "Stable chat id — conversation partner JID (WhatsApp) or chat integer (Telegram). Use as `action.send` chatId to reply on the same thread.", example: `"21624309128@s.whatsapp.net"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
+  { path: "chatId", type: "string", description: "Stable chat id — conversation partner JID (WhatsApp) or chat integer (Telegram). Use as `action.send` chatId to reply on the same thread.", example: `"21600000000@s.whatsapp.net"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "accountId", type: "string", description: "Which bot account received the message. Telegram routes this per-account; inherit into `action.send` to reply through the same bot.", example: `"default"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "text", type: "string", description: "Message body (caption for media), lower-cased for routing but the raw text here is verbatim.", example: `"hello"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "fromJid", type: "string", description: "Raw sender JID/id straight from the platform. Use `sender.id` for the normalized form.", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },

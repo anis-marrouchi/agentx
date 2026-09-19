@@ -686,7 +686,7 @@ function TriggerChannelForm({ node, patchData }: FormProps) {
             <Field
               label="Chat"
               hint={src === "whatsapp-message"
-                ? `Contact number or JID (e.g. "+216 24 309 128", "21624309128@s.whatsapp.net"). Empty or "*" matches any.`
+                ? `Contact number or JID (e.g. "+216 00 000 000", "21600000000@s.whatsapp.net"). Empty or "*" matches any.`
                 : src === "telegram-message"
                   ? `Telegram chat id ("1816212449" for a DM, "-1003861455814" for a group). Empty or "*" matches any.`
                   : `Exact chat id. Empty or "*" matches any.`}
