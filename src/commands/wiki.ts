@@ -2513,9 +2513,12 @@ wiki
   .option("--unclear", "include fields the grader was unsure about")
   .option("--json")
   .action(async (opts) => {
-    const { fieldQuestions, reportFields, articleFieldsState, nextActions, TIER_MEANING } =
+    // Its own seat, not article-quality's. Both ask about the same
+    // articles, but a per-field yes/no and a 0-3 rubric calibrate
+    // differently, and pooling them would average two unrelated error
+    // profiles into one meaningless reliability curve.
+    const { fieldQuestions, reportFields, articleFieldsState, nextActions, TIER_MEANING, ARTICLE_FIELDS_SEAT } =
       await import("@/decisions/seats/article-fields")
-    const { ARTICLE_QUALITY_SEAT } = await import("@/decisions/seats/article-quality")
     const { askSeat } = await import("@/decisions/seat")
     const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
@@ -2532,13 +2535,13 @@ wiki
         if (opts.type && article.meta.type !== opts.type) continue
         checked++
         const res = await askSeat(
-          ARTICLE_QUALITY_SEAT,
+          ARTICLE_FIELDS_SEAT,
           articleFieldsState({ title: article.meta.title, type: article.meta.type, body: article.content }),
           fieldQuestions(article.meta.type),
           { links: [{ kind: "article", id: meta.path }], features: { agent: agentId, type: article.meta.type ?? "?" } },
         )
         if (!res) {
-          console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.article-quality.mode"))
+          console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.article-fields.mode"))
           return
         }
         const report = reportFields(article.meta.type, res.answers as never)
