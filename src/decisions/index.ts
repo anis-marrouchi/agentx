@@ -68,7 +68,11 @@ export function registerBuiltinDecisionBackends(
       // stays false until it is measured.
       probabilitySource: "native",
       maxChoiceOptions: 255,
-      maxStateChars: 24_000,
+      // Jev's request budget is ~32k TOKENS. 24k characters is roughly 6k
+      // tokens — a quarter of what it accepts, and it was my conservative
+      // carry-over from the simple-jev demo's 2k context. It silently
+      // truncated re-ranking shortlists at the tail.
+      maxStateChars: 90_000,
       ...jev,
     }),
   )
@@ -85,7 +89,7 @@ export function registerBuiltinDecisionBackends(
       apiKeyEnv: "TYPESAFE_API_KEY",
       probabilitySource: "native",
       maxChoiceOptions: 255,
-      maxStateChars: 24_000,
+      maxStateChars: 90_000,
       ...typesafe,
     }),
   )

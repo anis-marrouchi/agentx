@@ -638,7 +638,7 @@ const decisionsConfigSchema = z.object({
       model: z.string().default("jev-latest"),
       apiKeyEnv: z.string().default("OPENROUTER_API_KEY"),
       timeoutMs: z.number().int().min(100).default(30_000),
-      maxStateChars: z.number().int().min(500).default(24_000),
+      maxStateChars: z.number().int().min(500).default(90_000),
       maxChoiceOptions: z.number().int().min(2).max(255).default(255),
     }).default({}),
     /** Jev direct from TypeSafe rather than through OpenRouter. Same
@@ -649,7 +649,7 @@ const decisionsConfigSchema = z.object({
       model: z.string().default("jev-latest"),
       apiKeyEnv: z.string().default("TYPESAFE_API_KEY"),
       timeoutMs: z.number().int().min(100).default(30_000),
-      maxStateChars: z.number().int().min(500).default(24_000),
+      maxStateChars: z.number().int().min(500).default(90_000),
       maxChoiceOptions: z.number().int().min(2).max(255).default(255),
     }).default({}),
   }).default({}),
