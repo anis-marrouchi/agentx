@@ -165,6 +165,33 @@ function isDuplicateOfLast(
   return last.role === role && (last.name ?? "") === name && last.content === content
 }
 
+/**
+ * The user message before `currentMessage`, for a dispatch that has already
+ * recorded its own turn.
+ *
+ * By the time the session-continuity seat runs, executeInternal has already
+ * appended the incoming request via addUserMessage — so the last user
+ * message in the session IS the request being dispatched. Reading it
+ * naively asks "does this request continue itself", which answers yes with
+ * high confidence every time and pins the seat permanently shut.
+ *
+ * At most one tail entry can be the current message: addUserMessage
+ * collapses consecutive exact duplicates, so a genuine re-send is stored
+ * once. When the tail is NOT the current message (the append was deduped,
+ * or the caller runs before it), the tail already is the prior request and
+ * is returned unchanged.
+ */
+export function priorUserMessage(
+  messages: SessionMessage[] | undefined,
+  currentMessage: string,
+): string | null {
+  const users = (messages ?? []).filter((m) => m.role === "user")
+  const tail = users[users.length - 1]
+  if (!tail) return null
+  const prior = tail.content === currentMessage ? users[users.length - 2] : tail
+  return prior?.content ?? null
+}
+
 /** Bucket an ISO timestamp into a stable 15-min window label (e.g. "14:45").
  *  Used in history rendering so the prompt's bucket headers change at most
  *  every 15 minutes — the prefix stays byte-stable across intra-bucket

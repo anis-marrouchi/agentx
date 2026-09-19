@@ -10,7 +10,7 @@ import {
 } from "@/decisions/seats/session-continuity"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
-import { SessionStore, detectLongMemoryHint } from "./sessions"
+import { SessionStore, detectLongMemoryHint, priorUserMessage } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
@@ -745,8 +745,10 @@ export class AgentRegistry {
     let minutesSinceLastTurn: number | null = null
     try {
       const session = this.sessions.getSession(task.agentId, channel, chatId)
-      const priorUser = [...(session.messages ?? [])].reverse().find((m) => m.role === "user")
-      previousMessage = priorUser?.content ?? null
+      // Not simply the last user message: this turn's request was already
+      // appended upstream, so that would compare the request to itself.
+      // See priorUserMessage for why the seat stays shut when it does.
+      previousMessage = priorUserMessage(session.messages, task.message ?? "")
       if (session.updatedAt) {
         minutesSinceLastTurn = Math.round((Date.now() - Date.parse(session.updatedAt)) / 60_000)
       }
