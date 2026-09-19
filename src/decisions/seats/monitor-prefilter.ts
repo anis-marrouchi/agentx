@@ -39,22 +39,16 @@ import type { AnswersFor, NoulAnswer, StateValue } from "../types"
 
 export const MONITOR_PREFILTER_SEAT = "monitor-prefilter"
 
+// Phrasing follows TypeSafe's own rubric exemplars: one short clause, one
+// fact, stated in the state's vocabulary, no criteria essay. The earlier
+// version of worthReviewing asked whether the run "left something
+// unresolved, surprising, risky, or needing a decision" — four questions
+// wearing one name, and exactly the shape their consistency cookbook shows
+// scattering across repeated samples. `decisions consistency` measures
+// whether this rewrite actually holds still.
 export const monitorPrefilterQuestions = {
-  worthReviewing: noul(
-    "Would a person act on a written review of this run?",
-    {
-      true:
-        "The run left something unresolved, surprising, risky, or needing a decision — " +
-        "a review would produce a follow-up someone actually does.",
-      false:
-        "The run did what was asked and ended cleanly. A review would produce a summary " +
-        "nobody reads and no follow-up.",
-    },
-  ),
-  runHitAnError: noul("Did this run fail, error, or get cancelled?", {
-    true: "The run's status is anything other than success.",
-    false: "The run completed successfully.",
-  }),
+  worthReviewing: noul("Would a person take an action after reading a review of this run?"),
+  runHitAnError: noul("Did this run end in anything other than success?"),
 }
 
 export type MonitorPrefilterAnswers = AnswersFor<typeof monitorPrefilterQuestions>
