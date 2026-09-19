@@ -232,7 +232,7 @@ wiki
       // that nobody typed into a chat, and nobody types their own.
       let factsBlock = ""
       if (opts.facts !== false) {
-        const { extractHints, resolveFacts, mergeRecords, renderFactsBlock, installPrompts, defaultSources } =
+        const { extractHints, resolveFacts, mergeRecords, renderFactsBlock, installPrompts, defaultSources, recordsFromEntries } =
           await import("@/wiki/facts")
         // The dictionary is fleet-wide, not per-agent. The wiki is one
         // shared source of truth, so a person another agent has an
@@ -250,15 +250,29 @@ wiki
           knownPeople = [...names]
         }
         const hints = extractHints(
-          unabsorbed.map((e) => ({ context: e.sourceContext, content: e.content })),
+          unabsorbed.map((e) => ({
+            context: e.sourceContext,
+            content: e.content,
+            sender: typeof e.meta?.sender === "string" ? e.meta.sender : undefined,
+          })),
           { known: knownPeople },
         )
-        if (hints.length > 0) {
+        // The entries' own stamped identifiers come first: they are the
+        // platform's record of who sent this message, so unlike a
+        // directory lookup there is no name to resolve and nothing to
+        // mismatch. Directory results fill in around them.
+        const fromEntries = recordsFromEntries(unabsorbed)
+        if (hints.length > 0 || fromEntries.length > 0) {
           const sources = defaultSources()
-          const { records, results } = await resolveFacts(hints, { sources })
-          const merged = mergeRecords(records)
+          const { records, results } = hints.length > 0
+            ? await resolveFacts(hints, { sources })
+            : { records: [], results: [] }
+          const merged = mergeRecords([...fromEntries, ...records])
           factsBlock = renderFactsBlock(merged)
-          const got = results.filter((r) => r.records.length > 0).map((r) => `${r.source}:${r.records.length}`)
+          const got = [
+            ...(fromEntries.length > 0 ? [`entries:${fromEntries.length}`] : []),
+            ...results.filter((r) => r.records.length > 0).map((r) => `${r.source}:${r.records.length}`),
+          ]
           console.log(chalk.dim(`    Facts: ${hints.length} entities → ${merged.length} resolved${got.length ? ` (${got.join(" ")})` : ""}`))
           for (const p of installPrompts(results, sources)) {
             // A source nobody knows is missing becomes a permanent hole
@@ -2624,13 +2638,24 @@ wiki
     const { fieldQuestions, reportFields, articleFieldsState, ARTICLE_FIELDS_SEAT, BACKFILL_ORDER } =
       await import("@/decisions/seats/article-fields")
     const { askSeat } = await import("@/decisions/seat")
-    const { resolveFacts, mergeRecords, installPrompts, defaultSources } = await import("@/wiki/facts")
+    const { resolveFacts, mergeRecords, installPrompts, defaultSources, recordsFromEntries } =
+      await import("@/wiki/facts")
     const { backfillArticle } = await import("@/wiki/backfill")
 
     const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     const limit = parseInt(opts.limit)
     const sources = defaultSources()
+
+    // Identifiers already stamped on captured entries. These need no
+    // tool and no token, so on a node with neither wacli nor a GitLab
+    // token this is the only source there is — and it is the most
+    // reliable one, because the platform recorded who sent the message
+    // rather than us matching a name against a directory.
+    const stamped = mergeRecords(recordsFromEntries((hub.getSharedStore() as never as {
+      listEntries: () => Array<{ source?: string; meta?: Record<string, unknown> }>
+    }).listEntries()))
+    const stampedByName = new Map(stamped.map((e) => [e.name.toLowerCase().trim(), e]))
 
     let considered = 0
     let written = 0
@@ -2663,6 +2688,7 @@ wiki
         if (wanted.length === 0) continue
 
         const { records, results } = await resolveFacts([{ name: article.meta.title, type: "person" }], { sources })
+        const own = stampedByName.get(article.meta.title.toLowerCase().trim())
         if (!promptedInstall) {
           for (const p of installPrompts(results, sources)) {
             console.log(chalk.yellow(`  ! ${p.source} ${p.kind} — would supply ${p.provides.join(", ")}`))
@@ -2670,7 +2696,12 @@ wiki
           }
           promptedInstall = true
         }
-        const merged = mergeRecords(records)
+        // Stamped identifiers win over directory hits: same reasoning as
+        // absorb, there is no name resolution step to get wrong.
+        const merged = mergeRecords([
+          ...(own ? [{ name: own.name, source: "entries", fields: Object.fromEntries(Object.entries(own.fields).map(([k, v]) => [k, v.value])) }] : []),
+          ...records,
+        ])
         if (merged.length === 0) continue
 
         const { content, edits } = backfillArticle(article.content, merged[0], wanted)

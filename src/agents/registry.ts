@@ -167,6 +167,38 @@ function clip(s: string, max = 800): string {
  * re-rendering it every turn is pure bloat, and per-turn bloat is what
  * drove tier-2 rotation and the "I have no prior context" failures.
  */
+/**
+ * Metadata stamped onto a captured wiki entry.
+ *
+ * Kept as a named function so the capture site stays readable and so the
+ * shape is testable without standing up a registry. Empty objects
+ * collapse to undefined — an entry with no metadata should carry no
+ * frontmatter keys rather than an empty map that later parses as "we
+ * looked and there was nothing".
+ */
+export function buildEntryMeta(
+  intent: { path?: string[]; pathLabel?: string } | undefined,
+  context: {
+    sender?: string
+    senderId?: string
+    senderUsername?: string
+    group?: string
+  } | undefined,
+): Record<string, unknown> | undefined {
+  const meta: Record<string, unknown> = {}
+  if (intent?.path?.length) {
+    meta.intentPath = intent.path
+    meta.intentPathLabel = intent.pathLabel
+  }
+  if (context?.sender) meta.sender = context.sender
+  if (context?.senderId) meta.senderId = context.senderId
+  if (context?.senderUsername) meta.senderUsername = context.senderUsername
+  // Only worth recording alongside a sender; on its own `sourceContext`
+  // already holds it.
+  if (context?.group && context?.sender) meta.group = context.group
+  return Object.keys(meta).length > 0 ? meta : undefined
+}
+
 export function buildWikiContext(
   agentWiki: ReturnType<WikiHub["getAgentWiki"]>,
   agentId: string,
@@ -2093,14 +2125,27 @@ export class AgentRegistry {
               source: channel,
               sourceContext: task.context?.group || task.context?.sender,
               content: `User: ${task.message}\n\nAgent: ${response.content}`,
+              // Who actually spoke.
+              //
+              // `sourceContext` collapses group and sender into one slot
+              // and the group wins, so in a group chat the speaker was
+              // dropped on the floor — and group chat is where most
+              // people talk. Across a month of entries not one recorded
+              // a sender, which is why the wiki could describe someone's
+              // billing thread in detail and not know how to reach them:
+              // the fact was never captured, so no prompt and no lookup
+              // could recover it.
+              //
+              // senderId is the platform's own identifier — on WhatsApp
+              // that is the JID, which is the number itself. Capturing
+              // it here means the identifier arrives with the entry
+              // instead of being reconstructed later from a directory.
               // Stamp the classifier's path on the entry so `wiki absorb` can
               // propagate it to the article's `graphPath` without
               // reconstructing fingerprints from transformed content. Without
               // this, articles never carry graphPath and the wiki retrieval
               // scorer multiplies the graph weight (default 0.6) by 0.
-              meta: intent?.path?.length
-                ? { intentPath: intent.path, intentPathLabel: intent.pathLabel }
-                : undefined,
+              meta: buildEntryMeta(intent, task.context),
             })
           } catch {
             // Wiki export is best-effort

@@ -31,7 +31,7 @@
 export interface EntityHint {
   name: string
   /** Where the name came from, so a source can skip hints it cannot serve. */
-  origin?: "context" | "body" | "article"
+  origin?: "sender" | "context" | "body" | "article"
   /** Narrows the lookup when absorb already knows the type. */
   type?: string
 }

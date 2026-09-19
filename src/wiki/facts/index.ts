@@ -8,6 +8,8 @@ export { countryFromPhone, parseContactsTable, plausible } from "./sources/wacli
 export { createGitlabSource } from "./sources/gitlab"
 export { createGogSource } from "./sources/gog"
 export { createWacliSource } from "./sources/wacli"
+export { platformOf, recordsFromEntries } from "./sources/entries"
+export type { SenderStampedEntry } from "./sources/entries"
 
 export interface ResolveOptions {
   sources?: FactSource[]
@@ -53,15 +55,27 @@ export function defaultSources(): FactSource[] {
  * the entry that names the person.
  */
 export function extractHints(
-  entries: Array<{ context?: string; content?: string }>,
+  entries: Array<{ context?: string; content?: string; sender?: string }>,
   opts: { max?: number; known?: string[] } = {},
 ): EntityHint[] {
   const max = opts.max ?? 25
   const byName = new Map<string, EntityHint>()
 
+  // The stamped sender first: it is the platform's own record of who
+  // spoke, so it beats both a heuristic over `context` and a substring
+  // scan of the body. Entries captured before senders were recorded
+  // simply have none, and fall through to the other two.
+  for (const e of entries) {
+    const s = (e.sender ?? "").trim()
+    if (s && isPersonName(s)) byName.set(s.toLowerCase(), { name: s, origin: "sender", type: "person" })
+  }
+
   for (const e of entries) {
     const ctx = (e.context ?? "").trim()
-    if (isPersonName(ctx)) byName.set(ctx.toLowerCase(), { name: ctx, origin: "context" })
+    if (!isPersonName(ctx)) continue
+    const key = ctx.toLowerCase()
+    if (byName.has(key)) continue
+    byName.set(key, { name: ctx, origin: "context" })
   }
 
   // `context` only names a person for one-to-one channels. On a GitLab
