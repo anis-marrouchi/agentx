@@ -323,7 +323,14 @@ export interface UnpromotedOptions {
  *  `updatedAt` is newer than the recorded one — ISO-8601 strings compare
  *  lexicographically, so plain `>` is safe. */
 export function getUnpromotedMemories(
-  all: Array<{ agentId: string; memory: MemoryRecord }>,
+  all: Array<{
+    agentId: string
+    memory: MemoryRecord
+    /** Supplied by non-memory sources so their namespace survives. */
+    stamp?: string
+    /** Optional rank — more occurrences sort first. */
+    occurrences?: number
+  }>,
   index: WikiIndex,
   ledger: PromotionLedger,
   opts: UnpromotedOptions = {},
@@ -345,8 +352,8 @@ export function getUnpromotedMemories(
   }
   for (const e of ledger) record(e.stamp)
 
-  const candidates: MemoryCandidate[] = []
-  for (const { agentId, memory } of all) {
+  const candidates: Array<MemoryCandidate & { occurrences?: number }> = []
+  for (const { agentId, memory, stamp, occurrences } of all) {
     if (!types.includes(memory.type)) continue
     if (opts.agentFilter && agentId !== opts.agentFilter) continue
     if (opts.sinceMs !== undefined) {
@@ -356,11 +363,18 @@ export function getUnpromotedMemories(
     const key = memoryKey(agentId, memory)
     const handled = seen.get(key)
     if (handled && memory.updatedAt <= handled) continue
-    candidates.push({ agentId, memory, key, stamp: memoryStamp(agentId, memory) })
+    // A caller-supplied stamp is kept as-is. Re-deriving it would
+    // rewrite a `review:` stamp into the `memory:` namespace and lose
+    // the provenance the ledger needs to tell the two sources apart.
+    candidates.push({ agentId, memory, key, stamp: stamp ?? memoryStamp(agentId, memory), occurrences })
   }
 
+  // Recurrence first where a source provides it, then recency. Memory
+  // candidates carry no count, so their ordering is unchanged.
   return candidates
-    .sort((a, b) => b.memory.updatedAt.localeCompare(a.memory.updatedAt))
+    .sort((a, b) =>
+      (b.occurrences ?? 0) - (a.occurrences ?? 0) ||
+      b.memory.updatedAt.localeCompare(a.memory.updatedAt))
     .slice(0, max)
 }
 
@@ -468,6 +482,11 @@ export interface RunPromotionOptions extends PromotionLlmOptions {
   agentFilter?: string
   types?: MemoryType[]
   max?: number
+  /** Candidates from somewhere other than agent memory — currently
+   *  session-monitor reviews. They join the same pool so they inherit
+   *  the ledger, the dedupe and the judge rather than getting a second
+   *  pipeline that drifts from this one. */
+  extraCandidates?: MemoryCandidate[]
   /** Write articles + ledger. Default false (dry-run). */
   commit?: boolean
   log?: (msg: string) => void
@@ -504,7 +523,7 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
   const store = new WikiStore(wikiDir, (...args: unknown[]) => log(args.map(String).join(" ")))
   const index = store.rebuildIndex()
   const ledger = readPromotionLedger(wikiDir)
-  const all = listAllAgentMemories(memoryRoot)
+  const all = [...listAllAgentMemories(memoryRoot), ...(opts.extraCandidates ?? [])]
 
   report.candidates = getUnpromotedMemories(all, index, ledger, {
     types: opts.types,

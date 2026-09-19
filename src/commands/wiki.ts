@@ -467,6 +467,8 @@ wiki
   .option("--via <agentId>", "route the LLM call through an agent — uses the agent's own session, no API key")
   .option("--model <model>", "direct Anthropic API — needs ANTHROPIC_API_KEY")
   .option("--daemon <url>", "daemon API base URL for --via", "http://127.0.0.1:18800")
+  .option("--reviews", "also promote findings from session-monitor reviews")
+  .option("--review-kinds <list>", "which review kinds", "decisions,warnings,friction,context")
   .option("--commit", "write articles and ledger (default: dry-run)", false)
   .action(async (opts) => {
     const sinceMs = parsePromoteSince(opts.since)
@@ -486,7 +488,40 @@ wiki
     console.log(chalk.bold("  Memory → Wiki Promotion"))
     console.log()
 
+    // The monitor has been producing structured findings all along and
+    // none of them ever reached the wiki. They are not conversation, so
+    // absorb was never going to see them; they are already-formed
+    // claims, which is exactly what promotion is for.
+    let extraCandidates: import("@/wiki/promote").MemoryCandidate[] = []
+    if (opts.reviews) {
+      const { reviewsToCandidates } = await import("@/wiki/review-candidates")
+      const { default: Database } = await import("better-sqlite3")
+      const dbPath = resolve(process.cwd(), ".agentx/db.sqlite")
+      if (!existsSync(dbPath)) {
+        console.log(chalk.yellow(`  --reviews: no ${dbPath}`))
+      } else {
+        const db = new Database(dbPath, { readonly: true })
+        try {
+          const rows = db.prepare(
+            "SELECT id, session_id, agent, source, updated_at, result FROM session_reviews WHERE status='ready' AND result IS NOT NULL AND updated_at >= ? ORDER BY updated_at DESC",
+          ).all(Date.now() - (sinceMs ?? 7 * 864e5)) as never[]
+          extraCandidates = reviewsToCandidates(rows, {
+            kinds: String(opts.reviewKinds).split(",").map((k: string) => k.trim()).filter(Boolean),
+          })
+          const recurring = (extraCandidates as Array<{ occurrences?: number }>).filter((c) => (c.occurrences ?? 1) > 1).length
+          console.log(chalk.dim(`  ${rows.length} review(s) in window → ${extraCandidates.length} candidate finding(s), ${recurring} seen in more than one session`))
+          const top = (extraCandidates as Array<{ occurrences?: number; memory: { description: string } }>)[0]
+          if (top && (top.occurrences ?? 1) > 1) {
+            console.log(chalk.dim(`  most recurrent (${top.occurrences} sessions): ${top.memory.description.slice(0, 84)}`))
+          }
+        } finally {
+          db.close()
+        }
+      }
+    }
+
     const report = await runPromotion({
+      extraCandidates,
       wikiDir: opts.dir ? resolve(opts.dir) : undefined,
       memoryRoot: opts.memoryDir ? resolve(opts.memoryDir) : undefined,
       sinceMs,
