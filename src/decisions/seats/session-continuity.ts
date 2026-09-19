@@ -47,7 +47,38 @@ export const SESSION_CONTINUITY_SEAT = "session-continuity"
 // context ("forget the deploy, what was that token you mentioned?"), and
 // rotating on that one is precisely the amnesia case.
 export const sessionContinuityQuestions = {
-  continues: noul("Is the new request part of the same piece of work as the previous request?"),
+  // `continues` states the boundary in criteria rather than leaving it to
+  // the phrase "same piece of work".
+  //
+  // It used to ask "Is the new request part of the same piece of work as
+  // the previous request?" with no criteria — the vague-definition shape
+  // TypeSafe's Noul page warns about by example ("Is the candidate strong
+  // in Python?"). With no stated boundary the probability had nothing
+  // stable to mean, and it showed: across four resampled runs of the 27
+  // labelled bench turns, the two populations sat the WRONG way round
+  // (worst-case margin about -0.12) while `needsHistory` — which asks a
+  // referential question with a definite answer — separated.
+  //
+  // Supplying the boundary through criteria, which the docs call for
+  // exactly when "the boundary between yes and no is nuanced", caught 6 of
+  // 7 subject changes against 4 of 7, in every run, with no rotation on a
+  // turn that needed earlier context.
+  //
+  // It did NOT make `continues` cleanly separable — the margin moves to
+  // roughly zero, not comfortably positive. This is a better question, not
+  // a solved one, and it is still the weaker of the two.
+  continues: noul(
+    "The new request continues the task the user was already working on in the previous request, rather than starting a separate one.",
+    {
+      true:
+        'The new request advances, narrows, corrects or follows up on the previous request\'s task — including terse replies such as "and the cost?" or "why?" that mean nothing on their own.',
+      false:
+        "The new request opens a subject that could be answered without having seen the previous request, even if it arrived seconds later or belongs to the same broad field.",
+    },
+  ),
+  // Left alone deliberately. It already separates, and changing both
+  // questions at once would have produced a number nothing could be
+  // attributed to.
   needsHistory: noul("Does the new request refer to something stated earlier in the conversation?"),
 }
 

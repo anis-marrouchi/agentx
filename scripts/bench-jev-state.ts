@@ -36,6 +36,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import {
   registerBuiltinDecisionBackends,
   getDecisionBackend,
+  noul,
   type NoulAnswer,
 } from "@/decisions"
 import {
@@ -46,7 +47,47 @@ import {
   type ContinuityInput,
   type SessionContinuityAnswers,
 } from "@/decisions/seats/session-continuity"
+import type { Questions } from "@/decisions"
 import { SCENARIOS, type BenchScenario, type Expectation } from "./bench-jev-scenarios"
+
+// Candidate question phrasings.
+//
+// v1 is what the seat ships. v2 changes ONE thing — `continues` — so the
+// comparison isolates it; `needsHistory` is held identical because it
+// already separates and a change there would confound the result.
+//
+// The case against v1's `continues`: "part of the same piece of work" is
+// the vague-definition shape TypeSafe's Noul page warns about by example
+// ("Is the candidate strong in Python?"). There is no stated boundary, so
+// the probability has nothing stable to mean. `needsHistory` asks a
+// referential question — does this point at something said earlier — which
+// has a definite answer, and it is the one that separates cleanly.
+//
+// v2 keeps the judgment but supplies the boundary through `criteria`,
+// which the seat has never used and which the docs call for exactly when
+// "the boundary between yes and no is nuanced".
+const QUESTION_SETS = {
+  // Spelled out rather than imported, so promoting a variant into the seat
+  // cannot quietly turn v1 into a copy of v2 and report no difference.
+  v1: {
+    continues: noul("Is the new request part of the same piece of work as the previous request?"),
+    needsHistory: sessionContinuityQuestions.needsHistory,
+  },
+  v2: {
+    continues: noul(
+      "The new request continues the task the user was already working on in the previous request, rather than starting a separate one.",
+      {
+        true:
+          "The new request advances, narrows, corrects or follows up on the previous request's task — including terse replies such as \"and the cost?\" or \"why?\" that mean nothing on their own.",
+        false:
+          "The new request opens a subject that could be answered without having seen the previous request, even if it arrived seconds later or belongs to the same broad field.",
+      },
+    ),
+    needsHistory: sessionContinuityQuestions.needsHistory,
+  },
+} as const
+
+type QuestionSetName = keyof typeof QUESTION_SETS
 
 interface Probe {
   scenario: string
@@ -67,6 +108,7 @@ function parseArgs(argv: string[]) {
   }
   return {
     turns: Number(get("turns", "3")),
+    compare: (get("compare", "state") ?? "state") as "state" | "questions",
     backend: get("backend"),
     json: argv.includes("--json"),
   }
@@ -80,6 +122,7 @@ async function probeScenario(
   width: number,
   backendName: string,
   model: string | undefined,
+  questions: Questions,
 ): Promise<Probe[]> {
   const backend = getDecisionBackend(backendName)
   const out: Probe[] = []
@@ -106,7 +149,7 @@ async function probeScenario(
       const started = Date.now()
       const res = await backend.decide({
         state: continuityState(input),
-        questions: sessionContinuityQuestions,
+        questions,
         model,
       })
       const answers = res.answers as SessionContinuityAnswers
@@ -197,19 +240,31 @@ async function main() {
   const labelled = SCENARIOS.reduce((n, s) => n + s.turns.filter((t) => t.expect).length, 0)
   console.error(
     `probing ${labelled} labelled turns x 2 state widths on backend "${backendName}"\n` +
+      `comparing ${args.compare === "questions" ? "question phrasings" : "state widths"}\n` +
       `no agent dispatches — decision calls only\n`,
   )
 
-  const arms: Array<{ label: string; width: number }> = [
-    { label: `narrow (today)`, width: 0 },
-    { label: `wide (+${args.turns})`, width: args.turns },
-  ]
+  // One variable per run. `state` holds the questions fixed and moves the
+  // width; `questions` holds the width fixed and moves the phrasing.
+  // Moving both at once produces a number that cannot be attributed.
+  const arms: Array<{ label: string; width: number; set: QuestionSetName }> =
+    args.compare === "questions"
+      ? [
+          { label: `v1 (today)`, width: args.turns, set: "v1" },
+          { label: `v2 (criteria)`, width: args.turns, set: "v2" },
+        ]
+      : [
+          { label: `narrow (today)`, width: 0, set: "v1" },
+          { label: `wide (+${args.turns})`, width: args.turns, set: "v1" },
+        ]
 
   const results: Array<ReturnType<typeof summarise> & { probes: Probe[] }> = []
   for (const arm of arms) {
     const probes: Probe[] = []
     for (const scenario of SCENARIOS) {
-      probes.push(...(await probeScenario(scenario, arm.width, backendName, model)))
+      probes.push(
+        ...(await probeScenario(scenario, arm.width, backendName, model, QUESTION_SETS[arm.set])),
+      )
     }
     results.push({ ...summarise(arm.label, probes), probes })
   }
