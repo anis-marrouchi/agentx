@@ -22,6 +22,36 @@ import type { AnswersFor, ChoiceAnswer, NoulAnswer, ScoreAnswer, StateValue } fr
 // What this does NOT do is write the article. Jev cannot generate text.
 // The output is a gate and a label; Sonnet still composes whatever
 // survives. The saving is in what never reaches it.
+//
+// ---------------------------------------------------------------------
+// MEASURED, AND IT DOES NOT WORK. Do not wire this in active mode.
+//
+// `agentx wiki triage-backtest` grades the gate against absorb's own
+// verdicts — 815 entries absorb cited, 4,811 it passed over, free labels
+// already on disk. On a balanced sample of 200:
+//
+//   default policy      recall 25%, filtering 72%
+//   every threshold 0   recall 45%  (the type gate alone costs 55%)
+//   type gate off too   recall 95% buys 4% filtering — nothing
+//
+// So the thresholds were never the problem. A rewritten question aimed
+// straight at the label — "would a wiki cite this at all, even one
+// sentence inside an article about something else?" — came out
+// ANTI-correlated: mean 0.245 on entries absorb kept versus 0.323 on
+// entries it discarded. Worse than a coin toss.
+//
+// Two readings, and they are not exclusive. Absorb merges: whether an
+// entry gets cited depends on what else was in its batch of five and
+// whether a related article already existed, so the label carries a lot
+// of lottery. And whatever the model is judging when asked "is this
+// worth keeping", it is not the thing absorb responds to.
+//
+// The honest state: this seat is unvalidated, the harness that would
+// validate it exists, and the evidence so far says no. Left in the tree
+// because the backtest is the useful artifact and because a future
+// question may do better — but nothing should route through it until a
+// run of `wiki triage-backtest --sweep` says otherwise.
+// ---------------------------------------------------------------------
 
 export const ENTRY_TRIAGE_SEAT = "entry-triage"
 
@@ -38,6 +68,18 @@ export const ENTRY_TYPES = {
 } as const
 
 export const entryTriageQuestions = {
+  // The question that matches how absorb actually behaves.
+  //
+  // The three below ask whether an entry DESERVES AN ARTICLE. Measured
+  // against absorb's own verdicts they filtered 4% of the corpus at 95%
+  // recall — useless — because absorb mostly MERGES an entry into an
+  // article that already exists. An entry can supply one sentence to a
+  // person's page without being a person article itself, so "what type
+  // is this?" and "is this worth reading?" are different questions and
+  // only the second is the one the gate needs answered.
+  citeWorthy: noul(
+    "Would a curated wiki cite this entry for anything at all — a fact, a date, a name, a decision — even a single sentence inside an article about something else?",
+  ),
   type: choice(ENTRY_TYPES, "What kind of wiki article, if any, does this entry belong in?"),
   worthKeeping: noul("Would this entry still be useful to someone in six months?"),
   procedure: noul("Does this entry describe how to do something, step by step?"),

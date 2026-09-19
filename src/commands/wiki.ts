@@ -2572,6 +2572,8 @@ wiki
   .option("--limit <n>", "articles to check", "40")
   .option("--auto", "only gaps a system of record can close without asking anyone")
   .option("--ask", "queue the gaps that need a person onto the questions list")
+  .option("--notify", "push the load-bearing ones to notifications.destination")
+  .option("--notify-tier <tier>", "tier at or above which to push", "pillar")
   .option("--unclear", "include fields the grader was unsure about")
   .option("--json")
   .action(async (opts) => {
@@ -2657,6 +2659,45 @@ wiki
     if (opts.ask) {
       console.log(chalk.cyan(`  Queued ${queued.added} question(s) for a person (${queued.skipped} already asked).`))
       console.log(chalk.dim("  agentx wiki questions   ·   agentx wiki answer <id> \"<value>\""))
+    }
+
+    // Interrupting someone is itself a decision, and until now the only
+    // one agentx made on that was "did the task run for 30 seconds".
+    // Tier is a better basis: a missing foundation fact makes an article
+    // describe nothing, and a missing piece of furniture can wait for
+    // whenever somebody opens the queue.
+    if (opts.ask && opts.notify && queued.added > 0) {
+      const { TIER_RANK } = await import("@/decisions/seats/article-fields")
+      const floor = TIER_RANK[opts.notifyTier as keyof typeof TIER_RANK] ?? TIER_RANK.pillar
+      const worth = pending.filter((q) => (TIER_RANK[(q.tier ?? "furniture") as keyof typeof TIER_RANK] ?? 9) <= floor)
+      if (worth.length === 0) {
+        console.log(chalk.dim(`  Nothing at or above ${opts.notifyTier} — not interrupting anyone.`))
+      } else {
+        const { loadDaemonConfig } = await import("@/daemon/config")
+        const cfg: any = loadDaemonConfig()
+        const dest = cfg?.notifications?.destination
+        if (!dest?.channel || !dest?.chatId) {
+          console.log(chalk.yellow("  --notify: no notifications.destination configured — questions are queued but nobody was told."))
+        } else {
+          const lines = worth.slice(0, 10).map((q) => `• ${q.question}`).join("\n")
+          const more = worth.length > 10 ? `\n…and ${worth.length - 10} more` : ""
+          const text = `${worth.length} wiki gap(s) need you (${opts.notifyTier}+):\n${lines}${more}\n\nagentx wiki questions`
+          const port = cfg?.daemon?.port ?? cfg?.port ?? 18800
+          try {
+            const r = await fetch(`http://127.0.0.1:${port}/channel/send`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }),
+            })
+            console.log(r.ok
+              ? chalk.cyan(`  Pushed ${worth.length} question(s) to ${dest.channel}.`)
+              : chalk.yellow(`  Push failed (${r.status}) — questions are still queued.`))
+          } catch (e: any) {
+            // The queue is the durable thing; the push is a courtesy.
+            console.log(chalk.yellow(`  Push failed (${String(e?.message ?? e).slice(0, 80)}) — questions are still queued.`))
+          }
+        }
+      }
     }
   })
 
@@ -2878,6 +2919,143 @@ wiki
     console.log(ok
       ? chalk.green(`  wrote ${q.field} into ${q.path} (prior version kept)`)
       : chalk.red(`  could not write ${q.path}`))
+  })
+
+// Does the triage gate actually work? Measured, not assumed.
+//
+// The seat has existed unwired for a while because nothing could say
+// whether it was right. The corpus answers that: absorb has already
+// judged 5,626 entries, so the gate can be run against its verdicts
+// before it is allowed to drop anything.
+wiki
+  .command("triage-backtest")
+  .description("grade the entry-triage gate against what absorb actually kept")
+  .option("--dir <path>", "wiki directory")
+  .option("--n <n>", "entries to sample (half positive, half negative)", "200")
+  .option("--min-worth <n>", "P(useful in six months) required to keep")
+  .option("--min-durability <n>", "expected durability required to keep")
+  .option("--min-type <n>", "type confidence required to keep")
+  .option("--sweep", "search thresholds for the most filtering that still keeps ~all positives")
+  .option("--min-recall <n>", "recall floor for --sweep", "0.95")
+  .option("--save <file>", "write the graded outcomes so sweeps can be re-run for free")
+  .option("--load <file>", "re-sweep saved outcomes without paying for the calls again")
+  .option("--json")
+  .action(async (opts) => {
+    const { ENTRY_TRIAGE_SEAT, entryTriageQuestions, triageState, triage } =
+      await import("@/decisions/seats/entry-triage")
+    const { askSeat } = await import("@/decisions/seat")
+    const { labelEntries, sample, scoreBacktest, toGradedRows, sweepPolicies } = await import("@/wiki/triage-backtest")
+    const { calibrationReport } = await import("@/decisions/calibration")
+
+    const hub = getHub(opts.dir, "graph")
+    const shared = hub.getSharedStore() as never as {
+      listEntries: () => Array<{ id: string; date?: string; source?: string; sourceContext?: string; content: string }>
+      getUnabsorbedEntries: () => Array<{ id: string }>
+    }
+    const all = shared.listEntries()
+    const unabsorbed = new Set(shared.getUnabsorbedEntries().map((e) => e.id))
+    const { labeled, backlog } = labelEntries(all, unabsorbed)
+    const picked = sample(labeled, (e) => e.absorbed, parseInt(opts.n))
+
+    const policy = {
+      minWorth: opts.minWorth ? parseFloat(opts.minWorth) : undefined,
+      minDurability: opts.minDurability ? parseFloat(opts.minDurability) : undefined,
+      minTypeConfidence: opts.minType ? parseFloat(opts.minType) : undefined,
+    }
+
+    const outcomes: Array<{ entry: typeof picked[number]; verdict: ReturnType<typeof triage>; citeWorthy?: number }> = []
+    let failures = 0
+    const t0 = Date.now()
+
+    // Model calls are the expensive part; thresholds are free to vary
+    // afterwards. Caching them turns a 74-second sweep into an instant one.
+    if (opts.load) {
+      const { readFileSync } = await import("fs")
+      outcomes.push(...JSON.parse(readFileSync(opts.load, "utf-8")))
+      console.log(chalk.dim(`  re-sweeping ${outcomes.length} saved outcome(s) — no calls made`))
+    } else {
+      console.log(chalk.dim(`  ${labeled.length} labelled (${backlog} in backlog) — grading ${picked.length}`))
+    }
+
+    for (const entry of opts.load ? [] : picked) {
+      const res = await askSeat(ENTRY_TRIAGE_SEAT, triageState(entry), entryTriageQuestions, {
+        features: { source: entry.source ?? "", absorbed: entry.absorbed },
+      })
+      if (!res) { failures++; continue }
+      const a = res.answers as never as { citeWorthy?: { noul: number } }
+      outcomes.push({
+        entry,
+        verdict: triage(res.answers as never, policy),
+        citeWorthy: a.citeWorthy?.noul,
+      })
+    }
+
+    if (outcomes.length === 0) {
+      console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.entry-triage.mode"))
+      return
+    }
+
+    if (opts.save) {
+      const { writeFileSync } = await import("fs")
+      writeFileSync(opts.save, JSON.stringify(outcomes))
+      console.log(chalk.dim(`  saved ${outcomes.length} outcome(s) to ${opts.save}`))
+    }
+
+    const report = scoreBacktest(outcomes, {
+      minType: policy.minTypeConfidence, minWorth: policy.minWorth, minDurability: policy.minDurability,
+    })
+    // The seat records backend and model per call in its own store; the
+    // backtest only needs the rows to carry a consistent tag.
+    const rows = toGradedRows(outcomes, "seat", "seat")
+    const cal = calibrationReport(rows, { minN: 50 })
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
+
+    if (opts.json) {
+      console.log(JSON.stringify({ report, calibration: cal, failures, elapsed }, null, 2))
+      return
+    }
+
+    const pct = (x: number) => `${(x * 100).toFixed(1)}%`
+    console.log()
+    console.log(chalk.bold("  entry-triage vs absorb's own verdicts"))
+    console.log(`    graded        ${report.n}  (${report.positives} kept by absorb, ${report.negatives} passed over)`)
+    console.log(`    recall        ${pct(report.recall)}   ${chalk.dim("of what absorb kept, the gate would keep")}`)
+    console.log(`    precision     ${pct(report.precision)}   ${chalk.dim("of what the gate keeps, absorb agreed")}`)
+    console.log(`    filtered      ${pct(report.filtered)}   ${chalk.dim("never reaches the writing model")}`)
+    console.log(`    ${report.lostPositives > 0 ? chalk.yellow(`lost          ${report.lostPositives} article(s) absorb would have written`) : chalk.green("lost          0 — nothing absorb kept was dropped")}`)
+    if (!("insufficient" in cal) || !cal.insufficient) {
+      console.log(`    ECE           ${(cal as { ece: number }).ece?.toFixed(3) ?? "n/a"}   ${chalk.dim("on P(worth keeping)")}`)
+    }
+    if (report.lostPositives > 0) {
+      const d = report.droppedBy
+      console.log(chalk.dim(`    dropped by:   type ${d.type} · worth ${d.worth} · durability ${d.durability}  (a positive can fail several)`))
+    }
+    const m = report.positiveMeans
+    console.log(chalk.dim(`    positives avg: worth ${m.worth.toFixed(2)} · durability ${m.durability.toFixed(2)} · typeConf ${m.typeConfidence.toFixed(2)}`))
+    console.log(chalk.dim(`    ${elapsed}s, ${failures} seat failure(s)`))
+    console.log()
+    console.log(chalk.dim("    Recall is the number that decides this: a dropped positive is"))
+    console.log(chalk.dim("    knowledge destroyed silently. Filtered is only the prize."))
+
+    if (opts.sweep) {
+      // Free: the calls are already paid for, only the thresholds vary.
+      const floor = parseFloat(opts.minRecall)
+      const { best, points } = sweepPolicies(outcomes, { minRecall: floor })
+      console.log()
+      console.log(chalk.bold(`  threshold sweep (${points.length} policies, recall floor ${pct(floor)})`))
+      if (!best) {
+        console.log(chalk.red(`    No policy reaches ${pct(floor)} recall — not even keeping everything typed.`))
+        const loosest = points.slice().sort((a, b) => b.recall - a.recall)[0]
+        if (loosest) {
+          console.log(chalk.dim(`    Best recall available: ${pct(loosest.recall)} at ${loosest.requireTyped ? `type>=${loosest.minType}` : "type gate OFF"} worth>=${loosest.minWorth} dur>=${loosest.minDurability}, filtering ${pct(loosest.filtered)}`))
+        }
+        console.log(chalk.yellow("    The gate is not safe to run in active mode on this evidence."))
+      } else {
+        console.log(`    best: ${best.requireTyped ? `typed & type>=${best.minType}` : "type gate OFF"}  worth>=${best.minWorth}  durability>=${best.minDurability}`)
+        console.log(`          recall ${pct(best.recall)} · filtered ${pct(best.filtered)} · precision ${pct(best.precision)} · lost ${best.lostPositives}`)
+        console.log(chalk.dim("    Filtering here is the real saving; anything above it costs articles."))
+      }
+    }
   })
 
 wiki
