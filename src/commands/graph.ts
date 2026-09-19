@@ -381,6 +381,136 @@ function commitApproved(
 
 // Suppress unused-import warning — hashPath is exported via the types; we don't
 // need it in this file but keep the dependency explicit in case future
+// --- Human labels for the classifier ---
+//
+// `graph review` above hands pending rows to an AGENT. That is triage,
+// not ground truth: it produces more model output, and only 32 of 8,903
+// rows are pending anyway. The 8,871 marked "approved" were approved by
+// schema validation, not by a person, so the largest classification
+// site in agentx has no labels at all — and a decision seat there would
+// produce a better-formed number against nothing to check it with.
+//
+// These commands are the label supply. They are deliberately
+// non-interactive: a queue you can pipe, and a verdict you can record
+// from a script or the dashboard later.
+
+function graphStoreFrom(): { store: GraphStore; baseDir: string } | null {
+  const config = loadDaemonConfig()
+  if (!config.graph?.baseDir) {
+    console.log(chalk.red("  graph.baseDir is not configured"))
+    return null
+  }
+  const baseDir = resolve(process.cwd(), config.graph.baseDir)
+  return { store: new GraphStore({ baseDir }), baseDir }
+}
+
+const label = graph
+  .command("label")
+  .description("human verdicts on classifications — the labels calibration needs")
+
+label
+  .command("next")
+  .alias("list")
+  .description("what to check next, spread across the confidence range")
+  .option("--n <n>", "how many", "10")
+  .option("--strategy <s>", "stratified | uncertain", "stratified")
+  .option("--json")
+  .action(async (opts) => {
+    const g = graphStoreFrom()
+    if (!g) return
+    const { ReviewStore, buildQueue } = await import("@/graph/review-store")
+    const rows = g.store.listAllClassifications()
+    const reviews = new ReviewStore(g.baseDir).load()
+    const queue = buildQueue(rows as never, new Set(reviews.keys()), {
+      n: parseInt(opts.n), strategy: opts.strategy as never,
+    })
+
+    if (opts.json) { console.log(JSON.stringify(queue, null, 2)); return }
+    if (queue.length === 0) { console.log(chalk.green("  nothing left unreviewed")); return }
+
+    const nodes = g.store.loadNodes().nodes
+    console.log()
+    for (const c of queue) {
+      const conf = typeof c.confidence === "number" ? c.confidence.toFixed(2) : chalk.dim("cache")
+      console.log(`  ${chalk.cyan(c.msgHash.slice(0, 8))} ${conf.padStart(5)}  ${chalk.bold(pathLabel(c.path, nodes) || c.path.join(" › "))}`)
+      if (c.preview) console.log(chalk.dim(`           ${String(c.preview).replace(/\s+/g, " ").slice(0, 96)}`))
+    }
+    console.log()
+    console.log(chalk.dim(`  ${queue.length} to check (${opts.strategy}).`))
+    console.log(chalk.dim(`  agentx graph label mark <hash> correct|wrong|unsure [--path a/b/c]`))
+  })
+
+label
+  .command("mark <hash> <verdict>")
+  .description("record a verdict: correct | wrong | unsure")
+  .option("--path <p>", "for `wrong`: the path it should have been, slash-separated")
+  .option("--note <t>", "why, when it is worth remembering")
+  .option("--by <who>", "reviewer", "operator")
+  .action(async (hash, verdict, opts) => {
+    if (!["correct", "wrong", "unsure"].includes(verdict)) {
+      console.log(chalk.red(`  verdict must be correct | wrong | unsure`))
+      return
+    }
+    const g = graphStoreFrom()
+    if (!g) return
+    const { ReviewStore } = await import("@/graph/review-store")
+    const rows = g.store.listAllClassifications()
+    const match = rows.filter((c) => c.msgHash === hash || c.msgHash.startsWith(hash))
+    if (match.length === 0) { console.log(chalk.red(`  no classification matching "${hash}"`)); return }
+    if (match.length > 1) { console.log(chalk.red(`  "${hash}" matches ${match.length} rows — use more characters`)); return }
+
+    const store = new ReviewStore(g.baseDir)
+    store.record({
+      msgHash: match[0].msgHash,
+      verdict: verdict as never,
+      correctPath: opts.path ? String(opts.path).split("/").filter(Boolean) : undefined,
+      note: opts.note,
+      reviewer: opts.by,
+    })
+    const nodes = g.store.loadNodes().nodes
+    console.log(chalk.green(`  ${verdict}: ${pathLabel(match[0].path, nodes) || match[0].path.join(" › ")}`))
+    if (opts.path) console.log(chalk.dim(`  should have been: ${opts.path}`))
+  })
+
+label
+  .command("stats")
+  .description("how many labels so far, and what they say")
+  .option("--json")
+  .action(async (opts) => {
+    const g = graphStoreFrom()
+    if (!g) return
+    const { ReviewStore, labelStats } = await import("@/graph/review-store")
+    const rows = g.store.listAllClassifications()
+    const reviews = new ReviewStore(g.baseDir).load()
+    const st = labelStats(rows as never, reviews)
+
+    if (opts.json) { console.log(JSON.stringify(st, null, 2)); return }
+    const pct = (x: number) => `${(x * 100).toFixed(1)}%`
+    console.log()
+    console.log(`  classifications  ${st.classifications}`)
+    console.log(`  reviewed         ${st.reviewed}  (${st.correct} correct · ${st.wrong} wrong · ${st.unsure} unsure)`)
+    if (st.correct + st.wrong > 0) console.log(`  accuracy         ${pct(st.accuracy)}`)
+    console.log(`  calibratable     ${st.calibratable}   ${chalk.dim("reviewed rows that carry a confidence")}`)
+
+    if (st.byBin.length > 0) {
+      console.log()
+      console.log(chalk.bold("  reliability — confidence vs how often it was right"))
+      for (const b of st.byBin) {
+        const gap = Math.abs((parseFloat(b.bin.split("-")[0]) + 0.05) - b.accuracy)
+        const flag = b.n >= 5 && gap > 0.15 ? chalk.yellow("  ← miscalibrated") : ""
+        console.log(`    ${b.bin}  n=${String(b.n).padStart(3)}  right ${pct(b.accuracy).padStart(6)}${flag}`)
+      }
+    }
+    console.log()
+    if (st.calibratable < 100) {
+      // The harness refuses to report an ECE below this for good reason:
+      // at n=30 the number is noise dressed as a measurement.
+      console.log(chalk.dim(`  ${100 - st.calibratable} more labelled rows before a calibration report means anything.`))
+    } else {
+      console.log(chalk.green("  enough labels for a calibration report — a seat here can now be graded."))
+    }
+  })
+
 // subcommands want to regenerate pathId for display.
 void hashPath
 void existsSync

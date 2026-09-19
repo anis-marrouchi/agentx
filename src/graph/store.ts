@@ -337,6 +337,13 @@ export class GraphStore {
     return this.listByStatus("pending", limit)
   }
 
+  /** Every classification, newest-first, collapsed one row per message.
+   *  The human-label queue needs the whole population rather than one
+   *  status, because the rows worth checking are the auto-approved ones. */
+  listAllClassifications(): Classification[] {
+    return this.readAllCollapsed()
+  }
+
   /** Same contract as listPendingClassifications but filtered to any status. */
   listByStatus(status: Classification["status"], limit = 200): Classification[] {
     const all = this.readAllCollapsed()

@@ -13,6 +13,7 @@ export type NodeType =
   | "trigger.form"
   | "agent"
   | "transform"
+  | "classify"
   | "branch"
   | "gateway.parallel"
   | "rule"
