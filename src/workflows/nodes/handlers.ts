@@ -1,4 +1,5 @@
 import { evaluateBranch, getByPath } from "../engine"
+import { classifyHandler } from "./classify"
 import { renderParams, render } from "../template"
 import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
@@ -668,6 +669,9 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "trigger.hook":    triggerHandler,
   "trigger.form":    triggerFormHandler,
   "agent":           agentHandler,
+  // A branch in its own right: it fires the port named after the label
+  // it picked, or `unsure`. No RESULT token, no separate branch node.
+  "classify":        classifyHandler,
   "branch":          branchHandler,
   "transform":       transformHandler,
   "gateway.parallel": gatewayParallelHandler,

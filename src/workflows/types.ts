@@ -30,6 +30,11 @@ export const nodeTypeSchema = z.enum([
   // Compute
   "agent",
   "transform",
+  // A typed classification, answered by the decision seat rather than by
+  // an agent emitting a RESULT token. Doubles as a branch: it fires the
+  // port named after the label it chose, or `unsure` when nothing clears
+  // its confidence threshold.
+  "classify",
   // Control flow
   "branch",
   "gateway.parallel",

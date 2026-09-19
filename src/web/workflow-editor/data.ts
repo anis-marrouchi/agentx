@@ -50,6 +50,7 @@ export const PALETTE: PaletteSection[] = [
     { id: "node.timer.boundary", type: "timer.boundary", label: "Wait a while", hint: "Pause for an hour, a day, however long", glyph: "g-branch", icon: "clock" },
   ]},
   { section: "Decide what happens next", items: [
+    { id: "node.classify",   type: "classify",   label: "Sort it into buckets", hint: "Pick one of your labels — and take the \u201cnot sure\u201d path when it cannot tell", glyph: "g-branch", icon: "branch" },
     { id: "node.branch",     type: "branch",     label: "If this, then that", hint: "Send the run down one path or another", glyph: "g-branch", icon: "branch" },
     { id: "node.rule",       type: "rule",       label: "A table of rules",   hint: "Several conditions at once; first match wins", glyph: "g-branch", icon: "branch" },
     { id: "node.gateway.parallel", type: "gateway.parallel", label: "Do several at once", hint: "Split into parallel paths, then join them", glyph: "g-branch", icon: "branch" },

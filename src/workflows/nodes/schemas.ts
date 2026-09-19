@@ -151,6 +151,15 @@ const BRANCH_OUTPUT: OutputField[] = [
   { path: "port", type: "string", description: "Which outgoing port matched. Downstream edges with `fromPort` matching this value will fire." },
 ]
 
+const CLASSIFY_OUTPUT: OutputField[] = [
+  { path: "label", type: "string", description: "The label chosen. Also the port that fires.", example: '"bug"' },
+  { path: "result", type: "string", description: "Alias of `label`, so a workflow migrating off an `agent` + RESULT-token node keeps its existing {{node.result}} references working.", example: '"bug"' },
+  { path: "confidence", type: "number", description: "How peaked the distribution was, 0-1. Compare against the node's minConfidence.", example: "0.93" },
+  { path: "probabilities", type: "object", description: "The full distribution over labels — every label with its probability.", example: '{"bug":0.93,"feature":0.05,"question":0.02}' },
+  { path: "unsure", type: "bool", description: "True when confidence fell below minConfidence and the `unsure` port fired instead of a label port.", example: "false" },
+  { path: "port", type: "string", description: "The port that fired: the chosen label, or `unsure`.", example: '"bug"' },
+]
+
 const TRANSFORM_OUTPUT: OutputField[] = [
   { path: "value", type: "any", description: "When config uses `path`, this carries the value picked from context. In `template` mode, keys from the rendered template land at the top level of this node's output (no `.value` prefix)." },
 ]
@@ -214,6 +223,7 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
     ],
   },
   "agent":              { summary: "Agent response after executing the prompt template.", fields: AGENT_OUTPUT },
+  "classify":           { summary: "A typed classification with a full probability distribution. Branches on its own result: the port named after the winning label fires, or `unsure` when nothing clears minConfidence.", fields: CLASSIFY_OUTPUT },
   "transform":          { summary: "Value picked from upstream context (path mode) or rendered template bundle (template mode).", fields: TRANSFORM_OUTPUT },
   "branch":             { summary: "Which outgoing port fired. Downstream edges match via `fromPort`.", fields: BRANCH_OUTPUT },
   "gateway.parallel":   { summary: "All incoming branches joined here. No output.", fields: [] },
