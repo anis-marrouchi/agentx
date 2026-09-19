@@ -4347,7 +4347,93 @@ export class AgentXDaemon {
             break
           }
 
-          const result = await this.mesh.sendTask(body.peer as string, body.message as string, body.agent as string | undefined)
+          // Origin context, forwarded so the receiving daemon keys the
+          // session by the SAME (channel, chatId) the caller used. The
+          // streaming branch above has always passed this; this one did
+          // not, so every synchronous mesh delegation landed in the
+          // recipient's api:default bucket with no way back to the
+          // conversation that asked for it. See sendTask's own docstring.
+          const meshContext = body.context as Record<string, unknown> | undefined
+          const meshSender = typeof body.senderAgentId === "string" ? body.senderAgentId : undefined
+
+          // Async mode: answer the caller now, deliver the result later.
+          //
+          // A delegated agent run routinely takes minutes, and holding an
+          // HTTP request open for it makes the whole delegation only as
+          // reliable as the shortest timeout anywhere in the chain — which
+          // in practice was a shell's 2-minute default, not anything the
+          // daemon chose. The work completed and the answer was thrown
+          // away because nobody was still holding the socket.
+          //
+          // The peer protocol is unchanged: the REMOTE side still runs a
+          // normal synchronous task. What moves is who waits — this daemon
+          // holds the 30-minute call in the background and delivers to the
+          // originating channel when it lands, so no caller has to wait at
+          // all.
+          //
+          // Delivery needs context.channel and context.chatId. Without
+          // them there is nowhere to send the result, so async is refused
+          // rather than silently accepted and dropped.
+          if (body.async === true) {
+            const deliverChannel = meshContext?.channel as string | undefined
+            const deliverChatId = meshContext?.chatId as string | undefined
+            if (!deliverChannel || !deliverChatId) {
+              this.json(res, 400, {
+                error: "async requires context.channel and context.chatId — there is no route back otherwise",
+              })
+              return
+            }
+            const taskId = `mesh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+            this.json(res, 202, {
+              accepted: true,
+              taskId,
+              deliverTo: `${deliverChannel}:${deliverChatId}`,
+              note: "result will be delivered to the originating chat when the peer finishes",
+            })
+
+            const peerName = body.peer as string
+            const targetAgent = body.agent as string | undefined
+            // Captured: the `if (!this.mesh)` guard above does not narrow
+            // through the async closure.
+            const mesh = this.mesh
+            void (async () => {
+              const started = Date.now()
+              let text: string
+              try {
+                text = await mesh.sendTask(peerName, body.message as string, targetAgent, {
+                  context: meshContext,
+                  senderAgentId: meshSender,
+                })
+                this.log(
+                  `[mesh/task async ${taskId}] ${peerName}/${targetAgent ?? "default"} finished in ${Date.now() - started}ms`,
+                )
+              } catch (e: any) {
+                // The failure is reported to the same chat that asked.
+                // Silence here is how "I'll report back" became a lie.
+                text = `Delegation to ${peerName}/${targetAgent ?? "default"} failed: ${e?.message ?? e}`
+                this.log(`[mesh/task async ${taskId}] failed: ${e?.message ?? e}`)
+              }
+              try {
+                await this.router.sendOutbound({
+                  channel: deliverChannel,
+                  chatId: deliverChatId,
+                  text,
+                  agentId: (meshContext?.agentId as string | undefined) ?? meshSender,
+                  accountId: meshContext?.accountId as string | undefined,
+                })
+              } catch (e: any) {
+                this.log(`[mesh/task async ${taskId}] delivery failed: ${e?.message ?? e}`)
+              }
+            })()
+            break
+          }
+
+          const result = await this.mesh.sendTask(
+            body.peer as string,
+            body.message as string,
+            body.agent as string | undefined,
+            { context: meshContext, senderAgentId: meshSender },
+          )
           this.json(res, 200, { response: result })
           break
         }
