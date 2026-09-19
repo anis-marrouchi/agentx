@@ -256,3 +256,76 @@ describe("renderFactsBlock", () => {
     expect(md).toMatch(/Do not paraphrase/i)
   })
 })
+
+describe("extractHints — known people found in entry bodies", () => {
+  // `context` names a person only on one-to-one channels. On a GitLab
+  // entry it is the issue title; in a group chat it is the group. The
+  // people who talk in groups were never looked up at all.
+  const groupEntry = {
+    context: "Team Group",
+    content: "Alex Rivera: heads up, the deploy is tonight. Dana Okonkwo will cover.",
+  }
+
+  it("finds a known person named only in the body", () => {
+    const h = extractHints([groupEntry], { known: ["Alex Rivera"] })
+    expect(h.map((x) => x.name)).toContain("Alex Rivera")
+    expect(h.find((x) => x.name === "Alex Rivera")?.origin).toBe("body")
+  })
+
+  it("ignores a name the wiki has no article for", () => {
+    // Harvesting capitalised pairs out of free text would spend lookups
+    // on noise and resolve strangers. Only the corpus's own people count.
+    const h = extractHints([groupEntry], { known: ["Alex Rivera"] })
+    expect(h.map((x) => x.name)).not.toContain("Dana Okonkwo")
+  })
+
+  it("does not invent a hint when the known person is absent from the batch", () => {
+    const h = extractHints([{ context: "Team Group", content: "nothing relevant here" }], {
+      known: ["Alex Rivera"],
+    })
+    expect(h).toEqual([])
+  })
+
+  it("matches case-insensitively", () => {
+    const h = extractHints([{ context: "g", content: "spoke to alex rivera today" }], {
+      known: ["Alex Rivera"],
+    })
+    expect(h.map((x) => x.name)).toEqual(["Alex Rivera"])
+  })
+
+  it("prefers the context hint and does not duplicate the person", () => {
+    const h = extractHints([{ context: "Alex Rivera", content: "Alex Rivera said hello" }], {
+      known: ["Alex Rivera"],
+    })
+    expect(h).toHaveLength(1)
+    expect(h[0].origin).toBe("context")
+  })
+
+  it("ignores blank and one-character dictionary entries", () => {
+    const h = extractHints([{ context: "g", content: "a b c" }], { known: ["", " ", "a"] })
+    expect(h).toEqual([])
+  })
+
+  it("still respects the cap once bodies are scanned", () => {
+    const known = Array.from({ length: 40 }, (_, i) => `Person Number${i}`)
+    const content = known.join(", ")
+    const h = extractHints([{ context: "g", content }], { known, max: 5 })
+    expect(h).toHaveLength(5)
+  })
+})
+
+describe("isPersonName — group names are not people", () => {
+  it("rejects a group chat whose name is shaped like a person's", () => {
+    // A group's `context` is its name, and plenty look exactly like a
+    // two-word person name. Treating one as a person spends a lookup and
+    // risks matching a real contact with a similar name.
+    for (const s of ["Team Group", "Noqta Family", "Dev Channel", "Support Room", "Sales Team"]) {
+      expect(isPersonName(s), s).toBe(false)
+    }
+  })
+
+  it("still accepts a person whose name merely sits near such words", () => {
+    expect(isPersonName("Alex Rivera")).toBe(true)
+    expect(isPersonName("Dana Okonkwo")).toBe(true)
+  })
+})

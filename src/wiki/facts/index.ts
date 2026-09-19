@@ -33,7 +33,7 @@ export function defaultSources(): FactSource[] {
  */
 export function extractHints(
   entries: Array<{ context?: string; content?: string }>,
-  opts: { max?: number } = {},
+  opts: { max?: number; known?: string[] } = {},
 ): EntityHint[] {
   const max = opts.max ?? 25
   const byName = new Map<string, EntityHint>()
@@ -42,12 +42,50 @@ export function extractHints(
     const ctx = (e.context ?? "").trim()
     if (isPersonName(ctx)) byName.set(ctx.toLowerCase(), { name: ctx, origin: "context" })
   }
+
+  // `context` only names a person for one-to-one channels. On a GitLab
+  // entry it is the issue title, and in a group chat it is the group —
+  // so the people who talk in groups, which is most of them, were never
+  // looked up at all. The first article written with this layer live
+  // said "Contact identifiers: unknown … no number is recorded" about
+  // someone the contact store knew perfectly well.
+  //
+  // The bodies do name them, but harvesting capitalised word pairs out
+  // of free text would spend lookups on noise and, worse, resolve
+  // strangers. So the corpus is its own dictionary: a name is a hint
+  // only if the wiki already has a person article for it. That is
+  // precise by construction, and it targets exactly the articles a
+  // second pass is going to rewrite.
+  const known = (opts.known ?? []).filter((n) => n.trim().length > 2)
+  if (known.length > 0) {
+    const haystack = entries.map((e) => e.content ?? "").join("\n").toLowerCase()
+    for (const name of known) {
+      const key = name.toLowerCase().trim()
+      if (byName.has(key)) continue
+      if (haystack.includes(key)) byName.set(key, { name, origin: "body", type: "person" })
+    }
+  }
+
   return Array.from(byName.values()).slice(0, max)
 }
 
 const NOT_A_PERSON = new Set([
   "me", "user", "system", "cron", "unknown", "anonymous", "bot", "agent",
   "self", "test", "admin", "none", "null", "n/a",
+])
+
+/**
+ * Words that make a capitalised phrase a collection rather than a person.
+ *
+ * A group chat's `context` is its name, and plenty of group names are
+ * shaped exactly like a person's — "Team Group", "Noqta Family". Shape
+ * alone cannot separate them, and treating one as a person spends a
+ * lookup and risks matching a real contact with a similar name.
+ */
+const COLLECTION_NOUNS = new Set([
+  "group", "team", "chat", "channel", "squad", "crew", "room", "family",
+  "project", "board", "committee", "club", "staff", "office", "dept",
+  "department", "support", "sales", "ops", "admins", "everyone", "all",
 ])
 
 /**
@@ -66,6 +104,7 @@ export function isPersonName(s: string): boolean {
   if (/[\d@/\\#:|_]/.test(t)) return false
   const words = t.split(/\s+/)
   if (words.length < 2 || words.length > 4) return false
+  if (words.some((w) => COLLECTION_NOUNS.has(w.toLowerCase()))) return false
   return words.every((w) => /^[\p{Lu}][\p{L}'’.-]*$/u.test(w))
 }
 

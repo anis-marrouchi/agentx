@@ -148,6 +148,9 @@ wiki
         }
       } catch { /* leave map empty */ }
     }
+    // Built once for the whole absorb, not per agent: it reads every
+    // article on the fleet.
+    let knownPeople: string[] | undefined
     const lookupPath = (entry: { content: string; source?: string; meta?: Record<string, unknown> }): string[] | undefined => {
       // Preferred: entry was stamped with the classifier's path at creation
       // time (registry.ts addEntry call). Free, exact, no fingerprint dance.
@@ -231,7 +234,25 @@ wiki
       if (opts.facts !== false) {
         const { extractHints, resolveFacts, mergeRecords, renderFactsBlock, installPrompts, defaultSources } =
           await import("@/wiki/facts")
-        const hints = extractHints(unabsorbed.map((e) => ({ context: e.sourceContext, content: e.content })))
+        // The dictionary is fleet-wide, not per-agent. The wiki is one
+        // shared source of truth, so a person another agent has an
+        // article for is still a person here — and scoping it to the
+        // current agent's six person articles found nobody. Across a
+        // month of entries the fleet dictionary raised hints from 4 to
+        // 10, and the six it added were all body-only mentions.
+        if (!knownPeople) {
+          const names = new Set<string>()
+          for (const a of hub.listAgents()) {
+            for (const art of hub.getAgentWiki(a).listArticles(a)) {
+              if (art.meta.type === "person") names.add(art.meta.title)
+            }
+          }
+          knownPeople = [...names]
+        }
+        const hints = extractHints(
+          unabsorbed.map((e) => ({ context: e.sourceContext, content: e.content })),
+          { known: knownPeople },
+        )
         if (hints.length > 0) {
           const sources = defaultSources()
           const { records, results } = await resolveFacts(hints, { sources })
