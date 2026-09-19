@@ -384,52 +384,46 @@ function sweepPolicy(r: ArmResult, scenario: BenchScenario): void {
   if (r.seatAnswers.length === 0) return
 
   const expected = new Map(scenario.turns.map((t) => [t.message, t.expect]))
-  const grid = [0.1, 0.15, 0.2, 0.25, 0.3, 0.4]
-  // Deliberately reaching below the 0.8 default. The two gates overlap:
-  // both nouls ≤ 0.2 already forces confidence ≥ 0.6, so minConfidence
-  // only binds above that — and at 0.8 it demands both nouls ≤ 0.1,
-  // which is much stricter than the documented "maxContinuity 0.2" and
-  // is the gate that actually decides. A grid that starts at 0.7 cannot
-  // show that, which is why the first version of this sweep printed
-  // zeroes everywhere and looked like the seat was broken.
-  const confidences = [0.5, 0.6, 0.7, 0.8]
+  // One dimension, because the policy has one knob.
+  //
+  // This swept minConfidence too, and reported it as the gate that bound
+  // every cell. That reading was right about the arithmetic and wrong
+  // about the cause: a Noul carries no confidence to gate on, so the
+  // second "knob" was a misuse of the primitive that silently halved this
+  // threshold. It has been removed rather than tuned, and sweeping it
+  // would now be sweeping a number nothing reads.
+  const grid = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]
 
   console.log(`\n  policy sweep (replayed from ${r.seatAnswers.length} recorded calls, no extra dispatches)`)
   console.log(`  ${"-".repeat(58)}`)
-  console.log(`  ${"maxContinuity".padEnd(15)}${confidences.map((c) => `minConf ${c}`.padStart(14)).join("")}`)
+  console.log(`  ${"maxContinuity".padEnd(16)}${"caught".padStart(12)}${"amnesia".padStart(12)}`)
 
   for (const maxContinuity of grid) {
-    const cells = confidences.map((minConfidence) => {
-      let caught = 0, amnesia = 0, shouldRotate = 0
-      for (const a of r.seatAnswers) {
-        const expect = expected.get(a.message)
-        if (!expect) continue
-        if (expect === "rotate") shouldRotate++
-        const answers = {
-          continues: { type: "noul", noul: a.continues },
-          needsHistory: { type: "noul", noul: a.needsHistory },
-        } as unknown as SessionContinuityAnswers
-        const rotate = shouldRotateEarly(answers, {
-          mechanicalRotation: false,
-          maxContinuity,
-          minConfidence,
-        })
-        if (!rotate) continue
-        if (expect === "rotate") caught++
-        else amnesia++
-      }
-      // Amnesia is never traded off against recall here — it is printed
-      // as its own number so a threshold that buys rotations with lost
-      // context cannot hide inside a single score.
-      const flag = amnesia > 0 ? "!" : " "
-      return `${caught}/${shouldRotate} am${amnesia}${flag}`.padStart(14)
-    })
-    const marker = maxContinuity === 0.2 ? " <- current" : ""
-    console.log(`  ${String(maxContinuity).padEnd(15)}${cells.join("")}${marker}`)
+    let caught = 0, amnesia = 0, shouldRotate = 0
+    for (const a of r.seatAnswers) {
+      const expect = expected.get(a.message)
+      if (!expect) continue
+      if (expect === "rotate") shouldRotate++
+      const answers = {
+        continues: { type: "noul", noul: a.continues },
+        needsHistory: { type: "noul", noul: a.needsHistory },
+      } as unknown as SessionContinuityAnswers
+      const rotate = shouldRotateEarly(answers, { mechanicalRotation: false, maxContinuity })
+      if (!rotate) continue
+      if (expect === "rotate") caught++
+      else amnesia++
+    }
+    // Amnesia is never traded off against recall here — it is its own
+    // column so a threshold that buys rotations with lost context cannot
+    // hide inside a single score.
+    const marker = maxContinuity === 0.2 ? "  <- current" : amnesia > 0 ? "  <- amnesia" : ""
+    console.log(
+      `  ${String(maxContinuity).padEnd(16)}${`${caught}/${shouldRotate}`.padStart(12)}${String(amnesia).padStart(12)}${marker}`,
+    )
   }
   console.log(`  ${"-".repeat(58)}`)
-  console.log(`  cells are caught/subject-changes and am<N> = amnesia (wrong rotations).`)
-  console.log(`  "!" marks any threshold that rotated where the turn needed history.`)
+  console.log(`  caught = subject changes rotated on. amnesia = rotations on turns`)
+  console.log(`  that needed earlier context; any non-zero disqualifies the row.`)
 }
 
 function fmt(n: number): string {

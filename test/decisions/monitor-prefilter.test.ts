@@ -239,6 +239,16 @@ describe("monitor pre-filter — active", () => {
 })
 
 describe("shouldSkip", () => {
+  it("honours the documented maxWorth, not half of it", () => {
+    // Same regression as session-continuity's shouldRotateEarly: a
+    // derived |noul - 0.5| * 2 "confidence" floored at 0.8 turned a
+    // documented maxWorth of 0.2 into an effective 0.1. A Noul carries no
+    // confidence to gate on, so the threshold now stands alone.
+    expect(shouldSkip(answers(0.15), { runFailed: false })).toBe(true)
+    expect(shouldSkip(answers(0.2), { runFailed: false })).toBe(true)
+    expect(shouldSkip(answers(0.21), { runFailed: false })).toBe(false)
+  })
+
   const answers = (worth: number): MonitorPrefilterAnswers =>
     ({
       worthReviewing: finalizeAnswer(monitorPrefilterQuestions.worthReviewing, { noul: worth }).answer,
@@ -255,7 +265,7 @@ describe("shouldSkip", () => {
 
   it("the failure override is not a threshold and cannot be tuned away", () => {
     expect(
-      shouldSkip(answers(0.0), { runFailed: true, minConfidence: 0, maxWorth: 1 }),
+      shouldSkip(answers(0.0), { runFailed: true, maxWorth: 1 }),
     ).toBe(false)
   })
 })

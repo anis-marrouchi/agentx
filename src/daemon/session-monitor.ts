@@ -382,7 +382,6 @@ export class SessionMonitor {
     const choice = chooseAction(result.answers as MonitorPrefilterAnswers, {
       active: result.mode === "active",
       runFailed: failed,
-      minConfidence: this.skipMinConfidence,
       maxWorth: this.skipMaxWorth,
       explore: this.exploreRate,
     })
@@ -396,7 +395,6 @@ export class SessionMonitor {
    *  costs one call. Move these only once
    *  `agentx decisions coverage --seat monitor-prefilter` says what the
    *  move costs. */
-  readonly skipMinConfidence = Number(process.env.AGENTX_MONITOR_SKIP_MIN_CONFIDENCE || 0.8)
   readonly skipMaxWorth = Number(process.env.AGENTX_MONITOR_SKIP_MAX_WORTH || 0.2)
   /** Undefined defers to DEFAULT_EXPLORE_RATE. Override only to raise it;
    *  lowering it to zero makes an active seat's own calibration report

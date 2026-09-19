@@ -28,7 +28,6 @@ describe("shouldRotateEarly", () => {
       shouldRotateEarly(answers(0.0, 0.0), {
         mechanicalRotation: true,
         maxContinuity: 1,
-        minConfidence: 0,
       }),
     ).toBe(false)
   })
@@ -43,8 +42,35 @@ describe("shouldRotateEarly", () => {
     expect(shouldRotateEarly(answers(0.95, 0.9), { mechanicalRotation: false })).toBe(false)
   })
 
-  it("will not act on a low-confidence answer", () => {
+  it("will not act when the answer is not a clear no", () => {
+    // Near 0.5 is not "medium continuity" — it is the model declining to
+    // separate yes from no, and the threshold rejects it for that reason
+    // rather than via any notion of confidence.
     expect(shouldRotateEarly(answers(0.45, 0.4), { mechanicalRotation: false })).toBe(false)
+  })
+
+  it("honours the documented threshold, not half of it", () => {
+    // The regression this pins. shouldRotateEarly used to AND the
+    // threshold with a "confidence" derived as |noul - 0.5| * 2, floored
+    // at 0.8. Both nouls at or below 0.2 already force that derived value
+    // to 0.6 or more, so the floor silently re-expressed the threshold as
+    // 0.1 while config, docstring and every discussion said 0.2.
+    //
+    // 0.15 sits inside the documented band and outside the effective one,
+    // so it rotates now and did not before. A Noul has no confidence to
+    // gate on — TypeSafe's primitive docs are explicit — and the whole
+    // band between 0.1 and 0.2 was dead because of it.
+    expect(shouldRotateEarly(answers(0.15, 0.15), { mechanicalRotation: false })).toBe(true)
+    expect(shouldRotateEarly(answers(0.2, 0.2), { mechanicalRotation: false })).toBe(true)
+    // Just outside stays out, so the threshold is still a threshold.
+    expect(shouldRotateEarly(answers(0.21, 0.2), { mechanicalRotation: false })).toBe(false)
+  })
+
+  it("respects an explicit maxContinuity", () => {
+    expect(shouldRotateEarly(answers(0.3, 0.3), { mechanicalRotation: false })).toBe(false)
+    expect(
+      shouldRotateEarly(answers(0.3, 0.3), { mechanicalRotation: false, maxContinuity: 0.35 }),
+    ).toBe(true)
   })
 
   it("requires BOTH questions, not their average", () => {

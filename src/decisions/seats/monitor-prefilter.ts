@@ -106,9 +106,7 @@ export function prefilterState(evidence: any): StateValue {
 export const DEFAULT_EXPLORE_RATE = 0.15
 
 export interface SkipPolicy {
-  /** Confidence floor on the yes/no call before a skip is permitted. */
-  minConfidence?: number
-  /** A skip also needs the model to actively believe nobody would act. */
+  /** A skip needs the model to actively believe nobody would act. */
   maxWorth?: number
   /** Hard override: a failed run is always reviewed. */
   runFailed: boolean
@@ -167,12 +165,18 @@ export function shouldSkip(answers: MonitorPrefilterAnswers, policy: SkipPolicy)
 
   const worth = answers.worthReviewing as NoulAnswer
   const maxWorth = policy.maxWorth ?? 0.2
-  const minConfidence = policy.minConfidence ?? 0.8
 
-  if (worth.noul > maxWorth) return false
-  // A noul's confidence is its distance from a coin flip, scaled to [0,1].
-  const confidence = Math.abs(worth.noul - 0.5) * 2
-  return confidence >= minConfidence
+  // Threshold the probability directly — see the note in
+  // session-continuity.ts's shouldRotateEarly, which carried the identical
+  // bug. A Noul has no confidence to gate on, and deriving one from the
+  // distance to 0.5 only re-expressed the threshold while tightening it:
+  // noul <= 0.2 already implies a derived 0.6, so a floor of 0.8 meant
+  // this seat skipped only at noul <= 0.1, half the documented maxWorth.
+  //
+  // This changes the recorded policy action on the shadow rows, which is
+  // the point: the coverage curve that governs promotion was drawn for a
+  // threshold nobody had chosen.
+  return worth.noul <= maxWorth
 }
 
 // ---------------------------------------------------------------------------

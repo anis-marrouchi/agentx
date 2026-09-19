@@ -102,8 +102,6 @@ export function continuityState(input: ContinuityInput): StateValue {
 }
 
 export interface RotatePolicy {
-  /** Confidence floor before an early rotation is allowed. */
-  minConfidence?: number
   /** Both nouls must sit at or below this to rotate early. */
   maxContinuity?: number
   /** True when a mechanical trigger already fired. The seat must not
@@ -131,17 +129,29 @@ export function shouldRotateEarly(
   if (policy.mechanicalRotation) return false
 
   const maxContinuity = policy.maxContinuity ?? 0.2
-  const minConfidence = policy.minConfidence ?? 0.8
 
   const continues = (answers.continues as NoulAnswer).noul
   const needsHistory = (answers.needsHistory as NoulAnswer).noul
-  if (continues > maxContinuity || needsHistory > maxContinuity) return false
 
-  const confidence = Math.min(
-    Math.abs(continues - 0.5) * 2,
-    Math.abs(needsHistory - 0.5) * 2,
-  )
-  return confidence >= minConfidence
+  // Threshold the probabilities directly. There is no second gate, and
+  // there was never anything for one to read.
+  //
+  // This used to also require a "confidence" derived as |noul - 0.5| * 2.
+  // A Noul has no confidence: TypeSafe's own primitive documentation says
+  // it "does not return a separate confidence value" and warns that a
+  // value near 0.5 does not mean medium anything — the probability IS the
+  // answer, and the documented way to act on one is to threshold it.
+  // types.ts has said the same thing about NoulAnswer since it was
+  // written; the gate here contradicted it.
+  //
+  // It was not merely redundant, it silently halved the threshold. Both
+  // nouls at or below 0.2 already forces the derived value to 0.6 or
+  // more, so a floor of 0.8 was really the demand that both sit at or
+  // below 0.1 — the seat enforced 0.1 while its own docstring, its
+  // config and every discussion of it said 0.2. A benchmark sweep found
+  // the floor binding on every cell and read it as a tuning knob. It was
+  // a misuse of the primitive wearing a knob's clothes.
+  return continues <= maxContinuity && needsHistory <= maxContinuity
 }
 
 function clip(value: string, max: number): string {
