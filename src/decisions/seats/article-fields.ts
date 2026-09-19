@@ -135,6 +135,43 @@ export const REQUIRED_FIELDS: Record<string, RequiredField[]> = {
  * on this fleet holds job titles. Ranking gaps by tier says what matters
  * most; this says which of them we can close by ourselves.
  */
+/**
+ * Fields a backfill may write on its own, and the resolved fact keys
+ * that feed each one.
+ *
+ * Deliberately a short list, and deliberately not the same list as
+ * FIELD_SOURCES. That one says which system *might* know something;
+ * this one says what we can copy verbatim from a system of record with
+ * no judgement involved. A contact value is a string we were handed. A
+ * project's status is a reading of the world, and no lookup returns it.
+ *
+ * `role` and `organisation` are here because GitLab and Google return
+ * them as literal profile fields — where those are blank, which is the
+ * common case, nothing is written and the gap stays open for a human.
+ */
+export const BACKFILLABLE: Record<string, { heading: string; match: RegExp; from: string[] }> = {
+  // Ordered by how specific the heading match is: `organisation` is
+  // tried before `role` because articles write "Organisation and
+  // position", and a naive /position/ test for role would claim it.
+  contactValue: {
+    heading: "Contact identifiers",
+    match: /contact|reach|phone|whatsapp|e-?mail/i,
+    from: ["phone", "whatsapp", "email", "gitlab"],
+  },
+  organisation: {
+    heading: "Organisation and position",
+    match: /organis|organiz|company|employer|team and/i,
+    from: ["organisation"],
+  },
+  role: {
+    heading: "Role or job title",
+    match: /role|job title/i,
+    from: ["role"],
+  },
+}
+
+export const BACKFILL_ORDER = ["contactValue", "organisation", "role"] as const
+
 export const FIELD_SOURCES: Record<string, string[]> = {
   contactValue: ["wacli", "gog", "gitlab"],
   organisation: ["gog", "gitlab", "erp"],

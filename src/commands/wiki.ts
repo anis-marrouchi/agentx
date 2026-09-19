@@ -2601,6 +2601,120 @@ wiki
     if (worst) console.log(chalk.dim(`  Start at ${worst} — ${TIER_MEANING[worst as keyof typeof TIER_MEANING]}.`))
   })
 
+// Closing the gaps that need no judgement.
+//
+// `wiki gaps` reports that an article has no contact value and that a
+// system of record can supply one. This writes it. Only identity fields
+// are eligible — verbatim strings a directory handed us — because
+// copying those involves no reading of the world. Status, reasoning and
+// ownership stay on the report where a person can answer them.
+//
+// Dry-run by default. Every applied edit versions the prior article
+// into _versions/ first, so a bad run is one `git`-less restore away.
+wiki
+  .command("backfill")
+  .description("write resolved identifiers into articles that are missing them")
+  .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph | unified | flat", "graph")
+  .option("--agent <id>", "only this agent's wiki")
+  .option("--limit <n>", "articles to consider", "40")
+  .option("--apply", "write the changes (default: show them only)")
+  .option("--json")
+  .action(async (opts) => {
+    const { fieldQuestions, reportFields, articleFieldsState, ARTICLE_FIELDS_SEAT, BACKFILL_ORDER } =
+      await import("@/decisions/seats/article-fields")
+    const { askSeat } = await import("@/decisions/seat")
+    const { resolveFacts, mergeRecords, installPrompts, defaultSources } = await import("@/wiki/facts")
+    const { backfillArticle } = await import("@/wiki/backfill")
+
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const limit = parseInt(opts.limit)
+    const sources = defaultSources()
+
+    let considered = 0
+    let written = 0
+    const rows: any[] = []
+    let promptedInstall = false
+
+    outer: for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      for (const meta of store.listArticles(agentId)) {
+        if (considered >= limit) break outer
+        // Only people. The backfillable fields are all person fields,
+        // and grading a project article to discover that is a wasted call.
+        if (meta.meta.type !== "person") continue
+        const article = store.readArticle(meta.path)
+        if (!article) continue
+        considered++
+
+        const res = await askSeat(
+          ARTICLE_FIELDS_SEAT,
+          articleFieldsState({ title: article.meta.title, type: article.meta.type, body: article.content }),
+          fieldQuestions(article.meta.type),
+          { links: [{ kind: "article", id: meta.path }], features: { agent: agentId, op: "backfill" } },
+        )
+        if (!res) {
+          console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.article-fields.mode"))
+          return
+        }
+        const report = reportFields(article.meta.type, res.answers as never)
+        const wanted = report.missing.filter((f) => (BACKFILL_ORDER as readonly string[]).includes(f))
+        if (wanted.length === 0) continue
+
+        const { records, results } = await resolveFacts([{ name: article.meta.title, type: "person" }], { sources })
+        if (!promptedInstall) {
+          for (const p of installPrompts(results, sources)) {
+            console.log(chalk.yellow(`  ! ${p.source} ${p.kind} — would supply ${p.provides.join(", ")}`))
+            console.log(chalk.dim(`    ${p.hint}`))
+          }
+          promptedInstall = true
+        }
+        const merged = mergeRecords(records)
+        if (merged.length === 0) continue
+
+        const { content, edits } = backfillArticle(article.content, merged[0], wanted)
+        if (edits.length === 0) continue
+
+        for (const e of edits) {
+          rows.push({
+            agent: agentId,
+            article: article.meta.title.slice(0, 32),
+            field: e.field,
+            action: e.replaced ? "replace" : "add",
+            // Values are identifiers; show that one was found, not what it is.
+            got: `${e.value.split(";").length} value(s)`,
+          })
+        }
+        if (opts.apply) {
+          const ok = store.writeArticle(meta.path, article.meta, content, agentId)
+          if (ok) written++
+          else console.log(chalk.red(`  could not write ${meta.path}`))
+        }
+      }
+    }
+
+    if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return }
+    if (rows.length === 0) {
+      console.log(chalk.green(`  ${considered} person article(s) considered — nothing to backfill`))
+      return
+    }
+    const cols = ["agent", "article", "field", "action", "got"]
+    const w = cols.map((c) => Math.max(c.length, ...rows.map((r) => String(r[c]).length)))
+    const fmt = (cells: any[]) => cells.map((v, i) => String(v).padEnd(w[i])).join("  ")
+    console.log()
+    console.log(chalk.bold(fmt(cols)))
+    for (const r of rows) console.log(fmt(cols.map((c) => r[c])))
+    console.log()
+    if (opts.apply) {
+      console.log(chalk.green(`  ${rows.length} field(s) written across ${written} article(s).`))
+      console.log(chalk.dim("  Prior versions are in _versions/ if any of this is wrong."))
+    } else {
+      console.log(chalk.dim(`  ${rows.length} field(s) would be written across ${considered} article(s) considered.`))
+      console.log(chalk.dim("  Re-run with --apply to write them."))
+    }
+  })
+
 wiki
   .command("import <archive>")
   .description("restore a wiki archive (created with `agentx wiki export`)")

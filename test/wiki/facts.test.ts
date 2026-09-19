@@ -329,3 +329,44 @@ describe("isPersonName — group names are not people", () => {
     expect(isPersonName("Dana Okonkwo")).toBe(true)
   })
 })
+
+describe("memoizeAvailability", () => {
+  it("probes once however many lookups follow", async () => {
+    const { memoizeAvailability } = await import("../../src/wiki/facts")
+    let probes = 0
+    const src = memoizeAvailability({
+      name: "slow", provides: [],
+      available: async () => { probes++; return null },
+      lookup: async () => [{ name: "Sample Person", source: "slow", fields: { email: "s@example.com" } }],
+    })
+    for (let i = 0; i < 5; i++) await resolveFacts([{ name: "Sample Person" }], { sources: [src] })
+    expect(probes).toBe(1)
+  })
+
+  it("caches an unavailable verdict too, without calling lookup", async () => {
+    const { memoizeAvailability } = await import("../../src/wiki/facts")
+    let probes = 0
+    const lookup = vi.fn(async () => [])
+    const src = memoizeAvailability({
+      name: "off", provides: [],
+      available: async () => { probes++; return { kind: "not-installed" as const, hint: "install" } },
+      lookup,
+    })
+    await resolveFacts([{ name: "Sample Person" }], { sources: [src] })
+    await resolveFacts([{ name: "Sample Person" }], { sources: [src] })
+    expect(probes).toBe(1)
+    expect(lookup).not.toHaveBeenCalled()
+  })
+
+  it("shares one probe between concurrent callers instead of racing", async () => {
+    const { memoizeAvailability } = await import("../../src/wiki/facts")
+    let probes = 0
+    const src = memoizeAvailability({
+      name: "s", provides: [],
+      available: async () => { probes++; await new Promise((r) => setTimeout(r, 5)); return null },
+      lookup: async () => [],
+    })
+    await Promise.all([src.available(), src.available(), src.available()])
+    expect(probes).toBe(1)
+  })
+})

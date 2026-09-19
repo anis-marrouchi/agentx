@@ -1,7 +1,7 @@
 import { createGitlabSource } from "./sources/gitlab"
 import { createGogSource } from "./sources/gog"
 import { createWacliSource } from "./sources/wacli"
-import type { EntityHint, FactRecord, FactSource, FactSourceResult } from "./types"
+import type { EntityHint, FactRecord, FactSource, FactSourceResult, Unavailable } from "./types"
 
 export * from "./types"
 export { countryFromPhone, parseContactsTable, plausible } from "./sources/wacli"
@@ -18,8 +18,29 @@ export interface ResolveOptions {
   onResult?: (r: FactSourceResult) => void
 }
 
+/**
+ * Probe each source once per process, not once per lookup.
+ *
+ * Availability does not change mid-run, but the probes are real work —
+ * gog's costs about 1.4s because it has to make an API call to
+ * distinguish "installed" from "installed but the API is disabled".
+ * Backfilling 50 articles re-ran every probe 50 times and spent longer
+ * asking whether the sources worked than using them.
+ *
+ * The promise is cached, not the result, so concurrent callers share one
+ * probe rather than racing.
+ */
+export function memoizeAvailability(source: FactSource): FactSource {
+  let probe: Promise<Unavailable | null> | undefined
+  return {
+    ...source,
+    available: () => (probe ??= source.available()),
+    lookup: (hints, signal) => source.lookup(hints, signal),
+  }
+}
+
 export function defaultSources(): FactSource[] {
-  return [createWacliSource(), createGitlabSource(), createGogSource()]
+  return [createWacliSource(), createGitlabSource(), createGogSource()].map(memoizeAvailability)
 }
 
 /**
