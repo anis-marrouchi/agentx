@@ -1,4 +1,4 @@
-import { fieldChecklistMarkdown } from "@/decisions/seats/article-fields"
+import { fieldChecklistMarkdown, tierLadderMarkdown } from "@/decisions/seats/article-fields"
 import type { WikiMode } from "./hub"
 import type { PromotionCluster } from "./promote"
 
@@ -22,8 +22,9 @@ export function buildAbsorbPrompt(
   existingArticles: Array<{ title: string; path: string; type?: string; tags?: string[] }>,
   entryTexts: string,
   entryCount: number,
+  factsBlock = "",
 ): string {
-  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount)
+  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock)
 }
 
 function buildFarzapediaPrompt(
@@ -32,6 +33,7 @@ function buildFarzapediaPrompt(
   existingArticles: Array<{ title: string; path: string; type?: string; tags?: string[] }>,
   entryTexts: string,
   entryCount: number,
+  factsBlock = "",
 ): string {
   const worldviewSection = worldview ? `\n## Worldview\n\n${worldview}\n` : ""
 
@@ -94,13 +96,24 @@ For each of the ${entryCount} raw entries below, ask in this order:
 - **Length: 20–100 lines.** Articles exceeding 100 lines should split into multiple type-specific articles.
 - **Every paragraph earns its place.** Cut narrative filler. If you can remove a sentence without losing a fact, remove it.
 
+## Build in layers
+
+Facts are not equally load-bearing. Write them in this order, and never
+spend length on a lower layer while a higher one is missing:
+
+${tierLadderMarkdown()}
+
+An article is a building, not a transcript. The common failure is to
+furnish a slab: a person's page that records an invoice thread in detail
+and never states their role, their organisation, or how to reach them.
+That article cannot answer "who is this" or "how do I reach them" — the
+two questions it exists for. History is the last layer, and it is the
+only one you can safely leave thin.
+
 ## Identity before history
 
 An entity article must first establish **what the entity is**, and only then
-what happened to it. The common failure is the opposite: a person's article
-that records an invoice thread in detail but never states their phone number,
-their title, or the company they work for. That article cannot answer "who is
-this person" or "how do I contact them" — the two questions it exists for.
+what happened to it.
 
 Before the narrative, every entity article carries an **Identity** section
 with the fields for its type. State a field even when the entries do not
@@ -143,7 +156,7 @@ sources: ["entry-id-1", "entry-id-2"]
 \`\`\`
 
 Access guidance: default \`public\`; \`private\` only for sensitive credentials or agent-specific learnings; \`shared\` with specific agent IDs when the article matters only to a subset.
-${worldviewSection}${existingList}
+${worldviewSection}${existingList}${factsBlock}
 ## Gap Detection
 
 After compiling, populate a \`gaps\` array: wikilink targets you referenced but for which no article exists yet. Be specific:

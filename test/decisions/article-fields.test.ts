@@ -32,7 +32,7 @@ describe("required fields per type", () => {
     // channel" and fails the article's purpose. The wording has to make
     // the number itself the thing being asked about.
     const q = REQUIRED_FIELDS.person.find((f) => f.key === "contactValue")!
-    expect(q.critical).toBe(true)
+    expect(q.tier).toBe("pillar")
     expect(q.question).toMatch(/rather than only naming a channel/)
   })
 
@@ -139,6 +139,14 @@ describe("fieldChecklistMarkdown — one definition, two renderings", () => {
     }
   })
 
+  it("orders the checklist foundation-first", async () => {
+    const { fieldChecklistMarkdown } = await import("../../src/decisions/seats/article-fields")
+    const line = fieldChecklistMarkdown().split("\n").find((l) => l.startsWith("- **project**"))!
+    // oneLine is foundation, status is walls — the prompt should read in
+    // the order the article gets built, not record order.
+    expect(line.indexOf("one line")).toBeLessThan(line.indexOf("current status"))
+  })
+
   it("rejects a label that carries its own emphasis", async () => {
     // Nested ** produced `**contact identifiers **verbatim** …**`, which
     // renders as broken markdown in the prompt.
@@ -153,5 +161,109 @@ describe("fieldChecklistMarkdown — one definition, two renderings", () => {
     const p = buildAbsorbPrompt("graph" as never, "a", "w", [] as never, [] as never)
     expect(p).toContain("contact identifiers VERBATIM")
     expect(p).toContain("hostname, IP, URL or path")
+  })
+})
+
+describe("tiers — not all facts are load-bearing", () => {
+  it("every field declares a tier from the ladder", async () => {
+    const { TIERS } = await import("../../src/decisions/seats/article-fields")
+    for (const [type, fields] of Object.entries(REQUIRED_FIELDS)) {
+      for (const f of fields) expect(TIERS, `${type}.${f.key}`).toContain(f.tier)
+    }
+  })
+
+  it("every type rests on at least one foundation field", async () => {
+    for (const [type, fields] of Object.entries(REQUIRED_FIELDS)) {
+      expect(fields.some((f) => f.tier === "foundation"), type).toBe(true)
+    }
+  })
+
+  it("critical means foundation or pillar, and nothing else", async () => {
+    const { isCritical } = await import("../../src/decisions/seats/article-fields")
+    for (const fields of Object.values(REQUIRED_FIELDS)) {
+      for (const f of fields) {
+        expect(isCritical(f), f.key).toBe(f.tier === "foundation" || f.tier === "pillar")
+      }
+    }
+  })
+
+  it("reports the worst tier with a gap, not just a count", async () => {
+    const { reportFields: rf } = await import("../../src/decisions/seats/article-fields")
+    // Furniture-level gap only.
+    const mild = rf("person", noulAnswers({
+      whatItIs: 0.95, whyItMatters: 0.02, relationships: 0.9,
+      role: 0.9, organisation: 0.9, contactValue: 0.9, language: 0.9, ourOwner: 0.9,
+    }))
+    expect(mild.worstTier).toBe("walls")
+    expect(mild.fit).toBe(true)
+
+    // Same count of gaps, but one is structural.
+    const severe = rf("person", noulAnswers({
+      whatItIs: 0.02, whyItMatters: 0.9, relationships: 0.9,
+      role: 0.9, organisation: 0.9, contactValue: 0.9, language: 0.9, ourOwner: 0.9,
+    }))
+    expect(severe.worstTier).toBe("foundation")
+    expect(severe.fit).toBe(false)
+  })
+
+  it("worstTier is null for a complete article", async () => {
+    const { reportFields: rf } = await import("../../src/decisions/seats/article-fields")
+    const all = Object.fromEntries(fieldsFor("person").map((f) => [f.key, 0.95]))
+    const r = rf("person", noulAnswers(all))
+    expect(r.worstTier).toBeNull()
+    expect(r.coverage).toBe(1)
+  })
+})
+
+describe("nextActions — the post-absorb work list", () => {
+  const partial = () => {
+    const { } = {}
+    return noulAnswers({
+      whatItIs: 0.95, whyItMatters: 0.02, relationships: 0.9,
+      role: 0.02, organisation: 0.9, contactValue: 0.02, language: 0.02, ourOwner: 0.9,
+    })
+  }
+
+  it("ranks by tier, then puts lookups before questions", async () => {
+    const { reportFields: rf, nextActions } = await import("../../src/decisions/seats/article-fields")
+    const acts = nextActions(rf("person", partial()))
+    expect(acts.map((a) => a.field)).toEqual(["contactValue", "role", "whyItMatters", "language"])
+    // contactValue and role are both pillar; contactValue is resolvable
+    // by lookup so it is drained before anyone is interrupted.
+    expect(acts[0].needsHuman).toBe(false)
+    expect(acts[0].sources).toContain("wacli")
+    expect(acts[1].needsHuman).toBe(false)
+  })
+
+  it("marks a field no system holds as needing a person", async () => {
+    const { reportFields: rf, nextActions } = await import("../../src/decisions/seats/article-fields")
+    const acts = nextActions(rf("person", partial()))
+    const language = acts.find((a) => a.field === "language")!
+    expect(language.needsHuman).toBe(true)
+    expect(language.sources).toEqual([])
+  })
+
+  it("maxTier stops the list before the furniture", async () => {
+    const { reportFields: rf, nextActions } = await import("../../src/decisions/seats/article-fields")
+    const acts = nextActions(rf("person", partial()), { maxTier: "pillar" })
+    expect(acts.map((a) => a.field)).toEqual(["contactValue", "role"])
+  })
+
+  it("includes unclear fields only when asked, and flags them", async () => {
+    const { reportFields: rf, nextActions } = await import("../../src/decisions/seats/article-fields")
+    const r = rf("person", noulAnswers({
+      whatItIs: 0.95, whyItMatters: 0.9, relationships: 0.9,
+      role: 0.9, organisation: 0.9, contactValue: 0.5, language: 0.9, ourOwner: 0.9,
+    }))
+    expect(nextActions(r)).toEqual([])
+    const withUnclear = nextActions(r, { includeUnclear: true })
+    expect(withUnclear.map((a) => a.field)).toEqual(["contactValue"])
+    expect(withUnclear[0].uncertain).toBe(true)
+  })
+
+  it("returns nothing for a complete article", async () => {
+    const { reportFields: rf, nextActions } = await import("../../src/decisions/seats/article-fields")
+    const all = Object.fromEntries(fieldsFor("project").map((f) => [f.key, 0.95]))
+    expect(nextActions(rf("project", noulAnswers(all)))).toEqual([])
   })
 })

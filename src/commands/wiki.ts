@@ -118,6 +118,7 @@ wiki
   .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
+  .option("--no-facts", "skip the system-of-record lookups")
   .option("--max <n>", "max entries per agent", "10")
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
   .action(async (opts) => {
@@ -223,7 +224,31 @@ wiki
         `--- ENTRY ${e.id} [${e.date} ${e.agentId} via ${e.source}] ---\n${e.content}\n--- END ENTRY ---`
       ).join("\n\n")
 
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length)
+      // Look up the people this batch names in the systems that actually
+      // hold their identifiers. Absorb cannot write down a contact value
+      // that nobody typed into a chat, and nobody types their own.
+      let factsBlock = ""
+      if (opts.facts !== false) {
+        const { extractHints, resolveFacts, mergeRecords, renderFactsBlock, installPrompts, defaultSources } =
+          await import("@/wiki/facts")
+        const hints = extractHints(unabsorbed.map((e) => ({ context: e.sourceContext, content: e.content })))
+        if (hints.length > 0) {
+          const sources = defaultSources()
+          const { records, results } = await resolveFacts(hints, { sources })
+          const merged = mergeRecords(records)
+          factsBlock = renderFactsBlock(merged)
+          const got = results.filter((r) => r.records.length > 0).map((r) => `${r.source}:${r.records.length}`)
+          console.log(chalk.dim(`    Facts: ${hints.length} entities → ${merged.length} resolved${got.length ? ` (${got.join(" ")})` : ""}`))
+          for (const p of installPrompts(results, sources)) {
+            // A source nobody knows is missing becomes a permanent hole
+            // in the corpus shaped like the tool that was never installed.
+            console.log(chalk.yellow(`    ! ${p.source} ${p.kind} — would supply ${p.provides.join(", ")}`))
+            console.log(chalk.dim(`      ${p.hint}`))
+          }
+        }
+      }
+
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock)
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -2464,6 +2489,92 @@ wiki
     console.log(chalk.green(`  ✓ wrote ${out} (${formatWikiBytes(size)})`))
     console.log(chalk.dim(`  Restore on another node: agentx wiki import ${out}`))
     console.log()
+  })
+
+// The post-absorb work list.
+//
+// Absorb writes an article once and never looks at it again, which
+// assumes one pass over a batch of conversation can see everything worth
+// keeping. It cannot: much of what an article needs was never in the
+// conversation. This turns the grader's per-field verdict into the next
+// pass's input, ordered by how much of the article rests on each gap, so
+// the corpus gets built up in layers instead of being declared finished
+// at the first draft.
+wiki
+  .command("gaps")
+  .description("what each article still needs, most load-bearing first")
+  .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph | unified | flat", "graph")
+  .option("--agent <id>", "only this agent's wiki")
+  .option("--type <t>", "only articles of this type")
+  .option("--max-tier <tier>", "stop at this layer: foundation|pillar|walls|openings|furniture", "pillar")
+  .option("--limit <n>", "articles to check", "40")
+  .option("--auto", "only gaps a system of record can close without asking anyone")
+  .option("--unclear", "include fields the grader was unsure about")
+  .option("--json")
+  .action(async (opts) => {
+    const { fieldQuestions, reportFields, articleFieldsState, nextActions, TIER_MEANING } =
+      await import("@/decisions/seats/article-fields")
+    const { ARTICLE_QUALITY_SEAT } = await import("@/decisions/seats/article-quality")
+    const { askSeat } = await import("@/decisions/seat")
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    const limit = parseInt(opts.limit)
+
+    let checked = 0
+    const rows: any[] = []
+    outer: for (const agentId of agents) {
+      const store = hub.getAgentWiki(agentId)
+      for (const meta of store.listArticles(agentId)) {
+        if (checked >= limit) break outer
+        const article = store.readArticle(meta.path)
+        if (!article) continue
+        if (opts.type && article.meta.type !== opts.type) continue
+        checked++
+        const res = await askSeat(
+          ARTICLE_QUALITY_SEAT,
+          articleFieldsState({ title: article.meta.title, type: article.meta.type, body: article.content }),
+          fieldQuestions(article.meta.type),
+          { links: [{ kind: "article", id: meta.path }], features: { agent: agentId, type: article.meta.type ?? "?" } },
+        )
+        if (!res) {
+          console.log(chalk.yellow("  seat is off or unavailable — set decisions.seats.article-quality.mode"))
+          return
+        }
+        const report = reportFields(article.meta.type, res.answers as never)
+        for (const a of nextActions(report, { maxTier: opts.maxTier, includeUnclear: Boolean(opts.unclear) })) {
+          if (opts.auto && a.needsHuman) continue
+          rows.push({
+            tier: a.tier,
+            need: a.field,
+            how: a.needsHuman ? chalk.yellow("ask") : a.sources.join("/"),
+            uncertain: a.uncertain ? "?" : "",
+            agent: agentId,
+            article: article.meta.title.slice(0, 40),
+          })
+        }
+      }
+    }
+
+    if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return }
+    if (rows.length === 0) {
+      console.log(chalk.green(`  ${checked} article(s) checked — nothing missing at or above ${opts.maxTier}`))
+      return
+    }
+    const cols = ["tier", "need", "how", "uncertain", "agent", "article"]
+    const plain = (v: any) => String(v).replace(/\u001b\[[0-9;]*m/g, "")
+    const w = cols.map((c) => Math.max(c.length, ...rows.map((r) => plain(r[c]).length)))
+    const pad = (v: any, i: number) => String(v) + " ".repeat(Math.max(0, w[i] - plain(v).length))
+    console.log()
+    console.log(chalk.bold(cols.map((c, i) => pad(c, i)).join("  ")))
+    for (const r of rows) console.log(cols.map((c, i) => pad(r[c], i)).join("  "))
+
+    const auto = rows.filter((r) => r.how !== chalk.yellow("ask")).length
+    console.log()
+    console.log(chalk.dim(`  ${rows.length} gap(s) across ${checked} article(s).`))
+    console.log(chalk.dim(`  ${auto} can be closed by a lookup; ${rows.length - auto} need a person.`))
+    const worst = rows[0]?.tier
+    if (worst) console.log(chalk.dim(`  Start at ${worst} — ${TIER_MEANING[worst as keyof typeof TIER_MEANING]}.`))
   })
 
 wiki
