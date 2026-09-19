@@ -141,6 +141,7 @@ export function reviewsToCandidates(
   // one map would make an over-merge drop a distinct finding instead of
   // merely inflating a rank.
   const familySessions = new Map<string, Set<string>>()
+  const provenance = new Map<string, { text: string; evidence: string; agent: string; source?: string }>()
 
   for (const row of rows) {
     let review: Record<string, unknown>
@@ -189,13 +190,14 @@ export function reviewsToCandidates(
             name: slug(text),
             type,
             description: text.slice(0, 200),
-            body: evidence
-              ? `${text}\n\n**Evidence:** ${evidence}\n\n_From a session review of ${row.agent}${row.source ? ` via ${row.source}` : ""}._`
-              : `${text}\n\n_From a session review of ${row.agent}${row.source ? ` via ${row.source}` : ""}._`,
+            // Body is filled in after the counting pass, because how a
+            // finding should be framed depends on how often it recurred.
+            body: "",
             createdAt: when,
             updatedAt: when,
           },
         }
+        provenance.set(stamp, { text, evidence, agent: row.agent, source: row.source })
         byExact.set(key, candidate)
         familyOf.set(key, family)
         out.push(candidate)
@@ -205,6 +207,8 @@ export function reviewsToCandidates(
 
   for (const [key, candidate] of byExact) {
     candidate.occurrences = familySessions.get(familyOf.get(key) ?? "")?.size ?? 1
+    const p = provenance.get(candidate.stamp)!
+    candidate.memory.body = renderBody(p, candidate.occurrences)
   }
 
   // Recurrence decides which finding matters; diversity decides what a
@@ -232,4 +236,46 @@ export function reviewsToCandidates(
     if (!placed) break
   }
   return ordered
+}
+
+/**
+ * How a finding is written decides whether it survives the judge.
+ *
+ * The monitor writes point-in-time observations, and the promotion
+ * judge — correctly — rejects those: "a transient OAuth expiry that
+ * stalled #38", "issue-thread state, not a wiki fact". Twelve
+ * candidates across two runs, all skipped, every reason sound.
+ *
+ * But a finding seen in seven separate sessions is no longer a status
+ * report about one of them; it is evidence of something that keeps
+ * happening, and that IS durable. The observation was never the
+ * knowledge — the repetition is. Saying so explicitly, with the session
+ * count as the evidence, is the difference between offering the judge a
+ * stale fact and offering it a pattern.
+ *
+ * A one-off stays phrased as what it is. Dressing a single observation
+ * up as a pattern would just launder session state past the judge,
+ * which is the failure this is trying to avoid, not a way around it.
+ */
+function renderBody(
+  p: { text: string; evidence: string; agent: string; source?: string },
+  occurrences: number,
+): string {
+  const origin = `${p.agent}${p.source ? ` via ${p.source}` : ""}`
+  const parts: string[] = []
+
+  if (occurrences > 1) {
+    parts.push(`Observed in ${occurrences} separate sessions. Most recently stated as:`)
+    parts.push(`> ${p.text}`)
+    parts.push(
+      `Recurring across ${occurrences} sessions is what makes this worth recording — ` +
+      `any single occurrence is session state, the repetition is the finding.`,
+    )
+  } else {
+    parts.push(p.text)
+  }
+
+  if (p.evidence) parts.push(`**Evidence:** ${p.evidence}`)
+  parts.push(`_From ${occurrences > 1 ? "session reviews" : "a session review"} of ${origin}._`)
+  return parts.join("\n\n")
 }

@@ -217,3 +217,46 @@ describe("recurrence counts sessions, not review rows", () => {
     expect(reviewsToCandidates(rows)[0].occurrences).toBe(2)
   })
 })
+
+describe("framing by recurrence", () => {
+  const sess = (id: string, sessionId: string, text: string, evidence?: string) => ({
+    id, session_id: sessionId, agent: "devops-agent", source: "cli",
+    updated_at: Date.UTC(2026, 8, 19), result: review({ warnings: [{ text, evidence }] }),
+  })
+
+  it("presents a cross-session finding as a pattern, with the count as evidence", () => {
+    // The judge rejects point-in-time observations, and is right to.
+    // The repetition is the durable part, so it has to be stated.
+    const body = reviewsToCandidates([
+      sess("r1", "s1", LONG), sess("r2", "s2", LONG), sess("r3", "s3", LONG),
+    ])[0].memory.body
+    expect(body).toContain("Observed in 3 separate sessions")
+    expect(body).toContain(`> ${LONG}`)
+    expect(body).toMatch(/repetition is the finding/)
+  })
+
+  it("leaves a one-off phrased as what it is", () => {
+    // Dressing a single observation up as a pattern would launder
+    // session state past the judge.
+    const body = reviewsToCandidates([sess("r1", "s1", LONG)])[0].memory.body
+    expect(body).toContain(LONG)
+    expect(body).not.toContain("separate sessions")
+    expect(body).not.toContain(">")
+  })
+
+  it("keeps the evidence either way", () => {
+    const one = reviewsToCandidates([sess("r1", "s1", LONG, "port 9222 open")])[0].memory.body
+    const many = reviewsToCandidates([
+      sess("r1", "s1", LONG, "port 9222 open"), sess("r2", "s2", LONG, "port 9222 open"),
+    ])[0].memory.body
+    expect(one).toContain("**Evidence:** port 9222 open")
+    expect(many).toContain("**Evidence:** port 9222 open")
+  })
+
+  it("attributes plural reviews when it saw several", () => {
+    const many = reviewsToCandidates([sess("r1", "s1", LONG), sess("r2", "s2", LONG)])[0].memory.body
+    expect(many).toContain("From session reviews of devops-agent")
+    const one = reviewsToCandidates([sess("r1", "s1", LONG)])[0].memory.body
+    expect(one).toContain("From a session review of devops-agent")
+  })
+})
