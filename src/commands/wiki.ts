@@ -2002,7 +2002,7 @@ wiki
   .option("--dir <path>", "wiki directory")
   .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "search specific agent's wiki")
-  .action((query, opts) => {
+  .action(async (query, opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
 
@@ -2011,7 +2011,7 @@ wiki
 
     for (const agentId of agents) {
       const store = hub.getAgentWiki(agentId)
-      const results = store.findRelevant(query, undefined, 10)
+      const results = await store.findRelevantReranked(query, undefined, 10)
 
       if (results.length > 0) {
         console.log(chalk.bold(`  ${chalk.cyan(agentId)}:`))

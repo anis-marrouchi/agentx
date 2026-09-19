@@ -404,10 +404,13 @@ export class WikiStore {
   }
 
   /**
-   * BM25, then re-ranked by the wiki-rerank seat.
+   * findRelevant, then re-ranked by the wiki-rerank seat.
    *
-   * Additive on purpose: `search()` stays synchronous and its four
-   * callers stay untouched. Measured on the 12-query eval against this
+   * Recall comes from findRelevant rather than search() because
+   * findRelevant is the function everything actually calls — search()
+   * turned out to have no callers at all. Additive on purpose: the
+   * synchronous findRelevant is untouched and its existing callers stay
+   * as they are. Measured on the 12-query eval against this
    * wiki, re-ranking moves R@1 from 33.3% to 50.0% and R@3 from 41.7% to
    * 66.7%, for about $0.0005 and 550ms a query.
    *
@@ -420,14 +423,14 @@ export class WikiStore {
    * an article BM25 never returned. Widening the shortlist does not fix
    * that — past 30 the extra candidates measurably diluted the ranking.
    */
-  async searchReranked(
+  async findRelevantReranked(
     query: string,
-    agentId: string,
+    agentId?: string,
     maxResults = 10,
     opts: { shortlist?: number; excerptChars?: number } = {},
   ): Promise<WikiArticle[]> {
     const shortlist = Math.max(maxResults, opts.shortlist ?? DEFAULT_SHORTLIST)
-    const pool = this.search(query, agentId, shortlist)
+    const pool = this.findRelevant(query, agentId, shortlist)
     if (pool.length < 2) return pool.slice(0, maxResults)
 
     const candidates: RerankCandidate[] = pool.map((article, i) => ({
@@ -443,7 +446,7 @@ export class WikiStore {
       WIKI_RERANK_SEAT,
       rerankState({ query, candidates, excerptChars: opts.excerptChars }),
       rerankQuestions(candidates),
-      { incumbent: { best: candidates[0].id }, features: { agent: agentId } },
+      { incumbent: { best: candidates[0].id }, features: { agent: agentId ?? "unknown" } },
     )
     if (!result || result.mode !== "active") return pool.slice(0, maxResults)
 

@@ -1101,7 +1101,7 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
           html = pageLayout("Health Check", agentSidebar(store, agentFilter), content)
         } else if (path === "/search") {
           const q = url.searchParams.get("q") || ""
-          const results = store.findRelevant(q, undefined, 20)
+          const results = await store.findRelevantReranked(q, undefined, 20)
           let content = `<h1>Search: "${escapeHtml(q)}"</h1>`
           for (const r of results) {
             content += `<div class="entry-card"><h3><a href="/article/${encodeURIComponent(r.path)}">${escapeHtml(r.meta.title)}</a></h3><p>${escapeHtml(r.content.slice(0, 200))}...</p></div>`
