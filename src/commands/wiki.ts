@@ -12,7 +12,12 @@ import { execSync } from "child_process"
 import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
 
 function getHub(dir?: string, mode?: WikiMode): WikiHub {
-  return new WikiHub(dir || resolve(process.cwd(), ".agentx/wiki"), undefined, mode || "graph")
+  return new WikiHub(wikiDir(dir), undefined, mode || "graph")
+}
+
+/** The wiki root, resolved the same way everywhere that needs it. */
+function wikiDir(dir?: string): string {
+  return dir || resolve(process.cwd(), ".agentx/wiki")
 }
 
 function modeLabel(mode: WikiMode): string {
@@ -393,12 +398,33 @@ wiki
           totalAbsorbed++
         }
 
-        // Show gaps (missing puzzle pieces)
+        // Gaps: entities absorb referenced but has no article for.
+        //
+        // These were printed and dropped. Absorb runs on a cron, so the
+        // one signal the wiki produces about its own holes was landing
+        // in a log nobody reads. They go on the same queue as the field
+        // gaps a lookup cannot close — one list of things needing a
+        // person, not two.
         if (gaps.length > 0) {
           console.log()
           console.log(chalk.yellow(`    Gaps detected (${gaps.length} missing pieces):`))
           for (const gap of gaps) {
             console.log(chalk.yellow(`      ? ${gap}`))
+          }
+          try {
+            const { QuestionStore } = await import("@/wiki/questions")
+            const q = new QuestionStore(wikiDir(opts.dir)).add(
+              gaps.map((gap) => ({
+                kind: "article" as const,
+                agentId,
+                path: "",
+                subject: String(gap).slice(0, 120),
+                question: `No article yet for: ${String(gap).slice(0, 160)}`,
+              })),
+            )
+            if (q.added > 0) console.log(chalk.dim(`    queued ${q.added} for follow-up (agentx wiki questions)`))
+          } catch {
+            // Queueing is best-effort; never fail an absorb over it.
           }
         }
 
@@ -2545,6 +2571,7 @@ wiki
   .option("--max-tier <tier>", "stop at this layer: foundation|pillar|walls|openings|furniture", "pillar")
   .option("--limit <n>", "articles to check", "40")
   .option("--auto", "only gaps a system of record can close without asking anyone")
+  .option("--ask", "queue the gaps that need a person onto the questions list")
   .option("--unclear", "include fields the grader was unsure about")
   .option("--json")
   .action(async (opts) => {
@@ -2555,7 +2582,9 @@ wiki
     const { fieldQuestions, reportFields, articleFieldsState, nextActions, TIER_MEANING, ARTICLE_FIELDS_SEAT } =
       await import("@/decisions/seats/article-fields")
     const { askSeat } = await import("@/decisions/seat")
+    const { QuestionStore } = await import("@/wiki/questions")
     const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const pending: Array<Parameters<InstanceType<typeof QuestionStore>["add"]>[0][number]> = []
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     const limit = parseInt(opts.limit)
 
@@ -2582,6 +2611,13 @@ wiki
         const report = reportFields(article.meta.type, res.answers as never)
         for (const a of nextActions(report, { maxTier: opts.maxTier, includeUnclear: Boolean(opts.unclear) })) {
           if (opts.auto && a.needsHuman) continue
+          if (opts.ask && a.needsHuman) {
+            pending.push({
+              kind: "field", agentId, path: meta.path, subject: article.meta.title,
+              field: a.field, tier: a.tier,
+              question: `${article.meta.title} (${article.meta.type ?? "?"}) — ${a.label}?`,
+            })
+          }
           rows.push({
             tier: a.tier,
             need: a.field,
@@ -2592,6 +2628,11 @@ wiki
           })
         }
       }
+    }
+
+    let queued = { added: 0, skipped: 0 }
+    if (opts.ask && pending.length > 0) {
+      queued = new QuestionStore(wikiDir(opts.dir)).add(pending)
     }
 
     if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return }
@@ -2613,6 +2654,10 @@ wiki
     console.log(chalk.dim(`  ${auto} can be closed by a lookup; ${rows.length - auto} need a person.`))
     const worst = rows[0]?.tier
     if (worst) console.log(chalk.dim(`  Start at ${worst} — ${TIER_MEANING[worst as keyof typeof TIER_MEANING]}.`))
+    if (opts.ask) {
+      console.log(chalk.cyan(`  Queued ${queued.added} question(s) for a person (${queued.skipped} already asked).`))
+      console.log(chalk.dim("  agentx wiki questions   ·   agentx wiki answer <id> \"<value>\""))
+    }
   })
 
 // Closing the gaps that need no judgement.
@@ -2744,6 +2789,95 @@ wiki
       console.log(chalk.dim(`  ${rows.length} field(s) would be written across ${considered} article(s) considered.`))
       console.log(chalk.dim("  Re-run with --apply to write them."))
     }
+  })
+
+// The questions only a person can answer, and the way back in.
+//
+// Everything a lookup could close is closed by `wiki backfill`. What is
+// left is judgement — a preferred language, who owns a relationship,
+// why a decision was made — and no amount of machinery produces it.
+// These two commands are the whole human path: see what is being
+// asked, answer it, and have the answer land in the source of truth
+// rather than in a chat log.
+wiki
+  .command("questions")
+  .alias("ask")
+  .description("gaps waiting on a person")
+  .option("--dir <path>", "wiki directory")
+  .option("--status <s>", "open | answered | dismissed", "open")
+  .option("--json")
+  .action(async (opts) => {
+    const { QuestionStore } = await import("@/wiki/questions")
+    const { TIER_RANK } = await import("@/decisions/seats/article-fields")
+    const qs = new QuestionStore(wikiDir(opts.dir)).list(opts.status as never)
+    if (opts.json) { console.log(JSON.stringify(qs, null, 2)); return }
+    if (qs.length === 0) { console.log(chalk.green(`  no ${opts.status} questions`)); return }
+
+    // Most load-bearing first, same order the articles should be built in.
+    qs.sort((a, b) =>
+      (TIER_RANK[(a.tier ?? "furniture") as keyof typeof TIER_RANK] ?? 9) -
+      (TIER_RANK[(b.tier ?? "furniture") as keyof typeof TIER_RANK] ?? 9))
+
+    console.log()
+    for (const q of qs) {
+      const tier = q.tier ? chalk.dim(`[${q.tier}]`) : ""
+      console.log(`  ${chalk.cyan(q.id)} ${tier} ${q.question}`)
+      if (q.answer) console.log(chalk.dim(`    → ${q.answer}`))
+    }
+    console.log()
+    console.log(chalk.dim(`  ${qs.length} ${opts.status}.  agentx wiki answer <id> "<value>"  ·  --dismiss to drop one`))
+  })
+
+wiki
+  .command("answer <id> [value]")
+  .description("answer a queued question; writes it into the article")
+  .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph | unified | flat", "graph")
+  .option("--dismiss", "close the question without answering it")
+  .action(async (id, value, opts) => {
+    const { QuestionStore } = await import("@/wiki/questions")
+    const { patchIdentityField } = await import("@/wiki/backfill")
+    const { IDENTITY_SLOTS } = await import("@/decisions/seats/article-fields")
+    const store = new QuestionStore(wikiDir(opts.dir))
+
+    if (opts.dismiss) {
+      const q = store.resolve(id, "dismissed")
+      console.log(q ? chalk.dim(`  dismissed: ${q.question}`) : chalk.red(`  no question matching "${id}"`))
+      return
+    }
+    if (!value) { console.log(chalk.red("  give a value, or pass --dismiss")); return }
+
+    const q = store.resolve(id, "answered", value)
+    if (!q) { console.log(chalk.red(`  no question matching "${id}"`)); return }
+    console.log(chalk.green(`  answered: ${q.question}`))
+
+    // An answer to a missing-article question is a note, not a patch —
+    // there is no article yet to write it into. Absorb will create one
+    // when the entries justify it.
+    if (q.kind !== "field" || !q.field || !q.path) {
+      console.log(chalk.dim("  recorded. No article to patch yet."))
+      return
+    }
+    // Only the identity fields have a defined place in the article. For
+    // anything else the answer is recorded and a person decides where
+    // it belongs — guessing a location in the source of truth is worse
+    // than leaving the answer on the queue.
+    if (!IDENTITY_SLOTS[q.field]) {
+      console.log(chalk.dim(`  recorded against ${q.path}. "${q.field}" has no fixed slot, so nothing was rewritten.`))
+      return
+    }
+
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const store2 = hub.getAgentWiki(q.agentId)
+    const article = store2.readArticle(q.path)
+    if (!article) { console.log(chalk.yellow(`  article gone: ${q.path}`)); return }
+
+    const patched = patchIdentityField(article.content, q.field, `${value} (answered by operator)`)
+    if (!patched) { console.log(chalk.dim("  already present — nothing to write.")); return }
+    const ok = store2.writeArticle(q.path, article.meta, patched.content, q.agentId)
+    console.log(ok
+      ? chalk.green(`  wrote ${q.field} into ${q.path} (prior version kept)`)
+      : chalk.red(`  could not write ${q.path}`))
   })
 
 wiki

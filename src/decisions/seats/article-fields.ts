@@ -149,6 +149,37 @@ export const REQUIRED_FIELDS: Record<string, RequiredField[]> = {
  * them as literal profile fields — where those are blank, which is the
  * common case, nothing is written and the gap stays open for a human.
  */
+/**
+ * Where a field lives in an article's Identity section.
+ *
+ * Separate from BACKFILLABLE, which is the narrower question of what a
+ * machine may write on its own. A person answering "what language does
+ * she prefer" has produced a fact that belongs in the article just as
+ * much as a number does — it simply had to come from a person. Without
+ * a slot for it the answer would be recorded on the queue and never
+ * reach the wiki, which is the same dead end the queue exists to fix.
+ *
+ * A field absent from this map has no defined place, so an answer to it
+ * is recorded and left for a person to file. Guessing a location in the
+ * source of truth is worse than leaving the answer where it can be seen.
+ */
+export const IDENTITY_SLOTS: Record<string, { heading: string; match: RegExp }> = {
+  // Order matters: `organisation` is matched before `role`, because
+  // articles write "Organisation and position" and a /position/ test
+  // for role would claim it.
+  contactValue: { heading: "Contact identifiers", match: /contact|reach|phone|whatsapp|e-?mail/i },
+  organisation: { heading: "Organisation and position", match: /organis|organiz|company|employer|team and/i },
+  role: { heading: "Role or job title", match: /role|job title/i },
+  language: { heading: "Preferred language", match: /language/i },
+  ourOwner: { heading: "Relationship owner", match: /relationship owner|owns the relationship|our owner/i },
+  address: { heading: "Address", match: /hostname|address|url|path/i },
+  access: { heading: "Access", match: /access|credential|how to get in/i },
+  administrator: { heading: "Administrator", match: /administrat|maintained by|who runs/i },
+  ownerClient: { heading: "Client or owner", match: /client|owner/i },
+  status: { heading: "Status", match: /status/i },
+  locations: { heading: "Repository and environments", match: /repositor|environment|url/i },
+}
+
 export const BACKFILLABLE: Record<string, { heading: string; match: RegExp; from: string[] }> = {
   // Ordered by how specific the heading match is: `organisation` is
   // tried before `role` because articles write "Organisation and

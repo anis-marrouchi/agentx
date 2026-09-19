@@ -148,3 +148,37 @@ describe("backfillArticle", () => {
     expect(twice.content).toBe(once.content)
   })
 })
+
+describe("IDENTITY_SLOTS — the human answer path", () => {
+  it("can write a field no lookup can supply", async () => {
+    // A person answering "what language does she prefer" has produced a
+    // fact that belongs in the article as much as a number does. Without
+    // a slot it would be recorded on the queue and never reach the wiki.
+    const r = patchIdentityField(WITH_IDENTITY, "language", "French (answered by operator)")!
+    expect(r.replaced).toBe(true)
+    expect(r.content).toContain("- **Preferred language:** French (answered by operator)")
+  })
+
+  it("covers the fields the grader says need a person", async () => {
+    const { IDENTITY_SLOTS, REQUIRED_FIELDS, FIELD_SOURCES } =
+      await import("../../src/decisions/seats/article-fields")
+    // Every person field with no fact source is one only a human can
+    // answer, so each needs somewhere to put the answer.
+    for (const f of REQUIRED_FIELDS.person) {
+      if ((FIELD_SOURCES[f.key] ?? []).length > 0) continue
+      if (f.key === "whatItIs" || f.key === "whyItMatters" || f.key === "relationships") continue
+      expect(IDENTITY_SLOTS[f.key], f.key).toBeTruthy()
+    }
+  })
+
+  it("is a superset of what a machine may write unasked", async () => {
+    const { IDENTITY_SLOTS, BACKFILLABLE } = await import("../../src/decisions/seats/article-fields")
+    for (const k of Object.keys(BACKFILLABLE)) expect(IDENTITY_SLOTS[k], k).toBeTruthy()
+  })
+
+  it("still refuses a field with no defined place", () => {
+    // Guessing a location in the source of truth is worse than leaving
+    // the answer where a person can see it.
+    expect(patchIdentityField(WITH_IDENTITY, "whyItMatters", "because")).toBeNull()
+  })
+})

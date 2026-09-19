@@ -1,4 +1,4 @@
-import { BACKFILLABLE, BACKFILL_ORDER } from "@/decisions/seats/article-fields"
+import { BACKFILLABLE, BACKFILL_ORDER, IDENTITY_SLOTS } from "@/decisions/seats/article-fields"
 import type { MergedEntity } from "./facts"
 
 // Writing resolved identifiers back into articles that are missing them.
@@ -68,7 +68,9 @@ export function patchIdentityField(
   field: string,
   value: string,
 ): { content: string; replaced: boolean } | null {
-  const spec = BACKFILLABLE[field]
+  // The wider map: a human answer may fill any identity slot, while
+  // only BACKFILLABLE fields may be written without being asked.
+  const spec = IDENTITY_SLOTS[field]
   if (!spec) return null
 
   const lines = content.split("\n")
