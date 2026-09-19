@@ -1,3 +1,4 @@
+import { createContactsSource } from "./sources/contacts"
 import { createGitlabSource } from "./sources/gitlab"
 import { createGogSource } from "./sources/gog"
 import { createWacliSource } from "./sources/wacli"
@@ -9,6 +10,8 @@ export { createGitlabSource } from "./sources/gitlab"
 export { createGogSource } from "./sources/gog"
 export { createWacliSource } from "./sources/wacli"
 export { platformOf, recordsFromEntries } from "./sources/entries"
+export { createContactsSource, factsFrom, loadContacts, namesOf } from "./sources/contacts"
+export type { ContactRecord } from "./sources/contacts"
 export type { SenderStampedEntry } from "./sources/entries"
 
 export interface ResolveOptions {
@@ -41,8 +44,22 @@ export function memoizeAvailability(source: FactSource): FactSource {
   }
 }
 
+/**
+ * Ordered by authority, because mergeRecords lets the first source to
+ * state a field win.
+ *
+ * The hand-maintained registry comes first: it is the only source where
+ * a person decided that a name, its aliases and a set of handles all
+ * refer to one human. Directories only know their own corner, and they
+ * cannot resolve an alias at all.
+ */
 export function defaultSources(): FactSource[] {
-  return [createWacliSource(), createGitlabSource(), createGogSource()].map(memoizeAvailability)
+  return [
+    createContactsSource(),
+    createWacliSource(),
+    createGitlabSource(),
+    createGogSource(),
+  ].map(memoizeAvailability)
 }
 
 /**
