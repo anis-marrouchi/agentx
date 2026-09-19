@@ -155,11 +155,62 @@ curl -s -X POST http://127.0.0.1:19900/task \
 
 ### 3. Mesh Task (cross-node, remote agents)
 
+**Use `async: true`. Always. A synchronous mesh delegation will be killed
+before the remote agent finishes, and its answer will be lost.**
+
 ```bash
 curl -s -X POST http://127.0.0.1:19900/mesh/task \
   -H "Content-Type: application/json" \
-  -d '{"peer": "macbook-local", "agent": "<agent-id>", "message": "Your task description"}'
+  -d '{
+    "peer": "<peer-name>",
+    "agent": "<agent-id>",
+    "message": "Your task description",
+    "async": true,
+    "senderAgentId": "<your own agent id>",
+    "context": {"channel": "<the channel you were asked on>",
+                "chatId": "<the chat id you were asked in>"}
+  }'
 ```
+
+This returns `202 {accepted, taskId, deliverTo}` immediately. The daemon
+holds the long call in the background and **delivers the remote agent's
+answer straight to that chat** when it lands. You do not wait, and you do
+not relay it yourself.
+
+#### Why `async` and not a longer timeout
+
+A delegated agent run takes minutes. An agent's Bash tool kills any
+command at **2 minutes**, and `curl -m 600` does NOT change that — the
+tool's own timeout fires regardless of curl's. This has already lost real
+work: a remote agent completed a full report 47 seconds after the call was
+killed, and the user never saw it.
+
+Raising the Bash timeout is not the fix either. It makes the delegation
+only as reliable as the longest thing you can keep a socket open for.
+`async` removes the wait entirely.
+
+#### `context` is the route home — it is not optional
+
+`context.channel` and `context.chatId` are how the daemon knows where to
+deliver the result. Without them:
+
+- the request is **rejected** with 400 in async mode, and
+- in sync mode the task lands on the remote node as `api:default`,
+  detached from the conversation that asked for it.
+
+Pass the channel and chat id you were actually asked on.
+
+#### Never promise to poll
+
+**You cannot poll.** An agent turn is a single execution — when you reply,
+you stop existing. Nothing wakes you when the remote agent finishes.
+Saying "I'm polling for his report and will send it when it lands" is
+stating something impossible, and it has been said to a user who then
+received nothing.
+
+With `async: true` the daemon delivers the answer. Say that instead:
+"Delegated to <agent> on <peer>. His answer will arrive here when he's
+done." Then stop.
 
 ### 4. AgentX CLI
 
