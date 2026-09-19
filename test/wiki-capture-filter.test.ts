@@ -39,6 +39,8 @@ describe("shouldCaptureEntry", () => {
       ["User: Run shell command: node dist/cli.js workflow absorb --since 24h", "run instruction"],
       ["User: [MISSED RUN — was scheduled for 2026-06-29T05:00:00.000Z] Run the /noqta-news skill", "missed cron run"],
       ["User: [Recent group conversation] [09:11] Group: do we need to restart the daemon?", "group chat dump"],
+      // Real shape from the corpus — a bracketed prefix ahead of the marker.
+      ["User: [Group, 09:43]: [Recent group conversation] we deployed twice today", "group chat dump"],
     ]
     for (const [content, reason] of cases) {
       const d = ok({ content })

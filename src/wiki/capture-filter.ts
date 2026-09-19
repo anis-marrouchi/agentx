@@ -27,7 +27,10 @@ const PROMPT_SHAPES: Array<[RegExp, string]> = [
   [/^User:\s*You are\s/i, "role brief"],
   [/^User:\s*(Run|Execute)\s/i, "run instruction"],
   [/^User:\s*\[MISSED RUN/i, "missed cron run"],
-  [/^User:\s*\[Recent group conversation\]/i, "group chat dump"],
+  // The bracketed prefix varies: some arrive as "[Group, 09:43]: [Recent
+  // group conversation]". Anchoring on the bare marker missed 367 entries
+  // in the first purge, so allow one leading bracketed segment.
+  [/^User:\s*(\[[^\]]{0,40}\]:?\s*)?\[Recent group conversation\]/i, "group chat dump"],
 ]
 
 export interface CaptureDecision {

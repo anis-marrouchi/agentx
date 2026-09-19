@@ -119,6 +119,7 @@ wiki
   .option("--agent <id>", "absorb only this agent")
   .option("--dry-run", "preview without running")
   .option("--max <n>", "max entries per agent", "10")
+  .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -187,7 +188,16 @@ wiki
     let totalWithPath = 0
 
     for (const agentId of agents) {
-      const unabsorbed = hub.getUnabsorbedEntries(agentId).slice(0, maxEntries)
+      // Oldest-first, so without a floor absorb spends every run on the
+      // earliest entries. Those predate intent-path stamping — devops-agent
+      // has 367 entries from April with no intentPath and 1,728 from May
+      // onward with one — so an unfiltered run compiles articles that can
+      // never carry graphPath, zeroing 0.6 of their retrieval score.
+      const sinceDate = typeof opts.since === "string" ? opts.since.trim() : ""
+      const unabsorbed = hub
+        .getUnabsorbedEntries(agentId)
+        .filter((e) => !sinceDate || (e.date ?? "") >= sinceDate)
+        .slice(0, maxEntries)
 
       if (unabsorbed.length === 0) {
         console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("all absorbed")}`)
