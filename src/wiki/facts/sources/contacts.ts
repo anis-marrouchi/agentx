@@ -18,8 +18,8 @@ import { countryFromPhone } from "./wacli"
 // disagreement is kept and rendered rather than resolved silently.
 //
 // It is also the only source that resolves aliases, which is what makes
-// a single registry entry cover "Anis", "anis.marrouchi" and the
-// display name a phone happens to be saved under.
+// a single registry entry cover a given name, a "first.last" handle and
+// the display name a phone happens to be saved under.
 
 export interface ContactRecord {
   id?: string

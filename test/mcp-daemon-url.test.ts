@@ -45,8 +45,8 @@ describe("MCP daemon URL resolution", () => {
   })
 
   it("keeps a real bind host as-is", () => {
-    writeConfig("100.82.31.24:19900")
-    expect(_resolveDaemonUrlForTesting()).toBe("http://100.82.31.24:19900")
+    writeConfig("100.64.0.1:19900")
+    expect(_resolveDaemonUrlForTesting()).toBe("http://100.64.0.1:19900")
   })
 
   it("falls back to .agentx/config.json", () => {

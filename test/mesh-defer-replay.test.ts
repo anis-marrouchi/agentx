@@ -19,7 +19,7 @@ const PEER = "macbook-local"
 function meshConfig(): any {
   return {
     mesh: {
-      peers: [{ name: PEER, url: "http://100.82.31.24:18800" }],
+      peers: [{ name: PEER, url: "http://100.64.0.1:18800" }],
       healthCheck: { timeout: 5, interval: 60 },
     },
   }
