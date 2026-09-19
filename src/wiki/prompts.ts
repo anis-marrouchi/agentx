@@ -89,9 +89,43 @@ For each of the ${entryCount} raw entries below, ask in this order:
 
 - **Wikipedia-style, flat, factual, encyclopedic.** This is the agent's knowledge, not a diary. Write about the *role* of the entity in our work, not a product description.
 - **Synthesize, don't quote.** At most 2 short quoted lines per article.
-- **Organize by theme, not chronology.** An article about a person lists what they do, who they work with, how they prefer to be contacted — not a log of every interaction.
+- **Organize by theme, not chronology.** An article about a person lists what they do, who they work with, and their actual contact details — not a log of every interaction. History goes last, and only where it still bears on the present.
 - **Length: 20–100 lines.** Articles exceeding 100 lines should split into multiple type-specific articles.
 - **Every paragraph earns its place.** Cut narrative filler. If you can remove a sentence without losing a fact, remove it.
+
+## Identity before history
+
+An entity article must first establish **what the entity is**, and only then
+what happened to it. The common failure is the opposite: a person's article
+that records an invoice thread in detail but never states their phone number,
+their title, or the company they work for. That article cannot answer "who is
+this person" or "how do I contact them" — the two questions it exists for.
+
+Before the narrative, every entity article carries an **Identity** section
+with the fields for its type. State a field even when the entries do not
+answer it, as \`unknown\`, so the gap is visible and a later pass can fill it.
+A field silently omitted is indistinguishable from a field that does not
+apply.
+
+- **person** — full name; role or job title; organisation and their position
+  in it; **contact identifiers verbatim** (phone, WhatsApp, email, handle —
+  the actual value, not just "reaches us on WhatsApp"); preferred language;
+  which projects and engagements they touch; who on our side owns the
+  relationship.
+- **project** — what it is in one line; client or owner; current status;
+  repository, environment and URLs; who works on it; where its issues live.
+- **place** — what kind of system it is; hostname, IP, URL, path; who
+  administers it; what runs on it; how access is obtained.
+- **concept** / **pattern** — a one-line definition first, then when it
+  applies and what to do about it.
+- **event** / **decision** — date, who was involved, what was decided or
+  happened, and what changed as a result.
+
+Extract identifiers **verbatim** from the entries. A phone number, an
+account number, a URL or a path is the single most useful thing an article
+can carry, and it is exactly what summarising discards. Never paraphrase or
+redact one that appears in the source; if a value appears only in part, say
+so rather than dropping it.
 
 ## Wikilink discipline
 
