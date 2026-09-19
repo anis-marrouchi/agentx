@@ -11,6 +11,9 @@ import { rawAnswersSchema, describeIssues } from "../schema"
 import type { AnswersFor, AnyAnswer, Questions, RawAnswer } from "../types"
 import { renderState } from "../prompt"
 import type { z } from "zod"
+import { readFileSync } from "fs"
+import { homedir } from "os"
+import { join } from "path"
 
 // A backend for a simple-jev server (featherless-ai/simple-jev).
 //
@@ -59,6 +62,12 @@ export interface SimpleJevOptions {
   name?: string
   model?: string
   apiKeyEnv?: string
+  /** Read the key from this file when the env var is unset. The daemon
+   *  gets its key from the launchd plist / systemd unit, but the CLI and
+   *  the wiki server are separate processes with a bare environment —
+   *  without this a seat silently fails open on every CLI call. Mirrors
+   *  ~/.agentx/mesh-token.txt. */
+  apiKeyFile?: string
   timeoutMs?: number
   maxStateChars?: number
   /** Their Choice accepts 2-50 candidates, well under Jev's 255. */
@@ -110,7 +119,7 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
 
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" }
-        const apiKey = opts.apiKeyEnv ? process.env[opts.apiKeyEnv] : undefined
+        const apiKey = resolveKey(opts.apiKeyEnv, opts.apiKeyFile)
         if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
         const res = await doFetch(`${baseUrl}${path}`, {
@@ -205,6 +214,27 @@ function withInstructions(questions: Questions): Questions {
       : { ...question, instructions: DEFAULT_INSTRUCTIONS[question.type] }
   }
   return out as Questions
+}
+
+/** Env var first, then the file. Cached per path: a seat on a hot path
+ *  must not stat the filesystem on every call. */
+const keyFileCache = new Map<string, string | null>()
+
+function resolveKey(envVar?: string, file?: string): string | undefined {
+  const fromEnv = envVar ? process.env[envVar] : undefined
+  if (fromEnv) return fromEnv
+  if (!file) return undefined
+
+  const path = file.startsWith("~/") ? join(homedir(), file.slice(2)) : file
+  if (!keyFileCache.has(path)) {
+    try {
+      const raw = readFileSync(path, "utf-8").trim()
+      keyFileCache.set(path, raw.length > 0 ? raw : null)
+    } catch {
+      keyFileCache.set(path, null)
+    }
+  }
+  return keyFileCache.get(path) ?? undefined
 }
 
 function assertChoiceCardinality(questions: Questions, max: number): void {

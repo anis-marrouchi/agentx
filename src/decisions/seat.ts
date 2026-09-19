@@ -53,15 +53,72 @@ const DEFAULT_RUNTIME: DecisionsRuntime = {
 }
 
 let runtime: DecisionsRuntime = { ...DEFAULT_RUNTIME }
+let configured = false
 
-/** Called once by the daemon after config load. Until it is, every seat is
- *  off and askSeat is a null-returning no-op. */
+/** Called by the daemon after config load, and by the lazy path below for
+ *  every other process. */
 export function configureDecisions(next: Partial<DecisionsRuntime>): void {
   runtime = { ...DEFAULT_RUNTIME, ...runtime, ...next }
+  configured = true
 }
 
 export function resetDecisionsRuntime(): void {
   runtime = { ...DEFAULT_RUNTIME, seats: {} }
+  configured = false
+}
+
+/**
+ * Configure from agentx.json on first use, for processes that are not the
+ * daemon.
+ *
+ * Seats are not a daemon feature, but only the daemon was calling
+ * configureDecisions — so `agentx wiki search` and the wiki server ran
+ * every seat as "off" and silently fell back, with no error and no
+ * recorded row. The failure was invisible precisely because the seat is
+ * designed to fail quietly.
+ *
+ * Best-effort and cached, including on failure: a CLI run outside a
+ * project has no config, and that must cost one failed read rather than
+ * one per call.
+ */
+function ensureConfigured(): void {
+  if (configured) return
+  configured = true
+  try {
+    // Required lazily: importing the daemon config from module scope would
+    // pull the config graph into every process that touches a seat.
+    const { loadDaemonConfig } = require("@/daemon/config") as {
+      loadDaemonConfig: () => { decisions?: any }
+    }
+    const cfg = loadDaemonConfig()?.decisions
+    if (!cfg?.enabled) return
+
+    const { registerBuiltinDecisionBackends } = require("./index") as {
+      registerBuiltinDecisionBackends: (...a: any[]) => void
+    }
+    const b = cfg.backends ?? {}
+    registerBuiltinDecisionBackends(b.local, b.simpleJev, b.jev, b.typesafe)
+
+    let store: DecisionStore | null = null
+    try {
+      store = new DecisionStore({ path: cfg.dbPath })
+    } catch {
+      /* answer without recording rather than not answer */
+    }
+    runtime = {
+      enabled: true,
+      defaultBackend: cfg.defaultBackend,
+      store,
+      seats: Object.fromEntries(
+        Object.entries(cfg.seats ?? {}).map(([name, seat]: [string, any]) => [
+          name,
+          { ...seat, redactState: cfg.redactState, keepStateRows: cfg.keepStateRows },
+        ]),
+      ),
+    }
+  } catch {
+    /* no config, no seats — exactly today's behaviour */
+  }
 }
 
 export function decisionsRuntime(): DecisionsRuntime {
@@ -97,6 +154,7 @@ export function seatEnvVar(seat: string): string {
 export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env): SeatMode {
   const fromEnv = parseSeatMode(env[seatEnvVar(seat)])
   if (fromEnv) return fromEnv
+  ensureConfigured()
   if (!runtime.enabled) return "off"
   return parseSeatMode(runtime.seats[seat]?.mode) ?? "off"
 }

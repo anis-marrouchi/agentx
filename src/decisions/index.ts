@@ -62,6 +62,7 @@ export function registerBuiltinDecisionBackends(
       path: "/decisions",
       model: "jev-latest",
       apiKeyEnv: "OPENROUTER_API_KEY",
+      apiKeyFile: "~/.agentx/openrouter-key.txt",
       // TypeSafe's claim is a model trained for calibrated decisions. The
       // claim is what this records; whether it holds on our traffic is what
       // `agentx decisions recalibrate` is for, and calibratedProbabilities
@@ -87,6 +88,7 @@ export function registerBuiltinDecisionBackends(
       path: "/systemone",
       model: "jev-latest",
       apiKeyEnv: "TYPESAFE_API_KEY",
+      apiKeyFile: "~/.agentx/typesafe-key.txt",
       probabilitySource: "native",
       maxChoiceOptions: 255,
       maxStateChars: 90_000,
