@@ -1,4 +1,13 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
+import { askSeat } from "@/decisions/seat"
+import {
+  SESSION_CONTINUITY_SEAT,
+  continuityState,
+  sessionContinuityQuestions,
+  shouldRotateEarly,
+  type ContinuityInput,
+  type SessionContinuityAnswers,
+} from "@/decisions/seats/session-continuity"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint } from "./sessions"
@@ -631,6 +640,77 @@ export class AgentRegistry {
    *
    *  Errors are swallowed by design — memory continuity is best-effort,
    *  it must never block or break the rotation it's hooked into. */
+  /**
+   * Ask the session-continuity seat whether to rotate before any
+   * mechanical trigger fires. Returns true only for a confident,
+   * active-mode early rotation.
+   *
+   * Never throws: askSeat is fail-open by contract, and everything else
+   * here is a guarded read. Off, shadow, backend error and missing
+   * history all return false, which is today's behaviour exactly.
+   */
+  private async maybeRotateForContinuity(
+    task: AgentTask,
+    state: { def: AgentDef },
+    channel: string,
+    chatId: string,
+    resumeSessionId: string,
+  ): Promise<boolean> {
+    let previousMessage: string | null = null
+    let minutesSinceLastTurn: number | null = null
+    try {
+      const session = this.sessions.getSession(task.agentId, channel, chatId)
+      const priorUser = [...(session.messages ?? [])].reverse().find((m) => m.role === "user")
+      previousMessage = priorUser?.content ?? null
+      if (session.updatedAt) {
+        minutesSinceLastTurn = Math.round((Date.now() - Date.parse(session.updatedAt)) / 60_000)
+      }
+    } catch {
+      /* a seat never breaks dispatch over missing history */
+    }
+
+    const input: ContinuityInput = {
+      message: task.message ?? "",
+      previousMessage,
+      minutesSinceLastTurn,
+      turnCount: this.sessions.getTurnCount(task.agentId, channel, chatId),
+      lastTurnContextTokens:
+        this.sessions.getLastTurnContextTokens(task.agentId, channel, chatId) || null,
+      agentId: task.agentId,
+      channel,
+    }
+
+    const result = await askSeat(
+      SESSION_CONTINUITY_SEAT,
+      continuityState(input),
+      sessionContinuityQuestions,
+      {
+        // What the code does today: no mechanical trigger fired, so resume.
+        incumbent: { continues: "yes", needsHistory: "yes" },
+        links: [{ kind: "session", id: `${task.agentId}:${channel}:${chatId}` }],
+        features: { agent: task.agentId, channel },
+      },
+    )
+    if (!result || result.mode !== "active") return false
+
+    const rotate = shouldRotateEarly(result.answers as SessionContinuityAnswers, {
+      mechanicalRotation: false,
+    })
+    if (!rotate) return false
+
+    this.log(`[${task.agentId}] continuity rotation for ${channel}:${chatId} (new subject)`)
+    void this.captureRotationMemoAsync(
+      task.agentId, state.def, resumeSessionId, channel, chatId, "continuity",
+    )
+    this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+    getEventBus().emit("session:rotated", {
+      agentId: task.agentId, channel, chatId,
+      reason: "continuity",
+      at: new Date().toISOString(),
+    })
+    return true
+  }
+
   private async captureRotationMemoAsync(
     agentId: string,
     def: AgentDef,
@@ -1159,6 +1239,22 @@ export class AgentRegistry {
         at: new Date().toISOString(),
       })
       resumeSessionId = undefined
+    }
+
+    // --- Session-continuity seat -----------------------------------------
+    //
+    // Runs only when the mechanical triggers did NOT fire, and can only
+    // rotate EARLY. The thresholds above stay authoritative: this may save
+    // a transcript replay, never keep alive one the safety rules wanted
+    // dead. See src/decisions/seats/session-continuity.ts for why the
+    // asymmetry matters — the cost of resuming is exact, the cost of
+    // rotating too early is amnesia, and optimising only the measurable
+    // side is how the original rotation incident happened.
+    if (resumeSessionId && state.def.tier === "claude-code") {
+      const rotatedEarly = await this.maybeRotateForContinuity(
+        task, state, channel, chatId, resumeSessionId,
+      )
+      if (rotatedEarly) resumeSessionId = undefined
     }
 
     // Compact session if history is getting too long (summarize older messages).

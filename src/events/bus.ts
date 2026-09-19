@@ -157,7 +157,7 @@ export interface AgentXEvents {
     agentId: string
     channel: string
     chatId: string
-    reason: "stale" | "max-turns" | "tier-2"
+    reason: "stale" | "max-turns" | "tier-2" | "continuity"
     lastTurnInputTokens?: number
     at: string
   }
