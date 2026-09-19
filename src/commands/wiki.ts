@@ -1,4 +1,5 @@
 import { Command } from "commander"
+import { stripAnthropicApiKey } from "@/utils/workspace-env"
 import chalk from "chalk"
 import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
@@ -228,7 +229,7 @@ wiki
         try {
           rawOutput = execSync(
             `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
-            { encoding: "utf-8", timeout: 900_000, maxBuffer: 10 * 1024 * 1024 },
+            { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: 900_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
           rawOutput = execErr.stdout || ""
@@ -819,7 +820,7 @@ wiki
     let draft = ""
     try {
       const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-      const raw = execSync(cmd, { encoding: "utf-8", timeout: 180_000, maxBuffer: 4 * 1024 * 1024 })
+      const raw = execSync(cmd, { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: 180_000, maxBuffer: 4 * 1024 * 1024 })
       try {
         const envelope = JSON.parse(raw)
         draft = String(envelope.result || envelope.content || "")
@@ -1111,7 +1112,7 @@ wiki
       let patched = ""
       try {
         const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.patchModel} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-        const raw = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+        const raw = execSync(cmd, { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
         try {
           const envelope = JSON.parse(raw)
           patched = String(envelope.result || envelope.content || "")
@@ -1286,7 +1287,7 @@ wiki
     let patched = ""
     try {
       const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.patchModel} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-      const raw = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+      const raw = execSync(cmd, { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
       try {
         const envelope = JSON.parse(raw)
         patched = String(envelope.result || envelope.content || "")
@@ -1713,7 +1714,7 @@ wiki
         let classifications: Array<{ path: string; type: string }>
         try {
           const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${opts.model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-          const rawOutput = execSync(cmd, { encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
+          const rawOutput = execSync(cmd, { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
           const envelope = JSON.parse(rawOutput)
           const responseText = String(envelope.result || envelope.content || "")
           const arrMatch = responseText.match(/\[[\s\S]*\]/)

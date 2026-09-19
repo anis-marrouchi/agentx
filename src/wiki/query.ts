@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "fs"
+import { stripAnthropicApiKey } from "@/utils/workspace-env"
 import { resolve } from "path"
 import { execSync } from "child_process"
 import type { WikiArticle } from "./types"
@@ -278,7 +279,7 @@ async function runClaude(prompt: string, model: string, timeoutMs: number): Prom
   writeFileSync(promptPath, prompt)
   try {
     const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 })
+    const raw = execSync(cmd, { env: stripAnthropicApiKey({ ...process.env }), encoding: "utf-8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 })
     try {
       const envelope = JSON.parse(raw)
       return String(envelope.result || envelope.content || "")

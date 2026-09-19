@@ -11,6 +11,7 @@ import {
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint } from "./sessions"
+import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
@@ -2011,8 +2012,21 @@ export class AgentRegistry {
           }
         }
 
-        // Wiki: export conversation as raw entry for later absorption
-        if (response.content.length > 50) {
+        // Wiki: export conversation as raw entry for later absorption.
+        //
+        // Filtered at the door. The old gate was response length alone, so
+        // every task was captured with its own prompt as the "User:" half:
+        // cron prompts, role briefs, missed-run notices. Of the 10,703
+        // entries that produced, 47.5% were machine-origin or prompt-shaped,
+        // against 257 articles ever compiled. Sifting that with Sonnet at
+        // absorb time costs ~19 minutes a run; rejecting it here costs a
+        // regex.
+        const wikiCapture = shouldCaptureEntry({
+          channel,
+          content: `User: ${task.message}`,
+          responseLength: response.content.length,
+        })
+        if (wikiCapture.capture) {
           try {
             const entryId = `${task.agentId}-${Date.now().toString(36)}`
             this.wikiHub.getSharedStore().addEntry({
