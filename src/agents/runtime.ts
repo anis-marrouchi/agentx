@@ -184,6 +184,13 @@ export interface AgentResponse {
    *  actually is, so rotation decisions must use it, never `usage`.
    *  Undefined on non-streaming paths (result JSON has no per-call data). */
   contextTokens?: number
+  /** Agentic-loop iterations the provider took inside THIS user turn, from
+   *  the CLI result event's `num_turns`. Distinct from a conversation turn:
+   *  one user message can cost many of these when the agent chains tools.
+   *  Benchmarks need it to tell "JEV made the agent cheaper" apart from
+   *  "JEV made the agent do less work". Undefined when the provider does
+   *  not report it. */
+  numTurns?: number
   /** The model Claude actually billed for (from the CLI's init event). When
    *  absent, cost reporting should fall back to the model override / agent
    *  config. Knowing the billed model is what makes cache-aware pricing
@@ -660,7 +667,7 @@ function extractClaudeIsError(stdout: string): string | null {
   return null
 }
 
-function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string } {
+function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string; numTurns?: number } {
   try {
     const data = JSON.parse(stdout)
     const usage = data.usage ? {
@@ -682,6 +689,7 @@ function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: stri
       sessionId: data.session_id,
       usage,
       billedModel,
+      numTurns: typeof data.num_turns === "number" ? data.num_turns : undefined,
     }
   } catch {
     return { text: stdout }
@@ -798,6 +806,7 @@ export async function executeClaudeCode(
       duration: Date.now() - start,
       claudeSessionId: parsed.sessionId,
       usage: parsed.usage,
+      numTurns: parsed.numTurns,
       billedModel: parsed.billedModel,
     }
   } catch (error: any) {
@@ -844,6 +853,7 @@ export async function executeClaudeCodeStreaming(
   let streamSessionId: string | undefined
   /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
   let streamContextTokens: number | undefined
+  let streamNumTurns: number | undefined
   /** If the terminal `result` event carries is_error, we stash it here and
    *  surface the translated message instead of treating `result` as agent text. */
   let streamApiError: string | undefined
@@ -965,6 +975,7 @@ export async function executeClaudeCodeStreaming(
               }
               if (typeof event.model === "string") streamBilledModel = event.model
               if (typeof event.session_id === "string") streamSessionId = event.session_id
+              if (typeof event.num_turns === "number") streamNumTurns = event.num_turns
             }
 
             // System-init event (first thing the CLI emits) carries the model
@@ -1055,6 +1066,7 @@ export async function executeClaudeCodeStreaming(
         duration: Date.now() - start,
         usage: streamUsage,
         contextTokens: streamContextTokens,
+        numTurns: streamNumTurns,
         billedModel: streamBilledModel,
         claudeSessionId: streamSessionId,
       }
@@ -1065,6 +1077,7 @@ export async function executeClaudeCodeStreaming(
       duration: Date.now() - start,
       usage: streamUsage,
       contextTokens: streamContextTokens,
+      numTurns: streamNumTurns,
       billedModel: streamBilledModel,
       claudeSessionId: streamSessionId,
     }
@@ -1075,6 +1088,7 @@ export async function executeClaudeCodeStreaming(
       duration: Date.now() - start,
       usage: streamUsage,
       contextTokens: streamContextTokens,
+      numTurns: streamNumTurns,
       billedModel: streamBilledModel,
       claudeSessionId: streamSessionId,
     }
@@ -1791,6 +1805,7 @@ async function executeClaudeCodePersistent(
   let finalErrorKind: FriendlyError["kind"] | undefined
   let usage: TokenUsage | undefined
   let contextTokens: number | undefined
+  let numTurns: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
 
@@ -1859,6 +1874,7 @@ async function executeClaudeCodePersistent(
             cacheCreateTokens: r.usage.cache_creation_input_tokens || 0,
           }
         }
+        if (typeof r.num_turns === "number") numTurns = r.num_turns
         if (typeof (r.message?.model) === "string") billedModel = r.message.model
         else if (typeof r.model === "string") billedModel = r.model
       }
@@ -1897,6 +1913,7 @@ async function executeClaudeCodePersistent(
     duration: Date.now() - start,
     usage,
     contextTokens,
+    numTurns,
     billedModel,
     claudeSessionId: sessionId,
   }
