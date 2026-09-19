@@ -38,6 +38,7 @@ export function registerBuiltinDecisionBackends(
   local: LocalBackendOptions = {},
   simpleJev: SimpleJevOptions = {},
   jev: SimpleJevOptions = {},
+  typesafe: SimpleJevOptions = {},
 ): void {
   registerDecisionBackend("mock", () => createMockDecisionBackend())
   registerDecisionBackend("local", () => createLocalDecisionBackend(local))
@@ -68,6 +69,23 @@ export function registerBuiltinDecisionBackends(
       maxChoiceOptions: 255,
       maxStateChars: 24_000,
       ...jev,
+    }),
+  )
+  // Jev direct from TypeSafe, bypassing OpenRouter. Same System One
+  // contract on /v1/systemone; the difference is billing and that it needs
+  // a TypeSafe key rather than an OpenRouter one. Prefer this once you have
+  // direct access: one less hop, and the vendor's own rate limits.
+  registerDecisionBackend("typesafe", () =>
+    createSimpleJevBackend({
+      name: "typesafe",
+      baseUrl: "https://api.typesafe.ai/v1",
+      path: "/systemone",
+      model: "jev-latest",
+      apiKeyEnv: "TYPESAFE_API_KEY",
+      probabilitySource: "native",
+      maxChoiceOptions: 255,
+      maxStateChars: 24_000,
+      ...typesafe,
     }),
   )
 }

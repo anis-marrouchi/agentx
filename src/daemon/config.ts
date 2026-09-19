@@ -641,6 +641,17 @@ const decisionsConfigSchema = z.object({
       maxStateChars: z.number().int().min(500).default(24_000),
       maxChoiceOptions: z.number().int().min(2).max(255).default(255),
     }).default({}),
+    /** Jev direct from TypeSafe rather than through OpenRouter. Same
+     *  contract, different billing and rate limits. Needs TYPESAFE_API_KEY. */
+    typesafe: z.object({
+      baseUrl: z.string().default("https://api.typesafe.ai/v1"),
+      path: z.string().default("/systemone"),
+      model: z.string().default("jev-latest"),
+      apiKeyEnv: z.string().default("TYPESAFE_API_KEY"),
+      timeoutMs: z.number().int().min(100).default(30_000),
+      maxStateChars: z.number().int().min(500).default(24_000),
+      maxChoiceOptions: z.number().int().min(2).max(255).default(255),
+    }).default({}),
   }).default({}),
   seats: z.record(z.string(), decisionSeatSchema).default({}),
 }).default({})

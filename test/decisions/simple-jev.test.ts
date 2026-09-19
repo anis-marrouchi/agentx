@@ -336,3 +336,40 @@ describe.skipIf(!liveJev)("jev via OpenRouter — live", () => {
     _resetDecisionBackendsForTesting()
   }, 90_000)
 })
+
+// Live check against TypeSafe direct. Needs TYPESAFE_API_KEY; the state is
+// synthetic on purpose.
+const liveTypesafe =
+  process.env.AGENTX_TYPESAFE_LIVE === "1" && Boolean(process.env.TYPESAFE_API_KEY)
+describe.skipIf(!liveTypesafe)("typesafe direct — live", () => {
+  it("round-trips all three primitives on /v1/systemone", async () => {
+    _resetDecisionBackendsForTesting()
+    registerBuiltinDecisionBackends()
+    const backend = getDecisionBackend("typesafe")
+
+    const res = await backend.decide({
+      state: "The nightly deploy cron has failed four days running with exit code 1, but every run record says success:true",
+      questions: {
+        cause: choice({
+          infrastructure: "The machine or network is at fault",
+          "application-bug": "The deployed code is at fault",
+          "monitoring-gap": "The failure is real but reported as success",
+        }),
+        page: noul("Should a human be paged right now?"),
+        severity: score(["trivial", "annoying", "serious", "critical"]),
+      },
+      timeoutMs: 60_000,
+    })
+
+    expect(res.model).toMatch(/jev/i)
+    expect(res.meta.backend).toBe("typesafe")
+    expect(res.meta.structureMode).toBe("native")
+    expect((res.answers.cause as ChoiceAnswer).choice).toBe("monitoring-gap")
+    expect((res.answers.page as NoulAnswer).noul).toBeGreaterThan(0.5)
+    // Severity lands between "serious" and "critical", not on an integer.
+    const sev = (res.answers.severity as ScoreAnswer).score
+    expect(sev).toBeGreaterThan(2)
+    expect(sev).toBeLessThan(3)
+    _resetDecisionBackendsForTesting()
+  }, 90_000)
+})
