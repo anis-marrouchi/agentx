@@ -829,6 +829,17 @@ export const daemonConfigSchema = z.object({
      *  Raise for Max 20×, lower if your workload stays under the cap naturally. */
     maxClaudeCodeDispatchesPerHour: z.number().int().min(1).max(10_000).default(80),
     maxClaudeCodeDispatchesPer5h: z.number().int().min(1).max(50_000).default(180),
+    /** How many requests BEFORE the immediate predecessor to show the
+     *  session-continuity seat. 0 keeps today's two-message state exactly.
+     *
+     *  Off by default on purpose. A probe over 27 hand-written turns found
+     *  that at 3, the seat's safety question (`needsHistory`) becomes
+     *  cleanly separable where two messages leave it straddling zero — but
+     *  that rests on 7 positive examples from synthetic scenarios, and this
+     *  seat's failure mode is the agent silently losing conversation
+     *  context. The promotion gate for that wants labelled production rows,
+     *  not a good afternoon on a fixture. Raise it to collect them. */
+    continuityStateTurns: z.number().int().min(0).max(5).default(0),
   }).default({}),
   /** Move B — JS/TS plugins. Each entry is an installed npm package name
    *  (e.g. `agentx-plugin-mattermost` or `@noqta/plugin-mattermost`); the

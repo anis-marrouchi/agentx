@@ -192,6 +192,30 @@ export function priorUserMessage(
   return prior?.content ?? null
 }
 
+/**
+ * Up to `count` user requests from BEFORE the immediate predecessor,
+ * oldest first. Companion to priorUserMessage, and skips the current turn
+ * for the same reason.
+ *
+ * Returns fewer than `count` near the start of a conversation, and an
+ * empty array when `count` is 0 — which is what keeps the widened state
+ * strictly opt-in.
+ */
+export function priorUserRequests(
+  messages: SessionMessage[] | undefined,
+  currentMessage: string,
+  count: number,
+): string[] {
+  if (count <= 0) return []
+  const users = (messages ?? []).filter((m) => m.role === "user")
+  const tail = users[users.length - 1]
+  // Drop the current turn, then the predecessor: priorUserMessage already
+  // carries that one and repeating it would just pay twice for it.
+  const end = (tail && tail.content === currentMessage ? users.length - 1 : users.length) - 1
+  if (end <= 0) return []
+  return users.slice(Math.max(0, end - count), end).map((m) => m.content)
+}
+
 /** Bucket an ISO timestamp into a stable 15-min window label (e.g. "14:45").
  *  Used in history rendering so the prompt's bucket headers change at most
  *  every 15 minutes — the prefix stays byte-stable across intra-bucket

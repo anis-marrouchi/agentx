@@ -58,6 +58,19 @@ export interface ContinuityInput {
   message: string
   /** The previous user message in this chat, if any. */
   previousMessage?: string | null
+  /** Requests BEFORE `previousMessage`, oldest first.
+   *
+   *  Empty by default. The benchmark showed why the option exists: on
+   *  subject changes with no lexical signpost, two messages alone left the
+   *  model genuinely unsure (`continues` 0.58 where a clean change scored
+   *  0.22), and no policy threshold recovers a number that never separated.
+   *  A subject boundary is visible against a run of requests in a way it is
+   *  not against one predecessor.
+   *
+   *  Bounded and off unless asked for, because this runs before every
+   *  resumed turn and the whole point of the seat is to be cheaper than
+   *  what it guards. */
+  recentRequests?: string[]
   minutesSinceLastTurn: number | null
   turnCount: number
   lastTurnContextTokens: number | null
@@ -67,11 +80,19 @@ export interface ContinuityInput {
 
 /** Small on purpose. Deciding whether two requests are the same piece of
  *  work needs the two requests, not the transcript between them — and this
- *  runs before a task that has not started yet, so it must be cheap. */
+ *  runs before a task that has not started yet, so it must be cheap.
+ *
+ *  `recentRequests` widens that deliberately narrow window, and stays
+ *  absent from the state entirely when empty so the default call is
+ *  byte-identical to what it always was. */
 export function continuityState(input: ContinuityInput): StateValue {
+  const earlier = (input.recentRequests ?? []).filter(Boolean)
   return {
     newRequest: clip(input.message, 1200),
     previousRequest: input.previousMessage ? clip(input.previousMessage, 800) : null,
+    ...(earlier.length
+      ? { earlierRequests: earlier.map((r) => clip(r, 400)) }
+      : {}),
     minutesSinceLastTurn: input.minutesSinceLastTurn,
     turnsSoFar: input.turnCount,
     currentContextTokens: input.lastTurnContextTokens,

@@ -10,7 +10,7 @@ import {
 } from "@/decisions/seats/session-continuity"
 import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
-import { SessionStore, detectLongMemoryHint, priorUserMessage } from "./sessions"
+import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
@@ -743,12 +743,18 @@ export class AgentRegistry {
   ): Promise<boolean> {
     let previousMessage: string | null = null
     let minutesSinceLastTurn: number | null = null
+    let recentRequests: string[] = []
     try {
       const session = this.sessions.getSession(task.agentId, channel, chatId)
       // Not simply the last user message: this turn's request was already
       // appended upstream, so that would compare the request to itself.
       // See priorUserMessage for why the seat stays shut when it does.
       previousMessage = priorUserMessage(session.messages, task.message ?? "")
+      recentRequests = priorUserRequests(
+        session.messages,
+        task.message ?? "",
+        this.config.session.continuityStateTurns,
+      )
       if (session.updatedAt) {
         minutesSinceLastTurn = Math.round((Date.now() - Date.parse(session.updatedAt)) / 60_000)
       }
@@ -759,6 +765,7 @@ export class AgentRegistry {
     const input: ContinuityInput = {
       message: task.message ?? "",
       previousMessage,
+      recentRequests,
       minutesSinceLastTurn,
       turnCount: this.sessions.getTurnCount(task.agentId, channel, chatId),
       lastTurnContextTokens:

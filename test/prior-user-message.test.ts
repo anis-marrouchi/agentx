@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { priorUserMessage, type SessionMessage } from "../src/agents/sessions"
+import { priorUserMessage, priorUserRequests, type SessionMessage } from "../src/agents/sessions"
 
 // Regression cover for a silent failure of the session-continuity seat.
 //
@@ -66,5 +66,35 @@ describe("priorUserMessage", () => {
     // prior user message is the turn in between, not the earlier "why?".
     const messages = [user("why?"), agent("because"), user("and then?"), agent("then this"), user("why?")]
     expect(priorUserMessage(messages, "why?")).toBe("and then?")
+  })
+})
+
+describe("priorUserRequests", () => {
+  const convo = [
+    user("one"), agent("."), user("two"), agent("."), user("three"), agent("."), user("four"),
+  ]
+
+  it("returns nothing at 0, which is what keeps the wider state opt-in", () => {
+    expect(priorUserRequests(convo, "four", 0)).toEqual([])
+  })
+
+  it("skips both the current turn and its immediate predecessor", () => {
+    // "four" is current, "three" is carried by priorUserMessage already.
+    expect(priorUserRequests(convo, "four", 2)).toEqual(["one", "two"])
+  })
+
+  it("returns oldest first", () => {
+    const r = priorUserRequests(convo, "four", 2)
+    expect(r[0]).toBe("one")
+  })
+
+  it("returns fewer than asked near the start of a conversation", () => {
+    expect(priorUserRequests([user("one"), agent("."), user("two")], "two", 3)).toEqual([])
+    expect(priorUserRequests(convo, "four", 99)).toEqual(["one", "two"])
+  })
+
+  it("is empty when there is nothing before the predecessor", () => {
+    expect(priorUserRequests([user("only")], "only", 3)).toEqual([])
+    expect(priorUserRequests(undefined, "x", 3)).toEqual([])
   })
 })
