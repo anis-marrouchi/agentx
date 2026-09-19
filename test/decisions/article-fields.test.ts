@@ -28,7 +28,7 @@ describe("required fields per type", () => {
   })
 
   it("asks a person for a contact VALUE, not a channel", () => {
-    // The Mohannad defect: "WhatsApp, in Arabic" satisfies "has a contact
+    // The observed defect: "WhatsApp, in Arabic" satisfies "has a contact
     // channel" and fails the article's purpose. The wording has to make
     // the number itself the thing being asked about.
     const q = REQUIRED_FIELDS.person.find((f) => f.key === "contactValue")!

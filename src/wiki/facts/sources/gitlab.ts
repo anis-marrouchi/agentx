@@ -2,12 +2,15 @@ import type { EntityHint, FactRecord, FactSource } from "../types"
 
 // Emails, handles and profile URLs, from the GitLab instance.
 //
-// 3,011 of the fleet's raw entries come from GitLab, so for most of the
-// people in the wiki this is the system that knows who they are. The
-// user search returns `organization` and `job_title` fields too; they
-// are usually blank on this instance, which is worth knowing — the
-// source reports what it has and stays quiet about the rest, so a blank
-// job title never reaches the prompt as a fact.
+// Where most of a fleet's entries arrive through GitLab, this is the
+// system that knows who the people in them are. The user search returns
+// `organization` and `job_title` too, but both are optional and often
+// blank — the source reports what it has and stays quiet about the
+// rest, so a blank job title never reaches the prompt as a fact.
+//
+// Host and token come from the environment. There is no default host:
+// guessing one would send entity names from a private corpus to
+// whatever answers at that address.
 
 export interface GitlabSourceOptions {
   baseUrl?: string
@@ -26,20 +29,23 @@ interface GitlabUser {
 }
 
 export function createGitlabSource(opts: GitlabSourceOptions = {}): FactSource {
-  const baseUrl = (opts.baseUrl ?? process.env.GITLAB_URL ?? "https://gitlab.noqta.tn").replace(/\/+$/, "")
+  const baseUrl = (opts.baseUrl ?? process.env.GITLAB_URL ?? "").replace(/\/+$/, "")
   const token = opts.token ?? process.env.GITLAB_ADMIN_TOKEN ?? process.env.GITLAB_TOKEN
 
   return {
     name: "gitlab",
     provides: ["email", "handle", "profile URL"],
     async available() {
+      if (!baseUrl) {
+        return { kind: "not-configured", hint: "export GITLAB_URL=https://<your-gitlab-host>" }
+      }
       if (!token) {
-        return { kind: "not-configured", hint: "export GITLAB_ADMIN_TOKEN=<admin PAT>  (read_api scope is enough)" }
+        return { kind: "not-configured", hint: "export GITLAB_ADMIN_TOKEN=<PAT>  (read_api scope is enough)" }
       }
       return null
     },
     async lookup(hints: EntityHint[], signal?: AbortSignal) {
-      if (!token) return []
+      if (!token || !baseUrl) return []
       const records: FactRecord[] = []
       const seen = new Set<string>()
       for (const h of hints) {

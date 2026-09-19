@@ -17,7 +17,7 @@ describe("raw entry meta round-trip", () => {
     // zeroing 0.6 of the hybrid retrieval score.
     store.addEntry({
       id: "e1", date: "2026-09-02", agentId: "devops-agent", source: "gitlab",
-      sourceContext: "Saber Salhi", content: "User: something\n\nAgent: reply",
+      sourceContext: "Alex Rivera", content: "User: something\n\nAgent: reply",
       meta: { intentPath: ["code", "set.constraints"], intentPathLabel: "code › set.constraints" },
     })
     const [entry] = store.listEntries()

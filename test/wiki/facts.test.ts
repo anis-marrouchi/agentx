@@ -25,13 +25,13 @@ const fake = (
 
 describe("isPersonName", () => {
   it("accepts a plain two-to-four word name", () => {
-    expect(isPersonName("Saber Salhi")).toBe(true)
-    expect(isPersonName("Anis Marrouchi")).toBe(true)
+    expect(isPersonName("Alex Rivera")).toBe(true)
+    expect(isPersonName("Dana Okonkwo")).toBe(true)
     expect(isPersonName("Jean-Luc De La Tour")).toBe(true)
   })
 
   it("rejects issue titles, which is what `context` holds for GitLab entries", () => {
-    expect(isPersonName("GitLab noqta/minbar issue #14: Feature")).toBe(false)
+    expect(isPersonName("GitLab acme/widgets issue #14: Feature")).toBe(false)
     expect(isPersonName("Deploy v2 to staging")).toBe(false)
     expect(isPersonName("673-competition-dates")).toBe(false)
   })
@@ -43,21 +43,21 @@ describe("isPersonName", () => {
   })
 
   it("rejects a single word — too weak a signal to spend a lookup on", () => {
-    expect(isPersonName("Saber")).toBe(false)
+    expect(isPersonName("Alex")).toBe(false)
   })
 
   it("rejects lowercase, which is how handles and slugs arrive", () => {
-    expect(isPersonName("saber salhi")).toBe(false)
+    expect(isPersonName("alex rivera")).toBe(false)
   })
 })
 
 describe("extractHints", () => {
   it("dedupes case-insensitively and keeps the first spelling", () => {
     const h = extractHints([
-      { context: "Saber Salhi" }, { context: "saber salhi" }, { context: "Saber Salhi" },
+      { context: "Alex Rivera" }, { context: "alex rivera" }, { context: "Alex Rivera" },
     ])
     expect(h).toHaveLength(1)
-    expect(h[0].name).toBe("Saber Salhi")
+    expect(h[0].name).toBe("Alex Rivera")
   })
 
   it("skips entries whose context is not a name", () => {

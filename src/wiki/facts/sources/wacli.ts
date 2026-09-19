@@ -114,9 +114,9 @@ function queriesFor(name: string): string[] {
 
 /**
  * A surname search returns everyone who shares it. Requiring every token
- * of the shorter name to appear in the longer one keeps "Mohannad
- * Sedrani" matching a contact stored as "Mohannad" while rejecting an
- * unrelated Sedrani.
+ * of the shorter name to appear in the longer one keeps a two-word wiki
+ * name matching a contact stored under just the first name, while
+ * rejecting an unrelated person who shares the surname.
  */
 export function plausible(candidate: string, wanted: string): boolean {
   const a = norm(candidate).split(/\s+/).filter(Boolean)

@@ -3,7 +3,7 @@
 // The field grader found `contactValue` missing from 18 of 52 person
 // articles, and the obvious reading — absorb summarised the phone number
 // away — is wrong. The number was never in the input. A wiki entry
-// carries `context: Mohannad Sedrani` and a block of conversation text;
+// carries `context: <display name>` and a block of conversation text;
 // nobody types their own phone number into a chat. No prompt can recover
 // a fact that was never present.
 //

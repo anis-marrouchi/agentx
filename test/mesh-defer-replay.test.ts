@@ -97,7 +97,7 @@ describe("MessageRouter — deferred mesh delivery", () => {
       id,
       channel: "gitlab",
       accountId: "default",
-      sender: { id: "u1", name: "Saber Salhi", isBot: false },
+      sender: { id: "u1", name: "Alex Rivera", isBot: false },
       text: `@devops-noqta are you still here ?`,
       group: { id: "noqta/minbar:issue:132", name: "minbar" },
       preferNode: PEER,
