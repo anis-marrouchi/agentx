@@ -119,3 +119,39 @@ describe("articleFieldsState", () => {
 it("seat name is stable", () => {
   expect(ARTICLE_FIELDS_SEAT).toBe("article-fields")
 })
+
+describe("fieldChecklistMarkdown — one definition, two renderings", () => {
+  it("covers every typed article kind", async () => {
+    const { fieldChecklistMarkdown } = await import("../../src/decisions/seats/article-fields")
+    const md = fieldChecklistMarkdown()
+    for (const type of Object.keys(REQUIRED_FIELDS)) expect(md).toContain(`**${type}**`)
+  })
+
+  it("emits every non-common field the grader checks", async () => {
+    const { fieldChecklistMarkdown, REQUIRED_FIELDS: R } = await import("../../src/decisions/seats/article-fields")
+    const md = fieldChecklistMarkdown()
+    const common = new Set(fieldsFor(undefined).map((f) => f.key))
+    for (const [type, fields] of Object.entries(R)) {
+      for (const f of fields) {
+        if (common.has(f.key)) continue
+        expect(md, `${type}.${f.key}`).toContain(f.label)
+      }
+    }
+  })
+
+  it("rejects a label that carries its own emphasis", async () => {
+    // Nested ** produced `**contact identifiers **verbatim** …**`, which
+    // renders as broken markdown in the prompt.
+    const { REQUIRED_FIELDS: R } = await import("../../src/decisions/seats/article-fields")
+    for (const fields of Object.values(R)) {
+      for (const f of fields) expect(f.label, f.key).not.toContain("**")
+    }
+  })
+
+  it("reaches the absorb prompt the writer actually sees", async () => {
+    const { buildAbsorbPrompt } = await import("../../src/wiki/prompts")
+    const p = buildAbsorbPrompt("graph" as never, "a", "w", [] as never, [] as never)
+    expect(p).toContain("contact identifiers VERBATIM")
+    expect(p).toContain("hostname, IP, URL or path")
+  })
+})

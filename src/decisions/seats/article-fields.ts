@@ -21,6 +21,8 @@ export const ARTICLE_FIELDS_SEAT = "article-fields"
 
 export interface RequiredField {
   key: string
+  /** Imperative form, rendered into the absorb prompt for the writer. */
+  label: string
   /** Phrased as a yes/no about the article, never about the subject. */
   question: string
   /** A missing critical field makes the article unfit for its purpose;
@@ -29,58 +31,58 @@ export interface RequiredField {
 }
 
 const COMMON: RequiredField[] = [
-  { key: "whatItIs", question: "Does the article say what the subject is, in its own terms?", critical: true },
-  { key: "whyItMatters", question: "Does the article say why the subject matters to our work?" },
-  { key: "relationships", question: "Does the article connect the subject to specific named people, projects or systems?" },
+  { key: "whatItIs", label: "what it is, in its own terms", question: "Does the article say what the subject is, in its own terms?", critical: true },
+  { key: "whyItMatters", label: "why it matters to our work", question: "Does the article say why the subject matters to our work?" },
+  { key: "relationships", label: "which named people, projects or systems it connects to", question: "Does the article connect the subject to specific named people, projects or systems?" },
 ]
 
 export const REQUIRED_FIELDS: Record<string, RequiredField[]> = {
   person: [
     ...COMMON,
-    { key: "role", question: "Does the article state this person's role or job title?", critical: true },
-    { key: "organisation", question: "Does the article name the organisation or team this person belongs to?", critical: true },
-    { key: "contactValue", question: "Does the article give an actual contact value — a phone number, handle, email or address — rather than only naming a channel?", critical: true },
-    { key: "language", question: "Does the article say what language to use with this person?" },
-    { key: "ourOwner", question: "Does the article say who on our side owns this relationship?" },
+    { key: "role", label: "role or job title", question: "Does the article state this person's role or job title?", critical: true },
+    { key: "organisation", label: "organisation or team, and their position in it", question: "Does the article name the organisation or team this person belongs to?", critical: true },
+    { key: "contactValue", label: "contact identifiers VERBATIM — phone, WhatsApp, email, handle; the actual value, not \"reaches us on WhatsApp\"", question: "Does the article give an actual contact value — a phone number, handle, email or address — rather than only naming a channel?", critical: true },
+    { key: "language", label: "preferred language", question: "Does the article say what language to use with this person?" },
+    { key: "ourOwner", label: "who on our side owns the relationship", question: "Does the article say who on our side owns this relationship?" },
   ],
   place: [
     ...COMMON,
-    { key: "address", question: "Does the article give a hostname, IP, URL or filesystem path for this system?", critical: true },
-    { key: "access", question: "Does the article say how access is obtained?", critical: true },
-    { key: "runsWhat", question: "Does the article say what runs on or is stored in this system?" },
-    { key: "administrator", question: "Does the article say who administers it?" },
+    { key: "address", label: "hostname, IP, URL or path", question: "Does the article give a hostname, IP, URL or filesystem path for this system?", critical: true },
+    { key: "access", label: "how access is obtained", question: "Does the article say how access is obtained?", critical: true },
+    { key: "runsWhat", label: "what runs on or is stored in it", question: "Does the article say what runs on or is stored in this system?" },
+    { key: "administrator", label: "who administers it", question: "Does the article say who administers it?" },
   ],
   project: [
     ...COMMON,
-    { key: "oneLine", question: "Does the article describe in one line what the project delivers?", critical: true },
-    { key: "ownerClient", question: "Does the article name the client or internal owner?", critical: true },
-    { key: "status", question: "Does the article state the project's current status?" },
-    { key: "locations", question: "Does the article give a repository, environment or URL for it?", critical: true },
-    { key: "people", question: "Does the article name who works on it?" },
+    { key: "oneLine", label: "what it is, in one line", question: "Does the article describe in one line what the project delivers?", critical: true },
+    { key: "ownerClient", label: "client or internal owner", question: "Does the article name the client or internal owner?", critical: true },
+    { key: "status", label: "current status", question: "Does the article state the project's current status?" },
+    { key: "locations", label: "repository, environment and URLs", question: "Does the article give a repository, environment or URL for it?", critical: true },
+    { key: "people", label: "who works on it", question: "Does the article name who works on it?" },
   ],
   concept: [
     ...COMMON,
-    { key: "definition", question: "Does the article open with a one-line definition of the concept?", critical: true },
-    { key: "whenApplies", question: "Does the article say when this concept applies?" },
+    { key: "definition", label: "a one-line definition, first", question: "Does the article open with a one-line definition of the concept?", critical: true },
+    { key: "whenApplies", label: "when it applies", question: "Does the article say when this concept applies?" },
   ],
   pattern: [
     ...COMMON,
-    { key: "definition", question: "Does the article open with a one-line statement of the pattern?", critical: true },
-    { key: "whenApplies", question: "Does the article say when to apply it?", critical: true },
-    { key: "whatToDo", question: "Does the article say what to actually do?", critical: true },
+    { key: "definition", label: "a one-line statement of the pattern, first", question: "Does the article open with a one-line statement of the pattern?", critical: true },
+    { key: "whenApplies", label: "when to apply it", question: "Does the article say when to apply it?", critical: true },
+    { key: "whatToDo", label: "what to actually do", question: "Does the article say what to actually do?", critical: true },
   ],
   event: [
     ...COMMON,
-    { key: "when", question: "Does the article give the date the event happened?", critical: true },
-    { key: "who", question: "Does the article name who was involved?" },
-    { key: "outcome", question: "Does the article say what changed as a result?", critical: true },
+    { key: "when", label: "the date it happened", question: "Does the article give the date the event happened?", critical: true },
+    { key: "who", label: "who was involved", question: "Does the article name who was involved?" },
+    { key: "outcome", label: "what changed as a result", question: "Does the article say what changed as a result?", critical: true },
   ],
   decision: [
     ...COMMON,
-    { key: "what", question: "Does the article state plainly what was decided?", critical: true },
-    { key: "why", question: "Does the article give the reasoning behind the decision?", critical: true },
-    { key: "when", question: "Does the article say when it was decided?" },
-    { key: "consequence", question: "Does the article say what the decision changed?" },
+    { key: "what", label: "what was decided", question: "Does the article state plainly what was decided?", critical: true },
+    { key: "why", label: "the reasoning behind it", question: "Does the article give the reasoning behind the decision?", critical: true },
+    { key: "when", label: "when it was decided", question: "Does the article say when it was decided?" },
+    { key: "consequence", label: "what it changed", question: "Does the article say what the decision changed?" },
   ],
 }
 
@@ -152,4 +154,30 @@ export function reportFields(
     coverage: fields.length ? present.length / fields.length : 0,
     fit: missingCritical.length === 0,
   }
+}
+
+/**
+ * The same field list, rendered for the absorb prompt.
+ *
+ * The writer and the checker read one definition. When these were two
+ * hand-written lists they drifted within a day: the prompt asked for a
+ * relationship owner, the rubric never looked for one, and nobody could
+ * tell whether a missing owner was the writer's fault or the checker's
+ * blind spot. Generating the prompt from the checked fields makes that
+ * class of disagreement unrepresentable.
+ */
+export function fieldChecklistMarkdown(): string {
+  const order = ["person", "project", "place", "concept", "pattern", "event", "decision"]
+  const commonKeys = new Set(COMMON.map((f) => f.key))
+  const bold = (t: string) => {
+    if (t.includes("**")) throw new Error(`field label must not carry its own emphasis: ${t}`)
+    return `**${t}**`
+  }
+  return order
+    .map((type) => {
+      const own = REQUIRED_FIELDS[type].filter((f) => !commonKeys.has(f.key))
+      const parts = own.map((f) => (f.critical ? bold(f.label) : f.label))
+      return `- **${type}** — ${parts.join("; ")}.`
+    })
+    .join("\n")
 }

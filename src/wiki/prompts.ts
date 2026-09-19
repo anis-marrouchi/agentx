@@ -1,3 +1,4 @@
+import { fieldChecklistMarkdown } from "@/decisions/seats/article-fields"
 import type { WikiMode } from "./hub"
 import type { PromotionCluster } from "./promote"
 
@@ -107,19 +108,11 @@ answer it, as \`unknown\`, so the gap is visible and a later pass can fill it.
 A field silently omitted is indistinguishable from a field that does not
 apply.
 
-- **person** — full name; role or job title; organisation and their position
-  in it; **contact identifiers verbatim** (phone, WhatsApp, email, handle —
-  the actual value, not just "reaches us on WhatsApp"); preferred language;
-  which projects and engagements they touch; who on our side owns the
-  relationship.
-- **project** — what it is in one line; client or owner; current status;
-  repository, environment and URLs; who works on it; where its issues live.
-- **place** — what kind of system it is; hostname, IP, URL, path; who
-  administers it; what runs on it; how access is obtained.
-- **concept** / **pattern** — a one-line definition first, then when it
-  applies and what to do about it.
-- **event** / **decision** — date, who was involved, what was decided or
-  happened, and what changed as a result.
+${fieldChecklistMarkdown()}
+
+Fields in **bold** are the ones an article of that type is unusable without.
+Every article of any type also states what it is, why it matters to our work,
+and which named people, projects or systems it connects to.
 
 Extract identifiers **verbatim** from the entries. A phone number, an
 account number, a URL or a path is the single most useful thing an article
