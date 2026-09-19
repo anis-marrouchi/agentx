@@ -42,6 +42,22 @@ export function createGitlabSource(opts: GitlabSourceOptions = {}): FactSource {
       if (!token) {
         return { kind: "not-configured", hint: "export GITLAB_ADMIN_TOKEN=<PAT>  (read_api scope is enough)" }
       }
+      // A present-but-rejected token is the dangerous case: every lookup
+      // returns nothing, which is indistinguishable from "this person is
+      // not in GitLab", and the corpus quietly grows a hole while the
+      // source reports itself healthy. One authenticated call turns that
+      // into a prompt.
+      try {
+        const res = await fetch(`${baseUrl}/api/v4/user`, { headers: { "PRIVATE-TOKEN": token } })
+        if (res.status === 401 || res.status === 403) {
+          return { kind: "not-configured", hint: `GitLab rejected the token (${res.status}) — set a valid GITLAB_ADMIN_TOKEN` }
+        }
+        if (!res.ok) {
+          return { kind: "failed", hint: `GitLab returned ${res.status} for the auth probe` }
+        }
+      } catch (err) {
+        return { kind: "failed", hint: `cannot reach ${baseUrl}: ${String((err as Error)?.message ?? err)}` }
+      }
       return null
     },
     async lookup(hints: EntityHint[], signal?: AbortSignal) {

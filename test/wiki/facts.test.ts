@@ -370,3 +370,58 @@ describe("memoizeAvailability", () => {
     expect(probes).toBe(1)
   })
 })
+
+describe("gitlab source availability", () => {
+  const withEnv = async (env: Record<string, string | undefined>, fn: () => Promise<void>) => {
+    const saved: Record<string, string | undefined> = {}
+    for (const k of Object.keys(env)) { saved[k] = process.env[k]; 
+      if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]! }
+    try { await fn() } finally {
+      for (const k of Object.keys(saved)) {
+        if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]!
+      }
+    }
+  }
+
+  it("asks for a host rather than guessing one", async () => {
+    const { createGitlabSource } = await import("../../src/wiki/facts")
+    await withEnv({ GITLAB_URL: undefined, GITLAB_ADMIN_TOKEN: "t", GITLAB_TOKEN: undefined }, async () => {
+      const why = await createGitlabSource().available()
+      expect(why?.kind).toBe("not-configured")
+      expect(why?.hint).toContain("GITLAB_URL")
+    })
+  })
+
+  it("reports a rejected token instead of returning silence", async () => {
+    // A present-but-bad token makes every lookup empty, which reads as
+    // "nobody is in GitLab" and quietly hollows out the corpus.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("", { status: 401 }) as never,
+    )
+    try {
+      const { createGitlabSource } = await import("../../src/wiki/facts")
+      const why = await createGitlabSource({ baseUrl: "https://git.example.com", token: "bad" }).available()
+      expect(why?.kind).toBe("not-configured")
+      expect(why?.hint).toMatch(/401|rejected/i)
+    } finally { fetchSpy.mockRestore() }
+  })
+
+  it("is healthy when the probe authenticates", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: 1 }), { status: 200 }) as never,
+    )
+    try {
+      const { createGitlabSource } = await import("../../src/wiki/facts")
+      expect(await createGitlabSource({ baseUrl: "https://git.example.com", token: "ok" }).available()).toBeNull()
+    } finally { fetchSpy.mockRestore() }
+  })
+
+  it("reports an unreachable host as failed, not as a config error", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ENOTFOUND"))
+    try {
+      const { createGitlabSource } = await import("../../src/wiki/facts")
+      const why = await createGitlabSource({ baseUrl: "https://git.example.com", token: "ok" }).available()
+      expect(why?.kind).toBe("failed")
+    } finally { fetchSpy.mockRestore() }
+  })
+})
