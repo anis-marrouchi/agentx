@@ -5,6 +5,8 @@ import { loadLocalSkills, matchSkillsToTask } from "@/agent/skills/loader"
 import { resolveOutputType } from "@/agent/outputs/types"
 import { generate } from "@/agent"
 import type { OutputType } from "@/agent/providers/types"
+import { existsSync, readFileSync } from "fs"
+import { resolve } from "path"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
@@ -92,8 +94,68 @@ async function elicit(
 /** Pending elicitation response handlers */
 const elicitationResolvers = new Map<string, (result: any) => void>()
 
-// Default daemon URL (local)
-const DAEMON_URL = process.env.AGENTX_DAEMON_URL || "http://localhost:19900"
+// --- Where the daemon is listening ---
+//
+// This used to be a hardcoded `http://localhost:19900`, which is one node's
+// port, not a universal default. Every daemon-backed tool here (channel.reply,
+// send, task, crons, …) failed with a bare "fetch failed" on any node bound
+// elsewhere — the agent sees a dead tool and no reason why.
+//
+// The server already knows: `serve --stdio --cwd <dir>` chdirs into the
+// agentx install, so the same agentx.json the daemon booted from is readable
+// right here. Resolution order:
+//
+//   1. AGENTX_DAEMON_URL      — explicit wins, incl. pointing at a remote node
+//   2. node.bind in the config — what the daemon is actually listening on
+//   3. localhost:19900         — last-resort default, unchanged
+//
+// Resolved lazily and memoized: this module is imported before
+// commands/serve.ts applies `process.chdir(--cwd)`, so reading the config at
+// import time would look in the wrong directory.
+const DEFAULT_DAEMON_URL = "http://localhost:19900"
+
+let daemonUrlCache: string | undefined
+
+function resolveDaemonUrl(): string {
+  if (process.env.AGENTX_DAEMON_URL) return process.env.AGENTX_DAEMON_URL
+  // Read the raw config rather than going through loadDaemonConfig(): the
+  // only field needed is node.bind, and a schema failure somewhere else in
+  // the file must not cost every tool its daemon connection.
+  for (const rel of ["agentx.json", ".agentx/config.json"]) {
+    try {
+      const path = resolve(process.cwd(), rel)
+      if (!existsSync(path)) continue
+      const bind = JSON.parse(readFileSync(path, "utf-8"))?.node?.bind
+      if (typeof bind !== "string" || !bind.includes(":")) continue
+      {
+        const idx = bind.lastIndexOf(":")
+        const host = bind.slice(0, idx)
+        const port = bind.slice(idx + 1)
+        // 0.0.0.0 / :: are bind-side wildcards, not dialable addresses.
+        const dialable = !host || host === "0.0.0.0" || host === "::" || host === "*"
+          ? "127.0.0.1"
+          : host
+        if (port) return `http://${dialable}:${port}`
+      }
+    } catch { /* unreadable or unparseable — try the next candidate */ }
+  }
+  return DEFAULT_DAEMON_URL
+}
+
+function daemonUrl(): string {
+  if (daemonUrlCache === undefined) daemonUrlCache = resolveDaemonUrl()
+  return daemonUrlCache
+}
+
+/** Test seams. `_reset…` drops the memoized value so a caller can change
+ *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
+export function _resetDaemonUrlForTesting(): void {
+  daemonUrlCache = undefined
+}
+
+export function _resolveDaemonUrlForTesting(): string {
+  return resolveDaemonUrl()
+}
 
 // Strip ANSI escape codes from CLI output (we re-invoke the CLI for tools
 // that shell out — chalk colors its output, MCP clients want plain text).
@@ -718,7 +780,7 @@ async function handleToolCall(
       if (!channel || !chatId || !text) {
         return { content: [{ type: "text", text: "Error: channel, chatId, and text are required." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/api/actions/builtin/channel.reply`, {
+      const res = await fetch(`${daemonUrl()}/api/actions/builtin/channel.reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -745,7 +807,7 @@ async function handleToolCall(
       if (!project || !kind || !iid) {
         return { content: [{ type: "text", text: "Error: project, kind, and iid are required." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/api/actions/builtin/channel.label`, {
+      const res = await fetch(`${daemonUrl()}/api/actions/builtin/channel.label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -770,7 +832,7 @@ async function handleToolCall(
 
       // Elicit missing required params
       if (!channel || !chatId || !text) {
-        const channelsRes = await fetch(`${DAEMON_URL}/channels`).catch(() => null)
+        const channelsRes = await fetch(`${daemonUrl()}/channels`).catch(() => null)
         const channels = channelsRes ? await channelsRes.json() as string[] : ["telegram", "whatsapp", "gitlab", "discord"]
 
         const response = await elicit(
@@ -791,7 +853,7 @@ async function handleToolCall(
         text = response.text as string
       }
 
-      const res = await fetch(`${DAEMON_URL}/send`, {
+      const res = await fetch(`${daemonUrl()}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
@@ -810,7 +872,7 @@ async function handleToolCall(
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/send/agent`, {
+      const res = await fetch(`${daemonUrl()}/send/agent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentId, text, senderAgentId }),
@@ -832,7 +894,7 @@ async function handleToolCall(
       if (!channel || !chatId) {
         return { content: [{ type: "text", text: "Error: channel and chatId are required." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/chat/recent`, {
+      const res = await fetch(`${daemonUrl()}/chat/recent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, sinceISO, limit }),
@@ -865,7 +927,7 @@ async function handleToolCall(
       if (!contactName || !text) {
         return { content: [{ type: "text", text: "Error: contactName and text are required." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/send/contact`, {
+      const res = await fetch(`${daemonUrl()}/send/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactName, text, channel, confirmed, agentId }),
@@ -891,7 +953,7 @@ async function handleToolCall(
 
       // Elicit missing params
       if (!agent || !message) {
-        const agentsRes = await fetch(`${DAEMON_URL}/agents`).catch(() => null)
+        const agentsRes = await fetch(`${daemonUrl()}/agents`).catch(() => null)
         const agentList = agentsRes ? (await agentsRes.json() as any[]).map((a: any) => a.id) : []
 
         const response = await elicit(
@@ -919,7 +981,7 @@ async function handleToolCall(
         chatId,
       } : undefined
 
-      const res = await fetch(`${DAEMON_URL}/task`, {
+      const res = await fetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent, message, senderAgentId, freshSession, context }),
@@ -932,7 +994,7 @@ async function handleToolCall(
     }
 
     case "agentx_agents": {
-      const res = await fetch(`${DAEMON_URL}/agents`)
+      const res = await fetch(`${daemonUrl()}/agents`)
       const agents = await res.json() as any[]
       const lines = agents.map((a: any) =>
         `${a.id} (${a.name}) — ${a.tier}, active: ${a.active}/${a.total}, errors: ${a.errors}`
@@ -941,7 +1003,7 @@ async function handleToolCall(
     }
 
     case "agentx_health": {
-      const res = await fetch(`${DAEMON_URL}/health`)
+      const res = await fetch(`${daemonUrl()}/health`)
       const data = await res.json() as any
       return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
     }
@@ -954,7 +1016,7 @@ async function handleToolCall(
       if (!sessionId) {
         return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/attach/next`, {
+      const res = await fetch(`${daemonUrl()}/attach/next`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
@@ -980,7 +1042,7 @@ async function handleToolCall(
       if (!sessionId) {
         return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
       }
-      const res = await fetch(`${DAEMON_URL}/attach/answer`, {
+      const res = await fetch(`${daemonUrl()}/attach/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, text: String(args.text ?? "") }),
@@ -994,7 +1056,7 @@ async function handleToolCall(
     }
 
     case "agentx_crons": {
-      const res = await fetch(`${DAEMON_URL}/crons/health`)
+      const res = await fetch(`${daemonUrl()}/crons/health`)
       const data = await res.json() as any
       const summary = `Healthy: ${data.healthy}, Failing: ${data.failing}, Disabled: ${data.disabled}, Missed: ${data.missed}`
       const jobs = (data.jobs || []).map((j: any) =>
@@ -1129,13 +1191,13 @@ async function handleToolCall(
       const action = (args.action as string) || "status"
       if (action === "on") {
         const cats = (args.categories as string) || "all"
-        await fetch(`${DAEMON_URL}/debug/on?categories=${cats}`, { method: "POST" })
+        await fetch(`${daemonUrl()}/debug/on?categories=${cats}`, { method: "POST" })
         return { content: [{ type: "text", text: `Debug enabled: ${cats}` }] }
       } else if (action === "off") {
-        await fetch(`${DAEMON_URL}/debug/off`, { method: "POST" })
+        await fetch(`${daemonUrl()}/debug/off`, { method: "POST" })
         return { content: [{ type: "text", text: "Debug disabled." }] }
       } else {
-        const res = await fetch(`${DAEMON_URL}/debug`)
+        const res = await fetch(`${daemonUrl()}/debug`)
         const data = await res.json() as any
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
       }
