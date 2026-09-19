@@ -43,11 +43,17 @@ const DEFAULT_CONFIG: ContextConfig = {
     references: 500,
     intent: 200,
     artifacts: 500,
-    procedures: 600,
-    memory: 600,
+    procedures: 400,
+    memory: 400,
     history: 1200,
     "cross-chat": 800,
-    wiki: 1000,
+    // The wiki is the long-term store, so it gets the room and the
+    // priority. Skills, procedures, patterns and memory are all derived
+    // from it or staged into it; when the budget is tight they are the
+    // ones that should shrink, not the source of truth. Until this was
+    // inverted the wiki had the lowest priority of the five and half the
+    // budget of skills, which is why agents read everything except it.
+    wiki: 2500,
   },
 }
 
@@ -326,8 +332,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   if (input.skillInjection) {
     layers.push({
       name: "skills",
-      priority: 6.2,
-      maxTokens: budget("skills", 2000),
+      priority: 6.4,
+      maxTokens: budget("skills", 800),
       content: input.skillInjection,
       tags: ["skills", "auto-inject"],
     })
@@ -337,8 +343,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   if (input.patternContext) {
     layers.push({
       name: "patterns",
-      priority: 6.3,
-      maxTokens: budget("patterns", 400),
+      priority: 6.5,
+      maxTokens: budget("patterns", 300),
       content: input.patternContext,
       tags: ["patterns", "behavioral", "self-improving"],
     })
@@ -348,8 +354,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   if (input.procedureContext) {
     layers.push({
       name: "procedures",
-      priority: 6.4,
-      maxTokens: budget("procedures", 600),
+      priority: 6.6,
+      maxTokens: budget("procedures", 400),
       content: input.procedureContext,
       tags: ["procedures", "sop"],
     })
@@ -359,8 +365,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   if (input.memoryContext) {
     layers.push({
       name: "memory",
-      priority: 6.5,
-      maxTokens: budget("memory", 600),
+      priority: 6.7,
+      maxTokens: budget("memory", 400),
       content: input.memoryContext,
       tags: ["memory", "persistent"],
     })
@@ -440,8 +446,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
   if (input.wikiContext) {
     layers.push({
       name: "wiki",
-      priority: 8,
-      maxTokens: budget("wiki", 1000),
+      priority: 6.1,
+      maxTokens: budget("wiki", 2500),
       content: input.wikiContext,
       tags: ["wiki", "knowledge"],
     })

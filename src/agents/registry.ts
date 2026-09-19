@@ -141,28 +141,80 @@ function clip(s: string, max = 800): string {
  * Uses an absolute CLI path because `agentx` is not on PATH in the agent
  * workspaces. `process.argv[1]` points at the running daemon's cli.js.
  */
-function buildWikiQueryHint(agentWiki: ReturnType<WikiHub["getAgentWiki"]>, agentId: string): string {
-  let articleCount = 0
+/**
+ * The wiki, injected as content on a fresh session.
+ *
+ * It used to be injected as an invitation: a paragraph telling the agent
+ * that an institutional wiki existed and it could shell out to
+ * `wiki query` if it wanted to. Four other knowledge layers — skills,
+ * patterns, procedures, memory — arrived as content, already in context,
+ * free to read. The wiki was the only one that cost a subprocess.
+ *
+ * Agents behaved exactly as that economy predicts. Over three months of
+ * traces the wiki was queried a handful of times out of tens of
+ * thousands of steps, while the prompt called it "the canonical source
+ * for who people are, past events, decisions". Calling something
+ * canonical does not make it cheap to read, and agents read what is
+ * cheap.
+ *
+ * So the catalog goes in directly. Titles by type is the map — enough to
+ * know what the institution knows and to name an article precisely —
+ * and the query command stays for depth. Bodies are still fetched on
+ * demand; injecting 500 articles would be the opposite mistake.
+ *
+ * Fresh sessions only. Under `--resume` the whole transcript is
+ * replayed, so this block is still in the agent's context from turn one;
+ * re-rendering it every turn is pure bloat, and per-turn bloat is what
+ * drove tier-2 rotation and the "I have no prior context" failures.
+ */
+export function buildWikiContext(
+  agentWiki: ReturnType<WikiHub["getAgentWiki"]>,
+  agentId: string,
+  opts: { maxArticles?: number } = {},
+): string {
+  let articles: Array<{ meta: { title: string; type?: string }; path: string }>
   try {
-    articleCount = agentWiki.listArticles(agentId).length
+    articles = agentWiki.listArticles(agentId)
   } catch {
     return ""
   }
-  if (articleCount === 0) return ""
-  const catalogPath = resolve(agentWiki.baseDir, "_index.md")
-  if (!existsSync(catalogPath)) return ""
+  if (articles.length === 0) return ""
+
+  const byType = new Map<string, string[]>()
+  for (const a of articles) {
+    const t = a.meta.type || "untyped"
+    const list = byType.get(t) || []
+    list.push(a.meta.title)
+    byType.set(t, list)
+  }
+
+  // A corpus larger than the budget degrades to counts per type rather
+  // than a truncated list: knowing 140 people are on file and how to ask
+  // beats seeing the first 40 names and assuming that is all of them.
+  const max = opts.maxArticles ?? 400
+  const listed = articles.length <= max
+
+  const catalog = Array.from(byType.entries()).sort()
+    .map(([type, titles]) => listed
+      ? `**${type}** (${titles.length}) — ${titles.sort().join(" · ")}`
+      : `**${type}** — ${titles.length} article${titles.length === 1 ? "" : "s"}`)
+    .join("\n")
+
   const cli = process.argv[1] || "dist/cli.js"
   const wikiDir = agentWiki.baseDir.replace(new RegExp(`/agents/${agentId}(/[^/]+)?$`), "")
+
   return [
-    "[Institutional Wiki — cross-agent source of truth]",
-    `A curated wiki with ${articleCount} article${articleCount === 1 ? "" : "s"} grouped by type: person, project, place, concept, event, decision, pattern.`,
+    "[Institutional Wiki — the single source of truth]",
+    `${articles.length} article${articles.length === 1 ? "" : "s"}. This is long-term memory for the whole fleet: who people are, what systems exist, what happened, what was decided, how we do things.`,
     "",
-    "The wiki is the canonical source for: who people are (team, clients, agents), past events (incidents, deploys), decisions and their reasoning, documented procedures, patterns.",
+    "It outranks every other context you are given. Your workspace memory, injected skills, mined procedures and behavioural patterns are all either staged into the wiki or derived from it — where any of them disagrees with the wiki, the wiki is right and the other is stale.",
     "",
-    "BEFORE you grep the workspace, search memory, or answer from your own prior context — if the question is about who / what happened / what we decided / how we do X, call:",
-    `  node ${cli} wiki query "the user's question" --dir ${wikiDir} --agent ${agentId}`,
+    "Catalog:",
+    catalog,
     "",
-    "It walks the catalog + wikilink graph and returns a cited answer. Your workspace memory is local to you; the wiki is shared and authoritative. Prefer the wiki for institutional questions; prefer your workspace for code-level questions.",
+    `For the contents of an article, or any question spanning several, run:\n  node ${cli} wiki query "the question" --dir ${wikiDir} --agent ${agentId}`,
+    "",
+    "It walks the catalog and the wikilink graph and returns a cited answer. Ask it before you grep the workspace or answer from your own recollection.",
     "[End Institutional Wiki]",
   ].join("\n")
 }
@@ -1148,13 +1200,12 @@ export class AgentRegistry {
     }
 
     // Wiki context — Phase 3 Farzapedia alignment: instead of preloading BM25
-    // hits (the old shallow-RAG path), we inject a short pointer to the
-    // `agentx wiki query` tool. The agent decides WHEN institutional knowledge
-    // matters and invokes the agentic query itself — walking _index.md, picking
-    // candidates, following wikilinks 2–3 hops. Zero retrieval cost on messages
-    // that don't need it.
+    // hits (the old shallow-RAG path). The catalog itself is injected on
+    // fresh sessions (see `wikiContext` below, once rotation has settled);
+    // bodies are still fetched on demand by the agent through
+    // `agentx wiki query`, so there is no retrieval cost on messages that
+    // do not need it.
     const agentWiki = this.wikiHub.getAgentWiki(task.agentId)
-    const wikiContext = buildWikiQueryHint(agentWiki, task.agentId)
 
     // Load persistent agent memory (cross-session facts)
     const relevantMemories = this.memoryStore.findRelevant(task.message, task.agentId, isCodexCli ? 3 : 8)
@@ -1300,6 +1351,12 @@ export class AgentRegistry {
       : (surgeryEnabled && isCodingChannelContext(channel, state.def.tier))
         ? { maxMessages: 6, maxChars: 1800 }
         : undefined
+
+    // Fresh sessions only — `--resume` replays the transcript, so the
+    // catalog injected on turn one is still there.
+    const wikiContext = !resumeSessionId && !isCodexCli
+      ? buildWikiContext(agentWiki, task.agentId)
+      : undefined
 
     const sessionHistory = !resumeSessionId
       ? this.sessions.buildHistoryContext(
@@ -1693,7 +1750,7 @@ export class AgentRegistry {
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       longMemoryRecall: longMemoryRecall || undefined,
-      wikiContext: isCodexCli ? undefined : wikiContext,
+      wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       rotationMemo,
       intent: intent
