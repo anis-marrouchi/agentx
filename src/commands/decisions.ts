@@ -5,6 +5,7 @@ import { resolve } from "path"
 import { DecisionStore, type GradedRowFilter } from "@/decisions/store"
 import { calibrationReport, coverageCurve } from "@/decisions/calibration"
 import { compareCalibrators } from "@/decisions/recalibrate"
+import { measureConsistency } from "@/decisions/consistency"
 import { getDecisionBackend, listDecisionBackends } from "@/decisions/backend"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { choice, noul } from "@/decisions/questions"
@@ -480,6 +481,105 @@ decisions
         n: p.n,
       })),
       opts.json,
+    )
+    store.close()
+  })
+
+decisions
+  .command("consistency")
+  .description("does the question hold still? resample one recorded state N times")
+  .option("--path <file>", "store path", DEFAULT_PATH)
+  .requiredOption("--seat <seat>")
+  .option("--backend <name>", "default: the backend that recorded the row")
+  .option("--model <id>")
+  .option("--call <id>", "a specific call id; default is the newest with stored state")
+  .option("-n, --samples <n>", "default 15", "15")
+  .option("--json")
+  .action(async (opts) => {
+    registerBuiltinDecisionBackends()
+    const store = open(opts)
+    const row = store.db
+      .prepare(
+        `SELECT id, backend, model, state_json, questions_json FROM decision_calls
+          WHERE seat = ? AND state_json IS NOT NULL AND error IS NULL
+            ${opts.call ? "AND id = ?" : ""}
+          ORDER BY ts DESC LIMIT 1`,
+      )
+      .get(...(opts.call ? [opts.seat, opts.call] : [opts.seat])) as
+      | { id: string; backend: string; model: string; state_json: string; questions_json: string }
+      | undefined
+
+    if (!row) {
+      console.log(chalk.yellow(`  No recorded call with stored state for seat "${opts.seat}".`))
+      console.log(chalk.dim("  State is kept for the first `keepStateRows` per seat; see decisions.redactState."))
+      store.close()
+      return
+    }
+
+    const backend = opts.backend ?? row.backend
+    // The store records the RESOLVED model ("typesafe/jev-1.13-20260917"),
+    // which is not a valid request id anywhere except the backend that
+    // resolved it — the direct TypeSafe API 400s on OpenRouter's form. So
+    // only reuse it when resampling on the same backend; otherwise let the
+    // target backend apply its own default.
+    const model = opts.model ?? (backend === row.backend ? row.model : undefined)
+    const report = await measureConsistency(
+      backend,
+      JSON.parse(row.state_json),
+      JSON.parse(row.questions_json),
+      { samples: Number(opts.samples), model },
+    )
+
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2))
+      store.close()
+      return
+    }
+
+    console.log(chalk.bold(`\n  ${opts.seat} on ${report.backend} (${report.model})`))
+    console.log(
+      chalk.dim(
+        `  ${report.samples} samples of call ${row.id}, ${report.totalMs}ms, ` +
+          `${report.usage.inputTokens.toLocaleString()} input tokens\n`,
+      ),
+    )
+    emit(
+      report.questions.map((q) => ({
+        question: q.question,
+        mean: q.mean.toFixed(4),
+        stdev: q.stdev.toFixed(4),
+        min: q.min.toFixed(3),
+        max: q.max.toFixed(3),
+        answers: q.distinctAnswers.join("/"),
+        band: q.bands.join("/"),
+        stable: q.crossesThreshold ? chalk.red("NO") : "yes",
+      })),
+      false,
+    )
+    console.log(`\n  mean stdev  ${report.meanStdev.toFixed(4)}`)
+    console.log(
+      chalk.dim("  TypeSafe publish 0.0102 for jev across a 14-question rubric, as a reference."),
+    )
+    if (report.unstable.length > 0) {
+      console.log(
+        chalk.red(
+          `\n  Unstable: ${report.unstable.join(", ")} — identical calls disagree about what to DO,`,
+        ),
+      )
+      console.log(
+        chalk.dim(
+          "  not merely by how much. Usually a compound question: one name, several questions.\n" +
+            "  Split it, or narrow it to a single clause in the state's own vocabulary.",
+        ),
+      )
+    } else {
+      console.log(chalk.green("\n  Every question held its decision across all samples."))
+    }
+    console.log(
+      chalk.dim(
+        "\n  Stability is not correctness. A question can hold perfectly still and be\n" +
+          "  perfectly wrong — that is what `decisions calibrate` is for.",
+      ),
     )
     store.close()
   })
