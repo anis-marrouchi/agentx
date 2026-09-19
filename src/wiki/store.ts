@@ -133,6 +133,26 @@ export class WikiStore {
       return m?.[1]?.trim() || ""
     }
 
+    // Everything addEntry wrote that is not one of the five named keys is
+    // `meta`, JSON-encoded one key per line. Dropping it here is what made
+    // graphPath 0%: the capture path stamps intentPath onto every entry,
+    // `wiki absorb` reads entry.meta.intentPath to propagate it onto the
+    // article, and this parser never returned a meta at all — so absorb
+    // always fell through to a fingerprint lookup its own comment calls
+    // unreliable, and the retrieval scorer multiplied the graph weight
+    // (0.6 of the hybrid score) by zero for every article ever compiled.
+    const KNOWN = new Set(["id", "date", "agent", "source", "context"])
+    const meta: Record<string, unknown> = {}
+    for (const line of fm.split("\n")) {
+      const m = line.match(/^(\w+):\s*(.+)$/)
+      if (!m || KNOWN.has(m[1])) continue
+      try {
+        meta[m[1]] = JSON.parse(m[2])
+      } catch {
+        meta[m[1]] = m[2].trim()
+      }
+    }
+
     return {
       id: get("id") || filename.replace(".md", ""),
       date: get("date"),
@@ -140,6 +160,7 @@ export class WikiStore {
       source: get("source"),
       sourceContext: get("context") || undefined,
       content: body,
+      meta: Object.keys(meta).length > 0 ? meta : undefined,
     }
   }
 
