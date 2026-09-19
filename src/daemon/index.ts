@@ -1406,6 +1406,30 @@ export class AgentXDaemon {
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
 
+    // ntfy — outbound push to the operator's phone. No inbound side, so it
+    // registers and starts without any polling or pairing handshake.
+    if (this.config.channels.ntfy?.enabled) {
+      const ntfyCfg = this.config.channels.ntfy
+      if (!ntfyCfg.topic) {
+        this.log(`  ntfy: enabled but channels.ntfy.topic is unset — skipping`)
+      } else {
+        const { NtfyAdapter } = await import("@/channels/ntfy")
+        const ntfy = new NtfyAdapter(
+          {
+            server: ntfyCfg.server,
+            topic: ntfyCfg.topic,
+            token: ntfyCfg.token,
+            defaultPriority: ntfyCfg.defaultPriority,
+            defaultTitle: ntfyCfg.defaultTitle,
+          },
+          this.log,
+        )
+        this.router.addChannel(ntfy)
+        await ntfy.start()
+        this.log(`  ntfy: enabled (${ntfyCfg.server})`)
+      }
+    }
+
     // WebRTC signaling — control plane only. Media flows browser-to-browser
     // via WebRTC direct, never through this daemon. See src/channels/webrtc-signal.ts.
     if (this.config.channels.webrtc?.enabled) {
@@ -1989,6 +2013,7 @@ export class AgentXDaemon {
    *  same-host dashboard), or carries its own secret (chat routes). */
   private static readonly MESH_PROTECTED_PATHS = new Set([
     "/task",
+    "/ask",
     "/mesh/task",
     "/mesh/inbox/send",
     "/workflow/event",
@@ -2037,6 +2062,11 @@ export class AgentXDaemon {
 
     try {
       if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+      }
+      // /ask also answers GET (?q=...) for voice clients that can only issue
+      // one. Same arbitrary-prompt execution, same gate.
+      if (req.method === "GET" && path === "/ask") {
         if (!this.checkMeshAuth(req, res, path)) return
       }
 
@@ -4222,14 +4252,23 @@ export class AgentXDaemon {
           // Accepts message via body.message (POST) or ?q= (GET)
           const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
+          let requestedAgent = url.searchParams.get("agent") || ""
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
+            requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
           }
 
-          const agentId = this.config.node.defaultAgent
+          // An explicit agent is what makes this endpoint useful for more than
+          // one voice persona — "ask the secretary" and "ask devops" are
+          // different agents with different context, not one default.
+          const agentId = requestedAgent.trim() || this.config.node.defaultAgent
           if (!agentId) {
-            this.json(res, 400, { error: "No defaultAgent configured in node config" })
+            this.json(res, 400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
+            return
+          }
+          if (!this.registry.getAgent(agentId)) {
+            this.json(res, 404, { error: `Unknown agent: "${agentId}"` })
             return
           }
           if (!message) {
@@ -4243,7 +4282,7 @@ export class AgentXDaemon {
           const response = await this.registry.execute({
             agentId,
             message: voicePrompt,
-            context: { channel: "voice", sender: "Siri" },
+            context: { channel: "voice", sender: "Siri", chatId: `voice:${agentId}` },
           })
 
           // Convert response to speakable text (TTS-friendly)
