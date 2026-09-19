@@ -1,4 +1,14 @@
 import { readFileSync, existsSync } from "fs"
+import { buildIndex, scoreAll } from "@/memory/bm25"
+import { askSeat } from "@/decisions/seat"
+import {
+  DEFAULT_SHORTLIST,
+  WIKI_RERANK_SEAT,
+  rerankQuestions,
+  rerankState,
+  toRanking,
+  type RerankCandidate,
+} from "@/decisions/seats/wiki-rerank"
 import { stripAnthropicApiKey } from "@/utils/workspace-env"
 import { resolve } from "path"
 import { execSync } from "child_process"
@@ -86,12 +96,18 @@ export async function agenticQuery(
   let candidates: Array<{ title: string; path: string }> = []
   let selectorOutput = ""
   try {
-    selectorOutput = await runClaude(
-      buildSelectorPrompt(question, catalog, maxCandidates),
-      selectorModel,
-      timeoutMs,
-    )
-    candidates = parseCandidates(selectorOutput)
+    const viaSeat = await selectCandidatesViaSeat(question, store, requesterId, maxCandidates)
+    if (viaSeat) {
+      candidates = viaSeat
+      selectorOutput = `[wiki-rerank seat] ${viaSeat.map((c) => c.title).join(" | ")}`
+    } else {
+      selectorOutput = await runClaude(
+        buildSelectorPrompt(question, catalog, maxCandidates),
+        selectorModel,
+        timeoutMs,
+      )
+      candidates = parseCandidates(selectorOutput)
+    }
   } catch (e: any) {
     log("selector failed:", e?.message)
     return { ...emptyResult("error", question, `Selector: ${e?.message || "unknown"}`), trace: { selectorMs: Date.now() - selectorStart, synthesisMs: 0, selectorOutput } }
@@ -196,6 +212,72 @@ function walkSubgraph(
 }
 
 // --- Prompts ---
+
+/**
+ * Pick candidates with the wiki-rerank seat instead of a Claude CLI call.
+ *
+ * The selector is 56% of a wiki query — 14.1s of a 25s total, measured —
+ * and its whole job is "pick 3 articles from this catalog", which is a
+ * Choice with per-option probabilities. Jev answers that in about a
+ * second. Synthesis stays on Sonnet; it writes prose, which Jev cannot.
+ *
+ * BM25 shortlists first because the shared catalog carries 971 entries,
+ * past the 255-option cap. Same two-stage shape as findRelevantReranked,
+ * and it reuses that seat rather than introducing a second one.
+ *
+ * Returns null whenever the seat is off, errors, or has nothing to rank,
+ * and the caller falls back to the CLI selector — so this is strictly an
+ * accelerator, never a new way to fail.
+ */
+async function selectCandidatesViaSeat(
+  question: string,
+  store: WikiStore,
+  requesterId: string | undefined,
+  maxCandidates: number,
+): Promise<Array<{ title: string; path: string }> | null> {
+  try {
+    const index = store.rebuildIndex()
+    const pool = (index.articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
+    if (pool.length < 2) return null
+
+    const docs = pool.map((a) =>
+      [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" "),
+    )
+    const scored = scoreAll(question, buildIndex(docs)).map((r) => r.docIndex)
+    for (let i = 0; i < pool.length; i++) if (!scored.includes(i)) scored.push(i)
+    const shortlist = scored.slice(0, DEFAULT_SHORTLIST)
+
+    const candidates: RerankCandidate[] = shortlist.map((i) => ({
+      id: `k${i}`,
+      title: pool[i].title || pool[i].path,
+      tags: pool[i].tags,
+      // The catalog has no body — a title, its type and its wikilinks are
+      // exactly what the CLI selector was given to choose on.
+      excerpt: [
+        pool[i].type ? `type: ${pool[i].type}` : "",
+        (pool[i].related ?? []).length ? `related: ${(pool[i].related ?? []).join(", ")}` : "",
+      ].filter(Boolean).join(" · "),
+    }))
+
+    const result = await askSeat(
+      WIKI_RERANK_SEAT,
+      rerankState({ query: question, candidates, excerptChars: 300 }),
+      rerankQuestions(candidates),
+      { features: { agent: requesterId ?? "unknown", stage: "catalog-selector" } },
+    )
+    if (!result || result.mode !== "active") return null
+
+    const ranking = toRanking(result.answers as never, candidates)
+    const picked = ranking.ranked
+      .slice(0, maxCandidates)
+      .map((id) => pool[Number(id.slice(1))])
+      .filter(Boolean)
+      .map((a) => ({ title: a.title, path: a.path }))
+    return picked.length > 0 ? picked : null
+  } catch {
+    return null
+  }
+}
 
 function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number): string {
   return `You are picking candidate articles from a wiki catalog to answer a question. You do NOT answer the question. You pick which articles the answer is likely to come from.
