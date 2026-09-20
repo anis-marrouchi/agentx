@@ -11,6 +11,7 @@ import { ledger as ledgerCmd } from "@/commands/ledger"
 import { decisions as decisionsCmd } from "@/commands/decisions"
 import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
+import { point as pointCmd } from "@/commands/point"
 import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
@@ -78,6 +79,7 @@ export async function buildProgram(): Promise<Command> {
     agent, channel, schedule,    // configure the things that carry work
     attachCmd, monitorCmd,       // connect editor sessions
     guardCmd,                    // safety
+    pointCmd,                    // computer use: point, never click
     usage,                       // what it cost, what gets used
     serve,                       // MCP
     token, configCmd, completion,

@@ -45,3 +45,4 @@ docs/prd
 
 # built app bundle
 apps/mac-voice/build/
+apps/mac-helper/build/
