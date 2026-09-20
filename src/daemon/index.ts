@@ -4339,13 +4339,25 @@ export class AgentXDaemon {
             return
           }
 
-          // Prepend instruction so the agent responds in a TTS-friendly way
-          const voicePrompt = `[VOICE MODE — Your response will be spoken aloud by a TTS engine. Keep it to 2-3 short sentences. Use plain language, no markdown, no code blocks, no bullet points, no URLs. Speak conversationally.]\n\n${message}`
+          // The voice instruction rides in the system append, NOT in the
+          // message.
+          //
+          // Prefixing it meant the session recorded the scaffolding as the
+          // user's words: a dashboard reading that conversation showed
+          // "[VOICE MODE — Your response will be spoken aloud...]" where
+          // the question should be, for every single turn. It also re-sent
+          // the same 300 characters on every request instead of letting
+          // them sit in the cached system prompt.
+          const voiceInstruction =
+            "[VOICE MODE] This question arrived by voice and your reply will be spoken aloud by a " +
+            "TTS engine. Answer in two or three short sentences. Plain language, no markdown, no " +
+            "code blocks, no bullet points, no URLs. Speak conversationally."
 
           const response = await this.registry.execute({
             agentId,
-            message: voicePrompt,
-            context: { channel: "voice", sender: "Siri", chatId: `voice:${agentId}` },
+            message,
+            systemPromptAppend: voiceInstruction,
+            context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
           })
 
           // Rich content rides the same in-band directive Telegram and

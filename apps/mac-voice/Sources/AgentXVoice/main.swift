@@ -91,7 +91,9 @@ final class App: NSObject, NSApplicationDelegate {
                 } else {
                     card.orderOut(nil)
                 }
-                panel.render(.speaking)
+                // Scroll the sentence being spoken, so it can be read as
+                // well as heard — and re-read after, which speech cannot do.
+                panel.render(.saying(answer.text))
                 await Speech.speak(answer.text)
                 panel.render(.idle)
             } catch {

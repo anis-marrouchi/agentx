@@ -29,6 +29,13 @@ final class Panel: NSPanel {
         /// Live activity from the daemon, with seconds elapsed — the
         /// difference between "it's working" and "it's hung".
         case working(String, Int)
+        /// What is being said right now, scrolled in full.
+        ///
+        /// "Speaking" told you the state and not the content, which is the
+        /// wrong half: you already know it is speaking, you can hear it.
+        /// What you cannot do is re-read a sentence that has gone past, or
+        /// follow it at all in a noisy room.
+        case saying(String)
         case error(String)
 
         var text: String {
@@ -37,6 +44,7 @@ final class Panel: NSPanel {
             case .listening: return "Listening"
             case .thinking: return "Thinking"
             case .speaking: return "Speaking"
+            case .saying(let text): return text
             // "·" is the system's own separator glyph.
             case .working(let what, let secs): return "\(what)  ·  \(secs)s"
             case .error(let m): return m
@@ -51,7 +59,7 @@ final class Panel: NSPanel {
             case .idle: return .tertiaryLabelColor
             case .listening: return Brand.accent
             case .thinking, .working: return Brand.primaryBright
-            case .speaking: return Brand.accentDeep
+            case .speaking, .saying: return Brand.accentDeep
             case .error: return Brand.alert
             }
         }
