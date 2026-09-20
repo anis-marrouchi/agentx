@@ -27,7 +27,7 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let verb = args.first else {
-    fail("usage: agentx-mac-helper read | point --x N --y N --w N --h N [--label TEXT]")
+    fail("usage: agentx-mac-helper read | point --x N --y N --w N --h N [--label TEXT] [--hold SECONDS] [--instant] | trusted")
 }
 
 func flag(_ name: String) -> String? {
@@ -51,7 +51,15 @@ case "point":
           let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? "") else {
         fail("point needs --x --y --w --h")
     }
-    Pointer.point(x: x, y: y, width: w, height: h, label: flag("label") ?? "")
+    Pointer.point(x: x, y: y, width: w, height: h,
+                  label: flag("label") ?? "",
+                  // Hold long enough to be seen, short enough not to be an
+                  // obstruction. 0 is useful for scripted sequences where
+                  // the next point follows immediately.
+                  holdSeconds: Double(flag("hold") ?? "") ?? 2.5,
+                  // Skip the human-speed move when something is stepping
+                  // through many targets and the motion would just be slow.
+                  instant: args.contains("--instant"))
     FileHandle.standardOutput.write(#"{"ok":true,"pointed":true}"#.data(using: .utf8)!)
 
 case "trusted":
