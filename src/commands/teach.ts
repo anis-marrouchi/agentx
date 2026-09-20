@@ -131,16 +131,31 @@ export const teach = new Command()
           // should not still be up while text is being typed elsewhere.
           "--hold", String(step.click || step.type ? 0.5 : step.holdSeconds ?? 2.6),
         ]).catch(() => {})
-        if (step.click) await run(HELPER, ["click"]).catch(() => {})
+        if (step.click) {
+          const err = await act(["click"])
+          if (err) console.log(chalk.red(`      ✗ ${err}`))
+          // Clicking a link navigates. Give the page a beat, then the next
+          // step re-reads the screen rather than acting on a stale tree.
+          await sleep(step.afterClickWaitMs ?? 1500)
+        }
       }
 
+      // Errors here are REPORTED, never swallowed.
+      //
+      // These calls used to end in .catch(() => {}), so the focus gate
+      // refusing to type looked exactly like typing successfully: the
+      // lesson narrated "watch me type this", typed nothing, and carried
+      // on. A safety check whose refusal is invisible teaches the operator
+      // that the feature is broken rather than that it was protected.
       if (step.type) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, step.type, "typing")
-        await run(HELPER, ["type", "--text", step.type]).catch(() => {})
+        const err = await act(["type", "--text", step.type])
+        if (err) { console.log(chalk.red(`      ✗ ${err}`)); setState("Blocked", err, "waiting"); await sleep(2000) }
       }
       if (step.key) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, `↵ ${step.key}`, "typing")
-        await run(HELPER, ["key", "--name", step.key]).catch(() => {})
+        const err = await act(["key", "--name", step.key])
+        if (err) { console.log(chalk.red(`      ✗ ${err}`)); setState("Blocked", err, "waiting"); await sleep(2000) }
       }
       if (!target && !step.type && !step.key) await sleep((step.holdSeconds ?? 1.2) * 1000)
       else if (step.holdSeconds) await sleep(step.holdSeconds * 1000)
@@ -157,6 +172,23 @@ export const teach = new Command()
     }
     console.log(chalk.green(`\n  done.\n`))
   })
+
+/** Run a helper verb, returning its error message or null on success.
+ *  The helper always answers with JSON, including on refusal. */
+async function act(argv: string[]): Promise<string | null> {
+  try {
+    const { stdout } = await run(HELPER, argv)
+    const parsed = JSON.parse(stdout || "{}")
+    return parsed.ok === false ? String(parsed.error ?? "refused") : null
+  } catch (e: any) {
+    // A non-zero exit still carries the JSON on stdout.
+    try {
+      const parsed = JSON.parse(e?.stdout || "{}")
+      if (parsed.error) return String(parsed.error)
+    } catch { /* not JSON */ }
+    return e?.message ?? "failed"
+  }
+}
 
 interface Located { x: number; y: number; width: number; height: number }
 

@@ -25,6 +25,8 @@ export interface LessonStep {
    *  `type` so committing a form is always its own deliberate step. */
   key?: string
   holdSeconds?: number
+  /** Pause after a click, for pages that navigate. */
+  afterClickWaitMs?: number
 }
 
 export interface Lesson {
@@ -53,10 +55,19 @@ const xAdvancedSearch: Lesson = {
       say: "Here's something about X search that almost nobody uses. It takes ten seconds and it changes what the site is good for.",
     },
     {
-      say: "This is the search box. Most people type a few words here and scroll. But it accepts commands, not just words.",
-      find: "the search box",
-      label: "search",
+      say: "Let's open search. This is it in the sidebar.",
+      find: "the search and explore link in the sidebar",
+      label: "Search",
       click: true,
+      // x.com navigates here; the input only exists on the page that loads.
+      afterClickWaitMs: 2600,
+    },
+    {
+      say: "Here's the box itself. Most people type a few words here and scroll. But it accepts commands, not just words.",
+      find: "the search query input field where you type",
+      label: "search field",
+      click: true,
+      afterClickWaitMs: 900,
     },
     {
       say: "Watch. From colon, then a username, limits results to just that person.",

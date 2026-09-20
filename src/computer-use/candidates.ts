@@ -67,10 +67,28 @@ export function scopeToPage(elements: RawElement[]): RawElement[] {
  * carry no label on macOS, and dropping everything unnamed removes the
  * controls people most often ask for.
  */
-export function buildCandidates(elements: RawElement[], max = 45): UICandidate[] {
+export function buildCandidates(elements: RawElement[], max = 60): UICandidate[] {
+  // Rank before capping.
+  //
+  // Slicing in tree order drops whatever appears late, and on x.com the
+  // search input sits after a sidebar full of navigation links — so the
+  // one element every search question is about was never shown to the
+  // model at all, and it confidently picked a nav link instead.
+  //
+  // Text inputs first, then things you press, then labels. Within a tier
+  // the tree order is kept, so reading position still breaks ties.
+  const rank = (role: string): number => {
+    if (/^AX(TextField|TextArea|SearchField|ComboBox)/.test(role)) return 0
+    if (/^AX(Button|MenuItem|MenuButton|PopUpButton|CheckBox|RadioButton|Tab|Link)/.test(role)) return 1
+    if (/^AX(Row|Cell|Slider|Disclosure|Toolbar)/.test(role)) return 2
+    return 3
+  }
   return scopeToPage(elements)
     .filter((e) => INTERESTING_ROLE.test(e.role))
     .filter((e) => e.width >= 1 && e.height >= 1)
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => rank(a.e.role) - rank(b.e.role) || a.i - b.i)
+    .map(({ e }) => e)
     .slice(0, max)
     .map((e, i) => ({
       id: e.id,
