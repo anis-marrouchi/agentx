@@ -205,6 +205,39 @@ export class CronScheduler {
     this.saveLastRuns()
   }
 
+  /** Node stores a timer delay in a 32-bit signed int. Anything larger is
+   *  silently coerced to 1ms — the timer fires IMMEDIATELY and only a
+   *  TimeoutOverflowWarning on stderr says why. ~24.8 days. */
+  private static readonly MAX_TIMEOUT_MS = 2_147_483_647
+
+  /**
+   * Arm a timer for an absolute moment, however far away.
+   *
+   * A job scheduled further out than 24.8 days used to fire the instant
+   * the daemon started, every restart, forever. A monthly accounting job
+   * set for the 20th ran a month early on every deploy — and because the
+   * only symptom was a warning about integers, it read as noise.
+   *
+   * Long waits are split into hops. Each hop recomputes the remaining time
+   * from the TARGET rather than subtracting a constant, so the schedule
+   * cannot drift across sleeps, clock adjustments or a slow hop.
+   */
+  private armTimer(jobId: string, targetMs: number, fire: () => void): void {
+    const remaining = targetMs - Date.now()
+    if (remaining > CronScheduler.MAX_TIMEOUT_MS) {
+      const timer = setTimeout(
+        () => this.armTimer(jobId, targetMs, fire),
+        CronScheduler.MAX_TIMEOUT_MS,
+      )
+      this.timers.set(jobId, timer)
+      return
+    }
+    // Negative means the moment already passed — fire now rather than
+    // never, which is what a 0 delay does.
+    const timer = setTimeout(fire, Math.max(0, remaining))
+    this.timers.set(jobId, timer)
+  }
+
   private scheduleNext(jobId: string): void {
     const job = this.jobs.get(jobId)
     if (!job || !job.enabled || !this.running) return
@@ -221,8 +254,7 @@ export class CronScheduler {
 
       this.log(`Job "${jobId}" next run: ${nextRun.toISOString()} (in ${Math.round(delay / 1000)}s)`)
 
-      const timer = setTimeout(() => this.executeJob(jobId), delay)
-      this.timers.set(jobId, timer)
+      this.armTimer(jobId, nextRun.getTime(), () => this.executeJob(jobId))
     } catch (e: any) {
       this.log(`Failed to schedule "${jobId}": ${e.message}`)
     }
