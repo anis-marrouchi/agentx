@@ -110,7 +110,13 @@ const xAdvancedSearch: Lesson = {
       // The one claim in this lesson worth checking: the query actually
       // reached the page. It is a text question about a loaded page, which
       // is what looking at the screen is reliable for.
-      verify: "the page is showing X search results for the query from:naval min_faves:500",
+      // Worded to avoid "X search results", which reads two ways: X is the
+      // site, but a model sees "X results" as a placeholder for a number
+      // and goes looking for a result count that x.com does not display.
+      // Measured: the observation came back correct and the evidence
+      // argued against it, landing the claim at 0.07. A claim is only as
+      // good as its least ambiguous reading.
+      verify: "the x.com page is displaying search results for the query from:naval min_faves:500, with at least one post visible",
     },
     {
       say: "There it is. That person's greatest hits — everything they wrote that actually landed. No scrolling through years of replies.",
