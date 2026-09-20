@@ -1158,6 +1158,75 @@ skillCmd
     process.exit(results.some(r => r.verdict === "FAILING") ? 1 : 0)
   })
 
+skillCmd
+  .command("suggest")
+  .description("rank an agent's skills against a task (suggests, never loads)")
+  .argument("<task>", "the task, in the words it arrived in")
+  .option("--agent <id>", "whose skills to rank")
+  .option("--min <p>", "minimum P(any skill applies)", "0.6")
+  .option("--json", "emit the ranking as JSON")
+  .action(async (task: string, opts: any) => {
+    // Suggests, never loads.
+    //
+    // Deliberately NOT wired into per-turn context injection. The path it
+    // would feed, getAutoInjectSkills(), is inert fleet-wide — 0 of 101
+    // skill files across 10 agent workspaces set autoInject — so wiring it
+    // in would change nothing today while adding a network call to every
+    // turn. Measuring the ranking first is what decides whether turning
+    // injection on is worth it at all.
+    const config = loadConfig()
+    const agents = Object.entries(config.agents || {}) as any[]
+    const [agentId, agent] = opts.agent
+      ? (agents.find(([id]) => id === opts.agent) ?? [])
+      : (agents[0] ?? [])
+    if (!agent) {
+      console.log(chalk.red(`  no such agent${opts.agent ? ` "${opts.agent}"` : ""}`))
+      process.exit(1)
+    }
+
+    const { loadLocalSkills } = await import("@/agent/skills/loader")
+    const { pickSkillForTask } = await import("@/agent/skills/select")
+    const skills = await loadLocalSkills(agent.workspace)
+    if (skills.length === 0) {
+      console.log(chalk.yellow(`  ${agentId} has no skills`))
+      return
+    }
+
+    const pick = await pickSkillForTask(skills, task, {
+      agent: agentId,
+      minRelevant: Number(opts.min) || 0.6,
+    })
+
+    if (opts.json) {
+      console.log(JSON.stringify({
+        task, agent: agentId, skillsSeen: skills.length,
+        picked: pick.skill?.frontmatter.name ?? null,
+        anyRelevant: pick.anyRelevant, confidence: pick.confidence,
+        judged: pick.judged, reason: pick.reason, shortlist: pick.shortlist,
+      }, null, 2))
+      return
+    }
+
+    console.log()
+    if (!pick.skill) {
+      console.log(`  ${chalk.yellow("·")} no skill for this ${chalk.dim(`— ${pick.reason}`)}`)
+    } else {
+      console.log(`  ${chalk.green("→")} ${chalk.bold(pick.skill.frontmatter.name)} ${chalk.dim(`· ${pick.reason}`)}`)
+      console.log(`    ${chalk.dim(pick.skill.frontmatter.description.slice(0, 140))}`)
+    }
+    if (pick.shortlist.length > 1) {
+      console.log(chalk.dim("\n    shortlist (lexical -> judged)"))
+      for (const s of pick.shortlist.slice(0, 6)) {
+        const judged = s.p === undefined ? "  -  " : s.p.toFixed(2)
+        console.log(chalk.dim(`      ${s.lexical.toFixed(2)} -> ${judged}  ${s.name}`))
+      }
+    }
+    if (!pick.judged) {
+      console.log(chalk.dim("\n    (lexical only — set decisions.seats.skill-select.mode to judge)"))
+    }
+    console.log()
+  })
+
 // ==================== agentx references ====================
 //
 // Operator-private fact registry. Generic to any project — Noqta runs KSI in
