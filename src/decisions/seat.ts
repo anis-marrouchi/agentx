@@ -152,9 +152,22 @@ export function seatEnvVar(seat: string): string {
  * restarting the daemon.
  */
 export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env): SeatMode {
+  // Configure FIRST, even when the env var will decide the answer.
+  //
+  // This used to return on the env override before touching the config,
+  // which meant the one documented way to switch a seat on for a single
+  // process — AGENTX_DECISION_SEAT_<SEAT>=active — also skipped the lazy
+  // setup that REGISTERS THE BACKENDS. The seat then reported `active` and
+  // every call failed with `unknown decision backend "local"`, so turning
+  // a seat on by hand quietly guaranteed it could never answer.
+  //
+  // It went unnoticed because the commands built around seats
+  // (`agentx decide`, `agentx decisions`) call registerBuiltinDecisionBackends
+  // themselves, so the path that was broken was the one an operator or a
+  // new seat would take.
+  ensureConfigured()
   const fromEnv = parseSeatMode(env[seatEnvVar(seat)])
   if (fromEnv) return fromEnv
-  ensureConfigured()
   if (!runtime.enabled) return "off"
   return parseSeatMode(runtime.seats[seat]?.mode) ?? "off"
 }
