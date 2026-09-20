@@ -234,7 +234,22 @@ export class CronScheduler {
     }
     // Negative means the moment already passed — fire now rather than
     // never, which is what a 0 delay does.
-    const timer = setTimeout(fire, Math.max(0, remaining))
+    const timer = setTimeout(() => {
+      // setTimeout is permitted to fire up to a millisecond EARLY, and on
+      // this fleet it does so on roughly one run in eight. The run is then
+      // stamped 08:59:59.9xx for a slot of 09:00, and getNextCronDate —
+      // which truncates its search start to the minute — hands back the
+      // occurrence that has just fired. That occurrence is in the past by
+      // the next daemon start, so detectMissedRuns reads it as a missed
+      // firing and dispatches the agent a second time for the same slot.
+      // Re-arming is cheaper than teaching every consumer of lastRun that
+      // the timestamp it holds may be a minute short of the real slot.
+      if (Date.now() < targetMs) {
+        this.armTimer(jobId, targetMs, fire)
+        return
+      }
+      fire()
+    }, Math.max(0, remaining))
     this.timers.set(jobId, timer)
   }
 
