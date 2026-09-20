@@ -78,6 +78,32 @@ case "hittest":
     guard let hd = try? JSONEncoder().encode(hit) else { fail("failed to encode hit") }
     FileHandle.standardOutput.write(hd)
 
+case "ocr":
+    // Reads the focused window unless a rect is given. Coordinates come
+    // back in the SAME convention as `read`, so a caller can point at an
+    // OCR hit without converting anything.
+    let region: CGRect
+    if let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
+       let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? "") {
+        region = CGRect(x: x, y: y, width: w, height: h)
+    } else if let win = OCR.focusedWindowFrame() {
+        region = win
+    } else {
+        fail("no focused window and no --x/--y/--w/--h given")
+    }
+    let langs = (flag("lang") ?? "fr-FR,en-US").split(separator: ",").map(String.init)
+    let hits = OCR.read(rect: region, languages: langs)
+    let payload: [String: Any] = [
+        "ok": true,
+        "region": ["x": region.minX, "y": region.minY, "w": region.width, "h": region.height],
+        "count": hits.count,
+        "hits": hits.map { ["text": $0.text, "x": $0.x, "y": $0.y,
+                            "width": $0.width, "height": $0.height,
+                            "confidence": $0.confidence] },
+    ]
+    FileHandle.standardOutput.write(
+        (try? JSONSerialization.data(withJSONObject: payload)) ?? Data())
+
 case "capture":
     guard let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
           let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? ""),

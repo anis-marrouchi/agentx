@@ -14,7 +14,7 @@ rm -rf build && mkdir -p "$BIN"
 
 swiftc -O -o "$BIN/agentx-mac-helper" \
   Sources/AgentXHelper/*.swift \
-  -framework AppKit -framework ApplicationServices \
+  -framework AppKit -framework ApplicationServices -framework Vision \
   -target arm64-apple-macosx14.0
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'

@@ -13,7 +13,7 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
-import { buildCandidates } from "@/computer-use/candidates"
+import { readScreen, rectFor } from "@/computer-use/screen"
 
 const run = promisify(execFile)
 
@@ -59,46 +59,39 @@ export const point = new Command()
       process.exit(1)
     }
 
-    let snap: Snapshot
+    let screen
     try {
-      const { stdout } = await run(HELPER, ["read", "--max", "400"])
-      snap = JSON.parse(stdout)
+      // Reads the accessibility tree, and falls back to local OCR when the
+      // tree is too thin to choose from — which is the only thing that
+      // makes Electron apps addressable at all.
+      screen = await readScreen({ max: Number(opts.max) || 40 })
     } catch (e: any) {
-      const detail = e?.stdout ? tryError(e.stdout) : e?.message
-      console.log(chalk.red(`  could not read the screen: ${detail}`))
+      console.log(chalk.red(`  could not read the screen: ${e?.message ?? e}`))
       process.exit(1)
     }
+    const candidates = screen.candidates
 
-    // Page-scoped: in a browser the tree holds the page AND the browser
-    // around it, and the browser's own search bar beats the page's.
-    const candidates: UICandidate[] = buildCandidates(snap.elements as never, Number(opts.max) || 40)
-
-    // A Choice needs at least two options to be a choice. One or zero is
-    // not a model problem and must not reach the model — with a single
-    // candidate there is nothing to decide, and with none the honest
-    // answer is that this app exposes nothing usable.
     if (candidates.length === 0) {
-      console.log(chalk.yellow(`  ${snap.app} exposes no usable controls${snap.note ? ` — ${snap.note}` : ""}`))
+      console.log(chalk.yellow(`  ${screen.app} exposes no usable controls and no readable text`))
       process.exit(2)
     }
     if (candidates.length === 1) {
-      const only = snap.elements.find((e) => e.id === candidates[0].id)!
-      console.log(
-        chalk.yellow(`  ${snap.app} exposes exactly one control — pointing at it without asking: `) +
-        chalk.bold(candidates[0].label),
-      )
-      await run(HELPER, [
-        "point", "--x", String(only.x), "--y", String(only.y),
-        "--w", String(only.width), "--h", String(only.height), "--label", candidates[0].label,
-      ])
+      const only = rectFor(screen, candidates[0].id)
+      if (only) {
+        console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
+                    chalk.bold(candidates[0].label))
+        await run(HELPER, ["point", "--x", String(only.x), "--y", String(only.y),
+                           "--w", String(only.width), "--h", String(only.height),
+                           "--label", candidates[0].label])
+      }
       return
     }
 
     const result = await askSeat(
       UI_ELEMENT_SEAT,
-      uiElementState({ request, app: snap.app, window: snap.window, candidates }),
+      uiElementState({ request, app: screen.app, window: screen.window, candidates }),
       uiElementQuestions(candidates),
-      { features: { app: snap.app, candidates: candidates.length } },
+      { features: { app: screen.app, candidates: candidates.length, ocr: screen.usedOCR } },
     )
     if (!result) {
       console.log(chalk.red(`  the ui-element seat is unavailable — set decisions.seats.${UI_ELEMENT_SEAT}.mode`))
@@ -106,7 +99,9 @@ export const point = new Command()
     }
 
     const sel = toSelection(result.answers as UIElementAnswers, candidates)
-    const chosen = snap.elements.find((e) => e.id === sel.id)
+    const chosen = rectFor(screen, sel.id)
+    const chosenLabel = candidates.find((c) => c.id === sel.id)?.label ?? ""
+    const fromOCR = screen.ocrRects.has(sel.id)
 
     // `present` is read BEFORE `target`, always. A Choice over a candidate
     // set will always name something; this is the question that can say
@@ -122,7 +117,7 @@ export const point = new Command()
 
     if (opts.json) {
       console.log(JSON.stringify({
-        app: snap.app, request, chosen: { ...chosen }, present: sel.present,
+        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, fromOCR }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
           ...r, label: candidates.find((c) => c.id === r.id)?.label,
@@ -131,10 +126,10 @@ export const point = new Command()
       return
     }
 
-    const name = chosen.label || chosen.value || chosen.role
+    const name = chosenLabel
     console.log(
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
-      chalk.dim(`(${chosen.role.replace(/^AX/, "")}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
+      chalk.dim(`(${fromOCR ? "read from screen" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
     )
     await run(HELPER, [
       "point",
