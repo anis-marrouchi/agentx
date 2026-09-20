@@ -12,13 +12,17 @@ final class Panel: NSPanel {
 
     /// Scrolls text too long for the pill instead of truncating it.
     ///
-    /// Step text like "Bash: check the calendar for conflicts tomorrow" is
-    /// routinely wider than 180 points, and an ellipsis hides exactly the
-    /// specific part that makes it reassuring. A slow marquee shows all of
-    /// it without making the widget bigger.
-    private var marquee: Timer?
+    /// Step text is routinely wider than 180 points, and an ellipsis hides
+    /// exactly the part that makes it reassuring.
+    ///
+    /// The first version rotated the STRING by one character every 0.18s.
+    /// That flickers, and unavoidably: every tick re-lays out the whole
+    /// text, and the motion is quantised to a character width, so it jumps
+    /// rather than slides. Instead the label now moves inside a clipping
+    /// view, animated by Core Animation — continuous, sub-pixel, composited
+    /// off the main thread, and it never touches the text once set.
+    private var clip: NSView?
     private var marqueeText = ""
-    private var marqueeOffset = 0
 
     enum State {
         case idle, listening, thinking, speaking
@@ -77,10 +81,17 @@ final class Panel: NSPanel {
         orb.frame = NSRect(x: 16, y: 21, width: 12, height: 12)
         blur.addSubview(orb)
 
-        label.frame = NSRect(x: 38, y: 17, width: 180, height: 20)
+        // A clipping window the label slides behind.
+        let clipView = NSView(frame: NSRect(x: 38, y: 17, width: 180, height: 20))
+        clipView.wantsLayer = true
+        clipView.layer?.masksToBounds = true
+        label.frame = NSRect(x: 0, y: 0, width: 180, height: 20)
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.lineBreakMode = .byTruncatingTail
-        blur.addSubview(label)
+        label.lineBreakMode = .byClipping
+        label.wantsLayer = true
+        clipView.addSubview(label)
+        blur.addSubview(clipView)
+        clip = clipView
 
         render(.idle)
         positionBottomRight()
@@ -103,46 +114,52 @@ final class Panel: NSPanel {
         setText(state.text)
     }
 
-    /// Fits, or scrolls. Restarting the marquee on every tick would make
-    /// long text stutter in place, so identical text is left alone.
+    /// Fits, or scrolls. Identical text is left alone so a per-second tick
+    /// cannot restart the animation and make it stutter in place.
     @MainActor
     private func setText(_ text: String) {
-        let fits = (text as NSString)
-            .size(withAttributes: [.font: label.font ?? NSFont.systemFont(ofSize: 12)])
-            .width <= label.frame.width
+        guard let clipView = clip else { label.stringValue = text; return }
+        let font = label.font ?? NSFont.systemFont(ofSize: 12)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
 
-        if fits {
+        if width <= clipView.bounds.width {
             stopMarquee()
             label.stringValue = text
+            label.frame.size.width = clipView.bounds.width
+            label.frame.origin.x = 0
             return
         }
         if text == marqueeText { return }
         marqueeText = text
-        marqueeOffset = 0
-        startMarquee()
+        startMarquee(text: text, textWidth: width, in: clipView)
     }
 
     @MainActor
-    private func startMarquee() {
-        marquee?.invalidate()
-        // Gap so the loop point is readable rather than words colliding.
-        let looped = marqueeText + "     ·     "
-        marquee = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let chars = Array(looped)
-                guard chars.count > 1 else { return }
-                self.marqueeOffset = (self.marqueeOffset + 1) % chars.count
-                let rotated = Array(chars[self.marqueeOffset...]) + Array(chars[..<self.marqueeOffset])
-                self.label.stringValue = String(rotated)
-            }
-        }
+    private func startMarquee(text: String, textWidth: CGFloat, in clipView: NSView) {
+        label.layer?.removeAnimation(forKey: "marquee")
+
+        // Gap so the loop point reads as a pause rather than words colliding.
+        let gap: CGFloat = 40
+        let travel = textWidth + gap
+        label.stringValue = text
+        label.frame = NSRect(x: 0, y: 0, width: textWidth + gap, height: clipView.bounds.height)
+
+        let slide = CABasicAnimation(keyPath: "position.x")
+        slide.fromValue = label.layer?.position.x ?? 0
+        slide.byValue = -travel
+        // Speed proportional to length, so a long step is not punishingly
+        // slow and a short one is not a blur. ~40 points a second reads at
+        // a glance without demanding attention.
+        slide.duration = CFTimeInterval(travel / 40)
+        slide.repeatCount = .infinity
+        slide.isRemovedOnCompletion = false
+        label.layer?.add(slide, forKey: "marquee")
     }
 
     @MainActor
     private func stopMarquee() {
-        marquee?.invalidate(); marquee = nil
-        marqueeText = ""; marqueeOffset = 0
+        label.layer?.removeAnimation(forKey: "marquee")
+        marqueeText = ""
     }
 
     // Borderless panels refuse key status unless told otherwise; without

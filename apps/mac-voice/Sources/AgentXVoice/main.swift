@@ -159,15 +159,24 @@ final class App: NSObject, NSApplicationDelegate {
         guard elapsed > 12 else { return }
         guard Date().timeIntervalSince(lastSpokeAt) > 15 else { return }
 
-        // Strip the tool prefix: "Bash: check the calendar" is something a
-        // person reads, not something worth hearing read aloud.
-        let spoken = step.contains(":") ? String(step.split(separator: ":").dropFirst().joined(separator: ":")) : step
-        let phrase = spoken.trimmingCharacters(in: .whitespaces)
-        guard phrase.count > 3, !spokenSteps.contains(phrase) else { return }
+        // The step is "Tool: detail". Both halves go to the daemon, which
+        // decides whether it is worth saying and in what words. Reading the
+        // detail aloud directly is what produced "still working, osascript
+        // tell application Calendar".
+        let parts = step.split(separator: ":", maxSplits: 1).map(String.init)
+        let tool = parts.first?.trimmingCharacters(in: .whitespaces) ?? step
+        let detail = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
 
-        spokenSteps.insert(phrase)
+        // Reserve the slot before awaiting, or two steps arriving together
+        // both pass the interval check and talk over each other.
         lastSpokeAt = Date()
-        Task { await Speech.speak("Still working. \(phrase).") }
+        Task { @MainActor in
+            guard let phrase = await AgentClient.phrase(
+                tool: tool, detail: detail, elapsed: Int(elapsed)) else { return }
+            guard !self.spokenSteps.contains(phrase) else { return }
+            self.spokenSteps.insert(phrase)
+            await Speech.speak(phrase.prefix(1).capitalized + phrase.dropFirst() + ".")
+        }
     }
 
     private func short(_ s: String) -> String {

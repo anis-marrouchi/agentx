@@ -24,6 +24,31 @@ enum AgentClient {
         let durationMs: Int?
     }
 
+    /// What, if anything, to say about the step now running.
+    ///
+    /// The daemon decides, because the phrasing lives with the model that
+    /// chooses it. Returning nil is the common and correct case — most
+    /// steps are not worth interrupting for, and the pill already shows
+    /// every one of them to anyone looking.
+    ///
+    /// Never throws: a narration that fails is silence, which is exactly
+    /// what it would have been anyway.
+    static func phrase(tool: String, detail: String, elapsed: Int) async -> String? {
+        guard let url = URL(string: "\(Config.daemonURL)/voice/phrase") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        // Shorter than the turn it narrates: a phrase that arrives late
+        // describes work already finished.
+        req.timeoutInterval = 6
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "tool": tool, "detail": detail, "elapsedSeconds": elapsed,
+        ])
+        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
+        struct Reply: Decodable { let say: String? }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.say
+    }
+
     static func ask(_ message: String) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"

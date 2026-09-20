@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// What the agent said, in a form you can read, click and copy.
 ///
@@ -13,8 +14,11 @@ import AppKit
 /// and WhatsApp already use, parsed server-side, so an agent has one way to
 /// attach a link or a picture regardless of where it is speaking.
 final class ResultCard: NSPanel {
-    private let scroll = NSScrollView()
-    private let body = NSTextView()
+    // A web view, because agents write markdown — headings, bullets,
+    // fenced code, tables. An NSTextView shows that as a mess of asterisks
+    // and hashes, which defeats the card's only purpose: being MORE
+    // readable than the spoken answer, not less.
+    private let web = WKWebView()
     private let links = NSStackView()
     private let thumb = NSImageView()
 
@@ -34,33 +38,10 @@ final class ResultCard: NSPanel {
         // Selectable, so the whole point — copying a link or a name out —
         // actually works. Editable would let a stray keystroke destroy the
         // answer before it is read.
-        body.isEditable = false
-        body.isSelectable = true
-        body.drawsBackground = false
-        body.font = .systemFont(ofSize: 13)
-        body.textContainerInset = NSSize(width: 10, height: 10)
-        body.isAutomaticLinkDetectionEnabled = true
-        body.isRichText = true
-
-        // An NSTextView used as a documentView renders NOTHING until it is
-        // given a size and told how to grow. Defaults are a zero frame and
-        // a fixed-width container, so the card came up blank however much
-        // text it held — which looked like "no answer" rather than a
-        // layout bug, and is why it read as an empty window.
-        body.frame = NSRect(x: 0, y: 0, width: 360, height: 100)
-        body.minSize = NSSize(width: 0, height: 0)
-        body.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        body.isVerticallyResizable = true
-        body.isHorizontallyResizable = false
-        body.autoresizingMask = [.width]
-        body.textContainer?.widthTracksTextView = true
-        body.textContainer?.containerSize = NSSize(width: 360, height: CGFloat.greatestFiniteMagnitude)
-
-        scroll.documentView = body
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.autoresizingMask = [.width, .height]
-        content.addSubview(scroll)
+        web.setValue(false, forKey: "drawsBackground")
+        web.navigationDelegate = self
+        web.autoresizingMask = [.width, .height]
+        content.addSubview(web)
 
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.isHidden = true
@@ -80,11 +61,7 @@ final class ResultCard: NSPanel {
         let linkH: CGFloat = links.arrangedSubviews.isEmpty ? 0 : 34
         let imgH: CGFloat = thumb.isHidden ? 0 : 120
         thumb.frame = NSRect(x: 10, y: h - imgH - 10, width: w - 20, height: imgH)
-        scroll.frame = NSRect(x: 0, y: linkH, width: w, height: h - linkH - imgH - (imgH > 0 ? 16 : 0))
-        // Container width must follow the scroll view or the text lays out
-        // against a stale width and clips.
-        body.textContainer?.containerSize = NSSize(width: w - 4, height: CGFloat.greatestFiniteMagnitude)
-        body.frame.size.width = w - 4
+        web.frame = NSRect(x: 0, y: linkH, width: w, height: h - linkH - imgH - (imgH > 0 ? 16 : 0))
         links.frame = NSRect(x: 0, y: 0, width: w, height: linkH)
     }
 
@@ -117,7 +94,8 @@ final class ResultCard: NSPanel {
     /// URLs and formatting the spoken form had to drop.
     @MainActor
     func show(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?) {
-        body.string = (written?.isEmpty == false ? written! : spoken)
+        let source = (written?.isEmpty == false ? written! : spoken)
+        web.loadHTMLString(Markdown.page(Markdown.toHTML(source)), baseURL: nil)
 
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
         for (label, url) in buttons.prefix(4) {
@@ -161,4 +139,21 @@ final class ResultCard: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+}
+
+extension ResultCard: WKNavigationDelegate {
+    /// Links open in the real browser. A 380-point utility panel is not a
+    /// place to read a web page, and navigating away would replace the
+    /// answer the card exists to hold.
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
 }

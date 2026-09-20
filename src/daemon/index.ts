@@ -79,6 +79,13 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
+import { askSeat } from "@/decisions/seat"
+import {
+  VOICE_NARRATION_SEAT,
+  voiceNarrationQuestions,
+  narrationState,
+  toNarration,
+} from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -4265,6 +4272,40 @@ export class AgentXDaemon {
             () => {},
           )
           this.json(res, response.error ? 500 : 200, response)
+          break
+        }
+
+        // What to say aloud while an agent works.
+        //
+        // The voice widget shows every step on screen, but reading the raw
+        // step aloud produced "still working, osascript tell application
+        // Calendar". Nobody wants to hear a shell command. The phrasing is
+        // written down in the seat and a decision model picks which one
+        // fits — it chooses, it does not write — and most steps come back
+        // as "say nothing", which is the point.
+        case "POST /voice/phrase": {
+          const body = await readBody(req)
+          const tool = String(body.tool ?? "")
+          const detail = String(body.detail ?? "")
+          const elapsed = Number(body.elapsedSeconds ?? 0)
+          if (!tool && !detail) { this.json(res, 400, { error: "Required: tool or detail" }); return }
+
+          try {
+            const result = await askSeat(
+              VOICE_NARRATION_SEAT,
+              narrationState({ tool, detail, elapsedSeconds: elapsed }),
+              voiceNarrationQuestions,
+              { timeoutMs: 4_000, features: { tool } },
+            )
+            // Seat off, backend down, or timed out: say nothing. Silence is
+            // the safe default here — a missed sentence is invisible, a
+            // wrong or duplicated one is grating.
+            if (!result || result.mode !== "active") { this.json(res, 200, { say: null }); return }
+            const narration = toNarration(result.answers as never)
+            this.json(res, 200, narration)
+          } catch {
+            this.json(res, 200, { say: null })
+          }
           break
         }
 
