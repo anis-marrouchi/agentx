@@ -15,7 +15,7 @@ import {
   type UIElementAnswers,
   type PriorAttempt,
 } from "@/decisions/seats/ui-element"
-import { buildCandidates } from "@/computer-use/candidates"
+import { readScreen, rectFor } from "@/computer-use/screen"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 
 const run = promisify(execFile)
@@ -247,31 +247,35 @@ async function act(argv: string[]): Promise<{ error: string | null; changed?: bo
 
 interface Located { x: number; y: number; width: number; height: number }
 
-/** Read the screen and ask which control the description names. */
+/** Read the screen and ask which control the description names.
+ *
+ *  Uses the same reader as `agentx point`, so a lesson gets the OCR
+ *  fallback too. Before this, teach read the tree directly: it had the
+ *  attempt history but no eyes, while point had eyes and no history, and
+ *  neither had both. */
 async function locate(description: string, priorAttempts: PriorAttempt[] = []): Promise<Located | null> {
   try {
-    const { stdout } = await run(HELPER, ["read", "--max", "400"])
-    const snap = JSON.parse(stdout) as {
-      app: string
-      window?: string | null
-      elements: Array<UICandidate & Located>
-    }
-    const candidates: UICandidate[] = buildCandidates(snap.elements as never, 45)
-    if (candidates.length < 2) return null
+    const screen = await readScreen({ max: 45 })
+    if (screen.candidates.length < 2) return null
 
     const result = await askSeat(
       UI_ELEMENT_SEAT,
-      uiElementState({ request: description, app: snap.app, window: snap.window, candidates, priorAttempts }),
-      uiElementQuestions(candidates),
-      { features: { app: snap.app, via: "teach" } },
+      uiElementState({
+        request: description,
+        app: screen.app,
+        window: screen.window,
+        candidates: screen.candidates,
+        priorAttempts,
+      }),
+      uiElementQuestions(screen.candidates),
+      { features: { app: screen.app, via: "teach", ocr: screen.usedOCR } },
     )
     if (!result) return null
-    const sel = toSelection(result.answers as UIElementAnswers, candidates)
+    const sel = toSelection(result.answers as UIElementAnswers, screen.candidates)
     // The `present` Noul first, always — a Choice will name something even
     // when the thing is not on screen.
     if (sel.present < 0.5) return null
-    const el = snap.elements.find((e) => e.id === sel.id)
-    return el ? { x: el.x, y: el.y, width: el.width, height: el.height } : null
+    return rectFor(screen, sel.id)
   } catch {
     return null
   }
