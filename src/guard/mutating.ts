@@ -17,15 +17,20 @@ import type { GuardInput } from "./types"
 // this function already flagged, and the seat can only make the outcome
 // stricter. Everything else runs exactly as it did before.
 
-const DESTRUCTIVE_COMMAND = new RegExp(
+// CONTENT patterns: destructive regardless of quoting, because the quotes
+// are how the payload is DELIVERED. `psql -c 'DELETE FROM users'` is a
+// deletion; the single quotes are shell plumbing, not a disclaimer. These
+// match the raw command, which knowingly accepts a false positive on
+// something like `grep "rm -rf" src/` — one needless dialog is the correct
+// side to err on.
+const DESTRUCTIVE_CONTENT = new RegExp(
   [
     // filesystem
     String.raw`\brm\s`, String.raw`\brmdir\b`, String.raw`\bunlink\b`,
     String.raw`\bshred\b`, String.raw`\btruncate\b`, String.raw`\bmkfs`,
     String.raw`\bdd\b[^|]*\bof=`,
-    // moves and overwrites: mv clobbers, cp -f clobbers, > truncates
+    // moves and overwrites that are meaningful as content
     String.raw`\bmv\s`, String.raw`\bcp\s+(-\w*f|\S+\s+-\w*f)`,
-    String.raw`[^>|]>[^>|&]`, String.raw`\btee\b(?!\s+-a)`,
     // version control history and working tree
     String.raw`git\s+(reset\s+--hard|clean\s+-\w*[fd]|checkout\s+--\s|restore\b)`,
     String.raw`git\s+push\b[^|]*(--force\b|-f\b|\+)`,
@@ -56,6 +61,55 @@ const DESTRUCTIVE_COMMAND = new RegExp(
  *  is the whole signal. */
 const MUTATING_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
 
+// SYNTAX patterns: only destructive when the SHELL sees them. A `>` inside
+// a commit message is prose; the same character outside quotes truncates a
+// file. These match only after literals are stripped, which is what stopped
+// enforce mode from blocking `git commit` on a heredoc containing "->".
+const DESTRUCTIVE_SYNTAX = new RegExp(
+  [
+    String.raw`[^>|]>[^>|&]`,      // redirect that clobbers
+    String.raw`\btee\b(?!\s+-a)`, // tee without append
+  ].join("|"),
+  "i",
+)
+
+/**
+ * Remove quoted text and heredoc bodies before SYNTAX matching.
+ *
+ * Shell syntax and shell DATA are not distinguishable in a raw command
+ * string, and matching the raw string means a `>` inside a commit message
+ * reads exactly like a redirect that clobbers a file. That is not
+ * hypothetical: enabling enforce mode immediately blocked a `git commit`
+ * whose heredoc body contained "->", with the reason "matched destructive
+ * pattern: m>".
+ *
+ * Over-inclusive is the correct bias for this classifier, but a rule that
+ * fires on prose is not over-inclusive, it is wrong — and a guard that
+ * blocks ordinary work is a guard someone turns off, which costs more
+ * safety than it ever bought.
+ *
+ * Deliberately crude: it blanks the CONTENTS of quotes and heredocs while
+ * preserving their delimiters, so `rm -rf "$HOME/x"` still matches on the
+ * `rm` and a redirect written outside quotes still matches on the `>`.
+ * Escaping edge cases resolve toward keeping text, i.e. toward matching.
+ */
+export function stripLiterals(command: string): string {
+  let out = command
+
+  // Heredoc bodies first: they can contain anything, including quotes that
+  // would otherwise unbalance the scan below.
+  out = out.replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+    (m) => m.split("\n")[0] + "\n")
+  // An unterminated heredoc (still being written) — drop to end of string.
+  out = out.replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*$/,
+    (m) => m.split("\n")[0] + "\n")
+
+  // Quoted spans, contents blanked, delimiters kept.
+  out = out.replace(/'([^'\\]|\\.)*'/g, "''")
+  out = out.replace(/"([^"\\]|\\.)*"/g, '""')
+  return out
+}
+
 export interface MutationCheck {
   mutating: boolean
   /** Which signal fired, for the audit trail and the confirmation dialog. */
@@ -75,9 +129,16 @@ export function classifyMutation(input: GuardInput): MutationCheck {
   const command = input.command ?? ""
   if (!command) return { mutating: false, reason: null }
 
-  const hit = DESTRUCTIVE_COMMAND.exec(command)
-  if (hit) {
-    return { mutating: true, reason: `matched destructive pattern: ${hit[0].trim().slice(0, 40)}` }
+  // Content first: quoting does not make a DROP TABLE safe.
+  const content = DESTRUCTIVE_CONTENT.exec(command)
+  if (content) {
+    return { mutating: true, reason: `matched destructive pattern: ${content[0].trim().slice(0, 40)}` }
+  }
+  // Then syntax, against a command with its literals blanked — a redirect
+  // only redirects when the shell is the one reading it.
+  const syntax = DESTRUCTIVE_SYNTAX.exec(stripLiterals(command))
+  if (syntax) {
+    return { mutating: true, reason: `matched destructive shell syntax: ${syntax[0].trim().slice(0, 40)}` }
   }
   return { mutating: false, reason: null }
 }

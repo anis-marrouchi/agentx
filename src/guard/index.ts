@@ -32,5 +32,5 @@ export function guessInstallRoot(): string {
   }
   return process.cwd()
 }
-export { checkPayload, getPolicy, resetPolicyCache } from "./service"
+export { checkPayload, checkPayloadWithConfirmation, getPolicy, resetPolicyCache } from "./service"
 export type { GuardServiceResult } from "./service"

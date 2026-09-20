@@ -124,3 +124,27 @@ describe("assessRisk — the ratchet", () => {
     expect(r.source).toBe("seat-unavailable")
   })
 })
+
+describe("syntax vs content — the distinction enforce mode forced", () => {
+  it("does not read prose as shell syntax", () => {
+    // The regression that blocked a real `git commit` the moment enforce
+    // mode went on: a heredoc body containing "->" read as a redirect.
+    const heredoc = "git commit -F - <<'EOF'\nfix: thing -> other thing\nand a > in prose\nEOF"
+    expect(classifyMutation(bash(heredoc)).mutating).toBe(false)
+    expect(classifyMutation(bash('git commit -m "arrow -> here"')).mutating).toBe(false)
+    expect(classifyMutation(bash('echo "a > b"')).mutating).toBe(false)
+  })
+
+  it("still catches a redirect the shell will actually perform", () => {
+    expect(classifyMutation(bash("echo hi > file.txt")).mutating).toBe(true)
+    expect(classifyMutation(bash("cat a | tee out.txt")).mutating).toBe(true)
+  })
+
+  it("does not let quoting launder destructive CONTENT", () => {
+    // Quotes are how the payload is delivered, not a disclaimer. This is
+    // the case that caught the first, too-aggressive fix.
+    expect(classifyMutation(bash("psql -c 'DELETE FROM users'")).mutating).toBe(true)
+    expect(classifyMutation(bash('mysql -e "DROP TABLE orders"')).mutating).toBe(true)
+    expect(classifyMutation(bash('rm -rf "$HOME/x"')).mutating).toBe(true)
+  })
+})

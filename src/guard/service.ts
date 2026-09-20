@@ -4,6 +4,8 @@ import { loadPolicy, GUARDRAILS_DIR } from "./policy"
 import { evaluate } from "./engine"
 import { recordDecision } from "./audit"
 import { decisionOutput, payloadToInput, type PreToolUsePayload } from "./check"
+import { assessRisk } from "./risk"
+import { confirmDestructive } from "./confirm"
 import type { GuardMode, ResolvedPolicy, Verdict } from "./types"
 
 // --- In-daemon guard service ---
@@ -91,6 +93,63 @@ export interface GuardServiceResult {
   /** Body to hand back to the hook — "" means "allow, say nothing". */
   stdout: string
   ms: number
+}
+
+/**
+ * Evaluate a payload AND obtain confirmation when one is required.
+ *
+ * The synchronous checkPayload below stays the fast path and the public
+ * contract; this wraps it for the caller that can await — the daemon's
+ * POST /guard/check, which is what production hooks actually call.
+ *
+ * Confirmation cannot live in the sync path: it blocks on a human. It
+ * cannot live in the hook's default 3-second budget either, which is why
+ * the installed hooks widen their timeout. Read-only calls never reach
+ * here and still answer in single-digit milliseconds.
+ */
+export async function checkPayloadWithConfirmation(
+  payload: PreToolUsePayload,
+  opts: { root: string; agentId?: string; env?: string },
+): Promise<GuardServiceResult> {
+  const base = checkPayload(payload, opts)
+  if (base.mode !== "enforce" || base.verdict.effectiveAction === "deny") return base
+
+  try {
+    const input = payloadToInput(payload, opts.agentId, opts.env)
+    if (!input.command && !input.filePath) return base
+
+    const risk = await assessRisk(input, base.verdict)
+    if (!risk.requiresConfirmation) return base
+
+    const outcome = await confirmDestructive({
+      tool: input.tool,
+      command: input.command ?? input.filePath ?? "",
+      reason: risk.reason ?? "flagged as destructive",
+      target: base.verdict.resolvedTarget,
+      agentId: input.agentId ?? opts.agentId ?? null,
+      // Comfortably inside the hook budget below. A dialog that outlives
+      // the hook is a dialog whose answer nobody reads.
+      timeoutSeconds: 45,
+    })
+    if (outcome === "confirmed") return base
+
+    return {
+      ...base,
+      stdout: JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            `[agentx-guard] Aborted at the confirmation dialog (${risk.reason ?? "destructive operation"}). ` +
+            `Do not retry this command or work around it. Say what you were trying to do and wait for instructions.`,
+        },
+      }),
+    }
+  } catch {
+    // A failure to ASK is not permission to proceed, but neither should a
+    // broken dialog brick every command — the deterministic verdict stands.
+    return base
+  }
 }
 
 /**

@@ -77,7 +77,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
-import { checkPayload, type PreToolUsePayload } from "@/guard"
+import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -2137,7 +2137,7 @@ export class AgentXDaemon {
         const agentId = url.searchParams.get("agent") || undefined
         const envScope = url.searchParams.get("env") || undefined
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
-        const { stdout } = checkPayload(payload as PreToolUsePayload, {
+        const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {
           root: process.cwd(),
           agentId,
           env: envScope,
