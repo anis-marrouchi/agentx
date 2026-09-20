@@ -27,6 +27,27 @@ export interface LessonStep {
   holdSeconds?: number
   /** Pause after a click, for pages that navigate. */
   afterClickWaitMs?: number
+  /**
+   * A claim that must be TRUE once this step has run, checked by looking
+   * at the screen.
+   *
+   * This exists because every other check in a lesson confirms that a call
+   * returned, not that anything happened. A run once narrated a whole
+   * recording session that never started, and nothing in the pipeline
+   * disagreed. A step that claims an effect should state it here, and the
+   * lesson stops when the claim is refuted OR cannot be settled — an
+   * inconclusive look is not a pass.
+   *
+   * Write claims about things plainly visible: text in a field, a page
+   * that has loaded, a panel covering something. Not about small status
+   * glyphs — a menu bar recording dot is about six points, and the vision
+   * models tested both missed a real one and reported one that was not
+   * there. See seats/screen-state.ts for the measurements.
+   */
+  verify?: string
+  /** Log the check but keep going when it fails. For claims worth
+   *  recording that are not worth stopping over. */
+  verifyOptional?: boolean
 }
 
 export interface Lesson {
@@ -86,6 +107,10 @@ const xAdvancedSearch: Lesson = {
       say: "And submit.",
       key: "return",
       holdSeconds: 3.2,
+      // The one claim in this lesson worth checking: the query actually
+      // reached the page. It is a text question about a loaded page, which
+      // is what looking at the screen is reliable for.
+      verify: "the page is showing X search results for the query from:naval min_faves:500",
     },
     {
       say: "There it is. That person's greatest hits — everything they wrote that actually landed. No scrolling through years of replies.",

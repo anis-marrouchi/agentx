@@ -105,15 +105,47 @@ case "ocr":
         (try? JSONSerialization.data(withJSONObject: payload)) ?? Data())
 
 case "capture":
-    guard let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
-          let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? ""),
-          let out = flag("out") else {
-        fail("capture needs --x --y --w --h --out")
+    // Region precedence: an explicit rect, else a named region of a
+    // screen, else the focused window. "Whole screen" has to be reachable
+    // without the caller knowing the display's size, because the state
+    // worth checking — a recording indicator, a capture pill — lives in
+    // the menu bar, which belongs to no window at all.
+    guard let out = flag("out") else { fail("capture needs --out") }
+    let screen = Screens.list().first(where: { $0.index == Int(flag("screen") ?? "") })
+        ?? Screens.active()
+    let region: CGRect
+    if let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
+       let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? "") {
+        region = CGRect(x: x, y: y, width: w, height: h)
+    } else if args.contains("--menubar") {
+        guard let s = screen else { fail("no screen found") }
+        region = Screens.menuBar(s)
+    } else if args.contains("--screen-full") {
+        guard let s = screen else { fail("no screen found") }
+        region = Screens.rect(s)
+    } else if let win = OCR.focusedWindowFrame() {
+        region = win
+    } else {
+        fail("no focused window — pass --x/--y/--w/--h, --menubar or --screen-full")
     }
-    guard Vision.capture(CGRect(x: x, y: y, width: w, height: h), to: out) else {
+    guard Vision.capture(region, to: out,
+                         maxWidth: Int(flag("max-width") ?? ""),
+                         maxPixels: Int(flag("max-pixels") ?? "")) else {
         fail("capture failed — check Screen Recording permission")
     }
-    FileHandle.standardOutput.write(#"{"ok":true,"captured":true}"#.data(using: .utf8)!)
+    let shot: [String: Any] = [
+        "ok": true, "captured": true, "path": out,
+        "region": ["x": region.minX, "y": region.minY,
+                   "w": region.width, "h": region.height],
+    ]
+    FileHandle.standardOutput.write(
+        (try? JSONSerialization.data(withJSONObject: shot)) ?? Data())
+
+case "screens":
+    // Display geometry in top-left coordinates, so a caller can aim at a
+    // second monitor without redoing AppKit's origin flip.
+    guard let d = try? JSONEncoder().encode(Screens.list()) else { fail("failed to encode screens") }
+    FileHandle.standardOutput.write(d)
 
 case "focused":
     // What has keyboard focus right now. The safety check before typing.
@@ -229,5 +261,5 @@ case "trusted":
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))
 
 default:
-    fail("unknown verb \"\(verb)\" — expected read, point or trusted")
+    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud or trusted")
 }

@@ -89,13 +89,60 @@ enum Vision {
     /// needs Screen Recording permission; without it macOS returns a
     /// desktop-only image rather than failing, which is why the caller is
     /// told to check for an all-uniform result.
-    static func capture(_ rect: CGRect, to path: String) -> Bool {
+    ///
+    /// `maxPixels` caps the TOTAL area before writing, and `maxWidth` the
+    /// long edge. Prefer the area budget.
+    ///
+    /// Cost tracks pixel count, not width, and capping width alone throws
+    /// away detail on small regions while saving nothing. A menu bar strip
+    /// is 2880x52 on this display — 150k pixels, a couple of hundred
+    /// tokens — and scaling it to 1400 wide halves the resolution of the
+    /// only thing in it worth seeing. A full screen is 5.2M pixels and
+    /// genuinely does need cutting. One rule covers both: leave it alone
+    /// unless it is actually big.
+    ///
+    /// Resolution here is not a cost knob, it is the difference between a
+    /// legible indicator and a grey smudge. macOS draws the screen-
+    /// recording dot at about six points.
+    @discardableResult
+    static func capture(_ rect: CGRect, to path: String,
+                        maxWidth: Int? = nil, maxPixels: Int? = nil) -> Bool {
         guard let image = CGWindowListCreateImage(
             rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution])
         else { return false }
-        let rep = NSBitmapImageRep(cgImage: image)
+        var target = maxWidth
+        if let budget = maxPixels, budget > 0 {
+            let area = image.width * image.height
+            if area > budget {
+                // Preserve aspect: width * (width / aspect) = budget.
+                let scale = (Double(budget) / Double(area)).squareRoot()
+                let fit = max(1, Int(Double(image.width) * scale))
+                target = min(target ?? fit, fit)
+            }
+        }
+        let out = target.flatMap { downscale(image, maxWidth: $0) } ?? image
+        let rep = NSBitmapImageRep(cgImage: out)
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+    }
+
+    /// Returns nil when the image is already narrow enough, so the caller
+    /// falls back to the original rather than paying for a pointless redraw.
+    private static func downscale(_ image: CGImage, maxWidth: Int) -> CGImage? {
+        guard maxWidth > 0, image.width > maxWidth else { return nil }
+        let height = max(1, Int(Double(image.height) * Double(maxWidth) / Double(image.width)))
+        guard let ctx = CGContext(
+            data: nil, width: maxWidth, height: height,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        // High, not low: this image exists to be READ. Cheap interpolation
+        // turns small text into grey mush and the model then reports an
+        // empty menu bar with complete confidence.
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: maxWidth, height: height))
+        return ctx.makeImage()
     }
 
     /// Mean absolute difference between two regions, 0…1.

@@ -12,6 +12,7 @@ import { decisions as decisionsCmd } from "@/commands/decisions"
 import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
+import { look as lookCmd } from "@/commands/look"
 import { decide as decideCmd } from "@/commands/decide"
 import { teach as teachCmd } from "@/commands/teach"
 import { attach as attachCmd } from "@/commands/attach"
@@ -82,6 +83,7 @@ export async function buildProgram(): Promise<Command> {
     attachCmd, monitorCmd,       // connect editor sessions
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
+    lookCmd,                     // computer use: see state the tree cannot report
     decideCmd,                   // typed decisions, for agents
     teachCmd,                    // talk and point, at the same time
     usage,                       // what it cost, what gets used

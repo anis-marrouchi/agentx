@@ -16,6 +16,7 @@ import {
   type PriorAttempt,
 } from "@/decisions/seats/ui-element"
 import { readScreen, rectFor } from "@/computer-use/screen"
+import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 
 const run = promisify(execFile)
@@ -123,6 +124,9 @@ export const teach = new Command()
 
     // What has been tried on this screen, carried between lookups.
     const attempts: PriorAttempt[] = []
+    /** Set when a verify step refused to confirm, so the ending does not
+     *  claim success and the exit code says so. */
+    let stopped = false
 
     for (const [i, step] of lesson.steps.entries()) {
       console.log(`  ${chalk.dim(String(i + 1).padStart(2))}  ${step.say}`)
@@ -207,10 +211,45 @@ export const teach = new Command()
       }
       if (!target && !step.type && !step.key) await sleep((step.holdSeconds ?? 1.2) * 1000)
       else if (step.holdSeconds) await sleep(step.holdSeconds * 1000)
+
+      // Did it actually work?
+      //
+      // Everything above reports whether a CALL succeeded. This is the
+      // only thing in the loop that asks whether the screen agrees, and it
+      // runs last so the page has settled. A refuted or inconclusive claim
+      // stops the lesson: continuing would narrate a result nobody
+      // verified, which is the failure this whole path exists to prevent.
+      if (step.verify) {
+        setState(`Step ${i + 1} of ${lesson.steps.length}`, "Checking that worked…", "waiting")
+        let checked
+        try {
+          checked = await verifyClaim(step.verify)
+        } catch (e: any) {
+          checked = null
+          console.log(chalk.yellow(`      ? could not check: ${e?.message ?? e}`))
+        }
+        if (checked) {
+          const mark = checked.outcome === "confirmed" ? chalk.green("✓")
+            : checked.outcome === "refuted" ? chalk.red("✗") : chalk.yellow("?")
+          console.log(`      ${mark} ${chalk.dim(checked.reason)}`)
+          if (!checked.ok && !step.verifyOptional) {
+            setState("Stopped", `That did not work: ${step.verify}`, "waiting")
+            console.log(chalk.red(`\n  stopping: could not confirm — ${step.verify}`))
+            console.log(chalk.dim(`  ${checked.reason}`))
+            console.log(chalk.dim(`  screenshot: ${checked.sighting.shot.path}`))
+            await sleep(2500)
+            try { hud?.stdin?.end() } catch { /* already gone */ }
+            stopped = true
+            break
+          }
+        }
+      }
     }
-    setState("Done", lesson.title, "done")
-    await sleep(1200)
-    try { hud?.stdin?.end() } catch { /* already gone */ }
+    if (!stopped) {
+      setState("Done", lesson.title, "done")
+      await sleep(1200)
+      try { hud?.stdin?.end() } catch { /* already gone */ }
+    }
 
     if (recorder && recordingPath) {
       // screencapture -v stops cleanly on SIGINT and finalises the file;
@@ -223,6 +262,13 @@ export const teach = new Command()
       } catch {
         console.log(chalk.yellow("  recording produced no file — check Screen Recording permission"))
       }
+    }
+    // The recording is finalised either way — a take of the failure is
+    // more useful than no take at all.
+    if (stopped) {
+      console.log(chalk.red(`  lesson stopped before the end.\n`))
+      process.exitCode = 3
+      return
     }
     console.log(chalk.green(`\n  done.\n`))
   })
