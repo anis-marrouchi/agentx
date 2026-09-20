@@ -16,6 +16,7 @@ import AppKit
 @MainActor
 final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
+    private let card = ResultCard()
     private let recorder = Recorder()
     private var hotkey: Hotkey?
     private var busy = false
@@ -23,6 +24,8 @@ final class App: NSObject, NSApplicationDelegate {
     private var ticker: Timer?
     private var startedAt = Date()
     private var lastStep = "Thinking…"
+    private var spokenSteps = Set<String>()
+    private var lastSpokeAt = Date.distantPast
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -77,6 +80,17 @@ final class App: NSObject, NSApplicationDelegate {
                 let answer = try await AgentClient.ask(heard)
                 endNarration()
                 Log.info("answer: \(answer.text)")
+                // Show BEFORE speaking, but only when there is something
+                // the speech cannot deliver — a link, an image, or more
+                // text than was read aloud. A card that opens on every
+                // "Ok." teaches you to ignore it.
+                if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
+                                             buttons: answer.buttons, imageURL: answer.imageURL) {
+                    card.show(spoken: answer.text, written: answer.written,
+                              buttons: answer.buttons, imageURL: answer.imageURL)
+                } else {
+                    card.orderOut(nil)
+                }
                 panel.render(.speaking)
                 await Speech.speak(answer.text)
                 panel.render(.idle)
@@ -102,6 +116,8 @@ final class App: NSObject, NSApplicationDelegate {
     private func beginNarration() {
         startedAt = Date()
         lastStep = "Thinking…"
+        spokenSteps.removeAll()
+        lastSpokeAt = Date()
         panel.render(.working(lastStep, 0))
 
         // Progress delivers on its own serial queue; hop to main before
@@ -112,6 +128,7 @@ final class App: NSObject, NSApplicationDelegate {
                 self.lastStep = step
                 Log.info("step: \(step)")
                 self.panel.render(.working(step, Int(Date().timeIntervalSince(self.startedAt))))
+                self.speakStepIfDue(step)
             }
         }
         progress?.start()
@@ -127,6 +144,30 @@ final class App: NSObject, NSApplicationDelegate {
     private func endNarration() {
         ticker?.invalidate(); ticker = nil
         progress?.stop(); progress = nil
+    }
+
+    /// Say what it is doing, sparingly.
+    ///
+    /// Silence during a long turn reads as a broken assistant, and a
+    /// visible label does not help someone who asked by voice precisely
+    /// because they were not looking at the screen. But narrating every
+    /// step would talk over itself and be worse than silence — so: nothing
+    /// for the first stretch, then at most one short line every 15
+    /// seconds, and never the same step twice.
+    private func speakStepIfDue(_ step: String) {
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed > 12 else { return }
+        guard Date().timeIntervalSince(lastSpokeAt) > 15 else { return }
+
+        // Strip the tool prefix: "Bash: check the calendar" is something a
+        // person reads, not something worth hearing read aloud.
+        let spoken = step.contains(":") ? String(step.split(separator: ":").dropFirst().joined(separator: ":")) : step
+        let phrase = spoken.trimmingCharacters(in: .whitespaces)
+        guard phrase.count > 3, !spokenSteps.contains(phrase) else { return }
+
+        spokenSteps.insert(phrase)
+        lastSpokeAt = Date()
+        Task { await Speech.speak("Still working. \(phrase).") }
     }
 
     private func short(_ s: String) -> String {

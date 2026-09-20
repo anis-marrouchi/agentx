@@ -78,6 +78,7 @@ import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/re
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
+import { extractUiDirective } from "@/channels/ui-directive"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -4285,12 +4286,21 @@ export class AgentXDaemon {
             context: { channel: "voice", sender: "Siri", chatId: `voice:${agentId}` },
           })
 
-          // Convert response to speakable text (TTS-friendly)
-          const speakable = toSpeakable(response.content)
+          // Rich content rides the same in-band directive Telegram and
+          // WhatsApp already use, so an agent has ONE way to attach a link
+          // or an image regardless of where it is speaking. Parsed here
+          // rather than in each client, for the same reason /ask owns the
+          // voice prompt: two parsers drift.
+          const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
+          const speakable = toSpeakable(withoutDirective)
 
           this.json(res, response.error ? 500 : 200, {
             text: speakable,
-            full: response.content,
+            // The answer as written — what a client SHOWS, while `text` is
+            // what it speaks. They differ: spoken text drops URLs and
+            // markdown, which are exactly what is worth reading.
+            full: withoutDirective,
+            ui: directive ?? null,
             error: response.error,
             duration: response.duration,
           })
