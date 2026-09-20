@@ -479,6 +479,13 @@ export class AgentRegistry {
    *  prompt on every task. */
   readonly agentMemory: AgentMemory = new AgentMemory()
   private patternStore: PatternStore
+  /** Model to drop mechanical tasks onto, from
+   *  `decisions.routing.cheapModel`. Unset means no routing happens at
+   *  all — the feature is off until an operator names the model, so it
+   *  cannot silently downgrade a fleet that never asked for it. */
+  private get cheapModel(): string | undefined {
+    return (this.config as any)?.decisions?.routing?.cheapModel || undefined
+  }
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
@@ -1856,7 +1863,38 @@ export class AgentRegistry {
 
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
-    const taskWithSystemPrompt: AgentTask = { ...task, systemPromptAppend }
+    // Route mechanical work to a cheaper model, when the seat is active
+    // and sure. Everything that is not an explicit confident "no" keeps
+    // the agent's own model — see agents/routing.ts for why the failure
+    // has to land on the expensive side.
+    //
+    // Awaited rather than fired off, because the answer has to be in hand
+    // before the task runs; it is one Noul against a message that is
+    // already in memory, and it never blocks a task from running.
+    let routedModel: string | undefined
+    if (!task.model && this.cheapModel) {
+      try {
+        const { routeTaskModel } = await import("./routing")
+        const route = await routeTaskModel({
+          message: task.message,
+          agent: task.agentId,
+          channel,
+          isFollowUp: Boolean(resumeSessionId),
+          cheapModel: this.cheapModel,
+        })
+        if (route.downgraded) {
+          routedModel = route.model
+          this.log(`[${task.agentId}] ${route.reason}`)
+        }
+      } catch {
+        /* routing is an optimisation; never let it stop a task */
+      }
+    }
+
+    const taskWithSystemPrompt: AgentTask = {
+      ...task, systemPromptAppend,
+      ...(routedModel ? { model: routedModel } : {}),
+    }
 
     let finalResponse: AgentResponse | undefined
     try {
