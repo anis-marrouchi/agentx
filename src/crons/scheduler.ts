@@ -2,6 +2,7 @@ import type { DaemonConfig, CronJobDef } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
 import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
+import { execFile } from "child_process"
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
@@ -144,6 +145,7 @@ export class CronScheduler {
         timezone: def.timezone,
         agent: def.agent,
         prompt: def.prompt,
+        command: def.command,
         timeout: def.timeout,
         model: def.model,
         maxOutputTokens: def.maxOutputTokens,
@@ -323,6 +325,89 @@ export class CronScheduler {
     }
   }
 
+  /**
+   * Run a cron whose work is a shell command, with no model involved.
+   *
+   * Failure handling deliberately mirrors the agent path — same
+   * consecutiveErrors, same notify, same disable-after-three, same retry —
+   * so an operator does not have to learn two sets of cron semantics
+   * depending on how a job happens to be defined.
+   *
+   * Only the output TAIL is kept. The agent prompts this replaces all said
+   * "report the exit code plus the last 10 lines", which was the right
+   * instinct: a run record is read by a person after something broke, and
+   * the end of the output is where the breakage is.
+   */
+  private async executeCommandJob(
+    job: CronJobState,
+    startedAt: Date,
+    isRetry: boolean,
+    retryAttempt: number,
+  ): Promise<void> {
+    const command = job.command!.trim()
+    this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Running command for "${job.id}"`)
+
+    let success = false
+    let output = ""
+    let error: string | undefined
+
+    try {
+      const { stdout, stderr, code } = await runShell(command, job.timeout * 1000)
+      output = tail(`${stdout}${stderr ? `\n${stderr}` : ""}`, COMMAND_OUTPUT_LINES)
+      success = code === 0
+      if (!success) error = `exit ${code}${output ? `\n${output}` : ""}`
+    } catch (e: any) {
+      error = e?.message ?? String(e)
+    }
+
+    const result: CronRunResult = {
+      jobId: job.id,
+      startedAt,
+      completedAt: new Date(),
+      success,
+      response: output || undefined,
+      error,
+      duration: Date.now() - startedAt.getTime(),
+      isRetry,
+      retryAttempt,
+    }
+
+    if (!success) {
+      job.consecutiveErrors++
+      job.totalFailures++
+      job.lastError = error
+      this.log(`Command job "${job.id}" failed (${job.consecutiveErrors} consecutive): ${error}`)
+      await this.notifyFailure(job, error ?? "command failed")
+      if (job.onError.includes("disable") && job.consecutiveErrors >= 3) {
+        job.enabled = false
+        this.log(`Job "${job.id}" disabled after ${job.consecutiveErrors} consecutive errors`)
+        try {
+          await applyConfigMutation(
+            (cfg) => setAtPath(cfg, `crons.${job.id}.enabled`, false),
+            { reload: false },
+          )
+        } catch (e: any) {
+          this.log(`Failed to persist disable for "${job.id}": ${e.message}`)
+        }
+        await this.notifyDisabled(job)
+      }
+      this.logRun(result)
+      this.scheduleRetry(job.id, retryAttempt)
+      return
+    }
+
+    if (job.consecutiveErrors > 0) {
+      this.log(`Job "${job.id}" recovered after ${job.consecutiveErrors} failure(s)`)
+    }
+    job.consecutiveErrors = 0
+    job.lastSuccess = new Date()
+    job.lastError = undefined
+    job.retryPending = false
+    this.log(`Command job "${job.id}" completed in ${result.duration}ms`)
+    this.logRun(result)
+    this.scheduleNext(job.id)
+  }
+
   private async executeJob(jobId: string, retryAttempt: number = 0): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job || !this.running) return
@@ -353,10 +438,24 @@ export class CronScheduler {
       }
     }
 
-    this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`)
+    // Named after what will actually happen. A command job saying
+    // `-> agent "coo-agent"` sends a reader looking for a dispatch that
+    // never occurs.
+    this.log(
+      job.command?.trim()
+        ? `${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> command`
+        : `${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`,
+    )
     const startedAt = firedAt
     job.lastRun = startedAt
     job.totalRuns++
+
+    // A command job never reaches a model. Branch before the ledger
+    // dispatch record, because nothing is being dispatched TO.
+    if (job.command?.trim()) {
+      await this.executeCommandJob(job, startedAt, isRetry, retryAttempt)
+      return
+    }
 
     // Phase 1 commit 6.d — record the dispatch decision before the
     // (potentially long-running) registry.execute call. The returned
@@ -652,4 +751,44 @@ export class CronScheduler {
       })),
     }
   }
+}
+
+
+/** Lines of command output kept in a run record. */
+const COMMAND_OUTPUT_LINES = 20
+
+function tail(text: string, lines: number): string {
+  const all = text.replace(/\s+$/, "").split("\n")
+  return all.length <= lines ? all.join("\n") : all.slice(-lines).join("\n")
+}
+
+/**
+ * Run a shell command with a hard timeout.
+ *
+ * Resolves with the exit code rather than rejecting on non-zero: a failing
+ * command is an ANSWER here, not an exception, and the caller wants the
+ * output either way.
+ */
+function runShell(
+  command: string,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "/bin/sh",
+      ["-c", command],
+      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 },
+      (err: any, stdout, stderr) => {
+        if (err && err.killed) {
+          reject(new Error(`command timed out after ${Math.round(timeoutMs / 1000)}s`))
+          return
+        }
+        resolve({
+          stdout: String(stdout ?? ""),
+          stderr: String(stderr ?? ""),
+          code: err ? (typeof err.code === "number" ? err.code : 1) : 0,
+        })
+      },
+    )
+  })
 }

@@ -469,7 +469,26 @@ const cronJobSchema = z.object({
   schedule: z.string(),
   timezone: z.string().default("UTC"),
   agent: z.string(),
-  prompt: z.string(),
+  prompt: z.string().default(""),
+  /**
+   * A shell command to run INSTEAD of dispatching the agent.
+   *
+   * Seven of this fleet's twenty-six crons were a single command wrapped
+   * in an agent, and every one of them carried a paragraph like "Run this
+   * EXACT command. Do NOT substitute, rewrite, shorten, or fall back to
+   * alternative commands." That paragraph is a scar: it exists because
+   * models kept substituting, and no amount of prompt severity makes a
+   * language model a deterministic executor.
+   *
+   * Measured before this existed: ~$0.31 and ~24s per run to execute one
+   * `node script.js` and repeat ten lines of its output — a 114k-token
+   * context for a job with no judgement in it at all.
+   *
+   * When set, the scheduler runs the command directly. No model, no
+   * tokens, no improvisation. `agent` is still required and is who gets
+   * told when it fails.
+   */
+  command: z.string().optional(),
   timeout: z.number().default(600),
   model: z.string().optional(),
   /** Soft cap on output length. Claude Code CLI has no hard flag for this,
@@ -485,6 +504,8 @@ const cronJobSchema = z.object({
     chatId: z.string(),
     accountId: z.string().optional(),
   }).optional(),
+}).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
+  message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
 })
 
 const serviceSchema = z.object({

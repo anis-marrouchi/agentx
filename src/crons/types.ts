@@ -7,6 +7,9 @@ export interface CronJobState {
   timezone: string
   agent: string
   prompt: string
+  /** Run this shell command instead of dispatching the agent. See the
+   *  cron schema in daemon/config.ts for why this exists. */
+  command?: string
   timeout: number
   model?: string
   /** Soft output-length cap appended to the prompt at invocation time.
