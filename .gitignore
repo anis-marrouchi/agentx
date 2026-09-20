@@ -42,3 +42,6 @@ docs/prd
 
 # Design canvas working files (published as an Artifact, not product code)
 .design/
+
+# built app bundle
+apps/mac-voice/build/

@@ -37,9 +37,8 @@ final class Hotkey {
             return noErr
         }, spec.count, &spec, context, &handler)
 
-        var id = EventHotKeyID(signature: OSType(0x41475856), id: 1) // 'AGXV'
+        let id = EventHotKeyID(signature: OSType(0x41475856), id: 1) // 'AGXV'
         RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
-        _ = id
     }
 
     deinit {

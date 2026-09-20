@@ -12,6 +12,9 @@ final class Panel: NSPanel {
 
     enum State {
         case idle, listening, thinking, speaking
+        /// Live activity from the daemon, with seconds elapsed — the
+        /// difference between "it's working" and "it's hung".
+        case working(String, Int)
         case error(String)
 
         var text: String {
@@ -20,6 +23,7 @@ final class Panel: NSPanel {
             case .listening: return "Listening…"
             case .thinking: return "Thinking…"
             case .speaking: return "Speaking…"
+            case .working(let what, let secs): return "\(what)  ·  \(secs)s"
             case .error(let m): return m
             }
         }
@@ -29,6 +33,7 @@ final class Panel: NSPanel {
             case .listening: return .systemRed
             case .thinking: return .systemOrange
             case .speaking: return .systemGreen
+            case .working: return .systemOrange
             case .error: return .systemYellow
             }
         }

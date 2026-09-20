@@ -14,6 +14,10 @@ final class App: NSObject, NSApplicationDelegate {
     private let recorder = Recorder()
     private var hotkey: Hotkey?
     private var busy = false
+    private var progress: Progress?
+    private var ticker: Timer?
+    private var startedAt = Date()
+    private var lastStep = "Thinking…"
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -61,14 +65,16 @@ final class App: NSObject, NSApplicationDelegate {
                     busy = false; resetSoon(); return
                 }
                 Log.info("heard: \(heard)")
-                panel.render(.thinking)
+                beginNarration()
 
                 let answer = try await AgentClient.ask(heard)
+                endNarration()
                 Log.info("answer: \(answer.text)")
                 panel.render(.speaking)
                 await Speech.speak(answer.text)
                 panel.render(.idle)
             } catch {
+                endNarration()
                 Log.warn("turn failed: \(error.localizedDescription)")
                 panel.render(.error(short(error.localizedDescription)))
                 // Say it aloud too — a voice assistant that fails only in
@@ -78,6 +84,36 @@ final class App: NSObject, NSApplicationDelegate {
             }
             busy = false
         }
+    }
+
+    /// Narrate the wait using what the daemon says it is actually doing.
+    ///
+    /// Two sources, because neither alone is enough: `task:step` events
+    /// say what the agent is doing but arrive irregularly, and a 1-second
+    /// ticker proves the thing is still alive between them. Together they
+    /// answer both "what is it doing" and "is it stuck".
+    private func beginNarration() {
+        startedAt = Date()
+        lastStep = "Thinking…"
+        panel.render(.working(lastStep, 0))
+
+        progress = Progress(agentID: Config.agentID) { [weak self] step in
+            guard let self, self.busy else { return }
+            self.lastStep = step
+            Log.info("step: \(step)")
+            self.panel.render(.working(step, Int(Date().timeIntervalSince(self.startedAt))))
+        }
+        progress?.start()
+
+        ticker = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self, self.busy else { return }
+            self.panel.render(.working(self.lastStep, Int(Date().timeIntervalSince(self.startedAt))))
+        }
+    }
+
+    private func endNarration() {
+        ticker?.invalidate(); ticker = nil
+        progress?.stop(); progress = nil
     }
 
     private func short(_ s: String) -> String {
