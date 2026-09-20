@@ -13,6 +13,27 @@ enum Config {
     /// ElevenLabs default voice. Override with AGENTX_VOICE_ID.
     static let voiceID = env("AGENTX_VOICE_ID") ?? "21m00Tcm4TlvDq8ikWAM"
     static let sttModel = env("AGENTX_STT_MODEL") ?? "scribe_v1"
+
+    /// How to invoke smart paste. Run through a login shell, so this is a
+    /// command line rather than a path.
+    ///
+    /// Environment, then a file, then a guess — the same order as the keys
+    /// below and for the same reason, with one extra: `agentx` on PATH is
+    /// very often the WRONG agentx. It is commonly a globally installed
+    /// copy of the published package rather than the local build, so it
+    /// silently lacks anything unreleased, and a login shell may resolve
+    /// `node` to a version old enough that the CLI will not start at all.
+    /// Both were true on the machine this was written on. The file is how
+    /// a machine says which build it actually means.
+    static let pasteCommand: String = {
+        if let c = env("AGENTX_PASTE_COMMAND"), !c.isEmpty { return c }
+        if let s = try? String(contentsOfFile: "\(NSHomeDirectory())/.agentx/paste-command.txt",
+                               encoding: .utf8) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { return t }
+        }
+        return "agentx paste"
+    }()
     static let ttsModel = env("AGENTX_TTS_MODEL") ?? "eleven_turbo_v2_5"
 
     static let mlxWhisper = env("AGENTX_MLX_WHISPER")

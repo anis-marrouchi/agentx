@@ -13,6 +13,7 @@ import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
 import { look as lookCmd } from "@/commands/look"
+import { paste as pasteCmd } from "@/commands/paste"
 import { decide as decideCmd } from "@/commands/decide"
 import { teach as teachCmd } from "@/commands/teach"
 import { attach as attachCmd } from "@/commands/attach"
@@ -84,6 +85,7 @@ export async function buildProgram(): Promise<Command> {
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
     lookCmd,                     // computer use: see state the tree cannot report
+    pasteCmd,                    // clipboard, reshaped for where it lands
     decideCmd,                   // typed decisions, for agents
     teachCmd,                    // talk and point, at the same time
     usage,                       // what it cost, what gets used

@@ -10,13 +10,20 @@ import Carbon.HIToolbox
 ///
 /// ⌥Space and not ⌃Space: control-space is bound to input-source switching
 /// on many Macs, and silently stealing it is a bad first impression.
+///
+/// Each instance carries its own `id` and IGNORES events for any other.
+/// That is not decoration: every installed handler is called for EVERY
+/// registered hotkey, so a second binding without this filter makes both
+/// actions fire on either key.
 final class Hotkey {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let onPress: () -> Void
     private let onRelease: () -> Void
+    private let id: UInt32
 
-    init(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+    init(id: UInt32 = 1, onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+        self.id = id
         self.onPress = onPress
         self.onRelease = onRelease
     }
@@ -30,6 +37,15 @@ final class Hotkey {
         InstallEventHandler(GetApplicationEventTarget(), { _, event, ctx in
             guard let ctx, let event else { return noErr }
             let me = Unmanaged<Hotkey>.fromOpaque(ctx).takeUnretainedValue()
+
+            // Whose key was it? Handlers are global, so this instance must
+            // discard anything that is not its own.
+            var fired = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                              EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &fired)
+            guard fired.id == me.id else { return noErr }
+
             let kind = GetEventKind(event)
             DispatchQueue.main.async {
                 if kind == UInt32(kEventHotKeyPressed) { me.onPress() } else { me.onRelease() }
@@ -37,8 +53,8 @@ final class Hotkey {
             return noErr
         }, spec.count, &spec, context, &handler)
 
-        let id = EventHotKeyID(signature: OSType(0x41475856), id: 1) // 'AGXV'
-        RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        let hotKeyID = EventHotKeyID(signature: OSType(0x41475856), id: id) // 'AGXV'
+        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
     }
 
     deinit {

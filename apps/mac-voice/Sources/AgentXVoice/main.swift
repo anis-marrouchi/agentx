@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// AgentX Voice — push-to-talk widget over the daemon's /ask endpoint.
 ///
@@ -19,6 +20,7 @@ final class App: NSObject, NSApplicationDelegate {
     private let card = ResultCard()
     private let recorder = Recorder()
     private var hotkey: Hotkey?
+    private var pasteHotkey: Hotkey?
     private var busy = false
     private var progress: Progress?
     private var ticker: Timer?
@@ -27,14 +29,47 @@ final class App: NSObject, NSApplicationDelegate {
     private var spokenSteps = Set<String>()
     private var lastSpokeAt = Date.distantPast
 
+    /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
+    private func smartPaste() {
+        guard !busy else { return }
+        busy = true
+        panel.render(.working("Pasting…", 0))
+        SmartPaste.run { [weak self] result in
+            guard let self else { return }
+            self.busy = false
+            guard let result else {
+                self.panel.render(.error("Smart paste unavailable"))
+                return
+            }
+            // Quiet when nothing changed: "pasted as copied" is the common
+            // case and does not deserve an announcement.
+            if let what = SmartPaste.summary(result) {
+                self.panel.render(.working(what, 0))
+            }
+            self.panel.render(.idle)
+        }
+    }
+
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
         panel.orderFrontRegardless()
 
         hotkey = Hotkey(
+            id: 1,
             onPress: { [weak self] in self?.startListening() },
             onRelease: { [weak self] in self?.stopAndSend() })
         hotkey?.register()
+
+        // ⌘⌥V: reshape the clipboard for wherever the caret is, then paste.
+        // Fires on RELEASE so the modifiers are up before cmd-V is sent —
+        // pressing it while ⌘⌥ are still held produces a different chord
+        // in the destination app.
+        pasteHotkey = Hotkey(
+            id: 2,
+            onPress: {},
+            onRelease: { [weak self] in self?.smartPaste() })
+        pasteHotkey?.register(keyCode: UInt32(kVK_ANSI_V),
+                              modifiers: UInt32(cmdKey | optionKey))
 
         recorder.requestPermission { [weak self] granted in
             Task { @MainActor in
