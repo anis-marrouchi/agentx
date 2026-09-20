@@ -13,6 +13,7 @@ import {
   toSelection,
   type UICandidate,
   type UIElementAnswers,
+  type PriorAttempt,
 } from "@/decisions/seats/ui-element"
 import { buildCandidates } from "@/computer-use/candidates"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
@@ -120,6 +121,9 @@ export const teach = new Command()
       } catch { /* HUD is optional */ }
     }
 
+    // What has been tried on this screen, carried between lookups.
+    const attempts: PriorAttempt[] = []
+
     for (const [i, step] of lesson.steps.entries()) {
       console.log(`  ${chalk.dim(String(i + 1).padStart(2))}  ${step.say}`)
       setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "talking")
@@ -133,8 +137,9 @@ export const teach = new Command()
 
       // Locate while the sentence is still playing, so the highlight
       // lands as the sentence ends rather than after a pause.
-      const target = step.find ? await locate(step.find) : null
+      const target = step.find ? await locate(step.find, attempts) : null
       if (step.find && !target) {
+        attempts.push({ tried: step.find, changed: false, note: "not found on screen" })
         // Say so rather than silently skipping: a lesson that points at
         // nothing and carries on is worse than one that admits the screen
         // is not where it expected.
@@ -155,8 +160,18 @@ export const teach = new Command()
           "--hold", String(step.click || step.type ? 0.5 : step.holdSeconds ?? 2.6),
         ]).catch(() => {})
         if (step.click) {
-          const err = await act(["click"])
+          const { error: err, changed } = await act(["click"])
           if (err) console.log(chalk.red(`      ✗ ${err}`))
+          // What actually happened feeds the next lookup, so a control
+          // that did nothing is not chosen again.
+          attempts.push({
+            tried: step.label ?? step.find ?? "control",
+            changed: changed !== false,
+            note: err ?? undefined,
+          })
+          if (changed === false) {
+            console.log(chalk.yellow(`      · clicked, but the screen did not change`))
+          }
           // Clicking a link navigates. Give the page a beat, then the next
           // step re-reads the screen rather than acting on a stale tree.
           await sleep(step.afterClickWaitMs ?? 1500)
@@ -172,13 +187,23 @@ export const teach = new Command()
       // that the feature is broken rather than that it was protected.
       if (step.type) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, step.type, "typing")
-        const err = await act(["type", "--text", step.type])
-        if (err) { console.log(chalk.red(`      ✗ ${err}`)); setState("Blocked", err, "waiting"); await sleep(2000) }
+        const { error: err } = await act(["type", "--text", step.type])
+        if (err) {
+          console.log(chalk.red(`      ✗ ${err}`))
+          setState("Blocked", err, "waiting")
+          attempts.push({ tried: `type into ${step.label ?? "the field"}`, changed: false, note: err })
+          await sleep(2000)
+        }
       }
       if (step.key) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, `↵ ${step.key}`, "typing")
-        const err = await act(["key", "--name", step.key])
-        if (err) { console.log(chalk.red(`      ✗ ${err}`)); setState("Blocked", err, "waiting"); await sleep(2000) }
+        const { error: err } = await act(["key", "--name", step.key])
+        if (err) {
+          console.log(chalk.red(`      ✗ ${err}`))
+          setState("Blocked", err, "waiting")
+          attempts.push({ tried: `press ${step.key}`, changed: false, note: err })
+          await sleep(2000)
+        }
       }
       if (!target && !step.type && !step.key) await sleep((step.holdSeconds ?? 1.2) * 1000)
       else if (step.holdSeconds) await sleep(step.holdSeconds * 1000)
@@ -202,27 +227,28 @@ export const teach = new Command()
     console.log(chalk.green(`\n  done.\n`))
   })
 
-/** Run a helper verb, returning its error message or null on success.
- *  The helper always answers with JSON, including on refusal. */
-async function act(argv: string[]): Promise<string | null> {
+/** Run a helper verb. Returns the error message, or null on success, plus
+ *  whether the screen actually changed when the verb reports it. */
+async function act(argv: string[]): Promise<{ error: string | null; changed?: boolean }> {
   try {
     const { stdout } = await run(HELPER, argv)
     const parsed = JSON.parse(stdout || "{}")
-    return parsed.ok === false ? String(parsed.error ?? "refused") : null
+    if (parsed.ok === false) return { error: String(parsed.error ?? "refused") }
+    return { error: null, changed: parsed.changed }
   } catch (e: any) {
     // A non-zero exit still carries the JSON on stdout.
     try {
       const parsed = JSON.parse(e?.stdout || "{}")
-      if (parsed.error) return String(parsed.error)
+      if (parsed.error) return { error: String(parsed.error) }
     } catch { /* not JSON */ }
-    return e?.message ?? "failed"
+    return { error: e?.message ?? "failed" }
   }
 }
 
 interface Located { x: number; y: number; width: number; height: number }
 
 /** Read the screen and ask which control the description names. */
-async function locate(description: string): Promise<Located | null> {
+async function locate(description: string, priorAttempts: PriorAttempt[] = []): Promise<Located | null> {
   try {
     const { stdout } = await run(HELPER, ["read", "--max", "400"])
     const snap = JSON.parse(stdout) as {
@@ -235,7 +261,7 @@ async function locate(description: string): Promise<Located | null> {
 
     const result = await askSeat(
       UI_ELEMENT_SEAT,
-      uiElementState({ request: description, app: snap.app, window: snap.window, candidates }),
+      uiElementState({ request: description, app: snap.app, window: snap.window, candidates, priorAttempts }),
       uiElementQuestions(candidates),
       { features: { app: snap.app, via: "teach" } },
     )

@@ -29,19 +29,49 @@ export interface UICandidate {
   enabled: boolean
 }
 
+/** Something already attempted on this screen, and what came of it. */
+export interface PriorAttempt {
+  /** The control that was chosen, as it was labelled. */
+  tried: string
+  /** Did the screen actually change afterwards? Straight from the
+   *  before/after comparison, not from whether the call returned. */
+  changed: boolean
+  /** Optional detail — "refused: focus is a link", "not found". */
+  note?: string
+}
+
 export interface UIElementInput {
   /** What the user asked for, in their words. */
   request: string
   app: string
   window?: string | null
   candidates: UICandidate[]
+  /** What has already been tried on this screen, most recent last.
+   *
+   *  Without it every lookup is the model's first: it re-picks the control
+   *  that just did nothing, and a failed step repeats until something
+   *  times out. With it, "I clicked Search and the screen did not change"
+   *  is evidence that the next answer should differ. */
+  priorAttempts?: PriorAttempt[]
 }
 
 export function uiElementState(input: UIElementInput): StateValue {
+  const prior = (input.priorAttempts ?? []).slice(-4)
   return {
     request: input.request,
     app: input.app,
     window: input.window ?? null,
+    // Only when there is something to say. An empty array in the state is
+    // noise the model has to read past on the common first attempt.
+    ...(prior.length
+      ? {
+          alreadyTried: prior.map((p) => ({
+            control: clip(p.tried, 80),
+            screenChanged: p.changed,
+            note: p.note ? clip(p.note, 120) : null,
+          })),
+        }
+      : {}),
     controls: input.candidates.map((c) => ({
       id: String(c.id),
       role: humanRole(c.role),
@@ -60,7 +90,11 @@ export function uiElementQuestions(candidates: UICandidate[]) {
     criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}`
   }
   return {
-    target: choice(criteria, "Which control does the request refer to?"),
+    target: choice(
+      criteria,
+      "Which control does the request refer to? If `alreadyTried` shows a control was " +
+        "clicked and the screen did not change, that one did not work — choose differently.",
+    ),
     present: noul(
       "The screen actually contains a control matching the request.",
       {
