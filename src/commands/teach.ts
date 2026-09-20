@@ -46,6 +46,8 @@ export const teach = new Command()
   .option("--voice <id>", "ElevenLabs voice id")
   .option("--no-speak", "point only, print the narration")
   .option("--no-hud", "skip the on-screen callout")
+  .option("--record", "record with Screen Studio (display) around the lesson")
+  .option("--record-window", "record a single window instead of the display")
   .action(async (lessonId: string | undefined, opts) => {
     if (!lessonId) {
       console.log(chalk.bold("\n  lessons\n"))
@@ -67,6 +69,24 @@ export const teach = new Command()
 
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
+
+    // Screen Studio exposes no AppleScript dictionary and no URL scheme,
+    // but it does register global shortcuts — and synthetic modifier keys
+    // reach those the same way a keyboard does. Recording is opt-in: a
+    // tool that silently starts capturing the screen is not one anybody
+    // should have to think about twice.
+    if (opts.record || opts.recordWindow) {
+      const launched = await ensureScreenStudio()
+      if (!launched) {
+        console.log(chalk.yellow("  Screen Studio isn't running — skipping the recording"))
+      } else {
+        const combo = opts.recordWindow ? "4" : "3"
+        console.log(chalk.dim(`  recording (⌘⌥${combo}) — finish is ⌘⌃↵`))
+        await run(HELPER, ["key", "--name", combo, "--mod", "cmd+opt"]).catch(() => {})
+        // Screen Studio needs a moment to arm before the first frame.
+        await sleep(2500)
+      }
+    }
 
     // A callout that persists while the speech moves on. Spawned once and
     // fed lines, not respawned per step — a fresh window each time would
@@ -128,6 +148,13 @@ export const teach = new Command()
     setState("Done", lesson.title, "done")
     await sleep(1200)
     try { hud?.stdin?.end() } catch { /* already gone */ }
+
+    if (opts.record || opts.recordWindow) {
+      // Stop before the HUD teardown finishes, so the recording does not
+      // end on a stray fade.
+      await run(HELPER, ["key", "--name", "return", "--mod", "cmd+ctrl"]).catch(() => {})
+      console.log(chalk.dim("  recording finished — Screen Studio has the take"))
+    }
     console.log(chalk.green(`\n  done.\n`))
   })
 
@@ -198,6 +225,23 @@ function elevenLabsKey(): string | null {
     } catch { /* next */ }
   }
   return null
+}
+
+/** Screen Studio has to be running for its global shortcuts to exist. */
+async function ensureScreenStudio(): Promise<boolean> {
+  try {
+    await run("/usr/bin/pgrep", ["-f", "Screen Studio"])
+    return true
+  } catch {
+    try {
+      await run("/usr/bin/open", ["-a", "Screen Studio"])
+      // Cold launch: the shortcut is not registered until it is up.
+      await sleep(4000)
+      return true
+    } catch {
+      return false
+    }
+  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
