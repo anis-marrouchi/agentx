@@ -12,7 +12,18 @@ import AppKit
 /// that it UPDATES: a fresh window per step would flash, lose its
 /// position, and steal focus. One window, many lines, closed on EOF.
 ///
-///   {"title":"Step 2 of 9","body":"Type from:naval","state":"typing"}
+///   {"title":"Step 2 of 9","body":"Type from:naval","state":"typing",
+///    "avoid":{"x":218,"y":145,"w":420,"h":40}}
+///
+/// `avoid` is the rectangle the lesson is about to point at. The callout
+/// moves out of its way.
+///
+/// This is not the same problem as click occlusion, and a hit test does
+/// not catch it: the panel sets ignoresMouseEvents, so a click passes
+/// straight through and the window server correctly reports whatever is
+/// underneath. It is invisible to a click and very visible to a person —
+/// which is exactly how this window ended up sitting on top of the search
+/// field a lesson was pointing at, with nothing able to notice.
 ///
 /// Anything unparseable is ignored rather than fatal — a malformed line
 /// from a caller should not take down the display mid-lesson.
@@ -61,11 +72,42 @@ enum HUD {
             bodyField.maximumNumberOfLines = 2
             blur.addSubview(bodyField)
 
-            // Top centre: out of the way of most content, and where a
-            // person already looks for system feedback.
-            if let screen = NSScreen.main {
-                let v = screen.visibleFrame
-                setFrameOrigin(NSPoint(x: v.midX - 230, y: v.maxY - 130))
+            moveToDefault()
+        }
+
+        /// Top centre: out of the way of most content, and where a person
+        /// already looks for system feedback.
+        func moveToDefault() {
+            guard let screen = NSScreen.main else { return }
+            let v = screen.visibleFrame
+            setFrameOrigin(NSPoint(x: v.midX - frame.width / 2, y: v.maxY - frame.height - 34))
+        }
+
+        /// Move below the target when the default position would cover it.
+        ///
+        /// `rect` arrives in accessibility coordinates (top-left origin);
+        /// windows use bottom-left, so it is flipped before comparing.
+        func avoid(_ rect: CGRect) {
+            guard let screen = NSScreen.main else { return }
+            let v = screen.visibleFrame
+            let flipped = CGRect(x: rect.origin.x,
+                                 y: screen.frame.maxY - rect.origin.y - rect.height,
+                                 width: rect.width, height: rect.height)
+            moveToDefault()
+            // A margin, so the callout does not merely touch the target's
+            // edge and still crowd it.
+            guard frame.insetBy(dx: -16, dy: -16).intersects(flipped) else { return }
+
+            // Prefer just below the target; fall back to just above when
+            // there is no room, and give up rather than push it off screen.
+            let below = flipped.minY - frame.height - 20
+            if below > v.minY {
+                setFrameOrigin(NSPoint(x: frame.origin.x, y: below))
+            } else {
+                let above = flipped.maxY + 20
+                if above + frame.height < v.maxY {
+                    setFrameOrigin(NSPoint(x: frame.origin.x, y: above))
+                }
             }
         }
 
@@ -106,6 +148,13 @@ enum HUD {
                             Brand.metaString(t, size: 10, color: .secondaryLabelColor)
                     }
                     if let b = obj["body"] as? String { window.bodyField.stringValue = b }
+                    if let a = obj["avoid"] as? [String: Any],
+                       let x = a["x"] as? Double, let y = a["y"] as? Double,
+                       let w = a["w"] as? Double, let h = a["h"] as? Double {
+                        window.avoid(CGRect(x: x, y: y, width: w, height: h))
+                    } else {
+                        window.moveToDefault()
+                    }
                     let state = (obj["state"] as? String) ?? "talking"
                     let c = colours[state] ?? Brand.primaryBright
                     window.dot.layer?.backgroundColor = c.cgColor

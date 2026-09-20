@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import { execFile, spawn, type ChildProcess } from "child_process"
 import { promisify } from "util"
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from "fs"
 import { resolve, join } from "path"
 import { tmpdir } from "os"
 import chalk from "chalk"
@@ -46,8 +46,8 @@ export const teach = new Command()
   .option("--voice <id>", "ElevenLabs voice id")
   .option("--no-speak", "point only, print the narration")
   .option("--no-hud", "skip the on-screen callout")
-  .option("--record", "record with Screen Studio (display) around the lesson")
-  .option("--record-window", "record a single window instead of the display")
+  .option("--record", "record the screen (screencapture) around the lesson")
+  .option("--record-dir <path>", "where to write the recording")
   .action(async (lessonId: string | undefined, opts) => {
     if (!lessonId) {
       console.log(chalk.bold("\n  lessons\n"))
@@ -70,22 +70,35 @@ export const teach = new Command()
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
 
-    // Screen Studio exposes no AppleScript dictionary and no URL scheme,
-    // but it does register global shortcuts — and synthetic modifier keys
-    // reach those the same way a keyboard does. Recording is opt-in: a
-    // tool that silently starts capturing the screen is not one anybody
-    // should have to think about twice.
-    if (opts.record || opts.recordWindow) {
-      const launched = await ensureScreenStudio()
-      if (!launched) {
-        console.log(chalk.yellow("  Screen Studio isn't running — skipping the recording"))
-      } else {
-        const combo = opts.recordWindow ? "4" : "3"
-        console.log(chalk.dim(`  recording (⌘⌥${combo}) — finish is ⌘⌃↵`))
-        await run(HELPER, ["key", "--name", combo, "--mod", "cmd+opt"]).catch(() => {})
-        // Screen Studio needs a moment to arm before the first frame.
-        await sleep(2500)
-      }
+    // Recording uses screencapture, not Screen Studio.
+    //
+    // Screen Studio's ⌘⌥3 DOES fire — it opens a picker, with a "Start
+    // Recording" window and a display highlighter. But the picker needs
+    // confirming, Return does not confirm it, and the window exposes no
+    // accessibility children at all (it is Electron, like VS Code), so
+    // there is nothing to locate and click. Driving it would mean clicking
+    // blind at a hardcoded offset, which breaks the first time the app
+    // moves a button.
+    //
+    // screencapture ships with macOS, takes a path, and either produces a
+    // file or does not. Opt-in either way: a tool that silently starts
+    // capturing the screen is not one anybody should have to think twice
+    // about.
+    let recorder: ChildProcess | null = null
+    let recordingPath: string | null = null
+    if (opts.record) {
+      recordingPath = join(
+        opts.recordDir || process.cwd(),
+        `teach-${lesson.id}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.mov`,
+      )
+      console.log(chalk.dim(`  recording → ${recordingPath}`))
+      // -v video, -x silent (no shutter sound in the take), -C shows the
+      // cursor, which is the entire point of a pointing lesson.
+      recorder = spawn("/usr/sbin/screencapture", ["-v", "-x", "-C", recordingPath], {
+        stdio: ["pipe", "ignore", "ignore"],
+      })
+      // The first frames land before capture is actually running.
+      await sleep(2000)
     }
 
     // A callout that persists while the speech moves on. Spawned once and
@@ -94,8 +107,17 @@ export const teach = new Command()
     const hud: ChildProcess | null = opts.hud === false
       ? null
       : spawn(HELPER, ["hud"], { stdio: ["pipe", "ignore", "ignore"] })
-    const setState = (title: string, body: string, state: string) => {
-      try { hud?.stdin?.write(JSON.stringify({ title, body, state }) + "\n") } catch { /* HUD is optional */ }
+    // `avoid` carries the rectangle about to be highlighted, so the
+    // callout steps out of its way. Without it the callout sat on top of
+    // the very control the lesson was pointing at — invisible to a click,
+    // and completely in the way of a person.
+    const setState = (
+      title: string, body: string, state: string,
+      avoid?: { x: number; y: number; w: number; h: number },
+    ) => {
+      try {
+        hud?.stdin?.write(JSON.stringify({ title, body, state, avoid }) + "\n")
+      } catch { /* HUD is optional */ }
     }
 
     for (const [i, step] of lesson.steps.entries()) {
@@ -121,7 +143,8 @@ export const teach = new Command()
       await speaking
 
       if (target) {
-        setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "pointing")
+        setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "pointing",
+                 { x: target.x, y: target.y, w: target.width, h: target.height })
         await run(HELPER, [
           "point",
           "--x", String(target.x), "--y", String(target.y),
@@ -164,11 +187,17 @@ export const teach = new Command()
     await sleep(1200)
     try { hud?.stdin?.end() } catch { /* already gone */ }
 
-    if (opts.record || opts.recordWindow) {
-      // Stop before the HUD teardown finishes, so the recording does not
-      // end on a stray fade.
-      await run(HELPER, ["key", "--name", "return", "--mod", "cmd+ctrl"]).catch(() => {})
-      console.log(chalk.dim("  recording finished — Screen Studio has the take"))
+    if (recorder && recordingPath) {
+      // screencapture -v stops cleanly on SIGINT and finalises the file;
+      // SIGTERM leaves an unplayable container.
+      recorder.kill("SIGINT")
+      await sleep(2500)
+      try {
+        const { size } = statSync(recordingPath)
+        console.log(chalk.green(`  recorded ${(size / 1_048_576).toFixed(1)} MB → ${recordingPath}`))
+      } catch {
+        console.log(chalk.yellow("  recording produced no file — check Screen Recording permission"))
+      }
     }
     console.log(chalk.green(`\n  done.\n`))
   })
@@ -257,23 +286,6 @@ function elevenLabsKey(): string | null {
     } catch { /* next */ }
   }
   return null
-}
-
-/** Screen Studio has to be running for its global shortcuts to exist. */
-async function ensureScreenStudio(): Promise<boolean> {
-  try {
-    await run("/usr/bin/pgrep", ["-f", "Screen Studio"])
-    return true
-  } catch {
-    try {
-      await run("/usr/bin/open", ["-a", "Screen Studio"])
-      // Cold launch: the shortcut is not registered until it is up.
-      await sleep(4000)
-      return true
-    } catch {
-      return false
-    }
-  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

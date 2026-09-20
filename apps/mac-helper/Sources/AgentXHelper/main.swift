@@ -62,6 +62,33 @@ case "point":
                   instant: args.contains("--instant"))
     FileHandle.standardOutput.write(#"{"ok":true,"pointed":true}"#.data(using: .utf8)!)
 
+case "hittest":
+    // What is actually on top at this point. The occlusion check.
+    guard let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? "") else {
+        fail("hittest needs --x --y")
+    }
+    var expect: CGRect?
+    if let ex = Double(flag("ex") ?? ""), let ey = Double(flag("ey") ?? ""),
+       let ew = Double(flag("ew") ?? ""), let eh = Double(flag("eh") ?? "") {
+        expect = CGRect(x: ex, y: ey, width: ew, height: eh)
+    }
+    guard let hit = Vision.hitTest(x: x, y: y, expect: expect) else {
+        fail("nothing at (\(Int(x)), \(Int(y)))")
+    }
+    guard let hd = try? JSONEncoder().encode(hit) else { fail("failed to encode hit") }
+    FileHandle.standardOutput.write(hd)
+
+case "capture":
+    guard let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
+          let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? ""),
+          let out = flag("out") else {
+        fail("capture needs --x --y --w --h --out")
+    }
+    guard Vision.capture(CGRect(x: x, y: y, width: w, height: h), to: out) else {
+        fail("capture failed — check Screen Recording permission")
+    }
+    FileHandle.standardOutput.write(#"{"ok":true,"captured":true}"#.data(using: .utf8)!)
+
 case "focused":
     // What has keyboard focus right now. The safety check before typing.
     guard let f = Focus.current() else { fail("nothing focused") }
@@ -104,13 +131,54 @@ case "click":
     // Clicks where the cursor already is, so a caller must point first.
     // Deliberately not folded into `point`: locating something should
     // never be the same act as pressing it.
+    //
+    // Before pressing, LOOK. The accessibility tree reports what exists,
+    // not what is visible, so a control can be reported exactly where an
+    // overlay is covering it — this tool's own HUD did precisely that.
+    // The hit test resolves through the window server and sees what a
+    // click would really land on.
+    if !args.contains("--force"), let p = CGEvent(source: nil)?.location {
+        if let hit = Vision.hitTest(x: p.x, y: p.y),
+           let expected = flag("expect"), !expected.isEmpty {
+            let seen = "\(hit.role) \(hit.label)".lowercased()
+            if !seen.contains(expected.lowercased()) {
+                fail("refusing to click: \(hit.app) shows \(hit.role) \"\(hit.label)\" at the cursor, not \"\(expected)\" — something is covering it")
+            }
+        }
+    }
     // Visual first: a press people can see leads the reaction slightly,
     // the way a real one does.
     if !args.contains("--quiet") { Pointer.clickFlourish() }
+
+    // Snapshot a patch around the cursor so the caller can be told whether
+    // anything actually happened, rather than inferring it from a
+    // successful call.
+    var beforeShot: CGImage?
+    var patch = CGRect.zero
+    if let p = CGEvent(source: nil)?.location {
+        patch = CGRect(x: p.x - 90, y: p.y - 60, width: 180, height: 120)
+        beforeShot = Vision.snapshot(patch)
+    }
+
     Typer.click(button: flag("button") ?? "left",
                 clicks: Int(flag("clicks") ?? "1") ?? 1,
                 modifiers: (flag("mod") ?? "").split(separator: "+").map(String.init))
-    FileHandle.standardOutput.write(#"{"ok":true,"clicked":true}"#.data(using: .utf8)!)
+
+    // A UI needs a frame or two to react.
+    Thread.sleep(forTimeInterval: Double(flag("settle") ?? "") ?? 0.45)
+    var changed: Bool?
+    if beforeShot != nil, let diff = Vision.difference(patch, beforeShot) {
+        // 1.5% mean absolute difference over a 16x16 grid: enough to catch
+        // a button state or a menu opening, high enough to ignore a
+        // blinking caret.
+        changed = diff > 0.015
+    }
+    let payload: [String: Any] = [
+        "ok": true, "clicked": true,
+        "changed": changed as Any,
+    ]
+    FileHandle.standardOutput.write(
+        (try? JSONSerialization.data(withJSONObject: payload)) ?? Data())
 
 case "scroll":
     Typer.scroll(dx: Int32(flag("dx") ?? "0") ?? 0,

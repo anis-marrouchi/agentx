@@ -74,6 +74,16 @@ enum AgentClient {
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
 
+        // 202 means accepted-but-busy: the daemon has already written a
+        // speakable explanation into `text`. Falling through to the error
+        // path here is what made "she is still working" sound like "that
+        // didn't work".
+        if let http = response as? HTTPURLResponse, http.statusCode == 202,
+           let queuedText = reply?.text, !queuedText.isEmpty {
+            return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
+                          durationMs: reply?.duration)
+        }
+
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let detail = reply?.error ?? String(data: data.prefix(200), encoding: .utf8) ?? ""
             throw VoiceError.api("daemon HTTP \(http.statusCode): \(detail)")

@@ -4360,6 +4360,30 @@ export class AgentXDaemon {
             context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
           })
 
+          // Being busy is not an error.
+          //
+          // When the agent already has a turn running, execute returns the
+          // `__queued__` sentinel: the request IS accepted and will run,
+          // but a synchronous caller cannot observe its result. /ask was
+          // reporting that as HTTP 500, so the widget said "Sorry, that
+          // didn't work" while the agent was in fact working on what the
+          // person asked for thirty seconds earlier. The honest answer is
+          // to say so, out loud, rather than to claim a failure.
+          if (response.error?.startsWith("__queued__")) {
+            const pending = Number(response.error.split(":")[2] || 1)
+            this.json(res, 202, {
+              text: pending > 1
+                ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
+                : "I'm still working on your last request. Give me a moment.",
+              full: null,
+              ui: null,
+              queued: true,
+              pending,
+              duration: response.duration,
+            })
+            return
+          }
+
           // Rich content rides the same in-band directive Telegram and
           // WhatsApp already use, so an agent has ONE way to attach a link
           // or an image regardless of where it is speaking. Parsed here

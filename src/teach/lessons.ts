@@ -70,14 +70,17 @@ const xAdvancedSearch: Lesson = {
       afterClickWaitMs: 900,
     },
     {
-      say: "Watch. From colon, then a username, limits results to just that person.",
-      type: "from:naval ",
-      holdSeconds: 1.2,
-    },
-    {
-      say: "Now the part worth knowing. Min underscore faves, colon, five hundred. Only posts with at least five hundred likes.",
-      type: "min_faves:500",
-      holdSeconds: 1.6,
+      // One `type`, not two.
+      //
+      // Split across two steps, only the second survived: x.com is a SPA
+      // and its search field re-rendered between them, discarding the
+      // first. The take showed q=min_faves:500 with "from:naval" gone and
+      // an error on the results page. Any field with autocomplete or
+      // controlled state can do this, so a single query goes in a single
+      // call and the narration carries the explanation instead.
+      say: "Watch. From colon, then a username, limits it to that person. Then min underscore faves, colon, five hundred — only posts with at least five hundred likes.",
+      type: "from:naval min_faves:500",
+      holdSeconds: 1.8,
     },
     {
       say: "And submit.",
