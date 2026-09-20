@@ -9,6 +9,11 @@ import AppKit
 /// Deliberately has NO computer-use capability in this slice. The point is
 /// to find out whether talking to an agent this way is actually pleasant
 /// before building the part that can click things.
+/// Main-actor isolated in full. An NSApplicationDelegate touches AppKit in
+/// every method, and the crash that prompted this was UI state reached from
+/// a background queue. Isolating the whole class turns that from a runtime
+/// heap corruption into a compile error.
+@MainActor
 final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
     private let recorder = Recorder()
@@ -29,9 +34,11 @@ final class App: NSObject, NSApplicationDelegate {
         hotkey?.register()
 
         recorder.requestPermission { [weak self] granted in
-            guard let self else { return }
-            if !granted { self.panel.render(.error("Microphone denied")) }
-            else { Log.info("ready — hold ⌥Space to talk (agent: \(Config.agentID))") }
+            Task { @MainActor in
+                guard let self else { return }
+                if !granted { self.panel.render(.error("Microphone denied")) }
+                else { Log.info("ready — hold ⌥Space to talk (agent: \(Config.agentID))") }
+            }
         }
     }
 
@@ -97,17 +104,23 @@ final class App: NSObject, NSApplicationDelegate {
         lastStep = "Thinking…"
         panel.render(.working(lastStep, 0))
 
+        // Progress delivers on its own serial queue; hop to main before
+        // touching any view.
         progress = Progress(agentID: Config.agentID) { [weak self] step in
-            guard let self, self.busy else { return }
-            self.lastStep = step
-            Log.info("step: \(step)")
-            self.panel.render(.working(step, Int(Date().timeIntervalSince(self.startedAt))))
+            Task { @MainActor in
+                guard let self, self.busy else { return }
+                self.lastStep = step
+                Log.info("step: \(step)")
+                self.panel.render(.working(step, Int(Date().timeIntervalSince(self.startedAt))))
+            }
         }
         progress?.start()
 
         ticker = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, self.busy else { return }
-            self.panel.render(.working(self.lastStep, Int(Date().timeIntervalSince(self.startedAt))))
+            Task { @MainActor in
+                guard let self, self.busy else { return }
+                self.panel.render(.working(self.lastStep, Int(Date().timeIntervalSince(self.startedAt))))
+            }
         }
     }
 
@@ -122,13 +135,15 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func resetSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            guard let self, !self.recorder.isRecording, !self.busy else { return }
-            self.panel.render(.idle)
+            MainActor.assumeIsolated {
+                guard let self, !self.recorder.isRecording, !self.busy else { return }
+                self.panel.render(.idle)
+            }
         }
     }
 }
 
 let app = NSApplication.shared
-let delegate = App()
+let delegate = MainActor.assumeIsolated { App() }
 app.delegate = delegate
 app.run()

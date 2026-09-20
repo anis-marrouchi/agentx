@@ -83,6 +83,10 @@ final class Panel: NSPanel {
         setFrameOrigin(NSPoint(x: v.maxX - frame.width - 24, y: v.minY + 24))
     }
 
+    /// AppKit is not thread-safe. Marking this explicitly means a stray
+    /// call from a delegate queue is a compile error rather than heap
+    /// corruption that traps somewhere unrelated an hour later.
+    @MainActor
     func render(_ state: State) {
         label.stringValue = state.text
         label.textColor = state.color

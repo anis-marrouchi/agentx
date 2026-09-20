@@ -18,31 +18,64 @@ final class Progress: NSObject, URLSessionDataDelegate {
     private let agentID: String
     private let onStep: (String) -> Void
 
+    /// Every touch of `buffer`, `task` and `session` happens here.
+    ///
+    /// URLSession delivers on its own queue while stop() is called from the
+    /// main thread at the end of a turn, and both mutated `buffer`. Two
+    /// threads mutating a Data value is not a race you get to lose
+    /// gracefully — it corrupts the heap, and the process traps later in
+    /// unrelated code (a CATransaction flush, in the crash that prompted
+    /// this). Serialising is the fix; a lock around only removeAll() would
+    /// not be, because the append path mutates it too.
+    private let queue = DispatchQueue(label: "tn.noqta.agentx.voice.progress")
+    private var stopped = false
+
     init(agentID: String, onStep: @escaping (String) -> Void) {
         self.agentID = agentID
         self.onStep = onStep
     }
 
     func start() {
+        queue.async { [weak self] in self?.startLocked() }
+    }
+
+    private func startLocked() {
+        guard !stopped else { return }
         guard let url = URL(string: "\(Config.daemonURL)/events?type=task") else { return }
         var req = URLRequest(url: url)
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 3600
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 3600
-        let s = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+        // Deliver on our own serial queue rather than an arbitrary one, so
+        // didReceive and stop() cannot interleave.
+        let opQueue = OperationQueue()
+        opQueue.maxConcurrentOperationCount = 1
+        opQueue.underlyingQueue = queue
+        let s = URLSession(configuration: cfg, delegate: self, delegateQueue: opQueue)
         session = s
         task = s.dataTask(with: req)
         task?.resume()
     }
 
     func stop() {
-        task?.cancel(); task = nil
-        session?.invalidateAndCancel(); session = nil
-        buffer.removeAll()
+        queue.async { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.stopped = true
+            self.task?.cancel(); self.task = nil
+            // invalidateAndCancel breaks the session's strong reference to
+            // this delegate; without it the object leaks for the life of
+            // the app and keeps receiving events after the turn ended.
+            self.session?.invalidateAndCancel(); self.session = nil
+            self.buffer.removeAll()
+        }
     }
 
+    deinit { task?.cancel(); session?.invalidateAndCancel() }
+
+    // Already on `queue` — see the delegateQueue wiring in startLocked().
     func urlSession(_ s: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard !stopped else { return }
         buffer.append(data)
         // SSE frames are separated by a blank line. Anything not yet
         // terminated stays buffered for the next packet.

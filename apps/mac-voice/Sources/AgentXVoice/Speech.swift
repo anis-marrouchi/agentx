@@ -155,7 +155,38 @@ final class Player: NSObject, AVAudioPlayerDelegate {
     }
 }
 
+/// Logs to stderr AND to a file.
+///
+/// The app is normally launched with `open`, which sends stderr nowhere.
+/// The first crash left a .ips report and no application log at all, so
+/// the cause had to be reconstructed from a stack trace. A few lines of
+/// file logging is the difference between reading what happened and
+/// inferring it.
 enum Log {
-    static func warn(_ s: String) { FileHandle.standardError.write("[agentx-voice] \(s)\n".data(using: .utf8)!) }
-    static func info(_ s: String) { FileHandle.standardError.write("[agentx-voice] \(s)\n".data(using: .utf8)!) }
+    private static let queue = DispatchQueue(label: "tn.noqta.agentx.voice.log")
+    private static let path = "\(NSHomeDirectory())/Library/Logs/agentx-voice.log"
+
+    static func warn(_ s: String) { write("WARN \(s)") }
+    static func info(_ s: String) { write("INFO \(s)") }
+
+    private static func write(_ s: String) {
+        let line = "[\(stamp())] \(s)\n"
+        FileHandle.standardError.write(line.data(using: .utf8)!)
+        queue.async {
+            guard let data = line.data(using: .utf8) else { return }
+            if let fh = FileHandle(forWritingAtPath: path) {
+                defer { try? fh.close() }
+                _ = try? fh.seekToEnd()
+                try? fh.write(contentsOf: data)
+            } else {
+                try? data.write(to: URL(fileURLWithPath: path))
+            }
+        }
+    }
+
+    private static func stamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: Date())
+    }
 }
