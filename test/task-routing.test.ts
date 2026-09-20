@@ -99,14 +99,45 @@ describe("routeTaskModel", () => {
     expect(hoisted.askSeat).not.toHaveBeenCalled()
   })
 
-  it("never switches models partway through a conversation", async () => {
-    // A follow-up inherits the difficulty of what it follows up on, and
-    // swapping models mid-session changes who is answering.
+  it("keeps the model on a follow-up while the cache is still warm", async () => {
+    // Switching mid-session is mechanically fine — it is what /model does.
+    // It is the ARITHMETIC that says no: the new model has no cache for
+    // the transcript, so it reads all of it at $1.00/M against opus's
+    // cached $0.50/M, and only wins back the difference on output. A task
+    // worth downgrading has a short answer, so the swap loses.
     const { routeTaskModel } = await import("../src/agents/routing")
 
-    const route = await routeTaskModel({ ...base, isFollowUp: true })
+    const route = await routeTaskModel({
+      ...base, isFollowUp: true, sessionIdleMs: 30_000,
+    })
     expect(route.downgraded).toBe(false)
-    expect(route.reason).toMatch(/follow-up/i)
+    expect(route.reason).toMatch(/warm cache/i)
     expect(hoisted.askSeat).not.toHaveBeenCalled()
+  })
+
+  it("routes a follow-up once the cache has gone cold", async () => {
+    // Past the TTL there is no cached read left to give up: opus pays
+    // $5.00/M and haiku $1.00/M, so the cheap model wins outright. A rule
+    // that refused here would be leaving the easy savings on the table.
+    hoisted.askSeat.mockResolvedValue(answer(0.13))
+    const { routeTaskModel } = await import("../src/agents/routing")
+
+    const route = await routeTaskModel({
+      ...base, isFollowUp: true, sessionIdleMs: 3 * 60 * 60 * 1000,
+    })
+    expect(route.downgraded).toBe(true)
+    expect(route.model).toBe("claude-haiku-4-5")
+  })
+
+  it("still keeps the flagship on a cold follow-up that needs it", async () => {
+    // A cold cache makes the swap affordable, not advisable. The seat
+    // still decides.
+    hoisted.askSeat.mockResolvedValue(answer(0.8))
+    const { routeTaskModel } = await import("../src/agents/routing")
+
+    const route = await routeTaskModel({
+      ...base, isFollowUp: true, sessionIdleMs: 3 * 60 * 60 * 1000,
+    })
+    expect(route.downgraded).toBe(false)
   })
 })

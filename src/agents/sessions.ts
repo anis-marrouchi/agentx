@@ -820,6 +820,20 @@ export class SessionStore {
    * Check if a native CLI session is stale (idle too long for resume to be useful).
    * When stale, the resumed context will be too far behind — better to start fresh.
    */
+  /**
+   * How long since this session last did anything, in ms.
+   *
+   * Used to reason about whether the provider's prompt cache for it is
+   * still warm — a cold cache changes which model is cheaper, because the
+   * saving from a cached read only exists while the cache exists. Returns
+   * null when there is no native session to resume.
+   */
+  sessionIdleMs(agentId: string, channel: string, chatId: string): number | null {
+    const session = this.getSession(agentId, channel, chatId)
+    if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return null
+    return Date.now() - new Date(session.updatedAt).getTime()
+  }
+
   isSessionStale(agentId: string, channel: string, chatId: string): boolean {
     const session = this.getSession(agentId, channel, chatId)
     if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false

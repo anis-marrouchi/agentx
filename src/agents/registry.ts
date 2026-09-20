@@ -1880,6 +1880,9 @@ export class AgentRegistry {
           agent: task.agentId,
           channel,
           isFollowUp: Boolean(resumeSessionId),
+          // Idle time decides whether the cache this would give up still
+          // exists. See routing.ts for the arithmetic.
+          sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
           cheapModel: this.cheapModel,
         })
         if (route.downgraded) {

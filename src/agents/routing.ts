@@ -22,9 +22,34 @@ import {
 // than the tokens it saved, so the failure has to land on the expensive
 // side.
 //
-// Follow-ups keep the flagship regardless. A second turn inherits the
-// difficulty of the first, and swapping models inside a live session
-// changes who is answering halfway through a conversation.
+// Follow-ups are where this gets interesting, and the answer is
+// arithmetic rather than caution.
+//
+// Switching models mid-session is mechanically trivial — the session is a
+// transcript and the model is a per-invocation flag, which is exactly what
+// Claude Code's /model does. The cost is that the PROMPT CACHE IS PER
+// MODEL. Resuming on a different model means that model has no cache for
+// the transcript and reads all of it at full price.
+//
+// Published rates, opus-5 against haiku-4.5:
+//
+//   opus cached read   $0.50/M        haiku uncached read  $1.00/M
+//   opus output       $25.00/M        haiku output          $5.00/M
+//
+// So the swap costs 2x more on input and saves $20/M on output, and it is
+// cheaper only when
+//
+//   session_tokens < 40 x reply_tokens
+//
+// A task worth downgrading is by definition one whose answer is short —
+// an acknowledgement, a status echo. Ten tokens of reply puts the
+// break-even at a 400-token session. On any real conversation the swap
+// LOSES, and it loses precisely on the traffic this seat exists to catch.
+//
+// That reverses once the cache is COLD. After the cache TTL there is no
+// cached read to give up: opus pays $5.00/M and haiku $1.00/M, and the
+// cheap model wins outright. So a follow-up is routable exactly when the
+// session has been idle long enough that nothing is cached any more.
 
 /** Below this P(needs the strongest model), a cheaper one will do.
  *
@@ -33,6 +58,11 @@ import {
  *  asymmetry between "saved a fraction of a cent" and "gave a subtly wrong
  *  answer nobody caught" is not close. */
 const DOWNGRADE_BELOW = 0.2
+
+/** How long a cached prefix is assumed to live. Anthropic's default TTL is
+ *  five minutes with a one-hour option; an hour is assumed here because it
+ *  is the assumption whose error is cheap — see the note above. */
+const CACHE_TTL_MS = 60 * 60 * 1000
 
 export interface RouteResult {
   /** The model to use, or undefined to leave the agent's own default. */
@@ -48,6 +78,11 @@ export interface RouteOptions extends TaskTierInput {
   /** The model to drop to. Usually from config; no downgrade without it. */
   cheapModel?: string | null
   threshold?: number
+  /** Idle time on the session being resumed, or null when starting fresh.
+   *  Only consulted for follow-ups. */
+  sessionIdleMs?: number | null
+  /** How long a cached prefix is assumed to survive. */
+  cacheTtlMs?: number
 }
 
 /**
@@ -62,8 +97,21 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
   })
 
   if (!opts.cheapModel) return keep("no cheaper model configured")
-  // A conversation should not change who is answering it partway through.
-  if (opts.isFollowUp) return keep("follow-up turn — keeping the session's model")
+
+  // A follow-up onto a WARM cache is the losing case above. Idle longer
+  // than the TTL and there is nothing left to lose, so it is routable.
+  //
+  // One hour, not the five-minute default, because the assumption has to
+  // be the one that fails safely: over-estimating how long the cache lives
+  // means occasionally keeping the flagship when a swap would have been
+  // free, while under-estimating means routinely paying double on input.
+  if (opts.isFollowUp) {
+    const idle = opts.sessionIdleMs ?? 0
+    const ttl = opts.cacheTtlMs ?? CACHE_TTL_MS
+    if (idle < ttl) {
+      return keep(`follow-up on a warm cache (idle ${Math.round(idle / 1000)}s) — swapping would cost more than it saves`)
+    }
+  }
 
   let result
   try {
