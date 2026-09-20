@@ -94,8 +94,19 @@ final class Progress: NSObject, URLSessionDataDelegate {
         }
         guard event.contains("task"), !payload.isEmpty,
               let data = payload.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+              let outer = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
+
+        // broadcastSSE wraps every frame as {time, message}, where
+        // `message` is the payload re-encoded as a STRING. So the step is
+        // one JSON level deeper than the frame appears to be — unwrap it,
+        // while still accepting a flat frame in case that ever changes.
+        var obj = outer
+        if let inner = outer["message"] as? String,
+           let innerData = inner.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: innerData) as? [String: Any] {
+            obj = parsed
+        }
 
         // Only this widget's agent. Other agents are busy on their own work
         // and narrating theirs would be both confusing and a privacy leak.
@@ -107,13 +118,28 @@ final class Progress: NSObject, URLSessionDataDelegate {
     /// Turn a step event into something worth showing in 180 points of
     /// label. Prefers the human-facing action over the internal step name.
     private func summarise(_ obj: [String: Any]) -> String? {
-        let name = (obj["action"] as? String) ?? (obj["name"] as? String) ?? ""
-        guard !name.isEmpty else { return nil }
-        var text = name
-        if let input = obj["inputSummary"] as? String, !input.isEmpty {
-            let flat = input.replacingOccurrences(of: "\n", with: " ")
-            text += ": \(flat)"
+        // Only the start of a step is worth announcing. A tool_result
+        // arrives a beat later and would just repeat what was said.
+        if (obj["name"] as? String) == "tool_result" { return nil }
+
+        let tool = (obj["action"] as? String) ?? (obj["name"] as? String) ?? ""
+        guard !tool.isEmpty, tool != "tool_use" else { return nil }
+
+        // inputSummary is the tool's raw arguments as JSON. The useful
+        // part is one field — a command, a path, a query — and showing the
+        // braces instead would waste the whole label.
+        var detail = ""
+        if let input = obj["inputSummary"] as? String,
+           let d = input.data(using: .utf8),
+           let args = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+            for key in ["command", "file_path", "path", "query", "pattern", "url", "description"] {
+                if let v = args[key] as? String, !v.isEmpty { detail = v; break }
+            }
         }
-        return text.count > 34 ? String(text.prefix(32)) + "…" : text
+        let flat = detail.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        let text = flat.isEmpty ? tool : "\(tool): \(flat)"
+        // Long text is fine — the panel marquees it rather than truncating.
+        return text.count > 90 ? String(text.prefix(88)) + "…" : text
     }
 }

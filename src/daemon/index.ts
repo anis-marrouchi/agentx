@@ -79,6 +79,7 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
+import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -162,6 +163,26 @@ export class AgentXDaemon {
       const line = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")
       this.broadcastSSE("log", line)
     }
+
+    // Bridge per-step agent activity onto /events.
+    //
+    // There are two buses. The daemon's own (daemon/event-bus.ts) has a
+    // `task` kind meaning task LIFECYCLE — created, submitted, canceled.
+    // The step-by-step detail an agent produces while working —
+    // "Bash: check the calendar", with its input summary — is emitted on
+    // the internal bus in events/bus.ts, which /events never served.
+    //
+    // So a client asking /events?type=task for live progress got lifecycle
+    // frames and nothing else, and any UI built on it sat silent through
+    // the entire turn. Forwarding here gives /events the events its own
+    // filter name already implies.
+    getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
+      try {
+        this.broadcastSSE("task", JSON.stringify({ kind: "task:step", ...e }))
+      } catch {
+        /* a telemetry frame must never break the step it describes */
+      }
+    })
 
     // Load config
     this.log("Loading configuration...")

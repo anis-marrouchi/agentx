@@ -42,6 +42,20 @@ final class ResultCard: NSPanel {
         body.isAutomaticLinkDetectionEnabled = true
         body.isRichText = true
 
+        // An NSTextView used as a documentView renders NOTHING until it is
+        // given a size and told how to grow. Defaults are a zero frame and
+        // a fixed-width container, so the card came up blank however much
+        // text it held — which looked like "no answer" rather than a
+        // layout bug, and is why it read as an empty window.
+        body.frame = NSRect(x: 0, y: 0, width: 360, height: 100)
+        body.minSize = NSSize(width: 0, height: 0)
+        body.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        body.isVerticallyResizable = true
+        body.isHorizontallyResizable = false
+        body.autoresizingMask = [.width]
+        body.textContainer?.widthTracksTextView = true
+        body.textContainer?.containerSize = NSSize(width: 360, height: CGFloat.greatestFiniteMagnitude)
+
         scroll.documentView = body
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
@@ -67,6 +81,10 @@ final class ResultCard: NSPanel {
         let imgH: CGFloat = thumb.isHidden ? 0 : 120
         thumb.frame = NSRect(x: 10, y: h - imgH - 10, width: w - 20, height: imgH)
         scroll.frame = NSRect(x: 0, y: linkH, width: w, height: h - linkH - imgH - (imgH > 0 ? 16 : 0))
+        // Container width must follow the scroll view or the text lays out
+        // against a stale width and clips.
+        body.textContainer?.containerSize = NSSize(width: w - 4, height: CGFloat.greatestFiniteMagnitude)
+        body.frame.size.width = w - 4
         links.frame = NSRect(x: 0, y: 0, width: w, height: linkH)
     }
 
