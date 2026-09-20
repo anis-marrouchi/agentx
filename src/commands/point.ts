@@ -13,6 +13,7 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
+import { buildCandidates } from "@/computer-use/candidates"
 
 const run = promisify(execFile)
 
@@ -43,7 +44,7 @@ interface Snapshot {
 /** Controls a person could plausibly mean. The raw tree is mostly groups
  *  and static text scaffolding; handing forty of those to a model buys
  *  nothing and crowds out the real candidates. */
-const INTERESTING = /^AX(Button|MenuItem|MenuButton|TextField|TextArea|CheckBox|RadioButton|PopUpButton|Link|Tab|Row|Cell|ComboBox|Slider|Disclosure|Toolbar)/
+
 
 export const point = new Command()
   .name("point")
@@ -68,20 +69,9 @@ export const point = new Command()
       process.exit(1)
     }
 
-    // Unlabelled controls are kept, described by role and position in
-    // their parent. Window close/minimise buttons carry no label at all on
-    // macOS, and dropping everything unnamed meant the most commonly asked
-    // for controls on any screen were the ones never offered.
-    const interesting = snap.elements.filter((e) => INTERESTING.test(e.role))
-    const candidates: UICandidate[] = interesting
-      .slice(0, Number(opts.max) || 40)
-      .map((e, i) => ({
-        id: e.id,
-        role: e.role,
-        label: (e.label || e.value || "").trim() || `${e.role.replace(/^AX/, "")} ${i + 1}`,
-        value: e.value ?? null,
-        enabled: e.enabled,
-      }))
+    // Page-scoped: in a browser the tree holds the page AND the browser
+    // around it, and the browser's own search bar beats the page's.
+    const candidates: UICandidate[] = buildCandidates(snap.elements as never, Number(opts.max) || 40)
 
     // A Choice needs at least two options to be a choice. One or zero is
     // not a model problem and must not reach the model — with a single

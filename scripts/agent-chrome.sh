@@ -18,6 +18,12 @@
 # So: a SEPARATE profile at ~/.agentx/chrome-profile that you log into
 # once, per site, deliberately. Sessions persist there across restarts, and
 # the blast radius is whatever you chose to sign into — not everything.
+#
+# --force-renderer-accessibility is what makes the PAGE readable. Chrome
+# builds a web page's accessibility tree lazily, only once it believes an
+# assistive technology is listening. Without the flag an outside reader
+# sees the browser chrome — Back, Forward, the address bar — and nothing
+# of the page, which looks exactly like a site that exposes nothing.
 set -euo pipefail
 
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -37,6 +43,7 @@ echo "→ launching Chrome  profile=$PROFILE  cdp=$PORT"
 "$CHROME" \
   --remote-debugging-port="$PORT" \
   --user-data-dir="$PROFILE" \
+  --force-renderer-accessibility \
   --no-first-run \
   --no-default-browser-check \
   --restore-last-session \

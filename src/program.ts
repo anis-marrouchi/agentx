@@ -13,6 +13,7 @@ import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
 import { decide as decideCmd } from "@/commands/decide"
+import { teach as teachCmd } from "@/commands/teach"
 import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
@@ -82,6 +83,7 @@ export async function buildProgram(): Promise<Command> {
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
     decideCmd,                   // typed decisions, for agents
+    teachCmd,                    // talk and point, at the same time
     usage,                       // what it cost, what gets used
     serve,                       // MCP
     token, configCmd, completion,
