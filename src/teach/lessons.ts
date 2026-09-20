@@ -11,12 +11,19 @@
 // where it expected rather than pointing confidently at the wrong thing.
 
 export interface LessonStep {
-  /** Spoken aloud, and printed. */
+  /** Spoken aloud, printed, and shown in the on-screen callout. */
   say: string
   /** What to point at, in plain words. Omit for narration only. */
   find?: string
   /** Overrides the label shown on the highlight pill. */
   label?: string
+  /** Click the located element. Requires `find`. */
+  click?: boolean
+  /** Type this after locating (and clicking) — paced like a hand. */
+  type?: string
+  /** Press a named key afterwards, e.g. "return" to submit. Separate from
+   *  `type` so committing a form is always its own deliberate step. */
+  key?: string
   holdSeconds?: number
 }
 
@@ -49,20 +56,25 @@ const xAdvancedSearch: Lesson = {
       say: "This is the search box. Most people type a few words here and scroll. But it accepts commands, not just words.",
       find: "the search box",
       label: "search",
+      click: true,
     },
     {
-      say: "Try typing: from colon, then a username. That limits results to just that person. On its own that's mildly useful.",
-      find: "the search box",
-      label: "from:username",
+      say: "Watch. From colon, then a username, limits results to just that person.",
+      type: "from:naval ",
+      holdSeconds: 1.2,
     },
     {
-      say: "Now the part worth knowing. Add: min underscore faves, colon, five hundred. That means only show posts with at least five hundred likes.",
-      find: "the search box",
-      label: "min_faves:500",
-      holdSeconds: 3.4,
+      say: "Now the part worth knowing. Min underscore faves, colon, five hundred. Only posts with at least five hundred likes.",
+      type: "min_faves:500",
+      holdSeconds: 1.6,
     },
     {
-      say: "Put together, from colon naval, min underscore faves colon five hundred, gives you that person's greatest hits. Everything they wrote that actually landed, newest first. No scrolling through years of replies.",
+      say: "And submit.",
+      key: "return",
+      holdSeconds: 3.2,
+    },
+    {
+      say: "There it is. That person's greatest hits — everything they wrote that actually landed. No scrolling through years of replies.",
       holdSeconds: 2,
     },
     {

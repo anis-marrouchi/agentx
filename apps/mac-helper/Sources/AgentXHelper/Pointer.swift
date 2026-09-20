@@ -92,6 +92,83 @@ enum Pointer {
                        y: u * u * a.y + 2 * u * t * b.y + t * t * c.y)
     }
 
+    /// A click, made visible.
+    ///
+    /// A synthetic click is otherwise invisible — the UI reacts, but
+    /// nothing shows that the press came from here rather than from the
+    /// person watching. In a lesson that ambiguity is the whole problem:
+    /// you cannot learn a gesture you did not see performed.
+    ///
+    /// So the cursor position gets a ring that snaps inward and rebounds,
+    /// which is how a fingertip reads — compression then release, not a
+    /// flash. Runs before the event so the visual leads the reaction by a
+    /// frame or two, the way a real press does.
+    static func clickFlourish(durationSeconds: Double = 0.42) {
+        guard let p = CGEvent(source: nil)?.location,
+              let screen = NSScreen.screens.first(where: {
+                  $0.frame.contains(CGPoint(x: p.x, y: $0.frame.maxY - p.y))
+              }) ?? NSScreen.main else { return }
+
+        let r: CGFloat = 46
+        let flipped = CGPoint(x: p.x, y: screen.frame.maxY - p.y)
+        let panel = NSPanel(contentRect: NSRect(x: flipped.x - r, y: flipped.y - r,
+                                                width: r * 2, height: r * 2),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.level = .screenSaver
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.ignoresMouseEvents = true
+        panel.hasShadow = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
+        let host = NSView(frame: panel.contentView!.bounds)
+        host.wantsLayer = true
+        panel.contentView = host
+
+        let ring = CAShapeLayer()
+        let box = CGRect(x: r - 17, y: r - 17, width: 34, height: 34)
+        ring.path = CGPath(ellipseIn: box, transform: nil)
+        ring.fillColor = NSColor.systemGreen.withAlphaComponent(0.22).cgColor
+        ring.strokeColor = NSColor.systemGreen.cgColor
+        ring.lineWidth = 2.5
+        ring.frame = host.bounds
+        ring.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        host.layer?.addSublayer(ring)
+
+        // Squash then rebound past rest, then settle — the shape of a
+        // press. A single scale-down reads as the UI shrinking, not as a
+        // finger landing.
+        let squash = CAKeyframeAnimation(keyPath: "transform.scale")
+        squash.values = [1.0, 0.55, 1.22, 1.0]
+        squash.keyTimes = [0, 0.28, 0.62, 1.0]
+        squash.timingFunctions = [
+            CAMediaTimingFunction(name: .easeIn),
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeOut),
+        ]
+        squash.duration = durationSeconds
+
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, 1.0, 0.9, 0.0]
+        fade.keyTimes = [0, 0.18, 0.55, 1.0]
+        fade.duration = durationSeconds
+
+        let group = CAAnimationGroup()
+        group.animations = [squash, fade]
+        group.duration = durationSeconds
+        group.isRemovedOnCompletion = false
+        group.fillMode = .forwards
+        ring.add(group, forKey: "click")
+
+        panel.orderFrontRegardless()
+        let deadline = Date().addingTimeInterval(durationSeconds)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.012))
+        }
+        panel.orderOut(nil)
+    }
+
     // MARK: Annotation
 
     /// A radar ping and a marching-ants border.

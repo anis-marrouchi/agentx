@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { execFile } from "child_process"
+import { execFile, spawn, type ChildProcess } from "child_process"
 import { promisify } from "util"
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs"
 import { resolve, join } from "path"
@@ -45,6 +45,7 @@ export const teach = new Command()
   .argument("[lesson]", "lesson id (omit to list)")
   .option("--voice <id>", "ElevenLabs voice id")
   .option("--no-speak", "point only, print the narration")
+  .option("--no-hud", "skip the on-screen callout")
   .action(async (lessonId: string | undefined, opts) => {
     if (!lessonId) {
       console.log(chalk.bold("\n  lessons\n"))
@@ -67,8 +68,19 @@ export const teach = new Command()
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
 
+    // A callout that persists while the speech moves on. Spawned once and
+    // fed lines, not respawned per step — a fresh window each time would
+    // flash and lose its place.
+    const hud: ChildProcess | null = opts.hud === false
+      ? null
+      : spawn(HELPER, ["hud"], { stdio: ["pipe", "ignore", "ignore"] })
+    const setState = (title: string, body: string, state: string) => {
+      try { hud?.stdin?.write(JSON.stringify({ title, body, state }) + "\n") } catch { /* HUD is optional */ }
+    }
+
     for (const [i, step] of lesson.steps.entries()) {
       console.log(`  ${chalk.dim(String(i + 1).padStart(2))}  ${step.say}`)
+      setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "talking")
 
       // Speak first, then point. Saying "look at the search box" AFTER
       // highlighting it is backwards — the eye has already moved and the
@@ -77,30 +89,45 @@ export const teach = new Command()
         ? Promise.resolve()
         : speak(step.say, opts.voice)
 
-      if (step.find) {
-        // Read the screen while the sentence is still playing, so the
-        // highlight lands as the sentence ends rather than after a pause.
-        const target = await locate(step.find)
-        await speaking
-        if (target) {
-          await run(HELPER, [
-            "point",
-            "--x", String(target.x), "--y", String(target.y),
-            "--w", String(target.width), "--h", String(target.height),
-            "--label", step.label ?? step.find,
-            "--hold", String(step.holdSeconds ?? 2.6),
-          ]).catch(() => {})
-        } else {
-          // Say so rather than silently skipping: a lesson that points at
-          // nothing and carries on is worse than one that admits the
-          // screen is not where it expected.
-          console.log(chalk.yellow(`      (couldn't find "${step.find}" on screen — narrating only)`))
-        }
-      } else {
-        await speaking
-        await sleep((step.holdSeconds ?? 1.2) * 1000)
+      // Locate while the sentence is still playing, so the highlight
+      // lands as the sentence ends rather than after a pause.
+      const target = step.find ? await locate(step.find) : null
+      if (step.find && !target) {
+        // Say so rather than silently skipping: a lesson that points at
+        // nothing and carries on is worse than one that admits the screen
+        // is not where it expected.
+        console.log(chalk.yellow(`      (couldn't find "${step.find}" — narrating only)`))
       }
+      await speaking
+
+      if (target) {
+        setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "pointing")
+        await run(HELPER, [
+          "point",
+          "--x", String(target.x), "--y", String(target.y),
+          "--w", String(target.width), "--h", String(target.height),
+          "--label", step.label ?? step.find ?? "",
+          // Short hold when something follows immediately — the highlight
+          // should not still be up while text is being typed elsewhere.
+          "--hold", String(step.click || step.type ? 0.5 : step.holdSeconds ?? 2.6),
+        ]).catch(() => {})
+        if (step.click) await run(HELPER, ["click"]).catch(() => {})
+      }
+
+      if (step.type) {
+        setState(`Step ${i + 1} of ${lesson.steps.length}`, step.type, "typing")
+        await run(HELPER, ["type", "--text", step.type]).catch(() => {})
+      }
+      if (step.key) {
+        setState(`Step ${i + 1} of ${lesson.steps.length}`, `↵ ${step.key}`, "typing")
+        await run(HELPER, ["key", "--name", step.key]).catch(() => {})
+      }
+      if (!target && !step.type && !step.key) await sleep((step.holdSeconds ?? 1.2) * 1000)
+      else if (step.holdSeconds) await sleep(step.holdSeconds * 1000)
     }
+    setState("Done", lesson.title, "done")
+    await sleep(1200)
+    try { hud?.stdin?.end() } catch { /* already gone */ }
     console.log(chalk.green(`\n  done.\n`))
   })
 

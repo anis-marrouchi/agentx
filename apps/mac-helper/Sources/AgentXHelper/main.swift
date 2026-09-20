@@ -62,6 +62,74 @@ case "point":
                   instant: args.contains("--instant"))
     FileHandle.standardOutput.write(#"{"ok":true,"pointed":true}"#.data(using: .utf8)!)
 
+case "focused":
+    // What has keyboard focus right now. The safety check before typing.
+    guard let f = Focus.current() else { fail("nothing focused") }
+    let enc = JSONEncoder()
+    guard let d = try? enc.encode(f) else { fail("failed to encode focus") }
+    FileHandle.standardOutput.write(d)
+
+case "type":
+    // Typing goes wherever focus is, and cannot tell a search box from a
+    // post composer. Refuses by default when focus looks publishable —
+    // this exists because a lesson once got one keystroke from posting a
+    // search query to a public timeline.
+    guard let text = flag("text") else { fail("type needs --text") }
+    if !args.contains("--force") {
+        guard let f = Focus.current() else {
+            fail("refusing to type: nothing has keyboard focus")
+        }
+        if !f.editable {
+            fail("refusing to type: focus is \(f.role) \"\(f.label)\", which does not accept text")
+        }
+        if f.publishRisk {
+            fail("refusing to type: focus looks like a compose or send field (\(f.role) \"\(f.label)\") — pass --force only if publishing is intended")
+        }
+    }
+    Typer.type(text, wpm: Double(flag("wpm") ?? "") ?? 260)
+    FileHandle.standardOutput.write(#"{"ok":true,"typed":true}"#.data(using: .utf8)!)
+
+case "key":
+    guard let name = flag("name") else { fail("key needs --name (return, tab, escape, a…z, 0…9)") }
+    // Return is the commit key. Pressing it into a composer publishes.
+    if !args.contains("--force"), ["return", "enter"].contains(name.lowercased()),
+       let f = Focus.current(), f.publishRisk {
+        fail("refusing to press \(name): focus looks like a compose or send field (\(f.role) \"\(f.label)\")")
+    }
+    let mods = (flag("mod") ?? "").split(separator: "+").map(String.init)
+    guard Typer.press(name, modifiers: mods) else { fail("unknown key \"\(name)\"") }
+    FileHandle.standardOutput.write(#"{"ok":true,"pressed":true}"#.data(using: .utf8)!)
+
+case "click":
+    // Clicks where the cursor already is, so a caller must point first.
+    // Deliberately not folded into `point`: locating something should
+    // never be the same act as pressing it.
+    // Visual first: a press people can see leads the reaction slightly,
+    // the way a real one does.
+    if !args.contains("--quiet") { Pointer.clickFlourish() }
+    Typer.click(button: flag("button") ?? "left",
+                clicks: Int(flag("clicks") ?? "1") ?? 1,
+                modifiers: (flag("mod") ?? "").split(separator: "+").map(String.init))
+    FileHandle.standardOutput.write(#"{"ok":true,"clicked":true}"#.data(using: .utf8)!)
+
+case "scroll":
+    Typer.scroll(dx: Int32(flag("dx") ?? "0") ?? 0,
+                 dy: Int32(flag("dy") ?? "0") ?? 0,
+                 steps: Int(flag("steps") ?? "10") ?? 10)
+    FileHandle.standardOutput.write(#"{"ok":true,"scrolled":true}"#.data(using: .utf8)!)
+
+case "drag":
+    guard let tx = Double(flag("to-x") ?? ""), let ty = Double(flag("to-y") ?? "") else {
+        fail("drag needs --to-x --to-y (press starts wherever the cursor is)")
+    }
+    Typer.drag(to: CGPoint(x: tx, y: ty),
+               durationSeconds: Double(flag("duration") ?? "") ?? 0.6)
+    FileHandle.standardOutput.write(#"{"ok":true,"dragged":true}"#.data(using: .utf8)!)
+
+case "hud":
+    // Long-lived: reads update lines on stdin until EOF.
+    HUD.run()
+
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))

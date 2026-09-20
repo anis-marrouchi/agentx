@@ -59,18 +59,29 @@ enum AXTree {
         let root = (windowRef as! AXUIElement?) ?? axApp
         let windowTitle = string(root, kAXTitleAttribute)
 
+        // Traverse everything, but only SPEND the budget on elements worth
+        // choosing between.
+        //
+        // A modern web page is mostly containers: x.com fills 273 of 400
+        // slots with unlabelled AXGroups before reaching its search field,
+        // so a naive cap returns a tree with no inputs in it and the page
+        // looks like it exposes nothing. Skipped nodes still have their
+        // children walked; `parent` points at the nearest KEPT ancestor, so
+        // the hierarchy stays usable for page-scoping.
         var queue: [(AXUIElement, Int)] = [(root, -1)]
         while !queue.isEmpty {
             if elements.count >= maxElements { truncated = true; break }
             let (node, parent) = queue.removeFirst()
-            let idx = elements.count
-            if let e = describe(node, id: idx, parent: parent) {
+
+            var keptIndex = parent
+            if let e = describe(node, id: elements.count, parent: parent), worthKeeping(e) {
+                keptIndex = elements.count
                 elements.append(e)
-                var childrenRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-                   let children = childrenRef as? [AXUIElement] {
-                    for c in children { queue.append((c, idx)) }
-                }
+            }
+            var childrenRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+               let children = childrenRef as? [AXUIElement] {
+                for c in children { queue.append((c, keptIndex)) }
             }
         }
 
@@ -83,6 +94,21 @@ enum AXTree {
             note: elements.count < 3
                 ? "this app exposes almost no accessibility information — the tree is not usable here"
                 : nil)
+    }
+
+    /// Containers earn a slot only when they say something.
+    ///
+    /// The web area itself is always kept — page-scoping needs it as an
+    /// anchor even though it carries no label of its own.
+    private static func worthKeeping(_ e: Element) -> Bool {
+        if e.role == "AXWebArea" { return true }
+        let isContainer = e.role == "AXGroup" || e.role == "AXUnknown"
+            || e.role == "AXSplitGroup" || e.role == "AXScrollArea"
+        if !isContainer { return true }
+        // A labelled group is usually a landmark worth naming; "0" and ""
+        // are the DOM showing through.
+        let label = e.label.trimmingCharacters(in: .whitespaces)
+        return label.count > 1 && label != "0"
     }
 
     private static func describe(_ node: AXUIElement, id: Int, parent: Int) -> Element? {
