@@ -39,23 +39,24 @@ enum HUD {
             blur.blendingMode = .behindWindow
             blur.state = .active
             blur.wantsLayer = true
-            blur.layer?.cornerRadius = 16
+            blur.layer?.cornerRadius = Brand.Radius.lg
             blur.layer?.masksToBounds = true
             blur.autoresizingMask = [.width, .height]
             contentView = blur
 
             dot.wantsLayer = true
-            dot.layer?.cornerRadius = 5
-            dot.frame = NSRect(x: 20, y: 62, width: 10, height: 10)
+            dot.layer?.cornerRadius = 4
+            dot.frame = NSRect(x: 20, y: 63, width: 8, height: 8)
             blur.addSubview(dot)
 
             titleField.frame = NSRect(x: 38, y: 58, width: 400, height: 18)
-            titleField.font = .systemFont(ofSize: 11, weight: .semibold)
+            // Eyebrow: mono, uppercase, tracked — "STEP 2 OF 9".
+            titleField.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
             titleField.textColor = .secondaryLabelColor
             blur.addSubview(titleField)
 
             bodyField.frame = NSRect(x: 20, y: 14, width: 420, height: 40)
-            bodyField.font = .systemFont(ofSize: 14, weight: .medium)
+            bodyField.font = Brand.body(size: 14)
             bodyField.textColor = .labelColor
             bodyField.maximumNumberOfLines = 2
             blur.addSubview(bodyField)
@@ -71,12 +72,14 @@ enum HUD {
         override var canBecomeKey: Bool { false }
     }
 
+    // Teal for the agent acting on the screen, blue while it speaks,
+    // amber when it is blocked. One accent family, not a traffic light.
     private static let colours: [String: NSColor] = [
-        "talking": .systemBlue,
-        "pointing": .systemGreen,
-        "typing": .systemOrange,
-        "waiting": .systemGray,
-        "done": .systemGreen,
+        "talking": Brand.primaryBright,
+        "pointing": Brand.accent,
+        "typing": Brand.accentDeep,
+        "waiting": Brand.warn,
+        "done": Brand.accent,
     ]
 
     /// Read update lines until stdin closes.
@@ -98,10 +101,18 @@ enum HUD {
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 else { continue }
                 DispatchQueue.main.async {
-                    if let t = obj["title"] as? String { window.titleField.stringValue = t }
+                    if let t = obj["title"] as? String {
+                        window.titleField.attributedStringValue =
+                            Brand.metaString(t, size: 10, color: .secondaryLabelColor)
+                    }
                     if let b = obj["body"] as? String { window.bodyField.stringValue = b }
                     let state = (obj["state"] as? String) ?? "talking"
-                    window.dot.layer?.backgroundColor = (colours[state] ?? .systemBlue).cgColor
+                    let c = colours[state] ?? Brand.primaryBright
+                    window.dot.layer?.backgroundColor = c.cgColor
+                    window.dot.layer?.shadowColor = c.cgColor
+                    window.dot.layer?.shadowOpacity = 0.6
+                    window.dot.layer?.shadowRadius = 5
+                    window.dot.layer?.shadowOffset = .zero
                 }
             }
             // EOF: the lesson ended.

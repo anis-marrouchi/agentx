@@ -12,6 +12,19 @@ import Foundation
 /// falls through as text rather than breaking the page.
 enum Markdown {
 
+    /// Fallback styling when no design tokens are supplied.
+    static let defaultCSS = """
+      body { font: -apple-system-body; font-size: 13px; margin: 12px; line-height: 1.5;
+             color: canvastext; background: transparent; word-wrap: break-word; }
+      code { font: ui-monospace, monospace; font-size: 12px;
+             background: color-mix(in srgb, canvastext 10%, transparent);
+             padding: 1px 4px; border-radius: 4px; }
+      pre { background: color-mix(in srgb, canvastext 8%, transparent);
+            padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
+      a { color: linktext; }
+    """
+
+
     static func toHTML(_ markdown: String) -> String {
         var html = ""
         var inCode = false
@@ -117,39 +130,11 @@ enum Markdown {
     /// Wraps rendered HTML in a page that follows the system appearance.
     /// A card that is white while everything else is dark is worse than
     /// plain text.
-    static func page(_ body: String) -> String {
+    static func page(_ body: String, css: String? = nil) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8">
-        <style>
-          :root { color-scheme: light dark; }
-          body {
-            font: -apple-system-body; font-size: 13px;
-            margin: 12px; line-height: 1.5;
-            color: canvastext; background: transparent;
-            word-wrap: break-word;
-          }
-          h1,h2,h3,h4 { margin: .6em 0 .3em; font-size: 1.08em; font-weight: 650; }
-          p { margin: .4em 0; }
-          ul { margin: .35em 0; padding-left: 1.2em; }
-          li { margin: .15em 0; }
-          code {
-            font: ui-monospace, SFMono-Regular, monospace; font-size: 12px;
-            background: color-mix(in srgb, canvastext 10%, transparent);
-            padding: 1px 4px; border-radius: 4px;
-          }
-          pre {
-            background: color-mix(in srgb, canvastext 8%, transparent);
-            padding: 8px 10px; border-radius: 6px; overflow-x: auto;
-          }
-          pre code { background: none; padding: 0; }
-          blockquote {
-            margin: .4em 0; padding-left: .8em;
-            border-left: 3px solid color-mix(in srgb, canvastext 25%, transparent);
-            opacity: .85;
-          }
-          a { color: linktext; }
-          hr { border: none; border-top: 1px solid color-mix(in srgb, canvastext 20%, transparent); }
-        </style></head><body>\(body)</body></html>
+        <style>\(css ?? defaultCSS)</style>
+        </head><body>\(body)</body></html>
         """
     }
 }

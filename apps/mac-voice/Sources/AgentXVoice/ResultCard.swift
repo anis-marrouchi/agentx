@@ -27,6 +27,9 @@ final class ResultCard: NSPanel {
                    styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         title = "Agent"
+        // Brand radius on the utility panel so it matches the pill it
+        // sits above rather than defaulting to the system's corner.
+        contentView?.wantsLayer = true
         isFloatingPanel = true
         level = .floating
         hidesOnDeactivate = false
@@ -95,7 +98,7 @@ final class ResultCard: NSPanel {
     @MainActor
     func show(spoken: String, written: String?, buttons: [(String, String)], imageURL: String?) {
         let source = (written?.isEmpty == false ? written! : spoken)
-        web.loadHTMLString(Markdown.page(Markdown.toHTML(source)), baseURL: nil)
+        web.loadHTMLString(Markdown.page(Markdown.toHTML(source), css: Brand.cardCSS), baseURL: nil)
 
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
         for (label, url) in buttons.prefix(4) {

@@ -129,8 +129,8 @@ enum Pointer {
         let ring = CAShapeLayer()
         let box = CGRect(x: r - 17, y: r - 17, width: 34, height: 34)
         ring.path = CGPath(ellipseIn: box, transform: nil)
-        ring.fillColor = NSColor.systemGreen.withAlphaComponent(0.22).cgColor
-        ring.strokeColor = NSColor.systemGreen.cgColor
+        ring.fillColor = Brand.accent.withAlphaComponent(0.22).cgColor
+        ring.strokeColor = Brand.accent.cgColor
         ring.lineWidth = 2.5
         ring.frame = host.bounds
         ring.anchorPoint = CGPoint(x: 0.5, y: 0.5)
@@ -203,12 +203,12 @@ enum Pointer {
         panel.contentView = host
 
         let box = CGRect(x: pad, y: pad, width: rect.width, height: rect.height)
-        let accent = NSColor.systemGreen
+        let accent = Brand.accent
 
         // Marching ants.
         let border = CAShapeLayer()
         border.path = CGPath(roundedRect: box.insetBy(dx: -3, dy: -3),
-                             cornerWidth: 7, cornerHeight: 7, transform: nil)
+                             cornerWidth: Brand.Radius.base, cornerHeight: Brand.Radius.base, transform: nil)
         border.fillColor = accent.withAlphaComponent(0.10).cgColor
         border.strokeColor = accent.cgColor
         border.lineWidth = 2.5
@@ -225,7 +225,7 @@ enum Pointer {
         for delay in [0.0, 0.5] {
             let ping = CAShapeLayer()
             ping.path = CGPath(roundedRect: box.insetBy(dx: -3, dy: -3),
-                               cornerWidth: 7, cornerHeight: 7, transform: nil)
+                               cornerWidth: Brand.Radius.base, cornerHeight: Brand.Radius.base, transform: nil)
             ping.fillColor = NSColor.clear.cgColor
             ping.strokeColor = accent.cgColor
             ping.lineWidth = 2
@@ -279,9 +279,10 @@ enum Pointer {
     /// A pill above the target naming what was chosen, so a wrong pick is
     /// obvious rather than merely mysterious.
     private static func addLabel(_ text: String, to host: NSView, above box: CGRect, accent: NSColor) {
-        let field = NSTextField(labelWithString: text)
-        field.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        field.textColor = .white
+        // Meta type — mono, uppercase, tracked — because this names a
+        // thing rather than saying something about it.
+        let field = NSTextField(labelWithString: "")
+        field.attributedStringValue = Brand.metaString(text, size: 10.5, color: .white)
         field.alignment = .center
         field.sizeToFit()
 
@@ -293,7 +294,7 @@ enum Pointer {
         let pill = NSView(frame: NSRect(x: box.midX - w / 2, y: y, width: w, height: h))
         pill.wantsLayer = true
         pill.layer?.backgroundColor = accent.cgColor
-        pill.layer?.cornerRadius = h / 2
+        pill.layer?.cornerRadius = Brand.Radius.sm
         field.frame = NSRect(x: 9, y: 4, width: field.frame.width, height: field.frame.height)
         pill.addSubview(field)
         host.addSubview(pill)

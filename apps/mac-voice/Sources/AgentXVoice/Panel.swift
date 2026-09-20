@@ -33,24 +33,32 @@ final class Panel: NSPanel {
 
         var text: String {
             switch self {
-            case .idle: return "⌥Space to talk"
-            case .listening: return "Listening…"
-            case .thinking: return "Thinking…"
-            case .speaking: return "Speaking…"
+            case .idle: return "hold ⌥space"
+            case .listening: return "Listening"
+            case .thinking: return "Thinking"
+            case .speaking: return "Speaking"
+            // "·" is the system's own separator glyph.
             case .working(let what, let secs): return "\(what)  ·  \(secs)s"
             case .error(let m): return m
             }
         }
         var color: NSColor {
             switch self {
-            case .idle: return .secondaryLabelColor
-            case .listening: return .systemRed
-            case .thinking: return .systemOrange
-            case .speaking: return .systemGreen
-            case .working: return .systemOrange
-            case .error: return .systemYellow
+            // Teal carries every ACTIVE state, so the widget reads as one
+            // thing doing work rather than a traffic light. System reds
+            // and greens were macOS's voice, not the product's, and they
+            // shift with the user's accent-colour setting.
+            case .idle: return .tertiaryLabelColor
+            case .listening: return Brand.accent
+            case .thinking, .working: return Brand.primaryBright
+            case .speaking: return Brand.accentDeep
+            case .error: return Brand.alert
             }
         }
+
+        /// Idle is an invitation and belongs in meta type; everything else
+        /// is a running commentary and belongs in body type.
+        var isMeta: Bool { if case .idle = self { return true }; return false }
     }
 
     init() {
@@ -71,14 +79,14 @@ final class Panel: NSPanel {
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 14
+        blur.layer?.cornerRadius = Brand.Radius.lg
         blur.layer?.masksToBounds = true
         blur.autoresizingMask = [.width, .height]
         contentView = blur
 
         orb.wantsLayer = true
-        orb.layer?.cornerRadius = 6
-        orb.frame = NSRect(x: 16, y: 21, width: 12, height: 12)
+        orb.layer?.cornerRadius = 4
+        orb.frame = NSRect(x: 18, y: 22, width: 8, height: 8)
         blur.addSubview(orb)
 
         // A clipping window the label slides behind.
@@ -86,7 +94,7 @@ final class Panel: NSPanel {
         clipView.wantsLayer = true
         clipView.layer?.masksToBounds = true
         label.frame = NSRect(x: 0, y: 0, width: 180, height: 20)
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = Brand.body(size: 12)
         label.lineBreakMode = .byClipping
         label.wantsLayer = true
         clipView.addSubview(label)
@@ -109,9 +117,22 @@ final class Panel: NSPanel {
     /// corruption that traps somewhere unrelated an hour later.
     @MainActor
     func render(_ state: State) {
-        label.textColor = state.color
         orb.layer?.backgroundColor = state.color.cgColor
-        setText(state.text)
+        // A soft halo on the dot while active: the same --nq-ring-accent
+        // idea, and the only ornament on the pill.
+        orb.layer?.shadowColor = state.color.cgColor
+        orb.layer?.shadowOpacity = state.isMeta ? 0 : 0.55
+        orb.layer?.shadowRadius = 5
+        orb.layer?.shadowOffset = .zero
+
+        if state.isMeta {
+            stopMarquee()
+            label.attributedStringValue = Brand.metaString(state.text, color: state.color)
+            label.frame.origin.x = 0
+        } else {
+            label.textColor = state.color
+            setText(state.text)
+        }
     }
 
     /// Fits, or scrolls. Identical text is left alone so a per-second tick
