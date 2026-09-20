@@ -1,6 +1,8 @@
 import { loadPolicy } from "./policy"
 import { evaluate } from "./engine"
 import { recordDecision } from "./audit"
+import { assessRisk } from "./risk"
+import { confirmDestructive } from "./confirm"
 import type { GuardInput, GuardMode, ResolvedPolicy, Verdict } from "./types"
 
 // --- `agentx guard check`: the PreToolUse hook entrypoint ---
@@ -131,7 +133,42 @@ export async function runCheckFromStdin(opts: { root: string; agentId?: string; 
     if (!raw.trim()) return
     const payload = JSON.parse(raw) as PreToolUsePayload
     const input = payloadToInput(payload, opts.agentId, opts.env)
-    const { verdict } = runGuard(input, { root: opts.root, agentId: opts.agentId, env: opts.env })
+    const { verdict, mode } = runGuard(input, { root: opts.root, agentId: opts.agentId, env: opts.env })
+
+    // Deterministic rules first; they are authoritative. Only when they
+    // did NOT already block does the risk layer get a say, and all it can
+    // do is turn an allow into a confirmation. See ./risk.ts for why that
+    // one-directional shape is what keeps the guard deterministic.
+    if (mode === "enforce" && verdict.effectiveAction !== "deny") {
+      const risk = await assessRisk(input, verdict)
+      if (risk.requiresConfirmation) {
+        // Blocking, out-of-band, and never spoken — a voice "yes" shares a
+        // failure mode with the voice instruction that produced the
+        // command. See ./confirm.ts.
+        const outcome = await confirmDestructive({
+          tool: input.tool,
+          command: input.command ?? input.filePath ?? "",
+          reason: risk.reason ?? "flagged as destructive",
+          target: verdict.resolvedTarget,
+          agentId: input.agentId ?? opts.agentId ?? null,
+        })
+        if (outcome !== "confirmed") {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason:
+                `[agentx-guard] Aborted by the operator at the confirmation dialog (${risk.reason ?? "destructive operation"}). ` +
+                `Do not retry this command. Explain what you were trying to do and wait for instructions.`,
+            },
+          }))
+          return
+        }
+        // Confirmed: fall through to the normal decision path. The click
+        // authorises THIS call only; nothing is remembered.
+      }
+    }
+
     const { stdout } = decisionOutput(verdict)
     if (stdout) process.stdout.write(stdout)
   } catch (e: any) {
