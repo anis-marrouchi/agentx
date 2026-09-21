@@ -5,12 +5,14 @@ on:
     branches: [master]
     paths:
       - "docs/**"
+      - "docs-holding/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
+      - "docs-holding/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - ".github/workflows/docs.yml"
@@ -28,6 +30,15 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # What actually gets published. `docs-holding` serves the "docs are being
+      # rewritten" page; flip back to `docs/.vitepress/dist` to restore the real
+      # site. One line, one commit, either direction.
+      #
+      # The VitePress build below keeps running regardless — it is the only
+      # automated dead-link check in the repo, and docs v2 is rewriting every
+      # page. We stop *deploying* its output, not producing it.
+      DOCS_DEPLOY_DIR: docs-holding
     steps:
       - uses: actions/checkout@v4
 
@@ -69,7 +80,7 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: >-
-            pages deploy docs/.vitepress/dist
+            pages deploy ${{ env.DOCS_DEPLOY_DIR }}
             --project-name=agentx-docs
             --branch=${{ github.head_ref || github.ref_name }}
             --commit-dirty=true
