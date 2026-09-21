@@ -11,7 +11,7 @@ import type {
 } from "./providers/types"
 import { ToolExecutor, type ToolResult } from "./tools"
 import { getAnthropicTools, formatToolsForSystemPrompt } from "./tools"
-import { NOQTA_TOOLS, type NoqtaToolContext } from "./tools/noqta"
+import { ACME_TOOLS, type AcmeToolContext } from "./tools/acme"
 import type { McpTool, McpCallResult } from "./mcp-client"
 import { debug } from "@/observability"
 
@@ -27,11 +27,11 @@ export interface AgenticLoopOptions {
   overwrite?: boolean
   dryRun?: boolean
   onProgress?: (event: AgenticProgressEvent) => void
-  /** When set, the noqta workspace tool catalog (list_projects,
+  /** When set, the acme workspace tool catalog (list_projects,
    *  create_task, …) becomes part of the agent's tool set and the
    *  executor dispatches calls via /api/agent/tools using the server-
    *  held bearer. The bearer NEVER enters the model's prompt context. */
-  noqtaContext?: NoqtaToolContext
+  acmeContext?: AcmeToolContext
   /** Tools supplied by external MCP servers booted upstream
    *  (see src/agent/mcp-client.ts). The loop merges these into the
    *  catalog passed to provider.generateRaw and routes matching
@@ -109,15 +109,15 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
     interactive,
     overwrite,
     dryRun,
-    noqtaContext: options.noqtaContext,
+    acmeContext: options.acmeContext,
     abortSignal,
   })
   const tools = getAnthropicTools(enabledTools)
-  // Append noqta workspace tools only when we have a noqta user context
+  // Append acme workspace tools only when we have an acme user context
   // to dispatch them against. Adding them otherwise would confuse the
   // model (it'd see tools it can't successfully invoke).
-  if (options.noqtaContext) {
-    for (const t of NOQTA_TOOLS) {
+  if (options.acmeContext) {
+    for (const t of ACME_TOOLS) {
       tools.push({ name: t.name, description: t.description, input_schema: t.input_schema })
     }
   }

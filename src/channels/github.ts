@@ -22,7 +22,7 @@ import { markBody, detectAgentxMarker } from "./outbound-marker"
 //   agentMappings:
 //     - agentId: "coder-agent"
 //       githubUsernames: ["my-bot"]
-//       node: "macbook-local"        # forward to mesh peer
+//       node: "hq-local"        # forward to mesh peer
 
 export interface GitHubRoute {
   repo: string   // "owner/repo" or "*" for default
@@ -327,7 +327,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     // Resolve token: per-agent PAT > App installation token > global PAT.
     // Prefer the App token over forwarding to a peer — the App posts as the
-    // bot identity (e.g. "noqta-agentx[bot]"), whereas a peer's PAT posts as
+    // bot identity (e.g. "acme-agentx[bot]"), whereas a peer's PAT posts as
     // its owner. Forwarding is only useful when this node has no way to post
     // for the target repo (no App, no PAT).
     const token = agentToken || await this.getTokenForRepo(repo)
@@ -456,7 +456,7 @@ export class GitHubAdapter implements ChannelAdapter {
       return
     }
 
-    // Skip comments from known bot users (e.g. noqta-agentx[bot] when using App auth)
+    // Skip comments from known bot users (e.g. acme-agentx[bot] when using App auth)
     if (this.isBotUser(user.login)) {
       this.log(`Bot user ${user.login}, skipping (comment ${comment.id})`)
       return

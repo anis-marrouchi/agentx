@@ -18,7 +18,7 @@ import type { WebRtcSignalBroker, WebRtcSignal } from "./webrtc-signal"
 // run WebRTC (e.g. headless production servers without the native binary
 // installed) can boot cleanly. The module-level static import would crash
 // the whole daemon at startup with ERR_MODULE_NOT_FOUND, blocking unrelated
-// channels — see clawd-server 2026-04-23 incident.
+// channels — see peer-server 2026-04-23 incident.
 
 let wrtcModule: any | null = null
 

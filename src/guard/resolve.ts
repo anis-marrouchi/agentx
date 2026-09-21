@@ -150,7 +150,7 @@ export function resolveTargets(command: string, env: Record<string, string>): Re
     if (h) set.add(h)
   }
 
-  // 3. Bare host / IP tokens (covers --host api.hackathonat.com, ssh, IPs).
+  // 3. Bare host / IP tokens (covers --host api.demosite.example.com, ssh, IPs).
   const hostRe = /\b(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})\b/gi
   for (const m of expanded.matchAll(hostRe)) set.add(m[0].toLowerCase())
 

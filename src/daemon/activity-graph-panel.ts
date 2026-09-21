@@ -76,7 +76,7 @@ export interface FleetDispatch {
   initiatorId: string
   /** What kind of trigger started this dispatch — "telegram", "gitlab",
    *  "github", "cron", "workflow", "a2a", … Lets the UI render a small
-   *  pill ("Anis · GitLab MR") instead of the catch-all "Schedule". */
+   *  pill ("Alex · GitLab MR") instead of the catch-all "Schedule". */
   initiatorKind?: InitiatorKind
   subject: string
   intent: string
@@ -174,13 +174,13 @@ function colorForClient(id: string): string {
   // Reserve known clients to nice colours; everything else picks from a
   // deterministic palette by hashing the id.
   const known: Record<string, string> = {
-    mtgl: "#e07a3a",
-    ksi: "#3a7bd5",
-    noqta: "#10b981",
-    hasanah: "#bc8cff",
-    "hasanah-lab": "#bc8cff",
+    globex: "#e07a3a",
+    initech: "#3a7bd5",
+    acme: "#10b981",
+    umbrella: "#bc8cff",
+    "umbrella-lab": "#bc8cff",
     hexastack: "#06b6d4",
-    hackathonat: "#ec775c",
+    demosite: "#ec775c",
     internal: "#6b7280",
     // "unmapped" is rendered amber so it's visually obvious that the
     // operator needs to add a contactMap or business.projects entry.
@@ -383,7 +383,7 @@ function initiatorFrom(source: string, intent: string, raw: any): { id: string; 
 }
 
 /** Initiator origin — used by the UI to render a small pill next to the
- *  initiator name (e.g. "Anis · GitLab MR", "Cron: daily-brief"). */
+ *  initiator name (e.g. "Alex · GitLab MR", "Cron: daily-brief"). */
 export type InitiatorKind =
   | "telegram" | "whatsapp" | "slack" | "discord"
   | "gitlab" | "github"
@@ -536,7 +536,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     //   2. ev.project namespace prefix (with projects[].client override)
     //   3. agent's default client via orgChart (agent reportsTo PM whose
     //      project has a known client — covers mesh dispatches with no
-    //      project metadata, like a2a calls to mtgl-v2)
+    //      project metadata, like a2a calls to globex-v2)
     //   4. "unmapped" fallback
     //
     // Step 3 is computed per-decision below since it's agent-dependent.
@@ -565,7 +565,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     if (init) {
       initiatorId = init.id
       initiatorKind = init.kind
-      // Contact-map can override the display name (e.g. map "marrouchi" → "Anis")
+      // Contact-map can override the display name (e.g. map "rivera" → "Alex")
       const display = contact?.displayName || init.name
       if (!initiatorMap.has(init.id) || contact?.displayName) {
         initiatorMap.set(init.id, { id: init.id, name: display, avatar: initialsFor(display), kind: init.kind })
@@ -715,8 +715,8 @@ export function buildLocalActivityGraphSnapshot(windowH: number): FleetSnapshot 
  *  dispatch so the UI can render a small node badge. Clients, agents,
  *  channels, and initiators dedupe by id (first writer wins for the
  *  display fields like color/name) — they're concept-level entities,
- *  not node-local processes, so a `mtgl` client on Mac and a `mtgl`
- *  client on clawd should collapse into one row. Agents share names
+ *  not node-local processes, so a `globex` client on Mac and a `globex`
+ *  client on peer should collapse into one row. Agents share names
  *  across nodes too, but the dispatch's nodeId carries the disambiguation. */
 export function mergeFleetSnapshots(parts: Array<{ nodeId: string; snap: FleetSnapshot }>): FleetSnapshot {
   const clients = new Map<string, FleetClient>()

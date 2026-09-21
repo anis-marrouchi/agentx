@@ -65,7 +65,7 @@ const agentHandler: NodeHandler = async (ctx) => {
       // The friendly message follows verbatim for operators reading the log.
       return { error: `[${kind}] ${resp.error}` }
     }
-    const parser = String(cfg.resultParser ?? "noqta-result-token")
+    const parser = String(cfg.resultParser ?? "acme-result-token")
     const parsed = parser === "json" ? extractJsonBlock(resp.content) : parseResultToken(resp.content)
     return {
       output: {
@@ -128,7 +128,7 @@ const sendHandler: NodeHandler = async (ctx) => {
 
   // Local-first: if this node hosts the channel, send through the live
   // adapter. Otherwise fall back to the mesh forwarder (the channel may live
-  // on a peer — workflow on macbook, whatsapp on clawd-server, etc.). Without
+  // on a peer — workflow on macbook, whatsapp on peer-server, etc.). Without
   // either, we hard-error rather than silently dropping.
   if (adapter?.send) {
     try {

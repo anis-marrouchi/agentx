@@ -13,7 +13,7 @@ Add a `boards` block and (optionally) a `dashboard` block to `agentx.json`:
   "channels": {
     "gitlab": {
       "enabled": true,
-      "host": "https://gitlab.noqta.tn",
+      "host": "https://gitlab.example.com",
       "token": "${GITLAB_TOKEN}",
       "agentMappings": [
         { "agentId": "devops-agent", "gitlabUsernames": ["devops-bot"] },
@@ -24,11 +24,11 @@ Add a `boards` block and (optionally) a `dashboard` block to `agentx.json`:
 
   "boards": [
     {
-      "id": "mtgl-main",
-      "name": "MTGL Engineering",
+      "id": "globex-main",
+      "name": "Globex Engineering",
       "source": {
         "type": "gitlab",
-        "projects": ["mtgl/mtgl-system-v2"]
+        "projects": ["globex/globex-system-v2"]
       },
       "primaryToolLabel": "team:platform",
       "labels": [

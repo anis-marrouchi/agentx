@@ -3,7 +3,7 @@ import { z } from "zod"
 // --- Intent Knowledge Graph types + Zod schemas ---
 //
 // A hierarchical, enumerable intent taxonomy with fixed axes per level.
-// See plan: /Users/macbookpro/.claude/plans/delightful-floating-diffie.md
+// See plan: /Users/you/.claude/plans/delightful-floating-diffie.md
 //
 // Shape on disk (.agentx/graph/):
 //   schema.json              — level definitions + required axes per level

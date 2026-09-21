@@ -101,21 +101,21 @@ describe("WebRtcSignalBroker", () => {
   })
 
   it("matches subscribers by normalized name (case/hyphen-insensitive)", () => {
-    const broker = new WebRtcSignalBroker("Clawd Server", [], () => {})
+    const broker = new WebRtcSignalBroker("Peer Server", [], () => {})
     const sub = fakeRes()
     // Subscriber uses the self-reported node.name verbatim...
-    broker.subscribe("c1", "Clawd Server", sub)
+    broker.subscribe("c1", "Peer Server", sub)
     // ...but the incoming signal uses the hyphenated peer-list spelling.
-    broker.handleIncoming(signal({ callId: "c1", to: "clawd-server" }))
+    broker.handleIncoming(signal({ callId: "c1", to: "peer-server" }))
     expect(sub.chunks).toHaveLength(1)
   })
 
   it("normalizes allowedCallers too", () => {
-    const broker = new WebRtcSignalBroker("bob", ["MacBook-Local"], () => {})
+    const broker = new WebRtcSignalBroker("bob", ["HQ-Local"], () => {})
     const sub = fakeRes()
     broker.subscribe("c1", "bob", sub)
     // Signal's `from` uses a different spelling — should still be allowed.
-    const r = broker.handleIncoming(signal({ from: "macbook_local", to: "bob", kind: "offer" }))
+    const r = broker.handleIncoming(signal({ from: "hq_local", to: "bob", kind: "offer" }))
     expect(r.ok).toBe(true)
     expect(sub.chunks).toHaveLength(1)
   })

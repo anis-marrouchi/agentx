@@ -101,7 +101,7 @@ describe("replay — basic equivalence", () => {
     const e = event()
     decideAndCommit(source, e, dispatchPolicy("router", "agent-x"), () => 100)
     // PM gate on the same event — different decidedBy, different decision
-    decideAndCommit(source, e, haltPolicy("pm:pm-mtgl", "out of business hours"), () => 101)
+    decideAndCommit(source, e, haltPolicy("pm:pm-globex", "out of business hours"), () => 101)
 
     const result = replay(target, dumpEvents(source), dumpDecisions(source))
 
@@ -134,7 +134,7 @@ describe("replay — basic equivalence", () => {
     decideAndCommit(source, event({ source: "telegram", sourceEventId: "tg-1", project: null, subject: "chat:1" }),
       dispatchPolicy("channel-router", "atlas"), () => 100)
     decideAndCommit(source, event({ source: "gitlab", sourceEventId: "gl-1" }),
-      dispatchPolicy("gitlab:issue:target-mention", "mtgl-v2"), () => 101)
+      dispatchPolicy("gitlab:issue:target-mention", "globex-v2"), () => 101)
     decideAndCommit(source, event({ source: "workflow", sourceEventId: "wf-1", project: "p2", subject: "wf:run-1" }),
       dispatchPolicy("workflow-dispatcher", "wf-agent"), () => 102)
 

@@ -134,7 +134,7 @@ export interface ProjectRule {
      *  excludeStates/excludeAuthors. GitLab MR `action` values: open,
      *  reopen, update, close, approved, unapproved, approval, unapproval,
      *  merge. Most W3-style review automations want `[open, reopen, update]`
-     *  only, with `excludeAuthors: [bot, noqta-]` to ignore agent-driven
+     *  only, with `excludeAuthors: [bot, acme-]` to ignore agent-driven
      *  MR updates. */
     merge_request?: IssueRule
     note?: NoteRule

@@ -92,7 +92,7 @@ const integrationCredentialsSchema = z.object({
 const integrationSchema = z.object({
   /** Service identifier — open string, well-known values in INTEGRATION_KINDS. */
   kind: z.string().min(1),
-  /** Human-readable label (e.g. "@cx_bot", "Noqta CRM", "anis@noqta.tn"). Unique per (agent, kind). */
+  /** Human-readable label (e.g. "@cx_bot", "Acme CRM", "alex@example.com"). Unique per (agent, kind). */
   label: z.string().min(1),
   credentials: integrationCredentialsSchema.default({}),
   /** Non-secret metadata — username, email, host URL, portal id, JID, etc.
@@ -179,8 +179,8 @@ const agentConfigSchema = z.object({
    *  .claude/settings.json permissions.allow with the codegraph_* tools,
    *  (c) appends a CodeGraph instruction section to the managed CLAUDE.md,
    *  and (d) background-indexes the workspace at daemon boot if .codegraph/
-   *  is missing. Off by default — flip on for coding agents (mtgl-v2-coder,
-   *  ksi-v2-coder, hasanah-coding, etc.) where token-volume on exploration
+   *  is missing. Off by default — flip on for coding agents (globex-v2-coder,
+   *  initech-v2-coder, umbrella-coding, etc.) where token-volume on exploration
    *  loops is the bottleneck. */
   codegraph: z.boolean().default(false),
   /** Per-agent override for the global `session.contextStrategy`. Lets
@@ -190,7 +190,7 @@ const agentConfigSchema = z.object({
   contextStrategy: z.enum(["layered", "planner"]).optional(),
   /** When true, the registry resolves references-recipes for this agent's
    *  workspace and renders a deterministic [Verified References] block at
-   *  priority 4.7. Off by default — flip on per agent (pm-ksi, devops-agent,
+   *  priority 4.7. Off by default — flip on per agent (pm-initech, devops-agent,
    *  etc.) once a `references/` registry exists in the agent's workspace
    *  or repo root. See src/agents/references/. */
   contextReferences: z.boolean().default(false),
@@ -361,7 +361,7 @@ const channelsConfigSchema = z.object({
       /** If set, the agent lives on a remote mesh peer (node id). Forces the
        *  username→agent map to resolve to this mapping even when a local
        *  agent's token resolves to the same GitLab user — prevents collisions
-       *  like two agents both claiming @devops-noqta. */
+       *  like two agents both claiming @devops-acme. */
       node: z.string().optional(),
     })).default([]),
   }).default({}),
@@ -872,7 +872,7 @@ export const daemonConfigSchema = z.object({
     continuityStateTurns: z.number().int().min(0).max(5).default(0),
   }).default({}),
   /** Move B — JS/TS plugins. Each entry is an installed npm package name
-   *  (e.g. `agentx-plugin-mattermost` or `@noqta/plugin-mattermost`); the
+   *  (e.g. `agentx-plugin-mattermost` or `@acme/plugin-mattermost`); the
    *  loader does a dynamic `import(name)` at boot, validates the manifest,
    *  and calls plugin.setup(ctx). Plugins can register channel adapters
    *  via ctx.addChannel() and subscribe to bus events via ctx.on(). Empty

@@ -1,10 +1,10 @@
 // Static analyzer for the dispatch graph.
 //
 // A "conflict" is two dispatch paths that can fire for the same external
-// event. The classic case (incident 2026-04-29 issue mtgl/mtgl-system-v2#709):
+// event. The classic case (incident 2026-04-29 issue globex/globex-system-v2#709):
 // a workflow `gitlab-sdlc-loop` triggers on `gitlab-issue` for project
-// mtgl/mtgl-system-v2 AND the gitlab channel router has an agentMapping for
-// `mtgl-v2` on the same project. Both fire on issue.create — two parallel
+// globex/globex-system-v2 AND the gitlab channel router has an agentMapping for
+// `globex-v2` on the same project. Both fire on issue.create — two parallel
 // agent runs on one issue.
 //
 // This module runs at workflow load and on config reload. It returns a list

@@ -108,7 +108,7 @@ describe("DecisionStore", () => {
   it("takes the newest label per question, keeping the earlier one on disk", () => {
     const callId = store.recordCall(baseCall())
     store.label(callId, "area", "technical", { kind: "outcome", ts: 1000 })
-    store.label(callId, "area", "billing", { kind: "human", labeledBy: "anis", ts: 2000 })
+    store.label(callId, "area", "billing", { kind: "human", labeledBy: "alex", ts: 2000 })
 
     expect(store.gradedRows({ question: "area" })[0].truth).toBe("billing")
     const stored = store.db

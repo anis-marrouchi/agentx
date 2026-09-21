@@ -3,7 +3,7 @@ import { buildEntryMeta } from "../../src/agents/registry"
 import { extractHints } from "../../src/wiki/facts"
 
 describe("buildEntryMeta — recording who spoke", () => {
-  const ctx = { sender: "Alex Rivera", senderId: "21600000000@s.example.net", senderUsername: "@alex", group: "Team Chat" }
+  const ctx = { sender: "Alex Rivera", senderId: "10000000000@s.example.net", senderUsername: "@alex", group: "Team Chat" }
 
   it("stamps the sender and the platform identifier", () => {
     const m = buildEntryMeta(undefined, ctx)!
@@ -11,7 +11,7 @@ describe("buildEntryMeta — recording who spoke", () => {
     // On WhatsApp the platform id IS the number, so capturing it means
     // the identifier arrives with the entry rather than being
     // reconstructed from a directory later.
-    expect(m.senderId).toBe("21600000000@s.example.net")
+    expect(m.senderId).toBe("10000000000@s.example.net")
     expect(m.senderUsername).toBe("@alex")
   })
 

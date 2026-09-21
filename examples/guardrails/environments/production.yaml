@@ -1,4 +1,4 @@
-# Production protected resources — Noqta fleet.
+# Production protected resources — Acme fleet.
 #
 # The catalog rules reference `target_in: production`, so DECLARING a host here
 # is what ARMS them. `resolve_env: true` expands $VAR/${VAR}, reads .env* in the
@@ -10,7 +10,7 @@
 # Matching is host-based on purpose: hostnames are stable and non-secret, while
 # credentials rotate and must never be committed here.
 #
-# Inventory sources: mtgl-odoo / ksi-v1-coder / ksi-servers-access skills,
+# Inventory sources: globex-odoo / initech-v1-coder / initech-servers-access skills,
 # agentx mesh config, and a fleet-wide scan of agent workspace env files
 # (2026-07-22). Re-run `agentx guard policy --agent <id>` after editing.
 
@@ -19,32 +19,32 @@ protected_resources:
     resolve_env: true
 
     hosts:
-      # --- MTGL ---------------------------------------------------------
-      - "167.99.0.229"                 # MTGL Odoo production (odoo + postgres + apache)
+      # --- Globex ---------------------------------------------------------
+      - "203.0.113.13"                 # Globex Odoo production (odoo + postgres + apache)
 
-      # --- KSI ----------------------------------------------------------
-      - "134.122.119.251"              # KSI V1 WordPress production host
-      - "ksi.tn"                       # KSI V1 production site
+      # --- Initech ----------------------------------------------------------
+      - "203.0.113.11"              # Initech V1 WordPress production host
+      - "initech.example.com"                       # Initech V1 production site
 
-      # --- Hackathonat (the 2026-07-21 incident) ------------------------
-      - "api.hackathonat.com"
-      - "185.164.25.107"
+      # --- DemoSite (the 2026-07-21 incident) ------------------------
+      - "api.demosite.example.com"
+      - "203.0.113.12"
 
-      # --- Noqta marketing site (Supabase prod) -------------------------
+      # --- Acme marketing site (Supabase prod) -------------------------
       - "db.rgznpcdznpcjoxxytwsh.supabase.co"
       - "rgznpcdznpcjoxxytwsh.supabase.co"
       - "aws-0-eu-central-1.pooler.supabase.com"
 
       # --- Shared platform ----------------------------------------------
-      - "gitlab.noqta.tn"              # source of truth for every project
-      - "whatsapp.noqta.tn"            # WhatsApp API endpoint
-      - "noqta.tn"                     # main site + V2 jump host
+      - "gitlab.example.com"              # source of truth for every project
+      - "whatsapp.example.com"            # WhatsApp API endpoint
+      - "example.com"                     # main site + V2 jump host
 
       # --- The agent fleet itself ---------------------------------------
-      # clawd-server runs all 22 production agents; destructive DB work
+      # peer-server runs all 22 production agents; destructive DB work
       # against it takes down the fleet (and its own intent ledger).
-      - "64.226.102.124"               # clawd-server public
-      - "100.67.108.119"               # clawd-server tailscale
+      - "203.0.113.10"               # peer-server public
+      - "100.64.0.11"               # peer-server tailscale
 
     # Credentials NEVER go in this file. If you keep a dedicated prod
     # connection string in the daemon env, reference it by name here:
@@ -53,7 +53,7 @@ protected_resources:
     db_urls: []
 
     # buckets:
-    #   - "noqta-prod-uploads"
+    #   - "acme-prod-uploads"
     # contexts:                        # k8s contexts, droplet ids, cluster names
     #   - "do-fra1-prod"
 
@@ -63,8 +63,8 @@ protected_resources:
   staging:
     resolve_env: true
     hosts:
-      - "v2.ksi.tn"                    # KSI V2 staging
-      - "admin.mtgl.noqta.tn"          # MTGL V2 staging
+      - "v2.initech.example.com"                    # Initech V2 staging
+      - "admin.globex.example.com"          # Globex V2 staging
     db_urls: []
 
 # Production-only rules beyond the catalog:

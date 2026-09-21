@@ -73,31 +73,31 @@ function hookWorkflow(opts: { id: string; event: string }): Workflow {
 
 describe("detectConflicts — workflow vs gitlab agentMapping", () => {
   it("no conflict when gitlab is disabled", () => {
-    const wf = workflow({ id: "wf-a", project: "noqta/repo" })
+    const wf = workflow({ id: "wf-a", project: "acme/repo" })
     const cfg = gitlabConfig({ enabled: false, agentMappings: [{ agentId: "a", gitlabUsernames: [], keywords: [] }] })
     expect(detectConflicts([wf], cfg)).toEqual([])
   })
 
   it("no conflict when gitlab has no agentMappings", () => {
-    const wf = workflow({ id: "wf-a", project: "noqta/repo" })
+    const wf = workflow({ id: "wf-a", project: "acme/repo" })
     const cfg = gitlabConfig({ agentMappings: [] })
     expect(detectConflicts([wf], cfg)).toEqual([])
   })
 
   it("flags overlap when workflow project is routed to a mapped agent", () => {
     // Reproduces the #709 incident: workflow `gitlab-sdlc-loop` triggers on
-    // gitlab-issue for project `mtgl/mtgl-system-v2`; the gitlab channel
-    // router has agentMapping mtgl-v2 routed to that project.
-    const wf = workflow({ id: "gitlab-sdlc-loop", project: "mtgl/mtgl-system-v2" })
+    // gitlab-issue for project `globex/globex-system-v2`; the gitlab channel
+    // router has agentMapping globex-v2 routed to that project.
+    const wf = workflow({ id: "gitlab-sdlc-loop", project: "globex/globex-system-v2" })
     const cfg = gitlabConfig({
-      routes: [{ project: "mtgl/mtgl-system-v2", agent: "mtgl-v2" }],
-      agentMappings: [{ agentId: "mtgl-v2", gitlabUsernames: ["coding-mtgl-v2"], keywords: [] }],
+      routes: [{ project: "globex/globex-system-v2", agent: "globex-v2" }],
+      agentMappings: [{ agentId: "globex-v2", gitlabUsernames: ["coding-globex-v2"], keywords: [] }],
     })
     const conflicts = detectConflicts([wf], cfg)
     expect(conflicts).toHaveLength(1)
     expect(conflicts[0].kind).toBe("workflow-vs-gitlab-agentmapping")
     expect(conflicts[0].workflowId).toBe("gitlab-sdlc-loop")
-    expect(conflicts[0].details.overlappingAgents).toEqual(["mtgl-v2"])
+    expect(conflicts[0].details.overlappingAgents).toEqual(["globex-v2"])
     expect(conflicts[0].autoFix).toBe(true)
   })
 
@@ -121,7 +121,7 @@ describe("detectConflicts — workflow vs gitlab agentMapping", () => {
     // no overlap because no mapping is currently the default for that project.
     const wf = workflow({ id: "wf-a", project: "other/repo" })
     const cfg = gitlabConfig({
-      routes: [{ project: "noqta/repo", agent: "a" }],
+      routes: [{ project: "acme/repo", agent: "a" }],
       agentMappings: [{ agentId: "a", gitlabUsernames: [], keywords: [] }],
     })
     expect(detectConflicts([wf], cfg)).toEqual([])
@@ -135,15 +135,15 @@ describe("detectConflicts — workflow vs gitlab agentMapping", () => {
     const wf = hookWorkflow({ id: "gitlab-sdlc-loop", event: "on:gitlab-issue" })
     const cfg = gitlabConfig({
       agentMappings: [
-        { agentId: "mtgl-v2", gitlabUsernames: ["coding-mtgl-v2"], keywords: [] },
-        { agentId: "pm-mtgl", gitlabUsernames: ["pm-mtgl"], keywords: [] },
+        { agentId: "globex-v2", gitlabUsernames: ["coding-globex-v2"], keywords: [] },
+        { agentId: "pm-globex", gitlabUsernames: ["pm-globex"], keywords: [] },
       ],
     })
     const conflicts = detectConflicts([wf], cfg)
     expect(conflicts).toHaveLength(1)
     expect(conflicts[0].workflowId).toBe("gitlab-sdlc-loop")
     expect(conflicts[0].details.triggerType).toBe("trigger.hook")
-    expect(conflicts[0].details.overlappingAgents).toEqual(["mtgl-v2", "pm-mtgl"])
+    expect(conflicts[0].details.overlappingAgents).toEqual(["globex-v2", "pm-globex"])
   })
 
   it("flags trigger.hook for on:gitlab-mr and on:gitlab-note too", () => {

@@ -56,8 +56,8 @@ describe("MCP daemon URL resolution", () => {
 
   it("lets AGENTX_DAEMON_URL override the config, for pointing at a remote node", () => {
     writeConfig("127.0.0.1:18800")
-    process.env.AGENTX_DAEMON_URL = "http://clawd.internal:19900"
-    expect(_resolveDaemonUrlForTesting()).toBe("http://clawd.internal:19900")
+    process.env.AGENTX_DAEMON_URL = "http://peer.internal:19900"
+    expect(_resolveDaemonUrlForTesting()).toBe("http://peer.internal:19900")
   })
 
   it("keeps the legacy default when there is no config at all", () => {

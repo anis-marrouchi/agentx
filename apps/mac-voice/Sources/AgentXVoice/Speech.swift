@@ -163,7 +163,7 @@ final class Player: NSObject, AVAudioPlayerDelegate {
 /// file logging is the difference between reading what happened and
 /// inferring it.
 enum Log {
-    private static let queue = DispatchQueue(label: "tn.noqta.agentx.voice.log")
+    private static let queue = DispatchQueue(label: "tn.acme.agentx.voice.log")
     private static let path = "\(NSHomeDirectory())/Library/Logs/agentx-voice.log"
 
     static func warn(_ s: String) { write("WARN \(s)") }

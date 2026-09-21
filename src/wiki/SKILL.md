@@ -19,7 +19,7 @@ You have access to a curated wiki that is **shared across all agents in the team
 - "What happened on DATE" / "past incident about Z" → query the wiki
 - "What did we decide about X" → query the wiki
 - "How do we do X" (team procedure, not code-level) → query the wiki
-- "History of the MTGL deploys" / any "history of" question → query the wiki
+- "History of the Globex deploys" / any "history of" question → query the wiki
 
 **When NOT to use the wiki:**
 

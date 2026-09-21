@@ -8,7 +8,7 @@ import { globalPermissions } from "@/permissions"
 import { globalHooks } from "@/hooks"
 import { debug } from "@/observability"
 import type { GeneratedFile } from "../providers/types"
-import { executeNoqtaTool, isNoqtaTool, type NoqtaToolContext } from "./noqta"
+import { executeAcmeTool, isAcmeTool, type AcmeToolContext } from "./acme"
 
 export interface ToolCallInput {
   name: string
@@ -30,12 +30,12 @@ export interface ToolExecutorOptions {
   interactive?: boolean
   overwrite?: boolean
   dryRun?: boolean
-  /** When set, noqta-tools (list_projects, create_task, etc.) become
+  /** When set, acme-tools (list_projects, create_task, etc.) become
    *  available — the executor dispatches them by POSTing to
    *  /api/agent/tools with the server-held bearer. The bearer NEVER
-   *  enters the model's prompt context. Omit to leave noqta-tools off
+   *  enters the model's prompt context. Omit to leave acme-tools off
    *  (the agent will see "Unknown tool" if it calls one anyway). */
-  noqtaContext?: NoqtaToolContext
+  acmeContext?: AcmeToolContext
   /** Operator-cancel signal. When fired we short-circuit `execute()`
    *  before dispatch and forward to execa as `cancelSignal` so a
    *  hung shell command can't outlive the abort. */
@@ -82,12 +82,12 @@ export class ToolExecutor {
     let result: ToolResult
 
     try {
-      // noqta-tools dispatch first — if the call name belongs to the
-      // noqta catalog AND a noqtaContext is configured, run it via the
+      // acme-tools dispatch first — if the call name belongs to the
+      // acme catalog AND an acmeContext is configured, run it via the
       // server-side HTTP dispatcher. Without context we fall through to
       // the "unknown tool" branch so the agent gets a clear error.
-      if (this.options.noqtaContext && isNoqtaTool(call.name)) {
-        const res = await executeNoqtaTool(call.name, call.input, this.options.noqtaContext)
+      if (this.options.acmeContext && isAcmeTool(call.name)) {
+        const res = await executeAcmeTool(call.name, call.input, this.options.acmeContext)
         result = {
           tool_use_id: call.id,
           content: res.content,

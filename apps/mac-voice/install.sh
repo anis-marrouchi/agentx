@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="AgentX Voice.app"
 DEST="/Applications/$APP_NAME"
-PLIST="$HOME/Library/LaunchAgents/tn.noqta.agentx.voice.plist"
+PLIST="$HOME/Library/LaunchAgents/tn.acme.agentx.voice.plist"
 
 echo "→ installing to $DEST"
 rm -rf "$DEST"
@@ -24,7 +24,7 @@ cat > "$PLIST" <<PL
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>tn.noqta.agentx.voice</string>
+  <key>Label</key><string>tn.acme.agentx.voice</string>
   <key>ProgramArguments</key>
   <array><string>$DEST/Contents/MacOS/AgentXVoice</string></array>
   <key>RunAtLoad</key><true/>
@@ -40,7 +40,7 @@ PL
 # bootout is asynchronous: bootstrapping immediately after can race the
 # teardown and fail with "Input/output error". Wait for the label to
 # actually disappear, then bootstrap only if it is really gone.
-LABEL="tn.noqta.agentx.voice"
+LABEL="tn.acme.agentx.voice"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 for _ in $(seq 1 20); do
   launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break
@@ -58,5 +58,5 @@ echo
 echo "Installed. It is running now and will start at login."
 echo "  Spotlight : ⌘Space, type \"AgentX Voice\""
 echo "  Talk      : hold ⌥Space"
-echo "  Stop      : launchctl bootout gui/\$(id -u)/tn.noqta.agentx.voice"
+echo "  Stop      : launchctl bootout gui/\$(id -u)/tn.acme.agentx.voice"
 echo "  Logs      : ~/Library/Logs/agentx-voice.log"

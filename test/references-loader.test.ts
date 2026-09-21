@@ -24,25 +24,25 @@ afterAll(() => {
 describe("loadReferences", () => {
   it("loads YAML cards and namespaces them", async () => {
     write(
-      "references/ksi/ssh.yaml",
+      "references/initech/ssh.yaml",
       [
-        "namespace: ksi.ssh",
+        "namespace: initech.ssh",
         "cards:",
-        "  - id: clawd-mac",
+        "  - id: peer-mac",
         "    kind: ssh",
-        "    summary: clawd-server primary daemon host",
+        "    summary: peer-server primary daemon host",
         "    fields:",
-        "      user: clawd",
-        "      host: 64.226.102.124",
+        "      user: peer",
+        "      host: 203.0.113.10",
         "      key: ~/.ssh/id_mac",
-        "    tags: [clawd, agentx]",
+        "    tags: [peer, agentx]",
       ].join("\n"),
     )
     const idx = await loadReferences(tmp)
-    expect(idx.byId.has("ksi.ssh.clawd-mac")).toBe(true)
-    const card = idx.byId.get("ksi.ssh.clawd-mac")!
-    expect(card.fields.host).toBe("64.226.102.124")
-    expect(idx.byTag.get("clawd")?.length).toBe(1)
+    expect(idx.byId.has("initech.ssh.peer-mac")).toBe(true)
+    const card = idx.byId.get("initech.ssh.peer-mac")!
+    expect(card.fields.host).toBe("203.0.113.10")
+    expect(idx.byTag.get("peer")?.length).toBe(1)
   })
 
   it("rejects an invalid id", async () => {
@@ -59,20 +59,20 @@ describe("loadReferences", () => {
     await expect(loadReferences(tmp)).resolves.toBeDefined()
     // file is logged + skipped, the earlier valid file should still load.
     const idx = await loadReferences(tmp)
-    expect(idx.byId.has("ksi.ssh.clawd-mac")).toBe(true)
+    expect(idx.byId.has("initech.ssh.peer-mac")).toBe(true)
   })
 
   it("renders deterministically (alphabetical)", () => {
     const cards: ReferenceCard[] = [
       {
-        id: "ksi.ssh.b",
+        id: "initech.ssh.b",
         kind: "ssh",
         summary: "second",
         fields: { host: "2" },
         tags: [],
       },
       {
-        id: "ksi.ssh.a",
+        id: "initech.ssh.a",
         kind: "ssh",
         summary: "first",
         fields: { host: "1" },
@@ -80,8 +80,8 @@ describe("loadReferences", () => {
       },
     ]
     const out = renderReferences(cards)
-    const aIdx = out.indexOf("ksi.ssh.a")
-    const bIdx = out.indexOf("ksi.ssh.b")
+    const aIdx = out.indexOf("initech.ssh.a")
+    const bIdx = out.indexOf("initech.ssh.b")
     expect(aIdx).toBeGreaterThan(0)
     expect(bIdx).toBeGreaterThan(aIdx)
     expect(out.startsWith("[Verified References")).toBe(true)
@@ -89,7 +89,7 @@ describe("loadReferences", () => {
 
   it("trims by char budget", () => {
     const cards: ReferenceCard[] = Array.from({ length: 20 }, (_, i) => ({
-      id: `ksi.test.${i.toString().padStart(2, "0")}`,
+      id: `initech.test.${i.toString().padStart(2, "0")}`,
       kind: "ssh" as const,
       summary: "x".repeat(40),
       fields: { host: "h" },

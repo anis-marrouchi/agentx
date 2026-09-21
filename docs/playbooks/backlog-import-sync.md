@@ -32,7 +32,7 @@ The interactive flow:
 Non-interactive form (e.g. for cron-driven imports):
 
 ```bash
-agentx backlog import --source gitlab --project mtgl/mtgl-system-v2 --assignee mtgl-v2
+agentx backlog import --source gitlab --project globex/globex-system-v2 --assignee globex-v2
 ```
 
 The `--assignee` flag pre-fills the assignee for every imported item — useful when you're seeding work for one specific agent.
@@ -77,7 +77,7 @@ For continuously keeping the backlog in step with upstream, add a cron:
 ```bash
 agentx schedule "every weekday at 8am" \
   --agent ops-agent \
-  --do "Run agentx backlog import --source gitlab --project mtgl/mtgl-system-v2 non-interactively for any new triaged issues since yesterday. Use the search filter 'label:triaged' to only catch ones that are ready to work on."
+  --do "Run agentx backlog import --source gitlab --project globex/globex-system-v2 non-interactively for any new triaged issues since yesterday. Use the search filter 'label:triaged' to only catch ones that are ready to work on."
 ```
 
 The agent runs the import (in dry-run-style — it can't accept interactive prompts, so wrap it in a script that pipes selections), or you can write a small wrapper that reads from the GitLab API directly and calls `agentx backlog import` per issue.
@@ -89,7 +89,7 @@ For the simplest setup, just have the agent run `agentx backlog import` every mo
 ```bash
 agentx backlog list
 agentx backlog list --status doing
-agentx backlog list --assignee mtgl-v2
+agentx backlog list --assignee globex-v2
 agentx backlog list --source gitlab
 ```
 
@@ -97,19 +97,19 @@ Shape of an item (`.agentx/backlog.json`):
 
 ```json
 {
-  "id": "gitlab:mtgl/mtgl-system-v2:142",
+  "id": "gitlab:globex/globex-system-v2:142",
   "title": "User profile page crash on null avatar",
   "description": "...",
-  "assignee": "mtgl-v2",
+  "assignee": "globex-v2",
   "labels": ["bug", "frontend"],
   "milestone": "v2.1",
   "status": "doing",
   "source": {
     "type": "gitlab",
-    "host": "gitlab.noqta.tn",
-    "project": "mtgl/mtgl-system-v2",
+    "host": "gitlab.example.com",
+    "project": "globex/globex-system-v2",
     "iid": 142,
-    "url": "https://gitlab.noqta.tn/mtgl/mtgl-system-v2/-/issues/142"
+    "url": "https://gitlab.example.com/globex/globex-system-v2/-/issues/142"
   },
   "importedAt": "2026-04-30T18:30:00.000Z",
   "createdAt": "...",

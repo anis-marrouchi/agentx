@@ -186,7 +186,7 @@ class TelegramGroupStore {
  * Persist long-poll `offset` per account to disk so a daemon restart doesn't
  * re-fetch updates Telegram still holds in its 24h retention window. Without
  * this, a crash loop (e.g. restart-counter cascade) causes the same message
- * to be handled N times — seen on 2026-04-15 when clawd spun through 20
+ * to be handled N times — seen on 2026-04-15 when peer spun through 20
  * systemd restarts while a zombie daemon held the pidfile, resulting in 6×
  * duplicate replies from the queued incoming messages.
  */
@@ -529,8 +529,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
   /** Account IDs of bots currently active (member/administrator) in a group.
    *  Used by the router to pick the correct bot when an agent has multiple
-   *  Telegram accounts bound to it (e.g. pm-ksi → both @noqta_ksi_bot and
-   *  @noqta_pm_ksi_bot) — the in-group account should win, otherwise messages
+   *  Telegram accounts bound to it (e.g. pm-initech → both @acme_initech_bot and
+   *  @acme_pm_initech_bot) — the in-group account should win, otherwise messages
    *  to the absent bot get silently dropped by multi-account-dedup. */
   getGroupBotAccounts(groupId: string): string[] {
     return this.groupStore.getGroupBots(groupId).map((b) => b.accountId)
@@ -1217,10 +1217,10 @@ export class TelegramAdapter implements ChannelAdapter {
       name: string
       content: string
       timestamp: string
-      /** Telegram bot account id used to send/receive (e.g., "noqta_cx_bot").
+      /** Telegram bot account id used to send/receive (e.g., "acme_cx_bot").
        *  Recorded on outbound only — provides the audit trail for "which bot
        *  actually sent this message" so debugging cross-account confusion
-       *  (the Nadia/CX bug) doesn't require API forensics. */
+       *  (the Marketing/CX bug) doesn't require API forensics. */
       accountId?: string
     },
   ): void {

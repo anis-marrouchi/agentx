@@ -52,7 +52,7 @@ export function markdownToHtml(text: string, opts: MarkdownOptions = {}): string
 
   // Wikilinks — support three forms for the [[...]] body:
   //   [[Title]]                        exact article title
-  //   [[path/to/article]]              path without .md (e.g. "people/anis")
+  //   [[path/to/article]]              path without .md (e.g. "people/alex")
   //   [[path/to/article.md]]           full relative path
   //   [[Title|custom display text]]    optional display override (Obsidian-style)
   html = html.replace(/\[\[([^\]]+)\]\]/g, (_m, inner: string) => {

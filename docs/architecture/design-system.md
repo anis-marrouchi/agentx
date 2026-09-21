@@ -104,7 +104,7 @@ same applies here. After any change to `components.css.ts` or a page renderer:
 
 ```bash
 pnpm build
-launchctl kickstart -k gui/$(id -u)/tn.noqta.agentx-dashboard   # macOS
+launchctl kickstart -k gui/$(id -u)/tn.acme.agentx-dashboard   # macOS
 curl -s localhost:4202/live | grep -c -- "--ax-blue"            # tokens present
 ```
 

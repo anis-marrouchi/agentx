@@ -5,7 +5,7 @@ import type { InboundEnvelope } from "../envelope"
 //
 // When a bot's reply lands in a group another bot is also in, the second
 // bot's polling sees the first bot's prose. Without a guard, mention
-// matchers will fire on bare-word handles ("nadia", "devops-mtgl") in
+// matchers will fire on bare-word handles ("marketing", "devops-globex") in
 // the prose and trigger spurious cross-bot cascades.
 //
 // The contract: bot-origin messages match ONLY explicit `@`-prefixed

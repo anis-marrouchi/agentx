@@ -35,7 +35,7 @@ A service is "always do exactly this." A procedure is "the steps for X are in th
 ```json
 "services": {
   "monthly-report": {
-    "name": "Monthly KSI report",
+    "name": "Monthly Initech report",
     "triggers": [
       { "pattern": "^monthly report$", "channel": "whatsapp" },
       { "pattern": "^تقرير الشهر$",     "channel": "whatsapp" },
@@ -43,7 +43,7 @@ A service is "always do exactly this." A procedure is "the steps for X are in th
     ],
     "allowedContacts": ["+1555...", "@manager"],
     "agent": "data-agent",
-    "prompt": "Run the standing monthly KSI report query. Fetch from PG host=db.internal db=ksi. Output the CSV inline (no attachments).",
+    "prompt": "Run the standing monthly Initech report query. Fetch from PG host=db.internal db=initech. Output the CSV inline (no attachments).",
     "schedule": "0 9 1 * *",
     "timezone": "Africa/Tunis",
     "notify": {
@@ -67,35 +67,35 @@ The deterministic surface is `triggers[].pattern` (regex), `allowedContacts`, `p
 
 ```bash
 agentx procedure add \
-  --id deploy-clawd \
-  --title "Deploy to clawd-server" \
-  --trigger "When asked to ship a feature to the clawd DigitalOcean droplet" \
+  --id deploy-peer \
+  --title "Deploy to peer-server" \
+  --trigger "When asked to ship a feature to the peer DigitalOcean droplet" \
   --input "Branch name" \
   --input "Reload required (yes/no)" \
   --expected "Service is up after deploy; smoke-test passes" \
   --kpi "Mean time to recover < 5min on broken deploy" \
   --owner devops-agent \
-  --tag "deploy,clawd" \
+  --tag "deploy,peer" \
   --steps "## Steps
 
 1. Build locally: pnpm build
-2. Rsync dist/: rsync -avz dist/ clawd:/home/clawd/agentx/dist/
+2. Rsync dist/: rsync -avz dist/ peer:/home/peer/agentx/dist/
 3. Re-install only if package.json changed: scp + pnpm install --prod
-4. Restart: ssh clawd 'sudo systemctl restart agentx'
-5. Verify: curl -fsS http://clawd-server:19900/health
-6. Tail for 60s: ssh clawd 'sudo journalctl -u agentx -f'
+4. Restart: ssh peer 'sudo systemctl restart agentx'
+5. Verify: curl -fsS http://peer-server:19900/health
+6. Tail for 60s: ssh peer 'sudo journalctl -u agentx -f'
 
 ## Notes
-- Mac builds against Node v22; clawd runs Node v22. If pnpm install ran under a different Node, rebuild better-sqlite3 explicitly."
+- Mac builds against Node v22; peer runs Node v22. If pnpm install ran under a different Node, rebuild better-sqlite3 explicitly."
 ```
 
-Then in the agent's CLAUDE.md, instruct the agent to call `agentx procedure show deploy-clawd` (or use the MCP tool surface) before any clawd deploy. The body is rendered into context as a verified reference; the agent follows the steps verbatim.
+Then in the agent's CLAUDE.md, instruct the agent to call `agentx procedure show deploy-peer` (or use the MCP tool surface) before any peer deploy. The body is rendered into context as a verified reference; the agent follows the steps verbatim.
 
 ## Calling a procedure from an agent
 
 Two paths:
 
-1. **Manual** — the agent runs `agentx procedure show deploy-clawd` in a `Bash` tool call, reads the output, follows the steps. Works without any extra config.
+1. **Manual** — the agent runs `agentx procedure show deploy-peer` in a `Bash` tool call, reads the output, follows the steps. Works without any extra config.
 2. **References integration** — set `contextReferences: true` on the agent and configure the references registry to point at procedures. The agent gets a `[Verified References]` block on every turn that includes the procedure body, so it never needs to fetch.
 
 The references path is the lower-latency, lower-token-cost option once you have more than one procedure.

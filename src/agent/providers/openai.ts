@@ -189,7 +189,7 @@ export class OpenAIProvider implements AgentProvider {
     // fetch's signal aborts — DeepSeek's reasoning_content can stream for
     // many minutes, and the orchestrator's wall-clock timer fired into a
     // signal that no one was actually watching here. Production saw 58+
-    // min hangs past the 15-min maxExecutionMinutes cap on noqta-public.
+    // min hangs past the 15-min maxExecutionMinutes cap on acme-public.
     const onAbortCancelReader = () => {
       reader.cancel(new Error("aborted")).catch(() => { /* already closed */ })
     }

@@ -31,7 +31,7 @@ const sampleProj: WorkflowEventProjection = {
   workflowId: "gitlab-sdlc-loop",
   eventId: "evt-abc",
   triggerSource: "gitlab-issue",
-  project: "mtgl/mtgl-system-v2",
+  project: "globex/globex-system-v2",
   entityRef: { backend: "issue", id: "709" },
 }
 
@@ -42,7 +42,7 @@ describe("buildWorkflowEventInput", () => {
       ts: 1714400000000,
       source: "workflow",
       sourceEventId: "gitlab-sdlc-loop:evt-abc",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       subject: "workflow:gitlab-sdlc-loop:entity:issue:709", // backend axis comes through
       intent: "workflow.gitlab-issue",
       rawJson: "{}",

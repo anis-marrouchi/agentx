@@ -516,7 +516,7 @@ agentx actions builtin http.fetch \
 
 # Delegate to a remote mesh peer's agent (fresh-session by default)
 agentx actions builtin mesh.delegate \
-  --input '{"peer":"clawd","agent":"devops","message":"daemon status"}'
+  --input '{"peer":"peer","agent":"devops","message":"daemon status"}'
 ```
 
 Common flags for `add`:

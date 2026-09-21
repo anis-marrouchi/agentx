@@ -61,7 +61,7 @@ const workSourceSchema = z.discriminatedUnion("type", [
  *  separate commit). */
 const projectSchema = z.object({
   /** Project identifier. For GitLab/GitHub: "owner/repo". For
-   *  noqta-internal projects: a stable string. */
+   *  acme-internal projects: a stable string. */
   id: z.string(),
   /** AgentId of the PM for this project. Looked up by
    *  `Organization.pmFor(project)` at dispatch time. */

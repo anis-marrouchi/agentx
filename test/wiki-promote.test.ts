@@ -63,17 +63,17 @@ afterEach(() => rmSync(ROOT, { recursive: true, force: true }))
 describe("promotion stamps", () => {
   it("round-trips memoryStamp → parseMemoryStamp", () => {
     const m = mem({ type: "feedback", name: "no_mock_db", updatedAt: "2026-07-01T12:34:56.789Z" })
-    const stamp = memoryStamp("clawd", m)
-    expect(stamp).toBe("memory:clawd/feedback_no_mock_db@2026-07-01T12:34:56.789Z")
+    const stamp = memoryStamp("peer", m)
+    expect(stamp).toBe("memory:peer/feedback_no_mock_db@2026-07-01T12:34:56.789Z")
     const parsed = parseMemoryStamp(stamp)!
     expect(parsed).toMatchObject({
-      agentId: "clawd",
+      agentId: "peer",
       type: "feedback",
       name: "no_mock_db",
       updatedAt: "2026-07-01T12:34:56.789Z",
-      key: "clawd/feedback_no_mock_db",
+      key: "peer/feedback_no_mock_db",
     })
-    expect(parsed.key).toBe(memoryKey("clawd", m))
+    expect(parsed.key).toBe(memoryKey("peer", m))
   })
 
   it("returns null for raw entry ids and malformed stamps", () => {
@@ -89,9 +89,9 @@ describe("promotion stamps", () => {
 
 describe("mergeSources", () => {
   it("replaces stale stamps for the same key, keeps raw entry ids and other stamps", () => {
-    const old = memoryStamp("clawd", mem({ updatedAt: "2026-06-01T10:00:00.000Z" }))
+    const old = memoryStamp("peer", mem({ updatedAt: "2026-06-01T10:00:00.000Z" }))
     const other = memoryStamp("cx", mem({ name: "wacli", type: "reference" }))
-    const fresh = memoryStamp("clawd", mem({ updatedAt: "2026-07-01T10:00:00.000Z" }))
+    const fresh = memoryStamp("peer", mem({ updatedAt: "2026-07-01T10:00:00.000Z" }))
     const merged = mergeSources(["entry-1", old, other], [fresh])
     expect(merged).toEqual(["entry-1", other, fresh])
   })
@@ -105,14 +105,14 @@ describe("mergeSources", () => {
 describe("listAllAgentMemories", () => {
   it("enumerates agent subdirs and skips underscore/dot dirs", () => {
     const store = new AgentMemory({ baseDir: ROOT })
-    store.save({ agentId: "clawd", type: "project", name: "ports", description: "d", body: "b" })
+    store.save({ agentId: "peer", type: "project", name: "ports", description: "d", body: "b" })
     store.save({ agentId: "cx", type: "reference", name: "wacli", description: "d", body: "b" })
     mkdirSync(resolve(store.baseDir, "_scratch"), { recursive: true })
     mkdirSync(resolve(store.baseDir, ".hidden"), { recursive: true })
 
     const all = listAllAgentMemories(ROOT)
     expect(all).toHaveLength(2)
-    expect(all.map((x) => x.agentId).sort()).toEqual(["clawd", "cx"])
+    expect(all.map((x) => x.agentId).sort()).toEqual(["peer", "cx"])
   })
 
   it("returns empty when the memory root does not exist", () => {
@@ -144,31 +144,31 @@ describe("promotion ledger", () => {
 
 describe("getUnpromotedMemories", () => {
   const all = [
-    { agentId: "clawd", memory: mem() },
+    { agentId: "peer", memory: mem() },
     { agentId: "cx", memory: mem({ name: "wacli", type: "reference", updatedAt: "2026-06-15T10:00:00.000Z" }) },
-    { agentId: "clawd", memory: mem({ name: "anis", type: "user" }) },
+    { agentId: "peer", memory: mem({ name: "alex", type: "user" }) },
   ]
 
   it("excludes user memories by default, includes them when opted in", () => {
     const def = getUnpromotedMemories(all, index(), [])
-    expect(def.map((c) => c.key).sort()).toEqual(["clawd/project_server_ports", "cx/reference_wacli"])
+    expect(def.map((c) => c.key).sort()).toEqual(["peer/project_server_ports", "cx/reference_wacli"])
     expect(DEFAULT_PROMOTE_TYPES).not.toContain("user")
 
     const withUser = getUnpromotedMemories(all, index(), [], { types: ["user"] })
-    expect(withUser.map((c) => c.key)).toEqual(["clawd/user_anis"])
+    expect(withUser.map((c) => c.key)).toEqual(["peer/user_alex"])
   })
 
   it("skips memories already stamped into article sources; re-runs are no-ops", () => {
-    const stamped = index([{ sources: ["entry-1", memoryStamp("clawd", mem())] }])
+    const stamped = index([{ sources: ["entry-1", memoryStamp("peer", mem())] }])
     const out = getUnpromotedMemories(all, stamped, [])
     expect(out.map((c) => c.key)).toEqual(["cx/reference_wacli"])
   })
 
   it("re-promotes when updatedAt is newer than the recorded stamp or skip", () => {
-    const oldStamp = memoryStamp("clawd", mem({ updatedAt: "2026-05-01T00:00:00.000Z" }))
+    const oldStamp = memoryStamp("peer", mem({ updatedAt: "2026-05-01T00:00:00.000Z" }))
     const stamped = index([{ sources: [oldStamp] }])
     const out = getUnpromotedMemories(all, stamped, [])
-    expect(out.map((c) => c.key)).toContain("clawd/project_server_ports")
+    expect(out.map((c) => c.key)).toContain("peer/project_server_ports")
 
     const ledger: PromotionLedger = [
       { stamp: memoryStamp("cx", mem({ name: "wacli", type: "reference", updatedAt: "2026-06-15T10:00:00.000Z" })), decision: "skipped", reason: "n/a", at: "2026-06-16T00:00:00.000Z" },
@@ -192,7 +192,7 @@ describe("getUnpromotedMemories", () => {
     const week = getUnpromotedMemories(all, index(), [], { sinceMs: 7 * 86400_000, now })
     expect(week.map((c) => c.key)).toEqual([])
     const month = getUnpromotedMemories(all, index(), [], { sinceMs: 30 * 86400_000, now })
-    expect(month.map((c) => c.key).sort()).toEqual(["clawd/project_server_ports", "cx/reference_wacli"])
+    expect(month.map((c) => c.key).sort()).toEqual(["peer/project_server_ports", "cx/reference_wacli"])
   })
 
   it("sorts newest first and honors max", () => {
@@ -210,14 +210,14 @@ function cand(agentId: string, over: Partial<MemoryRecord> = {}): MemoryCandidat
 describe("groupCandidates", () => {
   it("clusters same type_name across agents as corroboration with higher confidence", () => {
     const clusters = groupCandidates([
-      cand("clawd"),
+      cand("peer"),
       cand("devops", { updatedAt: "2026-06-10T00:00:00.000Z" }),
       cand("cx", { name: "wacli", type: "reference" }),
       cand("cx", { name: "style", type: "feedback" }),
     ])
     expect(clusters).toHaveLength(3)
     const corroborated = clusters.find((c) => c.candidates.length === 2)!
-    expect(corroborated.corroboratingAgents).toEqual(["clawd", "devops"])
+    expect(corroborated.corroboratingAgents).toEqual(["peer", "devops"])
     // 0.5 + 0.15·1 + 0.05 (project) = 0.70
     expect(corroborated.confidence).toBeCloseTo(0.7)
     const singleRef = clusters.find((c) => c.candidates[0].memory.name === "wacli")!
@@ -228,25 +228,25 @@ describe("groupCandidates", () => {
 })
 
 describe("parsePromotionResponse", () => {
-  const offered = new Set([cand("clawd").stamp, cand("cx", { name: "wacli", type: "reference" }).stamp])
+  const offered = new Set([cand("peer").stamp, cand("cx", { name: "wacli", type: "reference" }).stamp])
   const goodArticle = {
     path: "concepts/ports.md",
     title: "Server Ports",
     type: "concept",
-    related: ["Clawd Server"],
+    related: ["Peer Server"],
     tags: ["infra"],
-    content: "Ports for [[Clawd Server]] …",
-    promotedFrom: [cand("clawd").stamp],
+    content: "Ports for [[Peer Server]] …",
+    promotedFrom: [cand("peer").stamp],
   }
 
   it("parses a valid response surrounded by prose", () => {
-    const text = `Here you go:\n${JSON.stringify({ articles: [goodArticle], skipped: [{ memory: cand("cx", { name: "wacli", type: "reference" }).stamp, reason: "transient" }], gaps: ["Clawd Server — no article"] })}\nDone.`
+    const text = `Here you go:\n${JSON.stringify({ articles: [goodArticle], skipped: [{ memory: cand("cx", { name: "wacli", type: "reference" }).stamp, reason: "transient" }], gaps: ["Peer Server — no article"] })}\nDone.`
     const out = parsePromotionResponse(text, offered)
     if ("error" in out) throw new Error(out.error)
     expect(out.articles).toHaveLength(1)
-    expect(out.articles[0].promotedFrom).toEqual([cand("clawd").stamp])
+    expect(out.articles[0].promotedFrom).toEqual([cand("peer").stamp])
     expect(out.skipped).toEqual([{ stamp: cand("cx", { name: "wacli", type: "reference" }).stamp, reason: "transient" }])
-    expect(out.gaps).toEqual(["Clawd Server — no article"])
+    expect(out.gaps).toEqual(["Peer Server — no article"])
     expect(out.warnings).toEqual([])
   })
 
@@ -260,7 +260,7 @@ describe("parsePromotionResponse", () => {
     const fake = "memory:ghost/project_nope@2026-01-01T00:00:00.000Z"
     const text = JSON.stringify({
       articles: [
-        { ...goodArticle, promotedFrom: [cand("clawd").stamp, fake] },
+        { ...goodArticle, promotedFrom: [cand("peer").stamp, fake] },
         { ...goodArticle, path: "concepts/ghost.md", promotedFrom: [fake] },
       ],
       skipped: [{ memory: fake, reason: "x" }],
@@ -269,7 +269,7 @@ describe("parsePromotionResponse", () => {
     const out = parsePromotionResponse(text, offered)
     if ("error" in out) throw new Error(out.error)
     expect(out.articles).toHaveLength(1)
-    expect(out.articles[0].promotedFrom).toEqual([cand("clawd").stamp])
+    expect(out.articles[0].promotedFrom).toEqual([cand("peer").stamp])
     expect(out.skipped).toEqual([])
     expect(out.warnings.length).toBeGreaterThanOrEqual(3)
   })
@@ -285,14 +285,14 @@ describe("parsePromotionResponse", () => {
 describe("runPromotion", () => {
   const NOW = Date.parse("2026-07-01T12:00:00.000Z")
 
-  /** Seed one clawd project memory; returns its stamp. */
+  /** Seed one peer project memory; returns its stamp. */
   function seedMemory(over: Partial<Parameters<AgentMemory["save"]>[0]> = {}): string {
     const store = new AgentMemory({ baseDir: ROOT })
     const rec = store.save({
-      agentId: "clawd", type: "project", name: "server_ports",
+      agentId: "peer", type: "project", name: "server_ports",
       description: "daemon ports", body: "HTTP=19900, GitLab=18810", ...over,
     })
-    return memoryStamp((over as any).agentId ?? "clawd", rec)
+    return memoryStamp((over as any).agentId ?? "peer", rec)
   }
 
   function fetchReturning(payload: unknown): typeof fetch {
@@ -312,16 +312,16 @@ describe("runPromotion", () => {
   function articlePayload(stamp: string) {
     return {
       articles: [{
-        path: "concepts/clawd-server-ports.md",
-        title: "Clawd Server Ports",
+        path: "concepts/peer-server-ports.md",
+        title: "Peer Server Ports",
         type: "concept",
-        related: ["Clawd Server"],
+        related: ["Peer Server"],
         tags: ["infra"],
-        content: "Ports on [[Clawd Server]]: HTTP=19900.",
+        content: "Ports on [[Peer Server]]: HTTP=19900.",
         promotedFrom: [stamp],
       }],
       skipped: [],
-      gaps: ["Clawd Server — referenced but missing"],
+      gaps: ["Peer Server — referenced but missing"],
     }
   }
 
@@ -345,7 +345,7 @@ describe("runPromotion", () => {
     expect(report.gaps).toHaveLength(1)
 
     const store = new WikiStore(WIKI_DIR, () => {})
-    const article = store.readArticle("concepts/clawd-server-ports.md")!
+    const article = store.readArticle("concepts/peer-server-ports.md")!
     expect(article.meta.owner).toBe(PROMOTER_OWNER)
     expect(article.meta.access).toBe("public")
     expect(article.meta.sources).toEqual([stamp])
@@ -356,7 +356,7 @@ describe("runPromotion", () => {
     const rerun = await runPromotion({ ...baseOpts, fetchImpl: secondFetch })
     expect(rerun.candidates).toEqual([])
     expect((secondFetch as any).calls).toHaveLength(0)
-    expect(store.getVersions("concepts/clawd-server-ports.md")).toHaveLength(0) // never overwritten
+    expect(store.getVersions("concepts/peer-server-ports.md")).toHaveLength(0) // never overwritten
   })
 
   it("an updated memory re-promotes and mergeSources replaces the stale stamp", async () => {
@@ -369,7 +369,7 @@ describe("runPromotion", () => {
     const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp2)) })
     expect(report.written).toHaveLength(1)
     const store = new WikiStore(WIKI_DIR, () => {})
-    expect(store.readArticle("concepts/clawd-server-ports.md")!.meta.sources).toEqual([stamp2])
+    expect(store.readArticle("concepts/peer-server-ports.md")!.meta.sources).toEqual([stamp2])
   })
 
   it("unusable LLM reply after retry writes nothing and leaves the ledger untouched", async () => {
@@ -383,14 +383,14 @@ describe("runPromotion", () => {
     expect(report.errors).toHaveLength(1)
     expect(report.written).toEqual([])
     expect(readPromotionLedger(WIKI_DIR)).toEqual([])
-    expect(new WikiStore(WIKI_DIR, () => {}).readArticle("concepts/clawd-server-ports.md")).toBeNull()
+    expect(new WikiStore(WIKI_DIR, () => {}).readArticle("concepts/peer-server-ports.md")).toBeNull()
   })
 
   it("canWrite denial reports an error and does NOT ledger the stamp", async () => {
     const stamp = seedMemory()
     const store = new WikiStore(WIKI_DIR, () => {})
-    store.writeArticle("concepts/clawd-server-ports.md", {
-      title: "Clawd Server Ports", tags: [], owner: "someone-else", access: "public",
+    store.writeArticle("concepts/peer-server-ports.md", {
+      title: "Peer Server Ports", tags: [], owner: "someone-else", access: "public",
       created: "2026-01-01", lastUpdated: "2026-01-01", sources: [],
     }, "pre-existing", "someone-else")
 
@@ -399,7 +399,7 @@ describe("runPromotion", () => {
     expect(report.errors[0]).toContain("someone-else")
     expect(report.written).toEqual([])
     expect(readPromotionLedger(WIKI_DIR)).toEqual([]) // retried after a human resolves
-    expect(store.readArticle("concepts/clawd-server-ports.md")!.content).toBe("pre-existing")
+    expect(store.readArticle("concepts/peer-server-ports.md")!.content).toBe("pre-existing")
   })
 
   it("skip decisions land in the ledger and suppress the memory next run", async () => {
@@ -416,20 +416,20 @@ describe("runPromotion", () => {
 
 describe("buildMemoryPromotePrompt", () => {
   it("contains the wikilink mandate, exact stamps, corroboration, and truncated bodies", () => {
-    const long = cand("clawd", { body: "x".repeat(PROMOTE_BODY_LIMIT + 500) })
+    const long = cand("peer", { body: "x".repeat(PROMOTE_BODY_LIMIT + 500) })
     const clusters = groupCandidates([long, cand("devops")])
     const prompt = buildMemoryPromotePrompt(
       "memory-promoter",
       clusters,
-      [{ title: "Clawd Server", path: "concepts/clawd-server.md", type: "concept" }],
+      [{ title: "Peer Server", path: "concepts/peer-server.md", type: "concept" }],
       "",
     )
     expect(prompt).toContain("2–5 other articles via `[[Article Title]]` wikilinks")
     expect(prompt).toContain(long.stamp)
-    expect(prompt).toContain("corroborated by: clawd, devops (2 agents)")
+    expect(prompt).toContain("corroborated by: peer, devops (2 agents)")
     expect(prompt).toContain("[… truncated]")
     expect(prompt).not.toContain("x".repeat(PROMOTE_BODY_LIMIT + 1))
-    expect(prompt).toContain("[[Clawd Server]] — concepts/clawd-server.md")
+    expect(prompt).toContain("[[Peer Server]] — concepts/peer-server.md")
     expect(prompt).toContain("Never a secret")
     expect(prompt).toContain('"promotedFrom"')
   })

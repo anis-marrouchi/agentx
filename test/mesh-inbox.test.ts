@@ -18,7 +18,7 @@ const hasAgent = (id: string) => LOCAL_AGENTS.has(id)
 const config = {
   mesh: {
     inboxes: [
-      { name: "anis-desk", agent: "devops-agent", enabled: true },
+      { name: "alex-desk", agent: "devops-agent", enabled: true },
       { name: "ops-oncall", agent: "coo-agent", enabled: false },
     ],
   },
@@ -28,7 +28,7 @@ describe("published inboxes", () => {
   it("publishes only the declared name and whether it accepts", () => {
     const published = listPublishedInboxes(config)
     expect(published).toEqual([
-      { name: "anis-desk", accepting: true },
+      { name: "alex-desk", accepting: true },
       { name: "ops-oncall", accepting: false },
     ])
     // The published surface must never grow to carry local state. cwd names
@@ -45,7 +45,7 @@ describe("published inboxes", () => {
   })
 
   it("does not resolve a disabled inbox", () => {
-    expect(resolveInbox(config, "anis-desk")?.agent).toBe("devops-agent")
+    expect(resolveInbox(config, "alex-desk")?.agent).toBe("devops-agent")
     expect(resolveInbox(config, "ops-oncall")).toBeNull()
     expect(resolveInbox(config, "nope")).toBeNull()
   })
@@ -54,7 +54,7 @@ describe("published inboxes", () => {
 describe("relay request validation", () => {
   it("accepts a well-formed request and carries the claimed sender through", () => {
     const v = validateRelayRequest(config, {
-      inbox: "anis-desk", message: "build is red on main",
+      inbox: "alex-desk", message: "build is red on main",
       from: { principal: "alice", node: "her-laptop" },
     }, hasAgent)
     expect(v.ok).toBe(true)
@@ -74,20 +74,20 @@ describe("relay request validation", () => {
 
   it("requires an inbox and a non-empty message", () => {
     expect(validateRelayRequest(config, { message: "x" }, hasAgent)).toMatchObject({ ok: false, status: 400 })
-    expect(validateRelayRequest(config, { inbox: "anis-desk" }, hasAgent)).toMatchObject({ ok: false, status: 400 })
-    expect(validateRelayRequest(config, { inbox: "anis-desk", message: "   " }, hasAgent)).toMatchObject({ ok: false, status: 400 })
+    expect(validateRelayRequest(config, { inbox: "alex-desk" }, hasAgent)).toMatchObject({ ok: false, status: 400 })
+    expect(validateRelayRequest(config, { inbox: "alex-desk", message: "   " }, hasAgent)).toMatchObject({ ok: false, status: 400 })
   })
 
   it("refuses an oversized message rather than truncating it", () => {
     // Truncation could silently drop the half that changes the meaning.
     const big = "a".repeat(MAX_RELAY_MESSAGE_BYTES + 1)
-    expect(validateRelayRequest(config, { inbox: "anis-desk", message: big }, hasAgent))
+    expect(validateRelayRequest(config, { inbox: "alex-desk", message: big }, hasAgent))
       .toMatchObject({ ok: false, status: 413 })
   })
 
   it("counts bytes, not characters, so multibyte content can't slip past the cap", () => {
     const justOver = "é".repeat(MAX_RELAY_MESSAGE_BYTES / 2 + 1) // 2 bytes each
-    const v = validateRelayRequest(config, { inbox: "anis-desk", message: justOver }, hasAgent)
+    const v = validateRelayRequest(config, { inbox: "alex-desk", message: justOver }, hasAgent)
     expect(v.ok).toBe(false)
   })
 })
@@ -128,7 +128,7 @@ describe("relay framing", () => {
   })
 
   it("threads a correspondent's messages into one conversation", () => {
-    expect(relayChatId("anis-desk", "alice")).toBe("relay:anis-desk:alice")
+    expect(relayChatId("alex-desk", "alice")).toBe("relay:alex-desk:alice")
   })
 })
 
@@ -176,7 +176,7 @@ describe("no Claude Code session key custody", () => {
 describe("relay never hops to another node", () => {
   // registry.execute falls through to mesh fallback for an agent that is not
   // local, which would forward relayed foreign content to whichever peer
-  // hosts that agent id. Caught in production verification: a clawd inbox
+  // hosts that agent id. Caught in production verification: a peer inbox
   // pointing at a MacBook-only agent reported delivered:true, executed on
   // the other node under channel "api", and left no audit row behind.
   const strayConfig = {

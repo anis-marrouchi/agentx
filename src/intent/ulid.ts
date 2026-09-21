@@ -7,7 +7,7 @@ import { randomBytes } from "crypto"
 // that (10-char Crockford-base32 timestamp + 16-char randomness, total
 // 26 chars). The full `ulid` npm package is overkill for the few hundred
 // lines of generation logic we need, and adding a dep means another
-// `pnpm install --prod` step on clawd-server. So we inline.
+// `pnpm install --prod` step on peer-server. So we inline.
 //
 // This is not a cryptographic primitive — its job is to be a unique,
 // time-sortable identifier. Random bytes come from `crypto.randomBytes`

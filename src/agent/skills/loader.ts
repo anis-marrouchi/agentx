@@ -91,7 +91,7 @@ function parseYamlFrontmatter(raw: string): Record<string, unknown> {
   // Real YAML — handles arrays (block + flow), nested objects (e.g. `metadata:`
   // sub-block used by some skills), quoted strings, and comma-separated tag
   // strings. The previous primitive parser silently dropped nested keys, which
-  // caused valid skills (ksi-pm, hotmail, ksi-v1-coder) to fail Zod validation
+  // caused valid skills (initech-pm, hotmail, initech-v1-coder) to fail Zod validation
   // and load as null.
   const parsed = yaml.load(raw)
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {

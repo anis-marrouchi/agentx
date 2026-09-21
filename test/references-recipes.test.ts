@@ -17,60 +17,60 @@ beforeAll(() => {
   tmp = mkdtempSync(path.join(tmpdir(), "recipes-"))
   // Reference cards
   write(
-    "references/ksi/ssh.yaml",
+    "references/initech/ssh.yaml",
     [
-      "namespace: ksi.ssh",
+      "namespace: initech.ssh",
       "cards:",
-      "  - id: clawd-mac",
+      "  - id: peer-mac",
       "    kind: ssh",
-      "    summary: clawd-server",
-      "    fields: { user: clawd, host: 64.226.102.124 }",
+      "    summary: peer-server",
+      "    fields: { user: peer, host: 203.0.113.10 }",
       "    tags: [deploy]",
-      "  - id: ksi-server",
+      "  - id: initech-server",
       "    kind: ssh",
-      "    summary: KSI V1 production",
-      "    fields: { user: root, host: 134.122.119.251 }",
-      "    tags: [deploy, ksi-v1]",
+      "    summary: Initech V1 production",
+      "    fields: { user: root, host: 203.0.113.11 }",
+      "    tags: [deploy, initech-v1]",
     ].join("\n"),
   )
   write(
-    "references/ksi/contacts.yaml",
+    "references/initech/contacts.yaml",
     [
-      "namespace: ksi.contacts",
+      "namespace: initech.contacts",
       "cards:",
       "  - id: pm",
       "    kind: contact",
-      "    summary: KSI PM",
-      "    fields: { email: pm@ksi.tn }",
+      "    summary: Initech PM",
+      "    fields: { email: pm@initech.example.com }",
       "    tags: []",
       "  - id: dev",
       "    kind: contact",
-      "    summary: KSI dev lead",
-      "    fields: { email: dev@ksi.tn }",
+      "    summary: Initech dev lead",
+      "    fields: { email: dev@initech.example.com }",
       "    tags: []",
     ].join("\n"),
   )
   // Recipes
   write(
-    "references/recipes/ksi.yaml",
+    "references/recipes/initech.yaml",
     [
       "recipes:",
-      "  - id: ksi-devops",
+      "  - id: initech-devops",
       "    when:",
       "      agentIds: [devops-agent, coder-agent]",
       "      messageRegex: ['deploy|ssh|server|restart']",
-      "    references: [ksi.ssh.clawd-mac, ksi.ssh.ksi-server]",
-      "    skills: [ksi-v2-deploy]",
-      "  - id: ksi-cx",
+      "    references: [initech.ssh.peer-mac, initech.ssh.initech-server]",
+      "    skills: [initech-v2-deploy]",
+      "  - id: initech-cx",
       "    when:",
       "      agentIds: [cx-agent]",
       "      messageRegex: ['email|client|hotmail']",
-      "    references: [ksi.contacts.*]",
-      "    skills: [ksi-cx-email, hotmail]",
+      "    references: [initech.contacts.*]",
+      "    skills: [initech-cx-email, hotmail]",
       "  - id: missing-ref",
       "    when:",
-      "      agentIds: [pm-ksi]",
-      "    references: [ksi.does.not.exist]",
+      "      agentIds: [pm-initech]",
+      "    references: [initech.does.not.exist]",
     ].join("\n"),
   )
 })
@@ -88,10 +88,10 @@ describe("resolveRecipes", () => {
       recipes,
       refs,
     )
-    expect(result.matched.map(r => r.id)).toContain("ksi-devops")
+    expect(result.matched.map(r => r.id)).toContain("initech-devops")
     const ids = result.cards.map(c => c.id).sort()
-    expect(ids).toEqual(["ksi.ssh.clawd-mac", "ksi.ssh.ksi-server"])
-    expect(result.requiredSkills).toContain("ksi-v2-deploy")
+    expect(ids).toEqual(["initech.ssh.initech-server", "initech.ssh.peer-mac"])
+    expect(result.requiredSkills).toContain("initech-v2-deploy")
   })
 
   it("expands trailing .* into all matching ids", async () => {
@@ -103,8 +103,8 @@ describe("resolveRecipes", () => {
       refs,
     )
     const ids = result.cards.map(c => c.id).sort()
-    expect(ids).toEqual(["ksi.contacts.dev", "ksi.contacts.pm"])
-    expect(result.requiredSkills.sort()).toEqual(["hotmail", "ksi-cx-email"])
+    expect(ids).toEqual(["initech.contacts.dev", "initech.contacts.pm"])
+    expect(result.requiredSkills.sort()).toEqual(["hotmail", "initech-cx-email"])
   })
 
   it("does not match when agentId is wrong", async () => {
@@ -123,11 +123,11 @@ describe("resolveRecipes", () => {
     const refs = await loadReferences(tmp)
     const recipes = await loadRecipes(tmp)
     const result = resolveRecipes(
-      { agentId: "pm-ksi", message: "anything" },
+      { agentId: "pm-initech", message: "anything" },
       recipes,
       refs,
     )
-    expect(result.unresolvedIds).toContain("ksi.does.not.exist")
+    expect(result.unresolvedIds).toContain("initech.does.not.exist")
   })
 
   it("is deterministic — same input → same card order", async () => {

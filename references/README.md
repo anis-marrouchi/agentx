@@ -15,7 +15,7 @@ agentx context engine renders matching references as a deterministic
 | `.agentx/references/recipes/*.yaml` | **NO** | Operator-private recipe rules per project. |
 
 `.agentx/` is gitignored (see top-level `.gitignore`). Project-specific
-data — KSI for Noqta, your own clients for you — must NOT be committed
+data — Initech for Acme, your own clients for you — must NOT be committed
 to the agentx repo.
 
 ## Search order
@@ -44,7 +44,7 @@ cards:
     kind: ssh | gitlab | path | contact | http | secret-pointer
     summary: <one line>  # rendered in the verified-references block
     fields:              # typed key/value bag — strings, numbers, bools
-      user: clawd
+      user: peer
       host: 198.51.100.10
     tags: [deploy]       # optional, used by recipes
     ownerAgent: devops   # optional
@@ -73,7 +73,7 @@ recipes:
 ## How to onboard a new project
 
 1. Pick a namespace. Use a single-segment slug — e.g. `acme`, `bigco`,
-   `mtgl`, `ksi`. This becomes the prefix on every card id.
+   `globex`, `initech`. This becomes the prefix on every card id.
 2. Drop YAML files under `.agentx/references/<namespace>/`. Suggested
    split: `ssh.yaml`, `gitlab.yaml`, `paths.yaml`, `contacts.yaml`. The
    split is purely organizational — cards from any file in the tree

@@ -10,7 +10,7 @@ import { resolve } from "path"
 
 /**
  * Parse a dotenv-style file. Tolerates the `export KEY=VALUE` form used by
- * shell-sourced files like .env.gitlab on clawd-server.
+ * shell-sourced files like .env.gitlab on peer-server.
  */
 function parseDotEnv(content: string): Array<[string, string]> {
   const out: Array<[string, string]> = []
@@ -86,7 +86,7 @@ export function _resetDaemonEnvKeysCache(): void {
  * workspace .env / .env.gitlab.
  *
  * - System env (PATH, HOME, USER, …) survives untouched.
- * - Daemon-level secrets (e.g. GITLAB_TOKEN in /home/clawd/agentx/.env) are
+ * - Daemon-level secrets (e.g. GITLAB_TOKEN in /home/peer/agentx/.env) are
  *   stripped UNLESS the workspace provides its own value for that key.
  * - Workspace env (per-agent .env / .env.gitlab) wins on the final merge.
  */

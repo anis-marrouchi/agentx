@@ -1,19 +1,19 @@
-// --- noqta.tn workspace tools (registered with the agentic loop) ---
+// --- example.com workspace tools (registered with the agentic loop) ---
 //
-// When an agent runs on behalf of a noqta.tn user (e.g. the noqta-public
+// When an agent runs on behalf of an example.com user (e.g. the acme-public
 // agent serving the on-site chat / voice path), we expose 7 server-side
 // primitives as native Anthropic tools the model can call. The agentic
-// loop dispatches them by POSTing to {NOQTA_API_URL}/api/agent/tools
+// loop dispatches them by POSTing to {ACME_API_URL}/api/agent/tools
 // with the server-held AGENTX_TOOLS_SECRET — the bearer NEVER enters
 // the model's prompt context.
 //
-// The catalog mirrors the noqta.tn-side dispatcher in
+// The catalog mirrors the example.com-side dispatcher in
 // app/api/agent/tools/route.ts. Schemas must match — the agent will be
 // confused if a field exists here but not there (or vice-versa).
 
 import type { ToolDefinition } from "./definitions"
 
-export const NOQTA_TOOL_NAMES = [
+export const ACME_TOOL_NAMES = [
   "list_projects",
   "get_project",
   "create_task",
@@ -23,13 +23,13 @@ export const NOQTA_TOOL_NAMES = [
   "get_credit_balance",
 ] as const
 
-export type NoqtaToolName = typeof NOQTA_TOOL_NAMES[number]
+export type AcmeToolName = typeof ACME_TOOL_NAMES[number]
 
-export const NOQTA_TOOLS: ToolDefinition[] = [
+export const ACME_TOOLS: ToolDefinition[] = [
   {
     name: "list_projects",
     description:
-      "List the noqta.tn user's active projects with per-project task counts. Use when the user asks 'what am I working on' or wants a project overview.",
+      "List the example.com user's active projects with per-project task counts. Use when the user asks 'what am I working on' or wants a project overview.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
     permission: "none",
   },
@@ -134,37 +134,37 @@ export const NOQTA_TOOLS: ToolDefinition[] = [
   },
 ]
 
-export interface NoqtaToolContext {
-  /** The noqta.tn user UUID this tool call impersonates. */
+export interface AcmeToolContext {
+  /** The example.com user UUID this tool call impersonates. */
   userId: string
   /** Logical agent id (for the audit table's X-Agent-Id column). */
   agentId?: string
-  /** Override the noqta.tn base URL — defaults to NOQTA_API_URL env or https://noqta.tn. */
+  /** Override the example.com base URL — defaults to ACME_API_URL env or https://example.com. */
   apiUrl?: string
 }
 
 /**
- * Execute a noqta-tool by POSTing to /api/agent/tools with the server-
+ * Execute an acme-tool by POSTing to /api/agent/tools with the server-
  * held bearer. The bearer is read from env at call time (not embedded
  * in prompts). Returns the raw response body as a string for the
  * agentic loop's tool_result block.
  */
-export async function executeNoqtaTool(
-  toolName: NoqtaToolName | string,
+export async function executeAcmeTool(
+  toolName: AcmeToolName | string,
   input: Record<string, unknown>,
-  ctx: NoqtaToolContext,
+  ctx: AcmeToolContext,
 ): Promise<{ content: string; is_error: boolean }> {
   const bearer =
-    process.env.NOQTA_AGENT_TOOLS_SECRET ||
+    process.env.ACME_AGENT_TOOLS_SECRET ||
     process.env.AGENTX_TOOLS_SECRET ||
     process.env.TELEGRAM_BOT_API_SECRET
   if (!bearer) {
     return {
-      content: JSON.stringify({ ok: false, error: "NOQTA_AGENT_TOOLS_SECRET not set on this host" }),
+      content: JSON.stringify({ ok: false, error: "ACME_AGENT_TOOLS_SECRET not set on this host" }),
       is_error: true,
     }
   }
-  const baseUrl = ctx.apiUrl || process.env.NOQTA_API_URL || "https://noqta.tn"
+  const baseUrl = ctx.apiUrl || process.env.ACME_API_URL || "https://example.com"
   const url = `${baseUrl.replace(/\/$/, "")}/api/agent/tools`
 
   const body = { tool: toolName, user_id: ctx.userId, ...(input || {}) }
@@ -174,8 +174,8 @@ export async function executeNoqtaTool(
   // (observed in prod: two voice turns stuck for 71+ min on the same
   // conversation before a manual daemon restart). 30s is generous for
   // a DB-backed RPC; the tool itself is supposed to be sub-second.
-  // Tunable via NOQTA_TOOL_TIMEOUT_MS env.
-  const timeoutMs = Number(process.env.NOQTA_TOOL_TIMEOUT_MS || 30_000)
+  // Tunable via ACME_TOOL_TIMEOUT_MS env.
+  const timeoutMs = Number(process.env.ACME_TOOL_TIMEOUT_MS || 30_000)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -185,7 +185,7 @@ export async function executeNoqtaTool(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${bearer}`,
-        "X-Agent-Id": ctx.agentId || "noqta-public",
+        "X-Agent-Id": ctx.agentId || "acme-public",
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -202,7 +202,7 @@ export async function executeNoqtaTool(
     return {
       content: JSON.stringify({
         ok: false,
-        error: aborted ? `noqta tool RPC timed out after ${timeoutMs}ms` : "noqta tool RPC failed",
+        error: aborted ? `acme tool RPC timed out after ${timeoutMs}ms` : "acme tool RPC failed",
         detail: err?.message || "unknown",
       }),
       is_error: true,
@@ -212,6 +212,6 @@ export async function executeNoqtaTool(
   }
 }
 
-export function isNoqtaTool(name: string): name is NoqtaToolName {
-  return (NOQTA_TOOL_NAMES as readonly string[]).includes(name)
+export function isAcmeTool(name: string): name is AcmeToolName {
+  return (ACME_TOOL_NAMES as readonly string[]).includes(name)
 }

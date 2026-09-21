@@ -27,7 +27,7 @@ function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput
     ts: 1714400000000,
     source: "gitlab",
     sourceEventId: "gl-evt-1",
-    project: "mtgl/mtgl-system-v2",
+    project: "globex/globex-system-v2",
     subject: "issue:709",
     intent: "issue.opened",
     rawJson: JSON.stringify({ kind: "issue", id: 709 }),
@@ -50,7 +50,7 @@ describe("IntentLedger.recordEvent", () => {
     const second = ledger.recordEvent(eventInput({ ts: 1714400000999, project: "ignored" }))
     // Same id, same stored project (the second call must NOT have overwritten).
     expect(second.id).toBe(first.id)
-    expect(second.project).toBe("mtgl/mtgl-system-v2")
+    expect(second.project).toBe("globex/globex-system-v2")
     const all = ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }
     expect(all.n).toBe(1)
   })
@@ -104,7 +104,7 @@ describe("IntentLedger.recordDecision", () => {
       eventId: e.id,
       decidedAt: e.ts + 1,
       decidedBy: "channel-router",
-      agentId: "mtgl-v2",
+      agentId: "globex-v2",
       outcome: "dispatched" as const,
       reason: null,
     }
@@ -116,31 +116,31 @@ describe("IntentLedger.recordDecision", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({
       eventId: e.id, decidedAt: e.ts + 1, decidedBy: "channel-router",
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
     ledger.recordDecision({
-      eventId: e.id, decidedAt: e.ts + 2, decidedBy: "pm:pm-mtgl",
+      eventId: e.id, decidedAt: e.ts + 2, decidedBy: "pm:pm-globex",
       agentId: null, outcome: "halted", reason: "PM denied — out of scope",
     })
     const chain = ledger.getDecisionsForEvent(e.id)
-    expect(chain.map((d) => d.decidedBy)).toEqual(["channel-router", "pm:pm-mtgl"])
+    expect(chain.map((d) => d.decidedBy)).toEqual(["channel-router", "pm:pm-globex"])
     expect(chain[1].reason).toBe("PM denied — out of scope")
   })
 })
 
 describe("IntentLedger.getActiveDecisionForSubject", () => {
   it("returns null when nothing has been dispatched for the subject", () => {
-    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "issue:709")).toBeNull()
+    expect(ledger.getActiveDecisionForSubject("globex/globex-system-v2", "issue:709")).toBeNull()
   })
 
   it("returns the in-flight dispatched decision while it has no resolution", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({
       eventId: e.id, decidedAt: e.ts + 1, decidedBy: "channel-router",
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
-    const active = ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "issue:709")
-    expect(active?.agentId).toBe("mtgl-v2")
+    const active = ledger.getActiveDecisionForSubject("globex/globex-system-v2", "issue:709")
+    expect(active?.agentId).toBe("globex-v2")
     expect(active?.outcome).toBe("dispatched")
   })
 
@@ -148,13 +148,13 @@ describe("IntentLedger.getActiveDecisionForSubject", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({
       eventId: e.id, decidedAt: e.ts + 1, decidedBy: "channel-router",
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
     ledger.recordResolution({
       decisionEventId: e.id, decisionDecidedBy: "channel-router",
       resolvedAt: e.ts + 100, status: "completed", durationMs: 99, resultSummary: "ok",
     })
-    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "issue:709")).toBeNull()
+    expect(ledger.getActiveDecisionForSubject("globex/globex-system-v2", "issue:709")).toBeNull()
   })
 
   it("ignores non-dispatched decisions — halted/deduped/queued never count as active", () => {
@@ -163,12 +163,12 @@ describe("IntentLedger.getActiveDecisionForSubject", () => {
       eventId: e.id, decidedAt: e.ts + 1, decidedBy: "channel-router",
       agentId: null, outcome: "halted", reason: "no eligible agent",
     })
-    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "issue:709")).toBeNull()
+    expect(ledger.getActiveDecisionForSubject("globex/globex-system-v2", "issue:709")).toBeNull()
   })
 
   it("returns null when project or subject is null — active-task is undefined without both", () => {
     expect(ledger.getActiveDecisionForSubject(null, "issue:709")).toBeNull()
-    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", null)).toBeNull()
+    expect(ledger.getActiveDecisionForSubject("globex/globex-system-v2", null)).toBeNull()
   })
 
   it("scopes by (project, subject) — same subject string in another project is a different slot", () => {
@@ -203,7 +203,7 @@ describe("IntentLedger.getActiveDecisionForSubject", () => {
       eventId: e2.id, decidedAt: 300, decidedBy: "channel-router",
       agentId: "new-agent", outcome: "dispatched", reason: null,
     })
-    const active = ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "issue:709")
+    const active = ledger.getActiveDecisionForSubject("globex/globex-system-v2", "issue:709")
     expect(active?.agentId).toBe("new-agent")
   })
 })
@@ -222,7 +222,7 @@ describe("IntentLedger.recordResolution", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({
       eventId: e.id, decidedAt: 1, decidedBy: "channel-router",
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
     const res = {
       decisionEventId: e.id, decisionDecidedBy: "channel-router",
@@ -269,14 +269,14 @@ describe("IntentLedger.recordResolution", () => {
     expect(ledger.cleanupOrphanedDispatches()).toBe(0)
 
     // After cleanup, getActiveDecisionForSubject for e1's slot returns null.
-    expect(ledger.getActiveDecisionForSubject("mtgl/mtgl-system-v2", "s1")).toBeNull()
+    expect(ledger.getActiveDecisionForSubject("globex/globex-system-v2", "s1")).toBeNull()
   })
 
   it("getResolution returns null while in-flight and the row once resolved", () => {
     const e = ledger.recordEvent(eventInput())
     ledger.recordDecision({
       eventId: e.id, decidedAt: 1, decidedBy: "channel-router",
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
     expect(ledger.getResolution(e.id, "channel-router")).toBeNull()
     ledger.recordResolution({

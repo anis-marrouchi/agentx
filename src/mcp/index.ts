@@ -339,7 +339,7 @@ const TOOLS = [
       properties: {
         agentId: {
           type: "string",
-          description: "Exact agentId of the target agent (e.g. 'clawd', 'atlas'). Must match an agent in this daemon's registry or in a healthy mesh peer's directory.",
+          description: "Exact agentId of the target agent (e.g. 'peer', 'atlas'). Must match an agent in this daemon's registry or in a healthy mesh peer's directory.",
         },
         text: {
           type: "string",
@@ -356,7 +356,7 @@ const TOOLS = [
   {
     name: "agentx_recent",
     description:
-      "Read the most recent messages from a chat across ALL agents that have sessions for it. Returns inbound + each agent's replies in chronological order, so you can see what's actually been said in a Telegram chat / GitLab thread / WhatsApp DM regardless of which agent recorded it. Use this BEFORE speculating about what was sent — the cx/devops/marketing thread on 2026-04-29 about a Nadia/CX bot mixup would have been resolved in one call instead of three agents speculating. Bounded by sinceISO (default: last 24h) and limit (default: 30, max: 200).",
+      "Read the most recent messages from a chat across ALL agents that have sessions for it. Returns inbound + each agent's replies in chronological order, so you can see what's actually been said in a Telegram chat / GitLab thread / WhatsApp DM regardless of which agent recorded it. Use this BEFORE speculating about what was sent — the cx/devops/marketing thread on 2026-04-29 about a Marketing/CX bot mixup would have been resolved in one call instead of three agents speculating. Bounded by sinceISO (default: last 24h) and limit (default: 30, max: 200).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -553,7 +553,7 @@ const TOOLS = [
         },
         title_or_path: {
           type: "string",
-          description: "Article title (case-insensitive) or relative path like 'people/anis.md'.",
+          description: "Article title (case-insensitive) or relative path like 'people/alex.md'.",
         },
         instruction: {
           type: "string",
@@ -586,7 +586,7 @@ const TOOLS = [
         },
         topic: {
           type: "string",
-          description: "What the article is about — e.g. 'MTGL deployment procedure', 'Yousef Al-Fahad', 'Hackathonat KSA migration'.",
+          description: "What the article is about — e.g. 'Globex deployment procedure', 'Jane Doe', 'DemoSite KSA migration'.",
         },
         type: {
           type: "string",

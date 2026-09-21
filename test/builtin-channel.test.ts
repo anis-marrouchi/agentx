@@ -77,17 +77,17 @@ describe("channel.reply", () => {
 
     const out: any = await runBuiltin("channel.reply", {
       channel: "gitlab",
-      chatId: "mtgl/mtgl-system-v2:merge_request:236",
+      chatId: "globex/globex-system-v2:merge_request:236",
       text: "First answer.",
-      agentId: "mtgl-v2",
+      agentId: "globex-v2",
     })
 
     expect(out.messageId).toBe("msg-123")
     expect(calls).toHaveLength(1)
     expect(calls[0].msg.channel).toBe("gitlab")
-    expect(calls[0].msg.chatId).toBe("mtgl/mtgl-system-v2:merge_request:236")
+    expect(calls[0].msg.chatId).toBe("globex/globex-system-v2:merge_request:236")
     expect(calls[0].msg.text).toBe("First answer.")
-    expect(calls[0].msg.agentId).toBe("mtgl-v2")
+    expect(calls[0].msg.agentId).toBe("globex-v2")
     // Idempotency is opt-IN. Action MUST pass an idempotencyKey for the
     // router-level dedupe to engage. Empty string = router uses body hash.
     expect(calls[0].opts?.idempotencyKey).toBe("")
@@ -127,15 +127,15 @@ describe("channel.label", () => {
     setMessageRouter(router as any)
     const out: any = await runBuiltin("channel.label", {
       channel: "gitlab",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       kind: "merge_request",
       iid: "236",
       add: ["Doing"],
       remove: ["Triage", "To Do"],
-      agentId: "mtgl-v2",
+      agentId: "globex-v2",
     })
     expect(out.labels).toEqual([
-      "<echo:mtgl/mtgl-system-v2:merge_request:236:+Doing:-Triage+To Do>",
+      "<echo:globex/globex-system-v2:merge_request:236:+Doing:-Triage+To Do>",
     ])
   })
 
@@ -160,11 +160,11 @@ describe("channel.assign", () => {
     setMessageRouter(router as any)
     const out: any = await runBuiltin("channel.assign", {
       channel: "gitlab",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       kind: "issue",
       iid: "236",
-      assignees: ["coding-mtgl-v2", "noqta-pm-mtgl"],
-      agentId: "pm-mtgl",
+      assignees: ["coding-globex-v2", "acme-pm-globex"],
+      agentId: "pm-globex",
     })
     expect(out.assigneeIds).toEqual([1000, 1001])
   })
@@ -189,12 +189,12 @@ describe("channel.create_issue", () => {
     setMessageRouter(router as any)
     const out: any = await runBuiltin("channel.create_issue", {
       channel: "gitlab",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       title: "Test case for #236",
       description: "Reproduce: …",
       labels: ["test", "QA"],
       assignees: ["qa-forensics"],
-      agentId: "pm-mtgl",
+      agentId: "pm-globex",
     })
     expect(out.iid).toBe(9001)
     expect(out.url).toContain("9001")
@@ -206,7 +206,7 @@ describe("channel.create_issue", () => {
     setMessageRouter(router as any)
     const out: any = await runBuiltin("channel.create_issue", {
       channel: "gitlab",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       title: "Test case for #236",
       relateToIid: "236",
     })

@@ -57,7 +57,7 @@ export const boardReconcileSchema = z.object({
 export const boardSourceSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("gitlab"),
-    /** GitLab project paths (e.g. "mtgl/mtgl-system-v2"). At least one required. */
+    /** GitLab project paths (e.g. "globex/globex-system-v2"). At least one required. */
     projects: z.array(z.string()).min(1),
   }),
   // future: backlog, wiki

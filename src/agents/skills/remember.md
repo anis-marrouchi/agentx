@@ -51,7 +51,7 @@ curl -sS -X POST http://localhost:18800/api/memory \
   }'
 ```
 
-Your agent id is the name of the workspace directory you're in (e.g. `atlas`, `mtgl-v2`). When in doubt, run `basename "$(pwd)"`.
+Your agent id is the name of the workspace directory you're in (e.g. `atlas`, `globex-v2`). When in doubt, run `basename "$(pwd)"`.
 
 ### Update an existing memory
 

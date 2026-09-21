@@ -270,7 +270,7 @@ describe("ProcessRegistry — idle/stale sweep", () => {
   it("never kills a busy handle, even long past both timeouts", async () => {
     // Regression: the real factory used to keep reporting "idle" while a
     // turn streamed, so any turn longer than idleTimeoutMs was killed
-    // mid-work ("claude process … is dead (idle (903s))" on clawd).
+    // mid-work ("claude process … is dead (idle (903s))" on peer).
     const factory = new FakeFactory()
     const reg = new ProcessRegistry({
       factory,

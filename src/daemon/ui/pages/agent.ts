@@ -420,7 +420,7 @@ const AGENT_PAGE_BODY = `
           </div>
           <div class="ax-field">
             <label class="lbl">Chat id <span class="opt">who's the person?</span></label>
-            <input class="inp mono" id="ho-chatid" placeholder="1816212449 or +21612345678" />
+            <input class="inp mono" id="ho-chatid" placeholder="1816212449 or +10000000000" />
           </div>
           <div class="ax-field">
             <label class="lbl">Hand off to</label>
@@ -1546,7 +1546,7 @@ async function dispatchTd(text) {
   appendTdTyping();
   const t0 = Date.now();
   try {
-    // Use /chat endpoint so test-drive exercises the same path as noqta.tn.
+    // Use /chat endpoint so test-drive exercises the same path as example.com.
     // Falls back to /task reply shape if /chat isn't reachable (no auth configured).
     let reply, queuedTask;
     try {

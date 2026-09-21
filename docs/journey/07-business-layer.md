@@ -153,7 +153,7 @@ The simplest work source is a GitHub-flavored markdown checklist at `.agentx/bac
 - [ ] @alice Refresh LinkedIn banner [time: 30m]
 - [ ] @bob Fix login redirect bug — issue #142 [time: 1h30m]
 - [ ] @bob Migrate `/users` endpoint to v2 [time: 3h]
-- [ ] @carol Rotate GitLab token on clawd-server [time: 45m]
+- [ ] @carol Rotate GitLab token on peer-server [time: 45m]
 - [ ] @carol Weekly cost review [time: 1h]
 ```
 
@@ -162,7 +162,7 @@ Each unchecked line is a work item. The **line number is the stable ID**, so the
 ### Other work sources
 
 ```bash
-agentx config set business.workSource '{"type":"gitlab","projects":["noqta/agentx","noqta/website"]}'
+agentx config set business.workSource '{"type":"gitlab","projects":["acme/agentx","acme/website"]}'
 ```
 
 Pulls open GitLab issues assigned to each agent as work items.

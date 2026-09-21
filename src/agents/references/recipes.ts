@@ -27,7 +27,7 @@ const recipeSchema = z.object({
       requireTags: z.array(z.string()).optional(),
     })
     .default({}),
-  /** Card ids OR ".*" glob suffixes — "ksi.contacts.*" matches all under that prefix. */
+  /** Card ids OR ".*" glob suffixes — "initech.contacts.*" matches all under that prefix. */
   references: z.array(z.string()).default([]),
   /** Skill names that should be considered required for this intent (audit lint
    *  flags FAILING when a referenced skill has no SKILL.md). */

@@ -6,7 +6,7 @@ title: "10. MCP server — drive AgentX from Claude Code or Cursor"
 
 > **Difficulty:** advanced · **Time:** ~25 minutes
 
-You're coding in Cursor or Claude Code. You type `@agentx send the deploy summary to the team Telegram` — the IDE calls AgentX's MCP tools to dispatch the message. Or you ask `@agentx what are Nadia's crons today?` — the same MCP surface answers from the daemon's live state. Any MCP-capable client becomes a remote control for your AgentX fleet.
+You're coding in Cursor or Claude Code. You type `@agentx send the deploy summary to the team Telegram` — the IDE calls AgentX's MCP tools to dispatch the message. Or you ask `@agentx what are Marketing's crons today?` — the same MCP surface answers from the daemon's live state. Any MCP-capable client becomes a remote control for your AgentX fleet.
 
 This is the inverse of [Journey 5](/journey/05-hooks-webhooks): there, external systems poke AgentX. Here, your IDE pulls AgentX into its own tool surface.
 

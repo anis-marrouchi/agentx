@@ -250,7 +250,7 @@ export const TOPBAR_SCRIPT = `<script>
     // lives outside /api/admin for legacy reasons, but the page is part
     // of the admin surface and should proxy when a non-primary peer is
     // selected (otherwise the workflows page on Mac shows local-only
-    // YAMLs while the runtime lives on clawd).
+    // YAMLs while the runtime lives on peer).
     function shouldProxy(url){
       if (!url) return false;
       // Admin-side surfaces that follow the mesh selector. Each entry

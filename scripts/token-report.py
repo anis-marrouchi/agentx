@@ -108,7 +108,7 @@ def analyze_claude_sessions():
 
         name = project_dir.name
         # Strip user path prefix
-        for prefix in ["-Users-macbookpro-", "-home-clawd-"]:
+        for prefix in ["-Users-you-", "-home-peer-"]:
             if name.startswith(prefix):
                 name = name[len(prefix):]
 

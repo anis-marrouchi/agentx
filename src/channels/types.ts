@@ -148,7 +148,7 @@ export interface SeededMessage {
   timestamp: string
   externalId?: string
   /** Optional channel-side account/bot identity that handled this message
-   *  (e.g., Telegram accountId "noqta_cx_bot"). Captured by adapters that
+   *  (e.g., Telegram accountId "acme_cx_bot"). Captured by adapters that
    *  shadow-log outbound, so seeded history preserves the audit trail of
    *  which bot identity actually sent each line. Renderers may ignore it. */
   accountId?: string

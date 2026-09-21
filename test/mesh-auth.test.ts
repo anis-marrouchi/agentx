@@ -17,7 +17,7 @@ describe("decideMeshAuth", () => {
 
   it("allows non-loopback callers with a valid Bearer token", () => {
     const d = decideMeshAuth({
-      remoteAddress: "100.67.108.119",
+      remoteAddress: "100.64.0.11",
       authorizationHeader: "Bearer shared-mesh-token",
       acceptedTokens: TOKENS,
     })
@@ -26,7 +26,7 @@ describe("decideMeshAuth", () => {
 
   it("accepts any configured token (peer token, not just MESH_TOKEN)", () => {
     const d = decideMeshAuth({
-      remoteAddress: "100.67.108.119",
+      remoteAddress: "100.64.0.11",
       authorizationHeader: "Bearer peer-b-token",
       acceptedTokens: TOKENS,
     })
@@ -35,7 +35,7 @@ describe("decideMeshAuth", () => {
 
   it("rejects non-loopback callers with no token", () => {
     const d = decideMeshAuth({
-      remoteAddress: "100.67.108.119",
+      remoteAddress: "100.64.0.11",
       authorizationHeader: "",
       acceptedTokens: TOKENS,
     })
@@ -70,7 +70,7 @@ describe("decideMeshAuth", () => {
 
   it("grace path: allows (with reason) when no tokens are configured at all", () => {
     const d = decideMeshAuth({
-      remoteAddress: "100.67.108.119",
+      remoteAddress: "100.64.0.11",
       authorizationHeader: "",
       acceptedTokens: new Set(),
     })
@@ -79,7 +79,7 @@ describe("decideMeshAuth", () => {
 
   it("escape hatch: AGENTX_MESH_AUTH=off disables enforcement", () => {
     const d = decideMeshAuth({
-      remoteAddress: "100.67.108.119",
+      remoteAddress: "100.64.0.11",
       authorizationHeader: "",
       acceptedTokens: TOKENS,
       enforcementDisabled: true,

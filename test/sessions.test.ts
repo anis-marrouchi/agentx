@@ -25,7 +25,7 @@ describe("SessionStore", () => {
   })
 
   it("adds user and agent messages", () => {
-    store.addUserMessage("atlas", "telegram", "g1", "Anis", "Hello")
+    store.addUserMessage("atlas", "telegram", "g1", "Alex", "Hello")
     store.addAgentMessage("atlas", "telegram", "g1", "Hi there!")
 
     const session = store.getSession("atlas", "telegram", "g1")
@@ -35,9 +35,9 @@ describe("SessionStore", () => {
   })
 
   it("builds history context", () => {
-    store.addUserMessage("atlas", "telegram", "g1", "Anis", "What is 2+2?")
+    store.addUserMessage("atlas", "telegram", "g1", "Alex", "What is 2+2?")
     store.addAgentMessage("atlas", "telegram", "g1", "4")
-    store.addUserMessage("atlas", "telegram", "g1", "Anis", "And 3+3?")
+    store.addUserMessage("atlas", "telegram", "g1", "Alex", "And 3+3?")
 
     const context = store.buildHistoryContext("atlas", "telegram", "g1")
     expect(context).toContain("What is 2+2?")
@@ -58,8 +58,8 @@ describe("SessionStore", () => {
   })
 
   it("clearSession removes AgentX history and Claude resume metadata", () => {
-    store.addUserMessage("lead", "api", "default", "Anis", "I want monthly subscription")
-    store.addAgentMessage("lead", "api", "default", "Thanks Anis")
+    store.addUserMessage("lead", "api", "default", "Alex", "I want monthly subscription")
+    store.addAgentMessage("lead", "api", "default", "Thanks Alex")
     store.setClaudeSessionId("lead", "api", "default", "claude-session")
     store.setCodexSessionId("lead", "api", "default", "codex-session")
     store.recordTurnUsage("lead", "api", "default", {
@@ -85,7 +85,7 @@ describe("SessionStore", () => {
   })
 
   it("persists sessions across instances", () => {
-    store.addUserMessage("atlas", "telegram", "g1", "Anis", "test")
+    store.addUserMessage("atlas", "telegram", "g1", "Alex", "test")
     store.addAgentMessage("atlas", "telegram", "g1", "reply")
 
     // Create new store instance pointing to same dir
@@ -125,7 +125,7 @@ describe("SessionStore — day-rollover continuity", () => {
     const key = `atlas:telegram:g1:${prevDay}`
     const record = {
       id: key, agentId: "atlas", channel: "telegram", chatId: "g1", day: prevDay,
-      messages: [{ role: "user", name: "Anis", content: "old", timestamp: updatedAt }],
+      messages: [{ role: "user", name: "Alex", content: "old", timestamp: updatedAt }],
       createdAt: updatedAt, updatedAt,
       claudeSessionId: "sess-yesterday", turnCount: 7, lastTurnContextTokens: 90_000,
       ...extra,

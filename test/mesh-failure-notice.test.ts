@@ -6,8 +6,8 @@ import { cleanMeshError } from "../src/channels/router"
 // on the reasoning that a mesh failure has no meaningful agent attribution.
 // In practice the router always knows which agent the note was routed to, and
 // the global token belongs to some *other* bot — so a failure on a thread that
-// @-mentioned @noqta_coder_bot showed a ❌ authored by @devops-noqta, and the
-// reporter concluded the wrong bot was ignoring them (noqta/minbar#46).
+// @-mentioned @acme_coder_bot showed a ❌ authored by @devops-acme, and the
+// reporter concluded the wrong bot was ignoring them (acme/soylent#46).
 //
 // These tests pin the identity: react() posts as the named agent whenever that
 // agent's identity is resolvable, and only falls back to the global token when
@@ -23,8 +23,8 @@ function makeConfig(overrides: Partial<GitLabChannelConfig> = {}): GitLabChannel
     token: GLOBAL_TOKEN,
     routes: [],
     agentMappings: [
-      { agentId: "coder-agent", gitlabUsernames: ["noqta_coder_bot"], keywords: [], token: CODER_TOKEN },
-      { agentId: "remote-agent", gitlabUsernames: ["noqta_remote_bot"], keywords: [], node: "macbook-local" },
+      { agentId: "coder-agent", gitlabUsernames: ["acme_coder_bot"], keywords: [], token: CODER_TOKEN },
+      { agentId: "remote-agent", gitlabUsernames: ["acme_remote_bot"], keywords: [], node: "hq-local" },
     ],
     ...overrides,
   }
@@ -54,7 +54,7 @@ describe("GitLabAdapter.react — reaction identity", () => {
   it("posts ❌ with the agent's own token, not the global one", async () => {
     const gl = new GitLabAdapter(makeConfig(), () => {})
 
-    await gl.react("noqta/minbar:issue:46", "104670", "❌", "coder-agent")
+    await gl.react("acme/soylent:issue:46", "104670", "❌", "coder-agent")
 
     expect(calls).toHaveLength(1)
     expect(calls[0].token).toBe(CODER_TOKEN)
@@ -68,14 +68,14 @@ describe("GitLabAdapter.react — reaction identity", () => {
     const forwarded: any[] = []
     gl.setReactForwarder(async (...args) => { forwarded.push(args) })
 
-    await gl.react("noqta/minbar:issue:46", "104670", "❌", "remote-agent")
+    await gl.react("acme/soylent:issue:46", "104670", "❌", "remote-agent")
 
     // Nothing posted locally — the peer owns the token.
     expect(calls).toHaveLength(0)
     expect(forwarded).toHaveLength(1)
     const [node, project, noteableType, noteableIid, noteId, agentId, name] = forwarded[0]
-    expect(node).toBe("macbook-local")
-    expect(project).toBe("noqta/minbar")
+    expect(node).toBe("hq-local")
+    expect(project).toBe("acme/soylent")
     expect(noteableType).toBe("issue")
     expect(noteableIid).toBe("46")
     expect(noteId).toBe(104670)
@@ -88,7 +88,7 @@ describe("GitLabAdapter.react — reaction identity", () => {
   it("falls back to the global token when no agent is known", async () => {
     const gl = new GitLabAdapter(makeConfig(), () => {})
 
-    await gl.react("noqta/minbar:issue:46", "104670", "❌")
+    await gl.react("acme/soylent:issue:46", "104670", "❌")
 
     expect(calls).toHaveLength(1)
     expect(calls[0].token).toBe(GLOBAL_TOKEN)
@@ -98,7 +98,7 @@ describe("GitLabAdapter.react — reaction identity", () => {
   it("falls back to the global token when the agent has no mapping", async () => {
     const gl = new GitLabAdapter(makeConfig(), () => {})
 
-    await gl.react("noqta/minbar:issue:46", "104670", "⚠️", "unmapped-agent")
+    await gl.react("acme/soylent:issue:46", "104670", "⚠️", "unmapped-agent")
 
     expect(calls).toHaveLength(1)
     expect(calls[0].token).toBe(GLOBAL_TOKEN)
@@ -108,7 +108,7 @@ describe("GitLabAdapter.react — reaction identity", () => {
   it("still drops 👀 — handleNote already acks with the agent's own token", async () => {
     const gl = new GitLabAdapter(makeConfig(), () => {})
 
-    await gl.react("noqta/minbar:issue:46", "104670", "👀", "coder-agent")
+    await gl.react("acme/soylent:issue:46", "104670", "👀", "coder-agent")
 
     expect(calls).toHaveLength(0)
   })
@@ -127,13 +127,13 @@ describe("GitLabAdapter.react — reaction identity", () => {
 describe("cleanMeshError", () => {
   it("peels a single mesh hop down to the real cause", () => {
     expect(cleanMeshError(
-      'Peer "macbook-local" /task error: 500: Anthropic\'s API is temporarily overloaded. — AgentX will retry in a moment.',
+      'Peer "hq-local" /task error: 500: Anthropic\'s API is temporarily overloaded. — AgentX will retry in a moment.',
     )).toBe("Anthropic's API is temporarily overloaded.")
   })
 
-  it("peels a nested fallback chain (the shape seen on noqta/minbar#46)", () => {
+  it("peels a nested fallback chain (the shape seen on acme/soylent#46)", () => {
     expect(cleanMeshError(
-      'Peer "macbook-local" /task error: 500: mesh fallback failed: Peer "clawd-server" /task error: 500: Anthropic\'s API is temporarily overloaded. — AgentX will retry in a moment.',
+      'Peer "hq-local" /task error: 500: mesh fallback failed: Peer "peer-server" /task error: 500: Anthropic\'s API is temporarily overloaded. — AgentX will retry in a moment.',
     )).toBe("Anthropic's API is temporarily overloaded.")
   })
 

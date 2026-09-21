@@ -98,7 +98,7 @@ board
   .command("add <id>")
   .description("add a GitLab board to agentx.json")
   .requiredOption("--name <name>", "human-readable board name")
-  .requiredOption("--projects <paths>", "comma-separated GitLab project paths (e.g. 'mtgl/system,mtgl/website')")
+  .requiredOption("--projects <paths>", "comma-separated GitLab project paths (e.g. 'globex/system,globex/website')")
   .option("--label <label>", "primary tool label ANDed into every query (e.g. 'Tool::Claude')")
   .option("--days <n>", "open-window time range in days", "30")
   .option("--closed-days <n>", "closed-window in days", "30")

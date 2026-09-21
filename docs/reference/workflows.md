@@ -36,7 +36,7 @@ nodes:
         Reply with exactly one line:
         RESULT: new-request
         RESULT: other
-      resultParser: noqta-result-token
+      resultParser: acme-result-token
       timeoutMinutes: 2
 
   - id: route
@@ -51,7 +51,7 @@ nodes:
     type: action.createIssue
     config:
       channel: gitlab
-      project: noqta/web
+      project: acme/web
       title: "WhatsApp: new request from {{trigger.sender.name}}"
       description: "{{trigger.text}}"
 
@@ -155,7 +155,7 @@ Filters move "ONLY ACT when …" guards from the agent prompt up to the dispatch
 id: mr-review-pickup
 version: 2
 title: Review MRs when a reviewer is assigned
-project: noqta/web
+project: acme/web
 
 nodes:
   - id: trigger
@@ -217,7 +217,7 @@ Each fire gets a distinct entity ref, so overlapping runs coexist. The trigger's
 
 | Node | Purpose | Output bundle |
 |---|---|---|
-| `agent` | Invoke a registered agent with a templated `prompt`. `resultParser: noqta-result-token` (default) parses a `RESULT:` line; `resultParser: json` extracts a JSON block. `timeoutMinutes` optional. | `{ reply, result, json?, taskId, durationMs }` |
+| `agent` | Invoke a registered agent with a templated `prompt`. `resultParser: acme-result-token` (default) parses a `RESULT:` line; `resultParser: json` extracts a JSON block. `timeoutMinutes` optional. | `{ reply, result, json?, taskId, durationMs }` |
 | `transform` | Pick or reshape values from upstream context | arbitrary |
 | `branch` | First matching case selects an outgoing port (see below) | `{ port }` |
 | `action.*` | Side-effect sinks — one verb per channel-adapter method | verb-specific |

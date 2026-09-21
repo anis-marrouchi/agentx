@@ -16,7 +16,7 @@ Use this when:
 Each agent has an optional `intents: string[]` (Phase 5). Empty/unset = permissive (any intent).
 
 ```bash
-agentx config get agents.mtgl-v2.intents --json
+agentx config get agents.globex-v2.intents --json
 ```
 
 Example:
@@ -54,11 +54,11 @@ agentx config set agents.atlas.intents '[]'
 The `maxDelegationDepth` field (Phase 8) caps how many distinct upstream agents can be in the dispatch chain on the same `(project, subject)` before a dispatch to this agent is refused. Default: `5`. Range: `0–50`.
 
 ```bash
-agentx config get agents.mtgl-v2.maxDelegationDepth
+agentx config get agents.globex-v2.maxDelegationDepth
 # 5
 
 # Tighten — this coder should never sit deeper than 3 hops
-agentx config set agents.mtgl-v2.maxDelegationDepth 3
+agentx config set agents.globex-v2.maxDelegationDepth 3
 ```
 
 Setting `0` disables the check for that agent (use when the agent is always called as the bottom of a chain).

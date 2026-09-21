@@ -1,9 +1,9 @@
 import AppKit
 
-/// Noqta design tokens, transcribed for AppKit.
+/// Acme design tokens, transcribed for AppKit.
 ///
 /// Copied from the design system's `tokens/` rather than eyeballed, so the
-/// widget belongs to the same product as noqta.tn instead of merely
+/// widget belongs to the same product as example.com instead of merely
 /// looking tidy. Two rules from that system shape most of what follows:
 ///
 ///   - Mono is UPPERCASE with 0.06–0.08em tracking, and is reserved for
@@ -12,7 +12,7 @@ import AppKit
 ///     and from a single accent colour, not from decoration.
 ///
 /// System colours were the obvious default and the wrong one: .systemRed
-/// and .systemGreen are macOS's voice, not Noqta's, and they shift under
+/// and .systemGreen are macOS's voice, not Acme's, and they shift under
 /// the user's accent-colour setting.
 enum Brand {
 

@@ -523,7 +523,7 @@ function renderAgent(a, node) {
   // The page's job is "who is alive and what are they doing RIGHT NOW". Giving
   // an idle agent the same real estate as a working one — model, last-reply
   // excerpt, footer — is exactly backwards: it makes the answer harder to see
-  // the more agents you run. On clawd (22 agents) the busy ones were lost in a
+  // the more agents you run. On peer (22 agents) the busy ones were lost in a
   // wall of identical idle cards.
   //
   // Collapsed still carries what the question needs: who, engine, and when it

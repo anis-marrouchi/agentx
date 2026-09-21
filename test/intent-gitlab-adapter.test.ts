@@ -36,7 +36,7 @@ afterEach(() => {
 
 const sampleIssue: GitLabEventProjection = {
   entityKind: "issue",
-  project: "mtgl/mtgl-system-v2",
+  project: "globex/globex-system-v2",
   iid: 709,
   action: "open",
   title: "Test issue",
@@ -46,7 +46,7 @@ const sampleIssue: GitLabEventProjection = {
 
 const sampleMR: GitLabEventProjection = {
   entityKind: "merge_request",
-  project: "mtgl/mtgl-system-v2",
+  project: "globex/globex-system-v2",
   iid: 225,
   action: "open",
   title: "Test MR",
@@ -54,8 +54,8 @@ const sampleMR: GitLabEventProjection = {
   url: "https://gitlab.example/mrs/225",
 }
 
-const issueTarget: GitLabTarget = { agentId: "mtgl-v2", trigger: "assignee-added" }
-const mrTarget: GitLabTarget = { agentId: "mtgl-v2", trigger: "reviewer-added" }
+const issueTarget: GitLabTarget = { agentId: "globex-v2", trigger: "assignee-added" }
+const mrTarget: GitLabTarget = { agentId: "globex-v2", trigger: "reviewer-added" }
 
 describe("buildGitLabTargetEventInput", () => {
   it("issue: entity-kind-prefixed sourceEventId + subject", () => {
@@ -63,9 +63,9 @@ describe("buildGitLabTargetEventInput", () => {
     expect(input).toEqual({
       ts: 1714400000000,
       source: "gitlab",
-      sourceEventId: "issue:709:open:mtgl-v2:assignee-added",
-      project: "mtgl/mtgl-system-v2",
-      subject: "issue:709:agent:mtgl-v2:trigger:assignee-added",
+      sourceEventId: "issue:709:open:globex-v2:assignee-added",
+      project: "globex/globex-system-v2",
+      subject: "issue:709:agent:globex-v2:trigger:assignee-added",
       intent: "issue.open",
       rawJson: "{}",
     })
@@ -76,9 +76,9 @@ describe("buildGitLabTargetEventInput", () => {
     expect(input).toEqual({
       ts: 1714400000000,
       source: "gitlab",
-      sourceEventId: "merge_request:225:open:mtgl-v2:reviewer-added",
-      project: "mtgl/mtgl-system-v2",
-      subject: "merge_request:225:agent:mtgl-v2:trigger:reviewer-added",
+      sourceEventId: "merge_request:225:open:globex-v2:reviewer-added",
+      project: "globex/globex-system-v2",
+      subject: "merge_request:225:agent:globex-v2:trigger:reviewer-added",
       intent: "merge_request.open",
       rawJson: "{}",
     })
@@ -126,7 +126,7 @@ describe("buildGitLabDispatchPolicy", () => {
   it("decide() returns dispatched/agentId — the policy is a thin wrapper around the legacy target choice", () => {
     const policy = buildGitLabDispatchPolicy("issue", issueTarget)
     expect(policy.decide({} as any)).toEqual({
-      agentId: "mtgl-v2",
+      agentId: "globex-v2",
       outcome: "dispatched",
       reason: null,
     })
@@ -137,7 +137,7 @@ describe("recordGitLabTargetDispatch", () => {
   it("issue: writes event + decision; ULID time-encodes the supplied clock", () => {
     recordGitLabTargetDispatch(
       ledger, sampleIssue, issueTarget, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched" },
+      { agentId: "globex-v2", outcome: "dispatched" },
       () => 1714400000000,
     )
     const events = ledger.db.prepare("SELECT * FROM intent_events").all() as Array<{ id: string; ts: number }>
@@ -171,10 +171,10 @@ describe("recordGitLabTargetDispatch", () => {
     ).toBe(2)
   })
 
-  it("agreement: ledger=dispatched/mtgl-v2 and legacy=dispatched/mtgl-v2 → no divergence", () => {
+  it("agreement: ledger=dispatched/globex-v2 and legacy=dispatched/globex-v2 → no divergence", () => {
     recordGitLabTargetDispatch(
       ledger, sampleIssue, issueTarget, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched" },
+      { agentId: "globex-v2", outcome: "dispatched" },
       () => 1,
     )
     expect(ledger.getDivergences()).toHaveLength(0)
@@ -199,7 +199,7 @@ describe("recordGitLabTargetDispatch", () => {
     for (let i = 0; i < 3; i++) {
       recordGitLabTargetDispatch(
         ledger, sampleIssue, issueTarget, "{}",
-        { agentId: "mtgl-v2", outcome: "dispatched" },
+        { agentId: "globex-v2", outcome: "dispatched" },
         () => 1 + i,
       )
     }
@@ -240,10 +240,10 @@ describe("recordGitLabTargetDispatch", () => {
 
 const sampleNote: GitLabNoteProjection = {
   noteId: "12345",
-  project: "mtgl/mtgl-system-v2",
+  project: "globex/globex-system-v2",
   noteableType: "issue",
   noteableIid: "709",
-  mentions: ["mtgl_v2_bot"],
+  mentions: ["globex_v2_bot"],
 }
 
 describe("buildNoteEventInput", () => {
@@ -253,7 +253,7 @@ describe("buildNoteEventInput", () => {
       ts: 1714400000000,
       source: "gitlab",
       sourceEventId: "note:12345",
-      project: "mtgl/mtgl-system-v2",
+      project: "globex/globex-system-v2",
       subject: "issue:709:note:12345",
       intent: "note.issue",
       rawJson: "{}",
@@ -281,8 +281,8 @@ describe("buildNoteDispatchPolicy", () => {
   })
 
   it("agentId resolved → dispatched", () => {
-    expect(buildNoteDispatchPolicy("mtgl-v2").decide({} as any)).toEqual({
-      agentId: "mtgl-v2", outcome: "dispatched", reason: null,
+    expect(buildNoteDispatchPolicy("globex-v2").decide({} as any)).toEqual({
+      agentId: "globex-v2", outcome: "dispatched", reason: null,
     })
   })
 
@@ -297,7 +297,7 @@ describe("recordGitLabNoteDispatch", () => {
   it("agreement: dispatch/X = dispatch/X → no divergence", () => {
     recordGitLabNoteDispatch(
       ledger, sampleNote, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention:mtgl_v2_bot" },
+      { agentId: "globex-v2", outcome: "dispatched", reason: "mention:globex_v2_bot" },
       () => 1,
     )
     expect(ledger.getDivergences()).toHaveLength(0)
@@ -308,7 +308,7 @@ describe("recordGitLabNoteDispatch", () => {
     for (let i = 0; i < 4; i++) {
       recordGitLabNoteDispatch(
         ledger, sampleNote, "{}",
-        { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+        { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
         () => 1 + i,
       )
     }
@@ -383,7 +383,7 @@ describe("recordGitLabIssueLevelDecision", () => {
     // NOT collide because the marker is part of the sourceEventId.
     recordGitLabTargetDispatch(
       ledger, sampleIssue, issueTarget, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched" },
+      { agentId: "globex-v2", outcome: "dispatched" },
       () => 1,
     )
     recordGitLabIssueLevelDecision(

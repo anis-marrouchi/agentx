@@ -83,9 +83,9 @@ describe("transitionDiff", () => {
 describe("boardSchema validation", () => {
   it("accepts a minimal gitlab board and applies GitLab-style default columns", () => {
     const parsed = boardSchema.parse({
-      id: "mtgl-main",
-      name: "MTGL Engineering",
-      source: { type: "gitlab", projects: ["mtgl/mtgl-system-v2"] },
+      id: "globex-main",
+      name: "Globex Engineering",
+      source: { type: "gitlab", projects: ["globex/globex-system-v2"] },
     })
     expect(parsed.columns).toHaveLength(6)
     expect(parsed.columns[0].id).toBe("open")
@@ -97,7 +97,7 @@ describe("boardSchema validation", () => {
 
   it("rejects boards with non-slug ids", () => {
     expect(() => boardSchema.parse({
-      id: "MTGL Main", name: "bad",
+      id: "Globex Main", name: "bad",
       source: { type: "gitlab", projects: ["x/y"] },
     })).toThrow(/lowercase slug/i)
   })

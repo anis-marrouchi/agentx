@@ -29,7 +29,7 @@ The fastest path is the dashboard's [Admin → Channels → GitLab tab](/referen
     "webhookSecret": "${GITLAB_WEBHOOK_SECRET}",
     "token": "${GITLAB_TOKEN}",
     "routes": [
-      { "project": "noqta/api", "agent": "qa" }
+      { "project": "acme/api", "agent": "qa" }
     ],
     "agentMappings": [
       { "agentId": "qa", "gitlabUsernames": ["qa-bot"], "token": "${GITLAB_QA_TOKEN}" }
@@ -102,8 +102,8 @@ The `routes[]` arrays decide which agent receives a given inbound. Order matters
 
 ```json
 "routes": [
-  { "project": "noqta/critical", "agent": "qa-strict" },
-  { "project": "noqta/*",        "agent": "qa" },
+  { "project": "acme/critical", "agent": "qa-strict" },
+  { "project": "acme/*",        "agent": "qa" },
   { "project": "*",              "agent": "atlas" }
 ]
 ```

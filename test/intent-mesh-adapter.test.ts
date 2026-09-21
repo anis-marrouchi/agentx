@@ -25,17 +25,17 @@ afterEach(() => {
 })
 
 const meshTaskWithChannelContext: MeshTaskProjection = {
-  agentId: "mtgl-v2",
+  agentId: "globex-v2",
   senderAgentId: "atlas",
   context: {
-    chatId: "mtgl/mtgl-system-v2:issue:709",
+    chatId: "globex/globex-system-v2:issue:709",
     channel: "gitlab",
-    project: "mtgl/mtgl-system-v2",
+    project: "globex/globex-system-v2",
   },
 }
 
 const meshTaskBare: MeshTaskProjection = {
-  agentId: "ksi-v2",
+  agentId: "initech-v2",
 }
 
 describe("buildMeshEventInput", () => {
@@ -45,8 +45,8 @@ describe("buildMeshEventInput", () => {
       ts: 999,
       source: "mesh",
       sourceEventId: null,
-      project: "mtgl/mtgl-system-v2",
-      subject: "chat:mtgl/mtgl-system-v2:issue:709",
+      project: "globex/globex-system-v2",
+      subject: "chat:globex/globex-system-v2:issue:709",
       intent: "mesh.gitlab",
       rawJson: "{}",
     })
@@ -54,7 +54,7 @@ describe("buildMeshEventInput", () => {
 
   it("bare A2A task: subject = mesh:agent:<id>, project null, intent = mesh.task", () => {
     const input = buildMeshEventInput(meshTaskBare, "{}", () => 1)
-    expect(input.subject).toBe("mesh:agent:ksi-v2")
+    expect(input.subject).toBe("mesh:agent:initech-v2")
     expect(input.intent).toBe("mesh.task")
     expect(input.project).toBeNull()
   })
@@ -74,9 +74,9 @@ describe("buildMeshPolicyFromLegacy", () => {
 
   it("dispatched flows through verbatim", () => {
     const decided = buildMeshPolicyFromLegacy({
-      outcome: "dispatched", agentId: "mtgl-v2", reason: "from atlas",
+      outcome: "dispatched", agentId: "globex-v2", reason: "from atlas",
     }).decide({} as any)
-    expect(decided).toEqual({ agentId: "mtgl-v2", outcome: "dispatched", reason: "from atlas" })
+    expect(decided).toEqual({ agentId: "globex-v2", outcome: "dispatched", reason: "from atlas" })
   })
 })
 
@@ -85,7 +85,7 @@ describe("recordMeshDispatch", () => {
     for (let i = 0; i < 3; i++) {
       recordMeshDispatch(
         ledger, meshTaskBare, "{}",
-        { agentId: "ksi-v2", outcome: "dispatched", reason: null },
+        { agentId: "initech-v2", outcome: "dispatched", reason: null },
         () => 1 + i,
       )
     }
@@ -100,7 +100,7 @@ describe("recordMeshDispatch", () => {
   it("agreement: dispatched/X = dispatched/X → no divergence", () => {
     recordMeshDispatch(
       ledger, meshTaskWithChannelContext, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: "from atlas" },
+      { agentId: "globex-v2", outcome: "dispatched", reason: "from atlas" },
       () => 1,
     )
     expect(ledger.getDivergences()).toHaveLength(0)
@@ -111,7 +111,7 @@ describe("recordMeshDispatch", () => {
     // First task: ledger and legacy both dispatched.
     recordMeshDispatch(
       ledger, meshTaskWithChannelContext, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: null },
+      { agentId: "globex-v2", outcome: "dispatched", reason: null },
       () => 1,
     )
     expect(ledger.getDivergences()).toHaveLength(0)
@@ -119,7 +119,7 @@ describe("recordMeshDispatch", () => {
     // subject set) → deduped; legacy still dispatched → divergence.
     recordMeshDispatch(
       ledger, meshTaskWithChannelContext, "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: null },
+      { agentId: "globex-v2", outcome: "dispatched", reason: null },
       () => 2,
     )
     const divergences = ledger.getDivergences()

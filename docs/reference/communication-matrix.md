@@ -47,7 +47,7 @@ Response is a streamed SSE feed of the agent's reply. Also available via `agentx
 curl -X POST http://localhost:18800/mesh/task \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $MESH_TOKEN" \
-  -d '{"peer":"clawd-server","agent":"devops","message":"Check disk free"}'
+  -d '{"peer":"peer-server","agent":"devops","message":"Check disk free"}'
 ```
 
 See [Journey 8 — Mesh federation](/journey/08-mesh-federation) for the full setup.

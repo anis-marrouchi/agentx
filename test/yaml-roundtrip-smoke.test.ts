@@ -9,9 +9,9 @@ const RICH_YAML = `# Workflow: Merge & Deploy (rich)
 # survive an editor save.
 
 id: rich-merge
-project: ksi/int.ksi.tn
+project: initech/int.initech.example.com
 version: 2
-title: "KSI — Merge & Deploy (rich)"
+title: "Initech — Merge & Deploy (rich)"
 status: active
 
 envAllow:
@@ -48,7 +48,7 @@ describe("yaml round-trip — comment preservation", () => {
   it("keeps doc-level header + per-node commentBefore through an edit", () => {
     const raw = parseYamlWorkflow(RICH_YAML, { filePath: "rich.yaml" })
     const wf = workflowSchema.parse(raw)
-    wf.title = "KSI — Merge & Deploy (rich, edited)"
+    wf.title = "Initech — Merge & Deploy (rich, edited)"
     const node = wf.nodes.find((n) => n.id === "capture-start")!
     ;(node.config as any).input.records[0].phase = "start-edited"
     const out = renderWorkflowYamlPreservingComments(RICH_YAML, wf)

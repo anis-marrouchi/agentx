@@ -20,7 +20,7 @@ import { dirname, resolve } from "path"
 // The same install also carries the PreToolUse guard hook. An attached
 // session answering as a production identity runs under the human's own
 // permissions rather than the agent workspace's settings.json, so without
-// this an attached `clawd` would be LESS guarded than a spawned one. That
+// this an attached `peer` would be LESS guarded than a spawned one. That
 // asymmetry is exactly the kind of thing that causes the incident the guard
 // was built for, so the installer refuses to leave it open.
 

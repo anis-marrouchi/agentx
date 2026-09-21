@@ -186,7 +186,7 @@ export class WorkflowStore {
     }
     // Filename ≠ id fallback. Authors sometimes pick a short filename
     // for an `id:` that's longer / differently namespaced (e.g.
-    // `ksi-mr-fix-loop.yaml` containing `id: ksi-int-ksi-tn-mr-fix-loop`).
+    // `initech-mr-fix-loop.yaml` containing `id: initech-int-initech-tn-mr-fix-loop`).
     // list() finds these because it scans the directory; the per-id
     // fast paths above don't. Scan as a last resort so the editor's
     // GET /api/workflows/:id can still load the workflow.
@@ -229,7 +229,7 @@ export class WorkflowStore {
     // Filename ≠ id fallback (matches get()'s fallback): if no YAML at
     // <id>.yaml, scan for any *.ya?ml whose parsed `id:` equals this
     // workflow's id and round-trip THAT file. Without this, a YAML
-    // named `ksi-mr-fix-loop.yaml` (id `ksi-int-ksi-tn-mr-fix-loop`)
+    // named `initech-mr-fix-loop.yaml` (id `initech-int-initech-tn-mr-fix-loop`)
     // would slip through to the JSON-write path below, leaving the
     // YAML as an orphan and creating a coexistence trap on next load.
     if (!existingYaml && existsSync(this.baseDir)) {

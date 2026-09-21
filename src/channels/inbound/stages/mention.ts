@@ -7,7 +7,7 @@ import type { InboundEnvelope } from "../envelope"
 // Calls `registry.findByMention(text, { atMentionsOnly })`. The
 // `atMentionsOnly` flag is set by the bot-policy stage upstream and
 // changes the matching semantics:
-//   - false: bare-word matches like "nadia" count
+//   - false: bare-word matches like "marketing" count
 //   - true:  only explicit `@`-prefixed handles count (bot-origin)
 //
 // Telegram has an extra rule: groups under `policy.group=mention-required`

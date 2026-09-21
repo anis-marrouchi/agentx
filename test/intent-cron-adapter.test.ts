@@ -26,7 +26,7 @@ afterEach(() => {
 
 const sampleJob: CronJobProjection = {
   jobId: "marketing-daily-brief",
-  agentId: "nadia",
+  agentId: "marketing",
   firedAt: new Date(1714400000000),
 }
 
@@ -60,9 +60,9 @@ describe("buildCronPolicyFromLegacy", () => {
 
   it("dispatched legacy → policy returns dispatched verbatim", () => {
     const decided = buildCronPolicyFromLegacy({
-      outcome: "dispatched", agentId: "nadia", reason: null,
+      outcome: "dispatched", agentId: "marketing", reason: null,
     }).decide({} as any)
-    expect(decided).toEqual({ agentId: "nadia", outcome: "dispatched", reason: null })
+    expect(decided).toEqual({ agentId: "marketing", outcome: "dispatched", reason: null })
   })
 
   it("hook-blocked → halted with reason", () => {
@@ -78,7 +78,7 @@ describe("recordCronDispatch", () => {
   it("records event + decision; agreement → no divergence", () => {
     recordCronDispatch(
       ledger, sampleJob, "{}",
-      { agentId: "nadia", outcome: "dispatched", reason: null },
+      { agentId: "marketing", outcome: "dispatched", reason: null },
       () => 1,
     )
     expect(
@@ -91,7 +91,7 @@ describe("recordCronDispatch", () => {
     for (let i = 0; i < 3; i++) {
       recordCronDispatch(
         ledger, sampleJob, "{}",
-        { agentId: "nadia", outcome: "dispatched", reason: null },
+        { agentId: "marketing", outcome: "dispatched", reason: null },
         () => 1 + i,
       )
     }
@@ -106,12 +106,12 @@ describe("recordCronDispatch", () => {
   it("project=null disables active-task safety: successive fires both dispatch (matches legacy)", () => {
     recordCronDispatch(
       ledger, { ...sampleJob, firedAt: new Date(1) }, "{}",
-      { agentId: "nadia", outcome: "dispatched", reason: null },
+      { agentId: "marketing", outcome: "dispatched", reason: null },
       () => 1,
     )
     recordCronDispatch(
       ledger, { ...sampleJob, firedAt: new Date(2) }, "{}",
-      { agentId: "nadia", outcome: "dispatched", reason: null },
+      { agentId: "marketing", outcome: "dispatched", reason: null },
       () => 2,
     )
     expect(ledger.getDivergences()).toHaveLength(0)

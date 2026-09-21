@@ -80,7 +80,7 @@ const RING_DEDUP_TTL_MS = 5 * 60_000
  *  non-alphanumeric characters. This papers over the fact that a node's
  *  self-reported `node.name` and the name other peers use for it in their
  *  `mesh.peers[].name` list frequently disagree on case, spaces, or hyphens
- *  ("MacBook-Local" vs "macbook-local" vs "macbook_local"). Signaling is
+ *  ("HQ-Local" vs "hq-local" vs "hq_local"). Signaling is
  *  looser than agent dispatch because a single call is a tight two-party
  *  negotiation where ambiguity is vanishingly unlikely. */
 export function normalizeName(name: string): string {

@@ -506,7 +506,7 @@ const ADMIN_PAGE_BODY = `
     <div class="add-form">
       <h3>Add a webhook</h3>
       <div class="rowf">
-        <div><label>Webhook id<span class="hint">(lowercase)</span></label><input id="w-id" placeholder="mtgl-gitlab" /></div>
+        <div><label>Webhook id<span class="hint">(lowercase)</span></label><input id="w-id" placeholder="globex-gitlab" /></div>
         <div><label>Source</label><select id="w-source"><option value="gitlab">GitLab ✓</option><option value="github">GitHub ✓</option><option value="sentry">Sentry ✓</option><option value="stripe">Stripe ✓</option><option value="vercel">Vercel ✓</option><option value="odoo">Odoo ✓</option><option value="hubspot">HubSpot ✓</option><option value="discord">Discord</option><option value="slack">Slack</option><option value="custom">Custom</option></select></div>
       </div>
       <div class="rowf">
@@ -514,7 +514,7 @@ const ADMIN_PAGE_BODY = `
         <div><label>Signing secret env-var<span class="hint">(optional)</span></label><input id="w-secret" placeholder="GITLAB_WEBHOOK_SECRET" /></div>
       </div>
       <label>Description<span class="hint">(optional)</span></label>
-      <input id="w-desc" placeholder="MTGL main project webhooks" />
+      <input id="w-desc" placeholder="Globex main project webhooks" />
       <div class="actions"><button class="primary" onclick="addWebhook()">Add webhook</button><div id="w-msg" class="msg"></div></div>
     </div>
   </section>
@@ -535,7 +535,7 @@ const ADMIN_PAGE_BODY = `
     <div class="add-form">
       <h3>Add a peer</h3>
       <div class="rowf">
-        <div><label>Peer name<span class="hint">(human label)</span></label><input id="m-name" placeholder="clawd-server" /></div>
+        <div><label>Peer name<span class="hint">(human label)</span></label><input id="m-name" placeholder="peer-server" /></div>
         <div><label>URL</label><input id="m-url" placeholder="http://192.168.1.50:18800" /></div>
       </div>
       <label>Auth token<span class="hint">(optional — use a scoped token with <code>mesh:peer</code>)</span></label>
@@ -593,11 +593,11 @@ const ADMIN_PAGE_BODY = `
         <summary class="primary">+ Add or update project</summary>
         <div style="margin-top:10px">
           <label>Project id<span class="hint">(<code>owner/repo</code> for GitLab/GitHub; stable string for internal projects)</span></label>
-          <input id="bp-id" placeholder="mtgl/system" />
+          <input id="bp-id" placeholder="globex/system" />
           <label>PM <span class="hint">(agentId — drives the PM gate)</span></label>
-          <input id="bp-pm" placeholder="pm-mtgl" />
+          <input id="bp-pm" placeholder="pm-globex" />
           <label>Client <span class="hint">(used by the activity graph to attribute traffic)</span></label>
-          <input id="bp-client" placeholder="mtgl" />
+          <input id="bp-client" placeholder="globex" />
           <div class="actions"><button class="primary" onclick="upsertProject()">Save project</button><div id="bp-msg" class="msg"></div></div>
         </div>
       </details>
@@ -611,9 +611,9 @@ const ADMIN_PAGE_BODY = `
         <summary class="primary">+ Configure a client</summary>
         <div style="margin-top:10px">
           <label>Client id<span class="hint">(as it already appears on a project or contact)</span></label>
-          <input id="bc-id" placeholder="mtgl" />
+          <input id="bc-id" placeholder="globex" />
           <label>Display name <span class="hint">(optional)</span></label>
-          <input id="bc-name" placeholder="MTGL" />
+          <input id="bc-name" placeholder="Globex" />
           <label>Kind <span class="hint">(client = someone waiting on you; own = your product; internal = machinery)</span></label>
           <select id="bc-kind"><option value="">(default)</option><option value="client">client</option><option value="own">own</option><option value="internal">internal</option></select>
           <label>Respond within <span class="hint">(<code>4h</code>, <code>90m</code>, <code>2d</code> &mdash; blank means no clock, delay stays flat)</span></label>
@@ -636,15 +636,15 @@ const ADMIN_PAGE_BODY = `
           <label>Chat id <span class="hint">(e.g. <code>-100…</code>, JID — pick at least one of these three)</span></label>
           <input id="bc-chatId" placeholder="-1003861455814" />
           <label>Username</label>
-          <input id="bc-username" placeholder="anis" />
+          <input id="bc-username" placeholder="alex" />
           <label>Sender id</label>
           <input id="bc-senderId" placeholder="8500203323" />
           <label>Client <span class="hint">(required)</span></label>
-          <input id="bc-client" placeholder="noqta" />
+          <input id="bc-client" placeholder="acme" />
           <label>Project <span class="hint">(optional — defaults to <code>&lt;client&gt;/_chat</code>)</span></label>
-          <input id="bc-project" placeholder="noqta/internal" />
+          <input id="bc-project" placeholder="acme/internal" />
           <label>Display name <span class="hint">(initiator pill override)</span></label>
-          <input id="bc-displayName" placeholder="Anis Marrouchi" />
+          <input id="bc-displayName" placeholder="Alex Rivera" />
           <div class="actions"><button class="primary" onclick="upsertContact()">Save mapping</button><div id="bc-msg" class="msg"></div></div>
         </div>
       </details>
@@ -668,12 +668,12 @@ const ADMIN_PAGE_BODY = `
       <details class="add-form" style="margin-top:10px">
         <summary class="primary">+ Add or update board</summary>
         <div style="margin-top:10px">
-          <label>Board id<span class="hint">(unique slug, e.g. <code>mtgl</code>)</span></label>
-          <input id="bd-id" placeholder="mtgl" />
+          <label>Board id<span class="hint">(unique slug, e.g. <code>globex</code>)</span></label>
+          <input id="bd-id" placeholder="globex" />
           <label>Display name</label>
-          <input id="bd-name" placeholder="MTGL System" />
-          <label>GitLab project paths<span class="hint">(comma-separated, e.g. <code>mtgl/system,mtgl/website</code>)</span></label>
-          <input id="bd-projects" placeholder="mtgl/system" />
+          <input id="bd-name" placeholder="Globex System" />
+          <label>GitLab project paths<span class="hint">(comma-separated, e.g. <code>globex/system,globex/website</code>)</span></label>
+          <input id="bd-projects" placeholder="globex/system" />
           <label>Primary tool label <span class="hint">(optional — ANDed into every query, e.g. <code>Tool::Claude</code>)</span></label>
           <input id="bd-label" placeholder="Tool::Claude" />
           <div style="display:flex;gap:6px"><label style="flex:1">Open-window days<input id="bd-days" type="number" min="1" max="365" value="30" /></label><label style="flex:1">Closed-window days<input id="bd-closed-days" type="number" min="1" max="365" value="30" /></label></div>
@@ -2120,7 +2120,7 @@ function renderIntegrationsBlock(a) {
       '<div style="margin-top:10px;padding:8px 10px;background:var(--ax-bg);border:1px dashed var(--ax-border-2);border-radius:5px">' +
         '<div style="display:grid;grid-template-columns:1fr 1.5fr;gap:6px">' +
           '<select data-int-kind style="font-size:11px">' + kindOptions + '</select>' +
-          '<input data-int-label-add placeholder="Label (e.g. Noqta CRM, @cx_bot)" style="font-size:11px" />' +
+          '<input data-int-label-add placeholder="Label (e.g. Acme CRM, @cx_bot)" style="font-size:11px" />' +
         '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">' +
           '<input data-int-tokenenv placeholder="Token env var (UPPERCASE)" style="font-size:11px" />' +

@@ -4,7 +4,7 @@ import { shouldCaptureEntry } from "../src/wiki/capture-filter"
 const ok = (over: Partial<Parameters<typeof shouldCaptureEntry>[0]> = {}) =>
   shouldCaptureEntry({
     channel: "telegram",
-    content: "User: what did we decide about the staging URL?\n\nAgent: We standardised on admin.mtgl.noqta.tn.",
+    content: "User: what did we decide about the staging URL?\n\nAgent: We standardised on admin.globex.example.com.",
     responseLength: 200,
     ...over,
   })
@@ -28,16 +28,16 @@ describe("shouldCaptureEntry", () => {
   })
 
   it("drops a machine channel carrying a node suffix", () => {
-    // Channels arrive as "telegram@clawd-server" in the fleet.
-    expect(ok({ channel: "cron@clawd-server" }).capture).toBe(false)
-    expect(ok({ channel: "telegram@clawd-server" }).capture).toBe(true)
+    // Channels arrive as "telegram@peer-server" in the fleet.
+    expect(ok({ channel: "cron@peer-server" }).capture).toBe(false)
+    expect(ok({ channel: "telegram@peer-server" }).capture).toBe(true)
   })
 
   it("drops the four prompt shapes, quoting real captured entries", () => {
     const cases: Array<[string, string]> = [
-      ["User: You are pm-mtgl, role: Project Manager reporting to product-director.", "role brief"],
+      ["User: You are pm-globex, role: Project Manager reporting to product-director.", "role brief"],
       ["User: Run shell command: node dist/cli.js workflow absorb --since 24h", "run instruction"],
-      ["User: [MISSED RUN — was scheduled for 2026-06-29T05:00:00.000Z] Run the /noqta-news skill", "missed cron run"],
+      ["User: [MISSED RUN — was scheduled for 2026-06-29T05:00:00.000Z] Run the /acme-news skill", "missed cron run"],
       ["User: [Recent group conversation] [09:11] Group: do we need to restart the daemon?", "group chat dump"],
       // Real shape from the corpus — a bracketed prefix ahead of the marker.
       ["User: [Group, 09:43]: [Recent group conversation] we deployed twice today", "group chat dump"],

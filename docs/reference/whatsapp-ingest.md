@@ -59,7 +59,7 @@ All settings live under `channels.whatsapp.ingest` in `agentx.json`:
       "ingest": {
         "enabled": true,
         "mode": "metadata-only",
-        "allowContacts": ["+21624XXXXXXX"],
+        "allowContacts": ["+1000000XXXX"],
         "allowGroups": ["120363000000000001@g.us"],
         "denyContacts": [],
         "denyGroups": [],
@@ -116,7 +116,7 @@ All commands talk to the running daemon via HTTP (same pattern as `agentx usage`
 ::: tip First-time walkthrough
 1. Pair WhatsApp: `agentx connect whatsapp` (existing flow, opens QR).
 2. Let the daemon observe some events for a minute so the cache populates. Verify: `agentx whatsapp list-contacts`.
-3. Allowlist one contact in `agentx.json` → `channels.whatsapp.ingest.allowContacts: ["+21624XXXXXXX"]` and set `ingest.enabled: true`.
+3. Allowlist one contact in `agentx.json` → `channels.whatsapp.ingest.allowContacts: ["+1000000XXXX"]` and set `ingest.enabled: true`.
 4. Reload: `agentx config check` then the daemon picks it up (hot-reload).
 5. **Dry-run first**: `agentx whatsapp ingest-all --dry-run`. Inspect the would-be entries.
 6. Run for real: `agentx whatsapp ingest-all`.

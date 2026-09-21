@@ -64,15 +64,15 @@ export interface RealTestCase {
 export const REAL_CASES: RealTestCase[] = [
   // --- Infrastructure queries ---
   {
-    name: "mtgl staging deployment steps",
-    query: "how do I deploy mtgl to staging",
-    expectedTitleContains: "MTGL DevOps Environment",
+    name: "globex staging deployment steps",
+    query: "how do I deploy globex to staging",
+    expectedTitleContains: "Globex DevOps Environment",
     category: "infra",
   },
   {
-    name: "noqta website deploy pipeline",
-    query: "how does noqta.tn deployment work",
-    expectedTitleContains: "Noqta.tn Website",
+    name: "acme website deploy pipeline",
+    query: "how does example.com deployment work",
+    expectedTitleContains: "example.com Website",
     category: "infra",
   },
   {
@@ -104,9 +104,9 @@ export const REAL_CASES: RealTestCase[] = [
 
   // --- People queries ---
   {
-    name: "who is seif",
-    query: "who is seif al-arabi and what does he do",
-    expectedTitleContains: "Seif al-Arabi",
+    name: "who is sam",
+    query: "who is sam taylor and what does he do",
+    expectedTitleContains: "Sam Taylor",
     category: "people",
   },
 
@@ -120,8 +120,8 @@ export const REAL_CASES: RealTestCase[] = [
 
   // --- Project queries ---
   {
-    name: "seo keywords noqta",
-    query: "what are our SEO keyword targets for noqta.tn",
+    name: "seo keywords acme",
+    query: "what are our SEO keyword targets for example.com",
     expectedTitleContains: "SEO Priorities",
     category: "project",
   },
@@ -135,14 +135,14 @@ export const REAL_CASES: RealTestCase[] = [
   },
   {
     name: "server credentials",
-    query: "what are the database credentials for mtgl",
-    expectedTitleContains: "MTGL DevOps Environment",
+    query: "what are the database credentials for globex",
+    expectedTitleContains: "Globex DevOps Environment",
     category: "synonym",
   },
   {
     name: "CI pipeline stages",
     query: "what are the CI pipeline stages for the website",
-    expectedTitleContains: "Noqta.tn Website",
+    expectedTitleContains: "example.com Website",
     category: "synonym",
   },
 ]

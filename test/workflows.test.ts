@@ -65,7 +65,7 @@ describe("workflowSchema", () => {
   // JS Date. The schema wanted a string, so the workflow was rejected — and
   // WorkflowStore.list() swallows parse failures, so a production workflow
   // silently vanished from the engine with no error anywhere. Found on
-  // clawd, where 1 of 16 workflows had been missing for months.
+  // peer, where 1 of 16 workflows had been missing for months.
   it("accepts Date objects for created/updated (unquoted YAML dates)", () => {
     const raw = { ...baseWorkflow(), created: new Date("2026-05-10T00:00:00Z"), updated: new Date("2026-05-11T00:00:00Z") }
     const parsed = workflowSchema.safeParse(raw)
@@ -450,7 +450,7 @@ describe("WorkflowDispatcher integration", () => {
       trigger: { source: "whatsapp-message" },
       entityRef: { backend: "whatsapp", id: "e-3" },
       event: { id: "evt-3", payload: {} },
-      fromRemote: { peer: "clawd-server" },
+      fromRemote: { peer: "peer-server" },
     })
     expect(r.claimed.map((w) => w.id)).toEqual(["remote-ok"])
   })
@@ -460,7 +460,7 @@ describe("WorkflowDispatcher integration", () => {
     store.save(baseWorkflow({
       nodes: [
         { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
-        { id: "reply", type: "action.send", config: { channel: "remote-wa", chatId: "21624000000", text: "hi" } },
+        { id: "reply", type: "action.send", config: { channel: "remote-wa", chatId: "10000000000", text: "hi" } },
         { id: "done", type: "end", config: {} },
       ],
       edges: [{ from: "trigger", to: "reply" }, { from: "reply", to: "done" }],
@@ -485,7 +485,7 @@ describe("WorkflowDispatcher integration", () => {
     await new Promise((r) => setTimeout(r, 30))
 
     expect(forwarded).toHaveLength(1)
-    expect(forwarded[0]).toMatchObject({ channel: "remote-wa", chatId: "21624000000", text: "hi" })
+    expect(forwarded[0]).toMatchObject({ channel: "remote-wa", chatId: "10000000000", text: "hi" })
     const final = runs.list()[0]
     expect(final.status).toBe("completed")
     const replyEntry = final.history.find((h) => h.nodeId === "reply")
@@ -541,12 +541,12 @@ describe("WorkflowDispatcher integration", () => {
   it("workflow's top-level project: hard-scopes trigger matching across projects", async () => {
     const store = new WorkflowStore({ baseDir: TEST_DIR })
     // Two workflows tagged to different projects, both subscribed to the
-    // same gitlab-issue trigger. Mirrors the real ksi-vs-mtgl situation.
+    // same gitlab-issue trigger. Mirrors the real initech-vs-globex situation.
     // fanOut: true so every matching workflow gets claimed (not just the
     // first by priority) — that's how we observe the project filter.
     store.save(baseWorkflow({
-      id: "ksi-pm-triage",
-      project: "ksi/int.ksi.tn",
+      id: "initech-pm-triage",
+      project: "initech/int.initech.example.com",
       fanOut: true,
       nodes: [
         { id: "trigger", type: "trigger.hook", config: { source: "gitlab-issue", event: "on:gitlab-issue" } },
@@ -555,8 +555,8 @@ describe("WorkflowDispatcher integration", () => {
       edges: [{ from: "trigger", to: "done" }],
     }))
     store.save(baseWorkflow({
-      id: "mtgl-pm-triage",
-      project: "mtgl/mtgl-system-v2",
+      id: "globex-pm-triage",
+      project: "globex/globex-system-v2",
       fanOut: true,
       nodes: [
         { id: "trigger", type: "trigger.hook", config: { source: "gitlab-issue", event: "on:gitlab-issue" } },
@@ -582,13 +582,13 @@ describe("WorkflowDispatcher integration", () => {
       agents: { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) },
     })
     const result = await dispatcher.dispatch({
-      trigger: { source: "gitlab-issue", project: "ksi/int.ksi.tn" },
-      entityRef: { backend: "gitlab", id: "ksi/int.ksi.tn#446" },
-      event: { id: "evt", payload: { project: "ksi/int.ksi.tn" } },
+      trigger: { source: "gitlab-issue", project: "initech/int.initech.example.com" },
+      entityRef: { backend: "gitlab", id: "initech/int.initech.example.com#446" },
+      event: { id: "evt", payload: { project: "initech/int.initech.example.com" } },
     })
     const claimedIds = result.claimed.map((w) => w.id).sort()
-    expect(claimedIds).not.toContain("mtgl-pm-triage")
-    expect(claimedIds).toContain("ksi-pm-triage")
+    expect(claimedIds).not.toContain("globex-pm-triage")
+    expect(claimedIds).toContain("initech-pm-triage")
     expect(claimedIds).toContain("audit-all-issues")  // global workflows still see every project
   })
 })
@@ -689,8 +689,8 @@ describe("Phase 2: action.setLabel + action.readLabel", () => {
       workflow: baseWorkflow({ envAllow: [] }),
       run: {
         id: "r", workflowId: "w", workflowVersion: 2 as const, homeNode: "n", status: "running",
-        context: { trigger: { project: "noqta/web", issue: { iid: "42" } } }, pending: [], history: [],
-        entityRef: { backend: "gitlab", id: "noqta/web#42" }, createdAt: "", updatedAt: "",
+        context: { trigger: { project: "acme/web", issue: { iid: "42" } } }, pending: [], history: [],
+        entityRef: { backend: "gitlab", id: "acme/web#42" }, createdAt: "", updatedAt: "",
       },
       node: {
         id: "label-it", type: "action.setLabel",
@@ -699,7 +699,7 @@ describe("Phase 2: action.setLabel + action.readLabel", () => {
       channels, agents: { execute: async () => ({ content: "" }) }, log: () => {},
     })
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toEqual({ project: "noqta/web", iid: "42", add: ["Triage"], remove: ["New"], agentId: undefined })
+    expect(calls[0]).toEqual({ project: "acme/web", iid: "42", add: ["Triage"], remove: ["New"], agentId: undefined })
     expect(result.output).toEqual({ labels: ["Triage"], add: ["Triage"], remove: ["New"] })
   })
 
@@ -713,11 +713,11 @@ describe("Phase 2: action.setLabel + action.readLabel", () => {
       run: {
         id: "r", workflowId: "w", workflowVersion: 2 as const, homeNode: "n", status: "running",
         context: {}, pending: [], history: [],
-        entityRef: { backend: "gitlab", id: "noqta/web#42" }, createdAt: "", updatedAt: "",
+        entityRef: { backend: "gitlab", id: "acme/web#42" }, createdAt: "", updatedAt: "",
       },
       node: {
         id: "read-it", type: "action.readLabel",
-        config: { channel: "gitlab", project: "noqta/web", iid: "42" },
+        config: { channel: "gitlab", project: "acme/web", iid: "42" },
       },
       channels, agents: { execute: async () => ({ content: "" }) }, log: () => {},
     })

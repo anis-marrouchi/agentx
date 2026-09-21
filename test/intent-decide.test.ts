@@ -32,7 +32,7 @@ function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput
     ts: clock.t,
     source: "gitlab",
     sourceEventId: "gl-evt-1",
-    project: "mtgl/mtgl-system-v2",
+    project: "globex/globex-system-v2",
     subject: "issue:709",
     intent: "issue.opened",
     rawJson: JSON.stringify({ kind: "issue", id: 709 }),
@@ -57,14 +57,14 @@ const nullPolicy: DispatchPolicy = {
 
 describe("decideAndCommit — Inv-Idempotence", () => {
   it("re-delivery of the same (source, sourceEventId) returns the same decision row", () => {
-    const policy = dispatchPolicy("channel-router", "mtgl-v2")
+    const policy = dispatchPolicy("channel-router", "globex-v2")
     const first = decideAndCommit(ledger, eventInput(), policy, tick)
     const second = decideAndCommit(ledger, eventInput({ ts: clock.t }), policy, tick)
 
     expect(second.eventId).toBe(first.eventId)
     expect(second.decidedAt).toBe(first.decidedAt) // unchanged — cached, not re-decided
     expect(second.outcome).toBe("dispatched")
-    expect(second.agentId).toBe("mtgl-v2")
+    expect(second.agentId).toBe("globex-v2")
 
     const events = ledger.db.prepare("SELECT COUNT(*) as n FROM intent_events").get() as { n: number }
     const decisions = ledger.db.prepare("SELECT COUNT(*) as n FROM intent_decisions").get() as { n: number }
@@ -73,17 +73,17 @@ describe("decideAndCommit — Inv-Idempotence", () => {
   })
 
   it("the same event reaching two different policies yields two decisions (chain, not duplicate)", () => {
-    const a = dispatchPolicy("channel-router", "mtgl-v2")
-    const b = dispatchPolicy("pm:pm-mtgl", "mtgl-v2")
+    const a = dispatchPolicy("channel-router", "globex-v2")
+    const b = dispatchPolicy("pm:pm-globex", "globex-v2")
     const dA = decideAndCommit(ledger, eventInput(), a, tick)
     const dB = decideAndCommit(ledger, eventInput({ ts: clock.t }), b, tick)
 
     expect(dA.eventId).toBe(dB.eventId) // same event
     expect(dA.decidedBy).toBe("channel-router")
-    expect(dB.decidedBy).toBe("pm:pm-mtgl")
+    expect(dB.decidedBy).toBe("pm:pm-globex")
 
     const chain = ledger.getDecisionsForEvent(dA.eventId)
-    expect(chain.map((d) => d.decidedBy)).toEqual(["channel-router", "pm:pm-mtgl"])
+    expect(chain.map((d) => d.decidedBy)).toEqual(["channel-router", "pm:pm-globex"])
   })
 })
 
@@ -96,7 +96,7 @@ describe("decideAndCommit — Inv-Determinism", () => {
     const dirB = mkdtempSync(path.join(tmpdir(), "agentx-decide-b-"))
     const ledgerB = new IntentLedger({ path: path.join(dirB, "ledger.sqlite") })
     try {
-      const policy = dispatchPolicy("channel-router", "mtgl-v2")
+      const policy = dispatchPolicy("channel-router", "globex-v2")
       const fixedId = "01HQQQQQQQQQQQQQQQQQQQQQQQ"
       const dA = decideAndCommit(ledger, eventInput({ id: fixedId }), policy, () => 999)
       const dB = decideAndCommit(ledgerB, eventInput({ id: fixedId }), policy, () => 999)
@@ -127,7 +127,7 @@ describe("decideAndCommit — Inv-Determinism", () => {
 
 describe("decideAndCommit — Inv-ActiveTaskSafety", () => {
   it("a second event for the same (project, subject) is deduped while the first is in-flight", () => {
-    const router = dispatchPolicy("channel-router", "mtgl-v2")
+    const router = dispatchPolicy("channel-router", "globex-v2")
     const first = decideAndCommit(ledger, eventInput({ sourceEventId: "evt-1" }), router, tick)
     expect(first.outcome).toBe("dispatched")
 
@@ -143,7 +143,7 @@ describe("decideAndCommit — Inv-ActiveTaskSafety", () => {
   })
 
   it("once the first decision is resolved, the next event for the same subject can dispatch again", () => {
-    const router = dispatchPolicy("channel-router", "mtgl-v2")
+    const router = dispatchPolicy("channel-router", "globex-v2")
     const first = decideAndCommit(ledger, eventInput({ sourceEventId: "evt-1" }), router, tick)
     ledger.recordResolution({
       decisionEventId: first.eventId,
@@ -164,7 +164,7 @@ describe("decideAndCommit — Inv-ActiveTaskSafety", () => {
   })
 
   it("active-task scope is per (project, subject) — different projects don't block each other", () => {
-    const router = dispatchPolicy("channel-router", "mtgl-v2")
+    const router = dispatchPolicy("channel-router", "globex-v2")
     const a = decideAndCommit(
       ledger,
       eventInput({ sourceEventId: "evt-a", project: "proj-a" }),

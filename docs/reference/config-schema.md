@@ -65,7 +65,7 @@ Keyed by provider name (`claude`, `openai`, `ollama`, …). Each entry:
 | `maxDelegationDepth` | number (0–50) | `5` | **Phase 8 — capability-bounded security.** Max distinct upstream agents in the delegation chain on the same `(project, subject)` before a dispatch to this agent is refused. The ledger walker counts distinct agents across recent decisions on the subject. Set to 0 to disable for an agent that's always called as the bottom of a chain. **When to change:** lower this (e.g. 2) for agents at the bottom of a chain — prevents cascade loops where A → B → A. Default 5 is fine for most teams |
 | `mcp` | `Record<string, McpServer>` | — | Per-agent MCP servers. Synced to `<workspace>/.mcp.json` at boot. Operator edits to `.mcp.json` are respected — see `agent-mcp.ts` |
 | `contextStrategy` | `"layered"` \| `"planner"` | inherited from `session.contextStrategy` | Per-agent override of the global context-assembly strategy |
-| `contextReferences` | bool | `false` | When true, the registry resolves references-recipes for this agent's workspace and renders a deterministic `[Verified References]` block at priority 4.7. Off by default — flip on per agent (e.g. `pm-ksi`, `devops-agent`) once a `references/` registry exists. **When to change:** turn on for agents that need stable, cited facts (PMs, devops) — surfaces a `[Verified References]` block in the prompt. Off by default because not every agent has a `references/` registry |
+| `contextReferences` | bool | `false` | When true, the registry resolves references-recipes for this agent's workspace and renders a deterministic `[Verified References]` block at priority 4.7. Off by default — flip on per agent (e.g. `pm-initech`, `devops-agent`) once a `references/` registry exists. **When to change:** turn on for agents that need stable, cited facts (PMs, devops) — surfaces a `[Verified References]` block in the prompt. Off by default because not every agent has a `references/` registry |
 | `maxConcurrent` | number | `1` | Parallel turns allowed |
 | `maxExecutionMinutes` | number (1–240) | `20` | Hard wall-clock cap on a single Claude Code invocation. Exceeding sends SIGTERM (exit 143). Bump for devops/coder agents that run long investigations or multi-file refactors |
 | `permissionMode` | string | `default` | Claude Code permission mode (`default`, `acceptEdits`, `plan`, `bypassPermissions`) |
@@ -350,7 +350,7 @@ Inbound webhook inventory the dashboard manages. The actual URL is always `POST 
 Array of installed npm package names. The loader does dynamic `import(name)` at boot, validates the manifest, and calls `plugin.setup(ctx)`. See [`docs/architecture/plugins.md`](/architecture/plugins) (when surfaced) for the contract.
 
 ```json
-"plugins": ["agentx-plugin-mattermost", "@noqta/plugin-mattermost"]
+"plugins": ["agentx-plugin-mattermost", "@acme/plugin-mattermost"]
 ```
 
 Plugins can register channel adapters via `ctx.addChannel()` and subscribe to bus events via `ctx.on()`.

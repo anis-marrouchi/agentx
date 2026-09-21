@@ -50,13 +50,13 @@ Once two or more devices are authenticated, they can reach each other by Tailsca
 
 ```bash
 # From your laptop, ping the droplet
-ping 100.67.108.119
+ping 100.64.0.11
 
 # From the droplet, ping the laptop
-ping 100.88.42.7
+ping 100.64.0.13
 ```
 
-Every device also gets a MagicDNS name (e.g. `clawd-server`, `macbook-local`) so you can use hostnames instead of IPs.
+Every device also gets a MagicDNS name (e.g. `peer-server`, `hq-local`) so you can use hostnames instead of IPs.
 
 ## 3. How the mesh works
 
@@ -74,10 +74,10 @@ Enable MagicDNS in the Tailscale admin console (**DNS → Enable MagicDNS**). Th
 
 ```bash
 # Instead of
-curl http://100.67.108.119:19900/health
+curl http://100.64.0.11:19900/health
 
 # You can use
-curl http://clawd-server:19900/health
+curl http://peer-server:19900/health
 ```
 
 ### Subnet routing (optional)
@@ -124,7 +124,7 @@ When registering webhooks with GitHub, GitLab, or Telegram, use the server's **p
 https://yourserver.example.com:18810/webhook/github
 
 # Wrong — Tailscale IP (unreachable from the internet)
-http://100.67.108.119:18810/webhook/github
+http://100.64.0.11:18810/webhook/github
 ```
 
 **Step 3 — Lock down the webhook port with UFW**
@@ -227,7 +227,7 @@ tailscale status
 tailscale ip -4
 
 # Check if a peer is reachable
-tailscale ping clawd-server
+tailscale ping peer-server
 
 # See current UFW rules
 sudo ufw status verbose

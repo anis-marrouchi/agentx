@@ -23,7 +23,7 @@ export interface SenderStampedEntry {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : undefined
 
-/** "whatsapp@clawd-server" and "gitlab" both normalise to their platform. */
+/** "whatsapp@peer-server" and "gitlab" both normalise to their platform. */
 export function platformOf(source?: string): string {
   return String(source ?? "").split("@")[0].split(":")[0].toLowerCase()
 }

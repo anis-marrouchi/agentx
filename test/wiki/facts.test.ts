@@ -74,7 +74,7 @@ describe("parseContactsTable", () => {
   // Fixed-width output with an empty leading ALIAS column.
   const table = [
     "ALIAS  NAME              PHONE         JID",
-    "       Sample Person     216000000000  216000000000@s.example.net",
+    "       Sample Person     100000000000  100000000000@s.example.net",
     "vip    Other Person      33000000000   33000000000@s.example.net",
   ].join("\n")
 
@@ -82,13 +82,13 @@ describe("parseContactsTable", () => {
     const r = parseContactsTable(table)
     expect(r).toHaveLength(2)
     expect(r[0].name).toBe("Sample Person")
-    expect(r[0].fields.phone).toBe("+216000000000")
+    expect(r[0].fields.phone).toBe("+100000000000")
     expect(r[1].name).toBe("Other Person")
   })
 
   it("derives country from the dialling prefix", () => {
     const r = parseContactsTable(table)
-    expect(r[0].fields.country).toBe("Tunisia")
+    expect(r[0].fields.country).toBe("US/Canada")
     expect(r[1].fields.country).toBe("France")
   })
 
@@ -245,10 +245,10 @@ describe("renderFactsBlock", () => {
 
   it("instructs the writer to copy verbatim and attributes each value", () => {
     const md = renderFactsBlock(mergeRecords([
-      { name: "Sample Person", source: "wacli", fields: { phone: "+216000000000" } },
+      { name: "Sample Person", source: "wacli", fields: { phone: "+100000000000" } },
     ]))
     expect(md).toContain("**Sample Person**")
-    expect(md).toContain("`+216000000000`")
+    expect(md).toContain("`+100000000000`")
     expect(md).toContain("_(wacli)_")
     expect(md).toContain("verbatim")
     // Absorb's default disposition is to summarise; the block has to say
@@ -319,7 +319,7 @@ describe("isPersonName — group names are not people", () => {
     // A group's `context` is its name, and plenty look exactly like a
     // two-word person name. Treating one as a person spends a lookup and
     // risks matching a real contact with a similar name.
-    for (const s of ["Team Group", "Noqta Family", "Dev Channel", "Support Room", "Sales Team"]) {
+    for (const s of ["Team Group", "Acme Family", "Dev Channel", "Support Room", "Sales Team"]) {
       expect(isPersonName(s), s).toBe(false)
     }
   })

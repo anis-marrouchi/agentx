@@ -19,39 +19,39 @@ import type { WikiEntry } from "../src/wiki/types"
 
 // --- Test fixtures ---
 
-const contactAnis: ContactRead = {
-  jid: "21600000000@s.whatsapp.net",
-  phone: "21600000000",
-  pushName: "Anis",
-  savedName: "Anis Marrouchi",
+const contactAlex: ContactRead = {
+  jid: "10000000000@s.whatsapp.net",
+  phone: "10000000000",
+  pushName: "Alex",
+  savedName: "Alex Rivera",
   status: "Doing AgentX work",
   updatedAt: "2026-04-21T10:00:00.000Z",
 }
 const contactOther: ContactRead = {
-  jid: "21688888888@s.whatsapp.net",
-  phone: "21688888888",
+  jid: "10000000001@s.whatsapp.net",
+  phone: "10000000001",
   pushName: "Other",
   updatedAt: "2026-04-21T10:00:00.000Z",
 }
-const groupNoqta: GroupRead = {
+const groupAcme: GroupRead = {
   jid: "120363000000000001@g.us",
-  subject: "Noqta Team",
+  subject: "Acme Team",
   description: "Internal coordination",
-  owner: contactAnis.jid,
+  owner: contactAlex.jid,
   members: [
-    { jid: contactAnis.jid, admin: "superadmin" },
+    { jid: contactAlex.jid, admin: "superadmin" },
     { jid: contactOther.jid },
   ],
   memberCount: 2,
 }
 const dmChat: ChatRead = {
-  jid: contactAnis.jid,
-  name: "Anis Marrouchi",
+  jid: contactAlex.jid,
+  name: "Alex Rivera",
   isGroup: false,
 }
 const groupChat: ChatRead = {
-  jid: groupNoqta.jid,
-  name: "Noqta Team",
+  jid: groupAcme.jid,
+  name: "Acme Team",
   isGroup: true,
 }
 
@@ -62,11 +62,11 @@ const tsNow = () => new Date("2026-04-21T12:00:00.000Z")
 function makeSource(overrides: Partial<WhatsAppSource> = {}): WhatsAppSource {
   return {
     isConnected: () => true,
-    listContacts: () => [contactAnis, contactOther],
+    listContacts: () => [contactAlex, contactOther],
     listChats: () => [dmChat, groupChat],
     getContactProfile: async (jid) =>
-      [contactAnis, contactOther].find((c) => c.jid === jid) ?? null,
-    getGroupMetadata: async (jid) => (jid === groupNoqta.jid ? groupNoqta : null),
+      [contactAlex, contactOther].find((c) => c.jid === jid) ?? null,
+    getGroupMetadata: async (jid) => (jid === groupAcme.jid ? groupAcme : null),
     getHistory: async () => [],
     ...overrides,
   }
@@ -98,28 +98,28 @@ const baseConfig: IngestConfig = {
 
 describe("transformContact", () => {
   it("produces a stable id keyed to JID + date", () => {
-    const a = transformContact(contactAnis, "devops-agent", tsNow())
-    const b = transformContact(contactAnis, "devops-agent", tsNow())
+    const a = transformContact(contactAlex, "devops-agent", tsNow())
+    const b = transformContact(contactAlex, "devops-agent", tsNow())
     expect(a.id).toBe(b.id)
     expect(a.id).toMatch(/^wa-contact-[a-f0-9]{10}-\d{8}$/)
   })
 
   it("different contacts produce different ids", () => {
-    const a = transformContact(contactAnis, "devops-agent", tsNow())
+    const a = transformContact(contactAlex, "devops-agent", tsNow())
     const b = transformContact(contactOther, "devops-agent", tsNow())
     expect(a.id).not.toBe(b.id)
   })
 
   it("sets source and sourceContext correctly", () => {
-    const entry = transformContact(contactAnis, "devops-agent", tsNow())
+    const entry = transformContact(contactAlex, "devops-agent", tsNow())
     expect(entry.source).toBe("whatsapp:contact")
-    expect(entry.sourceContext).toBe(contactAnis.jid)
+    expect(entry.sourceContext).toBe(contactAlex.jid)
     expect(entry.agentId).toBe("devops-agent")
   })
 
   it("includes saved name and status in content but never message bodies", () => {
-    const entry = transformContact(contactAnis, "devops-agent", tsNow())
-    expect(entry.content).toContain("Anis Marrouchi")
+    const entry = transformContact(contactAlex, "devops-agent", tsNow())
+    expect(entry.content).toContain("Alex Rivera")
     expect(entry.content).toContain("Doing AgentX work")
     expect(entry.content).not.toContain("message")
   })
@@ -128,7 +128,7 @@ describe("transformContact", () => {
 describe("transformGroupMeta", () => {
   it("caps the member roster to avoid huge entries", () => {
     const many: GroupRead = {
-      ...groupNoqta,
+      ...groupAcme,
       members: Array.from({ length: 200 }, (_, i) => ({ jid: `${i}@s.whatsapp.net` })),
       memberCount: 200,
     }
@@ -138,42 +138,42 @@ describe("transformGroupMeta", () => {
   })
 
   it("stable id keyed to group JID + date", () => {
-    const a = transformGroupMeta(groupNoqta, "devops-agent", tsNow())
-    const b = transformGroupMeta(groupNoqta, "devops-agent", tsNow())
+    const a = transformGroupMeta(groupAcme, "devops-agent", tsNow())
+    const b = transformGroupMeta(groupAcme, "devops-agent", tsNow())
     expect(a.id).toBe(b.id)
   })
 })
 
 describe("transformDm / transformGroupMessages", () => {
   const msgs: MessageRead[] = [
-    { id: "MSG-1", fromJid: contactAnis.jid, fromMe: false, timestamp: 1713700000, text: "hey" },
-    { id: "MSG-2", fromJid: contactAnis.jid, fromMe: true, timestamp: 1713700010, text: "hi" },
+    { id: "MSG-1", fromJid: contactAlex.jid, fromMe: false, timestamp: 1713700000, text: "hey" },
+    { id: "MSG-2", fromJid: contactAlex.jid, fromMe: true, timestamp: 1713700010, text: "hi" },
   ]
 
   it("returns null for empty message arrays", () => {
-    expect(transformDm(dmChat, contactAnis, [], "a", tsNow())).toBeNull()
-    expect(transformGroupMessages(groupChat, groupNoqta, [], "a", tsNow())).toBeNull()
+    expect(transformDm(dmChat, contactAlex, [], "a", tsNow())).toBeNull()
+    expect(transformGroupMessages(groupChat, groupAcme, [], "a", tsNow())).toBeNull()
   })
 
   it("id includes the last message id so new messages → new entry", () => {
-    const a = transformDm(dmChat, contactAnis, msgs, "devops-agent", tsNow())!
-    const msgs2 = [...msgs, { id: "MSG-3", fromJid: contactAnis.jid, fromMe: false, timestamp: 1713700020, text: "ok" }]
-    const b = transformDm(dmChat, contactAnis, msgs2, "devops-agent", tsNow())!
+    const a = transformDm(dmChat, contactAlex, msgs, "devops-agent", tsNow())!
+    const msgs2 = [...msgs, { id: "MSG-3", fromJid: contactAlex.jid, fromMe: false, timestamp: 1713700020, text: "ok" }]
+    const b = transformDm(dmChat, contactAlex, msgs2, "devops-agent", tsNow())!
     expect(a.id).not.toBe(b.id)
   })
 
   it("same messages → same id (idempotent rewrite)", () => {
-    const a = transformDm(dmChat, contactAnis, msgs, "devops-agent", tsNow())!
-    const b = transformDm(dmChat, contactAnis, msgs, "devops-agent", tsNow())!
+    const a = transformDm(dmChat, contactAlex, msgs, "devops-agent", tsNow())!
+    const b = transformDm(dmChat, contactAlex, msgs, "devops-agent", tsNow())!
     expect(a.id).toBe(b.id)
   })
 
   it("renders media without the original text", () => {
     const mediaMsgs: MessageRead[] = [{
-      id: "M1", fromJid: contactAnis.jid, fromMe: false, text: "",
+      id: "M1", fromJid: contactAlex.jid, fromMe: false, text: "",
       media: { kind: "image", caption: "sunset" },
     }]
-    const entry = transformDm(dmChat, contactAnis, mediaMsgs, "a", tsNow())!
+    const entry = transformDm(dmChat, contactAlex, mediaMsgs, "a", tsNow())!
     expect(entry.content).toContain("[image: sunset]")
   })
 })
@@ -196,11 +196,11 @@ describe("resolveScope", () => {
     const cfg = { ...baseConfig, allowContacts: ["00000"] }
     const targets = resolveScope(cfg, source)
     expect(targets).toHaveLength(1)
-    expect(targets[0].jid).toBe(contactAnis.jid)
+    expect(targets[0].jid).toBe(contactAlex.jid)
   })
 
   it("respects `+` prefix in allowlist entries", () => {
-    const cfg = { ...baseConfig, allowContacts: ["+21600000000"] }
+    const cfg = { ...baseConfig, allowContacts: ["+10000000000"] }
     const targets = resolveScope(cfg, source)
     expect(targets).toHaveLength(1)
   })
@@ -208,8 +208,8 @@ describe("resolveScope", () => {
   it("deny wins over allow", () => {
     const cfg = {
       ...baseConfig,
-      allowContacts: ["21600000000"],
-      denyContacts: ["21600000000"],
+      allowContacts: ["10000000000"],
+      denyContacts: ["10000000000"],
     }
     expect(resolveScope(cfg, source)).toHaveLength(0)
   })
@@ -230,7 +230,7 @@ describe("runSweep", () => {
       source, store, agentId: "devops-agent", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21600000000"],
+        allowContacts: ["10000000000"],
         allowGroups: ["120363000000000001"],
       },
     })
@@ -247,7 +247,7 @@ describe("runSweep", () => {
     const store = new MemoryStore()
     const report = await runSweep({
       source, store, agentId: "devops-agent", now: tsNow(), dryRun: true,
-      config: { ...baseConfig, allowContacts: ["21600000000"] },
+      config: { ...baseConfig, allowContacts: ["10000000000"] },
     })
     expect(store.entries).toHaveLength(0)
     expect(report.dryRunEntries).toHaveLength(1)
@@ -265,13 +265,13 @@ describe("runSweep", () => {
 
   it("mode=messages pulls a bounded DM window and writes it", async () => {
     const msgs: MessageRead[] = [
-      { id: "M1", fromJid: contactAnis.jid, fromMe: false, timestamp: 1713700000, text: "hey" },
+      { id: "M1", fromJid: contactAlex.jid, fromMe: false, timestamp: 1713700000, text: "hey" },
     ]
     const source = makeSource({ getHistory: async () => msgs })
     const store = new MemoryStore()
     const report = await runSweep({
       source, store, agentId: "a", now: tsNow(),
-      config: { ...baseConfig, mode: "messages", allowContacts: ["21600000000"], historyDays: 10_000 },
+      config: { ...baseConfig, mode: "messages", allowContacts: ["10000000000"], historyDays: 10_000 },
     })
     expect(report.wroteDmWindows).toBe(1)
     expect(store.entries).toHaveLength(2)
@@ -286,7 +286,7 @@ describe("runSweep", () => {
       source, store, agentId: "a", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21600000000", "21688888888"],
+        allowContacts: ["10000000000", "10000000000"],
         allowGroups: ["120363000000000001"],
         throttle: { ...baseConfig.throttle, maxChatsPerSweep: 2 },
       },
@@ -304,23 +304,23 @@ describe("runSweep", () => {
       source, store, agentId: "a", now: tsNow(),
       config: {
         ...baseConfig,
-        allowContacts: ["21600000000"],
+        allowContacts: ["10000000000"],
         allowGroups: ["120363000000000001"],
       },
     })
     expect(report.wroteContacts).toBe(1)  // contact still processed
     expect(report.errors).toHaveLength(1) // group errored
-    expect(report.errors[0].jid).toBe(groupNoqta.jid)
+    expect(report.errors[0].jid).toBe(groupAcme.jid)
   })
 })
 
 describe("hashProfile", () => {
   it("stable for unchanged profile", () => {
-    expect(hashProfile(contactAnis)).toBe(hashProfile(contactAnis))
+    expect(hashProfile(contactAlex)).toBe(hashProfile(contactAlex))
   })
   it("changes when status changes", () => {
-    const a = hashProfile(contactAnis)
-    const b = hashProfile({ ...contactAnis, status: "new status" })
+    const a = hashProfile(contactAlex)
+    const b = hashProfile({ ...contactAlex, status: "new status" })
     expect(a).not.toBe(b)
   })
 })

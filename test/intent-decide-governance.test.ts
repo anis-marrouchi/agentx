@@ -12,7 +12,7 @@ import type { IntentEventInput } from "../src/intent/types"
 //   "a dispatch decision for (project, ...) where business.projects[].pm
 //    is set never resolves to an agent without going through the PM first
 //    (PM may rubber-stamp, but the decision row records
-//    decided_by='pm:pm-mtgl')"
+//    decided_by='pm:pm-globex')"
 
 let tmp: string
 let ledger: IntentLedger
@@ -141,9 +141,9 @@ describe("decideAndCommit governance — canHandle (capability veto)", () => {
       },
     }
     decideAndCommit(ledger,
-      evt({ project: "noqta", subject: "issue:1", intent: "issue.opened" }),
+      evt({ project: "acme", subject: "issue:1", intent: "issue.opened" }),
       dispatch("router", "agent-x"), tick, gov)
-    expect(observed).toEqual({ agentId: "agent-x", project: "noqta", intent: "issue.opened" })
+    expect(observed).toEqual({ agentId: "agent-x", project: "acme", intent: "issue.opened" })
   })
 
   it("canHandle veto + pmFor: decision attributes to PM but outcome is halted", () => {
@@ -177,7 +177,7 @@ describe("decideAndCommit governance — kickoff property", () => {
     //   "a dispatch decision for (project, ...) where business.projects[].pm
     //    is set never resolves to an agent without going through the PM first
     //    (PM may rubber-stamp, but the decision row records
-    //    decided_by='pm:pm-mtgl')"
+    //    decided_by='pm:pm-globex')"
     const gov: DispatchGovernance = { pmFor: (p) => p === "p1" ? "the-pm" : undefined }
     // Multiple events on p1, varied policies
     decideAndCommit(ledger, evt({ sourceEventId: "e1" }),

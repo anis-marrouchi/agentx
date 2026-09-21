@@ -48,7 +48,7 @@ export function shouldCaptureEntry(input: {
   if (input.responseLength <= 50) return { capture: false, reason: "response too short" }
 
   const channel = (input.channel ?? "").toLowerCase()
-  // Channels carry a node suffix: "telegram@clawd-server".
+  // Channels carry a node suffix: "telegram@peer-server".
   const base = channel.split("@")[0]
   if (MACHINE_CHANNELS.has(base)) return { capture: false, reason: `machine channel: ${base}` }
 

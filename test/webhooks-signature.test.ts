@@ -89,7 +89,7 @@ describe("WebhookHandler signature validation", () => {
       [{
         id: "gl-1",
         source: "gitlab",
-        agentId: "pm-ksi",
+        agentId: "pm-initech",
         secretEnv: "TEST_GL_SECRET",
         enabled: true,
       }],
@@ -99,7 +99,7 @@ describe("WebhookHandler signature validation", () => {
       "x-gitlab-token": "tok-1",
     }, "{}")
     const res = new CapturingResponse() as any
-    await handler.handle(req, res, "/webhook/pm-ksi")
+    await handler.handle(req, res, "/webhook/pm-initech")
     expect(res.status).toBe(200)
   })
 

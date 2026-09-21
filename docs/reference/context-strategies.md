@@ -84,7 +84,7 @@ curl -X POST http://127.0.0.1:18800/task \
     "agent": "devops-agent",
     "message": "...",
     "contextStrategy": "planner",
-    "context": { "channel": "bench", "chatId": "bench-1", "sender": "anis" }
+    "context": { "channel": "bench", "chatId": "bench-1", "sender": "alex" }
   }'
 ```
 

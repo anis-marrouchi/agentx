@@ -5,7 +5,7 @@ const baseInput: ContextInput = {
   channel: "telegram",
   agentId: "devops-agent",
   agentName: "DevOps",
-  sender: "Anis",
+  sender: "Alex",
   message: "ssh in and restart agentx",
 }
 
@@ -14,12 +14,12 @@ describe("references layer", () => {
     const ctx = buildAgentContext({
       ...baseInput,
       references:
-        "[Verified References — deterministic, do not re-query]\n- ksi.ssh.clawd-mac (ssh): clawd-server { user=clawd host=64.226.102.124 }",
+        "[Verified References — deterministic, do not re-query]\n- initech.ssh.peer-mac (ssh): peer-server { user=peer host=203.0.113.10 }",
     })
     expect(ctx).toContain("[Verified References")
-    expect(ctx).toContain("ksi.ssh.clawd-mac")
-    expect(ctx).toContain("user=clawd")
-    expect(ctx).toContain("host=64.226.102.124")
+    expect(ctx).toContain("initech.ssh.peer-mac")
+    expect(ctx).toContain("user=peer")
+    expect(ctx).toContain("host=203.0.113.10")
   })
 
   it("renders the references block before the intent layer (priority 4.7 < 5)", () => {
@@ -32,7 +32,7 @@ describe("references layer", () => {
         pathId: "x",
         status: "approved",
       },
-      references: "[Verified References — deterministic, do not re-query]\n- ksi.ssh.clawd-mac (ssh): clawd-server",
+      references: "[Verified References — deterministic, do not re-query]\n- initech.ssh.peer-mac (ssh): peer-server",
     })
     const refsIdx = ctx.indexOf("[Verified References")
     const intentIdx = ctx.indexOf("[Intent path")
@@ -48,7 +48,7 @@ describe("references layer", () => {
 
   it("trims to the per-layer budget (500 tokens ≈ 2000 chars)", () => {
     const huge = Array.from({ length: 200 })
-      .map((_, i) => `- ksi.test.${i}: ${"x".repeat(80)}`)
+      .map((_, i) => `- initech.test.${i}: ${"x".repeat(80)}`)
       .join("\n")
     const block = `[Verified References — deterministic, do not re-query]\n${huge}`
     const ctx = buildAgentContext({ ...baseInput, references: block })

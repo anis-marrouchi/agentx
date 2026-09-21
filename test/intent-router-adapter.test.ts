@@ -86,10 +86,10 @@ describe("buildRouterPolicyFromLegacy", () => {
 
   it("dispatched legacy → policy returns dispatched/agentId verbatim", () => {
     const policy = buildRouterPolicyFromLegacy({
-      outcome: "dispatched", agentId: "mtgl-v2", reason: "mention-stage",
+      outcome: "dispatched", agentId: "globex-v2", reason: "mention-stage",
     })
     expect(policy.decide({} as any)).toEqual({
-      agentId: "mtgl-v2", outcome: "dispatched", reason: "mention-stage",
+      agentId: "globex-v2", outcome: "dispatched", reason: "mention-stage",
     })
   })
 
@@ -123,7 +123,7 @@ describe("recordRouterDispatch", () => {
   it("agreement (dispatched/X = dispatched/X): event+decision recorded, no divergence row", () => {
     recordRouterDispatch(
       ledger, dmMessage, "telegram", "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+      { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
       () => 1,
     )
     expect(
@@ -153,7 +153,7 @@ describe("recordRouterDispatch", () => {
     for (let i = 0; i < 5; i++) {
       recordRouterDispatch(
         ledger, dmMessage, "telegram", "{}",
-        { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+        { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
         () => 1 + i,
       )
     }
@@ -176,13 +176,13 @@ describe("recordRouterDispatch", () => {
     recordRouterDispatch(
       ledger,
       { ...groupMessage, id: "msg-A" }, "telegram", "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+      { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
       () => 1,
     )
     recordRouterDispatch(
       ledger,
       { ...groupMessage, id: "msg-B" }, "telegram", "{}",
-      { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+      { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
       () => 2,
     )
     expect(
@@ -231,7 +231,7 @@ describe("recordRouterDispatch — multi-channel coverage", () => {
     const waMsg: RouterMessageProjection = {
       id: "wa-msg-1",
       channel: "whatsapp",
-      sender: { id: "21621600000000@s.whatsapp.net" },
+      sender: { id: "10000000000000@s.whatsapp.net" },
     }
     recordRouterDispatch(
       ledger, waMsg, "whatsapp", "{}",

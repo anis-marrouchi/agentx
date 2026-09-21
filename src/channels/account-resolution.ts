@@ -8,8 +8,8 @@ interface AccountLike {
 
 /**
  * Pick the Telegram account that should canonically handle traffic for an
- * agent. When multiple accounts share the same agentBinding (e.g. pm-ksi has
- * both @noqta_ksi_bot and @noqta_pm_ksi_bot), prefer one whose bot is a
+ * agent. When multiple accounts share the same agentBinding (e.g. pm-initech has
+ * both @acme_initech_bot and @acme_pm_initech_bot), prefer one whose bot is a
  * member of the target group — without that, multi-account-dedup picks the
  * first config-order match and silently drops messages received via the
  * other bot when the "canonical" one isn't in the chat.

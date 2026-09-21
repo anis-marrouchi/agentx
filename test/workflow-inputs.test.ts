@@ -39,8 +39,8 @@ describe("fillFromChatId", () => {
   }
 
   it("parses GitLab merge_request chatIds", () => {
-    expect(fillFromChatId("mtgl/mtgl_system:merge_request:959", schema)).toEqual({
-      project: "mtgl/mtgl_system",
+    expect(fillFromChatId("globex/globex_system:merge_request:959", schema)).toEqual({
+      project: "globex/globex_system",
       id: 959,
       mrId: 959,
     })
@@ -54,8 +54,8 @@ describe("fillFromChatId", () => {
   })
 
   it("parses issue chatIds", () => {
-    expect(fillFromChatId("ksi/int.ksi.tn:issue:440", schema)).toEqual({
-      project: "ksi/int.ksi.tn",
+    expect(fillFromChatId("initech/int.initech.example.com:issue:440", schema)).toEqual({
+      project: "initech/int.initech.example.com",
       id: 440,
       mrId: 440,
     })
@@ -68,8 +68,8 @@ describe("fillFromChatId", () => {
 
   it("only emits fields the schema declares", () => {
     const minimal = { type: "object", properties: { project: { type: "string" } } }
-    expect(fillFromChatId("mtgl/mtgl_system:merge_request:959", minimal)).toEqual({
-      project: "mtgl/mtgl_system",
+    expect(fillFromChatId("globex/globex_system:merge_request:959", minimal)).toEqual({
+      project: "globex/globex_system",
     })
   })
 })
@@ -102,7 +102,7 @@ describe("missingRequired", () => {
   })
 })
 
-describe("resolveAutoRunInputs (mtgl deploy shape)", () => {
+describe("resolveAutoRunInputs (globex deploy shape)", () => {
   const wf = wfWithSchema({
     type: "object",
     properties: {
@@ -118,12 +118,12 @@ describe("resolveAutoRunInputs (mtgl deploy shape)", () => {
 
   it("fills project + mrId from chatId, environment + ref from defaults — host/path still missing", () => {
     const r = resolveAutoRunInputs(wf, {
-      chatId: "mtgl/mtgl_system:merge_request:959",
+      chatId: "globex/globex_system:merge_request:959",
       channel: "gitlab",
       message: "Deploy MR !959",
       agentId: "devops-agent",
     })
-    expect(r.inputs.project).toBe("mtgl/mtgl_system")
+    expect(r.inputs.project).toBe("globex/globex_system")
     expect(r.inputs.mrId).toBe(959)
     expect(r.inputs.environment).toBe("staging")  // default
     expect(r.inputs.ref).toBe("master")            // default
@@ -136,7 +136,7 @@ describe("resolveAutoRunInputs (mtgl deploy shape)", () => {
     // We don't have a hosts-mapping path yet — this asserts the shape so a
     // later commit that pre-fills host/path from agentx.json doesn't break.
     const r = resolveAutoRunInputs(wf, {
-      chatId: "mtgl/mtgl_system:merge_request:959",
+      chatId: "globex/globex_system:merge_request:959",
       channel: "gitlab",
     })
     // Without host/path, there ARE missing fields, so the auto-runner

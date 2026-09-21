@@ -1479,12 +1479,12 @@ export async function executeSdk(
  * lets the daemon's POST /chat?stream=true actually stream Claude/DeepSeek
  * tokens — without it, the orchestrator returned only after the agentic
  * loop finished and SSE clients saw `role` then `stop` with no content
- * between (the failure mode that surfaced on the noqta-public smoke test
+ * between (the failure mode that surfaced on the acme-public smoke test
  * after the tier switch).
  */
 /** Side-channel for reasoning/thinking chunks — distinct from
  *  StreamCallback so callers can route them to a different UI lane
- *  (e.g. a collapsible thinking block on noqta.tn, a dimmed terminal
+ *  (e.g. a collapsible thinking block on example.com, a dimmed terminal
  *  block in the dashboard) without polluting the visible response. */
 export type ThinkingCallback = (text: string) => void
 
@@ -1540,19 +1540,19 @@ export async function executeOrchestrator(
       ? `${historyContext}\n\n${task.message}`
       : task.message
 
-    // Enable noqta workspace tools (list_projects, create_task, etc.)
-    // when the channel is web-chat AND the sender is a noqta user_id
+    // Enable acme workspace tools (list_projects, create_task, etc.)
+    // when the channel is web-chat AND the sender is an acme user_id
     // UUID. The ToolExecutor reads the bearer from env at dispatch
-    // time — it never enters the agent's prompt context. Non-noqta
-    // callers (telegram numeric ids, mesh, crons) get no noqtaContext
+    // time — it never enters the agent's prompt context. Non-acme
+    // callers (telegram numeric ids, mesh, crons) get no acmeContext
     // so the tools are absent from their catalog entirely.
     const sender = task.context?.sender
     const looksUuid =
       typeof sender === "string" &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sender)
-    const noqtaContext =
+    const acmeContext =
       task.context?.channel === "web-chat" && looksUuid
-        ? { userId: sender, agentId: task.agentId || "noqta-public" }
+        ? { userId: sender, agentId: task.agentId || "acme-public" }
         : undefined
 
     // MCP servers declared on this agent (including codegraph when
@@ -1573,7 +1573,7 @@ export async function executeOrchestrator(
       overwrite: true,
       interactive: false,
       context7: false,
-      noqtaContext,
+      acmeContext,
       providerOpts,
       abortSignal: combined.signal,
       mcpServers: hasMcp ? mcpServers : undefined,
@@ -1602,7 +1602,7 @@ export async function executeOrchestrator(
           // endpoint can emit `delta.reasoning_content` (DeepSeek's
           // own convention) and the dashboard modal can render it in
           // a distinct lane. Keeping it out of onDelta is critical:
-          // the chat SSE consumer (noqta.tn) treats `delta.content`
+          // the chat SSE consumer (example.com) treats `delta.content`
           // as visible response text, so leaking thinking there
           // floods the chat with `💭 the / 💭 user / …` per token.
           if (event.text && onThinking) onThinking(event.text)
@@ -1665,7 +1665,7 @@ export async function executeOrchestrator(
         }
       }
       // Fallback estimate so the SSE usage chunk on the daemon /chat
-      // path always has SOME values for noqta.tn's cost-based billing
+      // path always has SOME values for example.com's cost-based billing
       // to work against (the floor still protects against undercharge).
       if ((inputTokens === undefined || outputTokens === undefined) && tokensUsed) {
         inputTokens = Math.round(tokensUsed * 0.7)
@@ -1686,7 +1686,7 @@ export async function executeOrchestrator(
     const { generate } = await import("@/agent")
     const result = await generate(baseOpts)
     // Surface split tokens on `usage` so the daemon /chat handler (and
-    // its noqta.tn voice forwarder) can do cost-based billing instead
+    // its example.com voice forwarder) can do cost-based billing instead
     // of the floor-only fallback. Falls back to a 30/70 estimate when
     // the provider only reports a combined total (CLI tier, legacy
     // loop) so downstream billing never sees zeros for a real turn.

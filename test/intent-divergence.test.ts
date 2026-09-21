@@ -25,7 +25,7 @@ afterEach(() => {
 
 const dispatchPolicy: DispatchPolicy = {
   decidedBy: "channel-router",
-  decide: () => ({ agentId: "mtgl-v2", outcome: "dispatched", reason: null }),
+  decide: () => ({ agentId: "globex-v2", outcome: "dispatched", reason: null }),
 }
 
 function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput {
@@ -33,7 +33,7 @@ function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput
     ts: 1714400000000,
     source: "gitlab",
     sourceEventId: "gl-evt-1",
-    project: "mtgl/mtgl-system-v2",
+    project: "globex/globex-system-v2",
     subject: "issue:709",
     intent: "issue.opened",
     rawJson: "{}",
@@ -49,7 +49,7 @@ describe("decisionsAgree", () => {
   it("agrees on identical outcome + agentId", () => {
     const decision = dispatchAndDecide()
     expect(
-      decisionsAgree(decision, { outcome: "dispatched", agentId: "mtgl-v2" }),
+      decisionsAgree(decision, { outcome: "dispatched", agentId: "globex-v2" }),
     ).toBe(true)
   })
 
@@ -72,7 +72,7 @@ describe("decisionsAgree", () => {
     expect(
       decisionsAgree(decision, {
         outcome: "dispatched",
-        agentId: "mtgl-v2",
+        agentId: "globex-v2",
         reason: "totally different rationale",
       }),
     ).toBe(true)
@@ -138,7 +138,7 @@ describe("reportDivergence", () => {
       ledger,
       "gitlab",
       decision,
-      { outcome: "dispatched", agentId: "mtgl-v2" },
+      { outcome: "dispatched", agentId: "globex-v2" },
     )
 
     expect(reported).toBe(false)
@@ -166,7 +166,7 @@ describe("reportDivergence", () => {
       source: "gitlab",
       eventId: decision.eventId,
       decidedBy: "channel-router",
-      ledgerAgentId: "mtgl-v2",
+      ledgerAgentId: "globex-v2",
       ledgerOutcome: "dispatched",
       legacyAgentId: null,
       legacyOutcome: "halted",
@@ -177,7 +177,7 @@ describe("reportDivergence", () => {
     expect(logged).toContain("[ledger-divergence]")
     expect(logged).toContain("source=gitlab")
     expect(logged).toContain(`event=${decision.eventId}`)
-    expect(logged).toContain("ledger=dispatched/mtgl-v2")
+    expect(logged).toContain("ledger=dispatched/globex-v2")
     expect(logged).toContain("legacy=halted/null")
   })
 
@@ -257,7 +257,7 @@ describe("reportDivergence", () => {
     const decision = dispatchAndDecide()
     vi.spyOn(console, "log").mockImplementation(() => {})
     for (let i = 0; i < 20; i++) {
-      reportDivergence(ledger, "gitlab", decision, { outcome: "dispatched", agentId: "mtgl-v2" })
+      reportDivergence(ledger, "gitlab", decision, { outcome: "dispatched", agentId: "globex-v2" })
     }
     expect(ledger.getDivergences()).toHaveLength(0)
   })

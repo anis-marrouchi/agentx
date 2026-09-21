@@ -741,7 +741,7 @@ wiki
   .description("interactive interview session — Q&A with an LLM synthesizer, produces one typed wiki article")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "which agent's wiki to write to (required)")
-  .option("--topic <text>", "what to interview about (e.g. 'MTGL deployment procedure')")
+  .option("--topic <text>", "what to interview about (e.g. 'Globex deployment procedure')")
   .option("--type <t>", "article type hint (person|project|place|concept|event|decision|pattern)")
   .option("--model <m>", "synthesis model", "sonnet")
   .option("--no-commit", "show the draft but don't write")
@@ -2353,7 +2353,7 @@ wiki
   .command("sync")
   .description("pull raw entries from mesh peers into local wiki")
   .option("--dir <path>", "wiki directory")
-  .option("--peer <url>", "sync from a specific peer URL (e.g., http://100.67.108.119:19900)")
+  .option("--peer <url>", "sync from a specific peer URL (e.g., http://100.64.0.11:19900)")
   .option("--dry-run", "show what would be synced without writing")
   .action(async (opts) => {
     const hub = getHub(opts.dir)
@@ -2372,7 +2372,7 @@ wiki
         peerUrls = (config.mesh?.peers || []).map((p: any) => p.url)
       } catch {
         console.log(chalk.red("  No --peer specified and no daemon config found"))
-        console.log(chalk.dim("  Usage: agentx wiki sync --peer http://100.67.108.119:19900"))
+        console.log(chalk.dim("  Usage: agentx wiki sync --peer http://100.64.0.11:19900"))
         return
       }
     }

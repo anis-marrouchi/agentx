@@ -19,7 +19,7 @@
       "config": {
         "agentId": "intent-classifier",
         "prompt": "A client named {{trigger.sender.name}} ({{trigger.fromJid}}) wrote:\n---\n{{trigger.text}}\n---\nDecide intent. Reply with exactly one line:\nRESULT: status-check\nRESULT: new-request\nRESULT: other",
-        "resultParser": "noqta-result-token",
+        "resultParser": "acme-result-token",
         "timeoutMinutes": 2
       },
       "position": { "x": 320, "y": 160 }
@@ -41,7 +41,7 @@
       "type": "agent",
       "config": {
         "agentId": "gitlab-ticket-lookup",
-        "prompt": "Find open or recently-closed issues in noqta/web whose reporter mentions {{trigger.sender.name}} or {{trigger.fromJid}} and that could relate to this message:\n---\n{{trigger.text}}\n---\nSummarise the current status in one short paragraph suitable for a WhatsApp reply.",
+        "prompt": "Find open or recently-closed issues in acme/web whose reporter mentions {{trigger.sender.name}} or {{trigger.fromJid}} and that could relate to this message:\n---\n{{trigger.text}}\n---\nSummarise the current status in one short paragraph suitable for a WhatsApp reply.",
         "timeoutMinutes": 3
       },
       "position": { "x": 960, "y": 40 }
@@ -61,7 +61,7 @@
       "type": "action.createIssue",
       "config": {
         "channel": "gitlab",
-        "project": "noqta/web",
+        "project": "acme/web",
         "title": "WhatsApp: {{trigger.sender.name}} — new request",
         "description": "From: {{trigger.sender.name}} ({{trigger.fromJid}})\n\n{{trigger.text}}\n\n---\nOpened automatically from WhatsApp workflow run {{run.id}}.",
         "labels": ["source::whatsapp", "Triage"]
