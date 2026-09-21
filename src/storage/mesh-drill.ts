@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3"
-import { classifyCause, dayBounds, type CauseId } from "./mesh-analytics"
+import { AGENT_RUNS_ONLY, classifyCause, dayBounds, type CauseId } from "./mesh-analytics"
 
 // --- Drill-down reads behind the mesh page's thread → run → step path ---
 //
@@ -184,7 +184,10 @@ export function getDayActivity(
   const limit = Math.max(1, Math.min(200, Math.floor(args.limit ?? 40)))
   const p = { start, end, limit }
   const ERR = "SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END)"
-  const WINDOW = "started_at >= @start AND started_at < @end"
+  // Workflow node traces are excluded from every aggregate on this page —
+  // see AGENT_RUNS_ONLY. A day is "what the agents did", and 3,000 zero-ms
+  // engine steps answer a different question.
+  const WINDOW = `started_at >= @start AND started_at < @end AND ${AGENT_RUNS_ONLY}`
 
   const totals = db.prepare(`
     SELECT COUNT(*) runs, ${ERR} errors, SUM(COALESCE(duration_ms,0)) ms,

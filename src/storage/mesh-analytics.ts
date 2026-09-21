@@ -148,6 +148,27 @@ export interface AnalyticsOpts {
   limit?: number
 }
 
+/** Workflow engine steps (`workflow:action.send`, `workflow:end`,
+ *  `workflow:gateway.parallel`, …) each get their own task_traces row so the
+ *  workflow drill-down can show the path a run took. They are not agent work:
+ *  sub-millisecond, zero tokens, and on a busy day they outnumber real runs
+ *  20:1 — 6,368 of 6,745 traces over 2026-09-16..20. Any aggregate that
+ *  reports how long an agent takes, or how much it did, must exclude them or
+ *  it reports engine overhead as agent performance (the mean task duration
+ *  read 7.9s against a real 33s the day this was found).
+ *
+ *  Drill-downs keyed to one explicit agent (listThreadRuns,
+ *  getConversationSummary) deliberately do NOT apply this: asking for a
+ *  workflow node by name should still show it. */
+export const AGENT_RUNS_ONLY = "agent_id NOT LIKE 'workflow:%'"
+/** Same predicate for queries that alias task_traces as `t`. */
+export const AGENT_RUNS_ONLY_T = "t.agent_id NOT LIKE 'workflow:%'"
+
+/** True for the pseudo-agent ids the workflow dispatcher writes per node. */
+export function isWorkflowNodeAgent(agentId: string): boolean {
+  return agentId.startsWith("workflow:")
+}
+
 export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = {}): MeshAnalytics {
   const days = Math.max(0, Math.min(180, Math.floor(opts.days ?? 30)))
   const limit = Math.max(1, Math.min(200, Math.floor(opts.limit ?? 60)))
@@ -164,7 +185,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
            SUM(COALESCE(duration_ms,0)) ms,
            COUNT(DISTINCT agent_id) agents,
            COUNT(DISTINCT agent_id || '|' || COALESCE(channel,'') || '|' || COALESCE(chat_id,'')) threads
-    FROM task_traces WHERE started_at >= @since
+    FROM task_traces WHERE started_at >= @since AND ${AGENT_RUNS_ONLY}
   `).get(p) as Row
 
   const dayRows = db.prepare(`
@@ -172,7 +193,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
            CASE channel WHEN 'cron' THEN 'cron' WHEN 'workflow' THEN 'workflow' ELSE 'direct' END origin,
            COUNT(*) runs,
            SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END) errors
-    FROM task_traces WHERE started_at >= @since
+    FROM task_traces WHERE started_at >= @since AND ${AGENT_RUNS_ONLY}
     GROUP BY 1, 2 ORDER BY 1
   `).all(p) as Row[]
 
@@ -196,7 +217,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
     SELECT COALESCE(channel,'unknown') channel, COUNT(*) runs,
            SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END) errors,
            SUM(COALESCE(duration_ms,0)) ms
-    FROM task_traces WHERE started_at >= @since
+    FROM task_traces WHERE started_at >= @since AND ${AGENT_RUNS_ONLY}
     GROUP BY 1 ORDER BY runs DESC LIMIT 20
   `).all(p) as Row[]).map((r) => ({
     channel: r.channel, runs: r.runs, errors: r.errors, hours: round(r.ms / 3_600_000, 2),
@@ -207,7 +228,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
   const errRows = db.prepare(`
     SELECT COALESCE(error,'') error, agent_id, COUNT(*) c
     FROM task_traces
-    WHERE started_at >= @since AND status IN ('error','timeout')
+    WHERE started_at >= @since AND ${AGENT_RUNS_ONLY} AND status IN ('error','timeout')
     GROUP BY 1, 2 ORDER BY c DESC LIMIT 400
   `).all(p) as Row[]
   const causeMap = new Map<CauseId, { count: number; agents: Map<string, number>; example: string }>()
@@ -236,7 +257,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
              SUM(CASE WHEN status = 'ok' THEN COALESCE(output_tokens,0) ELSE 0 END) okOut,
              MAX(started_at) lastAt
       FROM task_traces
-      WHERE started_at >= @since AND channel = 'cron' AND chat_id IS NOT NULL
+      WHERE started_at >= @since AND ${AGENT_RUNS_ONLY} AND channel = 'cron' AND chat_id IS NOT NULL
       GROUP BY 1, 2 ORDER BY ms DESC LIMIT @limit
     `).all(p) as Row[]).map((r) => toJob(r, "cron", String(r.key).replace(/^cron:/, ""))),
     ...(db.prepare(`
@@ -246,7 +267,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
              SUM(CASE WHEN status = 'ok' THEN COALESCE(output_tokens,0) ELSE 0 END) okOut,
              MAX(started_at) lastAt
       FROM task_traces
-      WHERE started_at >= @since AND channel = 'workflow' AND workflow_id IS NOT NULL
+      WHERE started_at >= @since AND ${AGENT_RUNS_ONLY} AND channel = 'workflow' AND workflow_id IS NOT NULL
       GROUP BY 1, 2 ORDER BY ms DESC LIMIT @limit
     `).all(p) as Row[]).map((r) => toJob(r, "workflow", String(r.key))),
   ].sort((a, b) => b.hours - a.hours)
@@ -260,7 +281,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
            SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END) errors,
            MIN(started_at) firstAt, MAX(started_at) lastAt,
            SUM(COALESCE(duration_ms,0)) ms
-    FROM task_traces WHERE started_at >= @since
+    FROM task_traces WHERE started_at >= @since AND ${AGENT_RUNS_ONLY}
     GROUP BY 1, 2, 3
     ORDER BY (MAX(started_at) - MIN(started_at)) DESC, runs DESC
     LIMIT @limit
@@ -311,7 +332,7 @@ export function buildMeshAnalytics(db: Database.Database, opts: AnalyticsOpts = 
   const retention = db.prepare(`
     SELECT COUNT(*) traces,
            SUM(CASE WHEN EXISTS (SELECT 1 FROM task_trace_steps s WHERE s.task_id = t.task_id) THEN 1 ELSE 0 END) withSteps
-    FROM task_traces t WHERE started_at >= @since
+    FROM task_traces t WHERE started_at >= @since AND ${AGENT_RUNS_ONLY_T}
   `).get(p) as Row
 
   return {

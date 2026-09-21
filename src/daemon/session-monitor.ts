@@ -264,9 +264,13 @@ export class SessionMonitor {
    *  caller so the browser can re-lane by a different perspective without
    *  going back to the server. */
   activity(sinceMs: number, limit = 400) {
+    // Workflow node traces are excluded for the same reason the review scan
+    // above skips them: they are zero-ms engine steps, and at ~3k/day they
+    // would fill the window's LIMIT before a single real run got in.
     const rows = this.db.prepare(`SELECT task_id AS id, agent_id AS agentId, channel, chat_id AS chatId,
       status, started_at AS startedAt, duration_ms AS durationMs, message_preview AS preview
-      FROM task_traces WHERE started_at >= ? ORDER BY started_at DESC LIMIT ?`).all(sinceMs, limit) as Array<{
+      FROM task_traces WHERE started_at >= ? AND agent_id NOT LIKE 'workflow:%'
+      ORDER BY started_at DESC LIMIT ?`).all(sinceMs, limit) as Array<{
         id: string; agentId: string; channel: string | null; chatId: string | null
         status: string; startedAt: number; durationMs: number | null; preview: string | null }>
     const ids = new Set(rows.map(r => r.id))
