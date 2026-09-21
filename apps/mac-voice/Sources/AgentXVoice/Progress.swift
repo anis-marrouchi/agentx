@@ -136,9 +136,11 @@ final class Progress: NSObject, URLSessionDataDelegate {
                 if let v = args[key] as? String, !v.isEmpty { detail = v; break }
             }
         }
-        let flat = detail.replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        let text = flat.isEmpty ? tool : "\(tool): \(flat)"
+        // Raw tool names never reach the screen. The marquee used to show
+        // things like "mcp__agentx__agentx_task", which is unreadable to
+        // anyone outside this codebase and appears during exactly the long
+        // waits the widget exists to explain.
+        guard let text = StepLabel.describe(tool: tool, detail: detail) else { return nil }
         // Long text is fine — the panel marquees it rather than truncating.
         return text.count > 90 ? String(text.prefix(88)) + "…" : text
     }
