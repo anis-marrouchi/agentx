@@ -33,6 +33,7 @@ import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQ
 import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
+import { attachFocusWatcher } from "./focus-watcher"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import {
@@ -463,6 +464,23 @@ export class AgentXDaemon {
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
+
+    // Deliver anything Focus held, the moment Focus ends. Without a
+    // watcher the hold queue is a hole rather than a delay — nothing else
+    // ever takes a message back out of it.
+    attachFocusWatcher(
+      async ({ title, message, priority }) => {
+        await this.router.sendOutbound({
+          channel: "ntfy",
+          chatId: "default",
+          text: message,
+          title,
+          priority,
+          agentId: "secretary-agent",
+        } as any)
+      },
+      (m) => this.log(m),
+    )
 
     // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
     //    the previous process. Their agents died with the previous

@@ -14,6 +14,7 @@ import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
 import { look as lookCmd } from "@/commands/look"
 import { paste as pasteCmd } from "@/commands/paste"
+import { notify as notifyCmd } from "@/commands/notify"
 import { decide as decideCmd } from "@/commands/decide"
 import { teach as teachCmd } from "@/commands/teach"
 import { attach as attachCmd } from "@/commands/attach"
@@ -86,6 +87,7 @@ export async function buildProgram(): Promise<Command> {
     pointCmd,                    // computer use: point, never click
     lookCmd,                     // computer use: see state the tree cannot report
     pasteCmd,                    // clipboard, reshaped for where it lands
+    notifyCmd,                   // tell the operator, unless they are in Focus
     decideCmd,                   // typed decisions, for agents
     teachCmd,                    // talk and point, at the same time
     usage,                       // what it cost, what gets used
