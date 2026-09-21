@@ -53,12 +53,12 @@ export interface GenerateOptions {
     lintCommand?: string
     maxAttempts?: number
   }
-  /** Enables the noqta workspace tool catalog (list_projects, create_task,
+  /** Enables the acme workspace tool catalog (list_projects, create_task,
    *  …) in the agentic loop and threads the user_id through to the
-   *  executor. Without this set, the noqta-tools are absent from the
-   *  agent's tool list — keeps non-noqta agents clean. The bearer is
+   *  executor. Without this set, the acme-tools are absent from the
+   *  agent's tool list — keeps non-acme agents clean. The bearer is
    *  read from env at dispatch time and NEVER enters the prompt. */
-  noqtaContext?: import("./tools/noqta").NoqtaToolContext
+  acmeContext?: import("./tools/acme").AcmeToolContext
   /** Provider-level options forwarded to `createProvider`. Today only
    *  `thinking` (for DeepSeek thinking-mode). Wired from
    *  `providers.<name>.thinking` in agentx.json by the daemon's
@@ -254,11 +254,11 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       interactive,
       overwrite,
       dryRun,
-      noqtaContext: options.noqtaContext,
+      acmeContext: options.acmeContext,
       // Forward operator-Stop / wall-clock timeout into the loop. Without
       // this, generate() ignored the signal and the orchestrator kept
       // iterating after combined.abort() fired in executeOrchestrator —
-      // production saw 3-hour hangs on noqta-public (A2A /task path).
+      // production saw 3-hour hangs on acme-public (A2A /task path).
       abortSignal: options.abortSignal,
       mcpTools: mcpPool?.tools,
       mcpDispatch: mcpPool ? mcpPool.dispatch.bind(mcpPool) : undefined,
@@ -512,7 +512,7 @@ export async function* generateStream(
           interactive,
           overwrite,
           dryRun,
-          noqtaContext: options.noqtaContext,
+          acmeContext: options.acmeContext,
           mcpTools: mcpPool?.tools,
           mcpDispatch: mcpPool ? mcpPool.dispatch.bind(mcpPool) : undefined,
           onProgress: (event) => {

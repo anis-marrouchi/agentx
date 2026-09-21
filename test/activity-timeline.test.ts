@@ -37,11 +37,11 @@ describe("activity timeline", () => {
   })
 
   it("stacks concurrent runs so a duplicate dispatch is visible", () => {
-    // The real defect: hasanah-coding ran twice on #96 at once.
+    // The real defect: umbrella-coding ran twice on #96 at once.
     const t = buildTimeline([
-      run("first", "hasanah-coding", 0, 600),
-      run("second", "hasanah-coding", 5, 120),
-      run("later", "hasanah-coding", 20, 60),
+      run("first", "umbrella-coding", 0, 600),
+      run("second", "umbrella-coding", 5, 120),
+      run("later", "umbrella-coding", 20, 60),
     ])
     const lane = t.lanes[0]
     expect(lane.tracks).toBe(2)

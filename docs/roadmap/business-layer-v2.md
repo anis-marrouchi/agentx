@@ -5,7 +5,7 @@
 
 ## Motivating scenarios
 
-- Solo founder wants Nadia to do a **daily** GSC delta and a **weekly** LinkedIn draft without re-typing the task every time it's checked off.
+- Solo founder wants Marketing to do a **daily** GSC delta and a **weekly** LinkedIn draft without re-typing the task every time it's checked off.
 - Ops team wants a "monthly log prune" to appear on the first of every month, and a "yearly cert audit" to appear every January 1.
 - Marketing workflow should be `backlog → drafting → review → scheduled → published → done`, with review gating on a manager role — SharePoint-style states and rules.
 - Agents already work in GitLab (`To Do / Doing / Blocked / Done` labels) and the team also runs Odoo. They shouldn't be forced to pick one system — the business layer should federate.
@@ -71,8 +71,8 @@ Drop the "pick exactly one source" constraint:
   "type": "compound",
   "sources": [
     { "type": "linear",  "teamId": "MKT",                 "agents": ["marketing-agent"] },
-    { "type": "gitlab",  "projects": ["mtgl/mtgl-system-v2"], "agents": ["devops-*"] },
-    { "type": "odoo",    "project": "Support",             "agents": ["pm-hasanah"] },
+    { "type": "gitlab",  "projects": ["globex/globex-system-v2"], "agents": ["devops-*"] },
+    { "type": "odoo",    "project": "Support",             "agents": ["pm-umbrella"] },
     { "type": "backlog", "path": ".agentx/backlog.md" }
   ]
 }
@@ -108,7 +108,7 @@ Every transition appended to `.agentx/workflow/<itemId>.jsonl` — the audit tra
 
 ### 5. Odoo / Linear / Jira / Asana / HubSpot / generic-webhook sources (medium each)
 
-Each is a new `WorkSource` implementing the 4-method interface. Priority for this repo: **Odoo first** (already deployed via `mtgl-odoo` skill), **Linear second** (simple GraphQL). Jira / HubSpot / Salesforce / Zoho are natural follow-ups for enterprise users.
+Each is a new `WorkSource` implementing the 4-method interface. Priority for this repo: **Odoo first** (already deployed via `globex-odoo` skill), **Linear second** (simple GraphQL). Jira / HubSpot / Salesforce / Zoho are natural follow-ups for enterprise users.
 
 A `WebhookWorkSource` that accepts items via `POST /business/work-import` is the escape hatch for any system we haven't written a native adapter for.
 

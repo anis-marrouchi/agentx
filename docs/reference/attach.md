@@ -137,7 +137,7 @@ differs per install, and a hook aimed at the wrong port fails *silently*.
 have to pass `--no-guard` to prevent it.
 
 An attached session runs under **your** permissions, not the agent workspace's
-`.claude/settings.json`. Without a user-scope guard, an attached `clawd` would
+`.claude/settings.json`. Without a user-scope guard, an attached `peer` would
 be *less* protected than a spawned one — which is exactly the asymmetry the
 [guardrails](/reference/guard) were built to close.
 
@@ -149,7 +149,7 @@ as a production agent — none of that may leave the box.
 
 Things worth knowing before you attach a production identity:
 
-- **Replies go out for real.** Bind `clawd` and your answers appear in GitLab
+- **Replies go out for real.** Bind `peer` and your answers appear in GitLab
   under that identity. `agentx attach list` shows who is wearing what.
 - **Channel text enters your context.** Even in `notify` mode. Messages are
   clipped (`maxItemChars`, default 4000) and `manual` is always available.

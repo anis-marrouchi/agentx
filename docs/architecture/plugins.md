@@ -36,7 +36,7 @@ forking the daemon.
 
    ```json
    {
-     "plugins": ["@noqta/my-plugin"]
+     "plugins": ["@acme/my-plugin"]
    }
    ```
 

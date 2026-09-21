@@ -349,7 +349,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
           const me = this.sock?.user
           const remoteJid = msg.key.remoteJid || ""
           // Self-chat: remoteJid matches our JID or LID
-          const myJid = me?.id?.replace(/:.*/, "") || ""     // 21600000000
+          const myJid = me?.id?.replace(/:.*/, "") || ""     // 10000000000
           const myLid = me?.lid?.replace(/:.*/, "") || ""     // 214997540012179
           const chatUser = remoteJid.replace(/:.*/, "").replace(/@.*/, "")
           const isSelfChat = (chatUser === myJid) || (chatUser === myLid)
@@ -677,7 +677,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
    *  Baileys' HistoryMessage shape to the channel-agnostic SeededMessage
    *  shape consumed by SessionStore on cold session create. Bounded by the
    *  caller's maxMessages/maxChars; fromMe → role:agent. The chatId is the
-   *  Baileys jid (e.g., "21694xxx@s.whatsapp.net" for DMs). */
+   *  Baileys jid (e.g., "1000000xxx@s.whatsapp.net" for DMs). */
   async seedHistory(
     chatId: string,
     opts: { sinceISO?: string; maxMessages: number; maxChars: number },

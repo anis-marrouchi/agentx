@@ -299,10 +299,10 @@ export class Classifier {
       `   client / project / subject differs.`,
       ``,
       `Examples (right vs wrong):`,
-      `- "Please review MR #957 on mtgl/system" → ["code", "review.merge-request"]`,
-      `   NOT ["business", "noqta", "mtgl-v2", "review-mr-957-system"]`,
-      `- "Deploy ksi-v2 to staging please" → ["ops", "deploy.staging"]`,
-      `   NOT ["business", "noqta", "ksi-v2", "deploy-ksi-v2-to-staging"]`,
+      `- "Please review MR #957 on globex/system" → ["code", "review.merge-request"]`,
+      `   NOT ["business", "acme", "globex-v2", "review-mr-957-system"]`,
+      `- "Deploy initech-v2 to staging please" → ["ops", "deploy.staging"]`,
+      `   NOT ["business", "acme", "initech-v2", "deploy-initech-v2-to-staging"]`,
       `- "Hello Atlas" → ["support", "chat.greeting"]`,
       ``,
       `NODE ID RULES (strict — invalid ids get dropped):`,
@@ -444,7 +444,7 @@ export function hashPath(path: string[]): string {
     .slice(0, 16)
 }
 
-/** "Business › Noqta › DevOps › Review MR" — for the UI + context render. */
+/** "Business › Acme › DevOps › Review MR" — for the UI + context render. */
 export function pathLabel(path: string[], nodes: GraphNode[]): string {
   return path
     .map((id) => {

@@ -13,13 +13,13 @@ This is Phase 3 of the architectural rescue. It rides on top of the [intent ledg
 ## Why org-chart governance
 
 Without PM gating:
-- A GitLab issue on `mtgl/mtgl-system-v2` hits a `gitlab` route → routes to `mtgl-v2` (the coder agent).
+- A GitLab issue on `globex/globex-system-v2` hits a `gitlab` route → routes to `globex-v2` (the coder agent).
 - The coder dispatches. PM never sees it.
 - If the coder refuses or fails, the dispatch ends — no escalation up the chain.
 
 With PM gating:
-- Same inbound hits the route → the dispatcher checks `business.projects[].pm` for the project → finds `pm-mtgl` → dispatches to `pm-mtgl` first.
-- `pm-mtgl` decides: handle, delegate to `mtgl-v2`, or escalate to `product-director`.
+- Same inbound hits the route → the dispatcher checks `business.projects[].pm` for the project → finds `pm-globex` → dispatches to `pm-globex` first.
+- `pm-globex` decides: handle, delegate to `globex-v2`, or escalate to `product-director`.
 - The ledger records each step (the PM gate's decision, the coder's resolution, any escalation). `agentx ledger lineage` walks the chain.
 
 ## Enabling
@@ -59,11 +59,11 @@ For each project that should go through a PM:
 
 ```bash
 agentx config set business.projects '[
-  { "id": "mtgl/mtgl-system-v2", "pm": "pm-mtgl" },
-  { "id": "mtgl/mtgl_system",    "pm": "pm-mtgl" },
-  { "id": "ksi/ksi-v2",          "pm": "pm-ksi" },
-  { "id": "ksi/ksi.tn",          "pm": "pm-ksi" },
-  { "id": "noqta/hackathonat",   "pm": "pm-hackathonat" }
+  { "id": "globex/globex-system-v2", "pm": "pm-globex" },
+  { "id": "globex/globex_system",    "pm": "pm-globex" },
+  { "id": "initech/initech-v2",          "pm": "pm-initech" },
+  { "id": "initech/initech.example.com",          "pm": "pm-initech" },
+  { "id": "acme/demosite",   "pm": "pm-demosite" }
 ]'
 ```
 
@@ -77,7 +77,7 @@ A project without a `pm` entry falls through with the legacy direct-routing beha
 
 ## Org chart prerequisites
 
-`pm-mtgl` (and any agent listed as a PM) must be registered in `business.orgChart`:
+`pm-globex` (and any agent listed as a PM) must be registered in `business.orgChart`:
 
 ```json
 "business": {
@@ -86,14 +86,14 @@ A project without a `pm` entry falls through with the legacy direct-routing beha
       "role": "director",
       "schedule": { "start": "09:00", "end": "17:00" }
     },
-    "pm-mtgl": {
+    "pm-globex": {
       "role": "pm",
       "reportsTo": "product-director",
       "schedule": { "start": "09:00", "end": "17:00" }
     },
-    "mtgl-v2": {
+    "globex-v2": {
       "role": "coder",
-      "reportsTo": "pm-mtgl",
+      "reportsTo": "pm-globex",
       "schedule": { "start": "09:00", "end": "17:00" }
     }
   }

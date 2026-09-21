@@ -21,7 +21,7 @@ import type { IntentDecision, IntentEvent, IntentResolution } from "@/intent/typ
 // modify the ledger — opens read-only.
 //
 // Use `--path` to point at an alternate ledger (e.g., one rsync'd
-// locally from clawd-server). Default is .agentx/intent/ledger.sqlite
+// locally from peer-server). Default is .agentx/intent/ledger.sqlite
 // in the cwd.
 
 export const ledger = new Command()
@@ -427,7 +427,7 @@ ledger
 //   agentx ledger replay                              # all rows
 //   agentx ledger replay --since 24h                  # last 24h only
 //   agentx ledger replay --source gitlab              # one source only
-//   agentx ledger replay --path /tmp/clawd-ledger/ledger.sqlite
+//   agentx ledger replay --path /tmp/peer-ledger/ledger.sqlite
 
 ledger
   .command("replay")

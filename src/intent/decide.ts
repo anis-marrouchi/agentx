@@ -104,7 +104,7 @@ export interface PolicyDecision {
  *     "a dispatch decision for (project, ...) where business.projects[].pm
  *     is set never resolves to an agent without going through the PM
  *     first (PM may rubber-stamp, but the decision row records
- *     decided_by='pm:pm-mtgl')".
+ *     decided_by='pm:pm-globex')".
  *
  * The full async-PM gate (synchronously dispatch to the PM agent,
  * wait up to 60s for approval, fall back to escalation on timeout)

@@ -20,7 +20,7 @@ const DEFAULT_MAX_TOKENS = 8192
 // Min tokens for Anthropic prompt-cache eligibility (varies by model:
 // 1024 Haiku / 2048 Sonnet / 4096 Opus). Below threshold the API
 // silently skips caching. We wrap unconditionally — cheap when it
-// doesn't fit, big win when it does. Voice/text on noqta-public have
+// doesn't fit, big win when it does. Voice/text on acme-public have
 // 40K-token system prompts so caching always kicks in there.
 const CACHE_MIN_CHARS = 4 * 1024 // ~1k tokens at 4 char/tok
 

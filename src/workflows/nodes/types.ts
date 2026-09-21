@@ -44,7 +44,7 @@ export interface NodeContext {
   agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }
   /** Outbound mesh forwarder — used by `action.send` to deliver to a channel
    *  hosted on a peer node (e.g. workflow on macbook, whatsapp on
-   *  clawd-server). Optional; absent in single-node setups and tests. */
+   *  peer-server). Optional; absent in single-node setups and tests. */
   forwardChannelSend?: (payload: {
     channel: string
     chatId: string

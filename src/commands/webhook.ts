@@ -132,7 +132,7 @@ webhook
       const r = await prompts({
         type: "text",
         name: "id",
-        message: "Webhook id (lowercase, e.g. mtgl-gitlab)",
+        message: "Webhook id (lowercase, e.g. globex-gitlab)",
         validate: (v: string) => /^[a-z0-9][a-z0-9_-]*$/.test(v) || "Use lowercase letters, digits, -, _",
       })
       id = (r.id || "").trim()

@@ -50,8 +50,8 @@ export interface GitLabChannelConfig {
    *  username mappings so operators don't have to hand-register every agent
    *  for @mentions to work. Explicit entries in `agentMappings` always take
    *  precedence (they carry per-agent tokens, non-standard usernames, etc.)
-   *  The auto-derived defaults use the convention `{agentId, noqta-<agentId>}`
-   *  which mirrors the existing hand-maintained rows (pm-mtgl, atlas, ...).
+   *  The auto-derived defaults use the convention `{agentId, acme-<agentId>}`
+   *  which mirrors the existing hand-maintained rows (pm-globex, atlas, ...).
    *
    *  Removal: when an agent is deleted from agents.<id>, its default mapping
    *  disappears on next daemon restart. */
@@ -275,9 +275,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // explicit `agentMappings` row gets a default entry so @-mentions route
     // without operators hand-maintaining a parallel list.
     //
-    // Convention: `@<agentId>` and `@noqta-<agentId>` both route to the
-    // agent — mirrors existing hand-maintained rows (pm-mtgl → [pm-mtgl,
-    // noqta-pm-mtgl], atlas → [atlas, noqta-atlas], ...). Author explicit
+    // Convention: `@<agentId>` and `@acme-<agentId>` both route to the
+    // agent — mirrors existing hand-maintained rows (pm-globex → [pm-globex,
+    // acme-pm-globex], atlas → [atlas, acme-atlas], ...). Author explicit
     // entries in agentMappings when an agent needs a per-agent token or a
     // non-standard username.
     const explicitAgentIds = new Set((this.config.agentMappings ?? []).map((m) => m.agentId))
@@ -286,7 +286,7 @@ export class GitLabAdapter implements ChannelAdapter {
       if (explicitAgentIds.has(agentId)) continue
       // Skip internal/utility ids that aren't actual agents in the GitLab
       // sense (e.g. "graph-agent" only ever talks on the a2a mesh).
-      const defaultUsernames = [agentId, `noqta-${agentId}`]
+      const defaultUsernames = [agentId, `acme-${agentId}`]
       for (const username of defaultUsernames) {
         this.botUsernames.add(username)
         if (!this.usernameToAgent.has(username.toLowerCase())) {
@@ -394,7 +394,7 @@ export class GitLabAdapter implements ChannelAdapter {
     const token = agentToken || this.config.token
     if (!agentToken && msg.agentId) {
       // Global-token fallback. The note will appear in GitLab as authored
-      // by the global bot user (devops-noqta), not the requesting agent.
+      // by the global bot user (devops-acme), not the requesting agent.
       // Mark in journalctl (not just debug.webhook) so operators can spot
       // misattribution without flipping AGENTX_WEBHOOK_DEBUG.
       this.log(`[gitlab/identity] note from "${msg.agentId}" using GLOBAL token (${this.botUsername || "shared bot"}) — agent has no per-agent token`)
@@ -1770,7 +1770,7 @@ export class GitLabAdapter implements ChannelAdapter {
   /**
    * Log time spent on a GitLab issue/MR after agent completes work.
    * Uses the /add_spent_time API endpoint.
-   * chatId format: "project:type:iid" (e.g. "mtgl/mtgl-system-v2:issue:646")
+   * chatId format: "project:type:iid" (e.g. "globex/globex-system-v2:issue:646")
    */
   async logTimeSpent(chatId: string, durationMs: number, agentId?: string): Promise<void> {
     const parts = chatId.split(":")

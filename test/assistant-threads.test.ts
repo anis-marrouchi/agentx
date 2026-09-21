@@ -17,8 +17,8 @@ describe("assistant conversations", () => {
     // The thread lives here, and the answer lands whether or not the page that
     // asked is still open.
     const s = store()
-    const t = s.createThread("atlas", null, "why is the Hasanah work stuck?")
-    const seq = s.appendTurn(t.id, "why is the Hasanah work stuck?")
+    const t = s.createThread("atlas", null, "why is the Umbrella work stuck?")
+    const seq = s.appendTurn(t.id, "why is the Umbrella work stuck?")
     expect(s.messages(t.id).map(m => m.status)).toEqual(["done", "pending"])
     s.resolve(t.id, seq, "Because !64 is unreviewed.", "done")
     expect(s.messages(t.id)[1]).toMatchObject({ role: "assistant", status: "done" })

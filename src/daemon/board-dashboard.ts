@@ -879,7 +879,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Read-through proxies for runs. The dashboard's local RunStore only
   // sees runs home-noded on THIS machine, but the user typically wants
-  // the cross-fleet view: runs fired on clawd-server when GitLab events
+  // the cross-fleet view: runs fired on peer-server when GitLab events
   // land there, runs fired on Mac when local channels fire. We merge
   // the local list with the main-daemon's list and return the union.
   // Fan-out SSE proxy for /events — multiplexes every configured peer
@@ -2164,14 +2164,14 @@ async function handleActivityGraphFleet(
 
 /** SSE-stream the daemon's stdout to the dashboard /admin/health Logs tab.
  *  Picks the best available source: prefers `journalctl -u agentx -f`
- *  (systemd-managed nodes like clawd-server), falls back to `tail -F` on
+ *  (systemd-managed nodes like peer-server), falls back to `tail -F` on
  *  /tmp/agentx-daemon.log (Mac dev launches), or the tail of the
  *  workspace pid log if neither exists. Mirrors the source the
  *  `agentx daemon logs -f` CLI hits, so both surfaces show the same
  *  data.
  *
  *  The spawned process inherits the dashboard's permissions; on
- *  clawd-server `clawd` already has read access to its agentx unit's
+ *  peer-server `peer` already has read access to its agentx unit's
  *  journal via the systemd-journal group (no sudo needed). On Mac the
  *  log file is world-readable. */
 async function streamDaemonLogs(req: IncomingMessage, res: ServerResponse): Promise<void> {

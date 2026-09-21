@@ -24,10 +24,10 @@ function writeRule(relPath: string, body: string): void {
 
 describe("ProjectRulesStore", () => {
   it("loads YAML rules from nested dirs and looks up by project key", () => {
-    writeRule("ksi/int.ksi.tn.yaml", `
-project: ksi/int.ksi.tn
+    writeRule("initech/int.initech.example.com.yaml", `
+project: initech/int.initech.example.com
 agent: coder-agent
-runbook: /workspaces/ksi-v2
+runbook: /workspaces/initech-v2
 gitlab:
   issue:
     actions: [open, reopen]
@@ -38,23 +38,23 @@ gitlab:
     const result = store.load()
     expect(result.count).toBe(1)
     expect(result.errors).toBe(0)
-    const rule = store.find("ksi/int.ksi.tn")
+    const rule = store.find("initech/int.initech.example.com")
     expect(rule).toBeDefined()
-    expect(rule?.runbook).toBe("/workspaces/ksi-v2")
+    expect(rule?.runbook).toBe("/workspaces/initech-v2")
     expect(rule?.gitlab?.issue?.actions).toEqual(["open", "reopen"])
   })
 
   it("rejects an issue event whose action is not whitelisted", () => {
-    writeRule("ksi/int.ksi.tn.yaml", `
-project: ksi/int.ksi.tn
+    writeRule("initech/int.initech.example.com.yaml", `
+project: initech/int.initech.example.com
 gitlab:
   issue:
     actions: [open, reopen]
 `)
     store = new ProjectRulesStore(tmp, () => {})
     store.load()
-    expect(store.shouldFireGitlabIssue("ksi/int.ksi.tn", { action: "update" }).allow).toBe(false)
-    expect(store.shouldFireGitlabIssue("ksi/int.ksi.tn", { action: "open" }).allow).toBe(true)
+    expect(store.shouldFireGitlabIssue("initech/int.initech.example.com", { action: "update" }).allow).toBe(false)
+    expect(store.shouldFireGitlabIssue("initech/int.initech.example.com", { action: "open" }).allow).toBe(true)
   })
 
   it("rejects when requireLabels is unmet but allows when at least one matches", () => {
@@ -102,18 +102,18 @@ gitlab:
 project: acme/api
 gitlab:
   issue:
-    excludeAuthors: ["bot", "noqta-"]
+    excludeAuthors: ["bot", "acme-"]
 `)
     store = new ProjectRulesStore(tmp, () => {})
     store.load()
-    expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "noqta-coder" }).allow).toBe(false)
+    expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "acme-coder" }).allow).toBe(false)
     expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "renovate-bot" }).allow).toBe(false)
-    expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "anis" }).allow).toBe(true)
+    expect(store.shouldFireGitlabIssue("acme/api", { authorUsername: "alex" }).allow).toBe(true)
   })
 
   it("triggers: [auto] resolves any known agent mention without enumeration", () => {
-    writeRule("mtgl/system-v2.yaml", `
-project: mtgl/system-v2
+    writeRule("globex/system-v2.yaml", `
+project: globex/system-v2
 gitlab:
   note:
     triggers:
@@ -122,27 +122,27 @@ gitlab:
 `)
     store = new ProjectRulesStore(tmp, () => {})
     store.load()
-    const knownAgentMentions = ["@coding-mtgl-v2", "@pm-mtgl", "@devops-noqta"]
+    const knownAgentMentions = ["@coding-globex-v2", "@pm-globex", "@devops-acme"]
 
     // Mention a known agent — auto matches without manual enumeration.
-    expect(store.shouldFireGitlabNote("mtgl/system-v2",
-      { text: "@coding-mtgl-v2 what changed?" },
+    expect(store.shouldFireGitlabNote("globex/system-v2",
+      { text: "@coding-globex-v2 what changed?" },
       { knownAgentMentions }).allow).toBe(true)
 
     // Keyword falls back to the explicit object trigger.
-    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+    expect(store.shouldFireGitlabNote("globex/system-v2",
       { text: "looks good, merge and deploy" },
       { knownAgentMentions }).allow).toBe(true)
 
     // Unknown @mention with no keyword — still rejected.
-    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+    expect(store.shouldFireGitlabNote("globex/system-v2",
       { text: "@random-user any update?" },
       { knownAgentMentions }).allow).toBe(false)
   })
 
   it("triggers: [auto] without knownAgentMentions falls through (no-op)", () => {
-    writeRule("mtgl/system-v2.yaml", `
-project: mtgl/system-v2
+    writeRule("globex/system-v2.yaml", `
+project: globex/system-v2
 gitlab:
   note:
     triggers:
@@ -153,10 +153,10 @@ gitlab:
     store.load()
     // No knownAgentMentions supplied — auto entry can't match. Mention-only
     // text falls through to "no trigger matched" → reject.
-    expect(store.shouldFireGitlabNote("mtgl/system-v2",
-      { text: "@coding-mtgl-v2 hi" }).allow).toBe(false)
+    expect(store.shouldFireGitlabNote("globex/system-v2",
+      { text: "@coding-globex-v2 hi" }).allow).toBe(false)
     // Keyword still works.
-    expect(store.shouldFireGitlabNote("mtgl/system-v2",
+    expect(store.shouldFireGitlabNote("globex/system-v2",
       { text: "ship it now" }).allow).toBe(true)
   })
 
@@ -207,29 +207,29 @@ gitlab:
   })
 
   it("gitlab merge_request rule filters by action / labels / authors", () => {
-    writeRule("mtgl/system-v2.yaml", `
-project: mtgl/system-v2
+    writeRule("globex/system-v2.yaml", `
+project: globex/system-v2
 gitlab:
   merge_request:
     actions: ["open", "reopen", "update"]
     excludeStates: ["closed", "merged"]
-    excludeAuthors: ["bot", "noqta-"]
+    excludeAuthors: ["bot", "acme-"]
 `)
     store = new ProjectRulesStore(tmp, () => {})
     const r = store.load()
     expect(r.errors).toBe(0)
-    expect(store.find("mtgl/system-v2")?.gitlab?.merge_request?.excludeStates).toEqual(["closed", "merged"])
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open" }).allow).toBe(true)
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "approval" }).allow).toBe(false)
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", state: "closed" }).allow).toBe(false)
+    expect(store.find("globex/system-v2")?.gitlab?.merge_request?.excludeStates).toEqual(["closed", "merged"])
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open" }).allow).toBe(true)
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "approval" }).allow).toBe(false)
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open", state: "closed" }).allow).toBe(false)
     // excludeAuthors uses substring match against the configured entries.
-    // "noqta-pm-mtgl" matches "noqta-"; "renovate-bot" matches "bot".
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "noqta-pm-mtgl" }).allow).toBe(false)
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "renovate-bot" }).allow).toBe(false)
+    // "acme-pm-globex" matches "acme-"; "renovate-bot" matches "bot".
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open", authorUsername: "acme-pm-globex" }).allow).toBe(false)
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open", authorUsername: "renovate-bot" }).allow).toBe(false)
     // Coding agent's username doesn't match either entry — allowed (cascade
     // prevention for internal agents lives in the adapter's isBotUser check).
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "coding-mtgl-v2" }).allow).toBe(true)
-    expect(store.shouldFireGitlabMR("mtgl/system-v2", { action: "open", authorUsername: "marrouchi" }).allow).toBe(true)
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open", authorUsername: "coding-globex-v2" }).allow).toBe(true)
+    expect(store.shouldFireGitlabMR("globex/system-v2", { action: "open", authorUsername: "rivera" }).allow).toBe(true)
     // Project without an MR rule — default-allow.
     expect(store.shouldFireGitlabMR("other/repo", { action: "merge" }).allow).toBe(true)
   })

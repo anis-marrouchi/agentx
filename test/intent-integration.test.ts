@@ -31,7 +31,7 @@ afterEach(() => {
 
 const dispatchPolicy: DispatchPolicy = {
   decidedBy: "channel-router",
-  decide: () => ({ agentId: "mtgl-v2", outcome: "dispatched", reason: null }),
+  decide: () => ({ agentId: "globex-v2", outcome: "dispatched", reason: null }),
 }
 
 function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput {
@@ -39,7 +39,7 @@ function eventInput(overrides: Partial<IntentEventInput> = {}): IntentEventInput
     ts: 1714400000000,
     source: "gitlab",
     sourceEventId: "gl-evt-1",
-    project: "mtgl/mtgl-system-v2",
+    project: "globex/globex-system-v2",
     subject: "issue:709",
     intent: "issue.opened",
     rawJson: "{}",
@@ -58,7 +58,7 @@ describe("shadowAlongside — mode 'off'", () => {
         legacyCalled++
         return "legacy-result"
       },
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }),
       { env: {}, ledger }, // empty env → mode=off
     )
     expect(result).toBe("legacy-result")
@@ -77,7 +77,7 @@ describe("shadowAlongside — mode 'off'", () => {
       eventInput(),
       dispatchPolicy,
       async () => "legacy",
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }),
       { env: {} },
     )
     expect(result).toBe("legacy")
@@ -93,7 +93,7 @@ describe("shadowAlongside — mode 'shadow'", () => {
       eventInput(),
       dispatchPolicy,
       async () => "legacy-result",
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }),
       { env: shadowEnv, ledger, now: () => 9999 },
     )
     expect(result).toBe("legacy-result")
@@ -109,7 +109,7 @@ describe("shadowAlongside — mode 'shadow'", () => {
     await shadowAlongside(
       "gitlab",
       eventInput(),
-      dispatchPolicy,                              // ledger says: dispatch to mtgl-v2
+      dispatchPolicy,                              // ledger says: dispatch to globex-v2
       async () => "legacy",
       () => ({ agentId: null, outcome: "halted" }), // legacy says: halt
       { env: shadowEnv, ledger, now: () => 9999 },
@@ -121,9 +121,9 @@ describe("shadowAlongside — mode 'shadow'", () => {
     await shadowAlongside(
       "gitlab",
       eventInput(),
-      dispatchPolicy,                                       // ledger: dispatch to mtgl-v2
+      dispatchPolicy,                                       // ledger: dispatch to globex-v2
       async () => "legacy",
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }), // legacy: dispatch to mtgl-v2
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }), // legacy: dispatch to globex-v2
       { env: shadowEnv, ledger },
     )
     expect(ledger.getDivergences()).toHaveLength(0)
@@ -138,7 +138,7 @@ describe("shadowAlongside — mode 'shadow'", () => {
         eventInput(),
         dispatchPolicy,
         async () => "ok",
-        () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+        () => ({ agentId: "globex-v2", outcome: "dispatched" }),
         { env: shadowEnv },
       )
       // The injected singleton received the write, not our test-local ledger.
@@ -161,7 +161,7 @@ describe("shadowAlongside — mode 'authoritative' (deferred-to-1c semantics)", 
     const result = await shadowAlongside(
       "gitlab",
       eventInput(),
-      dispatchPolicy,                             // ledger: dispatch to mtgl-v2
+      dispatchPolicy,                             // ledger: dispatch to globex-v2
       async () => "legacy-still-wins",
       () => ({ agentId: null, outcome: "halted" }), // legacy: halt
       { env: { INTENT_LEDGER_MODE: "authoritative" }, ledger },
@@ -183,7 +183,7 @@ describe("shadowAlongside — per-source mode override", () => {
       eventInput(),
       dispatchPolicy,
       async () => "ok",
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }),
       { env, ledger },
     )
     expect(
@@ -197,7 +197,7 @@ describe("shadowAlongside — per-source mode override", () => {
       eventInput({ sourceEventId: "tg-evt-1", source: "telegram" }),
       dispatchPolicy,
       async () => "ok",
-      () => ({ agentId: "mtgl-v2", outcome: "dispatched" }),
+      () => ({ agentId: "globex-v2", outcome: "dispatched" }),
       { env, ledger },
     )
     expect(

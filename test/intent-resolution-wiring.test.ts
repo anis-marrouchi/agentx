@@ -185,7 +185,7 @@ describe("decideAndCommit + resolution roundtrip", () => {
     }
     const event = {
       ts: 1, source: "telegram" as const, sourceEventId: "msg-1",
-      project: "noqta", subject: "chat:1", intent: "msg", rawJson: "{}",
+      project: "acme", subject: "chat:1", intent: "msg", rawJson: "{}",
     }
     const d1 = decideAndCommit(ledger, event, policy, () => 1)
     expect(d1.outcome).toBe("dispatched")

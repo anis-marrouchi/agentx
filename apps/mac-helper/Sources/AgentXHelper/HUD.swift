@@ -136,7 +136,7 @@ enum HUD {
         // stdin on a background thread: the main thread has to keep
         // pumping the run loop or nothing renders and the blur never
         // resolves.
-        let queue = DispatchQueue(label: "tn.noqta.agentx.hud.stdin")
+        let queue = DispatchQueue(label: "tn.acme.agentx.hud.stdin")
         queue.async {
             while let line = readLine(strippingNewline: true) {
                 guard let data = line.data(using: .utf8),

@@ -171,7 +171,7 @@ describe("webhook trigger map", () => {
       [{
         id: "gl-1",
         source: "gitlab",
-        agentId: "pm-ksi",
+        agentId: "pm-initech",
         enabled: true,
         triggers: { "Note Hook": "wf-note", "Merge Request Hook": "wf-mr" },
       }],
@@ -179,7 +179,7 @@ describe("webhook trigger map", () => {
     handler.setWorkflowDispatcher(dispatcher as any)
     await handler.handle(
       makeReq({ "x-gitlab-event": "Note Hook" }, "{}"),
-      new CapturingResponse() as any, "/webhook/pm-ksi",
+      new CapturingResponse() as any, "/webhook/pm-initech",
     )
     expect(dispatcher.calls[0].workflowId).toBe("wf-note")
   })

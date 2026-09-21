@@ -6,67 +6,67 @@ import {
 } from "../src/business/clients"
 import { MONITOR_SCRIPT, renderMonitorPage } from "../src/daemon/ui/pages/monitor"
 
-// Mirrors the real clawd config: projects under mtgl/ksi/noqta, a deep
-// orgChart, and hasanah work that no project entry covers.
+// Mirrors the real peer config: projects under globex/initech/acme, a deep
+// orgChart, and umbrella work that no project entry covers.
 const business: BusinessShape = {
   projects: [
-    { id: "mtgl/mtgl-system-v2", pm: "pm-mtgl" },
-    { id: "ksi/ksi.tn", pm: "pm-ksi" },
-    { id: "hasanah-lab/hasanah-v1", pm: "pm-hasanah", client: "hasanah" },
+    { id: "globex/globex-system-v2", pm: "pm-globex" },
+    { id: "initech/initech.example.com", pm: "pm-initech" },
+    { id: "umbrella-lab/umbrella-v1", pm: "pm-umbrella", client: "umbrella" },
   ],
   orgChart: {
-    "pm-mtgl": {}, "mtgl-v2": { reportsTo: "pm-mtgl" }, "mtgl-junior": { reportsTo: "mtgl-v2" },
-    "pm-hasanah": {}, "hasanah-coding": { reportsTo: "pm-hasanah" },
+    "pm-globex": {}, "globex-v2": { reportsTo: "pm-globex" }, "globex-junior": { reportsTo: "globex-v2" },
+    "pm-umbrella": {}, "umbrella-coding": { reportsTo: "pm-umbrella" },
   },
-  contactMap: [{ channel: "telegram", chatId: "1816212449", client: "noqta" }],
-  clients: { hasanah: { name: "Hasanah Lab", kind: "client", respondWithin: "4h" } },
+  contactMap: [{ channel: "telegram", chatId: "1816212449", client: "acme" }],
+  clients: { umbrella: { name: "Umbrella Lab", kind: "client", respondWithin: "4h" } },
 }
 
 describe("client resolution", () => {
   it("derives a client from the project namespace when none is declared", () => {
-    expect(clientFromProject("mtgl/mtgl-system-v2", business.projects)).toBe("mtgl")
-    expect(clientFromProject("hasanah-lab/hasanah-v1", business.projects)).toBe("hasanah")
+    expect(clientFromProject("globex/globex-system-v2", business.projects)).toBe("globex")
+    expect(clientFromProject("umbrella-lab/umbrella-v1", business.projects)).toBe("umbrella")
     expect(clientFromProject("some-internal-thing", [])).toBe("some-internal-thing")
     expect(clientFromProject(null, [])).toBe(UNMAPPED)
   })
 
   it("carries a client down the org chart, so mesh dispatches are attributable", () => {
     const map = agentClients(business)
-    expect(map.get("pm-mtgl")).toBe("mtgl")
-    expect(map.get("mtgl-v2")).toBe("mtgl")
-    expect(map.get("mtgl-junior")).toBe("mtgl")       // transitive, two hops
-    expect(map.get("hasanah-coding")).toBe("hasanah")
+    expect(map.get("pm-globex")).toBe("globex")
+    expect(map.get("globex-v2")).toBe("globex")
+    expect(map.get("globex-junior")).toBe("globex")       // transitive, two hops
+    expect(map.get("umbrella-coding")).toBe("umbrella")
   })
 
   it("lets a hand-written contact rule beat any heuristic", () => {
-    expect(matchContact("telegram", { chatId: "1816212449" }, business.contactMap)?.client).toBe("noqta")
+    expect(matchContact("telegram", { chatId: "1816212449" }, business.contactMap)?.client).toBe("acme")
     expect(matchContact("telegram", { chatId: "999" }, business.contactMap)).toBeUndefined()
   })
 
   it("reads the principal off a monitor session id, whatever the channel", () => {
-    const gl = parseWorkRef("hasanah-coding:gitlab:hasanah-lab/hasanah-v1:issue:94")
-    expect(gl.project).toBe("hasanah-lab/hasanah-v1")
-    expect(resolveClient(gl, business)).toBe("hasanah")
+    const gl = parseWorkRef("umbrella-coding:gitlab:umbrella-lab/umbrella-v1:issue:94")
+    expect(gl.project).toBe("umbrella-lab/umbrella-v1")
+    expect(resolveClient(gl, business)).toBe("umbrella")
 
     const tg = parseWorkRef("marketing-agent:telegram:1816212449")
     expect(tg.chatId).toBe("1816212449")
-    expect(resolveClient(tg, business)).toBe("noqta")
+    expect(resolveClient(tg, business)).toBe("acme")
 
-    const wa = parseWorkRef("atlas:whatsapp:21600000000@s.whatsapp.net")
-    expect(wa.chatId).toBe("21600000000")
+    const wa = parseWorkRef("atlas:whatsapp:10000000000@s.whatsapp.net")
+    expect(wa.chatId).toBe("10000000000")
 
     // api and cron carry nothing addressable, so the agent's org seat decides.
-    expect(resolveClient(parseWorkRef("hasanah-coding:api:default"), business)).toBe("hasanah")
+    expect(resolveClient(parseWorkRef("umbrella-coding:api:default"), business)).toBe("umbrella")
     expect(resolveClient(parseWorkRef("nobody:api:default"), business)).toBe(UNMAPPED)
   })
 
   it("gives every derived client a policy without anyone declaring it", () => {
     const ids = listClients(business).map(c => c.id)
-    expect(ids).toEqual(["hasanah", "ksi", "mtgl", "noqta"])
-    const mtgl = clientPolicy("mtgl", business)
-    expect(mtgl).toMatchObject({ name: "mtgl", declared: false, standing: [] })
-    const hasanah = clientPolicy("hasanah", business)
-    expect(hasanah).toMatchObject({ name: "Hasanah Lab", kind: "client", respondWithinMinutes: 240, declared: true })
+    expect(ids).toEqual(["umbrella", "initech", "globex", "acme"])
+    const globex = clientPolicy("globex", business)
+    expect(globex).toMatchObject({ name: "globex", declared: false, standing: [] })
+    const umbrella = clientPolicy("umbrella", business)
+    expect(umbrella).toMatchObject({ name: "Umbrella Lab", kind: "client", respondWithinMinutes: 240, declared: true })
   })
 
   it("treats an unparseable duration as no clock rather than an urgent one", () => {
@@ -77,9 +77,9 @@ describe("client resolution", () => {
   })
 
   it("never lets an agent act unattended on a paying client's work", () => {
-    const paying = clientPolicy("hasanah", { ...business, clients: { hasanah: { kind: "client", standing: ["*"] } } })
+    const paying = clientPolicy("umbrella", { ...business, clients: { umbrella: { kind: "client", standing: ["*"] } } })
     expect(mayProceedUnattended(paying, "rebase-branch")).toBe(false)
-    const own = clientPolicy("noqta", { ...business, clients: { noqta: { kind: "own", standing: ["rebase-branch"] } } })
+    const own = clientPolicy("acme", { ...business, clients: { acme: { kind: "own", standing: ["rebase-branch"] } } })
     expect(mayProceedUnattended(own, "rebase-branch")).toBe(true)
     expect(mayProceedUnattended(own, "deploy")).toBe(false)
   })

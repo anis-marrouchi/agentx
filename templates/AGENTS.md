@@ -19,7 +19,7 @@ When messages include media placeholders like `<media:audio>`, `<media:image>`, 
 
 - NEVER echo the `<media:*>` tag back. Ever.
 - NEVER write `MEDIA:<media:…>` — causes ENOENT crashes.
-- Use the actual file path from the message instead. Paths look like `/home/clawd/.openclaw/media/inbound/...` on clawd-server, `/Users/<user>/.openclaw/media/inbound/...` locally.
+- Use the actual file path from the message instead. Paths look like `/home/peer/.openclaw/media/inbound/...` on peer-server, `/Users/<user>/.openclaw/media/inbound/...` locally.
 - If no path is available, ask the user to resend.
 
 ## Memory — write things down

@@ -12,72 +12,72 @@ triggers:
 
 You are part of a multi-agent mesh managed by AgentX. This skill teaches you how to discover other agents and communicate with them.
 
-## Your Node: `clawd-server`
+## Your Node: `peer-server`
 
 - **API port:** `19900`
 - **Default agent:** `atlas`
-- **Mesh peer:** `macbook-local` at `http://100.82.31.24:18800`
+- **Mesh peer:** `hq-local` at `http://100.64.0.12:18800`
 
 ---
 
-## Agent Roster — `clawd-server`
+## Agent Roster — `peer-server`
 
 ### Core / Platform
 
 | Agent ID | Name | Telegram Handle | GitLab Handle | Role |
 |----------|------|-----------------|---------------|------|
-| `atlas` | Main Agent | `@noqta_atlas_bot` | `@atlas` / `@noqta-atlas` | Default agent, general coordinator |
-| `product-director` | Product Director | `@noqta_director_bot` | — | Oversees all PMs and product strategy |
-| `seif` | Seif Agent | — | — | Personal assistant (reports to atlas) |
-| `omar` | Omar Agent | — | — | Personal assistant (reports to atlas) |
-| `razi-biodata` | Razi (Bio-Data Architect) | `@noqta_razi_bot` | — | Bio-data specialist (reports to atlas) |
-| `noqta-public` | Noqta Public Agent | `@noqta_public_bot` | — | Public-facing agent |
+| `atlas` | Main Agent | `@acme_atlas_bot` | `@atlas` / `@acme-atlas` | Default agent, general coordinator |
+| `product-director` | Product Director | `@acme_director_bot` | — | Oversees all PMs and product strategy |
+| `sam` | Sam Agent | — | — | Personal assistant (reports to atlas) |
+| `jordan` | Jordan Agent | — | — | Personal assistant (reports to atlas) |
+| `rae-biodata` | Rae (Bio-Data Architect) | `@acme_rae_bot` | — | Bio-data specialist (reports to atlas) |
+| `acme-public` | Acme Public Agent | `@acme_public_bot` | — | Public-facing agent |
 
-### MTGL Project Team
+### Globex Project Team
 
 | Agent ID | Telegram Handle | GitLab Handle | Role |
 |----------|-----------------|---------------|------|
-| `pm-mtgl` | `@noqta_pm_mtgl_bot` | `@pm-mtgl` / `@noqta-pm-mtgl` | PM — coordinates MTGL tasks |
-| `mtgl-v2` | `mtgl-coder` / `coding-mtgl-v2` | `@mtgl-v2-coder` / `@mtgl-coder` / `@coding-mtgl-v2` | Coder — Laravel/React (Opus model) |
-| `mtgl-v1` | — | — | MTGL V1 legacy agent |
-| `mtgl-v1-2` | — | — | MTGL V1 Coder #2 |
-| `mtgl-website` | — | — | MTGL website agent |
-| `devops-mtgl` | — | `@devops-mtgl` | DevOps — deploy, infra |
+| `pm-globex` | `@acme_pm_globex_bot` | `@pm-globex` / `@acme-pm-globex` | PM — coordinates Globex tasks |
+| `globex-v2` | `globex-coder` / `coding-globex-v2` | `@globex-v2-coder` / `@globex-coder` / `@coding-globex-v2` | Coder — Laravel/React (Opus model) |
+| `globex-v1` | — | — | Globex V1 legacy agent |
+| `globex-v1-2` | — | — | Globex V1 Coder #2 |
+| `globex-website` | — | — | Globex website agent |
+| `devops-globex` | — | `@devops-globex` | DevOps — deploy, infra |
 | `qa-forensics` | — | `@qa-forensics` | QA — review, regressions, safety |
 
-### KSI Project Team
+### Initech Project Team
 
 | Agent ID | Telegram Handle | GitLab Handle | Role |
 |----------|-----------------|---------------|------|
-| `pm-ksi` | `@noqta_pm_ksi_bot` | — | PM — coordinates KSI tasks |
-| `ksi-v2` | `@noqta_ksi_bot` | — | Coder |
-| `devops-ksi` | — | — | DevOps |
+| `pm-initech` | `@acme_pm_initech_bot` | — | PM — coordinates Initech tasks |
+| `initech-v2` | `@acme_initech_bot` | — | Coder |
+| `devops-initech` | — | — | DevOps |
 
-### Hackathonat Project Team
-
-| Agent ID | Telegram Handle | GitLab Handle | Role |
-|----------|-----------------|---------------|------|
-| `pm-hackathonat` | `@noqta_pm_hack_bot` | — | PM |
-| `hackathonat` | `@noqta_hackathonat_bot` | — | Coder |
-| `devops-hackathonat` | — | — | DevOps |
-
-### Hasanah Project Team
+### DemoSite Project Team
 
 | Agent ID | Telegram Handle | GitLab Handle | Role |
 |----------|-----------------|---------------|------|
-| `pm-hasanah` | `@noqta_pm_hasanah_bot` | — | PM |
-| `hasanah-coding` | `@noqta_hasanah_bot` | — | Coder |
-| `devops-hasanah` | — | — | DevOps |
+| `pm-demosite` | `@acme_pm_hack_bot` | — | PM |
+| `demosite` | `@acme_demosite_bot` | — | Coder |
+| `devops-demosite` | — | — | DevOps |
+
+### Umbrella Project Team
+
+| Agent ID | Telegram Handle | GitLab Handle | Role |
+|----------|-----------------|---------------|------|
+| `pm-umbrella` | `@acme_pm_umbrella_bot` | — | PM |
+| `umbrella-coding` | `@acme_umbrella_bot` | — | Coder |
+| `devops-umbrella` | — | — | DevOps |
 
 ---
 
-## Agent Roster — `macbook-local` (mesh peer)
+## Agent Roster — `hq-local` (mesh peer)
 
 | Agent ID | Name | Telegram Handle | GitLab Handle | Role |
 |----------|------|-----------------|---------------|------|
-| `atlas` | Main Agent | `@noqta_atlas_bot` | `@atlas` / `@noqta-atlas` | Coordinator, catch-all, technical advisor |
-| `devops-agent` | DevOps | `@noqta_devops_bot` | `@devops-noqta` | SysAdmin, infrastructure, deployments, CI/CD |
-| `marketing-agent` | Nadia | `@noqta_nadia_bot` | — | Marketing, content creation, SEO, social media |
+| `atlas` | Main Agent | `@acme_atlas_bot` | `@atlas` / `@acme-atlas` | Coordinator, catch-all, technical advisor |
+| `devops-agent` | DevOps | `@acme_devops_bot` | `@devops-acme` | SysAdmin, infrastructure, deployments, CI/CD |
+| `marketing-agent` | Marketing | `@acme_marketing_bot` | — | Marketing, content creation, SEO, social media |
 
 ---
 
@@ -85,16 +85,16 @@ You are part of a multi-agent mesh managed by AgentX. This skill teaches you how
 
 ```
 product-director
-├── pm-mtgl → mtgl-v2, mtgl-v1, mtgl-v1-2, mtgl-website, devops-mtgl, qa-forensics
-├── pm-ksi → ksi-v2, devops-ksi
-├── pm-hackathonat → hackathonat, devops-hackathonat
-└── pm-hasanah → hasanah-coding, devops-hasanah
+├── pm-globex → globex-v2, globex-v1, globex-v1-2, globex-website, devops-globex, qa-forensics
+├── pm-initech → initech-v2, devops-initech
+├── pm-demosite → demosite, devops-demosite
+└── pm-umbrella → umbrella-coding, devops-umbrella
 
 atlas
-├── seif
-├── omar
-├── razi-biodata
-└── noqta-public
+├── sam
+├── jordan
+├── rae-biodata
+└── acme-public
 ```
 
 ---
@@ -136,7 +136,7 @@ Returns: each peer's URL, health status, and list of agents with IDs, names, and
 Mention another agent's Telegram handle in your response. The AgentX router automatically activates them.
 
 ```
-@noqta_pm_mtgl_bot — can you check the status of issue #642?
+@acme_pm_globex_bot — can you check the status of issue #642?
 ```
 
 **Rules:**
@@ -219,7 +219,7 @@ done." Then stop.
 agentx daemon send <agent-id> "message"
 
 # Remote agent via mesh
-agentx daemon send <agent-id> "message" --peer macbook-local
+agentx daemon send <agent-id> "message" --peer hq-local
 ```
 
 ---
@@ -229,14 +229,14 @@ agentx daemon send <agent-id> "message" --peer macbook-local
 | Channel | Details |
 |---------|---------|
 | **Telegram** | Multiple bots, one per agent. Group policy: mention-required. DM policy: pair. |
-| **WhatsApp** | Atlas handles messages from `+21624309128` |
-| **GitLab** | `gitlab.noqta.tn` — webhooks route by project to the relevant PM agent |
+| **WhatsApp** | Atlas handles messages from `+10000000000` |
+| **GitLab** | `gitlab.example.com` — webhooks route by project to the relevant PM agent |
 
 **GitLab project → agent routing:**
-- `mtgl/mtgl-system-v2` → `pm-mtgl`
-- `mtgl/mtgl-website` → `mtgl-website`
-- `noqta/ksi-v2` or `ksi/ksi-v2` → `pm-ksi`
-- `noqta/hackathonat` → `pm-hackathonat`
+- `globex/globex-system-v2` → `pm-globex`
+- `globex/globex-website` → `globex-website`
+- `acme/initech-v2` or `initech/initech-v2` → `pm-initech`
+- `acme/demosite` → `pm-demosite`
 - `*` (catch-all) → `atlas`
 
 ---

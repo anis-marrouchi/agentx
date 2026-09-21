@@ -15,7 +15,7 @@ const alex = {
   id: "alex",
   name: "Alex Rivera",
   aliases: ["Alex", "alex.rivera"],
-  channels: { telegram: "818540323", gitlab: "alex-rivera", whatsapp: "21600000000@s.whatsapp.net" },
+  channels: { telegram: "818540323", gitlab: "alex-rivera", whatsapp: "10000000000@s.whatsapp.net" },
 }
 
 describe("namesOf", () => {
@@ -32,9 +32,9 @@ describe("factsFrom", () => {
   it("unpacks a WhatsApp JID into a number and a country", () => {
     // A reader wants the number, not the routing address it is embedded in.
     const f = factsFrom(alex)
-    expect(f.whatsapp).toBe("21600000000@s.whatsapp.net")
-    expect(f.phone).toBe("+21600000000")
-    expect(f.country).toBe("Tunisia")
+    expect(f.whatsapp).toBe("10000000000@s.whatsapp.net")
+    expect(f.phone).toBe("+10000000000")
+    expect(f.country).toBe("US/Canada")
   })
 
   it("normalises a handle to @form", () => {
@@ -85,7 +85,7 @@ describe("contacts source", () => {
       expect(r).toHaveLength(1)
       expect(r[0].name).toBe("Alex Rivera")
       expect(r[0].fuzzy).toBe(true)
-      expect(r[0].fields.phone).toBe("+21600000000")
+      expect(r[0].fields.phone).toBe("+10000000000")
     })
   })
 

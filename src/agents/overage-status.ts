@@ -13,7 +13,7 @@
 // largely cache_read and fits under the regular allotment. Agents without a
 // warm session pay full cache_create on first call, spill into overage, and
 // fail — creating a vicious cycle where the agent never establishes a warm
-// session in the first place (observed on pm-hasanah 2026-04-23).
+// session in the first place (observed on pm-umbrella 2026-04-23).
 //
 // This module reads the cached state so callers can short-circuit doomed
 // cold dispatches and surface a crisp operator-facing error instead of

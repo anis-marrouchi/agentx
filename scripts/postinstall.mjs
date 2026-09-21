@@ -32,7 +32,7 @@ const repoRoot = path.resolve(here, "..")
 const ourPkgJson = path.join(repoRoot, "package.json")
 try {
   const ourPkg = JSON.parse(fs.readFileSync(ourPkgJson, "utf8"))
-  if (ourPkg.name !== "agentx" && ourPkg.name !== "@noqta/agentx" && ourPkg.name !== "agentix-cli") process.exit(0)
+  if (ourPkg.name !== "agentx" && ourPkg.name !== "@acme/agentx" && ourPkg.name !== "agentix-cli") process.exit(0)
 } catch { process.exit(0) }
 
 // better-sqlite3 may live at the workspace root (top-level install) or

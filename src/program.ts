@@ -98,7 +98,7 @@ export async function buildProgram(): Promise<Command> {
   // --- Advanced: registered, documented, hidden from the default help ------
   //
   // 268 commands and subcommands accumulated here. The evidence for cutting
-  // the list down is unusually direct: on clawd — the node carrying 95% of
+  // the list down is unusually direct: on peer — the node carrying 95% of
   // fleet traffic — `~/.bash_history` contains ZERO `agentx <subcommand>`
   // invocations. Production is operated with systemctl, journalctl, a text
   // editor and the dashboard. The CLI is a development surface.

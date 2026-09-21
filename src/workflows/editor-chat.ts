@@ -125,7 +125,7 @@ const NODE_CATALOG = `# V2 Node catalog
 
 ## Triggers (exactly one per workflow)
 - \`trigger.channel\` — inbound channel event.
-    config: { "source": "whatsapp-message" | "telegram-message" | "slack-message" | "discord-message" | "gitlab-issue" | "gitlab-pipeline", "filter": { "chat"?: "*", "project"?: "noqta/web", "labels"?: ["x"] } }
+    config: { "source": "whatsapp-message" | "telegram-message" | "slack-message" | "discord-message" | "gitlab-issue" | "gitlab-pipeline", "filter": { "chat"?: "*", "project"?: "acme/web", "labels"?: ["x"] } }
 - \`trigger.cron\` — scheduled.           config: { "spec": "0 9 * * *", "timezone": "Africa/Tunis" }
 - \`trigger.hook\` — subscribes to any on:* hook event. config: { "event": "on:gitlab-issue" }
 - \`trigger.manual\` — kicked off by CLI or API. config: {}
@@ -133,7 +133,7 @@ const NODE_CATALOG = `# V2 Node catalog
 
 ## Compute
 - \`agent\` — run an agent with a templated prompt. Output: { reply, result (parsed RESULT: token), json?, durationMs }.
-    config: { "agentId": "<id>", "prompt": "Classify {{trigger.text}} — reply on one line: RESULT: a|b|c", "resultParser": "noqta-result-token" | "json", "timeoutMinutes": 2 }
+    config: { "agentId": "<id>", "prompt": "Classify {{trigger.text}} — reply on one line: RESULT: a|b|c", "resultParser": "acme-result-token" | "json", "timeoutMinutes": 2 }
 - \`transform\` — reshape upstream context.
     config: { "path": "trigger.contact.phone" }  OR  { "template": { "key": "{{trigger.text}}" } }
 
@@ -180,7 +180,7 @@ const NODE_CATALOG = `# V2 Node catalog
 
 ## Actions — side-effect sinks
 - \`action.send\` — post a message to any channel. config: { "channel": "telegram"|"whatsapp"|…, "chatId": "{{trigger.chatId}}", "text": "Hi {{classify.reply}}", "accountId"?: "…" }
-- \`action.createIssue\` — open a GitLab issue. config: { "channel": "gitlab", "project": "noqta/web", "title": "…", "description": "…", "labels": ["x"], "assignees": ["user"] }
+- \`action.createIssue\` — open a GitLab issue. config: { "channel": "gitlab", "project": "acme/web", "title": "…", "description": "…", "labels": ["x"], "assignees": ["user"] }
 - \`action.setLabel\` / \`action.readLabel\` / \`action.react\` / \`action.editMessage\` / \`action.logTime\` — self-explanatory; each maps 1:1 to a channel adapter method.
 - \`action.callHTTP\` — outbound HTTP.  config: { "method": "POST"|"GET"|…, "url": "https://…", "headers": {}, "body": {}, "timeoutMs": 30000 }
 

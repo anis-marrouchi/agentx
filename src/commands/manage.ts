@@ -275,7 +275,7 @@ integrations
   .option("--token-env <name>", "env-var holding the secret (uppercase identifier)")
   .option("--auth <mode>", "alternative to --token-env: 'keyring' for OS keyring")
   .option("--session-dir <path>", "for whatsapp / mtproto: file-based session directory")
-  .option("--metadata <kvList>", "comma-separated key=value pairs (e.g. 'username=anis,email=anis@noqta.tn')")
+  .option("--metadata <kvList>", "comma-separated key=value pairs (e.g. 'username=alex,email=alex@example.com')")
   .option("--no-prompt", "fail instead of prompting for missing values")
   .action(async (agentId: string, opts) => {
     const cfg = loadConfig()
@@ -300,7 +300,7 @@ integrations
       const r = await prompts({
         type: "text",
         name: "label",
-        message: `Label (e.g. "@cx_bot", "Noqta CRM", "anis@noqta.tn")`,
+        message: `Label (e.g. "@cx_bot", "Acme CRM", "alex@example.com")`,
       })
       label = (r.label || "").trim()
     }
@@ -589,7 +589,7 @@ channel
             { title: "Contact (phone number)", value: "contact" },
             { title: "Group (name match)", value: "group" },
           ]},
-          { type: "text", name: "value", message: (prev: string) => prev === "contact" ? "Phone number (e.g. +21600000000)" : "Group name (partial match)" },
+          { type: "text", name: "value", message: (prev: string) => prev === "contact" ? "Phone number (e.g. +10000000000)" : "Group name (partial match)" },
           { type: "select", name: "agent", message: "Route to agent", choices: agentChoices },
           { type: "confirm", name: "more", message: "Add another route?", initial: false },
         ])
@@ -806,7 +806,7 @@ mesh
 
     const answers = await prompts([
       { type: "text", name: "name", message: "Peer name (e.g. 'server-2')" },
-      { type: "text", name: "url", message: "Peer URL (e.g. 'http://100.67.108.119:18800')" },
+      { type: "text", name: "url", message: "Peer URL (e.g. 'http://100.64.0.11:18800')" },
       { type: "text", name: "token", message: "Auth token (optional, press enter to skip)" },
     ])
 
@@ -1229,8 +1229,8 @@ skillCmd
 
 // ==================== agentx references ====================
 //
-// Operator-private fact registry. Generic to any project — Noqta runs KSI in
-// .agentx/references/ksi/, the next operator runs their own clients the same
+// Operator-private fact registry. Generic to any project — Acme runs Initech in
+// .agentx/references/initech/, the next operator runs their own clients the same
 // way. The engine ships only the schema + a generic example template.
 
 export const references = new Command()
@@ -1301,7 +1301,7 @@ references
   .option("--cwd <cwd>", "where to scan for skills", process.cwd())
   .option("--references-cwd <cwd>", "where to WRITE the YAML files (defaults to --cwd; useful when skills live under ~/.claude and references live in the agentx repo)")
   .option("--from <skills>", "comma-separated skill name/tag substrings to filter by (default: namespace itself)")
-  .option("--gitlab-host <url>", "validate project URLs against this host (e.g. https://gitlab.noqta.tn)")
+  .option("--gitlab-host <url>", "validate project URLs against this host (e.g. https://gitlab.example.com)")
   .option("--write", "write the YAML files (default: dry-run preview)")
   .option("--force", "overwrite existing files when --write is set")
   .action(async (namespace: string, opts) => {
@@ -1476,7 +1476,7 @@ migrate
     const searchPaths = [
       configPath,
       resolve(process.env.HOME || "", ".openclaw/openclaw.json"),
-      resolve(process.env.HOME || "", ".openclaw/clawdbot.json"),
+      resolve(process.env.HOME || "", ".openclaw/peerbot.json"),
     ].filter(Boolean)
 
     let ocPath: string | undefined

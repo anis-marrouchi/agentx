@@ -23,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>AgentX Helper</string>
-  <key>CFBundleIdentifier</key><string>tn.noqta.agentx.helper</string>
+  <key>CFBundleIdentifier</key><string>tn.acme.agentx.helper</string>
   <key>CFBundleExecutable</key><string>agentx-mac-helper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
@@ -32,7 +32,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 echo "</plist>" >> "$APP/Contents/Info.plist"
 
-codesign --force --sign - --identifier tn.noqta.agentx.helper "$APP" 2>/dev/null \
+codesign --force --sign - --identifier tn.acme.agentx.helper "$APP" 2>/dev/null \
   || echo "warning: codesign failed; Accessibility grants will not stick across rebuilds"
 
 echo "built: $APP"

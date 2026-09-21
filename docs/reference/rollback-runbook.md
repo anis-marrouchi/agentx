@@ -34,7 +34,7 @@ back to the legacy dispatch path for just that source. Other sources keep
 running on the ledger.
 
 ```bash
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl set-environment INTENT_LEDGER_FALLBACK=1 && \
    sudo systemctl set-environment INTENT_LEDGER_SOURCES_GITLAB=off && \
    sudo systemctl restart agentx"
@@ -43,7 +43,7 @@ ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
 Replace `GITLAB` with the misbehaving source name. Verify:
 
 ```bash
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo journalctl -u agentx --since '30 seconds ago' | grep -E 'ledger.*source.*gitlab.*off|legacy fallback'"
 ```
 
@@ -56,12 +56,12 @@ write contention is high, schema migration went sideways).
 
 ```bash
 # Back to shadow (still recording, but legacy decides):
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl set-environment INTENT_LEDGER_MODE=shadow && \
    sudo systemctl restart agentx"
 
 # Or fully off:
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl set-environment INTENT_LEDGER_MODE=off && \
    sudo systemctl restart agentx"
 ```
@@ -69,7 +69,7 @@ ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
 Verify:
 
 ```bash
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "curl -sS http://localhost:19900/health 2>/dev/null && \
    sudo journalctl -u agentx --since '1 minute ago' | grep -i 'intent.ledger.mode'"
 ```
@@ -84,9 +84,9 @@ git log --oneline -10
 git revert <bad-commit>
 npm run build
 rsync -avz --delete -e "ssh -i ~/.ssh/id_mac" \
-  /Users/macbookpro/Developer/noqta/agentx/dist/ \
-  clawd@64.226.102.124:/home/clawd/agentx/dist/
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+  /Users/you/Developer/acme/agentx/dist/ \
+  peer@203.0.113.10:/home/peer/agentx/dist/
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl restart agentx && sleep 5 && sudo systemctl is-active agentx"
 ```
 
@@ -105,9 +105,9 @@ git stash push -m "pre-rollback"              # save anything uncommitted
 git reset --hard v0.18.0-pre-rescue
 npm run build
 rsync -avz --delete -e "ssh -i ~/.ssh/id_mac" \
-  /Users/macbookpro/Developer/noqta/agentx/dist/ \
-  clawd@64.226.102.124:/home/clawd/agentx/dist/
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+  /Users/you/Developer/acme/agentx/dist/ \
+  peer@203.0.113.10:/home/peer/agentx/dist/
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl restart agentx && sleep 5 && \
    sudo journalctl -u agentx --since '30 seconds ago' --no-pager | tail -20"
 ```
@@ -129,7 +129,7 @@ ledger decision and a legacy outcome. Mismatches are logged with the
 prefix `[ledger-divergence]`.
 
 ```bash
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo journalctl -u agentx --since '1 hour ago' | grep '\\[ledger-divergence\\]'"
 ```
 
@@ -143,7 +143,7 @@ needs work before promoting any source to authoritative.
 ## Health check shortcut
 
 ```bash
-ssh -i ~/.ssh/id_mac clawd@64.226.102.124 \
+ssh -i ~/.ssh/id_mac peer@203.0.113.10 \
   "sudo systemctl is-active agentx && \
    curl -sS http://localhost:19900/health && \
    sudo journalctl -u agentx --since '1 minute ago' | grep -iE 'error|fail|crashed' | head -5"

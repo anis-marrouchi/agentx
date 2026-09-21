@@ -18,19 +18,19 @@ describe("GroupLog", () => {
   })
 
   it("adds and retrieves entries", () => {
-    log.add("group-1", "Anis", "Hello")
-    log.add("group-1", "Nadia", "Hi there")
+    log.add("group-1", "Alex", "Hello")
+    log.add("group-1", "Marketing", "Hi there")
 
     const entries = log.getEntries("group-1")
     expect(entries).toHaveLength(2)
-    expect(entries[0].sender).toBe("Anis")
-    expect(entries[1].sender).toBe("Nadia")
+    expect(entries[0].sender).toBe("Alex")
+    expect(entries[1].sender).toBe("Marketing")
   })
 
   it("builds conversation context", () => {
-    log.add("g1", "Anis", "What about deployment?")
-    log.add("g1", "Nadia", "Staging is ready")
-    log.add("g1", "Anis", "@devops can you deploy?")
+    log.add("g1", "Alex", "What about deployment?")
+    log.add("g1", "Marketing", "Staging is ready")
+    log.add("g1", "Alex", "@devops can you deploy?")
 
     const context = log.buildContext("g1")
     expect(context).toContain("[Recent group conversation]")
@@ -41,7 +41,7 @@ describe("GroupLog", () => {
   })
 
   it("returns empty context for single message", () => {
-    log.add("g1", "Anis", "Hello")
+    log.add("g1", "Alex", "Hello")
     expect(log.buildContext("g1")).toBe("")
   })
 
@@ -50,8 +50,8 @@ describe("GroupLog", () => {
   })
 
   it("persists across instances", () => {
-    log.add("g1", "Anis", "Message 1")
-    log.add("g1", "Nadia", "Message 2")
+    log.add("g1", "Alex", "Message 1")
+    log.add("g1", "Marketing", "Message 2")
 
     const log2 = new GroupLog(TEST_DIR)
     const entries = log2.getEntries("g1")

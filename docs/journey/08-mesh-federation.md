@@ -89,7 +89,7 @@ On startup each node fetches the other's **agent card** from `GET /.well-known/a
 
 ```json
 {
-  "node": "clawd-server",
+  "node": "peer-server",
   "agents": [
     { "id": "devops", "name": "DevOps", "mentions": ["@devops"], "skills": ["deploy", "incident"] },
     { "id": "qa-forensics", "name": "QA Forensics", "mentions": ["@qa"], "skills": ["trace", "root-cause"] }
@@ -107,13 +107,13 @@ agentx mesh list
 
 ```
 NAME           URL                           STATUS   AGENTS
-clawd-server   http://100.67.108.119:19900   ✓ ok     devops, qa-forensics
+peer-server   http://100.64.0.11:19900   ✓ ok     devops, qa-forensics
 ```
 
 Send a task across:
 
 ```bash
-agentx daemon send devops "Check disk free on /var/log" --peer clawd-server
+agentx daemon send devops "Check disk free on /var/log" --peer peer-server
 ```
 
 Or from inside a chat on the laptop, mention `@devops` — the router detects it's a remote agent and forwards via HTTP with SSE streaming of the response.
@@ -124,7 +124,7 @@ Or from inside a chat on the laptop, mention `@devops` — the router detects it
 curl -X POST http://localhost:18800/mesh/task \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $MESH_TOKEN" \
-  -d '{"peer":"clawd-server","agent":"devops","message":"Run health check"}'
+  -d '{"peer":"peer-server","agent":"devops","message":"Run health check"}'
 ```
 
 The response is a streamed SSE feed of the remote agent's reply.
@@ -135,7 +135,7 @@ Each agent has its own wiki. With mesh enabled, you can sync raw entries from pe
 
 ```bash
 agentx wiki sync                  # pulls from all configured peers
-agentx wiki sync --peer clawd-server
+agentx wiki sync --peer peer-server
 agentx wiki absorb                # compile into articles locally
 ```
 
@@ -155,8 +155,8 @@ Open `http://localhost:4200` to browse local + remote agent wikis in one Wikiped
 
 ## Troubleshooting
 
-- `✗ clawd-server — Connection refused` → daemon down on remote, firewall blocks the port, or Tailscale not connected
-- `✗ clawd-server — 401` → `MESH_TOKEN` mismatch between the two `.env` files
+- `✗ peer-server — Connection refused` → daemon down on remote, firewall blocks the port, or Tailscale not connected
+- `✗ peer-server — 401` → `MESH_TOKEN` mismatch between the two `.env` files
 - Remote agent mentions unknown → agent cards don't refresh instantly; wait one health-check interval (default 60s) or restart
 
 ## What's next

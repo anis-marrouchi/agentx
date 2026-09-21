@@ -149,7 +149,7 @@ export class LandscapeBuilder {
     lines.push("ChatId formats:")
     lines.push('  telegram: numeric (e.g. "-1001234567890" for group, "123456" for DM)')
     lines.push('  gitlab: "group/project:issue:123" or "group/project:merge_request:45"')
-    lines.push('  whatsapp: JID (e.g. "+21612345678@s.whatsapp.net")')
+    lines.push('  whatsapp: JID (e.g. "+10000000000@s.whatsapp.net")')
     lines.push("Use this when asked to notify someone on a different channel, post to an issue, or broadcast updates.")
 
     // Conversation recall — short vs long memory model. Short memory

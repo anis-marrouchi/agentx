@@ -3,9 +3,9 @@ import { buildAgentContext, estimateTokens, type ContextInput } from "../src/age
 
 const baseInput: ContextInput = {
   channel: "telegram",
-  agentId: "nadia",
-  agentName: "Nadia",
-  sender: "Anis",
+  agentId: "marketing",
+  agentName: "Marketing",
+  sender: "Alex",
   message: "Hello",
 }
 
@@ -17,7 +17,7 @@ describe("buildAgentContext", () => {
 
   it("includes sender", () => {
     const ctx = buildAgentContext(baseInput)
-    expect(ctx).toContain("From: Anis")
+    expect(ctx).toContain("From: Alex")
   })
 
   it("includes agent handle on telegram", () => {

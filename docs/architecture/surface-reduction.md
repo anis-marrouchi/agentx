@@ -24,15 +24,15 @@ Two nodes, both queried directly (`task_history` in each node's
 `.agentx/db.sqlite`, plus runtime-directory contents):
 
 - **mac** — dev + GitLab + cron workload
-- **clawd** — production, GitLab-heavy, hosts WhatsApp
+- **peer** — production, GitLab-heavy, hosts WhatsApp
 
 Single-node data is not evidence. The first version of this analysis was run on
-`mac` alone and concluded WhatsApp had *never been used*. On `clawd` it has 62
+`mac` alone and concluded WhatsApp had *never been used*. On `peer` it has 62
 tasks in the last 30 days. That mistake is the reason the two-node rule exists.
 
 ## Channel traffic — last 30 days
 
-| Channel | mac | clawd | total | Verdict |
+| Channel | mac | peer | total | Verdict |
 |---|---:|---:|---:|---|
 | gitlab | 513 | 1350 | **1863** | Core |
 | cron | 731 | 115 | **846** | Core |
@@ -50,9 +50,9 @@ GitLab, cron and API are 95% of all traffic.
 
 | Surface | Last used | Note |
 |---|---|---|
-| `chat-cli` | 2026-07-03 | 70 tasks (mac) + 2 (clawd), then nothing |
+| `chat-cli` | 2026-07-03 | 70 tasks (mac) + 2 (peer), then nothing |
 | `tui` | 2026-07-03 | 4 tasks ever, mac only |
-| `web-chat` | 2026-06-01 | 140 tasks (clawd), then nothing |
+| `web-chat` | 2026-06-01 | 140 tasks (peer), then nothing |
 | `workflow-editor` | 2026-05-10 | 6 tasks ever |
 
 `chat-cli` and `tui` are the clearest signal in this whole document. Both were
@@ -69,7 +69,7 @@ better host.
 
 Empty on both nodes, and unconfigured in both `agentx.json` files:
 
-| Directory | mac | clawd |
+| Directory | mac | peer |
 |---|---|---|
 | `.agentx/actors/` | empty | empty |
 | `.agentx/patterns/` | empty | empty |
@@ -93,7 +93,7 @@ An empty runtime directory means **no operator ever created that kind of
 data** — no custom actions, no actors, no roles. It does *not* mean the code is
 unreachable. Workflows (54 tasks in 30d) and the business layer (8 entries) both
 run through `actions` and `actors` continuously; deleting them on directory
-evidence alone would have broken live production paths on clawd.
+evidence alone would have broken live production paths on peer.
 
 This is the impact half of the bar catching what the usage half missed, and it
 is the strongest argument for the two-part test.
@@ -152,7 +152,7 @@ again.
 
 ## The CLI on the production node: zero
 
-`~/.bash_history` on clawd holds 467 commands (HISTSIZE is 1000, so the file
+`~/.bash_history` on peer holds 467 commands (HISTSIZE is 1000, so the file
 is complete, not truncated; no timestamps, last written 2026-07-31).
 
 **It contains no `agentx <subcommand>` invocations at all.** Every one of the
@@ -173,7 +173,7 @@ The `nano agentx.json` entries are their own finding: config is edited by hand
 rather than through `agentx config set`, which suggests the config commands
 are not just unused but not preferred even when they'd fit.
 
-> Correction: an earlier note in this document described clawd's shell history
+> Correction: an earlier note in this document described peer's shell history
 > as "months" of data. There are no timestamps in the file, so no span can be
 > claimed — only that these 467 commands are everything bash recorded.
 

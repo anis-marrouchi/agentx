@@ -49,7 +49,7 @@ function populateLedger(): void {
     ledger,
     { id: "msg-1", channel: "telegram", accountId: "default", sender: { id: "user-1" } },
     "telegram", "{}",
-    { agentId: "mtgl-v2", outcome: "dispatched", reason: "mention" },
+    { agentId: "globex-v2", outcome: "dispatched", reason: "mention" },
     () => 1714400000000,
   )
   // 1 telegram dedup (divergence: legacy=deduped vs ledger=halted)
@@ -63,10 +63,10 @@ function populateLedger(): void {
   // 1 gitlab issue dispatch
   recordGitLabTargetDispatch(
     ledger,
-    { entityKind: "issue", project: "noqta/web", iid: 1, action: "open", title: "x", description: "", url: "u" },
-    { agentId: "mtgl-v2", trigger: "assignee-added" },
+    { entityKind: "issue", project: "acme/web", iid: 1, action: "open", title: "x", description: "", url: "u" },
+    { agentId: "globex-v2", trigger: "assignee-added" },
     "{}",
-    { agentId: "mtgl-v2", outcome: "dispatched" },
+    { agentId: "globex-v2", outcome: "dispatched" },
     () => 1714400002000,
   )
   ledger.close()

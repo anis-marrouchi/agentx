@@ -3,8 +3,8 @@
 > Date: 2026-04-30 (revised — previous revision 2026-04-27)
 > Author: Coder Agent
 > Versions reviewed: Hexabot `3.2.2-alpha.1`, AgentX `agentix-cli@0.18.0`
-> Hexabot tree: `/Users/macbookpro/Developer/coder-workspace/hexabot`
-> AgentX tree: `/Users/macbookpro/Developer/noqta/agentx`
+> Hexabot tree: `/Users/you/Developer/coder-workspace/hexabot`
+> AgentX tree: `/Users/you/Developer/acme/agentx`
 
 ## 0. What changed since the previous review
 
@@ -241,7 +241,7 @@ Docker Compose stack does this for you, but the **operational floor** is
 multi-service ops (PG backups, Redis fan-out, image builds).
 
 AgentX is one Node process. `npm i -g agentix-cli && agentx serve`. The
-$5-droplet deployment is real and tested (the tree has clawd-server deploy
+$5-droplet deployment is real and tested (the tree has peer-server deploy
 notes). One process means one place to crash and one log to read.
 
 ### 3.12 Test coverage / verifiability — Hexabot 8, AgentX 7

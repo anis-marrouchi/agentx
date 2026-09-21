@@ -45,7 +45,7 @@ The tables below give both variants side-by-side. Port differs by host too (loca
 
 | Host | Command |
 |---|---|
-| **macOS** | `launchctl kickstart -k gui/$(id -u)/tn.noqta.agentx` (graceful — `KeepAlive: true` respawns in ~2 s) |
+| **macOS** | `launchctl kickstart -k gui/$(id -u)/tn.acme.agentx` (graceful — `KeepAlive: true` respawns in ~2 s) |
 | **Linux** | `sudo systemctl restart agentx` (unit at `/etc/systemd/system/agentx.service`) |
 
 Verify:
@@ -60,7 +60,7 @@ until curl -sSf -o /dev/null http://127.0.0.1:19900/health; do sleep 1; done && 
 After restart, pending Telegram updates drain automatically and you'll see in the logs:
 
 ```
-[agentx] Bot @noqta_..._bot ready (account: ...)
+[agentx] Bot @acme_..._bot ready (account: ...)
 [agentx] Inflight replay: telegram/<id> (agent=...)
 ```
 

@@ -5,7 +5,7 @@ const entry = (source: string, meta: Record<string, unknown>) => ({ source, meta
 
 describe("platformOf", () => {
   it("strips the mesh node suffix", () => {
-    expect(platformOf("whatsapp@clawd-server")).toBe("whatsapp")
+    expect(platformOf("whatsapp@peer-server")).toBe("whatsapp")
     expect(platformOf("gitlab")).toBe("gitlab")
     expect(platformOf("webhook:hubspot")).toBe("webhook")
   })
@@ -20,19 +20,19 @@ describe("recordsFromEntries", () => {
     // The point of the whole change: no directory lookup, no name
     // resolution, nothing to mismatch.
     const r = recordsFromEntries([
-      entry("whatsapp@clawd-server", { sender: "Alex Rivera", senderId: "21600000000@s.whatsapp.net" }),
+      entry("whatsapp@peer-server", { sender: "Alex Rivera", senderId: "10000000000@s.whatsapp.net" }),
     ])
     expect(r).toHaveLength(1)
-    expect(r[0].fields.phone).toBe("+21600000000")
-    expect(r[0].fields.whatsapp).toBe("21600000000@s.whatsapp.net")
-    expect(r[0].fields.country).toBe("Tunisia")
+    expect(r[0].fields.phone).toBe("+10000000000")
+    expect(r[0].fields.whatsapp).toBe("10000000000@s.whatsapp.net")
+    expect(r[0].fields.country).toBe("US/Canada")
     expect(r[0].source).toBe("entries")
   })
 
   it("accepts a bare number on a whatsapp entry", () => {
-    const r = recordsFromEntries([entry("whatsapp", { sender: "Alex Rivera", senderId: "21600000000" })])
-    expect(r[0].fields.phone).toBe("+21600000000")
-    expect(r[0].fields.whatsapp).toBe("21600000000@s.whatsapp.net")
+    const r = recordsFromEntries([entry("whatsapp", { sender: "Alex Rivera", senderId: "10000000000" })])
+    expect(r[0].fields.phone).toBe("+10000000000")
+    expect(r[0].fields.whatsapp).toBe("10000000000@s.whatsapp.net")
   })
 
   it("files a handle under the platform it belongs to", () => {
@@ -54,11 +54,11 @@ describe("recordsFromEntries", () => {
 
   it("unions identifiers for a person seen across several entries", () => {
     const r = recordsFromEntries([
-      entry("whatsapp", { sender: "Alex Rivera", senderId: "21600000000@s.whatsapp.net" }),
+      entry("whatsapp", { sender: "Alex Rivera", senderId: "10000000000@s.whatsapp.net" }),
       entry("gitlab", { sender: "Alex Rivera", senderUsername: "alex" }),
     ])
     expect(r).toHaveLength(1)
-    expect(r[0].fields.phone).toBe("+21600000000")
+    expect(r[0].fields.phone).toBe("+10000000000")
     expect(r[0].fields.gitlab).toBe("@alex")
   })
 

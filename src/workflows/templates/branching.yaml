@@ -19,7 +19,7 @@ nodes:
     config:
       agentId: __AGENT__
       # Tell the agent to emit a structured RESULT token your workflow
-      # can branch on. The default `noqta-result-token` parser captures
+      # can branch on. The default `acme-result-token` parser captures
       # the line after `RESULT:` into `{{classify.result}}`.
       prompt: |
         Classify the message into one of: sales, support, newsletter, other.

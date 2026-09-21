@@ -3,7 +3,7 @@ import { encodeInvite, decodeInvite } from "../src/connect/mesh"
 
 describe("mesh invite URL", () => {
   it("round-trips a payload", () => {
-    const p = { url: "http://100.67.108.119:19900", token: "abcd".repeat(16), name: "clawd-server", version: 1 as const }
+    const p = { url: "http://100.64.0.11:19900", token: "abcd".repeat(16), name: "peer-server", version: 1 as const }
     const link = encodeInvite(p)
     expect(link).toMatch(/^agentx-mesh:\/\/join\//)
     expect(decodeInvite(link)).toEqual(p)

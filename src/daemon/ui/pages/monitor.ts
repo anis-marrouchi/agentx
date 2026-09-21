@@ -429,7 +429,7 @@ let shown={you:PAGE,agents:PAGE};
 
 /* --- Who and where ------------------------------------------------------
    session_id is "<agent>:<channel>:<target>" for trace-sourced reviews, e.g.
-   "hasanah-coding:gitlab:hasanah-lab/hasanah-v1:issue:94". Native CLI session
+   "umbrella-coding:gitlab:umbrella-lab/umbrella-v1:issue:94". Native CLI session
    ids carry no place, so the tags simply fall away. */
 const CHANNEL_ICON={gitlab:'branch',github:'branch',telegram:'send',whatsapp:'msg',discord:'msg',slack:'hash',api:'code',cron:'clock',mesh:'route'};
 function place(sessionId){

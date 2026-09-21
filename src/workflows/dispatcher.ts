@@ -440,8 +440,8 @@ export class WorkflowDispatcher {
       // Project-scope gate. A workflow's top-level `project:` field is
       // a hard scope: events from a different project never match. This
       // is what stops cross-tenant fan-out — e.g. an `on:gitlab-issue`
-      // event from `ksi/int.ksi.tn` reaching `mtgl-pm-triage` (which is
-      // tagged `project: mtgl/mtgl-system-v2`). Workflows with no
+      // event from `initech/int.initech.example.com` reaching `globex-pm-triage` (which is
+      // tagged `project: globex/globex-system-v2`). Workflows with no
       // `project` field are global and match across projects (rare —
       // typically cross-project chores or templates). Events with no
       // `t.project` (manual / cron / 1:1 chat) bypass this check; the
@@ -1059,8 +1059,8 @@ function matchesResume(
 }
 
 /** Normalize a chat identifier for filter comparison. Channel-aware: WhatsApp
- *  ids drift between formats (raw digits "21600000000", JID
- *  "21600000000@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
+ *  ids drift between formats (raw digits "10000000000", JID
+ *  "10000000000@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
  *  "+216 00 000 000") depending on whether they came from the adapter's
  *  payload, a copy-paste from the WA UI, or an editor field. We collapse all
  *  of these to the canonical bare-id form before equality so authors can write

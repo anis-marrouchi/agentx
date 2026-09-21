@@ -53,7 +53,7 @@ procedure
 procedure
   .command("add")
   .description("add a new procedure (non-interactive; pass all fields as flags)")
-  .requiredOption("--id <id>", "procedure id (lower-kebab, e.g. deploy-clawd)")
+  .requiredOption("--id <id>", "procedure id (lower-kebab, e.g. deploy-peer)")
   .requiredOption("--title <t>", "human-readable title")
   .requiredOption("--trigger <t>", "when this procedure applies (one sentence)")
   .option("--input <i...>", "required input (repeatable)", (v: string, prev: string[] = []) => [...prev, v])

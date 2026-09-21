@@ -6,10 +6,10 @@ import type { RecipeIndex } from "../src/agents/references/recipes"
 
 function refIndex(): ReferenceIndex {
   const card = {
-    id: "ksi.ssh.clawd-mac",
+    id: "initech.ssh.peer-mac",
     kind: "ssh" as const,
-    summary: "clawd-server",
-    fields: { user: "clawd", host: "64.226.102.124" },
+    summary: "peer-server",
+    fields: { user: "peer", host: "203.0.113.10" },
     tags: [] as string[],
   }
   return {
@@ -39,10 +39,10 @@ function skill(fm: Partial<Skill["frontmatter"]> & { name: string; description: 
 describe("auditSkill", () => {
   it("PASS for a clean skill citing a real reference", () => {
     const s = skill({
-      name: "ksi-v2-deploy",
-      description: "Deploy KSI V2",
+      name: "initech-v2-deploy",
+      description: "Deploy Initech V2",
       category: "deploy",
-      references: ["ksi.ssh.clawd-mac"],
+      references: ["initech.ssh.peer-mac"],
     })
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })
     expect(out[0].verdict).toBe("PASS")
@@ -50,9 +50,9 @@ describe("auditSkill", () => {
 
   it("FAILING when a referenced id does not resolve", () => {
     const s = skill({
-      name: "ksi-broken",
+      name: "initech-broken",
       description: "broken",
-      references: ["ksi.gitlab.does-not-exist"],
+      references: ["initech.gitlab.does-not-exist"],
     })
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })
     expect(out[0].verdict).toBe("FAILING")
@@ -60,9 +60,9 @@ describe("auditSkill", () => {
   })
 
   it("REVIEW when a fenced code block contains raw python3 ~/scripts/", () => {
-    const body = "```bash\npython3 ~/scripts/hotmail.py search --from ksi.tn\n```"
+    const body = "```bash\npython3 ~/scripts/hotmail.py search --from initech.example.com\n```"
     const s = skill(
-      { name: "ksi-cx-email", description: "email skill", category: "email", references: ["ksi.ssh.clawd-mac"] },
+      { name: "initech-cx-email", description: "email skill", category: "email", references: ["initech.ssh.peer-mac"] },
       body,
     )
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })
@@ -73,7 +73,7 @@ describe("auditSkill", () => {
   it("PASS when python3 ~/scripts/ appears only in prose (negation context)", () => {
     const body = "Do NOT invoke `python3 ~/scripts/hotmail.py` directly — delegate to the hotmail skill."
     const s = skill(
-      { name: "ksi-cx-email-v2", description: "email skill", category: "email", references: ["ksi.ssh.clawd-mac"] },
+      { name: "initech-cx-email-v2", description: "email skill", category: "email", references: ["initech.ssh.peer-mac"] },
       body,
     )
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })
@@ -89,7 +89,7 @@ describe("auditSkill", () => {
 
   it("REVIEW when raw IPs are embedded outside the registry", () => {
     const s = skill(
-      { name: "ksi-stale", description: "infra", category: "deploy", references: ["ksi.ssh.clawd-mac"] },
+      { name: "initech-stale", description: "infra", category: "deploy", references: ["initech.ssh.peer-mac"] },
       "ssh root@10.0.0.55 to deploy",
     )
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })
@@ -101,19 +101,19 @@ describe("auditSkill", () => {
     const out = auditAll({
       skills: [],
       references: refIndex(),
-      recipes: recipeIndex(["ksi-v2-deploy"]),
+      recipes: recipeIndex(["initech-v2-deploy"]),
     })
     expect(out).toHaveLength(1)
     expect(out[0].verdict).toBe("FAILING")
-    expect(out[0].name).toBe("ksi-v2-deploy")
+    expect(out[0].name).toBe("initech-v2-deploy")
   })
 
   it("FAILING when delegatesTo points at a missing skill", () => {
     const s = skill({
-      name: "ksi-cx-email",
+      name: "initech-cx-email",
       description: "email",
       category: "email",
-      references: ["ksi.ssh.clawd-mac"],
+      references: ["initech.ssh.peer-mac"],
       delegatesTo: ["nonexistent-skill"],
     })
     const out = auditAll({ skills: [s], references: refIndex(), recipes: recipeIndex() })

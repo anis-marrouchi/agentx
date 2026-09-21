@@ -377,7 +377,7 @@ function withBody(req: IncomingMessage, res: ServerResponse, handler: (body: unk
     // throw beats it. Without this try, the throw bubbles to the
     // IncomingMessage event listener and from there to the global
     // uncaughtException, killing the dashboard. We caught one such
-    // crash 2026-05-09 on clawd; never again.
+    // crash 2026-05-09 on peer; never again.
     let result: ReturnType<typeof handler>
     try {
       result = handler(parsed)

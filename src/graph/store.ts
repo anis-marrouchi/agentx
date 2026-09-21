@@ -200,7 +200,7 @@ export class GraphStore {
    * Commit a full classification path: for each path element that doesn't
    * yet exist, infer its schema level by matching the proposed axes against
    * the level's required axes (first match ≥ cursor wins — this handles
-   * paths that skip levels, like business → noqta where location is
+   * paths that skip levels, like business → acme where location is
    * absent). Refreshes the node list between adds so callers in a loop
    * don't hit "Node id already exists" on the second iteration.
    */

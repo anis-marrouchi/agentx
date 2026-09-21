@@ -135,8 +135,8 @@ export function startWorkflowTriggers(args: {
             }
             // filter.mentions — gitlab-note mention gate. Without this, the
             // workflow's hard-coded `agentId` runs no matter who the comment
-            // @-mentioned, so e.g. ksi-mr-fix-loop spawns ksi-v2 even on a
-            // comment addressed @pm-ksi. The legacy @-mention resolver still
+            // @-mentioned, so e.g. initech-mr-fix-loop spawns initech-v2 even on a
+            // comment addressed @pm-initech. The legacy @-mention resolver still
             // routes those to the right agent on the second pass when the
             // workflow doesn't claim the event.
             if (Array.isArray(cfg.filter.mentions) && cfg.filter.mentions.length > 0) {

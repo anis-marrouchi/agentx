@@ -13,9 +13,9 @@ const run = (workflowId: string, daysAgo: number, status = "completed"): RunSumm
 
 describe("workflow health", () => {
   it("reports a workflow that stopped firing, which nothing else would mention", () => {
-    // The real case: ksi-mr-review fired 26 times, then went silent for 3 days.
-    const runs = [...Array(26)].map((_, i) => run("ksi-mr-review", 8 + (i % 6)))
-    const [h] = workflowHealth([{ id: "ksi-mr-review", name: "MR review" }], runs, NOW)
+    // The real case: initech-mr-review fired 26 times, then went silent for 3 days.
+    const runs = [...Array(26)].map((_, i) => run("initech-mr-review", 8 + (i % 6)))
+    const [h] = workflowHealth([{ id: "initech-mr-review", name: "MR review" }], runs, NOW)
     expect(h.state).toBe("dormant")
     expect(h.prior).toBeGreaterThan(0)
     expect(h.recent).toBe(0)
@@ -51,23 +51,23 @@ describe("workflow health", () => {
     try {
       const file = join(dir, "r1.jsonl")
       writeFileSync(file, [
-        JSON.stringify({ v: 2, kind: "snapshot", run: { id: "r1", workflowId: "ksi-mr-review", status: "running" } }),
+        JSON.stringify({ v: 2, kind: "snapshot", run: { id: "r1", workflowId: "initech-mr-review", status: "running" } }),
         JSON.stringify({ v: 2, kind: "exec", runId: "r1", entry: {}, pending: [] }),
         JSON.stringify({ v: 2, kind: "exec", runId: "r1", entry: {}, pending: [], status: "failed" }),
       ].join("\n") + "\n")
       const when = new Date(NOW - DAY)
       utimesSync(file, when, when)
-      expect(scanRuns(dir)).toEqual([{ workflowId: "ksi-mr-review", status: "failed", at: NOW - DAY }])
+      expect(scanRuns(dir)).toEqual([{ workflowId: "initech-mr-review", status: "failed", at: NOW - DAY }])
       // A truncated or unreadable run must never take the whole scan down.
       writeFileSync(join(dir, "bad.jsonl"), "{not json")
-      expect(scanRuns(dir).map(r => r.workflowId)).toEqual(["ksi-mr-review"])
+      expect(scanRuns(dir).map(r => r.workflowId)).toEqual(["initech-mr-review"])
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
   it("is reported where automation lives, not on the briefing", () => {
     // Moved deliberately: a workflow that stopped is an automation concern.
     // The briefing is for work that needs a person, and mixing the two put
-    // five dormant MTGL jobs above the actions that actually needed one.
+    // five dormant Globex jobs above the actions that actually needed one.
     expect(renderWorkflowsPage()).toContain("stopped running")
     expect(renderMonitorPage()).not.toContain('id="automation"')
   })

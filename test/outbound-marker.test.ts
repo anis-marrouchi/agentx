@@ -45,7 +45,7 @@ describe("outbound-marker", () => {
   })
 
   it("agentId can include hyphens, dots, slashes — anything non-whitespace", () => {
-    expect(detectAgentxMarker("body <!-- agentx:pm-ksi -->")).toBe("pm-ksi")
-    expect(detectAgentxMarker("body <!-- agentx:devops.noqta -->")).toBe("devops.noqta")
+    expect(detectAgentxMarker("body <!-- agentx:pm-initech -->")).toBe("pm-initech")
+    expect(detectAgentxMarker("body <!-- agentx:devops.acme -->")).toBe("devops.acme")
   })
 })

@@ -17,34 +17,34 @@ describe("expandVars", () => {
 
 describe("extractHost", () => {
   it("pulls host from connection strings", () => {
-    expect(extractHost("postgres://user:pw@api.hackathonat.com:5432/db")).toBe("api.hackathonat.com")
+    expect(extractHost("postgres://user:pw@api.demosite.example.com:5432/db")).toBe("api.demosite.example.com")
     expect(extractHost("mongodb://root@10.0.0.5:27017")).toBe("10.0.0.5")
-    expect(extractHost("clawd@64.226.102.124")).toBe("64.226.102.124")
+    expect(extractHost("peer@203.0.113.10")).toBe("203.0.113.10")
     expect(extractHost("just-a-word")).toBeNull()
   })
 })
 
 describe("resolveTargets — the incident case", () => {
   it("resolves $DATABASE_URL to the prod host so the shadow command is catchable", () => {
-    const env = { DATABASE_URL: "postgres://user:pw@api.hackathonat.com:5432/app" }
+    const env = { DATABASE_URL: "postgres://user:pw@api.demosite.example.com:5432/app" }
     const cmd =
       'npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "$DATABASE_URL" --script'
     const { candidates, expandedCommand } = resolveTargets(cmd, env)
-    expect(expandedCommand).toContain("api.hackathonat.com")
-    expect(candidates).toContain("api.hackathonat.com")
+    expect(expandedCommand).toContain("api.demosite.example.com")
+    expect(candidates).toContain("api.demosite.example.com")
     expect(candidates.some((c) => c.startsWith("postgres://"))).toBe(true)
   })
 })
 
 describe("matchProtected", () => {
-  const set = protectedSetSchema.parse({ hosts: ["api.hackathonat.com"], db_urls: ["${PROD_DATABASE_URL}"] })
+  const set = protectedSetSchema.parse({ hosts: ["api.demosite.example.com"], db_urls: ["${PROD_DATABASE_URL}"] })
   it("matches a candidate host against a protected host", () => {
     const tokens = normalizeProtectedSet(set, { PROD_DATABASE_URL: "" })
-    expect(matchProtected(["api.hackathonat.com", "unrelated.dev"], tokens)).toBe("api.hackathonat.com")
+    expect(matchProtected(["api.demosite.example.com", "unrelated.dev"], tokens)).toBe("api.demosite.example.com")
   })
   it("matches a protected host inside a full candidate URL (substring)", () => {
     const tokens = normalizeProtectedSet(set, {})
-    expect(matchProtected(["postgres://u:p@api.hackathonat.com:5432/x"], tokens)).toBe("api.hackathonat.com")
+    expect(matchProtected(["postgres://u:p@api.demosite.example.com:5432/x"], tokens)).toBe("api.demosite.example.com")
   })
   it("no match for an unrelated target", () => {
     const tokens = normalizeProtectedSet(set, {})

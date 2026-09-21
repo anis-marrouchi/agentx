@@ -3,18 +3,18 @@ import { A2AMesh } from "../src/a2a/mesh"
 import { MessageRouter } from "../src/channels/router"
 import type { IncomingMessage } from "../src/channels/types"
 
-// A mesh peer flap used to be permanently destructive. When clawd-server's
-// probe of macbook-local failed three times, `hasMeshAgent` stopped counting
+// A mesh peer flap used to be permanently destructive. When peer-server's
+// probe of hq-local failed three times, `hasMeshAgent` stopped counting
 // devops-agent as known, the routing pipeline recorded
 // `kind=drop unknown_agent:devops-agent`, and five @-mentions on
-// noqta/minbar#132 were discarded. The peer recovered 24 minutes later and
+// acme/soylent#132 were discarded. The peer recovered 24 minutes later and
 // nothing replayed them — the reporter just saw the agent ignore him.
 //
 // These tests pin the two halves of the fix: a down peer's agents stay
 // *known*, and messages that arrive while it is down are held and replayed.
 
 const AGENT = "devops-agent"
-const PEER = "macbook-local"
+const PEER = "hq-local"
 
 function meshConfig(): any {
   return {
@@ -34,7 +34,7 @@ describe("A2AMesh.findAgentPeer — down is not unknown", () => {
     // One good probe teaches the mesh what the peer hosts.
     const state = (mesh as any).peers.get(PEER)
     state.client.getAgentCard = vi.fn(async () => ({
-      name: "MacBook-Local",
+      name: "HQ-Local",
       skills: [{ id: AGENT, name: "DevOps" }],
     }))
     await mesh.discoverAll()
@@ -69,7 +69,7 @@ describe("A2AMesh.findAgentPeer — down is not unknown", () => {
     mesh.onPeerChange((e) => { seenB.push(e.delta) })
 
     const state = (mesh as any).peers.get(PEER)
-    state.client.getAgentCard = vi.fn(async () => ({ name: "MacBook-Local", skills: [] }))
+    state.client.getAgentCard = vi.fn(async () => ({ name: "HQ-Local", skills: [] }))
     await mesh.discoverAll()
 
     // The daemon's EventBus bridge used to displace the router's listener.
@@ -98,8 +98,8 @@ describe("MessageRouter — deferred mesh delivery", () => {
       channel: "gitlab",
       accountId: "default",
       sender: { id: "u1", name: "Alex Rivera", isBot: false },
-      text: `@devops-noqta are you still here ?`,
-      group: { id: "noqta/minbar:issue:132", name: "minbar" },
+      text: `@devops-acme are you still here ?`,
+      group: { id: "acme/soylent:issue:132", name: "soylent" },
       preferNode: PEER,
     } as any
   }
@@ -123,7 +123,7 @@ describe("MessageRouter — deferred mesh delivery", () => {
 
   it("holds a message while the peer is down, then replays it on recovery", async () => {
     const r = router as any
-    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "noqta/minbar:issue:132")
+    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "acme/soylent:issue:132")
 
     // Nothing reached the peer, but nothing was thrown away either.
     expect(sendTask).not.toHaveBeenCalled()
@@ -139,15 +139,15 @@ describe("MessageRouter — deferred mesh delivery", () => {
 
   it("does not hold the same message twice when the webhook is redelivered", async () => {
     const r = router as any
-    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "noqta/minbar:issue:132")
-    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "noqta/minbar:issue:132")
+    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "acme/soylent:issue:132")
+    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "acme/soylent:issue:132")
 
     expect(router.getDeferredMeshCounts()).toEqual({ [PEER]: 1 })
   })
 
   it("discards held messages older than the TTL instead of answering them late", async () => {
     const r = router as any
-    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "noqta/minbar:issue:132")
+    await r.processResolvedMessage(adapter, makeMsg("108367"), AGENT, "acme/soylent:issue:132")
 
     // Age the entry past the 30-minute TTL.
     r.deferredByPeer.get(PEER)[0].deferredAt = Date.now() - 31 * 60 * 1000
@@ -162,7 +162,7 @@ describe("MessageRouter — deferred mesh delivery", () => {
   it("caps the queue so a peer that never returns cannot grow it without limit", async () => {
     const r = router as any
     for (let i = 0; i < 60; i++) {
-      await r.processResolvedMessage(adapter, makeMsg(`n-${i}`), AGENT, "noqta/minbar:issue:132")
+      await r.processResolvedMessage(adapter, makeMsg(`n-${i}`), AGENT, "acme/soylent:issue:132")
     }
     expect(router.getDeferredMeshCounts()[PEER]).toBe(50)
   })

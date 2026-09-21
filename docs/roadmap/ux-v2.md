@@ -269,7 +269,7 @@ agentx doctor
 #   morning-standup                     ✓ last ran 2h ago
 #   wiki-absorb-midnight                ⚠ 3 consecutive failures
 # Checking mesh peers...
-#   clawd-server                        ✓ healthy (agents: devops, qa)
+#   peer-server                        ✓ healthy (agents: devops, qa)
 # Checking disk...
 #   .agentx/sessions/                   ⚠ 2.1 GB (consider pruning)
 #

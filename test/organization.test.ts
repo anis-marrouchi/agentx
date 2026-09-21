@@ -20,13 +20,13 @@ function makeConfig(overrides: any = {}): BusinessConfig {
     },
     orgChart: {
       ceo: { role: "ceo", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
-      "pm-mtgl": { role: "pm", reportsTo: "ceo", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
-      "mtgl-v2": { role: "dev", reportsTo: "pm-mtgl", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
-      "mtgl-v1": { role: "dev", reportsTo: "pm-mtgl", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
+      "pm-globex": { role: "pm", reportsTo: "ceo", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
+      "globex-v2": { role: "dev", reportsTo: "pm-globex", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
+      "globex-v1": { role: "dev", reportsTo: "pm-globex", schedule: { start: "09:00", end: "17:00" }, utilizationTarget: 0.8 },
     },
     projects: [
-      { id: "mtgl/mtgl-system-v2", pm: "pm-mtgl" },
-      { id: "noqta/website" }, // no pm
+      { id: "globex/globex-system-v2", pm: "pm-globex" },
+      { id: "acme/website" }, // no pm
     ],
     ...overrides,
   })
@@ -35,12 +35,12 @@ function makeConfig(overrides: any = {}): BusinessConfig {
 describe("Organization.pmFor", () => {
   it("returns the configured PM for a project", () => {
     const org = new Organization(makeConfig())
-    expect(org.pmFor("mtgl/mtgl-system-v2")).toBe("pm-mtgl")
+    expect(org.pmFor("globex/globex-system-v2")).toBe("pm-globex")
   })
 
   it("returns undefined for a project without a PM", () => {
     const org = new Organization(makeConfig())
-    expect(org.pmFor("noqta/website")).toBeUndefined()
+    expect(org.pmFor("acme/website")).toBeUndefined()
   })
 
   it("returns undefined for an unknown project", () => {
@@ -66,7 +66,7 @@ describe("Organization.pmFor", () => {
 describe("Organization.escalationChain", () => {
   it("excludes the agent itself, includes all reports-to ancestors", () => {
     const org = new Organization(makeConfig())
-    expect(org.escalationChain("mtgl-v2")).toEqual(["pm-mtgl", "ceo"])
+    expect(org.escalationChain("globex-v2")).toEqual(["pm-globex", "ceo"])
   })
 
   it("returns empty for the root of the org tree", () => {
@@ -83,8 +83,8 @@ describe("Organization.escalationChain", () => {
 describe("Organization.canHandle", () => {
   it("returns true for any registered agent (permissive scaffold; per-capability check in Phase 5)", () => {
     const org = new Organization(makeConfig())
-    expect(org.canHandle("mtgl-v2", "mtgl/mtgl-system-v2", "issue.opened")).toBe(true)
-    expect(org.canHandle("ceo", "mtgl/mtgl-system-v2", "issue.opened")).toBe(true)
+    expect(org.canHandle("globex-v2", "globex/globex-system-v2", "issue.opened")).toBe(true)
+    expect(org.canHandle("ceo", "globex/globex-system-v2", "issue.opened")).toBe(true)
   })
 
   it("returns false for an agent not in the org chart", () => {
@@ -94,7 +94,7 @@ describe("Organization.canHandle", () => {
 
   it("works with null project / intent (router-style events)", () => {
     const org = new Organization(makeConfig())
-    expect(org.canHandle("mtgl-v2", null, null)).toBe(true)
+    expect(org.canHandle("globex-v2", null, null)).toBe(true)
   })
 
   it("returns true for ANY agent when orgChart is empty (permissive-when-unconfigured)", () => {

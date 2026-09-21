@@ -195,7 +195,7 @@ async function describe(question: string, shot: Shot, model: string, timeoutMs: 
         Authorization: `Bearer ${apiKey}`,
         // OpenRouter attributes traffic by these; without them calls land
         // in an unnamed bucket and cost cannot be traced back here.
-        "HTTP-Referer": "https://github.com/noqta/agentx",
+        "HTTP-Referer": "https://github.com/acme/agentx",
         "X-Title": "agentx",
       },
       body: JSON.stringify(body),

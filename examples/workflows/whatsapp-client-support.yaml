@@ -31,7 +31,7 @@ nodes:
         RESULT: status-check
         RESULT: new-request
         RESULT: other
-      resultParser: noqta-result-token
+      resultParser: acme-result-token
       timeoutMinutes: 2
     position: { x: 320, y: 160 }
 
@@ -51,7 +51,7 @@ nodes:
     config:
       agentId: gitlab-ticket-lookup
       prompt: |
-        Find open or recently-closed issues in noqta/web whose reporter mentions
+        Find open or recently-closed issues in acme/web whose reporter mentions
         {{trigger.sender.name}} or {{trigger.fromJid}} and that could relate to
         this message:
         ---
@@ -74,7 +74,7 @@ nodes:
     type: action.createIssue
     config:
       channel: gitlab
-      project: noqta/web
+      project: acme/web
       title: "WhatsApp: {{trigger.sender.name}} — new request"
       description: |-
         From: {{trigger.sender.name}} ({{trigger.fromJid}})

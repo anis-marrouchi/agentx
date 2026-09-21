@@ -216,7 +216,7 @@ export class WhatsAppCache {
   }
 }
 
-/** "+21624XXXXXXX@s.whatsapp.net" → "21624XXXXXXX". LIDs (`...@lid`) have
+/** "+1000000XXXX@s.whatsapp.net" → "21624XXXXXXX". LIDs (`...@lid`) have
  *  no phone under WhatsApp's privacy model and return "". */
 function extractPhone(jid: string): string {
   const user = jid.split("@")[0] ?? ""

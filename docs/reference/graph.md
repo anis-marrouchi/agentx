@@ -162,13 +162,13 @@ Define a dedicated `graph-agent` (sonnet, `maxConcurrent: 3`, no channels). Rest
 
 **2. Seed the schema.** On the bootstrap node, the first daemon start creates `.agentx/graph/schema.json` from the default. Copy that file to the other peer so both use the same level + axis definitions — schema drift blocks cross-node node-imports.
 
-**3. Seed the root nodes.** The scope (`business` / `personal`) and the first org node must exist before the classifier can anchor paths. Either (a) hand-write a two-line `nodes.json` with `business + noqta` and similar, or (b) run the bootstrap node for a day so real traffic populates it, then `graph pull` into the new peer.
+**3. Seed the root nodes.** The scope (`business` / `personal`) and the first org node must exist before the classifier can anchor paths. Either (a) hand-write a two-line `nodes.json` with `business + acme` and similar, or (b) run the bootstrap node for a day so real traffic populates it, then `graph pull` into the new peer.
 
 **4. First sync — pull the established node INTO the fresh one.** From the fresh peer:
 
 ```bash
 agentx graph pull --from http://<peer-tailscale-ip>:19900
-# graph pull ← http://100.82.31.24:18800
+# graph pull ← http://100.64.0.12:18800
 #   schema matches (5 levels)
 #   nodes: +15 added · 0 already-present · 0 failed
 #   fingerprints: +14 cached · 0 already-present
@@ -180,7 +180,7 @@ This copies the root scope/org nodes, every committed unit + activity node, and 
 
 ```bash
 agentx graph review --max 20
-# [1/1] f975e91e business › Noqta › seif-arbi › bugfix-mosheer-step2 ... APPROVE
+# [1/1] f975e91e business › Acme › sam-taylor › bugfix-mosheer-step2 ... APPROVE
 # Summary: did approve 1, did reject 0, 0 skipped, 0 errors.
 ```
 

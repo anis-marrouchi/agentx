@@ -27,9 +27,9 @@ describe("loadWorkspaceEnv", () => {
   })
 
   it("parses shell-style `export KEY=VALUE` from .env.gitlab", () => {
-    // Matches the format actually used on clawd-server's agent workspaces.
-    writeFileSync(resolve(WORKSPACE, ".env.gitlab"), "export GITLAB_TOKEN=secret\nexport GITLAB_USER=pm-ksi\n")
-    expect(loadWorkspaceEnv(WORKSPACE)).toEqual({ GITLAB_TOKEN: "secret", GITLAB_USER: "pm-ksi" })
+    // Matches the format actually used on peer-server's agent workspaces.
+    writeFileSync(resolve(WORKSPACE, ".env.gitlab"), "export GITLAB_TOKEN=secret\nexport GITLAB_USER=pm-initech\n")
+    expect(loadWorkspaceEnv(WORKSPACE)).toEqual({ GITLAB_TOKEN: "secret", GITLAB_USER: "pm-initech" })
   })
 
   it("strips surrounding single or double quotes from values", () => {
@@ -68,7 +68,7 @@ describe("buildAgentEnv", () => {
   })
 
   it("strips daemon-owned keys from inherited env", () => {
-    // The bug: daemon's /home/clawd/agentx/.env defines GITLAB_TOKEN, every
+    // The bug: daemon's /home/peer/agentx/.env defines GITLAB_TOKEN, every
     // spawned agent inherits it through process.env. With the strip, agents
     // without their own workspace token get NO token (the explicit policy
     // — "every agent shall use the token found on their workspace").

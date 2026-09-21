@@ -40,7 +40,7 @@ describe("mesh.delegate", () => {
       peer: "remote-1",
       agent: "atlas",
       message: "hi from a workflow",
-      senderAgentId: "pm-mtgl",
+      senderAgentId: "pm-globex",
       timeoutMs: 30_000,
     })
 
@@ -48,7 +48,7 @@ describe("mesh.delegate", () => {
     expect(captured.peer).toBe("remote-1")
     expect(captured.text).toBe("hi from a workflow")
     expect(captured.agent).toBe("atlas")
-    expect(captured.opts.senderAgentId).toBe("pm-mtgl")
+    expect(captured.opts.senderAgentId).toBe("pm-globex")
     expect(captured.opts.timeoutMs).toBe(30_000)
   })
 

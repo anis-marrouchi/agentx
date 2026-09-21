@@ -89,10 +89,10 @@ describe("rendering what agents write", () => {
     const { markdownToHtml } = await import("../src/utils/markdown-html")
     // The reply arrives as markdown; showing the asterisks is showing the
     // workings.
-    const out = markdownToHtml("**Saber is active** — `last_activity_on` = today\n\n| who | when |\n|---|---|\n| saber | 17:20 |")
-    expect(out).toContain("<strong>Saber is active</strong>")
+    const out = markdownToHtml("**Alice is active** — `last_activity_on` = today\n\n| who | when |\n|---|---|\n| alice | 17:20 |")
+    expect(out).toContain("<strong>Alice is active</strong>")
     expect(out).toContain("<code>last_activity_on</code>")
-    expect(out).toContain("<td>saber</td>")
+    expect(out).toContain("<td>alice</td>")
     expect(ASSISTANT_SCRIPT).toContain("markdownToHtml(body)")
     // A wide table must scroll inside the bubble, not stretch the drawer.
     expect(ASSISTANT_CSS).toContain(".ax-as__md table{display:block;overflow-x:auto")

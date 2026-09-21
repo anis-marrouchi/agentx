@@ -672,9 +672,9 @@ export class AgentRegistry {
    * When `atMentionsOnly` is true, only `@`-prefixed mentions are considered.
    * This is used for messages originating from another bot (cross-daemon
    * Telegram cascades, for example) where we don't want bare-word matches
-   * like "nadia" in prose or "devops-mtgl" quoted in a reply to trigger
+   * like "marketing" in prose or "devops-globex" quoted in a reply to trigger
    * agents spuriously. Intentional handoffs still work because agents
-   * write explicit `@noqta_X_bot` handles.
+   * write explicit `@acme_X_bot` handles.
    */
   findByMention(text: string, opts: { atMentionsOnly?: boolean } = {}): string | undefined {
     const lower = text.toLowerCase()
@@ -1389,7 +1389,7 @@ export class AgentRegistry {
 
     // Context Surgery — Fix 1: cap session history for coding-channel
     // contexts. Long github/gitlab issue threads anchor the agent on
-    // accumulated assumptions (the diagnosis from ksi-v2 review). Tighter
+    // accumulated assumptions (the diagnosis from initech-v2 review). Tighter
     // cap forces code-first investigation; thread remains accessible via
     // `gh`/`glab` if the agent explicitly fetches it. Gated behind
     // AGENTX_CONTEXT_SURGERY=1 for one-week soak before unconditional rollout.
@@ -1546,7 +1546,7 @@ export class AgentRegistry {
     // session store and inject as a context block so the agent doesn't have
     // to call /recall itself in obvious cases. Without this, on a fresh
     // claude session the agent would either fabricate context (the
-    // observed "Tarek Ksibi" gmail-search failure) or pester the user.
+    // observed "Jordan Ellis" gmail-search failure) or pester the user.
     let longMemoryRecall: string | undefined
     const lmHint = detectLongMemoryHint(task.message)
     if (lmHint) {
@@ -2002,7 +2002,7 @@ export class AgentRegistry {
       // Tiers other than claude-code don't emit stream-json events into
       // onEvent — they only call onDelta with text chunks. Without
       // wiring those chunks into the modal buffer, /live's task modal
-      // came up blank for orchestrator-tier (noqta-public) and
+      // came up blank for orchestrator-tier (acme-public) and
       // codex-cli runs even when text was actively streaming back to
       // the caller. Wrap onDelta only for non-claude-code tiers; for
       // claude-code the formatter (onEvent → pushToBuffer) is already

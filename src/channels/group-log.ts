@@ -17,7 +17,7 @@ const MAX_CONTEXT_CHARS = 6000
 const MAX_ENTRY_CHARS = 1500
 /** Drop identical (sender,text) re-sends that arrive within this window.
  *  Protects the log from users who mash Enter N times or from clients that
- *  mirror the same message across bots. Observed cost: 6× Seif spam blew the
+ *  mirror the same message across bots. Observed cost: 6× Sam spam blew the
  *  prompt budget on the next agent's first turn. */
 const REPEAT_WINDOW_MS = 60_000
 

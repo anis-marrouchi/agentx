@@ -44,8 +44,8 @@ const scenarios: Array<{ label: string; priorTail: SessionMessage[]; message: st
       user("give the coder my gitlab and github skills"),
       agent("Done. Coder agent now has GITLAB_TOKEN + gh permission."),
     ],
-    message: "Can you explain to Noqta coder what he needs to do to run the commands",
-    why: "Mentions peer agent (Noqta coder). Planner should set crossChat=true; recent turns still needed.",
+    message: "Can you explain to Acme coder what he needs to do to run the commands",
+    why: "Mentions peer agent (Acme coder). Planner should set crossChat=true; recent turns still needed.",
   },
   {
     label: "E. Memory-weighted question about a named entity",
@@ -57,7 +57,7 @@ const scenarios: Array<{ label: string; priorTail: SessionMessage[]; message: st
     label: "F. Typical mid-conversation technical ask (the expensive case)",
     priorTail: [
       user("here is his telegram token: 8670746012:AAEtxxx"),
-      agent("Bot account @noqta_coder_bot likely needs a daemon restart to start polling."),
+      agent("Bot account @acme_coder_bot likely needs a daemon restart to start polling."),
       user("restart daemond"),
       agent("Done — daemon restarted, all 6 agents up."),
       user("give the coder my gitlab and github skills let him use my tokens"),

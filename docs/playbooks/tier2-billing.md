@@ -43,7 +43,7 @@ Output:
 
 ```
 agent_id        reason  n   avg_input_tokens  max_input_tokens
-mtgl-v2         tier-2  47  198234             199821
+globex-v2         tier-2  47  198234             199821
 devops-agent    tier-2  12  197102             199541
 ```
 
@@ -117,8 +117,8 @@ Tokens persist hashed in `.agentx/tokens.json`; the secret is shown once. Revoke
 If one agent dominates the budget (e.g. an aggressive coder running on 100K-token diffs), cap it at the agent level:
 
 ```bash
-agentx config set agents.mtgl-v2.maxConcurrent 1
-agentx config set agents.mtgl-v2.maxExecutionMinutes 15
+agentx config set agents.globex-v2.maxConcurrent 1
+agentx config set agents.globex-v2.maxExecutionMinutes 15
 ```
 
 `maxConcurrent: 1` prevents the agent from running multiple turns in parallel (each parallel turn is a separate Claude session and counts independently against the soft budget). `maxExecutionMinutes` SIGTERMs after 15 minutes — bounds runaway investigations.

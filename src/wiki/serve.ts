@@ -42,8 +42,8 @@ function tagLinks(tags: string[] | undefined, agentId?: string): string {
  * a path-set on first call and try several normalisations:
  *
  *   1. Exact title lookup                      (handles [[My Article]])
- *   2. Exact path lookup                       (handles [[people/anis.md]])
- *   3. Path + ".md" suffix                     (handles [[people/anis]])
+ *   2. Exact path lookup                       (handles [[people/alex.md]])
+ *   3. Path + ".md" suffix                     (handles [[people/alex]])
  *   4. Case-insensitive title scan             (forgives minor casing drift)
  *
  * Return the path if any matches, else undefined so the caller can render
@@ -62,7 +62,7 @@ function resolveWikilink(target: string, wikiArticles: Map<string, string>): str
   if (pathSet.has(withExt)) return withExt
 
   // (4) case-insensitive title fallback — common when the user writes
-  // "Anis Marrouchi" but the canonical title is "anis marrouchi".
+  // "Alex Rivera" but the canonical title is "alex rivera".
   const targetLower = target.toLowerCase()
   for (const [title, path] of wikiArticles) {
     if (title.toLowerCase() === targetLower) return path
@@ -90,7 +90,7 @@ const HEAD_FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
 
 // Paper/ink editorial palette — warm neutrals, Newsreader display font,
 // Inter Tight for UI, JetBrains Mono for code/meta. Ported from the
-// /Users/macbookpro/Downloads/wiki mockup.
+// /Users/you/Downloads/wiki mockup.
 const CSS = `
 :root {
   --bg: #FAF8F3;

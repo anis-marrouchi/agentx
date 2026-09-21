@@ -20,14 +20,14 @@ describe("AgentMemory", () => {
       agentId: "atlas",
       type: "user",
       name: "role",
-      description: "Anis is a Tunisian founder — prefers terse tech replies.",
+      description: "Alex is a solo founder — prefers terse tech replies.",
       body: "He's juggling 4 projects; context-switch cost is high.\n\nKeep bullet lists tight.",
     })
     expect(rec.name).toBe("role")
     expect(rec.type).toBe("user")
     expect(rec.body).toContain("4 projects")
     const rehydrated = s.get("atlas", "role")!
-    expect(rehydrated.description).toContain("Tunisian founder")
+    expect(rehydrated.description).toContain("solo founder")
     expect(rehydrated.body).toBe(rec.body)
     expect(rehydrated.createdAt).toBe(rec.createdAt)
   })

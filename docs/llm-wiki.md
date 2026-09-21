@@ -59,9 +59,9 @@ Honest 0–3 scoring, where 3 = exemplary, 2 = solid, 1 = partial, 0 = absent.
 Karpathy's spec calls out contradiction detection as runtime insurance — without it, a wiki becomes a cache of stale facts with no health feedback. AgentX ships this as `agentx wiki lint --semantic`.
 
 ```
-$ agentx wiki lint --semantic --agent ksi-coding
+$ agentx wiki lint --semantic --agent initech-coding
 
-  ksi-coding: 3 issues
+  initech-coding: 3 issues
     [≠] contradiction app/Filament/.../SupplierArticleResource.php ⟷ docs/eager-loading.md:
         [high] One article asserts the supplier eager-load is in the resource;
         the other says it lives in the global scope.
@@ -113,4 +113,4 @@ These will be addressed iteratively. None block the claims above.
 
 - [The Karpathy gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — the source.
 - [Journey 06: Shared wiki — compounding team knowledge](./journey/06-shared-wiki.md) — how to use it day-to-day.
-- [An honest review of our Karpathy-inspired wiki](https://noqta.tn/en/blog/agentx-wiki-karpathy-honest-review-2026) — the lessons learned post.
+- [An honest review of our Karpathy-inspired wiki](https://example.com/en/blog/agentx-wiki-karpathy-honest-review-2026) — the lessons learned post.

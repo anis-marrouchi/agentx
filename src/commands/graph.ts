@@ -171,7 +171,7 @@ graph
 graph
   .command("pull")
   .description("pull schema + nodes + approved classifications from a peer's graph")
-  .requiredOption("--from <url>", "peer daemon URL (e.g. http://clawd.noqta.tn:19900)")
+  .requiredOption("--from <url>", "peer daemon URL (e.g. http://peer.example.com:19900)")
   .option("--token <t>", "bearer token for the peer (if it requires auth)")
   .option("--limit <n>", "max approved classifications to pull", "500")
   .option("--dry-run", "show what would change, don't write")
@@ -365,7 +365,7 @@ async function askAgent(
 
 /** Commit any new nodes along the path + populate the fingerprint cache.
  *  Delegates to store.commitNodesAlongPath which handles level inference
- *  from axes (so paths that skip levels, like business→noqta when location
+ *  from axes (so paths that skip levels, like business→acme when location
  *  is absent, land at the right level) and refreshes nodes between adds. */
 function commitApproved(
   store: GraphStore,

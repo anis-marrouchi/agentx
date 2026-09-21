@@ -9,7 +9,7 @@ import type { AnswersFor } from "../../src/decisions/types"
 const candidates: RerankCandidate[] = [
   { id: "a1", title: "GITLAB_TOKEN Expired", tags: ["incident"], excerpt: "The token expired." },
   { id: "a2", title: "WhatsApp Echo Loop", tags: ["incident"], excerpt: "Bot replied to itself." },
-  { id: "a3", title: "MTGL DevOps Environment", excerpt: "Staging deploy steps." },
+  { id: "a3", title: "Globex DevOps Environment", excerpt: "Staging deploy steps." },
 ]
 
 function answers(probs: Record<string, number>, answerable = 0.9) {

@@ -24,7 +24,7 @@ export default withMermaid(defineConfig({
       { text: "Concepts", link: "/concepts" },
       { text: "Journey", link: "/journey/01-telegram-qa-bot" },
       { text: "Reference", link: "/reference/cli" },
-      { text: "Blog ↗", link: "https://noqta.tn/en/blog" },
+      { text: "Blog ↗", link: "https://example.com/en/blog" },
       { text: "GitHub", link: "https://github.com/anis-marrouchi/agentx" },
     ],
 

@@ -72,7 +72,7 @@ The wiki is a compounding knowledge base of interlinked markdown articles that a
 Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
 - People: \`people/anis-marrouchi.md\`
-- Projects: \`projects/mtgl-system-v2.md\`
+- Projects: \`projects/globex-system-v2.md\`
 - Concepts: \`concepts/staging-deployment.md\`
 - Events: \`events/YYYY-MM-DD-<slug>.md\` (date in path)
 - Decisions: \`decisions/<slug>.md\`
@@ -170,12 +170,12 @@ After compiling, populate a \`gaps\` array: wikilink targets you referenced but 
 {
   "articles": [
     {
-      "path": "projects/mtgl-system-v2.md",
-      "title": "MTGL System V2",
+      "path": "projects/globex-system-v2.md",
+      "title": "Globex System V2",
       "type": "project",
-      "related": ["Anis Marrouchi", "Laravel", "Staging Deployment"],
-      "tags": ["mtgl", "laravel", "react"],
-      "content": "MTGL System V2 is [[Anis Marrouchi]]'s production Laravel + React app for …",
+      "related": ["Alex Rivera", "Laravel", "Staging Deployment"],
+      "tags": ["globex", "laravel", "react"],
+      "content": "Globex System V2 is [[Alex Rivera]]'s production Laravel + React app for …",
       "sources": ["entry-id-1", "entry-id-2"]
     }
   ],
@@ -277,7 +277,7 @@ Corroboration across agents (shown per candidate) is a confidence signal, not a 
 Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
 - People: \`people/anis-marrouchi.md\`
-- Projects: \`projects/mtgl-system-v2.md\`
+- Projects: \`projects/globex-system-v2.md\`
 - Concepts: \`concepts/staging-deployment.md\`
 - Events: \`events/YYYY-MM-DD-<slug>.md\` (date in path)
 - Decisions: \`decisions/<slug>.md\`
@@ -307,13 +307,13 @@ Reference candidates ONLY by their exact stamp strings (the \`memory:...\` line 
 {
   "articles": [
     {
-      "path": "concepts/mtgl-staging-deploy.md",
-      "title": "MTGL Staging Deploy",
+      "path": "concepts/globex-staging-deploy.md",
+      "title": "Globex Staging Deploy",
       "type": "concept",
-      "related": ["MTGL System V2", "Staging Deployment"],
-      "tags": ["mtgl", "deploy"],
-      "content": "Deploys to [[MTGL System V2]] staging go through …",
-      "promotedFrom": ["memory:coder-agent/project_mtgl_deploy@2026-07-01T22:14:03.000Z"]
+      "related": ["Globex System V2", "Staging Deployment"],
+      "tags": ["globex", "deploy"],
+      "content": "Deploys to [[Globex System V2]] staging go through …",
+      "promotedFrom": ["memory:coder-agent/project_globex_deploy@2026-07-01T22:14:03.000Z"]
     }
   ],
   "skipped": [

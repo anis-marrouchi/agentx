@@ -1358,7 +1358,7 @@ export class AgentXDaemon {
         })
 
         // Forward note posting to peer so reply identity stays under the
-        // agent's real GitLab user (e.g. @devops-noqta) instead of whatever
+        // agent's real GitLab user (e.g. @devops-acme) instead of whatever
         // the local global token resolves to (the group-access-token bot).
         gitlab.setSendNoteForwarder(async (node, project, noteableType, noteableIid, agentId, text): Promise<string> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
@@ -1688,7 +1688,7 @@ export class AgentXDaemon {
       },
       forwardChannelSend: async (payload) => {
         // Find a healthy peer that hosts this channel. Channels are typically
-        // unique to a node (whatsapp on clawd-server, telegram on macbook),
+        // unique to a node (whatsapp on peer-server, telegram on macbook),
         // so we just take the first hit. If multiple peers somehow host the
         // same channel, this picks deterministically by directory order.
         const peers = this.mesh!.directory().filter((p) => p.healthy && p.channels?.includes(payload.channel))
@@ -2648,7 +2648,7 @@ export class AgentXDaemon {
         }
       }
 
-      // POST /chat — External web-chat endpoint (noqta.tn → clawd-server).
+      // POST /chat — External web-chat endpoint (example.com → peer-server).
       //
       // Contract:
       //   Authorization: Bearer <AGENTX_CHAT_SECRET>
@@ -2699,7 +2699,7 @@ export class AgentXDaemon {
 
         // Stream mode: caller wants OpenAI-shaped SSE chunks back instead
         // of a single JSON response. Triggered by body.stream:true or by
-        // an explicit Accept: text/event-stream. Used by the noqta.tn
+        // an explicit Accept: text/event-stream. Used by the example.com
         // voice forwarder (ElevenLabs custom-LLM has a tight first-token
         // deadline that the non-streaming path blows past).
         //
@@ -2765,7 +2765,7 @@ export class AgentXDaemon {
             // OpenAI shape: final chunk with finish_reason set, then an
             // optional usage-only chunk (empty choices[], usage populated)
             // when stream_options.include_usage was requested. We emit it
-            // unconditionally so noqta.tn's voice forwarder always has
+            // unconditionally so example.com's voice forwarder always has
             // token counts to debit credits against — the OpenAI SDK and
             // ElevenLabs both ignore unknown chunks gracefully.
             res.write(`data: ${JSON.stringify({ ...baseChunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`)
@@ -2902,7 +2902,7 @@ export class AgentXDaemon {
       // Authorization: Bearer <AGENTX_CHAT_SECRET>
       //
       // Returns the raw file with an appropriate Content-Type so browsers /
-      // noqta.tn can display images, PDFs, and other artifacts the agent wrote
+      // example.com can display images, PDFs, and other artifacts the agent wrote
       // during a /chat turn. Path traversal is blocked — the resolved path must
       // stay inside the agent's workspace directory.
       const workspaceFileMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/workspace\/(.+)$/)
@@ -4694,7 +4694,7 @@ export class AgentXDaemon {
             // Channels this node hosts. Used by mesh peers to route
             // workflow `action.send` calls back to the originating channel
             // when the workflow runs on a different node than the channel
-            // adapter (e.g. workflow on macbook, whatsapp on clawd-server).
+            // adapter (e.g. workflow on macbook, whatsapp on peer-server).
             channels: this.router.getChannelNames(),
             defaultInputModes: ["text"],
             defaultOutputModes: ["text"],
@@ -5209,7 +5209,7 @@ export class AgentXDaemon {
   }
 
   /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
-   *  this when the channel lives on this node (e.g. clawd-server hosts
+   *  this when the channel lives on this node (e.g. peer-server hosts
    *  whatsapp; macbook's workflow forwards here). Just unwraps to the local
    *  router's outbound path so all the same per-account/per-bot resolution
    *  applies. Authentication is currently the mesh token at the network
@@ -5249,8 +5249,8 @@ export class AgentXDaemon {
    *  every healthy mesh peer that hosts the channel — a channel's "true"
    *  chat list is spread across whichever nodes are actually paired
    *  (e.g. macbook has the channel enabled but WhatsApp Baileys is unpaired,
-   *  while clawd-server is paired; macbook's list is empty but we still want
-   *  the author to pick from clawd-server's cache). Dedup by `id`; the first
+   *  while peer-server is paired; macbook's list is empty but we still want
+   *  the author to pick from peer-server's cache). Dedup by `id`; the first
    *  source with a given id wins.
    *
    *  `sources` in the response tells the editor where the entries came from

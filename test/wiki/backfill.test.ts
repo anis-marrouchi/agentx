@@ -6,8 +6,8 @@ const entity = (fields: Record<string, { value: string; source: string }>): Merg
   ({ name: "Alex Rivera", fields })
 
 const resolved = entity({
-  phone: { value: "+21600000000", source: "wacli" },
-  whatsapp: { value: "21600000000@s.example.net", source: "wacli" },
+  phone: { value: "+10000000000", source: "wacli" },
+  whatsapp: { value: "10000000000@s.example.net", source: "wacli" },
   email: { value: "alex@example.com", source: "gitlab" },
   country: { value: "Tunisia", source: "wacli" },
 })
@@ -32,7 +32,7 @@ Something.
 describe("renderValue", () => {
   it("joins every fact feeding one field, each attributed", () => {
     const v = renderValue(resolved, ["phone", "email"])!
-    expect(v).toContain("+21600000000 (phone, via wacli)")
+    expect(v).toContain("+10000000000 (phone, via wacli)")
     expect(v).toContain("alex@example.com (email, via gitlab)")
   })
 
@@ -48,24 +48,24 @@ describe("renderValue", () => {
 
 describe("patchIdentityField", () => {
   it("replaces an existing unknown bullet in place", () => {
-    const r = patchIdentityField(WITH_IDENTITY, "contactValue", "+21600000000 (phone, via wacli)")!
+    const r = patchIdentityField(WITH_IDENTITY, "contactValue", "+10000000000 (phone, via wacli)")!
     expect(r.replaced).toBe(true)
-    expect(r.content).toContain("- **Contact identifiers:** +21600000000 (phone, via wacli)")
+    expect(r.content).toContain("- **Contact identifiers:** +10000000000 (phone, via wacli)")
     expect(r.content).not.toContain("no number is recorded")
     // Neighbouring bullets untouched.
     expect(r.content).toContain("- **Preferred language:** unknown.")
   })
 
   it("is idempotent — re-running writes nothing and so cuts no new version", () => {
-    const once = patchIdentityField(WITH_IDENTITY, "contactValue", "+21600000000 (phone, via wacli)")!
-    expect(patchIdentityField(once.content, "contactValue", "+21600000000 (phone, via wacli)")).toBeNull()
+    const once = patchIdentityField(WITH_IDENTITY, "contactValue", "+10000000000 (phone, via wacli)")!
+    expect(patchIdentityField(once.content, "contactValue", "+10000000000 (phone, via wacli)")).toBeNull()
   })
 
   it("adds the bullet when the section exists but the field does not", () => {
     const stripped = WITH_IDENTITY.replace(/- \*\*Contact identifiers.*\n/, "")
-    const r = patchIdentityField(stripped, "contactValue", "+21600000000 (phone, via wacli)")!
+    const r = patchIdentityField(stripped, "contactValue", "+10000000000 (phone, via wacli)")!
     expect(r.replaced).toBe(false)
-    expect(r.content).toContain("- **Contact identifiers:** +21600000000")
+    expect(r.content).toContain("- **Contact identifiers:** +10000000000")
     // Inserted inside Identity, not after the next heading.
     const idx = r.content.indexOf("Contact identifiers")
     expect(idx).toBeLessThan(r.content.indexOf("## Why it matters"))
@@ -73,7 +73,7 @@ describe("patchIdentityField", () => {
 
   it("creates an Identity section for an article written before the tier work", () => {
     const old = `---\ntitle: Alex Rivera\n---\n\nAlex Rivera is a contact.\n\n## History\n\nStuff.\n`
-    const r = patchIdentityField(old, "contactValue", "+21600000000 (phone, via wacli)")!
+    const r = patchIdentityField(old, "contactValue", "+10000000000 (phone, via wacli)")!
     expect(r.content).toContain("## Identity")
     // After the opening definition, before the first existing section —
     // identity follows "what this is" rather than displacing it.
@@ -83,7 +83,7 @@ describe("patchIdentityField", () => {
 
   it("matches a differently-worded heading, since a model wrote them", () => {
     const variant = WITH_IDENTITY.replace("**Contact identifiers:**", "**How to reach him:**")
-    const r = patchIdentityField(variant, "contactValue", "+21600000000 (phone, via wacli)")!
+    const r = patchIdentityField(variant, "contactValue", "+10000000000 (phone, via wacli)")!
     expect(r.replaced).toBe(true)
     expect(r.content).not.toContain("How to reach him")
   })
@@ -105,7 +105,7 @@ describe("backfillArticle", () => {
   it("fills only the fields the grader reported missing", () => {
     const r = backfillArticle(WITH_IDENTITY, resolved, ["contactValue"])
     expect(r.edits.map((e) => e.field)).toEqual(["contactValue"])
-    expect(r.content).toContain("+21600000000")
+    expect(r.content).toContain("+10000000000")
     // role was also "unknown" but was not in `missing`, so it stands.
     expect(r.content).toContain("- **Role or job title:** unknown.")
   })
@@ -115,11 +115,11 @@ describe("backfillArticle", () => {
     // does; the wiki corrects the systems, not the reverse.
     const withValue = WITH_IDENTITY.replace(
       "- **Contact identifiers:** unknown. Posts in a group; no number is recorded.",
-      "- **Contact identifiers:** +21611111111 (confirmed in person)",
+      "- **Contact identifiers:** +10000000000 (confirmed in person)",
     )
     const r = backfillArticle(withValue, resolved, [])
     expect(r.edits).toEqual([])
-    expect(r.content).toContain("+21611111111")
+    expect(r.content).toContain("+10000000000")
   })
 
   it("writes nothing when the sources answered nothing", () => {
@@ -130,13 +130,13 @@ describe("backfillArticle", () => {
 
   it("applies several fields in one pass without disturbing each other", () => {
     const full = entity({
-      phone: { value: "+21600000000", source: "wacli" },
+      phone: { value: "+10000000000", source: "wacli" },
       organisation: { value: "Acme", source: "gitlab" },
       role: { value: "Engineer", source: "gitlab" },
     })
     const r = backfillArticle(WITH_IDENTITY, full, ["contactValue", "organisation", "role"])
     expect(r.edits.map((e) => e.field)).toEqual(["contactValue", "organisation", "role"])
-    expect(r.content).toContain("- **Contact identifiers:** +21600000000 (phone, via wacli)")
+    expect(r.content).toContain("- **Contact identifiers:** +10000000000 (phone, via wacli)")
     expect(r.content).toContain("- **Organisation and position:** Acme (organisation, via gitlab)")
     expect(r.content).toContain("- **Role or job title:** Engineer (role, via gitlab)")
   })

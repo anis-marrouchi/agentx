@@ -44,6 +44,6 @@ export interface Procedure {
   meta: ProcedureMeta
   /** Markdown body — typically a "## Steps" section and optional notes. */
   body: string
-  /** Relative path within the procedures root, e.g. "deploy-clawd.md". */
+  /** Relative path within the procedures root, e.g. "deploy-peer.md". */
   path: string
 }

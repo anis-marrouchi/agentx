@@ -12,8 +12,8 @@ Extract ONLY facts that would help the agent in FUTURE, DIFFERENT conversations:
 - Credentials, tokens, API keys shared by the user
 - User preferences and instructions ("never do X", "always use Y")
 - Commitments the agent made ("I will deploy by Friday")
-- Relationships ("Anis is the admin", "Nadia handles content")
-- Task state ("GitLab tokens need deploying to clawd-server")
+- Relationships ("Alex is the admin", "Marketing handles content")
+- Task state ("GitLab tokens need deploying to peer-server")
 - Important facts about infrastructure, config, or processes
 
 SKIP:

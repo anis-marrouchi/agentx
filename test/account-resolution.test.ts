@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest"
 import { pickAccountForAgent } from "../src/channels/account-resolution"
 
-// Models the production "Noqta" group config that motivated the fix:
-// agent pm-ksi has TWO Telegram accounts bound to it. ksi-v2 is declared
+// Models the production "Acme" group config that motivated the fix:
+// agent pm-initech has TWO Telegram accounts bound to it. initech-v2 is declared
 // first in the config, so it was the unconditional "canonical" pick before
 // this change.
 const accounts = {
   default: { agentBinding: "atlas" },
-  "ksi-v2": { agentBinding: "pm-ksi" },
-  "pm-ksi": { agentBinding: "pm-ksi" },
-  "pm-mtgl": { agentBinding: "pm-mtgl" },
+  "initech-v2": { agentBinding: "pm-initech" },
+  "pm-initech": { agentBinding: "pm-initech" },
+  "pm-globex": { agentBinding: "pm-globex" },
 }
 
 describe("pickAccountForAgent", () => {
@@ -19,29 +19,29 @@ describe("pickAccountForAgent", () => {
 
   it("returns the single bound account when the agent has only one", () => {
     expect(pickAccountForAgent(accounts, "atlas")).toBe("default")
-    expect(pickAccountForAgent(accounts, "pm-mtgl")).toBe("pm-mtgl")
+    expect(pickAccountForAgent(accounts, "pm-globex")).toBe("pm-globex")
   })
 
   it("returns first config-order match for DMs (no groupId)", () => {
     // No groupId → membership lookup is irrelevant; first wins.
-    expect(pickAccountForAgent(accounts, "pm-ksi")).toBe("ksi-v2")
+    expect(pickAccountForAgent(accounts, "pm-initech")).toBe("initech-v2")
   })
 
   it("falls back to first candidate when no membership lookup is provided", () => {
-    expect(pickAccountForAgent(accounts, "pm-ksi", "g1")).toBe("ksi-v2")
+    expect(pickAccountForAgent(accounts, "pm-initech", "g1")).toBe("initech-v2")
   })
 
   it("prefers an in-group account over a non-member one", () => {
-    // Reproduces the 2026-04-29 "Noqta" group bug: only @noqta_pm_ksi_bot
-    // (account "pm-ksi") was a member, so the previous logic dropped every
-    // message because it expected ksi-v2. The fix should pick "pm-ksi".
+    // Reproduces the 2026-04-29 "Acme" group bug: only @acme_pm_initech_bot
+    // (account "pm-initech") was a member, so the previous logic dropped every
+    // message because it expected initech-v2. The fix should pick "pm-initech".
     const result = pickAccountForAgent(
       accounts,
-      "pm-ksi",
-      "noqta-group",
-      () => ["default", "pm-ksi", "pm-mtgl"], // no ksi-v2
+      "pm-initech",
+      "acme-group",
+      () => ["default", "pm-initech", "pm-globex"], // no initech-v2
     )
-    expect(result).toBe("pm-ksi")
+    expect(result).toBe("pm-initech")
   })
 
   it("keeps the canonical account when both bound bots are in the group", () => {
@@ -50,11 +50,11 @@ describe("pickAccountForAgent", () => {
     // identity instead of flip-flopping with membership churn.
     const result = pickAccountForAgent(
       accounts,
-      "pm-ksi",
-      "noqta-group",
-      () => ["default", "ksi-v2", "pm-ksi"],
+      "pm-initech",
+      "acme-group",
+      () => ["default", "initech-v2", "pm-initech"],
     )
-    expect(result).toBe("ksi-v2")
+    expect(result).toBe("initech-v2")
   })
 
   it("falls back to first candidate when neither bound bot is in the group", () => {
@@ -63,22 +63,22 @@ describe("pickAccountForAgent", () => {
     // "drop"; we only need to avoid throwing or returning undefined.
     const result = pickAccountForAgent(
       accounts,
-      "pm-ksi",
+      "pm-initech",
       "empty-group",
-      () => ["pm-mtgl"],
+      () => ["pm-globex"],
     )
-    expect(result).toBe("ksi-v2")
+    expect(result).toBe("initech-v2")
   })
 
   it("ignores non-bound accounts that happen to be in the group", () => {
-    // An unrelated bot (pm-mtgl, bound to pm-mtgl) being a group member must
-    // NOT make it eligible for pm-ksi traffic.
+    // An unrelated bot (pm-globex, bound to pm-globex) being a group member must
+    // NOT make it eligible for pm-initech traffic.
     const result = pickAccountForAgent(
       accounts,
-      "pm-ksi",
+      "pm-initech",
       "g1",
-      () => ["pm-mtgl"], // member, but not bound to pm-ksi
+      () => ["pm-globex"], // member, but not bound to pm-initech
     )
-    expect(result).toBe("ksi-v2") // falls back to first candidate
+    expect(result).toBe("initech-v2") // falls back to first candidate
   })
 })

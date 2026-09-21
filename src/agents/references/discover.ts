@@ -34,7 +34,7 @@ export interface DiscoveryOptions {
    *  Empty = scan every skill. */
   filter?: string[]
   /** Optional GitLab host to validate project URLs against (e.g.
-   *  https://gitlab.noqta.tn). When set, project URLs from other hosts are
+   *  https://gitlab.example.com). When set, project URLs from other hosts are
    *  ignored — keeps stray GitHub mentions out of a self-hosted registry. */
   gitlabHost?: string
 }
@@ -57,7 +57,7 @@ export function discoverFromSkills(skills: Skill[], opts: DiscoveryOptions): Dis
         ...(fm.tags ?? []),
         (fm as any).category ?? "",
         skill.path ?? "",
-        body.slice(0, 500), // first ~125 tokens of body, enough for a "MTGL Odoo Server" header
+        body.slice(0, 500), // first ~125 tokens of body, enough for a "Globex Odoo Server" header
       ].join(" ").toLowerCase()
       const hit = opts.filter.some(f => hay.includes(f.toLowerCase()))
       if (!hit) continue

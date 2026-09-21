@@ -19,7 +19,7 @@ function write(rel: string, content: string) {
 beforeEach(() => {
   closeDb()
   root = mkdtempSync(path.join(tmpdir(), "guard-check-"))
-  process.env.DATABASE_URL = "postgres://user:pw@api.hackathonat.com:5432/app"
+  process.env.DATABASE_URL = "postgres://user:pw@api.demosite.example.com:5432/app"
 })
 afterEach(() => {
   closeDb()
@@ -35,7 +35,7 @@ function mkVerdict(over: Partial<Verdict>): Verdict {
     ruleId: "prisma-shadow-against-prod",
     severity: "critical",
     message: "never point shadow at prod",
-    resolvedTarget: "api.hackathonat.com",
+    resolvedTarget: "api.demosite.example.com",
     ...over,
   }
 }
@@ -47,7 +47,7 @@ describe("decisionOutput — Claude Code contract", () => {
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse")
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny")
     expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain("[agentx-guard]")
-    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain("api.hackathonat.com")
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain("api.demosite.example.com")
   })
 
   it("maps escalate -> ask", () => {
@@ -79,7 +79,7 @@ describe("decisionOutput — Claude Code contract", () => {
 describe("runGuard — end to end with audit", () => {
   it("evaluates the incident payload and writes an audit row (warn mode)", () => {
     write("policy.yaml", "mode: warn\n")
-    write("environments/production.yaml", "protected_resources:\n  production:\n    resolve_env: true\n    hosts: ['api.hackathonat.com']\n")
+    write("environments/production.yaml", "protected_resources:\n  production:\n    resolve_env: true\n    hosts: ['api.demosite.example.com']\n")
 
     const payload = {
       hook_event_name: "PreToolUse",
@@ -100,6 +100,6 @@ describe("runGuard — end to end with audit", () => {
     expect(rows[0].effective_action).toBe("allow")
     expect(rows[0].agent_id).toBe("devops-agent")
     expect(rows[0].matched_rule).toBe("prisma-shadow-against-prod")
-    expect(rows[0].resolved_target).toBe("api.hackathonat.com")
+    expect(rows[0].resolved_target).toBe("api.demosite.example.com")
   })
 })

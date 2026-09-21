@@ -104,8 +104,8 @@ export const CALL_PAGE_HTML = `<!doctype html>
     if (!r.ok) log("send " + signal.kind + " -> " + signal.to + " failed: " + r.status, "err");
   }
 
-  /** Find an existing peer by name (normalized — handles MacBook-Local vs
-   *  macbook-local spelling drift between the URL and the remote's node.name). */
+  /** Find an existing peer by name (normalized — handles HQ-Local vs
+   *  hq-local spelling drift between the URL and the remote's node.name). */
   function findPeerEntry(name) {
     if (!state) return null;
     const want = norm(name);

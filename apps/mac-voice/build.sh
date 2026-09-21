@@ -25,7 +25,7 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # Ad-hoc signature. Unsigned bundles get a fresh TCC identity on every
 # rebuild, so macOS re-asks for the microphone every single launch.
-codesign --force --sign - --identifier tn.noqta.agentx.voice "$APP" 2>/dev/null \
+codesign --force --sign - --identifier tn.acme.agentx.voice "$APP" 2>/dev/null \
   || echo "warning: codesign failed; expect repeated microphone prompts"
 
 echo "built: $APP"

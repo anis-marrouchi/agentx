@@ -63,7 +63,7 @@ The recommended sequence is **least-risky → most-risky**:
 
 ```bash
 # 1. Edit agentx.json — add the flag to the chosen agent.
-#    (Or use the safer fetch-edit-validate-push flow on clawd; see
+#    (Or use the safer fetch-edit-validate-push flow on peer; see
 #    skills/agentx-infra config-management section.)
 jq '.agents."<agent-id>".persistentProcess = true' agentx.json > /tmp/a.json && mv /tmp/a.json agentx.json
 
@@ -71,8 +71,8 @@ jq '.agents."<agent-id>".persistentProcess = true' agentx.json > /tmp/a.json && 
 python3 -c "import json; json.load(open('agentx.json'))"
 
 # 3. Restart the daemon.
-sudo systemctl restart agentx           # clawd-server
-launchctl kickstart -k gui/$(id -u)/tn.noqta.agentx    # macbook
+sudo systemctl restart agentx           # peer-server
+launchctl kickstart -k gui/$(id -u)/tn.acme.agentx    # macbook
 
 # 4. Confirm the registry came up.
 journalctl -u agentx -n 30 --no-pager | grep ProcessRegistry

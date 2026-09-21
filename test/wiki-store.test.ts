@@ -35,7 +35,7 @@ describe("WikiStore", () => {
 
     it("filters entries by agent", () => {
       store.addEntry({ id: "a1", date: "2026-04-06", agentId: "atlas", source: "telegram", content: "from atlas" })
-      store.addEntry({ id: "n1", date: "2026-04-06", agentId: "nadia", source: "telegram", content: "from nadia" })
+      store.addEntry({ id: "n1", date: "2026-04-06", agentId: "marketing", source: "telegram", content: "from marketing" })
 
       const atlas = store.listEntries({ agentId: "atlas" })
       expect(atlas).toHaveLength(1)
@@ -84,7 +84,7 @@ describe("WikiStore", () => {
       }
 
       store.writeArticle("concepts/mine.md", meta, "secret", "atlas")
-      const denied = store.writeArticle("concepts/mine.md", meta, "hacked", "nadia")
+      const denied = store.writeArticle("concepts/mine.md", meta, "hacked", "marketing")
       expect(denied).toBe(false)
     })
 
@@ -102,7 +102,7 @@ describe("WikiStore", () => {
       store.writeArticle("concepts/secret.md", meta, "secret content", "atlas")
 
       expect(store.readArticleAs("concepts/secret.md", "atlas")).not.toBeNull()
-      expect(store.readArticleAs("concepts/secret.md", "nadia")).toBeNull()
+      expect(store.readArticleAs("concepts/secret.md", "marketing")).toBeNull()
     })
 
     it("allows shared access", () => {
@@ -111,7 +111,7 @@ describe("WikiStore", () => {
         tags: ["project"],
         owner: "atlas",
         access: "shared" as const,
-        sharedWith: ["nadia"],
+        sharedWith: ["marketing"],
         created: "2026-04-06",
         lastUpdated: "2026-04-06",
         sources: [],
@@ -120,7 +120,7 @@ describe("WikiStore", () => {
       store.writeArticle("projects/shared.md", meta, "shared content", "atlas")
 
       expect(store.readArticleAs("projects/shared.md", "atlas")).not.toBeNull()
-      expect(store.readArticleAs("projects/shared.md", "nadia")).not.toBeNull()
+      expect(store.readArticleAs("projects/shared.md", "marketing")).not.toBeNull()
       expect(store.readArticleAs("projects/shared.md", "devops")).toBeNull()
     })
   })
@@ -154,7 +154,7 @@ describe("WikiStore", () => {
       }, "Top secret deployment plan", "atlas")
 
       expect(store.search("secret", "atlas")).toHaveLength(1)
-      expect(store.search("secret", "nadia")).toHaveLength(0)
+      expect(store.search("secret", "marketing")).toHaveLength(0)
     })
   })
 
@@ -250,7 +250,7 @@ describe("WikiStore - wikilinks and backlinks", () => {
       sources: [],
     }, "How to deploy. See [[Acme Project]].", "atlas")
 
-    store.writeArticle("projects/mtgl.md", {
+    store.writeArticle("projects/globex.md", {
       title: "Acme Project", tags: ["project"], owner: "atlas", access: "public",
       created: "2026-04-06", lastUpdated: "2026-04-06",
       sources: [],
@@ -405,7 +405,7 @@ describe("WikiStore - article type validation", () => {
   })
 
   it("drops an invalid type even if the serializer would have accepted it", () => {
-    // Covers the exact stray-type bug we hit on clawd (issue/mr/infrastructure)
+    // Covers the exact stray-type bug we hit on peer (issue/mr/infrastructure)
     for (const bad of ["issue", "mr", "infrastructure", "process", "AGENT", "projects", ""]) {
       const p = `z/${bad || "empty"}.md`
       s.writeArticle(p, baseMeta({ type: bad as any }), "body", "atlas")

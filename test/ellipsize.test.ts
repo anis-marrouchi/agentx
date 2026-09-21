@@ -31,7 +31,7 @@ describe("ellipsize", () => {
   })
 
   it("keeps GitLab pipeline body readable past the first line", () => {
-    const body = "[GitLab Pipeline FAILED] Project: mtgl/mtgl-system-v2\nRef: main\nDuration: 328s\nPipeline #369 — test:php failed"
+    const body = "[GitLab Pipeline FAILED] Project: globex/globex-system-v2\nRef: main\nDuration: 328s\nPipeline #369 — test:php failed"
     const out = ellipsize(body, 120)
     // Should preserve complete lines + ellipsis on its own line
     expect(out).toContain("Duration: 328s")

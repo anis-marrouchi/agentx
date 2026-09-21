@@ -18,7 +18,7 @@ export const referenceKindSchema = z.enum([
 export type ReferenceKind = z.infer<typeof referenceKindSchema>
 
 export const referenceCardSchema = z.object({
-  /** Dotted ID, e.g. "ksi.gitlab.project.ksi-v2". Globally unique. */
+  /** Dotted ID, e.g. "initech.gitlab.project.initech-v2". Globally unique. */
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/, "id must be a dotted slug"),
   kind: referenceKindSchema,
   /** Human-readable summary rendered in the verified-references block. */
@@ -26,7 +26,7 @@ export const referenceCardSchema = z.object({
   /** Typed fact body. Shape varies by kind — validated permissively here,
    *  shape is enforced at render time. */
   fields: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
-  /** Free-form tags used by recipes for matching (e.g. "deploy", "ksi-v2"). */
+  /** Free-form tags used by recipes for matching (e.g. "deploy", "initech-v2"). */
   tags: z.array(z.string()).default([]),
   /** Agent that owns / verifies this card. */
   ownerAgent: z.string().optional(),

@@ -306,7 +306,7 @@ export class A2AMesh {
        *  the sender used, instead of falling back to api/default. Without
        *  this, a GitLab webhook routed across the mesh lands in the
        *  recipient's api:default bucket with no project, no issue id, no
-       *  channelMeta — i.e., the mtgl/hasanah confusion incident on
+       *  channelMeta — i.e., the globex/umbrella confusion incident on
        *  2026-04-29 issue #709. Shape matches AgentTask.context. */
       context?: Record<string, unknown>
     } = {},
@@ -519,7 +519,7 @@ export class A2AMesh {
    *
    * Peer lookup is tolerant: the `to` field comes from whichever daemon
    * originated the signal, which often spells the same node differently
-   * ("MacBook-Local" vs "macbook-local"). Match on a normalized name so config
+   * ("HQ-Local" vs "hq-local"). Match on a normalized name so config
    * drift across sides doesn't break the signaling path.
    */
   async sendSignal(peerName: string, signal: unknown): Promise<boolean> {

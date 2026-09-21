@@ -44,8 +44,8 @@ protected_resources:
     db_urls:
       - "\${PROD_DATABASE_URL}"
     hosts:
-      - "api.hackathonat.com"
-      - "185.164.25.107"
+      - "api.demosite.example.com"
+      - "203.0.113.12"
     # buckets:
     #   - "my-prod-uploads"
     # contexts:            # k8s contexts, droplet ids, cluster names

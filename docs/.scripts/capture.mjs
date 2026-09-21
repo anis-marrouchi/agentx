@@ -18,7 +18,7 @@
 //   3. Emits PNGs into docs/public/screenshots/.
 
 import { spawn } from "node:child_process"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -30,43 +30,27 @@ mkdirSync(OUT, { recursive: true })
 const DASHBOARD = process.env.AGENTX_DASHBOARD || "http://localhost:4202"
 
 // Operator-real text → demo text. Applied as whole-word replacements across
-// every text node after render. Keep the REAL side as strings that uniquely
-// identify operator data, not generic UI labels.
-const REDACTIONS = [
-  // Agent display names
-  [/\bNadia\b/gi, "Marketing"],
-  [/\bDevOps\b/g, "Ops"],
-  [/\bAccountant\b/g, "Billing"],
-  [/\bSales Manager\b/g, "Sales"],
-  [/\bGraph Agent\b/g, "Indexer"],
-  // Agent IDs / slugs
-  [/\bmarketing-agent\b/g, "marketing"],
-  [/\bdevops-agent\b/g, "ops"],
-  [/\baccountant-agent\b/g, "billing"],
-  [/\bsales-manager-agent\b/g, "sales"],
-  [/\bgraph-agent\b/g, "indexer"],
-  // cron IDs prefixed with operator names
-  [/\bnadia-/g, "marketing-"],
-  // Owner / operator person names
-  [/\banis\b/gi, "owner"],
-  // Project names
-  [/\bMTGL\b/gi, "Demo"],
-  [/\bmtgl\b/gi, "demo"],
-  [/\bNoqta\b/gi, "Acme"],
-  [/\bnoqta\.tn\b/g, "acme.co"],
-  [/\bhackathonat\b/gi, "DemoSite"],
+// every text node after render.
+//
+// Two layers:
+//   1. STRUCTURAL rules below — pattern-based, carry no identifying data,
+//      and work for any operator (IPs, home paths, tokens, phone numbers).
+//   2. OPERATOR rules — the names of your agents, people, clients and hosts.
+//      Those are specific to whoever runs the daemon, so they are NOT kept
+//      in this repo. Put them in `docs/.scripts/redactions.local.json`
+//      (untracked) as an array of ["pattern", "flags", "replacement"], e.g.
+//        [["\\bAcme\\b", "gi", "Demo"], ["acme\\.example\\.com", "g", "demo.co"]]
+//      Without that file only the structural rules run, so screenshots of a
+//      live daemon may still show real agent and client names — populate it
+//      before publishing docs.
+const STRUCTURAL_REDACTIONS = [
   // IPs + hosts
   [/\b100\.[0-9]+\.[0-9]+\.[0-9]+\b/g, "100.64.0.X"],
-  [/\b64\.226\.102\.124\b/g, "198.51.100.23"],
-  [/clawd-server/gi, "peer-server"],
-  [/clawd\.noqta\.tn/gi, "peer.acme.co"],
-  [/\bmacbook-local\b/gi, "hq-local"],
-  [/\bMacBook-Local\b/g, "HQ"],
   // Any gitlab.* → demo
-  [/gitlab\.[a-z][a-z0-9.-]+/gi, "gitlab.acme.co"],
+  [/gitlab\.[a-z][a-z0-9.-]+/gi, "gitlab.example.com"],
   // /Users/... paths → ~/...
   [/\/Users\/[a-z][a-z0-9_-]*/gi, "~"],
-  // /home/clawd → ~
+  // /home/... → ~
   [/\/home\/[a-z][a-z0-9_-]*/gi, "~"],
   // Credential fragments
   [/\b\d{7,}:[A-Za-z0-9_-]{30,}\b/g, "123456:demo-bot-token"],
@@ -76,6 +60,21 @@ const REDACTIONS = [
   // Chat IDs (Telegram group format)
   [/-100\d{8,}/g, "-1001000000000"],
 ]
+
+function loadOperatorRedactions() {
+  const p = resolve(__dirname, "redactions.local.json")
+  if (!existsSync(p)) return []
+  try {
+    return JSON.parse(readFileSync(p, "utf8")).map(
+      ([pattern, flags, replacement]) => [new RegExp(pattern, flags), replacement],
+    )
+  } catch (err) {
+    console.error(`[capture] ignoring redactions.local.json: ${err.message}`)
+    return []
+  }
+}
+
+const REDACTIONS = [...loadOperatorRedactions(), ...STRUCTURAL_REDACTIONS]
 
 const SHOTS = [
   { name: "boards",    url: "/",              waitSel: ".ax-board-col" },

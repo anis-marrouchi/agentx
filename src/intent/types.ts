@@ -32,7 +32,7 @@ export interface IntentEvent {
    *  re-deliveries from the same external source. Null when no stable id
    *  exists (e.g., cron firings have only the cron expression). */
   sourceEventId: string | null
-  /** "owner/repo" for GitLab/GitHub, "noqta" for cross-project events,
+  /** "owner/repo" for GitLab/GitHub, "acme" for cross-project events,
    *  null when the event has no project axis (DM-only telegram, ad-hoc cron). */
   project: string | null
   /** The conversational unit. Examples: "issue:709", "chat:-1003861455814",
@@ -60,13 +60,13 @@ export type IntentSource =
 
 /** A dispatch decision made by some component (channel router, workflow
  *  dispatcher, PM gate, etc.) about an event. One event can yield multiple
- *  decisions (e.g., the channel router decides "dispatch to mtgl-v2", then
+ *  decisions (e.g., the channel router decides "dispatch to globex-v2", then
  *  the PM gate decides "halt"). Decisions form a chain via decided_by. */
 export interface IntentDecision {
   eventId: string
   decidedAt: number
   /** Which component decided. Examples: "channel-router", "workflow:gitlab-sdlc-loop",
-   *  "pm:pm-mtgl", "ledger". Must be unique per (eventId, decidedBy). */
+   *  "pm:pm-globex", "ledger". Must be unique per (eventId, decidedBy). */
   decidedBy: string
   /** Target agent. Null when outcome != "dispatched". */
   agentId: string | null

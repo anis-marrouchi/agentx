@@ -6,7 +6,7 @@ import { guardPolicySchema, type GuardInput, type GuardMode, type GuardPolicy } 
 // Arms the production protected set so the catalog's `target_in: production`
 // rules can bite. Host-based so it works via process.env below.
 const PROD_POLICY: GuardPolicy = guardPolicySchema.parse({
-  protected_resources: { production: { resolve_env: true, hosts: ["api.hackathonat.com"] } },
+  protected_resources: { production: { resolve_env: true, hosts: ["api.demosite.example.com"] } },
 })
 
 function run(command: string, mode: GuardMode, extra?: Partial<GuardInput>, policy: GuardPolicy = PROD_POLICY) {
@@ -14,7 +14,7 @@ function run(command: string, mode: GuardMode, extra?: Partial<GuardInput>, poli
   return evaluate({ tool: "Bash", command, ...extra }, resolved)
 }
 
-const PROD_DB = "postgres://user:pw@api.hackathonat.com:5432/app"
+const PROD_DB = "postgres://user:pw@api.demosite.example.com:5432/app"
 
 beforeEach(() => {
   process.env.DATABASE_URL = PROD_DB
@@ -31,7 +31,7 @@ describe("engine — the incident", () => {
     const v = run(incident, "enforce")
     expect(v.action).toBe("deny")
     expect(v.ruleId).toBe("prisma-shadow-against-prod")
-    expect(v.resolvedTarget).toBe("api.hackathonat.com")
+    expect(v.resolvedTarget).toBe("api.demosite.example.com")
     expect(v.effectiveAction).toBe("deny")
   })
 
@@ -103,12 +103,12 @@ describe("engine — mode + precedence", () => {
 describe("engine — ambient connection targets", () => {
   // `prisma migrate reset` names no target; it reads DATABASE_URL implicitly.
   // Without ambient resolution this sailed through as allow even in a
-  // prod-configured workspace (found during clawd deploy verification).
+  // prod-configured workspace (found during peer deploy verification).
   it("catches a destructive command that names no target but reads ambient DATABASE_URL", () => {
     const v = run("npx prisma migrate reset --force", "enforce")
     expect(v.action).toBe("deny")
     expect(v.ruleId).toBe("prisma-reset-or-force-push-prod")
-    expect(v.resolvedTarget).toBe("api.hackathonat.com")
+    expect(v.resolvedTarget).toBe("api.demosite.example.com")
   })
 
   it("allows it once the ambient env is not production", () => {
@@ -118,7 +118,7 @@ describe("engine — ambient connection targets", () => {
 
   it("ambient targets do NOT arm a bare target_in rule (no `ls` false positives)", () => {
     const policy: GuardPolicy = guardPolicySchema.parse({
-      protected_resources: { production: { resolve_env: true, hosts: ["api.hackathonat.com"] } },
+      protected_resources: { production: { resolve_env: true, hosts: ["api.demosite.example.com"] } },
       agents: {
         "coder-agent": { rules: [{ id: "coder-no-prod", match: { target_in: "production" }, action: "deny" }] },
       },

@@ -54,12 +54,12 @@ export interface NodeOutputSchema {
 
 const TRIGGER_CHANNEL_COMMON: OutputField[] = [
   { path: "channel", type: "string", description: "Channel name that received the event.", example: `"whatsapp"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
-  { path: "chatId", type: "string", description: "Stable chat id — conversation partner JID (WhatsApp) or chat integer (Telegram). Use as `action.send` chatId to reply on the same thread.", example: `"21600000000@s.whatsapp.net"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
+  { path: "chatId", type: "string", description: "Stable chat id — conversation partner JID (WhatsApp) or chat integer (Telegram). Use as `action.send` chatId to reply on the same thread.", example: `"10000000000@s.whatsapp.net"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "accountId", type: "string", description: "Which bot account received the message. Telegram routes this per-account; inherit into `action.send` to reply through the same bot.", example: `"default"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "text", type: "string", description: "Message body (caption for media), lower-cased for routing but the raw text here is verbatim.", example: `"hello"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "fromJid", type: "string", description: "Raw sender JID/id straight from the platform. Use `sender.id` for the normalized form.", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "sender.id", type: "string", description: "Normalized sender id.", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
-  { path: "sender.name", type: "string", description: "Display name, e.g. WhatsApp pushName or Telegram first_name.", example: `"Anis"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
+  { path: "sender.name", type: "string", description: "Display name, e.g. WhatsApp pushName or Telegram first_name.", example: `"Alex"`, sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "sender.username", type: "string", description: "Platform-specific handle when available (Telegram @username, ...).", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "group.id", type: "string", description: "Group chat id when the message came from a group; undefined for DMs.", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
   { path: "group.name", type: "string", description: "Group display name when available.", sourceFilter: ["whatsapp-message", "telegram-message", "discord-message", "slack-message"] },
@@ -78,7 +78,7 @@ const TRIGGER_CHANNEL_COMMON: OutputField[] = [
   { path: "issue.action", type: "string", description: "Action that triggered the event (`open`, `update`, `close`, ...).", sourceFilter: ["gitlab-issue"] },
   { path: "issue.labels", type: "array", description: "Current labels on the issue.", sourceFilter: ["gitlab-issue"] },
   { path: "issue.assignees", type: "array", description: "Assignees on the issue.", sourceFilter: ["gitlab-issue"] },
-  { path: "project", type: "string", description: "GitLab project path.", example: `"noqta/web"`, sourceFilter: ["gitlab-issue", "gitlab-pipeline"] },
+  { path: "project", type: "string", description: "GitLab project path.", example: `"acme/web"`, sourceFilter: ["gitlab-issue", "gitlab-pipeline"] },
   { path: "chatId", type: "string", description: `Stable entity id for GitLab: "<project>:issue:<iid>" (issue) or "<project>:merge_request:<iid>" (pipeline).`, sourceFilter: ["gitlab-issue", "gitlab-pipeline"] },
   { path: "channel", type: "string", description: "Always `\"gitlab\"` for GitLab sources.", sourceFilter: ["gitlab-issue", "gitlab-pipeline"] },
 

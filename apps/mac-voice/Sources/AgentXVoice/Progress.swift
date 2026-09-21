@@ -27,7 +27,7 @@ final class Progress: NSObject, URLSessionDataDelegate {
     /// unrelated code (a CATransaction flush, in the crash that prompted
     /// this). Serialising is the fix; a lock around only removeAll() would
     /// not be, because the append path mutates it too.
-    private let queue = DispatchQueue(label: "tn.noqta.agentx.voice.progress")
+    private let queue = DispatchQueue(label: "tn.acme.agentx.voice.progress")
     private var stopped = false
 
     init(agentID: String, onStep: @escaping (String) -> Void) {

@@ -93,7 +93,7 @@ describe("routing pipeline — invariants", () => {
         text: "hey team",
         group: { id: "-100123", name: "Dev" },
       }),
-      { registry: new StubRegistry({ "noqta_devops_bot": "devops-agent" }) },
+      { registry: new StubRegistry({ "acme_devops_bot": "devops-agent" }) },
     )
     expect(r.kind).toBe("drop")
     expect(r.decidingStage).toBe("mention")
@@ -105,10 +105,10 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "telegram",
         accountId: "coder",
-        text: "@noqta_devops_bot please ssh in",
+        text: "@acme_devops_bot please ssh in",
         group: { id: "-100123", name: "Dev" },
       }),
-      { registry: new StubRegistry({ "noqta_devops_bot": "devops-agent" }) },
+      { registry: new StubRegistry({ "acme_devops_bot": "devops-agent" }) },
     )
     expect(r.kind).toBe("match")
     expect(r.agentId).toBe("devops-agent")
@@ -122,13 +122,13 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "telegram",
         accountId: "coder",
-        text: "nadia is on it",
+        text: "marketing is on it",
         group: { id: "-100123" },
         sender: { id: "bot-1", isBot: true, name: "DevOps Bot" },
       }),
       {
         config: cfg,
-        registry: new StubRegistry({ noqta_nadia_bot: "marketing-agent", nadia: "marketing-agent" }),
+        registry: new StubRegistry({ acme_marketing_bot: "marketing-agent", marketing: "marketing-agent" }),
       },
     )
     expect(r.kind).toBe("drop")
@@ -142,13 +142,13 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "telegram",
         accountId: "coder",
-        text: "@noqta_nadia_bot can you help?",
+        text: "@acme_marketing_bot can you help?",
         group: { id: "-100123" },
         sender: { id: "bot-1", isBot: true },
       }),
       {
         config: cfg,
-        registry: new StubRegistry({ noqta_nadia_bot: "marketing-agent", nadia: "marketing-agent" }),
+        registry: new StubRegistry({ acme_marketing_bot: "marketing-agent", marketing: "marketing-agent" }),
       },
     )
     expect(r.kind).toBe("match")
@@ -210,12 +210,12 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "gitlab",
         accountId: "default",
-        text: "@coding-ksi please look at this",
-        resolvedAgent: "coding-ksi",
+        text: "@coding-initech please look at this",
+        resolvedAgent: "coding-initech",
       }),
     )
     expect(r.kind).toBe("match")
-    expect(r.agentId).toBe("coding-ksi")
+    expect(r.agentId).toBe("coding-initech")
     expect(r.decidingStage).toBe("adapter-resolved")
   })
 
@@ -226,13 +226,13 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "telegram",
         accountId: "coder",
-        text: "nadia please draft a tweet",
+        text: "marketing please draft a tweet",
         group: { id: "-100123" },
         sender: { id: "u-1", isBot: false },
       }),
       {
         config: cfg,
-        registry: new StubRegistry({ noqta_nadia_bot: "marketing-agent", nadia: "marketing-agent" }),
+        registry: new StubRegistry({ acme_marketing_bot: "marketing-agent", marketing: "marketing-agent" }),
       },
     )
     expect(r.kind).toBe("match")

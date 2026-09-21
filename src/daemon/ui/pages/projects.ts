@@ -620,7 +620,7 @@ const PROJECTS_PAGE_SCRIPT = `
   // ── Contact add/remove ───────────────────────────────────────────
   async function addContact(projectKey) {
     const cid = prompt("Contact id to link to '" + projectKey + "':\\n\\n"
-      + "Use the id from .agentx/contacts.json (e.g. 'anis', 'omar').");
+      + "Use the id from .agentx/contacts.json (e.g. 'alex', 'jordan').");
     if (!cid) return;
     try {
       await postJson("/api/admin/projects/contacts/link", { projectKey, contactId: cid.trim() });

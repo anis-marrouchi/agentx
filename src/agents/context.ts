@@ -157,7 +157,7 @@ export interface ContextInput {
   // to the legacy regex tag extractor).
   intent?: {
     path: string[]                   // root → leaf node ids
-    pathLabel: string                // "Business › Noqta › DevOps › Review MR"
+    pathLabel: string                // "Business › Acme › DevOps › Review MR"
     pathId: string                   // hash — also carried as wiki `graph:<pathId>` tag
     axes?: Record<string, Record<string, string>>
     leaf?: { input?: string; output?: string }

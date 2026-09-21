@@ -130,7 +130,7 @@ const NOT_A_PERSON = new Set([
  * Words that make a capitalised phrase a collection rather than a person.
  *
  * A group chat's `context` is its name, and plenty of group names are
- * shaped exactly like a person's — "Team Group", "Noqta Family". Shape
+ * shaped exactly like a person's — "Team Group", "Acme Family". Shape
  * alone cannot separate them, and treating one as a person spends a
  * lookup and risks matching a real contact with a similar name.
  */

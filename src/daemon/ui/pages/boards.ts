@@ -1349,7 +1349,7 @@ const activity = {
 };
 
 function resolveDaemonUrl() {
-  // Allow ?daemon=http://host:port override; fall back to localhost:18800 (MacBook) then 19900 (clawd).
+  // Allow ?daemon=http://host:port override; fall back to localhost:18800 (MacBook) then 19900 (peer).
   const q = new URLSearchParams(window.location.search).get('daemon');
   if (q) return q.replace(/\\/+\$/, '');
   return localStorage.getItem('agentx.daemon') || 'http://localhost:18800';

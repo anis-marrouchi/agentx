@@ -674,7 +674,7 @@ function TriggerChannelForm({ node, patchData }: FormProps) {
           </div>
           {isGitLab && (
             <Field label="Project" hint={`GitLab project path. Empty or "*" matches any.`}>
-              <Input mono value={String(filter.project ?? "")} onChange={(v) => patchFilter({ project: v })} placeholder="* (any) or noqta/web" />
+              <Input mono value={String(filter.project ?? "")} onChange={(v) => patchFilter({ project: v })} placeholder="* (any) or acme/web" />
             </Field>
           )}
           {isGitHub && (
@@ -686,7 +686,7 @@ function TriggerChannelForm({ node, patchData }: FormProps) {
             <Field
               label="Chat"
               hint={src === "whatsapp-message"
-                ? `Contact number or JID (e.g. "+216 00 000 000", "21600000000@s.whatsapp.net"). Empty or "*" matches any.`
+                ? `Contact number or JID (e.g. "+216 00 000 000", "10000000000@s.whatsapp.net"). Empty or "*" matches any.`
                 : src === "telegram-message"
                   ? `Telegram chat id ("1816212449" for a DM, "-1003861455814" for a group). Empty or "*" matches any.`
                   : `Exact chat id. Empty or "*" matches any.`}
@@ -881,10 +881,10 @@ function AgentForm({ node, patchData, agents }: FormProps) {
       <Section title="Behavior" defaultOpen={false}>
         <Field label="How to read the reply" hint="How to extract a routing token from the agent's reply">
           <Select
-            value={String(cfg.resultParser ?? "noqta-result-token")}
+            value={String(cfg.resultParser ?? "acme-result-token")}
             onChange={(v) => patchData({ resultParser: v })}
             options={[
-              { value: "noqta-result-token", label: "RESULT: token (recommended)" },
+              { value: "acme-result-token", label: "RESULT: token (recommended)" },
               { value: "json", label: "JSON block (```json …```)" },
               { value: "raw", label: "Raw reply (no parsing)" },
             ]}
@@ -1215,7 +1215,7 @@ function ActionCreateIssueForm({ node, patchData }: FormProps) {
           <Select value={String(cfg.channel ?? "gitlab")} onChange={(v) => patchData({ channel: v })} options={["gitlab", "github"]} />
         </Field>
         <Field label="Project" hint={`GitLab "group/project" or GitHub "owner/repo"`}>
-          <Input mono value={String(cfg.project ?? "")} onChange={(v) => patchData({ project: v })} placeholder="noqta/web" />
+          <Input mono value={String(cfg.project ?? "")} onChange={(v) => patchData({ project: v })} placeholder="acme/web" />
         </Field>
       </Section>
       <Section title="Issue">

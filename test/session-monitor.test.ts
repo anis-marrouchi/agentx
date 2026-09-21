@@ -74,11 +74,11 @@ describe("cost of delay", () => {
     const { rankByDecay, decayOf } = await import("../src/daemon/monitor-capacity")
     const now = Date.UTC(2026, 8, 7)
     const hour = 3600_000
-    const clocks = { hasanah: 240, noqta: undefined }
+    const clocks = { umbrella: 240, acme: undefined }
     const list = [
-      { needsHuman: true, clientId: "noqta", updatedAt: now - 200 * hour },   // ancient, but nobody waits
-      { needsHuman: true, clientId: "hasanah", updatedAt: now - 2 * hour },   // inside the clock
-      { needsHuman: true, clientId: "hasanah", updatedAt: now - 9 * hour },   // past the clock
+      { needsHuman: true, clientId: "acme", updatedAt: now - 200 * hour },   // ancient, but nobody waits
+      { needsHuman: true, clientId: "umbrella", updatedAt: now - 2 * hour },   // inside the clock
+      { needsHuman: true, clientId: "umbrella", updatedAt: now - 9 * hour },   // past the clock
     ]
     expect(rankByDecay(list, clocks, now)).toEqual([2, 1, 0])
     expect(decayOf(list[2], clocks, now)).toMatchObject({ rising: true, overdue: true })
@@ -248,7 +248,7 @@ describe("cross-mesh monitor authentication", () => {
   })
 })
 
-// Every string below is a real action text taken from the clawd node's review
+// Every string below is a real action text taken from the peer node's review
 // queue, where 107 open actions covered roughly 20 distinct jobs.
 describe("commitment key", () => {
   it("collapses the same job re-derived by different sessions", () => {
@@ -256,12 +256,12 @@ describe("commitment key", () => {
       "Rotate the GitLab PAT 'glpat-REDACTED' and move it into an environment variable or secret store",
       "Rotate the GitLab PAT glpat-REDACTED and move it into an environment variable",
       "Rotate the GitLab PAT that appears in plaintext in the task trace, and move it into an environment v",
-      "Revoke the GitLab token glpat-REDACTED in gitlab.noqta.tn user settings, issue a replacement",
+      "Revoke the GitLab token glpat-REDACTED in gitlab.example.com user settings, issue a replacement",
     ].map(commitmentKey)
     expect(new Set(rotate).size).toBe(1)
 
     const merge64 = [
-      "Review and merge MR !64 in hasanah-lab/hasanah-v1; issue #94 is reopened at Status::Review",
+      "Review and merge MR !64 in umbrella-lab/umbrella-v1; issue #94 is reopened at Status::Review",
       "Review and merge MR !64 into development to land the remaining #94 work",
       "Review and merge MR !64 for issue #94 (internal report from Testing list dropdown)",
     ].map(commitmentKey)

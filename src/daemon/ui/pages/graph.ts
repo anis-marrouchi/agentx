@@ -52,7 +52,7 @@ export function renderGraphPage(opts: GraphPageOpts = {}): string {
         <summary>Add node</summary>
         <div class="row" style="margin-top:10px">
           <select id="n-level"></select>
-          <input id="n-id" placeholder="node id (e.g. noqta-devops)" />
+          <input id="n-id" placeholder="node id (e.g. acme-devops)" />
           <select id="n-parent"><option value="">— no parent —</option></select>
         </div>
         <div class="row" style="margin-top:6px">

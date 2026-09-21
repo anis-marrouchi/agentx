@@ -140,7 +140,7 @@ function defaultConfigFor(item: PaletteItem): Record<string, unknown> {
     case "trigger.manual": return {}
     case "trigger.hook":   return { event: item.id.endsWith(".n8n") ? "on:n8n" : "on:hook" }
     case "trigger.form":   return { form: { title: "New request", fields: [], submitLabel: "Submit" } }
-    case "agent":          return { agentId: "", prompt: "", resultParser: "noqta-result-token" }
+    case "agent":          return { agentId: "", prompt: "", resultParser: "acme-result-token" }
     case "transform":      return { expr: "" }
     case "branch":         return { cases: [{ when: { kind: "equals", params: { path: "", value: "" } }, to: "case1" }], default: "fallback" }
     case "gateway.parallel": return { mode: "fanOut" }
@@ -621,7 +621,7 @@ function whatsappClientSupportTemplate(id: string): Workflow {
       ], default: "fallback" } },
       { id: "lookup_ticket", type: "agent", config: { agentId: "gitlab-ticket-lookup", prompt: "Find related issues for {{trigger.sender.name}}. Summarise." } },
       { id: "reply_status",  type: "action.send", config: { channel: "whatsapp", chatId: "{{trigger.chatId}}", text: "{{lookup_ticket.reply}}" } },
-      { id: "create_issue",  type: "action.createIssue", config: { channel: "gitlab", project: "noqta/web", title: "WhatsApp: {{trigger.sender.name}}", description: "From: {{trigger.sender.name}} ({{trigger.fromJid}})\n\n{{trigger.text}}", labels: ["source::whatsapp", "Triage"] } },
+      { id: "create_issue",  type: "action.createIssue", config: { channel: "gitlab", project: "acme/web", title: "WhatsApp: {{trigger.sender.name}}", description: "From: {{trigger.sender.name}} ({{trigger.fromJid}})\n\n{{trigger.text}}", labels: ["source::whatsapp", "Triage"] } },
       { id: "confirm_new",   type: "action.send", config: { channel: "whatsapp", chatId: "{{trigger.chatId}}", text: "Thanks — ticket {{create_issue.issue.webUrl}} opened." } },
       { id: "fallback",      type: "action.send", config: { channel: "whatsapp", chatId: "{{trigger.chatId}}", text: "Got it — a human will reply shortly." } },
       { id: "done",          type: "end", config: { status: "completed" } },
@@ -651,7 +651,7 @@ function mrReviewTemplate(id: string): Workflow {
     fanOut: false,
     envAllow: ["GITLAB_TOKEN"],
     nodes: [
-      { id: "trigger",  type: "trigger.channel", config: { source: "gitlab-pipeline", filter: { project: "noqta/web" } } },
+      { id: "trigger",  type: "trigger.channel", config: { source: "gitlab-pipeline", filter: { project: "acme/web" } } },
       { id: "review",   type: "agent", config: { agentId: "code-reviewer", prompt: "Review MR #{{trigger.pipeline.id}}. Reply `RESULT: approved` or `RESULT: changes-requested`." } },
       { id: "route",    type: "branch", config: { cases: [
         { when: { kind: "equals", params: { path: "review.result", value: "approved" } }, to: "approved" },

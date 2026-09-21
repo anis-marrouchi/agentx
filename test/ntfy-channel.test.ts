@@ -101,16 +101,16 @@ describe("NtfyAdapter", () => {
     await a.send({
       channel: "ntfy", chatId: "", text: "check this",
       buttons: [
-        { label: "Open MR", url: "https://gitlab.noqta.tn/a/b/-/merge_requests/1" },
-        { label: "Issue", url: "https://gitlab.noqta.tn/a/b/-/issues/2" },
-        { label: "Pipeline", url: "https://gitlab.noqta.tn/a/b/-/pipelines/3" },
+        { label: "Open MR", url: "https://gitlab.example.com/a/b/-/merge_requests/1" },
+        { label: "Issue", url: "https://gitlab.example.com/a/b/-/issues/2" },
+        { label: "Pipeline", url: "https://gitlab.example.com/a/b/-/pipelines/3" },
         { label: "Dropped", url: "https://example.com" },
       ],
     })
 
     const actions = (fetchMock.mock.calls[0] as any)[1].headers["Actions"]
     expect(actions.split(";")).toHaveLength(3)
-    expect(actions).toContain("view, Open MR, https://gitlab.noqta.tn/a/b/-/merge_requests/1")
+    expect(actions).toContain("view, Open MR, https://gitlab.example.com/a/b/-/merge_requests/1")
     expect(actions).not.toContain("Dropped")
   })
 

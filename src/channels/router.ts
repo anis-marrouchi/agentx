@@ -219,7 +219,7 @@ export class MessageRouter {
 
   /** In-flight mesh forwards (this node is awaiting a peer's response).
    *  Counted so the daemon's shutdown drain can wait for these in addition
-   *  to local agent tasks — otherwise a clawd restart mid-forward kills the
+   *  to local agent tasks — otherwise a peer restart mid-forward kills the
    *  awaiter, the peer's response lands on a dead connection, and the
    *  inflight-replay re-runs the task on the peer. */
   private activeMeshForwards = 0
@@ -433,8 +433,8 @@ export class MessageRouter {
     // Record outbound into the recipient agent's channel session so cron/api/
     // a2a sends become visible to the next inbound turn on the same chatId.
     // This closes the cron-vs-telegram split: when marketing-agent's daily
-    // cron sends "trend brief" to Anis at 06:17, the next telegram message
-    // from Anis at 08:36 sees the brief in session history instead of treating
+    // cron sends "trend brief" to Alex at 06:17, the next telegram message
+    // from Alex at 08:36 sees the brief in session history instead of treating
     // the conversation as fresh.
     //
     // Only fires when an agentId is set — manual /send tests without an agent
@@ -1386,7 +1386,7 @@ export class MessageRouter {
    * Why a comment at all: this used to be ❌-only, on the reasoning that
    * transient failures would pollute the thread. In practice a reporter who
    * @-mentions a bot and gets 👀 then silence assumes the bot is ignoring
-   * them and keeps re-pinging — on noqta/minbar#46 that was 9 mentions over
+   * them and keeps re-pinging — on acme/soylent#46 that was 9 mentions over
    * 74 minutes of upstream 529s, every one of them silently dropped. One
    * comment per outage is far cheaper than that. Nothing retries on its own,
    * so the text says plainly that a re-mention is what resumes it.
