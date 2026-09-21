@@ -24,6 +24,28 @@ final class Panel: NSPanel {
     private var clip: NSView?
     private var marqueeText = ""
 
+    private var pressedAt: NSPoint?
+
+    /// A click acts on mouse UP, and only when the pointer has not moved.
+    ///
+    /// The panel is draggable by its background, so acting on mouse DOWN
+    /// would fire every time someone repositioned it — you could not move
+    /// the widget without talking to it.
+    override func mouseDown(with event: NSEvent) {
+        pressedAt = NSEvent.mouseLocation
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { pressedAt = nil }
+        if let start = pressedAt {
+            let now = NSEvent.mouseLocation
+            let moved = hypot(now.x - start.x, now.y - start.y)
+            if moved < 4 { onClick?() }
+        }
+        super.mouseUp(with: event)
+    }
+
     enum State {
         case idle, listening, thinking, speaking
         /// Live activity from the daemon, with seconds elapsed — the
@@ -69,6 +91,14 @@ final class Panel: NSPanel {
         var isMeta: Bool { if case .idle = self { return true }; return false }
     }
 
+    /// Called when the pill is clicked. Set by the app.
+    ///
+    /// The hotkey is faster once you know it, and invisible until then.
+    /// A widget whose only affordance is a chord you have to be told about
+    /// is a widget most people never use — "HOLD ⌥SPACE" is printed on it
+    /// precisely because there was nothing to click.
+    var onClick: (() -> Void)?
+
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 230, height: 54),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -82,7 +112,7 @@ final class Panel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
 
-        let blur = NSVisualEffectView(frame: contentRect(forFrameRect: frame))
+        let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: NSSize(width: 230, height: 54)))
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
@@ -91,6 +121,24 @@ final class Panel: NSPanel {
         blur.layer?.masksToBounds = true
         blur.autoresizingMask = [.width, .height]
         contentView = blur
+
+        // An opaque tint over the blur, and it is not a style preference.
+        //
+        // `blendingMode = .behindWindow` composites whatever is behind the
+        // pill, so the editor's own panel dividers were coming through it
+        // as a faint rectangle around the widget — it read as a border the
+        // widget was drawing, when it was the window behind. Translucency
+        // is pleasant over wallpaper and actively confusing over ruled UI.
+        //
+        // This keeps enough blur to feel native while making the pill read
+        // as one solid object wherever it is parked.
+        let tint = NSView(frame: blur.bounds)
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = NSColor.windowBackgroundColor
+            .withAlphaComponent(0.72).cgColor
+        tint.layer?.cornerRadius = Brand.Radius.lg
+        tint.autoresizingMask = [.width, .height]
+        blur.addSubview(tint)
 
         orb.wantsLayer = true
         orb.layer?.cornerRadius = 4

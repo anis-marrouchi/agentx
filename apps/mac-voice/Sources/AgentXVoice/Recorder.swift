@@ -15,6 +15,20 @@ final class Recorder {
     private let lock = NSLock()
     private(set) var isRecording = false
 
+    /// Loudness of the most recent buffer, 0…1, smoothed.
+    ///
+    /// Exists so the widget can tell talking from silence without a second
+    /// audio tap. Hands-free listening needs to know when you have
+    /// FINISHED a sentence, and the only honest signal for that is the
+    /// microphone going quiet — a fixed timeout either cuts people off
+    /// mid-thought or leaves the mic open staring at them.
+    ///
+    /// Read from the main thread while the audio thread writes it. A
+    /// Float write is atomic on every platform this runs on, and a reader
+    /// that occasionally sees the previous buffer's value is choosing
+    /// between two adjacent 100ms windows — which changes nothing.
+    private(set) var level: Float = 0
+
     /// 16 kHz mono int16 — the format both ElevenLabs and whisper prefer,
     /// and small enough that a 30-second utterance is under 1 MB.
     private let target = AVAudioFormat(
@@ -41,6 +55,7 @@ final class Recorder {
     }
 
     func start() throws {
+        level = 0
         guard !isRecording else { return }
         lock.lock(); pcm.removeAll(keepingCapacity: true); lock.unlock()
 
@@ -87,6 +102,17 @@ final class Recorder {
         }
         guard error == nil, out.frameLength > 0,
               let channel = out.int16ChannelData?[0] else { return }
+
+        // RMS over the buffer, in the same pass that copies it.
+        var sum: Float = 0
+        for i in 0..<Int(out.frameLength) {
+            let sample = Float(channel[i]) / 32768.0
+            sum += sample * sample
+        }
+        let rms = (sum / Float(max(Int(out.frameLength), 1))).squareRoot()
+        // Attack fast, release slow: a level that drops instantly makes a
+        // pause between words look like the end of a sentence.
+        level = rms > level ? rms : level * 0.82 + rms * 0.18
 
         let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
         lock.lock()

@@ -50,8 +50,31 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Only one widget, however it was started.
+    ///
+    /// Two pills were sitting on screen at once: the installed copy in
+    /// /Applications and a freshly built one from the source tree. Same
+    /// bundle identifier, different paths, so macOS is happy to run both —
+    /// and the older one keeps rendering an older UI, which looks exactly
+    /// like a bug in the new build.
+    ///
+    /// The NEWEST wins. After an upgrade or a rebuild the thing you just
+    /// made is the one you want; a stale copy showing yesterday's
+    /// behaviour has no claim to the screen.
+    private func retireOlderInstances() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let mine = Bundle.main.bundleIdentifier
+        for app in NSWorkspace.shared.runningApplications {
+            guard app.bundleIdentifier == mine,
+                  app.processIdentifier != me else { continue }
+            Log.info("retiring an older instance (pid \(app.processIdentifier))")
+            if !app.terminate() { app.forceTerminate() }
+        }
+    }
+
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        retireOlderInstances()
         panel.orderFrontRegardless()
 
         hotkey = Hotkey(
@@ -59,6 +82,7 @@ final class App: NSObject, NSApplicationDelegate {
             onPress: { [weak self] in self?.startListening() },
             onRelease: { [weak self] in self?.stopAndSend() })
         hotkey?.register()
+        panel.onClick = { [weak self] in self?.toggleListening() }
 
         // ⌘⌥V: reshape the clipboard for wherever the caret is, then paste.
         // Fires on RELEASE so the modifiers are up before cmd-V is sent —
@@ -80,7 +104,107 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    // --- Hands-free listening ---
+    //
+    // Holding a chord is fine for one question and wrong for a
+    // conversation: the reply arrives, you want to say one more thing, and
+    // you have to find ⌥Space again while the assistant sits idle. So the
+    // microphone reopens by itself after every answer, and closes again on
+    // its own if you say nothing.
+    //
+    // Ending on SILENCE rather than a timer is the whole trick. A fixed
+    // window either cuts people off mid-sentence or leaves the mic open
+    // staring at them; the only honest signal that a sentence has finished
+    // is the room going quiet.
+
+    /// RMS above which the microphone is hearing a voice rather than a room.
+    private let speechLevel: Float = 0.02
+    /// Quiet this long after speech ends the turn.
+    private let endSilence: TimeInterval = 1.2
+    /// How long an unprompted follow-up window waits before giving up.
+    private let followUpPatience: TimeInterval = 4.0
+    /// How long a clicked session waits for you to start talking.
+    private let clickPatience: TimeInterval = 8.0
+
+    private var listenPoll: Timer?
+    private var heardSpeech = false
+    private var quietSince: Date?
+    private var openedAt = Date()
+    private var patience: TimeInterval = 8.0
+    /// True when nothing was said and the window should close in silence.
+    private var silentClose = false
+
+    /// Open the microphone with no key held.
+    private func listenHandsFree(followUp: Bool) {
+        guard !busy, !recorder.isRecording else { return }
+        do {
+            try recorder.start()
+        } catch {
+            panel.render(.error(error.localizedDescription))
+            return
+        }
+        heardSpeech = false
+        quietSince = nil
+        openedAt = Date()
+        patience = followUp ? followUpPatience : clickPatience
+        silentClose = followUp
+        panel.render(.listening)
+
+        listenPoll?.invalidate()
+        listenPoll = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.pollLevel()
+        }
+    }
+
+    private func pollLevel() {
+        guard recorder.isRecording else { stopPolling(); return }
+        let level = recorder.level
+
+        if level > speechLevel {
+            heardSpeech = true
+            quietSince = nil
+            return
+        }
+        if heardSpeech {
+            // Speech has stopped. Give it a beat before deciding the
+            // sentence is over — people pause inside sentences.
+            let since = quietSince ?? Date()
+            quietSince = since
+            if Date().timeIntervalSince(since) >= endSilence {
+                stopPolling()
+                stopAndSend()
+            }
+            return
+        }
+        // Nothing said yet. Close quietly rather than making the person
+        // dismiss a window they did not ask for.
+        if Date().timeIntervalSince(openedAt) >= patience {
+            stopPolling()
+            _ = recorder.stop()
+            panel.render(silentClose ? .idle : .error("Didn't catch that"))
+            if !silentClose { resetSoon() }
+        }
+    }
+
+    private func stopPolling() {
+        listenPoll?.invalidate()
+        listenPoll = nil
+    }
+
+    /// The pill was clicked: start if idle, finish early if already listening.
+    private func toggleListening() {
+        if recorder.isRecording {
+            stopPolling()
+            stopAndSend()
+            return
+        }
+        listenHandsFree(followUp: false)
+    }
+
     private func startListening() {
+        // A held key overrides any hands-free window that is open, so the
+        // two ways of talking never fight over the microphone.
+        stopPolling()
         // A turn already in flight must not be interrupted by a stray
         // keypress; the answer is still coming and will be spoken.
         guard !busy, !recorder.isRecording else { return }
@@ -131,6 +255,11 @@ final class App: NSObject, NSApplicationDelegate {
                 panel.render(.saying(answer.text))
                 await Speech.speak(answer.text)
                 panel.render(.idle)
+                // Leave the microphone open for a moment. Say nothing and
+                // it closes itself; start talking and the conversation
+                // simply continues.
+                busy = false
+                listenHandsFree(followUp: true)
             } catch {
                 endNarration()
                 Log.warn("turn failed: \(error.localizedDescription)")
