@@ -36,6 +36,36 @@ final class Panel: NSPanel {
         super.mouseDown(with: event)
     }
 
+    /// Right-click opens the only menu the widget has.
+    ///
+    /// A hold has to be reversible in one gesture from wherever you are,
+    /// and it has to SHOW — a switch that silences your notifications
+    /// without saying so is how people miss things for a day and blame the
+    /// software.
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+        let holding = Hold.isOn
+        let item = NSMenuItem(
+            title: holding ? "Delivering notifications" : "Hold notifications",
+            action: #selector(toggleHold), keyEquivalent: "")
+        item.target = self
+        item.state = holding ? .on : .off
+        menu.addItem(item)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit AgentX Voice",
+                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+        NSMenu.popUpContextMenu(menu, with: event, for: contentView ?? NSView())
+    }
+
+    @objc private func toggleHold() {
+        let nowOn = Hold.toggle()
+        onHoldChanged?(nowOn)
+    }
+
+    /// Told when the hold flips, so the app can redraw and flush.
+    var onHoldChanged: ((Bool) -> Void)?
+
     override func mouseUp(with event: NSEvent) {
         defer { pressedAt = nil }
         if let start = pressedAt {
@@ -62,7 +92,7 @@ final class Panel: NSPanel {
 
         var text: String {
             switch self {
-            case .idle: return "hold ⌥space"
+            case .idle: return Hold.isOn ? "notifications held" : "hold ⌥space"
             case .listening: return "Listening"
             case .thinking: return "Thinking"
             case .speaking: return "Speaking"
@@ -78,7 +108,7 @@ final class Panel: NSPanel {
             // thing doing work rather than a traffic light. System reds
             // and greens were macOS's voice, not the product's, and they
             // shift with the user's accent-colour setting.
-            case .idle: return .tertiaryLabelColor
+            case .idle: return Hold.isOn ? Brand.warn : .tertiaryLabelColor
             case .listening: return Brand.accent
             case .thinking, .working: return Brand.primaryBright
             case .speaking, .saying: return Brand.accentDeep

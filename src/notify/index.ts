@@ -1,10 +1,10 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { readFocus, focusLabel, type FocusState } from "./focus"
-import { NotificationQueue, digest, type PendingNotification } from "./queue"
+import { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
 
 export { readFocus, focusLabel, type FocusState } from "./focus"
-export { NotificationQueue, digest, type PendingNotification } from "./queue"
+export { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
 
 // Telling the person something, at a moment they have agreed to be told.
 //
@@ -21,7 +21,14 @@ export { NotificationQueue, digest, type PendingNotification } from "./queue"
 // reason: ntfy's sound plays on the phone, and the person this is for is
 // usually in front of the Mac that raised the event.
 
-export type Sender = (msg: { title: string; message: string; priority?: number }) => Promise<void>
+export type Sender = (msg: {
+  title: string
+  message: string
+  priority?: number
+  /** Where to deliver. Omitted means the caller's own default. */
+  channel?: string
+  chatId?: string
+}) => Promise<void>
 
 export interface NotifyInput {
   message: string
@@ -32,6 +39,9 @@ export interface NotifyInput {
   priority?: number
   /** Deliver even in Focus. For things that genuinely cannot wait. */
   urgent?: boolean
+  /** Where it is going, so a held message reaches the same place later. */
+  channel?: string
+  chatId?: string
 }
 
 export interface NotifyResult {
@@ -64,12 +74,17 @@ export async function notify(
       message: input.message,
       priority: input.priority,
       heldBecause: focusLabel(state),
+      channel: input.channel,
+      chatId: input.chatId,
     }
     queue.add(entry)
     return { delivered: false, held: true, reason: `held — ${focusLabel(state)}` }
   }
 
-  await send({ title, message: input.message, priority: input.priority })
+  await send({
+    title, message: input.message, priority: input.priority,
+    channel: input.channel, chatId: input.chatId,
+  })
   if (opts.sound !== false) playSound(typeof opts.sound === "string" ? opts.sound : DEFAULT_SOUND)
   return { delivered: true, held: false, reason: state.active ? "urgent, sent during Focus" : "sent" }
 }
@@ -96,10 +111,19 @@ export async function flushHeld(
   // fails — and a message arriving twice is plainly better than one that
   // never arrives.
   const waiting = queue.list()
-  const folded = digest(waiting)
-  if (!folded) return 0
+  if (waiting.length === 0) return 0
 
-  await send({ title: folded.title, message: folded.message, priority: 4 })
+  // One digest per destination. A held Telegram message and a held push
+  // are not interchangeable — the Telegram one carries a reply the
+  // workflow depends on — so they are delivered where each was addressed.
+  for (const group of byDestination(waiting)) {
+    const folded = digest(group.entries)
+    if (!folded) continue
+    await send({
+      title: folded.title, message: folded.message, priority: 4,
+      channel: group.channel, chatId: group.chatId,
+    })
+  }
   queue.drain()
   if (opts.sound !== false) playSound(typeof opts.sound === "string" ? opts.sound : DEFAULT_SOUND)
   return waiting.length

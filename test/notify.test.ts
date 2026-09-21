@@ -66,12 +66,16 @@ describe("readFocus", () => {
 })
 
 describe("notify", () => {
+  // The queue lives at a fixed user-level path, NOT relative to cwd — that
+  // is the whole point of the fix it carries. So a test must name its own
+  // file explicitly; chdir would no longer isolate it, and the tests would
+  // quietly read and drain the operator's real backlog.
+  const tempQueue = () => new NotificationQueue(join(dir, "pending.json"))
+
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "agentx-notify-"))
-    process.chdir(dir)
   })
   afterEach(() => {
-    process.chdir(prevCwd)
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -80,14 +84,15 @@ describe("notify", () => {
 
   it("delivers when the person is not in Focus", async () => {
     const send = vi.fn(async () => {})
-    const r = await notify({ message: "build finished" }, send, { focus: focusOff, sound: false })
+    const r = await notify({ message: "build finished" }, send,
+      { focus: focusOff, sound: false, queue: tempQueue() })
     expect(r.delivered).toBe(true)
     expect(send).toHaveBeenCalledOnce()
   })
 
   it("holds rather than dropping when in Focus", async () => {
     const send = vi.fn(async () => {})
-    const queue = new NotificationQueue()
+    const queue = tempQueue()
     const r = await notify({ message: "a client replied", from: "cx" }, send,
       { focus: focusOn, queue, sound: false })
 
@@ -102,7 +107,7 @@ describe("notify", () => {
   it("lets something genuinely urgent through Focus", async () => {
     const send = vi.fn(async () => {})
     const r = await notify({ message: "production is down", urgent: true }, send,
-      { focus: focusOn, sound: false })
+      { focus: focusOn, sound: false, queue: tempQueue() })
     expect(r.delivered).toBe(true)
     expect(send).toHaveBeenCalledOnce()
   })
@@ -110,7 +115,7 @@ describe("notify", () => {
   it("folds a backlog into ONE message when Focus ends", async () => {
     // Firing four pings the moment Focus ends recreates exactly the
     // interruption Focus existed to prevent.
-    const queue = new NotificationQueue()
+    const queue = tempQueue()
     const send = vi.fn(async () => {})
     for (const m of ["one", "two", "three"]) {
       await notify({ message: m, from: "cx" }, send, { focus: focusOn, queue, sound: false })
@@ -132,7 +137,7 @@ describe("notify", () => {
     // The order matters: draining before sending is the obvious
     // implementation and it loses the entire backlog on a transient
     // network error — exactly the loss the queue exists to prevent.
-    const queue = new NotificationQueue()
+    const queue = tempQueue()
     const held = vi.fn(async () => {})
     await notify({ message: "still important", from: "cx" }, held,
       { focus: focusOn, queue, sound: false })
@@ -147,6 +152,32 @@ describe("notify", () => {
     expect(queue.list()).toHaveLength(0)
   })
 
+  it("delivers a held message to the channel it was addressed to", async () => {
+    // A held Telegram message carries the "approve 142" reply the WhatsApp
+    // workflow depends on. Flushing it to ntfy would deliver the words and
+    // strip the only thing that made it actionable.
+    const queue = tempQueue()
+    const send = vi.fn(async () => {})
+    await notify({ message: "Client request #142", from: "wa-triage",
+                   channel: "telegram", chatId: "1816212449" },
+      send, { focus: focusOn, queue, sound: false })
+    await notify({ message: "disk filling up", from: "devops" },
+      send, { focus: focusOn, queue, sound: false })
+
+    const n = await flushHeld(send, { queue, sound: false })
+    expect(n).toBe(2)
+    // One digest per destination, not one overall.
+    expect(send).toHaveBeenCalledTimes(2)
+    const destinations = send.mock.calls.map((c) => (c[0] as any).channel)
+    expect(destinations).toContain("telegram")
+    // An entry with no channel falls back to the push default rather than
+    // being left unaddressed.
+    expect(destinations).toContain("ntfy")
+    const telegram = send.mock.calls.find((c) => (c[0] as any).channel === "telegram")![0] as any
+    expect(telegram.chatId).toBe("1816212449")
+    expect(telegram.message).toContain("#142")
+  })
+
   it("passes a lone held message through unchanged", async () => {
     // A digest wrapper around a single item is noise.
     const entries = [{
@@ -158,7 +189,7 @@ describe("notify", () => {
   })
 
   it("survives a corrupt queue rather than refusing to notify", async () => {
-    const queue = new NotificationQueue()
+    const queue = tempQueue()
     mkdirSync(dirname(queue.path), { recursive: true })
     writeFileSync(queue.path, "{{{")
     // Losing a held notification is bad; refusing to send any new one

@@ -25,6 +25,12 @@ enum Config {
     /// `node` to a version old enough that the CLI will not start at all.
     /// Both were true on the machine this was written on. The file is how
     /// a machine says which build it actually means.
+    /// How to invoke `agentx notify`. Derived from pasteCommand so a
+    /// machine only has to say once where its agentx lives.
+    static var notifyCommand: String {
+        pasteCommand.replacingOccurrences(of: " paste", with: " notify")
+    }
+
     static let pasteCommand: String = {
         if let c = env("AGENTX_PASTE_COMMAND"), !c.isEmpty { return c }
         if let s = try? String(contentsOfFile: "\(NSHomeDirectory())/.agentx/paste-command.txt",

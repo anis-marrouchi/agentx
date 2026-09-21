@@ -40,11 +40,23 @@ final class Hotkey {
 
             // Whose key was it? Handlers are global, so this instance must
             // discard anything that is not its own.
+            //
+            // Filter ONLY on a successful lookup. Ignoring the status here
+            // left `fired` zero-initialised whenever the call failed, so
+            // the guard rejected every event and BOTH hotkeys went dead —
+            // silently, because a hotkey that does nothing looks exactly
+            // like a hotkey that was never pressed.
+            //
+            // Falling through on failure is the right degradation: the
+            // worst case is the older bug where both bindings react to
+            // either key, which is visible and recoverable. Silence is
+            // neither.
             var fired = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject),
-                              EventParamType(typeEventHotKeyID), nil,
-                              MemoryLayout<EventHotKeyID>.size, nil, &fired)
-            guard fired.id == me.id else { return noErr }
+            let status = GetEventParameter(
+                event, EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID), nil,
+                MemoryLayout<EventHotKeyID>.size, nil, &fired)
+            if status == noErr, fired.id != me.id { return noErr }
 
             let kind = GetEventKind(event)
             DispatchQueue.main.async {

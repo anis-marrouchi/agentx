@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
-import { dirname, resolve } from "path"
+import { homedir } from "os"
+import { dirname, resolve, join } from "path"
 
 // Notifications that arrived while the person was in Focus.
 //
@@ -24,9 +25,27 @@ export interface PendingNotification {
   priority?: number
   /** Why it waited, for the digest that eventually delivers it. */
   heldBecause: string
+  /** Where it was going. Recorded per entry because destinations differ
+   *  in kind, not just address: an ntfy push is a one-way tap, while the
+   *  WhatsApp triage message on Telegram carries the approve/reject reply
+   *  the whole workflow depends on. Delivering a held Telegram message to
+   *  ntfy would strip the only thing that made it actionable. */
+  channel?: string
+  chatId?: string
 }
 
-const DEFAULT_PATH = ".agentx/notifications/pending.json"
+/** One queue for the machine, not one per working directory.
+ *
+ *  This was cwd-relative and it silently broke the feature: `agentx
+ *  notify` is called from agents' workspaces, from cron scripts, from
+ *  pipelines in other repositories — so a message held by one process
+ *  landed in a queue no other process would ever read, and was lost the
+ *  moment that directory was forgotten. Caught with a real WhatsApp client
+ *  request that was held into a pipeline's own folder.
+ *
+ *  The person being notified is a property of the MACHINE, so the queue
+ *  belongs beside the rest of their agentx state. */
+const DEFAULT_PATH = join(homedir(), ".agentx", "notifications", "pending.json")
 
 export class NotificationQueue {
   readonly path: string
@@ -89,4 +108,27 @@ export function digest(entries: PendingNotification[]): { title: string; message
     title: `${entries.length} while you were away`,
     message: lines.join("\n"),
   }
+}
+
+/**
+ * Split a backlog by where each entry was going.
+ *
+ * One digest per destination, not one digest overall. The destinations are
+ * not interchangeable — a push and a Telegram thread differ in what the
+ * person can DO with the message when it lands — so folding them together
+ * would mean choosing one and silently breaking the other.
+ */
+export function byDestination(
+  entries: PendingNotification[],
+): Array<{ channel: string; chatId: string; entries: PendingNotification[] }> {
+  const groups = new Map<string, { channel: string; chatId: string; entries: PendingNotification[] }>()
+  for (const entry of entries) {
+    const channel = entry.channel ?? "ntfy"
+    const chatId = entry.chatId ?? "default"
+    const key = `${channel}\u0000${chatId}`
+    const group = groups.get(key) ?? { channel, chatId, entries: [] }
+    group.entries.push(entry)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
 }

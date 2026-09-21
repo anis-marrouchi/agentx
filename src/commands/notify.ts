@@ -30,13 +30,19 @@ const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
  *  than passed alongside. Sending it as its own field looked like it
  *  worked: the push arrived, with the default title, and the real one
  *  silently discarded. */
-function daemonSender(channel: string, chatId: string): Sender {
-  return async ({ title, message }) => {
+function daemonSender(defaultChannel: string, defaultChatId: string): Sender {
+  return async ({ title, message, channel, chatId }) => {
     const text = title && !message.startsWith(title) ? `${title}\n${message}` : message
     const res = await fetch(`${DAEMON}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel, chatId, text }),
+      // A held entry remembers where it was going; anything else uses the
+      // channel this invocation was given.
+      body: JSON.stringify({
+        channel: channel ?? defaultChannel,
+        chatId: chatId ?? defaultChatId,
+        text,
+      }),
     })
     if (!res.ok) {
       throw new Error(`daemon ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`)
@@ -99,6 +105,8 @@ export const notify = new Command()
           title: opts.title,
           priority: Number(opts.priority) || 4,
           urgent: Boolean(opts.urgent),
+          channel: opts.channel,
+          chatId: opts.chatId,
         },
         send,
         { queue, sound, focus: state },

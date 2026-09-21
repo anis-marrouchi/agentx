@@ -84,6 +84,17 @@ final class App: NSObject, NSApplicationDelegate {
         hotkey?.register()
         panel.onClick = { [weak self] in self?.toggleListening() }
 
+        // Turning the hold OFF is the moment anything that piled up
+        // becomes welcome. Without this the queue is a hole rather than a
+        // delay — the daemon's watcher only notices SYSTEM Focus ending,
+        // and this switch is not that.
+        panel.onHoldChanged = { [weak self] nowOn in
+            guard let self else { return }
+            self.panel.render(.idle)
+            if !nowOn { Hold.flushHeld() }
+            Log.info(nowOn ? "notifications held" : "notifications delivering")
+        }
+
         // ⌘⌥V: reshape the clipboard for wherever the caret is, then paste.
         // Fires on RELEASE so the modifiers are up before cmd-V is sent —
         // pressing it while ⌘⌥ are still held produces a different chord
@@ -151,8 +162,12 @@ final class App: NSObject, NSApplicationDelegate {
         panel.render(.listening)
 
         listenPoll?.invalidate()
-        listenPoll = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.pollLevel()
+        // Timer fires on the run loop but its closure is not main-actor
+        // isolated, and pollLevel touches UI. Hopping explicitly keeps it
+        // correct under Swift 6 rather than relying on the timer happening
+        // to run where we want it.
+        listenPoll = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            Task { @MainActor [weak self] in self?.pollLevel() }
         }
     }
 

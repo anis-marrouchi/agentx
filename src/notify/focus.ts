@@ -36,7 +36,43 @@ export interface FocusState {
 
 const ASSERTIONS = join(homedir(), "Library", "DoNotDisturb", "DB", "Assertions.json")
 
-export function readFocus(path = ASSERTIONS): FocusState {
+/** Where the widget records a hold the person switched on themselves. */
+const WIDGET_HOLD = join(homedir(), ".agentx", "focus.json")
+
+/**
+ * Focus, from either source: the widget's own toggle or the system's.
+ *
+ * The widget toggle exists because macOS Focus is a heavy instrument —
+ * turning it on silences everything on every device, which is more than
+ * someone wants when they only mean "let me finish this". A switch on the
+ * widget is a hold you can flick on for twenty minutes without negotiating
+ * with the operating system.
+ *
+ * Either source being on is enough. They are not ranked: both are the
+ * same person saying the same thing by different means, and a rule that
+ * let one override the other would mean ignoring an explicit instruction
+ * because it arrived through the wrong switch.
+ */
+export function readFocus(path = ASSERTIONS, holdPath = WIDGET_HOLD): FocusState {
+  const held = readWidgetHold(holdPath)
+  if (held.active) return held
+  return readSystemFocus(path)
+}
+
+/** The widget's own toggle. Absent file means not held. */
+export function readWidgetHold(path = WIDGET_HOLD): FocusState {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf-8"))
+    if (parsed?.active === true) {
+      return { active: true, mode: "widget", reason: "holding — switched on from the widget" }
+    }
+  } catch {
+    /* no file, or unreadable: not held */
+  }
+  return { active: false, mode: null, reason: "widget hold is off" }
+}
+
+export function readSystemFocus(path = ASSERTIONS): FocusState {
   let raw: string
   try {
     raw = readFileSync(path, "utf-8")
@@ -76,6 +112,7 @@ export function readFocus(path = ASSERTIONS): FocusState {
 /** A short phrase for logs and for telling someone why a message waited. */
 export function focusLabel(state: FocusState): string {
   if (!state.active) return "not in Focus"
+  if (state.mode === "widget") return "holding (widget)"
   if (!state.mode) return "in Focus"
   // com.apple.sleep.sleep-mode -> sleep mode
   const tail = state.mode.split(".").pop() ?? state.mode
