@@ -1,4 +1,5 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
+import { cheapModelForEngine } from "./routing"
 import { askSeat } from "@/decisions/seat"
 import {
   SESSION_CONTINUITY_SEAT,
@@ -479,13 +480,6 @@ export class AgentRegistry {
    *  prompt on every task. */
   readonly agentMemory: AgentMemory = new AgentMemory()
   private patternStore: PatternStore
-  /** Model to drop mechanical tasks onto, from
-   *  `decisions.routing.cheapModel`. Unset means no routing happens at
-   *  all — the feature is off until an operator names the model, so it
-   *  cannot silently downgrade a fleet that never asked for it. */
-  private get cheapModel(): string | undefined {
-    return (this.config as any)?.decisions?.routing?.cheapModel || undefined
-  }
   private rateLimiter: RateLimiter
   private tokenTracker: TokenTracker
   private landscape?: LandscapeBuilder
@@ -1872,7 +1866,8 @@ export class AgentRegistry {
     // before the task runs; it is one Noul against a message that is
     // already in memory, and it never blocks a task from running.
     let routedModel: string | undefined
-    if (!task.model && this.cheapModel) {
+    const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
+    if (!task.model && cheapModel) {
       try {
         const { routeTaskModel } = await import("./routing")
         const route = await routeTaskModel({
@@ -1883,7 +1878,7 @@ export class AgentRegistry {
           // Idle time decides whether the cache this would give up still
           // exists. See routing.ts for the arithmetic.
           sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
-          cheapModel: this.cheapModel,
+          cheapModel,
         })
         if (route.downgraded) {
           routedModel = route.model

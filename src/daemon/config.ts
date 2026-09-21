@@ -692,14 +692,14 @@ const decisionsConfigSchema = z.object({
     }).default({}),
   }).default({}),
   seats: z.record(z.string(), decisionSeatSchema).default({}),
-  /** Model routing driven by the task-tier seat.
-   *
-   *  `cheapModel` is the whole switch: with no model named, no task is
-   *  ever routed anywhere. The feature cannot turn itself on, because a
-   *  fleet quietly answering on a smaller model is a regression nobody
-   *  would see in the output. */
+  /** Model routing driven by the task-tier seat. Models are scoped to their
+   *  CLI engine; the legacy cheapModel applies only to Claude Code. */
   routing: z.object({
     cheapModel: z.string().optional(),
+    cheapModels: z.object({
+      "claude-code": z.string().optional(),
+      "codex-cli": z.string().optional(),
+    }).optional(),
   }).default({}),
 }).default({})
 

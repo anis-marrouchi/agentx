@@ -64,6 +64,23 @@ const DOWNGRADE_BELOW = 0.2
  *  is the assumption whose error is cheap — see the note above. */
 const CACHE_TTL_MS = 60 * 60 * 1000
 
+/** Resolve only models compatible with the agent's CLI engine. An omitted
+ *  model leaves the agent on its configured default. */
+export function cheapModelForEngine(
+  tier: string,
+  routing?: { cheapModel?: string; cheapModels?: { "claude-code"?: string; "codex-cli"?: string } },
+): string | undefined {
+  if (tier === "claude-code") {
+    const model = routing?.cheapModels?.[tier] ?? routing?.cheapModel
+    return model && /^(claude-|haiku$|sonnet$|opus$)/.test(model) ? model : undefined
+  }
+  if (tier === "codex-cli") {
+    const model = routing?.cheapModels?.[tier]
+    return model && /^(gpt-|o\d)/.test(model) ? model : undefined
+  }
+  return undefined
+}
+
 export interface RouteResult {
   /** The model to use, or undefined to leave the agent's own default. */
   model?: string
