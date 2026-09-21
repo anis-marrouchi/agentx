@@ -28,8 +28,8 @@ const contactAlex: ContactRead = {
   updatedAt: "2026-04-21T10:00:00.000Z",
 }
 const contactOther: ContactRead = {
-  jid: "10000000001@s.whatsapp.net",
-  phone: "10000000001",
+  jid: "19999999999@s.whatsapp.net",
+  phone: "19999999999",
   pushName: "Other",
   updatedAt: "2026-04-21T10:00:00.000Z",
 }
@@ -192,7 +192,7 @@ describe("resolveScope", () => {
 
   it("includes a contact matched by phone substring", () => {
     // A substring of the first fixture's number only — the second is
-    // 216888… so a match here proves substring matching, not "any contact".
+    // 1999999… so a match here proves substring matching, not "any contact".
     const cfg = { ...baseConfig, allowContacts: ["00000"] }
     const targets = resolveScope(cfg, source)
     expect(targets).toHaveLength(1)
