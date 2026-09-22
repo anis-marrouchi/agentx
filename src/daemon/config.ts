@@ -228,14 +228,15 @@ const agentConfigSchema = z.object({
    *  Unset → fall back to the channel default. */
   gitlabAutoReply: z.boolean().optional(),
   /** Opt into process reuse for claude-code (stream-json) or codex-cli
-   *  (app-server). Conversations have isolated processes. Unsupported Codex
+   *  (app-server), or opencode (dedicated v2 server). Conversations have isolated processes. Unsupported Codex
    *  versions fall back to exec before submitting any turn. Other tiers
    *  ignore this flag. Codex loads the operator's Codex config, unlike exec's
    *  --ignore-user-config path: review additional MCP servers before enabling.
-   *  Codex uses an 8-process cap and 5-minute idle eviction; processPool
+   *  Codex and OpenCode each use an 8-process cap and 5-minute idle eviction; processPool
    *  settings apply to Claude only. Default false for gradual rollout.
    *  See docs/architecture/persistent-codex-process.md and
-   *  docs/architecture/persistent-claude-process.md for details. */
+   *  docs/architecture/persistent-claude-process.md and
+   *  docs/architecture/persistent-opencode-process.md for details. */
   persistentProcess: z.boolean().default(false),
   queueMode: z.enum(["collect", "followup", "drop"]).default("collect"),
   heartbeat: z.object({

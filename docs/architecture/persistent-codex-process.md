@@ -43,8 +43,8 @@ use `workspace-write`; only `bypassPermissions` agents use `danger-full-access`.
 - Daemon shutdown closes the pool after draining work.
 
 These Codex limits are currently fixed; the `processPool` configuration and
-`agentx process` commands manage the separate Claude pool. OpenCode still starts
-its CLI for each request.
+`agentx process` commands manage the separate Claude pool. OpenCode can also reuse a dedicated
+server; see [persistent OpenCode processes](persistent-opencode-process.md).
 
 ## Measuring startup
 

@@ -1,5 +1,7 @@
 # Put an AI teammate on the tools your team already uses
 
+<a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
+
 New here? [Before you start](requirements.md) lists what you need, how to install it, and how to check it works.
 
 AgentX runs AI agents for a team. Connect a channel such as Telegram or GitLab, give an agent a job, and see what happened in the browser dashboard. A technical teammate installs it on a machine you control; operators can then use the browser for everyday work.

@@ -1,3 +1,4 @@
+import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
 import { execFile, spawn } from "child_process"
@@ -1330,19 +1331,40 @@ export async function executeOpenCodeCli(
   }
 
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildOpenCodeArgs(agent, prompt, task.model, task.systemPromptAppend, resumeSessionId)
+  const args = buildOpenCodeArgs(agent, prompt, task.model, task.systemPromptAppend, task.freshSession ? undefined : resumeSessionId)
   let fullText = ""
   let usage: TokenUsage | undefined
-  let sessionId = resumeSessionId
+  let sessionId = task.freshSession ? undefined : resumeSessionId
   let apiError: string | undefined
+  let server: Awaited<ReturnType<typeof openCodeProcessPool.acquire>> | undefined
+  let failed = true
+  let cleanupAbort: (() => void) | undefined
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    let env = buildOpenCodeEnv(agent, task)
+    if (agent.persistentProcess) {
+      try {
+        server = await openCodeProcessPool.acquire({
+          key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
+          cwd: agent.workspace, env, model: task.model || agent.model,
+          permission: agent.permissionMode, fresh: task.freshSession, signal: abortSignal,
+        })
+        args.splice(1, 0, "--server", server.url)
+        env = server.env
+        onEvent?.({ type: "opencode.ready", reused: server.reused, startupMs: Date.now() - start })
+      } catch (error) {
+        if (!(error instanceof OpenCodeServerUnavailable)) throw error
+        if (error.standalone) args.splice(1, 0, "--standalone")
+        onEvent?.({ type: "opencode.fallback", reason: error.message })
+      }
+    }
+    if (abortSignal?.aborted) throw new Error("task cancelled by operator")
     const proc = execa("opencode", args, {
       cwd: agent.workspace,
       timeout: timeoutMs,
       reject: false,
-      env: buildOpenCodeEnv(agent, task),
+      env,
       extendEnv: false,
       buffer: false,
       stdin: "ignore",
@@ -1352,11 +1374,14 @@ export async function executeOpenCodeCli(
     let cancelled = false
     let cancelReason: string | undefined
     const onAbort = () => {
+      server?.invalidate()
       cancelled = true
       cancelReason = (abortSignal?.reason as any)?.message || (typeof abortSignal?.reason === "string" ? abortSignal.reason : "task cancelled by operator")
       try { proc.kill("SIGTERM", { forceKillAfterTimeout: 3_000 }) } catch { /* */ }
     }
     if (abortSignal) abortSignal.addEventListener("abort", onAbort, { once: true })
+    cleanupAbort = () => abortSignal?.removeEventListener("abort", onAbort)
+    if (abortSignal?.aborted) onAbort()
 
     let lineBuffer = ""
     let stderrText = ""
@@ -1370,6 +1395,7 @@ export async function executeOpenCodeCli(
         if (typeof event.sessionID === "string") sessionId = event.sessionID
         const text = event.type === "text" && typeof event.part?.text === "string" ? event.part.text : undefined
         if (text) {
+          if (!fullText) onEvent?.({ type: "opencode.first_output", elapsedMs: Date.now() - start, reused: server?.reused ?? false })
           fullText += text
           onDelta?.(text, fullText)
         }
@@ -1416,13 +1442,17 @@ export async function executeOpenCodeCli(
       else errMsg = stderrText.trim() || `OpenCode exited with code ${r.exitCode ?? "unknown"}`
       return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start, usage, opencodeSessionId: sessionId }
     }
+    failed = false
     return { content: fullText.trim(), duration: Date.now() - start, usage, billedModel: task.model || agent.model, opencodeSessionId: sessionId }
   } catch (error: any) {
+    if (abortSignal?.aborted) return { content: "", error: "task cancelled by operator", errorKind: "cancelled", duration: Date.now() - start }
     const raw = /ENOENT|spawn opencode/i.test(error?.message || "") ? openCodeMissingMessage() : error?.message
     return { content: fullText, ...buildErrorEnvelope(raw || "OpenCode failed"), duration: Date.now() - start, usage, opencodeSessionId: sessionId }
+  } finally {
+    cleanupAbort?.()
+    server?.release(failed)
   }
 }
-
 /**
  * Execute a task using the Claude Agent SDK (tier: "sdk").
  */

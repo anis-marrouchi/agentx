@@ -377,6 +377,9 @@ function makeStreamEventFormatter(): (event: any) => string {
   return (event: any): string => {
     if (!event || typeof event !== "object") return ""
     const t = event.type
+    if (t === "opencode.ready") return `. opencode ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`
+    if (t === "opencode.first_output") return `. opencode first output=${event.elapsedMs}ms\n`
+    if (t === "opencode.fallback") return `. opencode using CLI fallback: ${event.reason}\n`
     if (t === "codex.ready") return `. codex ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`
     if (t === "codex.first_output") return `. codex first output=${event.elapsedMs}ms\n`
     if (t === "codex.fallback") return `. codex using CLI fallback: ${event.reason}\n`
