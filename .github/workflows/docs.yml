@@ -2,7 +2,7 @@ name: Deploy docs
 
 on:
   push:
-    branches: [master]
+    branches: [master, docs-v2]
     paths:
       - "docs/**"
       - "docs-holding/**"
@@ -31,14 +31,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # What actually gets published. `docs-holding` serves the "docs are being
-      # rewritten" page; flip back to `docs/.vitepress/dist` to restore the real
-      # site. One line, one commit, either direction.
-      #
-      # The VitePress build below keeps running regardless — it is the only
-      # automated dead-link check in the repo, and docs v2 is rewriting every
-      # page. We stop *deploying* its output, not producing it.
-      DOCS_DEPLOY_DIR: docs-holding
+      DOCS_DEPLOY_DIR: docs/.vitepress/dist
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +48,7 @@ jobs:
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm docs:build
+      - run: pnpm docs:check
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

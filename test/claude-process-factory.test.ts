@@ -16,7 +16,8 @@ import type { ProcessKey, SpawnOptions } from "../src/agents/process-registry"
 // initial build, well under a cent per run on standard pricing. Each
 // test sends a one-token-output prompt ("Reply with the word ready").
 
-const claudeAvailable = (() => {
+// Paid live-provider tests require explicit opt-in, even when Claude is installed.
+const claudeAvailable = process.env.AGENTX_TEST_LIVE_CLAUDE === "1" && (() => {
   try {
     execSync("claude --version", { stdio: "ignore" })
     return true

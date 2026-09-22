@@ -16,6 +16,7 @@ import { spawn, type ChildProcess } from "child_process"
 import { mkdirSync, writeFileSync, rmSync, openSync, existsSync } from "fs"
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
+import { demoReportWorkflow } from "./demo-workflow"
 
 interface NodeSpec {
   dir: string
@@ -43,6 +44,17 @@ function buildSpecs(root: string, basePort: number): NodeSpec[] {
       persona: "You are CX, the customer-facing coordinator. You triage inbound issues and delegate technical work to @builder on the vps node.",
       script: {
         steps: [
+          {
+            match: "USER: Build the demo report workflow",
+            reply: "Here is a scripted example: start it manually, ask CX for a report, then finish. It is saved disabled so you can review it before running.\n\n```json\n" + JSON.stringify(demoReportWorkflow, null, 2) + "\n```",
+            delayMs: 300,
+            chunkMs: 2,
+          },
+          {
+            match: "Prepare the demo shop report",
+            reply: "Demo shop report: checkout checks passed, MR !47 is ready for review, and CX has drafted the customer update. This is a scripted example.",
+            delayMs: 500,
+          },
           {
             match: "checkout is broken",
             thinking: "Checkout failure + red CI — this is a build problem, not a support question. @builder on vps-nyc owns demo/shop.",
@@ -131,6 +143,7 @@ function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string): void {
       },
     },
     mesh: { enabled: true, peers, discovery: "static", healthCheck: { interval: 3, timeout: 5 } },
+    workflows: { enabled: true },
   }
   writeFileSync(join(spec.dir, "agentx.json"), JSON.stringify(config, null, 2))
 }

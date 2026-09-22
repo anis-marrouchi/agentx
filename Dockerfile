@@ -1,41 +1,30 @@
-# AgentX Dockerfile — runs the agentx daemon + dashboard in a single container.
-#
-# Build:
-#   docker build -t agentx:latest .
-# Run (see docker-compose.yml for the friendlier path):
-#   docker run --rm -it \
-#     -p 18800:18800 -p 4202:4202 \
-#     -v "$PWD/agentx-data":/data \
-#     -e ANTHROPIC_API_KEY=sk-... \
-#     agentx:latest
-#
-# The container treats /data as the working directory, so your agentx.json,
-# .env, agents/, .agentx/, and task-history all live on the host via the
-# bind mount. No state is kept inside the container itself.
-
-FROM node:20-slim AS base
-
-# Claude Code is an optional install target; we don't bake it in by default
-# since many operators will use the SDK tier with just an API key. Set
-# INSTALL_CLAUDE=1 at build time to pull it in.
-ARG INSTALL_CLAUDE=0
-
-# System deps: git is often needed by Claude Code tools; ca-certs for HTTPS;
-# tini gives us a proper PID 1 so signals work.
+# Build the checked-out source; Compose runs this image as two services.
+FROM node:22-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates git tini \
+      ca-certificates git tini python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Install AgentX globally. Pin via --build-arg AGENTX_VERSION=x.y.z for repeatable builds.
-ARG AGENTX_VERSION=latest
-RUN npm install -g --omit=dev "agentix-cli@${AGENTX_VERSION}" \
+FROM base AS build
+WORKDIR /build
+RUN npm install -g pnpm@10
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
+  && pnpm install --frozen-lockfile --ignore-scripts
+COPY tsconfig.json tsup.config.ts tsup.web.config.ts ./
+COPY src/ ./src/
+COPY scripts/postinstall.mjs ./scripts/postinstall.mjs
+COPY agentx.example.json README.md LICENSE ./
+RUN pnpm build && mkdir /package && npm pack --ignore-scripts --pack-destination /package
+
+FROM base AS runtime
+ARG INSTALL_CLAUDE=0
+COPY --from=build /package/ /tmp/agentx-package/
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
+  && npm install -g --omit=dev /tmp/agentx-package/*.tgz \
   && if [ "${INSTALL_CLAUDE}" = "1" ]; then npm install -g --omit=dev @anthropic-ai/claude-code; fi \
-  && npm cache clean --force
-
+  && rm -rf /tmp/agentx-package && npm cache clean --force
+COPY docker/init.mjs /opt/agentx-docker/init.mjs
 WORKDIR /data
-
-# Default: boot the daemon. Override with `docker run ... agentx <command>`
-# to run other CLI commands (e.g. `agentx setup` hits the wizard).
 EXPOSE 18800 4202
 ENTRYPOINT ["/usr/bin/tini", "--", "agentx"]
 CMD ["daemon", "start"]

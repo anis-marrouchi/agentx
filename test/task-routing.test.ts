@@ -141,3 +141,20 @@ describe("routeTaskModel", () => {
     expect(route.downgraded).toBe(false)
   })
 })
+
+describe("cheapModelForEngine", () => {
+  it("keeps Haiku on Claude Code and Luna on Codex CLI", async () => {
+    const { cheapModelForEngine } = await import("../src/agents/routing")
+    const routing = { cheapModels: { "claude-code": "claude-haiku-4-5", "codex-cli": "gpt-5.6-luna" } }
+    expect(cheapModelForEngine("claude-code", routing)).toBe("claude-haiku-4-5")
+    expect(cheapModelForEngine("codex-cli", routing)).toBe("gpt-5.6-luna")
+  })
+
+  it("never sends a legacy Claude model to Codex CLI", async () => {
+    const { cheapModelForEngine } = await import("../src/agents/routing")
+    expect(cheapModelForEngine("claude-code", { cheapModel: "claude-haiku-4-5" })).toBe("claude-haiku-4-5")
+    expect(cheapModelForEngine("codex-cli", { cheapModel: "claude-haiku-4-5" })).toBeUndefined()
+    expect(cheapModelForEngine("codex-cli", { cheapModels: { "codex-cli": "claude-haiku-4-5" } })).toBeUndefined()
+    expect(cheapModelForEngine("claude-code", { cheapModels: { "claude-code": "gpt-5.6-luna" } })).toBeUndefined()
+  })
+})

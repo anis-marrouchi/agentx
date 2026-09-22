@@ -1,179 +1,26 @@
----
-layout: home
+# Put an AI teammate on the tools your team already uses
 
-hero:
-  name: "AgentX"
-  text: "AI operations layer for your team"
-  tagline: For small & medium businesses. Plug in Telegram, WhatsApp, GitLab, or GitHub, set schedules, and watch your agents work — on Claude, OpenAI, or any LLM. Web wizard for non-technical operators, CLI for engineers. Self-hosted.
-  actions:
-    - theme: brand
-      text: Get started
-      link: /install
-    - theme: alt
-      text: View on GitHub
-      link: https://github.com/anis-marrouchi/agentx
+New here? [Before you start](requirements.md) lists what you need, how to install it, and how to check it works.
 
-features:
-  - icon:
-      src: /icons/message-circle.svg
-      alt: Channel routing
-      width: 32
-      height: 32
-    title: Every channel, one router
-    details: Telegram, WhatsApp, GitLab, GitHub, webhooks, HTTP — built in. Agents reply on the channel they received on, or push to any other via cross-channel /send.
-    link: /journey/01-telegram-qa-bot
-    linkText: Build a Telegram bot
-  - icon:
-      src: /icons/alarm-clock.svg
-      alt: Scheduled jobs
-      width: 32
-      height: 32
-    title: Scheduled work that pages you on failure
-    details: Cron jobs with timezone, retries, and an onError pipeline that can both notify you AND auto-disable after N failures.
-    link: /journey/02-scheduled-reports
-    linkText: Schedule a daily report
-  - icon:
-      src: /icons/users.svg
-      alt: Multiple agents
-      width: 32
-      height: 32
-    title: Multi-agent, multi-role
-    details: Many agents sharing one channel, routed by @mention. Each agent is just a workspace directory — no code required.
-    link: /journey/03-multi-agent-group
-    linkText: Put a team in one group
-  - icon:
-      src: /icons/bar-chart-3.svg
-      alt: KPI tracking
-      width: 32
-      height: 32
-    title: Run a business with AI agents
-    details: Day-cycle ticker, work-pool, KPI tracking, daily reporter. Your team clocks in, claims tasks, and produces a daily P&L.
-    link: /journey/07-business-layer
-    linkText: Turn agents into a team
-  - icon:
-      src: /icons/network.svg
-      alt: Mesh federation
-      width: 32
-      height: 32
-    title: Mesh across machines
-    details: Agents on different machines collaborate over Tailscale/VPN. One roster, cross-node delegation, federated wiki. Manage any peer's config from one dashboard.
-    link: /journey/08-mesh-federation
-    linkText: Federate two machines
-  - icon:
-      src: /icons/brain.svg
-      alt: Knowledge base
-      width: 32
-      height: 32
-    title: Compounding knowledge
-    details: Karpathy-inspired wiki with a knowledge graph. Daily absorb turns raw conversations into cited articles the whole team can read.
-    link: /concepts
-    linkText: See the concepts
-  - icon:
-      src: /icons/settings.svg
-      alt: Admin panel
-      width: 32
-      height: 32
-    title: Browser-based admin, no JSON editing
-    details: Add agents, wire channels (QR-pair WhatsApp in the browser), schedule crons, mint scoped API tokens — all from the dashboard. CLI + agentx.json stay fully supported for power users.
-    link: /install
-    linkText: Start the wizard
-  - icon:
-      src: /icons/shield-check.svg
-      alt: Scoped tokens
-      width: 32
-      height: 32
-    title: Secure public agents
-    details: Expose specific agents over HTTP with scoped, revocable bearer tokens. Read-only, write, per-agent, or mesh-peer scopes — no RBAC needed for a small team.
-    link: /reference/tokens
-    linkText: Tokens & public access
-  - icon:
-      src: /icons/list-checks.svg
-      alt: Backlog and workflows
-      width: 32
-      height: 32
-    title: Backlog import + sync
-    details: Pull GitLab/GitHub issues into a structured backlog with two-way sync. Mutations push back upstream, the work-pool and ledger track the rest.
-    link: /playbooks/backlog-import-sync
-    linkText: Import + sync upstream
-  - icon:
-      src: /icons/git-branch.svg
-      alt: Typed workflow DSL
-      width: 32
-      height: 32
-    title: Typed step-graphs in YAML
-    details: Author workflows with branching, structured-output extraction, retries, human-in-the-loop forms, and sub-processes. Five built-in templates, one-line scaffolding, watch-mode tracing.
-    link: /journey/13-typed-workflow
-    linkText: Author a workflow
-  - icon:
-      src: /icons/git-branch.svg
-      alt: Plugins
-      width: 32
-      height: 32
-    title: Extend with plugins
-    details: Drop-in npm packages register custom channel adapters and bus subscribers. Mattermost, X, your internal tools — write a plugin once, ship it to every operator.
-    link: /playbooks/plugin-authoring
-    linkText: Author a plugin
-  - icon:
-      src: /icons/scale.svg
-      alt: Org-chart governance
-      width: 32
-      height: 32
-    title: Audit every dispatch
-    details: Append-only ledger captures every routing decision; replay reproduces them deterministically. PM-gating, typed capabilities, and delegation-depth caps make admission control auditable.
-    link: /playbooks/pm-gating
-    linkText: Enable governance
-  - icon:
-      src: /icons/zap.svg
-      alt: Actions registry
-      width: 32
-      height: 32
-    title: Wire SaaS without code
-    details: Register a HubSpot, Salesforce, Stripe, SendGrid, or Zendesk call once with typed inputs and templated secrets — call it from CLI, dashboard, workflows, or an agent prompt. No more curl-in-cron sprawl.
-    link: /reference/actions
-    linkText: Connect a SaaS API
----
+AgentX runs AI agents for a team. Connect a channel such as Telegram or GitLab, give an agent a job, and see what happened in the browser dashboard. A technical teammate installs it on a machine you control; operators can then use the browser for everyday work.
 
-## Three ways to start
+**Start without a model account:** [See the demo](./see-it-first.md). It uses real AgentX daemons and a scripted model, so it does not make billable model calls.
 
-<div class="vp-doc">
+**Ready to set up your own team?** [Install AgentX](./install.md), [create your first agent](./first-agent.md), and [connect Telegram](./connect-telegram.md).
 
-**I want a chatbot on Telegram.** → [Journey 1 — Telegram Q&A bot](/journey/01-telegram-qa-bot)
+The dashboard has six main tabs: [Live](./dashboard/live.md), [Operations](./dashboard/operations.md), [Monitor](./dashboard/monitor.md), [Activity](./dashboard/activity.md), [Workflows](./dashboard/workflows.md), and [Settings](./dashboard/settings.md). Start with Monitor to understand what still needs a person and what agents can handle.
 
-**I want a scheduled job that pings me when it fails.** → [Journey 2 — Scheduled reports](/journey/02-scheduled-reports)
+## More ways to work with your agents
 
-**I'm running a services team and want AI agents with KPIs.** → [Journey 7 — Business layer](/journey/07-business-layer)
+- [In-page chat](dashboard/chat.md): ask about the dashboard view you are looking at.
+- [Desktop assistant](dashboard/voice.md): speak to an agent from your Mac.
+- [Terminal UI](dashboard/tui.md): use OpenCode as the conversation interface.
+- [Tailscale setup](jobs/tailscale.md): connect machines privately.
+- [Agent-to-agent communication](reference/a2a.md): send work to peers or connect an external A2A client.
 
-**I want to drive AgentX from Cursor / Claude Code.** → [Journey 10 — MCP server](/journey/10-mcp-server)
+## Learn one step at a time
 
-**I live in Claude Code and want my agents to reach me there.** → [Journey 14 — Wearable agents](/journey/14-wearable-agent)
-
-**I'm putting agents into production.** → [Journey 11 — Production hardening](/journey/11-production-hardening)
-
-</div>
-
-## Install in 30 seconds
-
-**One line — opens the web setup wizard, no JSON editing:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
-```
-
-**Prefer Docker?**
-
-```bash
-git clone https://github.com/anis-marrouchi/agentx.git && cd agentx
-cp agentx.example.json agentx-data/agentx.json    # or run `agentx setup` later
-docker compose up -d
-```
-
-**Engineer shortcut:**
-
-```bash
-npm install -g agentix-cli
-agentx setup          # opens the web wizard
-# or skip the wizard:
-agentx init && agentx agent add && agentx channel add && agentx daemon start
-```
-
-Then open **http://127.0.0.1:4202** for the dashboard — live agents, task history, Kanban, and the `/admin` panel. See the [install guide](/install) for advanced setups, Tailscale binding, and systemd.
+1. **See it:** [follow the annotated workflow tour](tutorials/first-workflow.md).
+2. **Try it:** [record a VS Code walkthrough](tutorials/record-vscode.md).
+3. **Understand it:** [architecture](architecture/overview.md) and [Jev decisions](architecture/jev.md).
+4. **Use it from a terminal:** [command reference](reference/cli.md).

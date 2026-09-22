@@ -1,10 +1,20 @@
-node_modules
-dist
-.git
-.agentx
-agentx-data
-.env
-*.log
-.DS_Store
-test/**/fixtures/**
-docs
+# Only build inputs belong in the context. Keep runtime state, credentials,
+# private notes and local screenshots out of the image.
+**
+!Dockerfile
+!docker/
+!docker/init.mjs
+!package.json
+!pnpm-lock.yaml
+!.npmrc
+!tsconfig.json
+!tsup.config.ts
+!tsup.web.config.ts
+!src/
+!src/**
+src/web/workflow-editor/HANDOFF.md
+!scripts/
+!scripts/postinstall.mjs
+!agentx.example.json
+!README.md
+!LICENSE

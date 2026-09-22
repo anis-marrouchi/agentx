@@ -1,7 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { connectTelegram } from "@/connect/telegram"
-import { connectDiscord } from "@/connect/discord"
 import { connectWhatsApp } from "@/connect/whatsapp"
 import { invite as meshInvite, join as meshJoin } from "@/connect/mesh"
 
@@ -10,8 +9,7 @@ import { invite as meshInvite, join as meshJoin } from "@/connect/mesh"
 // Unified browser-cooperating pairing flow. Replaces manual "paste token
 // into .env, edit agentx.json, restart daemon" onboarding.
 //
-// V1 surfaces two channels: telegram (highest-pain) and mesh (only remaining
-// manual .env step in Journey 8). WhatsApp / Discord / GitLab follow.
+// Only offer channels backed by a live adapter.
 
 export const connect = new Command()
   .name("connect")
@@ -31,15 +29,6 @@ connect
       configPath: opts.config,
       skipChatCapture: !!opts.skipChatCapture,
     })
-  })
-
-connect
-  .command("discord")
-  .description("pair a Discord bot — verify token, emit install URL, save to .env")
-  .option("--agent <id>", "agent to bind the bot to")
-  .option("-c, --config <path>", "path to agentx.json")
-  .action(async (opts) => {
-    await connectDiscord({ agent: opts.agent, configPath: opts.config })
   })
 
 connect
@@ -85,7 +74,6 @@ connect.action(() => {
   console.log(chalk.bold("  agentx connect — which channel?"))
   console.log()
   console.log(`    ${chalk.cyan("agentx connect telegram")}        — pair a Telegram bot`)
-  console.log(`    ${chalk.cyan("agentx connect discord")}         — pair a Discord bot, emit install URL`)
   console.log(`    ${chalk.cyan("agentx connect whatsapp")}        — pair WhatsApp via QR`)
   console.log(`    ${chalk.cyan("agentx connect mesh invite")}     — emit a mesh join link for another node`)
   console.log(`    ${chalk.cyan("agentx connect mesh join <link>")} — accept a mesh invite`)

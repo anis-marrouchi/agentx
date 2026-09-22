@@ -1,0 +1,2 @@
+/* Keep the supplied dark symbol legible on the dark documentation theme. */
+.dark .VPNavBarTitle .logo { filter: invert(1); }

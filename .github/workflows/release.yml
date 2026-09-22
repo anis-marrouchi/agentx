@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish or retry (empty to update release PR)'
+        required: false
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    if: ${{ !inputs.tag }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: version
+    if: ${{ always() && (needs.version.outputs.released == 'true' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')) && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || needs.version.outputs.tag }}
+          fetch-depth: 0
+      - name: Verify release identity
+        env:
+          RELEASE_TAG: ${{ inputs.tag || needs.version.outputs.tag }}
+        run: |
+          node -e 'const p=require("./package.json"); if(process.env.RELEASE_TAG !== `v${p.version}`) throw Error("Tag and package version differ")'
+          git fetch origin master
+          git merge-base --is-ancestor HEAD origin/master
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@11
+      - name: Install dependencies
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm docs:check
+      - run: pnpm build
+      - name: Check packed files
+        run: node scripts/check-package.mjs
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance

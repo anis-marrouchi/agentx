@@ -34,7 +34,7 @@ export function deprecationNotice(d: Deprecation): void {
   console.error()
 }
 
-/** `agentx chat` and `agentx tui` — the two terminal chat surfaces. Both went
+/** `agentx chat` and the legacy Ink TUI — the old terminal chat surfaces. Both went
  *  unused on every node in the fleet after 2026-07-03. They lost to Claude
  *  Code, and attach mode is the answer: rather than a third attempt at a chat
  *  client, let the client people already prefer wear the agent identity. */

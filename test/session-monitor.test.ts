@@ -16,6 +16,23 @@ function fixture(reviewer = vi.fn(async () => JSON.stringify(result))) {
   return { db, reviewer, monitor: new SessionMonitor(db, reviewer) }
 }
 describe("session monitor", () => {
+  it("does not run a real reviewer in the scripted demo", async () => {
+    vi.stubEnv("AGENTX_DEMO_SCRIPT", "/demo/script.json")
+    vi.useFakeTimers()
+    const { monitor, reviewer } = fixture()
+    try {
+      monitor.register({ id: "demo", runtime: "demo", label: "CX" })
+      monitor.ended({ sessionId: "demo", runId: "demo-run", transcript: "Demo task finished" })
+      monitor.start()
+      await vi.advanceTimersByTimeAsync(15000)
+      expect(reviewer).not.toHaveBeenCalled()
+      expect(monitor.snapshot().reviews[0].status).toBe("pending")
+    } finally {
+      monitor.stop()
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    }
+  })
   it("reviews each ended trace once, preserving evidence and rejecting invented relations", async () => {
     const { db, reviewer, monitor } = fixture(vi.fn(async () => JSON.stringify({ ...result, relatedTaskIds: ["invented"] })))
     recordTraceStart(db, { agentId: "dev", channel: "cli", chatId: "chat", messagePreview: "Ship it" }, "task1")

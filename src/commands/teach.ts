@@ -15,7 +15,7 @@ import {
   type UIElementAnswers,
   type PriorAttempt,
 } from "@/decisions/seats/ui-element"
-import { readScreen, rectFor } from "@/computer-use/screen"
+import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 
@@ -34,10 +34,7 @@ const run = promisify(execFile)
 // keeps the keyboard, which is what makes it teaching rather than a
 // demonstration you watch.
 
-const HELPER = resolve(
-  process.cwd(),
-  "apps/mac-helper/build/AgentX Helper.app/Contents/MacOS/agentx-mac-helper",
-)
+
 
 
 

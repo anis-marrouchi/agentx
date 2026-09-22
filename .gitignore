@@ -5,12 +5,15 @@ node_modules/
 
 # AgentX runtime data
 .agentx/
+.agentx-demo/
+agentx-data/
 # Root-anchored: a bare pattern matches at any depth and silently excluded
 # examples/*/agentx.json, so CI had no scenarios to validate.
 /agentx.json
 /agentx.json.*
 .env
 .env.*
+!.env.example
 
 # Claude Code (project-local, not committed)
 .claude/
@@ -22,23 +25,9 @@ node_modules/
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
-# docs/architecture is allowlist-published. Default-ignore everything inside;
-# add a `!` exception for each file we want tracked. Keeps private
-# rescue/kickoff notes off-repo while letting public design notes ship.
-docs/architecture/*
-!docs/architecture/hexabot-vs-agentx.md
-!docs/architecture/plugins.md
-!docs/architecture/surface-contract.md
-!docs/architecture/workflows-yaml.md
-!docs/architecture/persistent-claude-process.md
-!docs/architecture/typed-workflow-dsl-plan.md
-!docs/architecture/workflow-absorb-plan.md
-!docs/architecture/three-tier.md
-!docs/architecture/surface-reduction.md
-!docs/architecture/design-system.md
+docs/.vitepress/.temp/
 
 src/web/workflow-editor/HANDOFF.md
-docs/prd
 
 # Design canvas working files (published as an Artifact, not product code)
 .design/
@@ -47,3 +36,21 @@ docs/prd
 apps/mac-voice/build/
 apps/mac-helper/build/
 docs/.scripts/redactions.local.json
+
+# Unpublished documentation history (may contain private legacy assets).
+notes/legacy-docs/
+
+# Engineering notes use an allowlist so private plans cannot accidentally be
+# included in the public repository when docs are reorganized.
+notes/architecture/*
+!notes/architecture/hexabot-vs-agentx.md
+!notes/architecture/plugins.md
+!notes/architecture/surface-contract.md
+!notes/architecture/workflows-yaml.md
+!notes/architecture/persistent-claude-process.md
+!notes/architecture/typed-workflow-dsl-plan.md
+!notes/architecture/workflow-absorb-plan.md
+!notes/architecture/three-tier.md
+!notes/architecture/surface-reduction.md
+!notes/architecture/design-system.md
+notes/prd

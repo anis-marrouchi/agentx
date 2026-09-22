@@ -443,7 +443,7 @@ agent.addCommand(integrations)
 
 export const channel = new Command()
   .name("channel")
-  .description("manage channels — add telegram/whatsapp/discord, list")
+  .description("manage channels — add telegram/whatsapp/gitlab, list")
 
 channel
   .command("list")
@@ -478,15 +478,6 @@ channel
       console.log(chalk.dim("  WhatsApp: disabled"))
     }
 
-    // Discord
-    const dc = config.channels?.discord
-    if (dc?.enabled) {
-      console.log(chalk.bold("  Discord:"))
-      console.log(`    agent: ${dc.agentBinding || "(none)"}`)
-    } else {
-      console.log(chalk.dim("  Discord: disabled"))
-    }
-
     // GitLab
     const gl = config.channels?.gitlab
     if (gl?.enabled) {
@@ -505,7 +496,7 @@ channel
 
 channel
   .command("add")
-  .description("add a channel (telegram, whatsapp, or discord)")
+  .description("add a channel (telegram, whatsapp, or gitlab)")
   .action(async () => {
     const config = loadConfig()
     const agentIds = Object.keys(config.agents || {})
@@ -523,7 +514,6 @@ channel
       choices: [
         { title: "Telegram — bot via BotFather token", value: "telegram" },
         { title: "WhatsApp — link via QR code (self-chat or contacts)", value: "whatsapp" },
-        { title: "Discord — bot via Discord developer portal", value: "discord" },
         { title: "GitLab — webhook for issues, MRs, comments, pipelines", value: "gitlab" },
       ],
     })
@@ -614,25 +604,6 @@ channel
       mkdirSync(resolve(process.cwd(), answers.sessionDir), { recursive: true })
       console.log(chalk.green(`  WhatsApp enabled (${routes.length} routes, default: ${answers.defaultAgent})`))
       console.log(chalk.dim("  Start daemon to scan QR code: agentx daemon start"))
-    }
-
-    // --- Discord ---
-    if (channelType === "discord") {
-      const answers = await prompts([
-        { type: "text", name: "token", message: "Discord bot token (from developer portal)" },
-        { type: "select", name: "agentBinding", message: "Bind to agent", choices: agentChoices },
-      ])
-
-      if (!answers.token) return
-
-      config.channels.discord = {
-        enabled: true,
-        token: answers.token,
-        agentBinding: answers.agentBinding,
-      }
-
-      await saveConfig(config)
-      console.log(chalk.green(`  Discord added -> ${answers.agentBinding}`))
     }
 
     // --- GitLab ---

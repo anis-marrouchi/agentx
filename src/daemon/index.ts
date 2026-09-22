@@ -4898,6 +4898,17 @@ export class AgentXDaemon {
 
     const stream = body.stream === true
 
+    const response = await this.registry.execute({
+      agentId,
+      message: contextPrefix + lastUserMsg.content,
+      context: { channel: "api", sender: "openai-compat" },
+    })
+    if (response.error) {
+      this.json(res, 502, { error: { message: response.error, type: "upstream_error" } })
+      return
+    }
+    const content = response.content || ""
+
     if (stream) {
       // SSE streaming response
       res.writeHead(200, {
@@ -4907,14 +4918,6 @@ export class AgentXDaemon {
       })
 
       const requestId = `chatcmpl-${Date.now().toString(36)}`
-
-      const response = await this.registry.execute({
-        agentId,
-        message: contextPrefix + lastUserMsg.content,
-        context: { channel: "api", sender: "openai-compat" },
-      })
-
-      const content = response.error || response.content || ""
 
       // Send as a single chunk (Claude Code doesn't stream to us via execFile)
       const chunk = {
@@ -4933,13 +4936,6 @@ export class AgentXDaemon {
       res.end()
     } else {
       // Standard response
-      const response = await this.registry.execute({
-        agentId,
-        message: contextPrefix + lastUserMsg.content,
-        context: { channel: "api", sender: "openai-compat" },
-      })
-
-      const content = response.error || response.content || ""
       const tokens = Math.ceil(content.length / 4)
 
       this.json(res, 200, {

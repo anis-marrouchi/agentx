@@ -1,3 +1,4 @@
+import { createRequire } from "node:module"
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
@@ -39,8 +40,8 @@ function runCli(args: string[]): { stdout: string; status: number } {
   // lookup at the temp dir.
   try {
     const stdout = execFileSync(
-      "npx",
-      ["tsx", cliPath, ...args, "--cwd", tmp],
+      process.execPath,
+      [createRequire(import.meta.url).resolve("tsx/cli"), cliPath, ...args, "--cwd", tmp],
       {
         cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
         // Put the RUNNER's Node first on PATH so npx/tsx spawn the same

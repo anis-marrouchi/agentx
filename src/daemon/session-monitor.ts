@@ -188,6 +188,10 @@ export class SessionMonitor {
     db.prepare("DELETE FROM session_reviews WHERE agent LIKE 'workflow:%'").run()
   }
   start() {
+    // Demo task replies are scripted, but this reviewer uses Claude directly.
+    // Never launch a billable background review from a zero-key demo.
+    // Documentation fixtures can still be read through the monitor API.
+    if (process.env.AGENTX_DEMO_SCRIPT) return
     if (this.timer) return
     this.abort = new AbortController()
     this.stopped = false
