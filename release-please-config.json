@@ -4,5 +4,8 @@
   "include-component-in-tag": false,
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": false,
-  "packages": { ".": {} }
+  "packages": {
+    ".": {}
+  },
+  "bootstrap-sha": "a282aa3c4c578aadc91c1dd08f2ee9b4745a87b3"
 }
