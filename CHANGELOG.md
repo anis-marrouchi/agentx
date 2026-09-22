@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.29.0](https://github.com/anis-marrouchi/agentx/compare/v0.28.0...v0.29.0) (2026-09-22)
+
+
+### Features
+
+* add contributor support and context-driven maintenance routines ([148c803](https://github.com/anis-marrouchi/agentx/commit/148c803b0ff024bcb0d7fef65d8b1dfcf93963d5))
+* gate request preprocessing and protect desktop model selection ([c1c01c0](https://github.com/anis-marrouchi/agentx/commit/c1c01c05d62d11a1b43fa9d1353f5343871b7738))
+* **runtime:** reuse Codex app-server processes across requests ([b753b52](https://github.com/anis-marrouchi/agentx/commit/b753b524799ea84e0fb5b0b59d2798e673e106e3))
+* **runtime:** reuse isolated OpenCode servers and add launch badge ([93cd9be](https://github.com/anis-marrouchi/agentx/commit/93cd9befcdc1721e77660ed3326b4d25dee655ce))
+
 ## 0.28.0 (2026-09-22)
 
 ### Features
