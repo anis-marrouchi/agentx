@@ -17,6 +17,16 @@
 
 AgentX routes messages and scheduled jobs to AI agents you host. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
 
+## Current state: usable, experimental, not yet stable
+
+AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
+
+The current source release is **0.28.0**. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
+
+**Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
+
+[Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
+
 ![Three agents on three local demo nodes in the Live dashboard](docs/public/screenshots/live.png)
 
 *The isolated scripted demo, after a cross-node task. No live fleet data is shown.*
@@ -36,6 +46,7 @@ The demo starts three local AgentX daemons and sends a task between them. Routin
 - **Answers where your team works.** Connect a channel and assign its messages to an agent.
 - **Runs scheduled work.** Ask an agent for a daily report or another recurring task.
 - **Shows what happened.** Live shows current work; Activity records completed runs; Monitor shows reviewed work that needs a person and work agents can handle.
+- **Offers several ways to interact.** Use [in-page chat](docs/dashboard/chat.md), the [OpenCode-backed TUI](docs/dashboard/tui.md), or the desktop assistant for voice and computer use.
 - **Grows across machines.** Start with one host, then pair another when a job needs its tools or files.
 
 ## Describe an automation, get an automation
@@ -51,7 +62,7 @@ A technical teammate needs a terminal for installation, model setup, and startin
 ```sh
 git clone https://github.com/anis-marrouchi/agentx.git
 cd agentx
-git checkout docs-v2
+git checkout main
 cp .env.example .env
 docker compose up --build -d
 ```
@@ -97,6 +108,18 @@ The six top-level tabs are **Live, Operations, Monitor, Activity, Workflows, and
 Telegram and WhatsApp have pairing flows. GitLab, GitHub, and generic webhooks can bring in events. **Slack and Discord are not supported as live channel adapters in this build.** [Channel reference](docs/reference/channels.md).
 
 Real agents need a configured model. An API provider needs a key; Claude Code, Codex CLI, and OpenCode need their CLI installed and authenticated on the host. Model-provider charges or subscription terms depend on your chosen provider.
+
+## Help test and improve AgentX
+
+The most valuable contribution right now is **trying AgentX and reporting what happens**. You do not need to write code to help.
+
+1. **Test and report issues.** Try installation, Settings, model setup, chat, the desktop assistant, the TUI, or a task across nodes. Report failures and confusing steps, including what you expected and what actually happened.
+2. **Help with triage and workflow/pipeline management.** Reproduce reports, identify duplicates, clarify priorities, and help follow issues through fixes, CI, and releases.
+3. **Contribute code and documentation.** Fix bugs, improve setup and Settings, clarify instructions, or help design the missing mesh-level and agent-level RBAC. Discuss larger changes in an issue first.
+
+[Report an issue](https://github.com/anis-marrouchi/agentx/issues/new) with your version, operating system, steps to reproduce, and relevant logs or screenshots. Remove secrets and private data before sharing. Report security vulnerabilities through the [security policy](SECURITY.md).
+
+See [Contributing](CONTRIBUTING.md) for testing, issue triage, and development instructions.
 
 ## Help and development
 

@@ -45,4 +45,4 @@ Please use [GitHub private vulnerability reporting](../../security/advisories/ne
 
 ## Supported versions
 
-Security fixes land on the latest minor release (`master`). There are no LTS branches; upgrading is the patch path.
+Security fixes land on the latest minor release (`main`). There are no LTS branches; upgrading is the patch path.

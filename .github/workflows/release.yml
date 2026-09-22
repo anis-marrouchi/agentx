@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -60,8 +60,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || needs.version.outputs.tag }}
         run: |
           node -e 'const p=require("./package.json"); if(process.env.RELEASE_TAG !== `v${p.version}`) throw Error("Tag and package version differ")'
-          git fetch origin master
-          git merge-base --is-ancestor HEAD origin/master
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
       - uses: pnpm/action-setup@v4
         with:
           version: 10

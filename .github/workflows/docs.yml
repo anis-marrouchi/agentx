@@ -2,7 +2,7 @@ name: Deploy docs
 
 on:
   push:
-    branches: [master, docs-v2]
+    branches: [main, docs-v2]
     paths:
       - "docs/**"
       - "docs-holding/**"
@@ -64,7 +64,24 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: pages project create agentx-docs --production-branch=master
+          command: pages project create agentx-docs --production-branch=main
+
+      - name: Set Cloudflare Pages production branch
+        if: ${{ vars.DEPLOY_TO_CLOUDFLARE == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          node --input-type=module <<'JS'
+          const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/pages/projects/agentx-docs`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ production_branch: 'main' }),
+          });
+          const body = await response.json();
+          if (!response.ok || !body.success) throw new Error(`Could not update Pages production branch (HTTP ${response.status})`);
+          console.log(`Production branch: ${body.result.production_branch}`);
+          JS
 
       - name: Deploy to Cloudflare Pages
         if: ${{ vars.DEPLOY_TO_CLOUDFLARE == 'true' }}

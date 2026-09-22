@@ -1824,6 +1824,6 @@ configCmd
 
     console.log()
     console.log(chalk.dim("  These flags are read once at daemon startup. Flipping requires a restart."))
-    console.log(chalk.dim("  See: https://github.com/anis-marrouchi/agentx/blob/master/docs/architecture/research-rescue-plan.md"))
+    console.log(chalk.dim("  See: https://github.com/anis-marrouchi/agentx/blob/main/docs/architecture/research-rescue-plan.md"))
     console.log()
   })

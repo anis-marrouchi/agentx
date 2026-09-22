@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, docs-v2]
+    branches: [main, docs-v2]
   pull_request:
   workflow_dispatch:
 

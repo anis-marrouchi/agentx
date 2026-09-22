@@ -2,7 +2,7 @@
 # AgentX one-line installer.
 #
 # Usage (typical):
-#   curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 #
 # What it does:
 #   1. Checks for Node.js >= 20 (installs via nvm if missing and nvm is present).
