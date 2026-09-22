@@ -5,7 +5,7 @@ Before installing, use the [prerequisites checklist](requirements.md) to choose 
 A technical teammate installs AgentX and connects a model. Operators can then use the browser for setup and daily work. Choose Docker for a contained installation, or run the Node.js application directly.
 
 ::: warning Registry package 0.27.0
-The published `0.27.0` package is missing a file used during installation (`scripts/postinstall.mjs`). This checkout fixes that packaging error. Until a corrected package is published, use the Docker or source instructions below; the npm installer may fail with `MODULE_NOT_FOUND`.
+The published `0.27.0` package is missing a file used during installation (`scripts/postinstall.mjs`). Version **0.28.0** includes the missing file. Choose 0.28.0 or newer, or use the Docker/source instructions below. Installing 0.27.0 may fail with `MODULE_NOT_FOUND`.
 :::
 
 ## Docker: build this checkout
@@ -65,12 +65,12 @@ node dist/cli.js daemon status
 
 Alternatively, the setup confirmation's **Start daemon now** button can start it on a local install. The dashboard and daemon are still separate processes: `setup` does not start the daemon merely by opening the wizard.
 
-## Install a corrected npm release
+## Install from npm
 
-Once the packaging fix is released, the npm package is `agentix-cli` and the executable is `agentx`:
+The npm package is `agentix-cli` and the executable is `agentx`:
 
 ```sh
-npm install -g agentix-cli
+npm install -g agentix-cli@latest
 agentx setup
 ```
 

@@ -14,7 +14,7 @@ agentx desktop install --agent coder-agent
 
 The command builds and installs the desktop app and computer-use helper, remembers the agent and daemon URL, and starts the app at login. Use an ID from `agentx agent list`. Apple command-line tools are required; if missing, the command explains how to install them. The daemon and the selected agent must already be configured.
 
-From this unreleased source checkout, build once with `pnpm build`, then use `node dist/cli.js desktop install --agent coder-agent`. Future packages containing this command will use the shorter `agentx` form.
+From a source checkout, build once with `pnpm build`, then use `node dist/cli.js desktop install --agent coder-agent`. Installed versions 0.28.0 and newer use the shorter `agentx` form.
 
 ```sh
 agentx desktop status

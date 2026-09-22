@@ -73,7 +73,7 @@ node dist/cli.js daemon start --detach
 node dist/cli.js daemon status
 ```
 
-The npm package is `agentix-cli`; the installed executable is `agentx`. **Published version 0.27.0 has an installation error:** its postinstall script is missing from the package. This checkout includes the fix. Use the source or Docker path until a corrected package is published. Follow the [installation guide](docs/install.md) for details.
+The npm package is `agentix-cli`; the installed executable is `agentx`. **Published version 0.27.0 has an installation error:** its postinstall script is missing from the package. Version 0.28.0 includes the fix; use 0.28.0 or newer, or build from source/Docker. Follow the [installation guide](docs/install.md) for details.
 
 ## One machine is enough to start
 

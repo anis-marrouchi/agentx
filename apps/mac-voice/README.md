@@ -8,7 +8,7 @@ agentx desktop install --agent coder-agent
 
 This installs the desktop app and native computer-use helper and saves the chosen
 agent for login startup. Use `agentx desktop status`, `start`, or `stop` afterward.
-From an unreleased source checkout, build the CLI and use `node dist/cli.js desktop install`.
+From a source checkout, build the CLI and use `node dist/cli.js desktop install`.
 See [the desktop guide](../../docs/dashboard/voice.md).
 
 The remaining sections describe developer builds of the voice component.

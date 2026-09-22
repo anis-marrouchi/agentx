@@ -52,7 +52,7 @@ Choose **one** installation path. Docker runs the daemon and dashboard in contai
 **Help:** [pnpm installation](https://pnpm.io/installation). If installation reports a native compilation error, follow [node-gyp's platform prerequisites](https://github.com/nodejs/node-gyp#installation) for Python and a C/C++ toolchain.
 
 ::: tip Commands in these guides
-`agentx` means an installed CLI. In this unreleased source checkout, use `node dist/cli.js` in its place after `pnpm build`. Run commands from the directory containing your `agentx.json`. The [install page](install.md) explains the current published-package limitation.
+`agentx` means an installed CLI. When running from source, use `node dist/cli.js` in its place after `pnpm build`. Run commands from the directory containing your `agentx.json`. The [install page](install.md) explains the 0.27.0 package limitation.
 :::
 
 ### Connect one model
