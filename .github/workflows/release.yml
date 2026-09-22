@@ -69,7 +69,6 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - name: Install dependencies
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -81,8 +80,8 @@ jobs:
       - name: Check packed files
         run: node scripts/check-package.mjs
       - name: Enable npm trusted publishing
-        run: npm install -g npm@11
+        run: |
+          npm install -g npm@11.6.2
+          npm --version
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --registry https://registry.npmjs.org
