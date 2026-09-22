@@ -69,3 +69,44 @@ Verification distinguishes **confirmed**, **refuted**, and **unknown**. A tiny r
 `askSeat` returns no decision if a backend fails or a seat is unavailable, leaving the caller to choose a fallback. The screen verifier uses the vision model's reading as an explicitly uncalibrated fallback; an unclear reading remains unknown. Do not assume every caller handles failures identically.
 
 See [the recording case](../tutorials/record-vscode.md) and the [command reference](../reference/cli.md#computer-use-and-teaching).
+
+## Request intake and context selection
+
+```mermaid
+flowchart TD
+  A[New request] --> B[request-gate: is typed preprocessing useful?]
+  B -->|Yes, active| C[Structured optional context catalogue]
+  C --> D[request-context: retain relevant blocks]
+  B -->|No| E[Configured agent and existing context]
+  B -->|Off, shadow, unavailable| F[Existing dispatch behavior]
+  D --> G[Mandatory context plus selected optional blocks]
+  G --> H[Main agent executes request]
+  E --> H
+  F --> H
+```
+
+The gate is itself a bounded typed decision. It does not answer arbitrary requests or execute tools. It receives a clipped request, the source channel, agent identity, and the available preprocessing operations. An active negative answer bypasses optional context planning and model routing.
+
+Optional context is a catalogue of stable IDs with source, description, size, bounded preview, and a data-trust label. The context seat can omit clearly irrelevant mesh overviews, patterns, references, memory, other-chat summaries, older recall, or wiki blocks. Uncertain, missing, shadow, and failed selection results retain context. The original request, identity, permissions, runbooks, skills, attachments, same-chat continuity, and handover remain outside its removal allowlist.
+
+This selects AgentX-assembled context before rendering the prompt. It does not erase native CLI session history, filter files/tools the main agent later reads, or avoid retrieval already performed upstream. Context previews are sent to the configured decision backend; this is not a data-isolation boundary.
+
+Enable both seats using the backend you have configured (this example uses the existing direct `typesafe` adapter):
+
+```json
+{
+  "decisions": {
+    "enabled": true,
+    "seats": {
+      "request-gate": { "mode": "active", "backend": "typesafe", "timeoutMs": 3000 },
+      "request-context": { "mode": "active", "backend": "typesafe", "timeoutMs": 3000 }
+    }
+  }
+}
+```
+
+An active gate replaces the legacy Haiku context-planner call. When the gate is off/shadow/unavailable, existing non-desktop dispatch remains authoritative. Each new decision has a three-second timeout.
+
+### Desktop model guarantee
+
+Desktop requests arriving through `/ask` use the `voice` channel. Both `voice` and `desktop` requests are excluded from automatic cheap-model routing, even for greetings, short confirmations, and cold sessions. They also skip the legacy Haiku context planner. Jev may still perform typed context decisions; the main response and computer-use task stay on the assigned agent's configured model. This preserves that configured model rather than selecting a hard-coded premium model; provider failures do not authorize a downgrade.

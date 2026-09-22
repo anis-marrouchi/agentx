@@ -37,6 +37,15 @@ describe("routeTaskModel", () => {
     vi.resetModules()
   })
 
+  it.each(["voice", "desktop"])("never downgrades %s requests even with an active cheap decision", async channel => {
+    hoisted.askSeat.mockResolvedValue(answer(0.01))
+    const { routeTaskModel } = await import("../src/agents/routing")
+    const result = await routeTaskModel({ ...base, channel })
+    expect(result.downgraded).toBe(false)
+    expect(result.model).toBeUndefined()
+    expect(hoisted.askSeat).not.toHaveBeenCalled()
+  })
+
   it("downgrades a mechanical task when the seat is active and sure", async () => {
     hoisted.askSeat.mockResolvedValue(answer(0.13))
     const { routeTaskModel } = await import("../src/agents/routing")

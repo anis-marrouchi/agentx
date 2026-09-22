@@ -1146,6 +1146,8 @@ export class AgentRegistry {
 
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
+    const { evaluateRequest, selectRequestContext } = await import("./request-planner")
+    const requestGate = await evaluateRequest(task.message, task.agentId, channel)
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
@@ -1589,7 +1591,7 @@ export class AgentRegistry {
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
     let plannerSucceeded = false
-    if (strategy === "planner") {
+    if (strategy === "planner" && !requestGate.active && channel !== "voice" && channel !== "desktop") {
       try {
         const { planContext } = await import("./context-planner")
         const plan = await planContext({
@@ -1808,8 +1810,13 @@ export class AgentRegistry {
       message: task.message,
     }
 
+    const selectedContext = requestGate.active && requestGate.preprocess
+      ? await selectRequestContext(contextInput)
+      : { input: contextInput, excluded: [] }
+    if (selectedContext.excluded.length) this.log(`[${task.agentId}] request-context excluded: ${selectedContext.excluded.join(", ")}`)
+
     const historyContext = buildAgentContext(
-      contextInput,
+      selectedContext.input,
       isCodexCli
         ? {
             totalBudget: 1800,
@@ -1867,7 +1874,7 @@ export class AgentRegistry {
     // already in memory, and it never blocks a task from running.
     let routedModel: string | undefined
     const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
-    if (!task.model && cheapModel) {
+    if (!task.model && cheapModel && (!requestGate.active || requestGate.preprocess)) {
       try {
         const { routeTaskModel } = await import("./routing")
         const route = await routeTaskModel({

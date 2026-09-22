@@ -50,3 +50,7 @@ Use **Activity** for past runs, **Live** for current work, and **Monitor** for r
 | Peer tasks and standalone A2A | `src/a2a/` |
 
 Continue to [Jev](jev.md), [A2A](../reference/a2a.md), or the [terminal command reference](../reference/cli.md).
+
+## Before the main model runs
+
+The typed `request-gate` decision evaluates whether a new request benefits from Jev preprocessing. When active and affirmative, `request-context` selects optional context from a structured catalogue before the prompt is rendered. Mandatory instructions and same-chat continuity are preserved. Desktop requests always retain the assigned agent model. See [request intake and context selection](./jev.md#request-intake-and-context-selection) for the contract and fallback behavior.

@@ -113,6 +113,8 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
     downgraded: false, needsFlagship: p, reason,
   })
 
+  if (opts.channel === "voice" || opts.channel === "desktop") return keep("desktop requests retain the configured model")
+
   if (!opts.cheapModel) return keep("no cheaper model configured")
 
   // A follow-up onto a WARM cache is the losing case above. Idle longer
