@@ -39,7 +39,7 @@ No-change runs update the timestamp and stop. The human digest is at most five b
 
 ## Event handling and availability
 
-GitHub issues/PRs/mentions use the existing channel and this runbook. Refresh only the affected thread plus enough context to reprioritize; daily sweeps catch missed events. CI workflow events are not currently handled by the GitHub adapter, so scheduled sweeps inspect Actions explicitly. Discussions are collected by the daily sweep, not live-routed. Cron jobs run only while the host and daemon are available; missed runs must reconcile current state once, not replay every missed action.
+GitHub issues/PRs/mentions use the existing channel and this runbook. The repository webhook subscribes only to issues, issue comments, PRs, reviews, and review comments; ordinary pushes are reconciled by scheduled sweeps to avoid redundant runs. Refresh only the affected thread plus enough context to reprioritize; daily sweeps catch missed events. CI workflow events are not currently handled by the GitHub adapter, so scheduled sweeps inspect Actions explicitly. Discussions are collected by the daily sweep, not live-routed. Cron jobs run only while the host and daemon are available; missed runs must reconcile current state once, not replay every missed action.
 
 This is an instruction-level role, not an RBAC enforcement boundary. The agent's underlying credentials and runtime permissions may be broader. Actual RBAC and stronger execution isolation remain roadmap work.
 
