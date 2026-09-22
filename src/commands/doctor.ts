@@ -70,11 +70,11 @@ export const doctor = new Command()
 async function runEnvChecks(checks: Check[]): Promise<void> {
   const nodeMajor = Number(process.versions.node.split(".")[0])
   checks.push({
-    severity: nodeMajor >= 20 ? "ok" : "fail",
+    severity: nodeMajor == 22 ? "ok" : "fail",
     group: "Environment",
     title: `Node.js ${process.versions.node}`,
-    detail: nodeMajor >= 20 ? undefined : "AgentX needs Node 20 or newer.",
-    fix: nodeMajor >= 20 ? undefined : "Install a newer Node (nvm install 20 && nvm use 20)",
+    detail: nodeMajor == 22 ? undefined : "AgentX requires Node 22.x.",
+    fix: nodeMajor == 22 ? undefined : "Install Node 22 (nvm install 22 && nvm use 22)",
   })
 
   const which = (bin: string): string | null => {

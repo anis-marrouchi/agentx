@@ -109,7 +109,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
       extraAttrs: `autocomplete="off"`,
     }) +
     `<div class="ax-hint-block">
-      The key is written to <code>.env</code> as <code>ANTHROPIC_API_KEY</code>. AgentX never transmits it — everything stays on this machine.
+      The key is stored in <code>.env</code> as <code>ANTHROPIC_API_KEY</code> and used to authenticate requests to Anthropic. Keep it private.
     </div>`
   )
 

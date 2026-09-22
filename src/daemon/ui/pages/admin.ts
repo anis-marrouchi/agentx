@@ -94,7 +94,7 @@ const ADMIN_HEALTH_SCRIPT = `
       const cfg = await r.json();
       const agents = Object.keys(cfg.agents || {});
       const channels = cfg.channels || {};
-      const channelDefs = ['telegram','whatsapp','slack','discord','gitlab','github'];
+      const channelDefs = ['telegram','whatsapp','gitlab','github'];
       const enabled = channelDefs.filter(c => channels[c] && channels[c].enabled).length;
       const crons = Object.keys(cfg.crons || {}).length;
       const webhooks = Object.keys(cfg.webhooks || {}).length;
@@ -337,7 +337,7 @@ const ADMIN_PAGE_BODY = `
     })}
     ${witBanner({
       persistKey: "channels",
-      bodyHtml: `<b>How does this work?</b> We give each channel a small "bridge" that forwards messages to AgentX. For chat apps (Telegram, Slack, Discord) you'll paste a bot token — we keep the value in your <code>.env</code> file and never send it over the network. For webhook-style sources (GitHub, GitLab) we hand you a URL to paste into their dashboard.`,
+      bodyHtml: `<b>How does this work?</b> Connect Telegram with a bot token or pair WhatsApp with a QR code. For webhook sources (GitHub, GitLab), use the URL shown in setup. Slack and Discord adapters are not supported in this build.`,
     })}
 
     <details class="add-form" style="margin-top:14px;margin-bottom:18px" id="notif-section">
@@ -345,7 +345,7 @@ const ADMIN_PAGE_BODY = `
       <div style="margin-top:10px">
         <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Where AgentX pings you when a task finishes, errors, or runs long. Mirrors <code>agentx notifications</code>.</p>
         <div id="notif-current" style="font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;color:var(--ax-muted)">—</div>
-        <label>Channel<span class="hint">(telegram | whatsapp | slack | discord — leave blank to clear)</span></label>
+        <label>Channel<span class="hint">(telegram | whatsapp — leave blank to clear)</span></label>
         <input id="notif-channel" placeholder="telegram" />
         <label>Chat id</label>
         <input id="notif-chat-id" placeholder="-1001234567890" />
@@ -631,7 +631,7 @@ const ADMIN_PAGE_BODY = `
       <details class="add-form" style="margin-top:10px">
         <summary class="primary">+ Add contact mapping</summary>
         <div style="margin-top:10px">
-          <label>Channel <span class="hint">(telegram | whatsapp | slack | discord — optional)</span></label>
+          <label>Channel <span class="hint">(telegram | whatsapp — optional)</span></label>
           <input id="bc-channel" placeholder="telegram" />
           <label>Chat id <span class="hint">(e.g. <code>-100…</code>, JID — pick at least one of these three)</span></label>
           <input id="bc-chatId" placeholder="-1003861455814" />
@@ -2218,8 +2218,6 @@ function renderChannels() {
 const CHANNEL_DEFS = [
   { id: 'telegram', icon: 'TG', label: 'Telegram' },
   { id: 'whatsapp', icon: 'WA', label: 'WhatsApp' },
-  { id: 'slack',    icon: 'SL', label: 'Slack' },
-  { id: 'discord',  icon: 'DC', label: 'Discord' },
   { id: 'gitlab',   icon: 'GL', label: 'GitLab' },
   { id: 'github',   icon: 'GH', label: 'GitHub' },
   { id: 'webrtc',   icon: '☎',  label: 'Calls (WebRTC)' },

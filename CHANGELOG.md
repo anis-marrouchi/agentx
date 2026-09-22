@@ -2,7 +2,26 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
-## Unreleased
+## 0.28.0 (2026-09-22)
+
+### Features
+- Add `agentx desktop install/start/stop/status` for the macOS assistant and computer-use helper.
+- Open AgentX agents in OpenCode v2, with a built-in TUI fallback for missing or older installations.
+- Add operator-first documentation, annotated screenshot tours, prerequisites, Jev architecture, A2A and terminal guides.
+- Seed isolated documentation demos with scripted workflows and review fixtures.
+
+### Fixes
+- Include the postinstall script and desktop build sources in npm packages.
+- Build Docker from source on Node 22, initialize shared configuration, and connect dashboard and daemon containers.
+- Keep scripted demos from calling the live session reviewer.
+- Report upstream model errors correctly from the OpenAI-compatible endpoint.
+- Correct sorted test expectations and use a pinned local CLI test runner; require opt-in for paid Claude integration tests.
+
+### Release automation
+- Generate future versions and changelogs with Release Please, then validate and publish npm releases through GitHub Actions.
+
+## Historical development notes
+
 
 ### Added
 - **Attach mode — wearable agents.** A Claude Code session you already have open can register with the daemon and wear an agent's identity, so channel messages for that agent are answered in the session in front of you instead of spawning a subprocess. `agentx attach install` once, then `agentx attach <agent>` inside any session. Three delivery modes: `manual` (never interrupts), `notify` (default — a note at the end of your turn), `auto` (takes the turn and drains until the inbox is empty, bounded at 5 messages). Unclaimed messages atomically expire after 90s and fall back to spawning, so nothing is lost and nothing is answered twice. See [Attach mode](/reference/attach) and [Journey 14](/journey/14-wearable-agent).

@@ -51,7 +51,6 @@
       }
     },
     "whatsapp": { "enabled": false },
-    "discord": { "enabled": false },
     "gitlab": { "enabled": false }
   },
   "crons": {

@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AgentX — docs coming soon</title>
 <meta name="description" content="The AgentX documentation is being rewritten. New docs, written for people who don't write code, are on the way.">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/agentx-symbol.png" type="image/png">
 <meta name="theme-color" content="#0ea5e9">
 <meta property="og:type" content="website">
 <meta property="og:title" content="AgentX — docs coming soon">
 <meta property="og:description" content="The AgentX documentation is being rewritten. New docs, written for people who don't write code, are on the way.">
-<meta property="og:image" content="/logo.png">
+<meta property="og:image" content="/agentx-symbol.png">
 <style>
   :root {
     --bg: #ffffff;
@@ -48,7 +48,10 @@
     padding: 48px 16px;
   }
   main { width: 100%; max-width: 560px; }
-  .logo { width: 72px; height: 72px; border-radius: 16px; display: block; }
+  .logo { width: 96px; height: 96px; object-fit: contain; display: block; }
+  @media (prefers-color-scheme: dark) {
+    .logo { filter: invert(1); }
+  }
   h1 {
     font-size: 1.9rem;
     line-height: 1.25;
@@ -97,7 +100,7 @@
 </head>
 <body>
 <main>
-  <img class="logo" src="/logo.png" alt="AgentX">
+  <img class="logo" src="/agentx-symbol.png" alt="AgentX" width="96" height="96">
 
   <h1>The AgentX docs are being rewritten.</h1>
 

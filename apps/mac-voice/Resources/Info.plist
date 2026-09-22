@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>AgentX Voice</string>
-  <key>CFBundleDisplayName</key><string>AgentX Voice</string>
+  <key>CFBundleName</key><string>AgentX Desktop</string>
+  <key>CFBundleDisplayName</key><string>AgentX Desktop</string>
   <key>CFBundleIdentifier</key><string>tn.acme.agentx.voice</string>
   <key>CFBundleExecutable</key><string>AgentXVoice</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -13,6 +13,6 @@
   <!-- Accessory: floats over other apps, no Dock icon, never steals focus. -->
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>AgentX Voice records your voice only while you hold the hotkey, so it can transcribe your instruction and send it to your agent.</string>
+  <string>AgentX Desktop records your voice only while you hold the hotkey, so it can transcribe your instruction and send it to your agent.</string>
 </dict>
 </plist>

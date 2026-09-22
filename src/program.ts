@@ -1,3 +1,5 @@
+import { a2a } from "@/commands/a2a"
+import { desktop } from "@/commands/desktop"
 import { monitor as monitorCmd } from "@/commands/monitor"
 import { Command } from "commander"
 import { daemon } from "@/commands/daemon"
@@ -79,10 +81,10 @@ export async function buildProgram(): Promise<Command> {
   // Getting set up, running the daemon, and the handful of things an operator
   // reaches for while the fleet is live.
   for (const cmd of [
-    setup, init, connect,        // get running
+    setup, init, connect, desktop,        // get running
     daemon, doctor,              // operate
     agent, channel, schedule,    // configure the things that carry work
-    attachCmd, monitorCmd,       // connect editor sessions
+    attachCmd, monitorCmd, tui,  // connect editor sessions and terminal UI
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
     lookCmd,                     // computer use: see state the tree cannot report
@@ -134,7 +136,7 @@ const ADVANCED = [
   // Observability + forensics
   ledgerCmd, decisionsCmd, traceCmd, processCmd, watch, dbCmd,
   // Fleet + extension
-  mesh, skillCmd, pluginCmd, hook, actionsCmd,
+  mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd,
   // Scheduling internals (`schedule` is the friendly front door)
   cron,
   // Housekeeping
@@ -142,7 +144,7 @@ const ADVANCED = [
   // Channel-specific + demo
   whatsapp, demo,
   // Deprecated — superseded by `agentx attach`
-  chat, tui,
+  chat,
 ]
 
 /** Pack names into indented lines of at most `width` characters. */

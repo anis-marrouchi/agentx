@@ -1,48 +1,126 @@
-# Contributing to AgentX
+# Contributing
 
-Thanks for considering a contribution. The full guide lives at
-[`docs/contributing.md`](docs/contributing.md) — repo layout, how to run the
-daemon locally, test discipline, PR conventions, and the three-tier source
-rule.
+Thanks for contributing. The guide below covers the repo layout, how to run tests, and the PR conventions.
 
-## TL;DR
+## Repo layout
 
-```bash
-pnpm install
-pnpm run build
-node dist/cli.js daemon start            # boots a local daemon on :18800
-pnpm test                                # vitest, includes tier-discipline check
+```
+src/
+├── agent/ · agents/      # registry, runtime, landscape, heartbeat, bootstrap
+├── a2a/                  # mesh client + server
+├── business/             # day-cycle, work-pool, KPI, reporter (optional layer)
+├── channels/             # Telegram, WhatsApp, GitLab, GitHub, webhooks, router
+├── commands/             # Commander CLI subcommands
+├── crons/                # scheduler, retry, onError pipeline
+├── daemon/               # main HTTP server, SSE, config loader
+├── git/                  # git-log / commit helpers
+├── hooks/                # hook registry + types
+├── mcp/                  # MCP server (exposes agentx as an MCP to Claude Code / Cursor)
+├── memory/               # Haiku-based cross-session memory
+├── observability/        # SSE events, debug mode, usage tracker
+├── permissions/          # permission manager for Claude Code
+├── services/             # deterministic pre-LLM matcher
+├── wiki/                 # ingest/absorb/query/sync (Karpathy flat + graph)
+├── cli.ts · index.ts     # entry points
 ```
 
-Config lives in `agentx.json` (Zod-validated by `src/daemon/config.ts`);
-copy `agentx.example.json` to start.
+An agent has a workspace directory and a configured model — see [What it is](docs/what-it-is.md).
 
-## Where to file what
+## Prerequisites
 
-- **Bug reports:** open an issue with reproduction steps, `agentx daemon logs`
-  output, and the failing config block. Don't paste tokens.
-- **Feature requests:** open an issue first — keeps the design conversation
-  visible and avoids wasted PR work.
-- **Good first issues:** filter the issue tracker for `good first issue` —
-  small, scoped, with clear acceptance criteria.
-- **Security:** don't open a public issue. Email anis.marrouchi@noqta.tn
-  (responsible disclosure: ~14 day window).
+- Node 22.x
+- pnpm 10+
 
-## Pull-request checklist
+## Setup
 
-- One change per PR; keep diffs small and named.
-- Tests pass locally (`pnpm test`) and the daemon still starts (`node dist/cli.js daemon start`).
-- For Zod schema changes, add the field BEFORE using it in consumers — unknown keys are silently stripped.
-- For new config fields, update `agentx.example.json` and `docs/reference/config-schema.md`.
-- Commits follow the convention in [`docs/contributing.md`](docs/contributing.md#commit-style).
+```bash
+git clone https://github.com/anis-marrouchi/agentx.git
+cd agentx
+pnpm install
+pnpm build          # tsup → dist/
+pnpm typecheck
+pnpm test           # vitest
+```
 
-## What this project is NOT
+Hot-reload during development:
 
-- Not a chatbot. AgentX coordinates agents you've configured; it doesn't have an opinion about what they say.
-- Not a hosted service. Everything runs on your machines — `agentx.json` and SQLite are the source of truth.
-- Not an agent framework. If you want a DSL for building a single agent, look at AutoGen / LangGraph / CrewAI. AgentX is the layer above: routing, observability, cost, schedules, and channels for agents you already have.
-- Not provider-locked. Claude, OpenAI, and any tool-using LLM backend can be plugged in via `providers.<name>` in `agentx.json`.
+```bash
+pnpm dev            # tsup --watch
+```
 
-## License
+## Running the docs site locally
 
-MIT — see [`LICENSE`](LICENSE). By contributing you agree your changes are released under the same terms.
+```bash
+pnpm docs:dev       # http://localhost:5173
+pnpm docs:build     # static site → docs/.vitepress/dist/
+pnpm docs:preview
+```
+
+## Commit style
+
+Conventional Commits — `<type>(<scope>): <subject>` with a body that explains **why** over **what**.
+
+```
+feat(daemon): business layer + multi-value cron onError
+fix(voice): use claude-haiku-4-5 alias
+refactor(wiki): split absorb prompt per mode
+```
+
+See [`.claude/CLAUDE.md`](https://github.com/anis-marrouchi/agentx/blob/master/.claude/CLAUDE.md) in your fork for the full convention.
+
+## Writing a channel adapter
+
+Each channel lives under `src/channels/`. Use the current `ChannelAdapter` interface in [src/channels/types.ts](src/channels/types.ts) and an existing adapter as a starting point. The following sketch illustrates the lifecycle; the interface defines the complete contract:
+
+```ts
+export class MyAdapter implements ChannelAdapter {
+  name = "my-channel"
+  async start() { /* open sockets */ }
+  async stop() { /* cleanup */ }
+  onMessage(cb: (msg: InboundMessage) => void) { /* register */ }
+  async send(chatId: string, text: string, opts?: SendOpts) { /* outbound */ }
+}
+```
+
+Wire the adapter into `src/daemon/index.ts` and add its Zod schema under `channelsConfigSchema` in `src/daemon/config.ts`.
+
+## Docs conventions
+
+- Write for an operator first. Label terminal and browser steps explicitly.
+- Keep reference pages concise and validate examples against the current code.
+- Keep screenshots sourced from a demo instance, never a live fleet.
+- Run `pnpm docs:check` before submitting a documentation change.
+
+### Reproduce the screenshots
+
+With Node 22 and Chrome or Chromium installed:
+
+```sh
+pnpm build
+pnpm docs:demo
+# In a second terminal:
+pnpm docs:seed
+pnpm docs:shots
+```
+
+The demo uses scripted replies and fictional review fixtures. Its channels and
+schedules stay disabled. The capture script only accepts the isolated dashboard
+at `http://127.0.0.1:18931`. Set `CHROME_PATH` if your browser is elsewhere, or
+`DOCS_SHOTS=live,operations` to capture a subset. Stop the demo with Ctrl-C.
+
+## Filing issues
+
+- **Bug** — include daemon version (`agentx --version`), config diff (secrets redacted), and a minimal repro.
+- **Feature** — describe the real-world scenario first; the API second.
+
+## Security
+
+Do **not** open public issues for vulnerabilities. Email the maintainer via the contact in `package.json`.
+
+## Releases
+
+Use Conventional Commits (`fix:`, `feat:`, and `!` / `BREAKING CHANGE:` for incompatible changes). Release Please opens a PR on `master` with the next package version and generated `CHANGELOG.md`. Merge that release PR to create the tag and start npm publication in the same workflow. The publish job checks types, tests, docs, build output, and package contents first.
+
+Configure npm trusted publishing for package `agentix-cli`, repository `anis-marrouchi/agentx`, workflow `release.yml`, using [npm's setup guide](https://docs.npmjs.com/trusted-publishers/). Alternatively configure a publishing `NPM_TOKEN` repository secret. A failed publication can be retried by dispatching **Release** with the existing `vX.Y.Z` tag. The workflow checks that the tag matches the package version and belongs to `master`.
+
+Release Please uses the built-in GitHub token unless `RELEASE_PLEASE_TOKEN` is configured. With the built-in token, its PR events do not trigger other workflows: run CI manually on the release branch before merging, or configure a dedicated release token for automatic PR checks. Publication always runs its own validation. [Release Please documentation](https://github.com/googleapis/release-please-action).

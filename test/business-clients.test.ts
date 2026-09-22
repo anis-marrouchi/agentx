@@ -62,7 +62,7 @@ describe("client resolution", () => {
 
   it("gives every derived client a policy without anyone declaring it", () => {
     const ids = listClients(business).map(c => c.id)
-    expect(ids).toEqual(["umbrella", "initech", "globex", "acme"])
+    expect(ids).toEqual(["acme", "globex", "initech", "umbrella"])
     const globex = clientPolicy("globex", business)
     expect(globex).toMatchObject({ name: "globex", declared: false, standing: [] })
     const umbrella = clientPolicy("umbrella", business)

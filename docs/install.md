@@ -1,195 +1,79 @@
-# Install
+# Install AgentX
 
-Pick the path that matches you. All three end up at the same place: a working daemon and a dashboard at `http://127.0.0.1:4202`.
+Before installing, use the [prerequisites checklist](requirements.md) to choose Docker or Node.js and prepare a model connection.
 
-## Option A: One-line installer (recommended)
+A technical teammate installs AgentX and connects a model. Operators can then use the browser for setup and daily work. Choose Docker for a contained installation, or run the Node.js application directly.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/master/install.sh | bash
-```
+::: warning Registry package 0.27.0
+The published `0.27.0` package is missing a file used during installation (`scripts/postinstall.mjs`). This checkout fixes that packaging error. Until a corrected package is published, use the Docker or source instructions below; the npm installer may fail with `MODULE_NOT_FOUND`.
+:::
 
-This:
+## Docker: build this checkout
 
-1. Checks for Node.js 20+ (uses nvm if available).
-2. Installs `agentix-cli` globally.
-3. Runs `agentx setup` — the daemon starts in the background and **your browser opens at `http://127.0.0.1:4202/setup`**.
+::: info Terminal
+Install and start Docker Desktop (or Docker Engine with Compose on Linux), then run:
 
-![AgentX setup wizard opens automatically after install](/screenshots/setup.png)
-
-The wizard collects: team name, first agent (name, trigger words, personality), optional Telegram bot token, optional Anthropic API key. It writes `agentx.json` + `.env` + scaffolds the agent's folder for you — no hand-editing.
-
-From that moment on, **everything is in the dashboard**: agents, channels, schedules, webhooks, mesh peers, tokens, the intent graph. The CLI is always there as a parallel control plane — every button maps to a verb — but you never need to open an editor.
-
-Jump straight into → [Journey 1 — Your first agent on Telegram](/journey/01-telegram-qa-bot) for a guided walkthrough.
-
-## Option B: Docker
-
-Best for servers you don't want to install Node on.
-
-```bash
+```sh
 git clone https://github.com/anis-marrouchi/agentx.git
 cd agentx
-cp agentx.example.json agentx-data/agentx.json   # or empty, and run `docker compose run daemon setup`
-cp .env.example .env                              # add your API keys here
-docker compose up -d
+git checkout docs-v2
+cp .env.example .env
+docker compose up --build -d
 ```
+:::
 
-The `docker-compose.yml` runs two containers (daemon + dashboard) sharing a bind-mounted `./agentx-data` directory — nothing is stored inside the image, so upgrades are `docker compose pull && up -d`.
+The first build downloads dependencies and compiles AgentX. It does not require Node.js on the host. An initialization service creates an empty team in `agentx-data/`, then the daemon and dashboard run in separate containers. Existing configuration is retained. Host ports are restricted to `127.0.0.1`.
 
-## Option C: Manual npm
+::: info In the browser
+Open `http://127.0.0.1:4202/setup`. Add your first agent. The simplest path in the default Docker image is **Anthropic API (BYO key)**: select it under **AI engine** and fill in **Anthropic API key**. Other providers need corresponding configuration. Claude Code, Codex CLI, and OpenCode are not installed in the default image; an installer must add and authenticate those tools before choosing them.
+:::
 
-```bash
+Compose already runs the daemon, so you do not need the wizard's **Start daemon now** button. Adding an agent requires a daemon restart. After saving setup, restart the two application services, then open **Live** and confirm the agent appears:
+
+::: info Terminal
+```sh
+docker compose restart daemon dashboard
+docker compose ps
+docker compose logs --tail=50 daemon dashboard
+```
+:::
+
+Keep `agentx-data/`: it contains configuration, workspaces, credentials, and task history. `docker compose down` stops the services without deleting that bind-mounted directory. If you change provider keys in the Compose `.env` file, recreate the services with `docker compose up -d --force-recreate`.
+
+For another local port, set `AGENTX_DASHBOARD_PORT` or `AGENTX_DAEMON_PORT` in `.env`. An existing non-Docker configuration needs `node.bind: "0.0.0.0:18800"` and `dashboard.daemonUrl: "http://daemon:18800"` so the containers can reach each other. Back up the data before adapting an existing install.
+
+## Run from source
+
+::: info Terminal
+Use **Node.js 22.x** and pnpm 10. From the checked-out repository:
+
+```sh
+pnpm install
+pnpm build
+node dist/cli.js setup
+```
+:::
+
+The wizard opens at `http://127.0.0.1:4202/setup`. Keep that terminal open while it serves the dashboard. In another terminal, start the daemon from the same directory:
+
+::: info Terminal
+```sh
+node dist/cli.js daemon start --detach
+node dist/cli.js daemon status
+```
+:::
+
+Alternatively, the setup confirmation's **Start daemon now** button can start it on a local install. The dashboard and daemon are still separate processes: `setup` does not start the daemon merely by opening the wizard.
+
+## Install a corrected npm release
+
+Once the packaging fix is released, the npm package is `agentix-cli` and the executable is `agentx`:
+
+```sh
 npm install -g agentix-cli
-agentx setup               # opens the wizard
+agentx setup
 ```
 
-If you'd rather skip the wizard and edit JSON by hand, `agentx init` still works:
+The one-line `install.sh` installer also installs that npm package and opens setup, so it is affected by the same release issue. Node 20 is too old; the package requires `>=22 <23`.
 
-```bash
-mkdir my-agentx && cd my-agentx
-agentx init
-```
-
-This creates:
-
-- `agentx.json` — the main config file
-- `.env` — template for secrets (loaded automatically at startup)
-- `.agentx/` — runtime data directory (sessions, wiki, cron logs, task history, tokens — gitignored)
-
-## Prerequisites (reference)
-
-- **Node.js 20+** — `node --version`
-- **Claude Code CLI** (for `claude-code` tier agents) — [install guide](https://docs.anthropic.com/en/docs/claude-code).
-- **Codex CLI** (for `codex-cli` tier agents) — install with `npm i -g @openai/codex`, then verify with `codex --version`.
-- **OpenCode CLI** (for `opencode` tier agents) — follow the [OpenCode install guide](https://opencode.ai/docs/), authenticate a provider, then verify with `opencode --version`.
-- A channel credential: a Telegram bot token from [@BotFather](https://t.me/BotFather), a Discord bot token, a GitLab API token, or a WhatsApp session. Telegram is the fastest to get started.
-
-## 3. Add your first agent
-
-```bash
-agentx agent add
-```
-
-You'll be asked for:
-
-| Prompt | What it means |
-|---|---|
-| ID | Short slug, e.g. `support` |
-| Name | Display name, e.g. `Support Assistant` |
-| Workspace | Directory for this agent's instructions, skills, MCP config. Defaults to `./agents/<id>` |
-| Tier | `claude-code` uses `claude`; `codex-cli` uses `codex`; `opencode` uses your OpenCode provider configuration; `sdk` uses the Anthropic Agent SDK; `orchestrator` uses AgentX's provider loop. See [Agent execution tiers](/reference/tiers) |
-| Model | e.g. `claude-sonnet-4-6`, `claude-haiku-4-5` |
-| Mentions | Handles that route to this agent, e.g. `@support_bot`, `@support` |
-
-An agent is just a directory with configuration files. No code required.
-
-## 4. Add a channel
-
-```bash
-agentx channel add
-```
-
-Pick one:
-
-::: code-group
-```text [Telegram]
-- Account name (free label): default
-- Bot token: <from @BotFather>
-- Bind to agent: <your agent>
-```
-
-```text [Discord]
-- Bot token: <from Discord Developer Portal>
-- Bind to agent: <your agent>
-```
-
-```text [GitLab]
-- GitLab host: https://gitlab.com (or self-hosted)
-- API token: <personal access token>
-- Webhook port: 18811
-- Secret: <random string>
-- Project routes: <project_id>:<agent_id>
-```
-
-```text [WhatsApp]
-- Default agent: <your agent>
-- Session dir: .agentx/whatsapp-sessions
-- First run prints a QR code — scan with WhatsApp on your phone
-```
-:::
-
-## 5. Start the daemon
-
-```bash
-agentx daemon start
-```
-
-You'll see each channel come up, each agent register, and (if configured) mesh peers health-check.
-
-### Watch it live
-
-In a second terminal:
-
-```bash
-agentx daemon watch
-```
-
-Color-coded activity feed:
-
-```text
-10:31:08 → Routing [telegram/You] -> "Support": Hello!
-10:31:08 ▶ [support] executing task (1/2)
-10:31:15 ✓ [support] completed in 7234ms
-```
-
-## 6. Verify
-
-```bash
-agentx daemon status   # PID, channels, agents, crons, mesh peers
-agentx config check    # Validate agentx.json + workspaces
-agentx config show     # Print resolved configuration
-```
-
-DM your Telegram bot — the reply should arrive within a couple of seconds.
-
-::: tip No manual JSON edits required
-From now on every config change has a CLI verb:
-
-```bash
-agentx config set agents.support.model claude-sonnet-4-6
-agentx schedule "every morning at 9" --agent support --do "..."
-```
-
-The daemon hot-reloads crons automatically. Sections that still need a restart (agents, channels, mesh) are flagged in the output.
-:::
-
-## Run in the background
-
-```bash
-agentx daemon start --detach
-```
-
-For auto-start on boot, use systemd (Linux) or launchd (macOS). A minimal systemd unit:
-
-```ini
-[Unit]
-Description=AgentX Daemon
-After=network.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/path/to/your/agentx
-ExecStart=/usr/bin/node /path/to/agentx/dist/cli.js daemon start
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## Where to next
-
-- **"I just want a Telegram Q&A bot."** → [Journey 1](/journey/01-telegram-qa-bot)
-- **"I want a scheduled report that pages me on failure."** → [Journey 2](/journey/02-scheduled-reports)
-- **"I want the big picture first."** → [Concepts](/concepts)
+Continue with [Your first agent](./first-agent.md). If the browser loads but messages do not run, follow [It's not answering](./help/its-not-answering.md).

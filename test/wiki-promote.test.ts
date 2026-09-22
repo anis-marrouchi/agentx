@@ -112,7 +112,7 @@ describe("listAllAgentMemories", () => {
 
     const all = listAllAgentMemories(ROOT)
     expect(all).toHaveLength(2)
-    expect(all.map((x) => x.agentId).sort()).toEqual(["peer", "cx"])
+    expect(all.map((x) => x.agentId).sort()).toEqual(["cx", "peer"])
   })
 
   it("returns empty when the memory root does not exist", () => {
@@ -151,7 +151,7 @@ describe("getUnpromotedMemories", () => {
 
   it("excludes user memories by default, includes them when opted in", () => {
     const def = getUnpromotedMemories(all, index(), [])
-    expect(def.map((c) => c.key).sort()).toEqual(["peer/project_server_ports", "cx/reference_wacli"])
+    expect(def.map((c) => c.key).sort()).toEqual(["cx/reference_wacli", "peer/project_server_ports"])
     expect(DEFAULT_PROMOTE_TYPES).not.toContain("user")
 
     const withUser = getUnpromotedMemories(all, index(), [], { types: ["user"] })
@@ -192,7 +192,7 @@ describe("getUnpromotedMemories", () => {
     const week = getUnpromotedMemories(all, index(), [], { sinceMs: 7 * 86400_000, now })
     expect(week.map((c) => c.key)).toEqual([])
     const month = getUnpromotedMemories(all, index(), [], { sinceMs: 30 * 86400_000, now })
-    expect(month.map((c) => c.key).sort()).toEqual(["peer/project_server_ports", "cx/reference_wacli"])
+    expect(month.map((c) => c.key).sort()).toEqual(["cx/reference_wacli", "peer/project_server_ports"])
   })
 
   it("sorts newest first and honors max", () => {
@@ -217,7 +217,7 @@ describe("groupCandidates", () => {
     ])
     expect(clusters).toHaveLength(3)
     const corroborated = clusters.find((c) => c.candidates.length === 2)!
-    expect(corroborated.corroboratingAgents).toEqual(["peer", "devops"])
+    expect(corroborated.corroboratingAgents).toEqual(["devops", "peer"])
     // 0.5 + 0.15·1 + 0.05 (project) = 0.70
     expect(corroborated.confidence).toBeCloseTo(0.7)
     const singleRef = clusters.find((c) => c.candidates[0].memory.name === "wacli")!
@@ -426,7 +426,7 @@ describe("buildMemoryPromotePrompt", () => {
     )
     expect(prompt).toContain("2–5 other articles via `[[Article Title]]` wikilinks")
     expect(prompt).toContain(long.stamp)
-    expect(prompt).toContain("corroborated by: peer, devops (2 agents)")
+    expect(prompt).toContain("corroborated by: devops, peer (2 agents)")
     expect(prompt).toContain("[… truncated]")
     expect(prompt).not.toContain("x".repeat(PROMOTE_BODY_LIMIT + 1))
     expect(prompt).toContain("[[Peer Server]] — concepts/peer-server.md")

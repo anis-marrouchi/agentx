@@ -1,175 +1,68 @@
 import { defineConfig } from "vitepress"
-import { withMermaid } from "vitepress-plugin-mermaid"
 
-export default withMermaid(defineConfig({
+const groups = [
+  { text: "Start here", items: [
+    { text: "Meet AgentX", link: "/" }, { text: "What it is", link: "/what-it-is" },
+    { text: "See it first", link: "/see-it-first" },
+    { text: "Visual walkthrough", link: "/tutorials/first-workflow" }, { text: "Before you start", link: "/requirements" }, { text: "Install", link: "/install" },
+    { text: "Your first agent", link: "/first-agent" }, { text: "Connect Telegram", link: "/connect-telegram" },
+  ] },
+  { text: "Running it day to day", items: [
+    { text: "Dashboard", link: "/dashboard/" }, { text: "Monitor", link: "/dashboard/monitor" },
+    { text: "Live", link: "/dashboard/live" }, { text: "Operations", link: "/dashboard/operations" },
+    { text: "Activity", link: "/dashboard/activity" }, { text: "Workflows", link: "/dashboard/workflows" },
+    { text: "Settings", link: "/dashboard/settings" },
+    { text: "In-page chat", link: "/dashboard/chat" }, { text: "Desktop assistant", link: "/dashboard/voice" },
+    { text: "Terminal UI (OpenCode)", link: "/dashboard/tui" },
+  ] },
+  { text: "Automations", items: [
+    { text: "Overview", link: "/automations/" }, { text: "Describe what you want", link: "/automations/describe-it" },
+    { text: "Check that it worked", link: "/automations/check-it-worked" },
+  ] },
+  { text: "Common jobs", items: [
+    { text: "Answer questions", link: "/jobs/answer-questions" }, { text: "Send a daily report", link: "/jobs/daily-report" },
+    { text: "Watch GitLab", link: "/jobs/watch-gitlab" }, { text: "Add a second machine", link: "/jobs/second-machine" },
+    { text: "Tailscale setup", link: "/jobs/tailscale" }, { text: "Keep it safe", link: "/jobs/keep-it-safe" },
+  ] },
+  { text: "When something goes wrong", items: [
+    { text: "It's not answering", link: "/help/its-not-answering" }, { text: "Run a health check", link: "/help/doctor" },
+    { text: "Understand costs", link: "/help/costs" },
+  ] },
+  { text: "Go deeper", items: [
+    { text: "Record a VS Code walkthrough", link: "/tutorials/record-vscode" },
+    { text: "Architecture", link: "/architecture/overview" },
+    { text: "Jev and typed decisions", link: "/architecture/jev" },
+  ] },
+  { text: "Reference for engineers", items: [
+    { text: "CLI", link: "/reference/cli" }, { text: "Configuration", link: "/reference/config" },
+    { text: "Channels", link: "/reference/channels" }, { text: "Workflow schema", link: "/reference/workflow-schema" },
+    { text: "Agent-to-agent (A2A)", link: "/reference/a2a" },
+    { text: "Dashboard map", link: "/reference/dashboard-map" }, { text: "Glossary", link: "/reference/glossary" },
+  ] },
+]
+
+export default defineConfig({
   title: "AgentX",
-  description: "A self-hosted mesh of AI agents for your team — A2A-native, auditable, on your machines. Route Telegram, WhatsApp, GitLab, GitHub, crons, webhooks, and mesh tasks to AI agents on Claude, OpenAI, or any LLM.",
-  lastUpdated: true,
+  description: "Put an AI teammate on the tools your team already uses.",
   cleanUrls: true,
-
+  lastUpdated: true,
   head: [
-    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
-    ["meta", { name: "theme-color", content: "#0ea5e9" }],
-    ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "AgentX — a self-hosted mesh of AI agents for your team" }],
-    ["meta", { property: "og:description", content: "Plug in Telegram, WhatsApp, GitLab, or GitHub. Set schedules. Watch your agents work. Web wizard for non-technical operators, CLI for engineers. Self-hosted." }],
+    ["link", { rel: "icon", href: "/agentx-symbol.png", type: "image/png" }],
+    ["meta", { property: "og:title", content: "AgentX — an AI teammate for your team" }],
+    ["meta", { property: "og:description", content: "Set up agents, connect your tools, and see what needs you." }],
+    ["meta", { property: "og:image", content: "/agentx-symbol.png" }],
   ],
-
   themeConfig: {
-    logo: "/logo.png",
-    siteTitle: "AgentX",
-
+    logo: "/agentx-symbol.png",
     nav: [
-      { text: "Install", link: "/install" },
-      { text: "Concepts", link: "/concepts" },
-      { text: "Journey", link: "/journey/01-telegram-qa-bot" },
-      { text: "Reference", link: "/reference/cli" },
-      { text: "Blog ↗", link: "https://example.com/en/blog" },
-      { text: "GitHub", link: "https://github.com/anis-marrouchi/agentx" },
+      { text: "Start here", link: "/" }, { text: "Dashboard", link: "/dashboard/" },
+      { text: "Automations", link: "/automations/" }, { text: "Common jobs", link: "/jobs/answer-questions" },
+      { text: "Reference", link: "/reference/cli" }, { text: "GitHub", link: "https://github.com/anis-marrouchi/agentx" },
     ],
-
-    sidebar: {
-      "/": [
-        {
-          text: "Start here",
-          items: [
-            { text: "What is AgentX?", link: "/" },
-            { text: "Install", link: "/install" },
-            { text: "Concepts", link: "/concepts" },
-          ],
-        },
-        {
-          text: "Journey (simple → advanced)",
-          items: [
-            { text: "1. Telegram Q&A bot", link: "/journey/01-telegram-qa-bot" },
-            { text: "2. Scheduled reports", link: "/journey/02-scheduled-reports" },
-            { text: "3. Multi-agent group", link: "/journey/03-multi-agent-group" },
-            { text: "4. Cross-channel", link: "/journey/04-cross-channel" },
-            { text: "5. Hooks & webhooks", link: "/journey/05-hooks-webhooks" },
-            { text: "6. Shared wiki", link: "/journey/06-shared-wiki" },
-            { text: "8. Mesh federation", link: "/journey/08-mesh-federation" },
-            { text: "9. Deterministic services", link: "/journey/09-deterministic-services" },
-            { text: "10. MCP server", link: "/journey/10-mcp-server" },
-            { text: "11. Production hardening", link: "/journey/11-production-hardening" },
-            { text: "13. Authoring a typed workflow", link: "/journey/13-typed-workflow" },
-            { text: "14. Wearable agents", link: "/journey/14-wearable-agent" },
-          ],
-        },
-        {
-          text: "Use cases",
-          items: [
-            { text: "Solo founder ops", link: "/use-cases/solo-founder" },
-            { text: "Agency — agent per client", link: "/use-cases/agency" },
-            { text: "Public service intake", link: "/use-cases/public-service" },
-            { text: "OSS maintainer fleet", link: "/use-cases/maintainer-fleet" },
-          ],
-        },
-        {
-          text: "Playbooks",
-          items: [
-            { text: "Backlog import + sync", link: "/playbooks/backlog-import-sync" },
-            { text: "Plugin authoring", link: "/playbooks/plugin-authoring" },
-            { text: "PM gating (org-chart)", link: "/playbooks/pm-gating" },
-            { text: "Capability audit", link: "/playbooks/capability-audit" },
-            { text: "Tier-2 billing", link: "/playbooks/tier2-billing" },
-          ],
-        },
-        {
-          text: "Dashboard",
-          items: [
-            { text: "Overview", link: "/reference/dashboard/" },
-            { text: "Setup wizard", link: "/reference/dashboard/setup" },
-            { text: "Live activity", link: "/reference/dashboard/live" },
-            { text: "Boards (Kanban)", link: "/reference/dashboard/boards" },
-            { text: "Workflows", link: "/reference/dashboard/workflows" },
-            { text: "Procedures", link: "/reference/dashboard/procedures" },
-            { text: "Processes", link: "/reference/dashboard/processes" },
-            { text: "Intent graph", link: "/reference/dashboard/graph" },
-            { text: "Per-agent page", link: "/reference/dashboard/agent" },
-            { text: "Admin panel", link: "/reference/dashboard/admin" },
-            { text: "Cost", link: "/reference/dashboard/cost" },
-            { text: "Health", link: "/reference/dashboard/health" },
-            { text: "Usage dashboard (legacy)", link: "/reference/dashboard/usage" },
-          ],
-        },
-        {
-          text: "Reference",
-          items: [
-            { text: "CLI", link: "/reference/cli" },
-            { text: "Attach mode", link: "/reference/attach" },
-            { text: "Guardrails", link: "/reference/guard" },
-            { text: "Config schema", link: "/reference/config-schema" },
-            { text: "Communication matrix", link: "/reference/communication-matrix" },
-            { text: "Context strategies", link: "/reference/context-strategies" },
-            { text: "WhatsApp as a data source", link: "/reference/whatsapp-ingest" },
-            { text: "Telegram without the jargon", link: "/reference/telegram-setup" },
-            { text: "Boards (Kanban)", link: "/reference/boards" },
-            { text: "Scoped API tokens", link: "/reference/tokens" },
-            { text: "Public agents", link: "/reference/public-agents" },
-            { text: "Intent knowledge graph", link: "/reference/graph" },
-            { text: "Procedures", link: "/reference/procedures" },
-            { text: "Workflows", link: "/reference/workflows" },
-            { text: "Actions registry", link: "/reference/actions" },
-            { text: "Tailscale mesh VPN", link: "/reference/tailscale-setup" },
-            { text: "agentx doctor", link: "/reference/doctor" },
-            { text: "Rollback runbook", link: "/reference/rollback-runbook" },
-          ],
-        },
-        {
-          text: "Architecture",
-          items: [
-            { text: "Three-tier model", link: "/architecture/three-tier" },
-            { text: "Surface reduction", link: "/architecture/surface-reduction" },
-            { text: "Design system", link: "/architecture/design-system" },
-            { text: "Plugins", link: "/architecture/plugins" },
-            { text: "Workflows YAML", link: "/architecture/workflows-yaml" },
-            { text: "Workflow absorb plan", link: "/architecture/workflow-absorb-plan" },
-            { text: "Typed workflow DSL plan", link: "/architecture/typed-workflow-dsl-plan" },
-          ],
-        },
-        {
-          text: "Roadmap",
-          items: [
-            { text: "What's next", link: "/roadmap/whats-next" },
-            { text: "UX v2 — zero manual config edits", link: "/roadmap/ux-v2" },
-          ],
-        },
-        {
-          text: "Meta",
-          items: [
-            { text: "Migrate from OpenClaw", link: "/migration/from-openclaw" },
-            { text: "Contributing", link: "/contributing" },
-          ],
-        },
-      ],
-    },
-
-    socialLinks: [
-      { icon: "github", link: "https://github.com/anis-marrouchi/agentx" },
-      { icon: "twitter", link: "https://twitter.com/anis_marrouchi" },
-    ],
-
-    editLink: {
-      pattern: "https://github.com/anis-marrouchi/agentx/edit/master/docs/:path",
-      text: "Edit this page on GitHub",
-    },
-
-    search: {
-      provider: "local",
-    },
-
-    footer: {
-      message: "Released under the MIT License.",
-      copyright: "© 2025–present Anis Marrouchi",
-    },
+    sidebar: groups,
+    search: { provider: "local" },
+    socialLinks: [{ icon: "github", link: "https://github.com/anis-marrouchi/agentx" }],
+    editLink: { pattern: "https://github.com/anis-marrouchi/agentx/edit/docs-v2/docs/:path" },
+    footer: { message: "Released under the MIT License." },
   },
-
-  mermaid: {
-    theme: "default",
-  },
-
-  ignoreDeadLinks: [
-    /^https?:\/\/localhost/,
-    /^https?:\/\/100\./,
-  ],
-}))
+})

@@ -13,7 +13,7 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
-import { readScreen, rectFor } from "@/computer-use/screen"
+import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 
 const run = promisify(execFile)
 
@@ -28,10 +28,7 @@ const run = promisify(execFile)
 // over WhatsApp, a cron job — instead of to one app. Swift owns only the
 // parts Node cannot reach.
 
-const HELPER = resolve(
-  process.cwd(),
-  "apps/mac-helper/build/AgentX Helper.app/Contents/MacOS/agentx-mac-helper",
-)
+
 
 interface Snapshot {
   app: string

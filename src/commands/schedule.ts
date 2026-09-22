@@ -44,7 +44,7 @@ async function resolveNotifyTarget(
     }
     console.log(chalk.yellow("  --notify me: no notifications.destination set yet."))
     const { channel, chatId, accountId } = await prompts([
-      { type: "text", name: "channel", message: "Destination channel (telegram/whatsapp/discord):" },
+      { type: "text", name: "channel", message: "Destination channel (telegram/whatsapp):" },
       { type: "text", name: "chatId", message: "Destination chatId:" },
       { type: "text", name: "accountId", message: "Account id (optional):" },
     ])

@@ -1,4 +1,19 @@
-# AgentX Voice
+# AgentX Desktop assistant
+
+Install and activate from your AgentX configuration directory:
+
+```sh
+agentx desktop install --agent coder-agent
+```
+
+This installs the desktop app and native computer-use helper and saves the chosen
+agent for login startup. Use `agentx desktop status`, `start`, or `stop` afterward.
+From an unreleased source checkout, build the CLI and use `node dist/cli.js desktop install`.
+See [the desktop guide](../../docs/dashboard/voice.md).
+
+The remaining sections describe developer builds of the voice component.
+
+## Voice component
 
 A floating push-to-talk widget for macOS. Hold **⌥Space**, speak, release —
 your words go to an agentx agent and its answer is spoken back.
@@ -17,10 +32,8 @@ places deciding how an agent sounds is how they drift apart.
              →  TTS   ElevenLabs, falling back to `say`
 ```
 
-**No computer use in this slice.** The agent can already do a great deal
-through its own shell (AppleScript, CLI tools). Driving other apps' GUIs
-is a separate, much larger component — and worth building only once
-talking to an agent this way proves pleasant.
+The native helper supplies computer-use capabilities; the desktop app supplies
+voice, hotkeys, and status UI. See the public guide for the current boundaries.
 
 ## Build
 
@@ -47,7 +60,7 @@ All optional; every one has a working default.
 | `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper` | offline STT |
 
-Keys are read from files *before* the environment: an app launched from
+The ElevenLabs key is read from the environment first, then key files: an app launched from
 Finder inherits nothing from your login shell, so an env-only design works
 from a terminal and fails mysteriously when double-clicked.
 
