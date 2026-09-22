@@ -29,11 +29,18 @@ jobs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Select release baseline
+        id: baseline
+        # The initial tag predates its merge commit. Stop at that merge only
+        # until the first automated release updates the manifest.
+        run: |
+          node -e 'const v=require("./.release-please-manifest.json")["."]; console.log(`config=${v === "0.28.0" ? ".github/release-please-initial.json" : "release-please-config.json"}`)' >> "$GITHUB_OUTPUT"
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
-          config-file: release-please-config.json
+          config-file: ${{ steps.baseline.outputs.config }}
           manifest-file: .release-please-manifest.json
 
   publish:
@@ -63,7 +70,6 @@ jobs:
           node-version: '22'
           cache: pnpm
           registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@11
       - name: Install dependencies
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -74,6 +80,8 @@ jobs:
       - run: pnpm build
       - name: Check packed files
         run: node scripts/check-package.mjs
+      - name: Enable npm trusted publishing
+        run: npm install -g npm@11
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
