@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.29.0](https://github.com/anis-marrouchi/agentx/compare/v0.28.0...v0.29.0) (2026-09-22)
+
+
+### Features
+
+* desktop assistant, guided docs, and release automation (0.28.0) ([a282aa3](https://github.com/anis-marrouchi/agentx/commit/a282aa3c4c578aadc91c1dd08f2ee9b4745a87b3))
+
 ## 0.28.0 (2026-09-22)
 
 ### Features
