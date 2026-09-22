@@ -1,0 +1,24 @@
+{
+  "repository": "anis-marrouchi/agentx",
+  "timezone": "Africa/Tunis",
+  "maxActiveItems": 3,
+  "maxPublicRepliesPerDay": 5,
+  "publicReplies": "draft",
+  "dailyTimeBudgetMinutes": 10,
+  "weeklyTimeBudgetMinutes": 15,
+  "quietHours": {
+    "start": "18:00",
+    "end": "09:00"
+  },
+  "initialPriorities": [
+    "Supported installation and upgrade reliability",
+    "Settings and configuration usability",
+    "Reproducible reports and contributor blockers"
+  ],
+  "replanOn": [
+    "new evidence",
+    "maintainer decision",
+    "release or CI state change",
+    "deadline or capacity change"
+  ]
+}

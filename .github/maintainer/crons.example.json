@@ -1,0 +1,22 @@
+{
+  "agentx-maintainer-daily": {
+    "enabled": true,
+    "schedule": "15 9 * * 2-5",
+    "timezone": "Africa/Tunis",
+    "agent": "coder-agent",
+    "prompt": "For anis-marrouchi/agentx, read <AGENTX_CHECKOUT>/skills/agentx-maintainer-daily/SKILL.md and follow it. Gather current context, refresh priorities and the plan, then do bounded work. Read the current policy; do not reuse stale task lists.",
+    "timeout": 660,
+    "maxOutputTokens": 1000,
+    "onError": ["log"]
+  },
+  "agentx-maintainer-weekly": {
+    "enabled": true,
+    "schedule": "15 9 * * 1",
+    "timezone": "Africa/Tunis",
+    "agent": "coder-agent",
+    "prompt": "For anis-marrouchi/agentx, read <AGENTX_CHECKOUT>/skills/agentx-maintainer-weekly/SKILL.md and follow it. Gather current context, review the past week, and replace the next week's priorities and plan using current evidence and capacity.",
+    "timeout": 900,
+    "maxOutputTokens": 1500,
+    "onError": ["log"]
+  }
+}

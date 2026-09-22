@@ -62,7 +62,7 @@ export default defineConfig({
     sidebar: groups,
     search: { provider: "local" },
     socialLinks: [{ icon: "github", link: "https://github.com/anis-marrouchi/agentx" }],
-    editLink: { pattern: "https://github.com/anis-marrouchi/agentx/edit/docs-v2/docs/:path" },
+    editLink: { pattern: "https://github.com/anis-marrouchi/agentx/edit/main/docs/:path" },
     footer: { message: "Released under the MIT License." },
   },
 })

@@ -12,6 +12,14 @@ AgentX is usable but experimental, and is not yet stable. Settings and configura
 
 The guide below covers the repo layout, how to run tests, and the PR conventions.
 
+## Support and triage
+
+Read the [support guide](.github/SUPPORT.md) for supported environments, reporting routes, and upgrade expectations. Questions belong in Discussions; reproducible problems belong in issues. Support is best effort.
+
+The [maintainer runbook](.github/maintainer/TRIAGE.md) defines priorities and the agent-assisted triage process. The agent gathers context before planning; public replies start as drafts, and humans own merges, releases, and closure decisions. We do not automatically close old issues.
+
+`node scripts/maintainer-context.mjs` gathers a read-only repository snapshot. `node scripts/smoke-package.mjs` installs a packed build in a temporary directory and checks the installed CLI and SQLite binding. The package smoke workflow also checks the published package on Linux and macOS.
+
 ## Repo layout
 
 ```

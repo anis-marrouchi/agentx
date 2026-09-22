@@ -27,9 +27,9 @@ The current source release is **0.28.0**. Our priority is to learn from actual u
 
 [Try the demo](#see-it-without-an-account), [check the requirements](docs/requirements.md), or [help us test](#help-test-and-improve-agentx).
 
-![Three agents on three local demo nodes in the Live dashboard](docs/public/screenshots/live.png)
+![AgentX Monitor showing tasks that need your attention in the current dashboard](docs/public/screenshots/monitor-only-you.png)
 
-*The isolated scripted demo, after a cross-node task. No live fleet data is shown.*
+*The Monitor dashboard in the isolated demo: review tasks that need you, with in-page agent chat. All displayed tasks are fictional.*
 
 ## See it without an account
 
@@ -124,6 +124,7 @@ See [Contributing](CONTRIBUTING.md) for testing, issue triage, and development i
 ## Help and development
 
 - [Start here](docs/index.md) · [Troubleshooting](docs/help/its-not-answering.md) · [CLI reference](docs/reference/cli.md)
+- [Support and supported environments](.github/SUPPORT.md) · [Ask a question](https://github.com/anis-marrouchi/agentx/discussions)
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 AgentX is released under the [MIT License](LICENSE).

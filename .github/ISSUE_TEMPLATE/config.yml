@@ -1,8 +1,11 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
-  - name: Documentation
-    url: https://agentx-docs.pages.dev
-    about: Guides, the 13-chapter journey, config reference, playbooks
-  - name: Security issue
+  - name: Questions and setup help
+    url: https://github.com/anis-marrouchi/agentx/discussions
+    about: Ask questions and share workarounds; support is best effort.
+  - name: Documentation and requirements
+    url: https://agentx-docs.pages.dev/requirements
+    about: Component requirements, installation steps, and external help links.
+  - name: Private security report
     url: https://github.com/anis-marrouchi/agentx/security/advisories/new
-    about: Please report vulnerabilities privately — see SECURITY.md
+    about: Report vulnerabilities privately; never include credentials in public issues.

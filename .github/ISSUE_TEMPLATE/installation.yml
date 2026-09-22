@@ -1,0 +1,36 @@
+name: Installation or upgrade problem
+description: Cannot install, upgrade, or start AgentX
+title: "Install: "
+labels: [bug, installation, needs-repro]
+body:
+  - type: markdown
+    attributes:
+      value: "AgentX is experimental. Never include tokens, .env files, private conversations, or unredacted configuration."
+  - type: input
+    id: versions
+    attributes:
+      label: OS, Node version, and AgentX version
+      placeholder: "Ubuntu 24.04, Node 22.x, agentix-cli 0.28.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: method
+    attributes:
+      label: Installation method
+      options: [npm, Source with pnpm, Docker, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact commands and result
+      description: "What did you run, what did you expect, and what happened? For upgrades include the previous version."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted error output
+      description: "Include only the relevant error. If available, inspect agentx doctor --json before sharing it; it is not automatically anonymized."
+    validations:
+      required: true
