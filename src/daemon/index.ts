@@ -1,3 +1,4 @@
+import { codexProcessPool } from "@/agents/codex-process"
 import { SessionMonitor, discoverClis, readMonitorBody } from "./session-monitor"
 import { workflowHealth, scanRuns } from "./workflow-health"
 import { AssistantStore } from "./assistant-store"
@@ -764,6 +765,7 @@ export class AgentXDaemon {
     }
 
     try {
+      codexProcessPool.stop()
       this.sessionMonitor?.stop()
       if (this.processRegistry) {
         this.log("  Stopping persistent claude processes...")

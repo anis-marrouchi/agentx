@@ -45,6 +45,28 @@ describe("codex-cli runtime", () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
+  it("falls back to exec when an older Codex cannot start app-server", async () => {
+    const calls = join(tmp, "calls.jsonl")
+    writeFileSync(join(tmp, "codex"), `#!/usr/bin/env node
+const fs = require("fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + "\\n");
+if (args[0] === "app-server") process.exit(2);
+const outIdx = args.indexOf("--output-last-message");
+if (outIdx >= 0) fs.writeFileSync(args[outIdx + 1], "legacy response");
+`)
+    chmodSync(join(tmp, "codex"), 0o755)
+    process.env.PATH = `${tmp}:${oldPath || ""}`
+    const events: any[] = []
+    const result = await executeTask(baseAgent(tmp, { persistentProcess: true }), baseTask(), {},
+      undefined, undefined, undefined, event => events.push(event))
+    expect(result.content).toBe("legacy response")
+    expect(result.error).toBeUndefined()
+    expect(readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line)[0]))
+      .toEqual(["app-server", "exec"])
+    expect(events.some(event => event.type === "codex.fallback")).toBe(true)
+  })
+
   it("executes codex-cli tier via codex exec and reads the final message file", async () => {
     writeFileSync(join(tmp, "codex-args.json"), "[]")
     writeFileSync(join(tmp, "codex"), `#!/usr/bin/env node

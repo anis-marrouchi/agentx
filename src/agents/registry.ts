@@ -377,6 +377,9 @@ function makeStreamEventFormatter(): (event: any) => string {
   return (event: any): string => {
     if (!event || typeof event !== "object") return ""
     const t = event.type
+    if (t === "codex.ready") return `. codex ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`
+    if (t === "codex.first_output") return `. codex first output=${event.elapsedMs}ms\n`
+    if (t === "codex.fallback") return `. codex using CLI fallback: ${event.reason}\n`
     if (t === "codex.spawned") {
       const model = event.model ? ` model=${event.model}` : ""
       const resume = event.resumeSessionId ? ` resume=${String(event.resumeSessionId).slice(0, 8)}` : ""

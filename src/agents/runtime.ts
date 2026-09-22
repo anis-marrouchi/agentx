@@ -1,4 +1,5 @@
 import { execa } from "execa"
+import { codexProcessPool, CodexUnavailable } from "./codex-process"
 import { execFile, spawn } from "child_process"
 import { StringDecoder } from "string_decoder"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
@@ -1946,6 +1947,25 @@ export async function executeTask(
       return executeClaudeCode(agent, task, historyContext, resumeSessionId, abortSignal)
 
     case "codex-cli":
+      if (agent.persistentProcess) {
+        try {
+          const result = await codexProcessPool.run({
+            key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
+            cwd: agent.workspace, env: buildRuntimeEnv(agent, task),
+            args: buildCodexAgentxMcpArgs(), model: task.model || agent.model,
+            bypass: agent.permissionMode === "bypassPermissions",
+            prompt: buildCodexPrompt(buildPrompt(agent, task, historyContext), task.systemPromptAppend),
+            resume: resumeSessionId, fresh: task.freshSession,
+            timeoutMs: Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000),
+            signal: abortSignal, onEvent, onDelta,
+          })
+          return { ...result, ...(result.error ? buildErrorEnvelope(result.error) : {}) }
+        } catch (error) {
+          if (!(error instanceof CodexUnavailable)) throw error
+          onEvent?.({ type: "codex.fallback", reason: error.message })
+          if (abortSignal?.aborted) return { content: "", error: "task cancelled by operator", errorKind: "cancelled" }
+        }
+      }
       if (onDelta) {
         return executeCodexCliStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }

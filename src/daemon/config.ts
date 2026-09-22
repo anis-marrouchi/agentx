@@ -227,18 +227,15 @@ const agentConfigSchema = z.object({
    *  (right for chatty agents whose reasoning shouldn't land as a comment).
    *  Unset → fall back to the channel default. */
   gitlabAutoReply: z.boolean().optional(),
-  /** When true, this agent's claude-code dispatches reuse a long-lived
-   *  subprocess per (channel, chatId) instead of spawning a fresh
-   *  `claude -p` per turn. Driven over stdin via stream-json input,
-   *  which keeps the prompt cache warm across turns within a chat
-   *  (turn 1 cache_create=12897 → turn 2 cache_create=20 + cache_read
-   *  =24575 in the 2026-05-03 spike — 3-5× latency win on chat-shaped
-   *  workloads). When the registry can't allocate a slot (global or
-   *  per-agent cap exceeded), the dispatch falls back to spawn-per-task
-   *  silently with a warning log. Other tiers (sdk, orchestrator)
-   *  ignore this flag. Default false until the persistent path
-   *  finishes its soak; flip per-agent first, then per-fleet.
-   *  See docs/architecture/persistent-claude-process.md for the design. */
+  /** Opt into process reuse for claude-code (stream-json) or codex-cli
+   *  (app-server). Conversations have isolated processes. Unsupported Codex
+   *  versions fall back to exec before submitting any turn. Other tiers
+   *  ignore this flag. Codex loads the operator's Codex config, unlike exec's
+   *  --ignore-user-config path: review additional MCP servers before enabling.
+   *  Codex uses an 8-process cap and 5-minute idle eviction; processPool
+   *  settings apply to Claude only. Default false for gradual rollout.
+   *  See docs/architecture/persistent-codex-process.md and
+   *  docs/architecture/persistent-claude-process.md for details. */
   persistentProcess: z.boolean().default(false),
   queueMode: z.enum(["collect", "followup", "drop"]).default("collect"),
   heartbeat: z.object({
