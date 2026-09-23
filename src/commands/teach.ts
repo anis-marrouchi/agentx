@@ -30,9 +30,8 @@ const run = promisify(execFile)
 // the thing it just named, and the label stays on screen while the next
 // sentence plays.
 //
-// Deliberately read-only: it points, it never clicks or types. The person
-// keeps the keyboard, which is what makes it teaching rather than a
-// demonstration you watch.
+// Lessons may point, click, type, and press keys. Actions require a fresh
+// readiness check and failures stop the lesson.
 
 
 
@@ -68,6 +67,18 @@ export const teach = new Command()
 
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
+
+    try {
+      if (lesson.start) {
+        await run("/usr/bin/open", ["-a", lesson.start.app, lesson.start.url])
+        await sleep(2000)
+        await requireReady(lesson.start.ready)
+      }
+    } catch (e: any) {
+      console.log(chalk.red(`  setup stopped: ${e?.message ?? e}`))
+      process.exitCode = 3
+      return
+    }
 
     // Recording uses screencapture, not Screen Studio.
     //
@@ -125,9 +136,15 @@ export const teach = new Command()
      *  claim success and the exit code says so. */
     let stopped = false
 
+    try {
     for (const [i, step] of lesson.steps.entries()) {
       console.log(`  ${chalk.dim(String(i + 1).padStart(2))}  ${step.say}`)
       setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "talking")
+
+      if (step.click || step.type || step.key) {
+        if (!step.before) throw new Error(`Step ${i + 1} needs a before claim`)
+        await requireReady(step.before)
+      }
 
       // Speak first, then point. Saying "look at the search box" AFTER
       // highlighting it is backwards — the eye has already moved and the
@@ -144,7 +161,8 @@ export const teach = new Command()
         // Say so rather than silently skipping: a lesson that points at
         // nothing and carries on is worse than one that admits the screen
         // is not where it expected.
-        console.log(chalk.yellow(`      (couldn't find "${step.find}" — narrating only)`))
+        await speaking
+        throw new Error(`Could not find "${step.find}"; stopped before acting`)
       }
       await speaking
 
@@ -159,10 +177,10 @@ export const teach = new Command()
           // Short hold when something follows immediately — the highlight
           // should not still be up while text is being typed elsewhere.
           "--hold", String(step.click || step.type ? 0.5 : step.holdSeconds ?? 2.6),
-        ]).catch(() => {})
+        ])
         if (step.click) {
           const { error: err, changed } = await act(["click"])
-          if (err) console.log(chalk.red(`      ✗ ${err}`))
+          if (err) throw new Error(err)
           // What actually happened feeds the next lookup, so a control
           // that did nothing is not chosen again.
           attempts.push({
@@ -187,23 +205,25 @@ export const teach = new Command()
       // on. A safety check whose refusal is invisible teaches the operator
       // that the feature is broken rather than that it was protected.
       if (step.type) {
+        await requireReady(step.before!)
         setState(`Step ${i + 1} of ${lesson.steps.length}`, step.type, "typing")
         const { error: err } = await act(["type", "--text", step.type])
         if (err) {
           console.log(chalk.red(`      ✗ ${err}`))
           setState("Blocked", err, "waiting")
           attempts.push({ tried: `type into ${step.label ?? "the field"}`, changed: false, note: err })
-          await sleep(2000)
+          throw new Error(err)
         }
       }
       if (step.key) {
+        await requireReady(step.before!)
         setState(`Step ${i + 1} of ${lesson.steps.length}`, `↵ ${step.key}`, "typing")
         const { error: err } = await act(["key", "--name", step.key])
         if (err) {
           console.log(chalk.red(`      ✗ ${err}`))
           setState("Blocked", err, "waiting")
           attempts.push({ tried: `press ${step.key}`, changed: false, note: err })
-          await sleep(2000)
+          throw new Error(err)
         }
       }
       if (!target && !step.type && !step.key) await sleep((step.holdSeconds ?? 1.2) * 1000)
@@ -225,6 +245,7 @@ export const teach = new Command()
           checked = null
           console.log(chalk.yellow(`      ? could not check: ${e?.message ?? e}`))
         }
+        if (!checked && !step.verifyOptional) throw new Error(`Could not verify: ${step.verify}`)
         if (checked) {
           const mark = checked.outcome === "confirmed" ? chalk.green("✓")
             : checked.outcome === "refuted" ? chalk.red("✗") : chalk.yellow("?")
@@ -241,6 +262,13 @@ export const teach = new Command()
           }
         }
       }
+    }
+    } catch (e: any) {
+      stopped = true
+      console.log(chalk.red(`  stopping: ${e?.message ?? e}`))
+      setState("Stopped", String(e?.message ?? e), "waiting")
+    } finally {
+      if (stopped) { try { hud?.stdin?.end() } catch { /* already gone */ } }
     }
     if (!stopped) {
       setState("Done", lesson.title, "done")
@@ -269,6 +297,11 @@ export const teach = new Command()
     }
     console.log(chalk.green(`\n  done.\n`))
   })
+
+async function requireReady(claim: string): Promise<void> {
+  const result = await verifyClaim(claim)
+  if (!result.ok) throw new Error(`Not ready: ${claim}. ${result.reason}`)
+}
 
 /** Run a helper verb. Returns the error message, or null on success, plus
  *  whether the screen actually changed when the verb reports it. */
