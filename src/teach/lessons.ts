@@ -57,7 +57,8 @@ export interface Lesson {
   title: string
   /** What should be on screen before starting. */
   appHint: string
-  start?: { app: string; url: string; ready: string }
+  /** `cleanWindow`: open a throwaway Chrome profile in app mode (Chrome only). */
+  start?: { app: string; url: string; ready: string; cleanWindow?: boolean }
   steps: LessonStep[]
 }
 
@@ -183,4 +184,80 @@ const xBookmarkFolders: Lesson = {
   ],
 }
 
-export const LESSONS: Lesson[] = [xAdvancedSearch, xBookmarkFolders]
+/**
+ * A tour of the AgentX dashboard, staged on the Docker demo
+ * (docker-compose.demo.yml). It only points and clicks navigation, so a
+ * recording of it never changes the demo's state.
+ */
+const agentxDashboardTour: Lesson = {
+  id: "agentx-dashboard-tour",
+  title: "AgentX: a tour of your agent team",
+  appHint: "Start the demo first: docker compose -f docker-compose.demo.yml up -d",
+  start: {
+    app: "Google Chrome",
+    url: "http://127.0.0.1:18931/live",
+    cleanWindow: true,
+    ready: "The text laptop-paris is visible on the page",
+  },
+  steps: [
+    {
+      say: "This is AgentX: a team of AI agents running on your own machines. Everything here is real, except the model's replies, which are scripted for the demo.",
+    },
+    {
+      say: "Up top, three machines, one agent each, all online.",
+      find: "the 3/3 machines count under Agents online",
+      label: "3 machines online",
+    },
+    {
+      say: "This machine is a laptop in Paris. Its agent, CX, talks to customers, and hands technical work to others.",
+      find: "the laptop-paris machine name",
+      label: "CX · laptop-paris",
+    },
+    {
+      say: "And this is Builder, on a server in New York. When CX gets a code problem, it sends it here, across the mesh.",
+      find: "the @builder Builder agent name in the vps-nyc section",
+      label: "Builder · vps-nyc",
+    },
+    {
+      say: "Operations shows what the whole team actually did.",
+      find: "the Operations tab in the top navigation bar",
+      label: "Operations",
+      before: "The AgentX Live page is on screen with the Live tab selected",
+      click: true,
+      verify: "The page shows the heading Mesh operations",
+    },
+    {
+      say: "Machines online, work in progress, failures today, and jobs waiting for a person to review.",
+      find: "the Nodes online summary",
+      label: "The team at a glance",
+    },
+    {
+      say: "Each lane is one kind of work. The demo's run landed here, as direct tasks.",
+      find: "the Direct lane label in the What ran chart",
+      label: "Direct tasks",
+    },
+    {
+      say: "Workflows turn a job you repeat into steps you can review before they run.",
+      find: "the Workflows tab in the top navigation bar",
+      label: "Workflows",
+      before: "The AgentX page with the heading Mesh operations is on screen",
+      click: true,
+      verify: "The page shows a Workflows list that includes Draft the demo shop report",
+    },
+    {
+      say: "This one drafts a report for the demo shop. It's saved switched off, so nothing runs until you say so.",
+      find: "the Draft the demo shop report workflow title",
+      label: "A saved workflow",
+    },
+    {
+      say: "And on every page, you can ask an agent about what you're looking at.",
+      find: "the Ask an agent about this page input",
+      label: "Ask an agent",
+    },
+    {
+      say: "That's the tour. Your machines, the work they did, and the jobs you can hand them.",
+    },
+  ],
+}
+
+export const LESSONS: Lesson[] = [xAdvancedSearch, xBookmarkFolders, agentxDashboardTour]

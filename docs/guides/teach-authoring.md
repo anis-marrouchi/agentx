@@ -23,3 +23,11 @@ const example: Lesson = {
 ```
 
 Build with Node 22 using `npm run build`, then run `agentx teach example-tour`. Run `agentx teach` to list registered lessons. Narration-only rehearsal uses `--no-speak`; it does not disable actions. Sign-in remains a human prerequisite. Page setup opens a browser URL, then checks readiness; a slow page or wrong browser window stops the lesson and requires a retry after correcting the screen.
+
+## Lessons on the AgentX demo
+
+`agentx teach agentx-dashboard-tour` tours the dashboard of the Docker demo (`docker compose -f docker-compose.demo.yml up -d`). It only points and clicks navigation, so it never changes the demo's state.
+
+- Run it from a project directory whose `agentx.json` enables the `ui-element` and `screen-state` decision seats. Without them, every `find` reports "Could not find" and every claim is unverifiable.
+- `start.cleanWindow: true` opens a throwaway Chrome profile in app mode. An everyday window's tabs, bookmarks and extensions use up the screen reader's candidates before it reaches the page, and would appear in a recording. The window opens below the callout, which otherwise covers the page's top navigation.
+- Write each claim as one plainly visible fact, such as `The text laptop-paris is visible on the page`. Compound claims ("A and B listed") and claims about the browser rather than the page often come back inconclusive, which stops the lesson.

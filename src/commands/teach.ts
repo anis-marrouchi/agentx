@@ -70,7 +70,7 @@ export const teach = new Command()
 
     try {
       if (lesson.start) {
-        await run("/usr/bin/open", ["-a", lesson.start.app, lesson.start.url])
+        await run("/usr/bin/open", openArgs(lesson.start))
         await sleep(2000)
         await requireReady(lesson.start.ready)
       }
@@ -297,6 +297,22 @@ export const teach = new Command()
     }
     console.log(chalk.green(`\n  done.\n`))
   })
+
+/** `cleanWindow` opens a throwaway Chrome profile in app mode. An everyday
+ *  window's tabs, bookmarks and extensions fill the screen reader's
+ *  candidate budget before the page does, and would end up in recordings.
+ *  The window starts below the HUD's top-centre band: over a page's top
+ *  navigation, the callout hides the tabs the lesson is looking for. */
+export function openArgs(start: NonNullable<Lesson["start"]>): string[] {
+  if (!start.cleanWindow) return ["-a", start.app, start.url]
+  return [
+    "-na", start.app, "--args",
+    `--user-data-dir=${join(tmpdir(), "agentx-teach-chrome")}`,
+    "--no-first-run", "--no-default-browser-check",
+    "--window-position=0,200", "--window-size=1440,680",
+    `--app=${start.url}`,
+  ]
+}
 
 async function requireReady(claim: string): Promise<void> {
   const result = await verifyClaim(claim)
