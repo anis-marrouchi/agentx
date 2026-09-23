@@ -142,6 +142,23 @@ describe("executeTask routing — persistent flag", () => {
     expect(events.map((e) => e.type)).toEqual(["system", "assistant", "result"])
   })
 
+  it("streams assistant text to onDelta on the persistent path", async () => {
+    const assistant = (content: unknown[]): TurnEvent => ({ type: "assistant", raw: { type: "assistant", message: { content } } })
+    const events: TurnEvent[] = [
+      assistant([{ type: "text", text: "Checking" }]),
+      assistant([{ type: "text", text: "Checking the repo." }, { type: "tool_use", name: "Bash", input: {} }]),
+      assistant([{ type: "text", text: "Done." }]),
+      { type: "result", raw: { type: "result", is_error: false, result: "Done.", session_id: "s" } },
+    ]
+    setProcessRegistry(new ProcessRegistry({ factory: new ScriptedFactory(events), sweepIntervalMs: 1_000_000 }))
+
+    const deltas: string[] = []
+    const r = await executeTask(baseAgent({ persistentProcess: true }), baseTask("hi") as any, {}, (d) => deltas.push(d))
+
+    expect(deltas).toEqual(["Checking", " the repo.", "\n\nDone."])
+    expect(r.content).toBe("Done.")
+  })
+
   it("does NOT call the persistent path when agent.persistentProcess is false", async () => {
     // No registry set. If runtime mistakenly tried to use it, executeClaudeCode
     // would fire and shell out to a missing or unintended `claude` binary.

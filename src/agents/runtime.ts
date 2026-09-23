@@ -1782,6 +1782,7 @@ async function executeClaudeCodePersistent(
   resumeSessionId?: string,
   onEvent?: (event: any) => void,
   abortSignal?: AbortSignal,
+  onDelta?: StreamCallback,
 ): Promise<AgentResponse | null> {
   const registry = getProcessRegistry()
   if (!registry) return null
@@ -1839,6 +1840,24 @@ async function executeClaudeCodePersistent(
   let numTurns: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
+  // Text already forwarded to onDelta. Each assistant event carries one
+  // message; a snapshot that extends the current message yields only its
+  // suffix, and a new message after tool use starts a new paragraph.
+  let streamedText = ""
+  let messageText = ""
+  const emitText = (text: string) => {
+    if (!onDelta || !text) return
+    let delta: string
+    if (messageText && text.startsWith(messageText)) {
+      delta = text.slice(messageText.length)
+    } else {
+      delta = streamedText && !streamedText.endsWith("\n") ? `\n\n${text}` : text
+    }
+    messageText = text
+    if (!delta) return
+    streamedText += delta
+    try { onDelta(delta, streamedText) } catch { /* caller crash must not break the turn */ }
+  }
 
   // Operator cancellation for the persistent path. Killing the handle
   // closes its stdio, which terminates the async iterator below; we then
@@ -1869,6 +1888,9 @@ async function executeClaudeCodePersistent(
         for (const block of blocks) {
           if (block.type === "text" && typeof block.text === "string") {
             finalText = block.text
+            emitText(block.text)
+          } else if (block.type === "tool_use") {
+            messageText = ""
           }
         }
         // Per-call usage on the assistant envelope: the last call's
@@ -1895,6 +1917,7 @@ async function executeClaudeCodePersistent(
           // Final result text (sometimes more authoritative than the last
           // assistant snapshot, especially for very short responses).
           finalText = r.result
+          if (!streamedText) emitText(r.result)
         }
         if (typeof r.session_id === "string") sessionId = r.session_id
         if (r.usage) {
@@ -1968,7 +1991,7 @@ export async function executeTask(
       // a slot — we fall through to the legacy spawn-per-task path so
       // a registry-only failure can never block dispatch.
       if (agent.persistentProcess) {
-        const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent, abortSignal)
+        const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent, abortSignal, onDelta)
         if (persistent !== null) return persistent
       }
       if (onDelta) {
