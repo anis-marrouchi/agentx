@@ -37,7 +37,7 @@ describe("routeTaskModel", () => {
     vi.resetModules()
   })
 
-  it.each(["voice", "desktop"])("never downgrades %s requests even with an active cheap decision", async channel => {
+  it.each(["voice", "desktop", "opencode"])("never downgrades %s requests even with an active cheap decision", async channel => {
     hoisted.askSeat.mockResolvedValue(answer(0.01))
     const { routeTaskModel } = await import("../src/agents/routing")
     const result = await routeTaskModel({ ...base, channel })

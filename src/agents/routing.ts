@@ -113,7 +113,11 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
     downgraded: false, needsFlagship: p, reason,
   })
 
-  if (opts.channel === "voice" || opts.channel === "desktop") return keep("desktop requests retain the configured model")
+  // The person picked this agent's model: in the desktop app, or as
+  // agentx/<agent> in OpenCode's model menu. Downgrading it is overriding them.
+  if (opts.channel === "voice" || opts.channel === "desktop" || opts.channel === "opencode") {
+    return keep(`${opts.channel} requests retain the configured model`)
+  }
 
   if (!opts.cheapModel) return keep("no cheaper model configured")
 
