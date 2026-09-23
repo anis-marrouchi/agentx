@@ -4,6 +4,7 @@ import { resolve, join } from "path"
 import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { renderActivityGraphPage } from "./ui/pages/activity-graph"
+import { inferProject, projectFromPreview } from "./activity-graph-attribution"
 import type { TopbarPeer } from "./topbar"
 import type { DaemonConfig } from "./config"
 
@@ -109,6 +110,10 @@ export interface FleetSnapshot {
   channels: FleetChannel[]
   initiators: FleetInitiator[]
   dispatches: FleetDispatch[]
+  /** Set by the fleet merger: the node that served the merged view. */
+  localNodeId?: string
+  /** Forge base URLs, so the UI can link issues and MRs. */
+  forges?: { gitlab?: string; github?: string }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +130,11 @@ const CHANNEL_DEF: Record<string, { label: string; color: string }> = {
   a2a: { label: "Agent → Agent", color: "#bf8700" },
   cron: { label: "Cron", color: "#6b7280" },
   workflow: { label: "Workflow", color: "#9333ea" },
-  api: { label: "API", color: "#3a7bd5" },
+  api: { label: "Web API", color: "#3a7bd5" },
+  mcp: { label: "Agent tools (MCP)", color: "#bf8700" },
+  voice: { label: "Voice", color: "#e5534b" },
+  desktop: { label: "Desktop assistant", color: "#8957e5" },
+  opencode: { label: "OpenCode", color: "#57606a" },
 }
 
 /** Collapse the storage `source` to the channel the operator thinks
@@ -268,6 +277,8 @@ function initiatorFrom(source: string, intent: string, raw: any): { id: string; 
           intent === "mesh.github" ? "github"
           : intent === "mesh.gitlab" ? "gitlab"
           : intent === "mesh.a2a" ? "a2a"
+          : intent === "mesh.voice" ? "voice"
+          : intent === "mesh.desktop" ? "desktop"
           : "mesh"
         return { id, name: senderName || senderUsername || id, avatar: initialsFor(display), kind }
       }
@@ -389,6 +400,7 @@ export type InitiatorKind =
   | "gitlab" | "github"
   | "cron" | "workflow"
   | "mesh" | "a2a"
+  | "voice" | "desktop"
   | "system"
 
 function chatKindFor(source: string): InitiatorKind {
@@ -541,14 +553,16 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     //
     // Step 3 is computed per-decision below since it's agent-dependent.
     const contact = matchContact(ev.source, raw, contactMap)
+    const inputPreview = inputPreviewFrom(ev.source, raw)
+    const project = ev.project ?? inferProject(raw, ev.subject, inputPreview)
     let baseClientId: string | null = null
     let baseProjectId: string | null = null
     if (contact) {
       baseClientId = contact.client
       baseProjectId = contact.project || `${contact.client}/_chat`
-    } else if (ev.project) {
-      baseClientId = clientFromProject(ev.project, businessProjects)
-      baseProjectId = ev.project
+    } else if (project) {
+      baseClientId = clientFromProject(project, businessProjects)
+      baseProjectId = project
     }
 
     // Origin channel — what the operator thinks of as "where this came
@@ -573,8 +587,6 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     } else if (!initiatorMap.has("__system")) {
       initiatorMap.set("__system", { id: "__system", name: "Schedule", avatar: "⏱", kind: "system" })
     }
-
-    const inputPreview = inputPreviewFrom(ev.source, raw)
 
     // For each dispatched decision on this event, emit a dispatch row.
     // Client/project resolves per-decision because the orgChart fallback
@@ -683,6 +695,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     initiators.push({ id: "__system", name: "Schedule", avatar: "⏱", kind: "system" })
   }
 
+  const gitlabHost = (daemonConfig as any)?.channels?.gitlab?.host
   return {
     now,
     windowH,
@@ -691,6 +704,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
     channels,
     initiators,
     dispatches,
+    forges: { gitlab: typeof gitlabHost === "string" ? gitlabHost : undefined, github: "https://github.com" },
   }
 }
 
@@ -726,7 +740,10 @@ export function mergeFleetSnapshots(parts: Array<{ nodeId: string; snap: FleetSn
   const dispatches: FleetDispatch[] = []
   let now = 0
   let windowH = 0
+  const forges: NonNullable<FleetSnapshot["forges"]> = {}
   for (const { nodeId, snap } of parts) {
+    forges.gitlab ??= snap.forges?.gitlab
+    forges.github ??= snap.forges?.github
     if (snap.now > now) now = snap.now
     if (snap.windowH > windowH) windowH = snap.windowH
     for (const c of snap.clients) {
@@ -741,7 +758,15 @@ export function mergeFleetSnapshots(parts: Array<{ nodeId: string; snap: FleetSn
     for (const a of snap.agents) if (!agents.has(a.id)) agents.set(a.id, a)
     for (const ch of snap.channels) if (!channels.has(ch.id)) channels.set(ch.id, ch)
     for (const i of snap.initiators) if (!initiators.has(i.id)) initiators.set(i.id, i)
-    for (const d of snap.dispatches) {
+    for (const raw of snap.dispatches) {
+      const d = reattribute(raw)
+      if (d.clientId !== raw.clientId && !clients.has(d.clientId)) {
+        clients.set(d.clientId, { id: d.clientId, name: d.clientId, color: colorForClient(d.clientId), projects: [] })
+      }
+      if (d.projectId !== raw.projectId) {
+        const c = clients.get(d.clientId)!
+        if (!c.projects.includes(d.projectId)) clients.set(d.clientId, { ...c, projects: [...c.projects, d.projectId].sort() })
+      }
       // Tag the dispatch row with its source node so the UI can show a badge.
       // Also rewrite the dispatch id to be globally unique — peers share the
       // same `<eventId>|<decidedBy>` shape, and a collision would make the
@@ -752,12 +777,24 @@ export function mergeFleetSnapshots(parts: Array<{ nodeId: string; snap: FleetSn
   return {
     now: now || Date.now(),
     windowH: windowH || 6,
+    localNodeId: parts[0]?.nodeId,
+    forges,
     clients: [...clients.values()].sort((a, b) => a.id.localeCompare(b.id)),
     agents: [...agents.values()].sort((a, b) => a.id.localeCompare(b.id)),
     channels: [...channels.values()],
     initiators: [...initiators.values()],
     dispatches: dispatches.sort((a, b) => b.startedAt - a.startedAt),
   }
+}
+
+/** Peers running older code leave relayed webhooks "unmapped" even though
+ *  the message names the project. Re-read it so the merged view is true. */
+function reattribute(d: FleetDispatch): FleetDispatch {
+  if (d.clientId !== "unmapped") return d
+  const project = projectFromPreview(d.inputPreview)
+  if (!project) return d
+  const businessProjects = (_daemonConfigRef as any)?.business?.projects ?? []
+  return { ...d, projectId: project, clientId: clientFromProject(project, businessProjects) }
 }
 
 let _daemonConfigRef: DaemonConfig | null = null
@@ -788,7 +825,14 @@ export async function handleActivityGraphApi(req: IncomingMessage, res: ServerRe
 
 const TICK_MS = 5000
 
-export async function handleActivityGraphStream(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+/** `build` defaults to the local ledger; the dashboard passes the fleet
+ *  merger in fleet mode so live updates don't collapse the view to one node. */
+export async function handleActivityGraphStream(
+  req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+  build: (windowH: number) => FleetSnapshot | null | Promise<FleetSnapshot | null> = buildLocalActivityGraphSnapshot,
+): Promise<boolean> {
   if (path !== "/api/admin/activity-graph/stream" && !path.startsWith("/api/admin/activity-graph/stream?")) return false
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -809,19 +853,17 @@ export async function handleActivityGraphStream(req: IncomingMessage, res: Serve
 
   try {
     while (!stopped) {
-      const opened = openLedger()
-      if (opened) {
-        try {
-          const snap = buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)
+      try {
+        const snap = await build(windowH)
+        if (stopped) break
+        if (snap) {
           res.write(`event: snapshot\n`)
           res.write(`data: ${JSON.stringify(snap)}\n\n`)
-        } catch (e: any) {
-          res.write(`event: error\ndata: ${JSON.stringify({ error: e?.message ?? String(e) })}\n\n`)
-        } finally {
-          opened.close()
+        } else {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: "ledger not available" })}\n\n`)
         }
-      } else {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: "ledger not available" })}\n\n`)
+      } catch (e: any) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: e?.message ?? String(e) })}\n\n`)
       }
       const start = Date.now()
       while (!stopped && Date.now() - start < TICK_MS) await new Promise((r) => setTimeout(r, 200))
@@ -951,11 +993,12 @@ export async function handleActivityGraphDetail(req: IncomingMessage, res: Serve
         project: contact.project || `${contact.client}/_chat`,
         via: `contactMap (channel=${contact.channel ?? "*"}${contact.username ? ` username=${contact.username}` : ""}${contact.chatId ? ` chatId=${contact.chatId}` : ""})`,
       }
-    } else if (ev.project) {
+    } else if (ev.project || inferProject(raw, ev.subject, fullInput)) {
+      const project = ev.project || inferProject(raw, ev.subject, fullInput)!
       attribution = {
-        client: clientFromProject(ev.project, businessProjects),
-        project: ev.project,
-        via: `project namespace prefix (${ev.project})`,
+        client: clientFromProject(project, businessProjects),
+        project,
+        via: ev.project ? `project namespace prefix (${project})` : `forge path in chat id / message (${project})`,
       }
     } else if (dec.agent_id) {
       const orgClient = agentToClient.get(dec.agent_id)

@@ -467,6 +467,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         await handleActivityGraphFleet(req, res, ctx)
         return
       }
+      if (path === "/api/admin/activity-graph/stream") {
+        await handleActivityGraphStream(req, res, path, (hours) => buildFleetActivitySnapshot(hours, ctx.config))
+        return
+      }
       // Dispatch detail in fleet mode: the id was rewritten to
       // "<nodeName>::<originalId>" by the merger so React keys stay
       // unique. Route the lookup back to the node that owns the row.
@@ -2122,7 +2126,11 @@ async function handleActivityGraphFleet(
 ): Promise<void> {
   const url = new URL(req.url || "/", "http://_")
   const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
-  const localNodeId = ctx.config.node?.id || ctx.config.node?.name || "local"
+  sendJson(res, 200, await buildFleetActivitySnapshot(hours, ctx.config))
+}
+
+async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {
+  const localNodeId = config.node?.id || config.node?.name || "local"
 
   const parts: Array<{ nodeId: string; snap: FleetSnapshot }> = []
 
@@ -2132,10 +2140,10 @@ async function handleActivityGraphFleet(
 
   // Each configured peer: HTTP fetch via the existing per-peer proxy logic.
   // Fire in parallel; whichever peers respond on time get merged in.
-  const peerEntries = (ctx.config.dashboard?.daemons || []).filter((d) => d.url)
-  await Promise.all(peerEntries.map(async (d) => {
-    const peer = findPeer(d.url.replace(/\/+$/, ""), ctx.config)
-    if (!peer) return
+  const peerEntries = (config.dashboard?.daemons || []).filter((d) => d.url)
+  const peerParts: Array<{ nodeId: string; snap: FleetSnapshot } | null> = await Promise.all(peerEntries.map(async (d) => {
+    const peer = findPeer(d.url.replace(/\/+$/, ""), config)
+    if (!peer) return null
     try {
       const ac = new AbortController()
       const timer = setTimeout(() => ac.abort(), 8000)
@@ -2148,18 +2156,20 @@ async function handleActivityGraphFleet(
           },
           signal: ac.signal,
         })
-        if (!r.ok) return
-        const snap = await r.json() as FleetSnapshot
-        parts.push({ nodeId: d.name || d.url, snap })
+        if (!r.ok) return null
+        return { nodeId: d.name || d.url, snap: await r.json() as FleetSnapshot }
       } finally {
         clearTimeout(timer)
       }
     } catch {
       // Drop this peer from the merge; the rest of the snapshot remains usable.
+      return null
     }
   }))
+  // Keep local first: the merger reports parts[0] as the serving node.
+  for (const p of peerParts) if (p) parts.push(p)
 
-  sendJson(res, 200, mergeFleetSnapshots(parts))
+  return mergeFleetSnapshots(parts)
 }
 
 /** SSE-stream the daemon's stdout to the dashboard /admin/health Logs tab.
