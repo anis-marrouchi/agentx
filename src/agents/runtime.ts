@@ -22,6 +22,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
 }
 import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
+import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 import { TurnDeadlineExceeded } from "./claude-process-factory"
@@ -127,6 +128,10 @@ export interface AgentTask {
    *  that pattern without requiring callers to invent unique
    *  chatIds. */
   freshSession?: boolean
+  /** Transcript held by a client that owns the conversation (OpenCode).
+   *  Seeds an empty AgentX session the same way a channel adapter's
+   *  seedHistory does, so a new or rotated session starts with it. */
+  seedHistory?: SeededMessage[]
   context?: {
     channel?: string
     sender?: string

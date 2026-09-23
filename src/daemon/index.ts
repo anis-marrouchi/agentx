@@ -27,6 +27,7 @@ import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
 import { readCronRunHistory } from "@/crons/run-history"
+import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
 import { EventBus, parseKindsParam } from "./event-bus"
@@ -4876,89 +4877,16 @@ export class AgentXDaemon {
    */
   private async handleOpenAICompat(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     const body = await readBody(req)
-
-    // Resolve agent ID: from URL path or "model" field
-    const pathMatch = path.match(/^\/llm\/([^/]+)\//)
-    const fallbackAgent = Object.keys(this.config.agents)[0] || "default"
-    const agentId = pathMatch?.[1] || (body.model as string) || fallbackAgent
-
-    // Extract messages — use the last user message as the task
-    const messages = (body.messages as Array<{ role: string; content: string }>) || []
-    const lastUserMsg = [...messages].reverse().find(m => m.role === "user")
-
-    if (!lastUserMsg?.content) {
-      this.json(res, 400, { error: { message: "No user message found", type: "invalid_request_error" } })
-      return
-    }
-
-    // Build conversation context from message history
-    const historyLines = messages
-      .slice(0, -1) // exclude the last message (it's the prompt)
-      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 200)}`)
-
-    const contextPrefix = historyLines.length > 0
-      ? `[Conversation]\n${historyLines.slice(-10).join("\n")}\n\n`
-      : ""
-
-    const stream = body.stream === true
-
-    const response = await this.registry.execute({
-      agentId,
-      message: contextPrefix + lastUserMsg.content,
-      context: { channel: "api", sender: "openai-compat" },
+    await handleOpenAICompat(req, res, path, body, {
+      execute: (task, onDelta, onThinking, onEvent) => this.registry.execute(task, onDelta, onThinking, onEvent),
+      agentIds: Object.keys(this.config.agents),
+      cancel: (agentId, channel, chatId, reason) => {
+        const running = this.registry.list().find(a => a.id === agentId)?.runningTasks
+          .filter(t => t.channel === channel && t.chatId === chatId) || []
+        for (const t of running) this.registry.cancelRunningTask(t.id, reason)
+      },
+      log: (msg) => this.log(msg),
     })
-    if (response.error) {
-      this.json(res, 502, { error: { message: response.error, type: "upstream_error" } })
-      return
-    }
-    const content = response.content || ""
-
-    if (stream) {
-      // SSE streaming response
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-      })
-
-      const requestId = `chatcmpl-${Date.now().toString(36)}`
-
-      // Send as a single chunk (Claude Code doesn't stream to us via execFile)
-      const chunk = {
-        id: requestId,
-        object: "chat.completion.chunk",
-        created: Math.floor(Date.now() / 1000),
-        model: agentId,
-        choices: [{
-          index: 0,
-          delta: { role: "assistant", content },
-          finish_reason: "stop",
-        }],
-      }
-      res.write(`data: ${JSON.stringify(chunk)}\n\n`)
-      res.write("data: [DONE]\n\n")
-      res.end()
-    } else {
-      // Standard response
-      const tokens = Math.ceil(content.length / 4)
-
-      this.json(res, 200, {
-        id: `chatcmpl-${Date.now().toString(36)}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: agentId,
-        choices: [{
-          index: 0,
-          message: { role: "assistant", content },
-          finish_reason: "stop",
-        }],
-        usage: {
-          prompt_tokens: Math.ceil(lastUserMsg.content.length / 4),
-          completion_tokens: tokens,
-          total_tokens: Math.ceil(lastUserMsg.content.length / 4) + tokens,
-        },
-      })
-    }
   }
 
   private json(res: ServerResponse, status: number, data: unknown): void {

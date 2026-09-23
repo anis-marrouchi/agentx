@@ -276,10 +276,17 @@ export class SessionStore {
    *    - the session already has messages (warm cache or partially loaded)
    *    - no adapter resolver is installed
    *    - the channel adapter has no seedHistory method
+   *  Caller-supplied seeds (from a client that owns the transcript, such
+   *  as OpenCode) take the adapter's place.
    *  Concurrent calls against the same key share one in-flight promise so
    *  the channel API is hit exactly once per cold create. Errors are
    *  swallowed — a seeding failure should never block a turn. */
-  async seedIfEmpty(agentId: string, channel: string, chatId: string): Promise<void> {
+  async seedIfEmpty(agentId: string, channel: string, chatId: string, callerSeeds?: SeededMessage[]): Promise<void> {
+    if (callerSeeds?.length) {
+      const session = this.getSession(agentId, channel, chatId)
+      if (session.messages.length === 0) this.appendSeededMessages(session, callerSeeds)
+      return
+    }
     if (!this.adapterResolver) return
     const key = this.sessionKey(agentId, channel, chatId)
     const inFlight = this.seedingPromises.get(key)

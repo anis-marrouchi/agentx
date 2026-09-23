@@ -17,6 +17,15 @@ describe("SessionStore", () => {
     rmSync(TEST_DIR, { recursive: true, force: true })
   })
 
+  it("seeds an empty session from a caller transcript, never a warm one", async () => {
+    const seed = (content: string) => ({ role: "user" as const, name: "User", content, timestamp: new Date().toISOString() })
+    await store.seedIfEmpty("a", "opencode", "ses_1", [seed("earlier ask"), { ...seed("earlier answer"), role: "agent" as const, name: "a" }])
+    expect(store.getSession("a", "opencode", "ses_1").messages.map(m => m.content)).toEqual(["earlier ask", "earlier answer"])
+
+    await store.seedIfEmpty("a", "opencode", "ses_1", [seed("replayed transcript")])
+    expect(store.getSession("a", "opencode", "ses_1").messages).toHaveLength(2)
+  })
+
   it("creates a session on first access", () => {
     const session = store.getSession("atlas", "telegram", "group-1")
     expect(session.agentId).toBe("atlas")

@@ -35,6 +35,10 @@ OpenCode's `/models` menu:
 }
 ```
 
-This uses AgentX's OpenAI-compatible chat endpoint. It returns text; it does
-not relay OpenCode tool calls or token-by-token output. AgentX agents still
-use their own configured runtime and tools while handling the request.
+This uses AgentX's OpenAI-compatible chat endpoint. The agent's reply streams
+as it is written, and its thinking and tool calls appear in OpenCode's
+Thinking block while it works. AgentX agents use their own configured runtime
+and tools; OpenCode's tools are not relayed. Each OpenCode session gets its own
+agent conversation, and stopping a request in OpenCode cancels the agent's
+turn. OpenCode's title requests are answered from your first message without
+running the agent.

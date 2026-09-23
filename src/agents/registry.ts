@@ -1177,7 +1177,7 @@ export class AgentRegistry {
     // doesn't start blind. No-op for warm sessions, non-channel callers
     // (cron/api/a2a), or channels without a seedHistory implementation.
     if (!task.freshSession) {
-      await this.sessions.seedIfEmpty(task.agentId, channel, chatId)
+      await this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory)
     }
 
     // Record user message in session
