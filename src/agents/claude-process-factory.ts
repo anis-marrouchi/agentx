@@ -54,7 +54,7 @@ export function readClaudeMdHashSafe(workspace: string): string | null {
   }
 }
 
-const TURN_DEADLINE_MS = 20 * 60 * 1000   // 20 min absolute per turn
+const TURN_DEADLINE_MS = 20 * 60 * 1000   // default when the caller passes no deadlineMs
 const KILL_GRACE_MS = 5_000               // SIGTERM → wait → SIGKILL
 
 export interface ClaudeProcessFactoryOptions {
@@ -64,6 +64,12 @@ export interface ClaudeProcessFactoryOptions {
   extraArgs?: string[]
   /** Logger; default no-op. */
   log?: (msg: string) => void
+}
+
+export class TurnDeadlineExceeded extends Error {
+  constructor(readonly budgetMs: number) {
+    super(`turn exceeded its ${Math.round(budgetMs / 60_000)}m budget`)
+  }
 }
 
 export class ClaudeProcessFactory implements ProcessFactory {
@@ -174,15 +180,22 @@ class ClaudeProcessHandle implements ProcessHandle {
     })
     this.child.stdin.write(line + "\n")
 
-    const deadline = turnStart + TURN_DEADLINE_MS
+    const budgetMs = input.deadlineMs ?? TURN_DEADLINE_MS
+    const deadline = turnStart + budgetMs
+    const timedOut = () => {
+      // Stop the turn for real: a process left running would keep working
+      // on a handle marked idle until the sweeper killed it mid-step.
+      void this.kill(`turn deadline (${Math.round(budgetMs / 60_000)}m)`)
+      return new TurnDeadlineExceeded(budgetMs)
+    }
 
     try {
       while (true) {
         const remaining = deadline - Date.now()
-        if (remaining <= 0) {
-          throw new Error(`turn deadline exceeded (${TURN_DEADLINE_MS}ms)`)
-        }
+        if (remaining <= 0) throw timedOut()
         const evt = await this.nextEvent(remaining)
+        // nextEvent yields null both on EOF and on its own timeout.
+        if (evt === null && !this.exited) throw timedOut()
         if (evt === null) {
           throw new Error(`claude process exited mid-turn (code=${this.exitCode}, reason=${this.snap.deadReason ?? "?"})`)
         }

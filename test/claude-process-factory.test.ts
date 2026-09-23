@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest"
 import { execSync } from "child_process"
-import { mkdtempSync } from "fs"
+import { chmodSync, mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { ClaudeProcessFactory } from "../src/agents/claude-process-factory"
+import { ClaudeProcessFactory, TurnDeadlineExceeded } from "../src/agents/claude-process-factory"
 import type { ProcessKey, SpawnOptions } from "../src/agents/process-registry"
 
 // These tests spawn a REAL `claude -p` subprocess. Skipped automatically
@@ -157,5 +157,22 @@ describe("ClaudeProcessFactory — does not require the binary at construction t
   it("can be constructed in any environment", () => {
     const factory = new ClaudeProcessFactory()
     expect(factory).toBeDefined()
+  })
+})
+
+describe("ClaudeProcessFactory — turn deadline", () => {
+  // Stands in for a Claude turn still working when its budget runs out:
+  // accepts the user line and never emits a result.
+  it("reports a timeout and stops the process instead of calling it an exit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-silent-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, "#!/bin/sh\nexec cat >/dev/null\n")
+    chmodSync(binary, 0o755)
+    const handle = new ClaudeProcessFactory({ binary }).spawn(KEY, OPTS())
+
+    const run = async () => { for await (const _ of handle.runTurn({ message: "hi", taskId: "t", deadlineMs: 200 })) { /* none */ } }
+    await expect(run()).rejects.toBeInstanceOf(TurnDeadlineExceeded)
+    await new Promise(r => setTimeout(r, 300))
+    expect(handle.state()).toBe("dead")
   })
 })

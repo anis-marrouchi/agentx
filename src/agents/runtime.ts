@@ -24,6 +24,7 @@ import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
+import { TurnDeadlineExceeded } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
 
 // --- Agent execution runtime ---
@@ -1874,7 +1875,8 @@ async function executeClaudeCodePersistent(
 
   let sawEvent = false
   try {
-    for await (const evt of handle.runTurn({ message: prompt, taskId: task.taskId ?? "unknown" })) {
+    const turnBudgetMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    for await (const evt of handle.runTurn({ message: prompt, taskId: task.taskId ?? "unknown", deadlineMs: turnBudgetMs })) {
       sawEvent = true
       // Forward to existing onEvent — trace step emitter, dashboard
       // formatter, etc. all keep working without changes.
@@ -1946,6 +1948,10 @@ async function executeClaudeCodePersistent(
       registry.release(key, { kill: true, reason: "pre-turn failure" })
       if (abortSignal) abortSignal.removeEventListener("abort", onAbort)
       return null
+    } else if (e instanceof TurnDeadlineExceeded) {
+      const env = buildErrorEnvelope(`Claude Code timed out after ${Math.round(e.budgetMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || task.agentId}" if tasks need longer.`)
+      finalError = env.error
+      finalErrorKind = env.errorKind
     } else {
       const env = buildErrorEnvelope(`persistent claude process error: ${e?.message || String(e)}`)
       finalError = env.error

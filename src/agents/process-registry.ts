@@ -94,6 +94,8 @@ export interface TurnInput {
   message: string
   /** Trace ULID for correlating events back to a task_traces row. */
   taskId: string
+  /** Absolute turn budget, from the agent's maxExecutionMinutes. */
+  deadlineMs?: number
 }
 
 export interface TurnEvent {
