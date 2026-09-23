@@ -2,6 +2,27 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.30.0](https://github.com/anis-marrouchi/agentx/compare/v0.29.0...v0.30.0) (2026-09-23)
+
+
+### Features
+
+* **daemon:** stream OpenAI-compatible replies per OpenCode session ([4a830c9](https://github.com/anis-marrouchi/agentx/commit/4a830c93ac58930ae87ea596682f80439e0b0327))
+* **decisions:** shadow seats for stuck turns and turn handoffs ([fc7adb8](https://github.com/anis-marrouchi/agentx/commit/fc7adb8bce97e4a57ee325d10e504170c4cdbb92))
+* **demo:** add --reuse and --bind for a persistent, reachable demo ([4ccb2f2](https://github.com/anis-marrouchi/agentx/commit/4ccb2f2a6c9425d153a3459fa1942b3a223b97cc))
+* **docker:** add a persistent scripted demo image for lessons ([ff99972](https://github.com/anis-marrouchi/agentx/commit/ff99972a5aa0a00e48136356a6e118f6e343faf6))
+* **teach:** add a dashboard tour lesson for the Docker demo ([5f961ef](https://github.com/anis-marrouchi/agentx/commit/5f961efa4befa72cedc8fbeb1d823ee23e0649ad))
+* **teach:** tour-guide lesson safety and Docker demo stage ([56b15ae](https://github.com/anis-marrouchi/agentx/commit/56b15ae82860a58db36dbe288b9a1e85a7be70ad))
+
+
+### Bug Fixes
+
+* **look:** report why the helper's screen capture failed ([a2d61e0](https://github.com/anis-marrouchi/agentx/commit/a2d61e0257cb7254cfe1918cbd091012a08c3a37))
+* **routing:** keep the selected model for OpenCode requests ([283272f](https://github.com/anis-marrouchi/agentx/commit/283272fc1e7921debcf0ea92265e3be9539dcc2c))
+* **runtime:** honour maxExecutionMinutes on persistent Claude turns ([4a32013](https://github.com/anis-marrouchi/agentx/commit/4a32013032ff502aa045b418a10b892581b38e87))
+* **runtime:** stream text from persistent Claude turns ([64b9101](https://github.com/anis-marrouchi/agentx/commit/64b9101c126948e24b36c6011abc4a2ee8b14aae))
+* **teach:** gate every action on a verified screen and stop on failure ([b409b93](https://github.com/anis-marrouchi/agentx/commit/b409b9300ad4f107a207ac513bfc5b589c70985b))
+
 ## [0.29.0](https://github.com/anis-marrouchi/agentx/compare/v0.28.0...v0.29.0) (2026-09-22)
 
 
