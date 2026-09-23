@@ -16,6 +16,17 @@ COPY scripts/postinstall.mjs ./scripts/postinstall.mjs
 COPY agentx.example.json README.md LICENSE ./
 RUN pnpm build && mkdir /package && npm pack --ignore-scripts --pack-destination /package
 
+# Scripted demo for lessons and recordings: docker-compose.demo.yml.
+# Runs from the source tree because the seeder uses the repo's fixtures.
+FROM build AS demo
+RUN pnpm rebuild
+COPY docker/demo/start.sh /usr/local/bin/agentx-demo
+COPY docs/.scripts/seed-demo.mjs ./docs/.scripts/
+COPY docs/public/examples/demo-report.json ./docs/public/examples/
+EXPOSE 18931
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
+CMD ["agentx-demo"]
+
 FROM base AS runtime
 ARG INSTALL_CLAUDE=0
 COPY --from=build /package/ /tmp/agentx-package/

@@ -1,0 +1,25 @@
+# Scripted AgentX demo — the stage for `agentx teach` lessons and recordings.
+# No model keys, no real channels: replies come from a script.
+#
+#   docker compose -f docker-compose.demo.yml up --build -d
+#   open http://127.0.0.1:18931/live
+#
+# State persists in the agentx-demo volume. Reset with:
+#   docker compose -f docker-compose.demo.yml down -v
+#
+# The dashboard has no token; it is published on host loopback only.
+
+services:
+  demo:
+    build:
+      context: .
+      target: demo
+    image: ghcr.io/anis-marrouchi/agentx-demo:${AGENTX_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18931:18931"
+    volumes:
+      - agentx-demo:/build/.agentx-demo
+
+volumes:
+  agentx-demo:
