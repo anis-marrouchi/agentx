@@ -38,3 +38,54 @@ export function inferProject(raw: any, subject: string | null, preview: string):
     projectFromPreview(preview)
   )
 }
+
+// --- Which issues / MRs is a dispatch about? ---
+
+export interface ForgeRef { kind: "issue" | "mr"; n: number }
+
+/** Forge path of a project id, or null for synthetic ids ("mtgl/_mesh"). */
+export function forgePath(projectId: string): string | null {
+  const [head, ...rest] = projectId.split("/")
+  if (!rest.length || head === "unmapped" || rest[0].startsWith("_")) return null
+  return projectId
+}
+
+export function refKey(projectId: string, r: ForgeRef): string {
+  return `${projectId}${r.kind === "mr" ? "!" : "#"}${r.n}`
+}
+
+const SUBJECT_REF_RE = /\b(issue|merge_request|pull|MR|Issue)s?[:\s]+[#!]?(\d+)/
+const HEADER_REF_RE = /^\[(?:GitLab|GitHub) \S+ (issue|merge_request|pull|MR|Issue)s? [#!]?(\d+)/i
+const kindOf = (word: string): ForgeRef["kind"] => (/^issue/i.test(word) ? "issue" : "mr")
+
+/** The one issue / MR / PR a dispatch is about: the subject first
+ *  ("issue:152", "MR #51", "pull:16"), then only the leading header of a
+ *  relayed webhook ("[GitLab ns/repo MR !51 update]") — a body can mention
+ *  any number of unrelated MRs. */
+export function primaryRef(d: { subject: string; inputPreview: string }): ForgeRef | null {
+  const m = d.subject.match(SUBJECT_REF_RE) ?? d.inputPreview.trimStart().match(HEADER_REF_RE)
+  return m ? { kind: kindOf(m[1]), n: Number(m[2]) } : null
+}
+
+/** MRs a hand-off names in its text ("review !445–!448"). Only for
+ *  dispatches without a primary ref — those are about one thing. */
+export function mentionedMrs(text: string, limit = 8): ForgeRef[] {
+  const out: ForgeRef[] = []
+  const seen = new Set<number>()
+  for (const m of text.matchAll(/(?:^|[\s(,])!(\d{1,6})\b/g)) {
+    const n = Number(m[1])
+    if (seen.has(n)) continue
+    seen.add(n)
+    out.push({ kind: "mr", n })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** Every ref a dispatch is about, primary first. Empty when the project
+ *  has no forge path — a bare "!445" could belong to any repo. */
+export function refsOf(d: { subject: string; inputPreview: string; projectId: string }): ForgeRef[] {
+  if (!forgePath(d.projectId)) return []
+  const primary = primaryRef(d)
+  return primary ? [primary] : mentionedMrs(d.inputPreview)
+}

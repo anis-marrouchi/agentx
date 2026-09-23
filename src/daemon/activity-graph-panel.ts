@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { renderActivityGraphPage } from "./ui/pages/activity-graph"
 import { inferProject, projectFromPreview } from "./activity-graph-attribution"
+import { fetchForgeStatus, refsToLookUp, type ForgeItem } from "./activity-graph-forge"
 import type { TopbarPeer } from "./topbar"
 import type { DaemonConfig } from "./config"
 
@@ -114,6 +115,8 @@ export interface FleetSnapshot {
   localNodeId?: string
   /** Forge base URLs, so the UI can link issues and MRs. */
   forges?: { gitlab?: string; github?: string }
+  /** Live issue/MR state keyed by refKey ("ns/repo!51"); see withForgeStatus. */
+  forge?: Record<string, ForgeItem>
 }
 
 // ---------------------------------------------------------------------------
@@ -797,6 +800,17 @@ function reattribute(d: FleetDispatch): FleetDispatch {
   return { ...d, projectId: project, clientId: clientFromProject(project, businessProjects) }
 }
 
+/** Attach live issue/MR/pipeline state for the refs in the window. A forge
+ *  outage leaves `forge` partial; the snapshot itself never fails on it. */
+export async function withForgeStatus(snap: FleetSnapshot): Promise<FleetSnapshot> {
+  const gl = (_daemonConfigRef as any)?.channels?.gitlab
+  const forge = await fetchForgeStatus(refsToLookUp(snap.dispatches), {
+    gitlab: gl?.host && gl?.token ? { host: gl.host, token: gl.token } : undefined,
+    githubToken: process.env.GITHUB_TOKEN || undefined,
+  })
+  return { ...snap, forge }
+}
+
 let _daemonConfigRef: DaemonConfig | null = null
 /** Wired by board-dashboard.ts when the dashboard starts so we can read
  *  agent metadata (tier, model, name) for the snapshot. */
@@ -814,7 +828,7 @@ export async function handleActivityGraphApi(req: IncomingMessage, res: ServerRe
   try {
     const url = new URL(req.url || "/", "http://_")
     const windowH = clampWindow(parseInt(url.searchParams.get("hours") || "6", 10))
-    sendJson(res, 200, buildFleetSnapshot(opened.db, _daemonConfigRef, windowH))
+    sendJson(res, 200, await withForgeStatus(buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)))
   } catch (e: any) {
     sendJson(res, 500, { error: e?.message ?? String(e) })
   } finally {
@@ -854,7 +868,8 @@ export async function handleActivityGraphStream(
   try {
     while (!stopped) {
       try {
-        const snap = await build(windowH)
+        const built = await build(windowH)
+        const snap = built && await withForgeStatus(built)
         if (stopped) break
         if (snap) {
           res.write(`event: snapshot\n`)

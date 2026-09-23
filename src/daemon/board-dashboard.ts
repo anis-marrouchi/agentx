@@ -22,7 +22,7 @@ import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
-import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, type FleetSnapshot } from "./activity-graph-panel"
+import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderMeshPage } from "./ui/pages/mesh"
@@ -2126,7 +2126,7 @@ async function handleActivityGraphFleet(
 ): Promise<void> {
   const url = new URL(req.url || "/", "http://_")
   const hours = parseInt(url.searchParams.get("hours") || "6", 10) || 6
-  sendJson(res, 200, await buildFleetActivitySnapshot(hours, ctx.config))
+  sendJson(res, 200, await withForgeStatus(await buildFleetActivitySnapshot(hours, ctx.config)))
 }
 
 async function buildFleetActivitySnapshot(hours: number, config: DaemonConfig): Promise<FleetSnapshot> {
