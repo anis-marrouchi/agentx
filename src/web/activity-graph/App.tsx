@@ -123,7 +123,7 @@ function useTip() {
 // Subbar
 
 const PERSPECTIVES = [
-  { id: "map", label: "Map", desc: "Channels → agents → projects" },
+  { id: "map", label: "Map", desc: "Transit map: lines are projects, stations are agents, trains are work" },
   { id: "fleet", label: "Fleet", desc: "Agent roster" },
   { id: "clients", label: "Clients", desc: "By client / project" },
   { id: "timeline", label: "Timeline", desc: "Gantt over time" },
@@ -932,16 +932,16 @@ export function App() {
   }
 
   return (
-    <div className="ax-fleet">
+    <div className={"ax-fleet is-" + perspective}>
       <Subbar
         perspective={perspective} setPerspective={setPerspective}
         windowH={windowH} setWindowH={setWindowH}
         filter={filter} updateFilter={updateFilter}
         dispatches={visible} lookup={lookup} stale={stale}
       />
-      <KpiStrip snap={snap} dispatches={visible} windowH={windowH} />
+      {perspective !== "map" && <KpiStrip snap={snap} dispatches={visible} windowH={windowH} />}
       <div className="content">
-        {perspective === "map" && <MapPerspective snap={snap} dispatches={visible} onOpenItem={setOpenItem} />}
+        {perspective === "map" && <MapPerspective snap={snap} dispatches={visible} windowH={windowH} onOpenItem={setOpenItem} />}
         {perspective === "fleet" && <FleetPerspective snap={snap} dispatches={visible} lookup={lookup} onOpenItem={setOpenItem} updateFilter={updateFilter} showIdle={true} />}
         {perspective === "clients" && <ClientsPerspective snap={snap} dispatches={visible} lookup={lookup} updateFilter={updateFilter} />}
         {perspective === "timeline" && <TimelinePerspective snap={snap} dispatches={visible} lookup={lookup} windowH={windowH} groupBy="agent" onOpenItem={setOpenItem} />}

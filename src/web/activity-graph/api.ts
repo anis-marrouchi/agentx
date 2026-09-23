@@ -1,3 +1,4 @@
+import type { ForgeItem } from "../../daemon/activity-graph-forge"
 // Fleet snapshot API — one-shot fetch + SSE subscription. The server
 // builds the same shape on every tick; the client diffs on its own.
 
@@ -74,6 +75,8 @@ export interface FleetSnapshot {
   localNodeId?: string
   /** Forge base URLs, so the UI can link issues and MRs. */
   forges?: { gitlab?: string; github?: string }
+  /** Live issue/MR/pipeline state keyed by "ns/repo!51" / "ns/repo#152". */
+  forge?: Record<string, ForgeItem>
 }
 
 export async function fetchSnapshot(windowH: number): Promise<FleetSnapshot> {
