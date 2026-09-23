@@ -597,3 +597,96 @@
   background: var(--ax-bg-elev);
   border-top: 1px solid var(--ax-border);
 }
+
+/* ── Map perspective ─────────────────────────────────────────────── */
+.ax-fleet .map-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ax-fleet .map-wrap .react-flow { flex: 1; min-height: 0; background: var(--ax-bg); }
+.ax-fleet .map-wrap .react-flow__controls button { background: var(--ax-bg-elev); color: var(--ax-text); border-color: var(--ax-border); fill: currentColor; }
+.ax-fleet .map-wrap .react-flow__edge-textbg { fill: var(--ax-bg); }
+.ax-fleet .map-wrap .react-flow__edge-text { fill: var(--ax-muted); font-size: 10px; }
+.ax-fleet .map-wrap .react-flow__handle { opacity: 0; pointer-events: none; }
+.ax-fleet .map-tools {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 14px; border-bottom: 1px solid var(--ax-border); font-size: 11px; color: var(--ax-muted);
+}
+.ax-fleet .map-legend { display: inline-flex; align-items: center; gap: 6px; }
+.ax-fleet .map-legend .lg { display: inline-block; width: 18px; height: 0; border-top: 3px solid var(--ax-muted); margin-left: 6px; }
+.ax-fleet .map-legend .lg--deleg { border-color: var(--ax-warn); }
+.ax-fleet .map-legend .lg--active { border-top-style: dashed; border-color: var(--ax-success); }
+
+.ax-fleet .map-node {
+  display: flex; align-items: center; gap: 8px;
+  width: 180px; height: 46px; padding: 0 10px;
+  background: var(--ax-bg-elev); color: var(--ax-text);
+  border: 1px solid var(--ax-border); border-left: 4px solid var(--c);
+  cursor: pointer; font-size: 12px;
+}
+.ax-fleet .map-node.is-vertical {
+  width: 112px; height: 58px; padding: 4px 6px; gap: 2px;
+  flex-direction: column; justify-content: center; text-align: center;
+  border-left-width: 1px; border-top: 4px solid var(--c); font-size: 11px;
+}
+/* Shape by kind: channels are pills, agents are cards, projects are folders. */
+.ax-fleet .map-node--channel { border-radius: 999px; }
+.ax-fleet .map-node--channel.is-vertical { border-radius: 16px; }
+.ax-fleet .map-node--agent { border-radius: 8px; }
+.ax-fleet .map-node--project { border-radius: 2px 10px 10px 10px; background: color-mix(in oklch, var(--c) 10%, var(--ax-bg-elev)); }
+.ax-fleet .map-node.is-mesh { border-color: color-mix(in oklch, var(--ax-warn) 60%, var(--ax-border)); }
+.ax-fleet .map-node.is-idle { opacity: 0.45; }
+.ax-fleet .map-node.is-active { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ax-success) 45%, transparent); }
+.ax-fleet .map-node.is-pulse { animation: map-pulse 0.9s ease-out 3; }
+@keyframes map-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ax-success) 70%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.ax-fleet .map-node__ic {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px;
+  background: color-mix(in oklch, var(--c) 20%, transparent); font-size: 12px; font-weight: 600;
+}
+.ax-fleet .map-node--agent .map-node__ic { border-radius: 50%; font-size: 9px; }
+.ax-fleet .map-node.is-vertical .map-node__ic { width: 18px; height: 18px; font-size: 10px; }
+.ax-fleet .map-node__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+.ax-fleet .map-node.is-vertical .map-node__txt { flex: none; width: 100%; }
+.ax-fleet .map-node__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.ax-fleet .map-node__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; color: var(--ax-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ax-fleet .map-node__ct { flex: none; font-family: var(--ax-mono); font-size: 11px; color: var(--ax-muted); }
+.ax-fleet .map-node__ct b { color: var(--ax-success); font-weight: 600; margin-right: 4px; }
+.ax-fleet .map-node.is-vertical .map-node__ct { font-size: 9px; }
+.ax-fleet .map-cluster {
+  border: 1.5px dashed color-mix(in oklch, var(--ax-warn) 70%, transparent);
+  background: color-mix(in oklch, var(--ax-warn) 7%, transparent);
+  border-radius: 12px; pointer-events: none;
+}
+.ax-fleet .map-cluster span {
+  position: absolute; top: 4px; left: 10px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--ax-warn);
+}
+
+.ax-fleet .map-panel {
+  position: absolute; top: 44px; right: 12px; bottom: 12px; width: min(380px, calc(100% - 24px));
+  display: flex; flex-direction: column; z-index: 5;
+  background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+.ax-fleet .map-panel__hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--ax-border); }
+.ax-fleet .map-panel__title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .map-panel__ct { font-size: 11px; color: var(--ax-muted); }
+.ax-fleet .map-panel .x { background: none; border: 0; color: var(--ax-muted); cursor: pointer; font-size: 14px; }
+.ax-fleet .map-panel__body { flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.ax-fleet .map-item { padding: 8px 10px; border: 1px solid var(--ax-border); border-radius: 6px; cursor: pointer; background: var(--ax-bg); }
+.ax-fleet .map-item:hover { border-color: var(--ax-accent); }
+.ax-fleet .map-item__subj { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .map-item__prev { margin-top: 2px; font-size: 11px; color: var(--ax-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .map-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--ax-muted); }
+.ax-fleet .map-item__meta a { color: var(--ax-accent); text-decoration: none; margin-left: auto; }
+
+@media (max-width: 640px) {
+  .ax-fleet .subbar { flex-wrap: wrap; row-gap: 6px; }
+  .ax-fleet .subbar .search-input { flex: 1 1 100%; order: 10; }
+  .ax-fleet .map-panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 55%; }
+  .ax-fleet .map-legend { display: none; }
+  .ax-fleet .kpis { display: flex; overflow-x: auto; padding: 8px 12px; }
+  .ax-fleet .kpi { flex: 0 0 auto; padding: 6px 10px; }
+  .ax-fleet .kpi__val { font-size: 18px; }
+  .ax-fleet .kpi__sub, .ax-fleet .kpi__spark { display: none; }
+}

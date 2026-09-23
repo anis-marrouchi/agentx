@@ -4,6 +4,7 @@ import {
   type FleetSnapshot, type FleetDispatch, type FleetClient, type FleetAgent,
   type FleetChannel, type FleetInitiator, type FleetDispatchDetail,
 } from "./api"
+import { MapPerspective } from "./MapPerspective"
 
 // ─────────────────────────────────────────────────────────────────────
 // Stream hook — fetches the initial snapshot and subscribes to SSE.
@@ -122,6 +123,7 @@ function useTip() {
 // Subbar
 
 const PERSPECTIVES = [
+  { id: "map", label: "Map", desc: "Channels → agents → projects" },
   { id: "fleet", label: "Fleet", desc: "Agent roster" },
   { id: "clients", label: "Clients", desc: "By client / project" },
   { id: "timeline", label: "Timeline", desc: "Gantt over time" },
@@ -908,7 +910,7 @@ function Drawer({ item, lookup, onClose }: { item: FleetDispatch | null; lookup:
 // Main app
 
 export function App() {
-  const [perspective, setPerspective] = useState<Perspective>("fleet")
+  const [perspective, setPerspective] = useState<Perspective>("map")
   const [windowH, setWindowH] = useState(6)
   const [filter, setFilter] = useState<FilterState>({
     client: null, agent: null, channel: null, initiator: null,
@@ -939,6 +941,7 @@ export function App() {
       />
       <KpiStrip snap={snap} dispatches={visible} windowH={windowH} />
       <div className="content">
+        {perspective === "map" && <MapPerspective snap={snap} dispatches={visible} onOpenItem={setOpenItem} />}
         {perspective === "fleet" && <FleetPerspective snap={snap} dispatches={visible} lookup={lookup} onOpenItem={setOpenItem} updateFilter={updateFilter} showIdle={true} />}
         {perspective === "clients" && <ClientsPerspective snap={snap} dispatches={visible} lookup={lookup} updateFilter={updateFilter} />}
         {perspective === "timeline" && <TimelinePerspective snap={snap} dispatches={visible} lookup={lookup} windowH={windowH} groupBy="agent" onOpenItem={setOpenItem} />}

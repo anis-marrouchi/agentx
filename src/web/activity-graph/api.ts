@@ -6,6 +6,7 @@ export type InitiatorKind =
   | "gitlab" | "github"
   | "cron" | "workflow"
   | "mesh" | "a2a"
+  | "voice" | "desktop"
   | "system"
 
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }
@@ -69,6 +70,10 @@ export interface FleetSnapshot {
   channels: FleetChannel[]
   initiators: FleetInitiator[]
   dispatches: FleetDispatch[]
+  /** Fleet mode: the node that served the merged view. */
+  localNodeId?: string
+  /** Forge base URLs, so the UI can link issues and MRs. */
+  forges?: { gitlab?: string; github?: string }
 }
 
 export async function fetchSnapshot(windowH: number): Promise<FleetSnapshot> {
