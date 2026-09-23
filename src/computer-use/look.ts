@@ -106,7 +106,11 @@ export async function capture(region: Region = { kind: "window" }, maxPixels = M
               "--w", String(region.width), "--h", String(region.height))
   }
 
-  const { stdout } = await run(HELPER, args)
+  // The helper exits non-zero on failure with its reason as JSON on stdout.
+  const stdout = await run(HELPER, args).then(r => r.stdout, (e: any) => {
+    if (typeof e?.stdout === "string" && e.stdout.trim().startsWith("{")) return e.stdout
+    throw e
+  })
   const res = JSON.parse(stdout) as {
     ok: boolean
     error?: string

@@ -13,7 +13,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { spawn, type ChildProcess } from "child_process"
-import { mkdirSync, writeFileSync, rmSync, openSync, existsSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, openSync, existsSync } from "fs"
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
@@ -181,11 +181,19 @@ export const demo = new Command()
   .option("--once", "play the scenario once and exit (default: keep daemons up until Ctrl-C)")
   .option("--keep", "keep the .agentx-demo directory on exit")
   .option("--no-open", "don't open the dashboard in a browser")
+  .option("--reuse", "resume an existing .agentx-demo instead of starting fresh (implies --keep)")
+  .option("--bind <host>", "dashboard bind address", "127.0.0.1")
   .action(async (opts) => {
     const basePort = parseInt(opts.basePort, 10)
     const root = resolve(process.cwd(), ".agentx-demo")
     const specs = buildSpecs(root, basePort)
-    const meshToken = randomBytes(24).toString("hex")
+    const tokenFile = join(root, "mesh-token")
+    // A resumed demo keeps its history, so a container restart or a lesson
+    // re-run lands on the same screen. Peers carry the token in config, so
+    // it has to survive with them.
+    const reuse = Boolean(opts.reuse) && existsSync(tokenFile) && existsSync(join(specs[0].dir, "agentx.json"))
+    const meshToken = reuse ? readFileSync(tokenFile, "utf8").trim() : randomBytes(24).toString("hex")
+    const keep = opts.keep || opts.reuse
     const children: ChildProcess[] = []
 
     const cli = process.argv[1]
@@ -194,8 +202,13 @@ export const demo = new Command()
       process.exit(1)
     }
 
-    if (existsSync(root)) rmSync(root, { recursive: true, force: true })
-    for (const spec of specs) writeNode(spec, specs, meshToken)
+    if (!reuse) {
+      // Empty rather than remove: in the demo container the directory is a
+      // volume mount point, which cannot be deleted.
+      if (existsSync(root)) for (const f of readdirSync(root)) rmSync(join(root, f), { recursive: true, force: true })
+      for (const spec of specs) writeNode(spec, specs, meshToken)
+      writeFileSync(tokenFile, meshToken + "\n", { mode: 0o600 })
+    }
 
     console.log()
     console.log(chalk.bold("  agentx demo — one message, three machines (simulated on loopback)"))
@@ -208,7 +221,7 @@ export const demo = new Command()
       tearingDown = true
       for (const c of children) { try { c.kill("SIGTERM") } catch { /* gone */ } }
       setTimeout(() => {
-        if (!opts.keep) { try { rmSync(root, { recursive: true, force: true }) } catch { /* busy */ } }
+        if (!keep) { try { rmSync(root, { recursive: true, force: true }) } catch { /* busy */ } }
         process.exit(code)
       }, 800)
     }
@@ -249,7 +262,7 @@ export const demo = new Command()
       const dashPort = specs[0].port + 10
       {
         const logFd = openSync(join(specs[0].dir, "board.log"), "a")
-        const child = spawn(process.execPath, [cli, "board", "serve"], {
+        const child = spawn(process.execPath, [cli, "board", "serve", "--bind", opts.bind], {
           cwd: specs[0].dir,
           env: { ...baseEnv, MESH_TOKEN: meshToken },
           stdio: ["ignore", logFd, logFd],
@@ -312,7 +325,10 @@ export const demo = new Command()
         console.log(chalk.dim(`  Worth your time? A star helps others find it: ${chalk.cyan("https://github.com/anis-marrouchi/agentx")}`))
       }
 
-      await playScenario()
+      // A resumed demo already recorded the scenario; replaying it on every
+      // restart would stack duplicate runs into the history lessons show.
+      if (reuse) console.log(chalk.dim("  Resumed existing demo state — press Enter to replay the scenario."))
+      else await playScenario()
 
       if (opts.once) {
         console.log()

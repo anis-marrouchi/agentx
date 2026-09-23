@@ -4,6 +4,14 @@
 !Dockerfile
 !docker/
 !docker/init.mjs
+!docker/demo/
+!docker/demo/start.sh
+!docs/
+!docs/.scripts/
+!docs/.scripts/seed-demo.mjs
+!docs/public/
+!docs/public/examples/
+!docs/public/examples/demo-report.json
 !package.json
 !pnpm-lock.yaml
 !.npmrc
