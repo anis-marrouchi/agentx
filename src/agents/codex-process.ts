@@ -175,9 +175,18 @@ export class CodexProcessPool {
             o.onDelta?.(p.delta, content)
           }
           if (method === "thread/tokenUsage/updated") {
+            // `last` is ONE model call; a tool-using turn makes many, so sum
+            // them (`total` spans the whole thread, which a resumed session
+            // shares with earlier turns). OpenAI's inputTokens includes the
+            // cached part; TokenUsage keeps them apart, Anthropic-style.
             const u = p.tokenUsage.last
-            usage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens,
-              cacheReadTokens: u.cachedInputTokens, cacheCreateTokens: u.cacheWriteInputTokens || 0 }
+            const cached = u.cachedInputTokens || 0
+            usage = {
+              inputTokens: (usage?.inputTokens || 0) + Math.max(0, (u.inputTokens || 0) - cached),
+              outputTokens: (usage?.outputTokens || 0) + (u.outputTokens || 0),
+              cacheReadTokens: (usage?.cacheReadTokens || 0) + cached,
+              cacheCreateTokens: (usage?.cacheCreateTokens || 0) + (u.cacheWriteInputTokens || 0),
+            }
           }
           if (method === "turn/completed") {
             if (p.turn.status === "completed") resolve()
