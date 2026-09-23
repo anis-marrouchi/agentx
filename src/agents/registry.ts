@@ -44,6 +44,7 @@ import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
+import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -1180,6 +1181,11 @@ export class AgentRegistry {
       await this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory)
     }
 
+    // Shadow seats read the agent's last reply before this message joins it.
+    const previousReply = [...this.sessions.getSession(task.agentId, channel, chatId).messages]
+      .reverse().find(m => m.role === "agent")?.content
+    onUserMessage({ agent: task.agentId, channel, chatId, message: task.message, previousReply, taskId: traceTaskId })
+
     // Record user message in session
     this.sessions.addUserMessage(task.agentId, channel, chatId, senderName, task.message)
 
@@ -1908,6 +1914,16 @@ export class AgentRegistry {
     }
 
     let finalResponse: AgentResponse | undefined
+    // turn-progress shadow seat: watches the tool steps of this turn.
+    const turnWatch = startTurnWatch({
+      agent: task.agentId, request: task.message, taskId: traceTaskId,
+      budgetMinutes: state.def.maxExecutionMinutes ?? 20,
+    })
+    const unwatchedOnEvent = onEvent
+    onEvent = (event: any) => {
+      turnWatch.observe(event)
+      unwatchedOnEvent?.(event)
+    }
     try {
       // Workflow auto-run short-circuit. When the matcher upstream picked a
       // workflow at >= autoRunThreshold AND `workflows.matching.mode == "auto"`,
@@ -2121,6 +2137,7 @@ export class AgentRegistry {
       } else {
         // Record agent response in session
         this.sessions.addAgentMessage(task.agentId, channel, chatId, response.content)
+        onAgentReply({ agent: task.agentId, channel, chatId, request: task.message, reply: response.content, taskId: traceTaskId })
 
         // Store native CLI session IDs for future resume.
         if (response.claudeSessionId) {
@@ -2271,6 +2288,7 @@ export class AgentRegistry {
       }
       return finalResponse
     } finally {
+      turnWatch.stop()
       state.activeTasks--
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
