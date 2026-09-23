@@ -43,6 +43,7 @@ import { chat } from "@/commands/chat"
 import { memory as memoryCmd } from "@/commands/memory"
 import { serve } from "@/commands/serve"
 import { demo } from "@/commands/demo"
+import { exec as execCmd } from "@/commands/exec"
 import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
@@ -143,6 +144,8 @@ const ADVANCED = [
   migrate, retention, notifications,
   // Channel-specific + demo
   whatsapp, demo,
+  // One-shot task for scripts and benchmarks
+  execCmd,
   // Deprecated — superseded by `agentx attach`
   chat,
 ]
