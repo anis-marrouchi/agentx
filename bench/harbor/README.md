@@ -25,16 +25,22 @@ cd /tmp/agentx-bench && pnpm install && pnpm build && npm pack
 # → /tmp/agentx-bench/agentix-cli-<version>.tgz
 ```
 
-Credentials, the same kind for every agent:
+Credentials, the same kind for every agent. Prefer the API key: it bills
+per token and leaves the fleet's subscription quota alone.
 
 ```bash
+# API billing (recommended)
+export ANTHROPIC_API_KEY=...         # baseline uses it; agentx needs --ak billing=api
+export OPENAI_API_KEY=...            # codex / codex-cli tier
+
+# or subscription billing: shares the fleet's quota
 export CLAUDE_CODE_OAUTH_TOKEN=...   # from `claude setup-token`
 export CLAUDE_FORCE_OAUTH=1          # make Harbor's claude-code baseline use it too
-export OPENAI_API_KEY=...            # codex / codex-cli tier
 ```
 
-agentx's `claude-code` tier always strips `ANTHROPIC_API_KEY` and uses the
-subscription, so the baseline must too, or the two are billed differently.
+agentx's `claude-code` tier uses the subscription unless the agent sets
+`billing: "api"`, so pass `--ak billing=api` whenever the baseline runs on
+the API key, or the two are billed differently.
 
 ## Run
 
@@ -47,7 +53,7 @@ M=anthropic/claude-opus-5-5
 harbor run -d terminal-bench@2.0 -a claude-code -m $M -n 2 -k 1 -l 5 -o jobs --job-name claude-code
 
 PYTHONPATH=bench/harbor harbor run -d terminal-bench@2.0 \
-  -a agentx_agent:AgentX -m $M --ak tier=claude-code --ak tarball=$TGZ \
+  -a agentx_agent:AgentX -m $M --ak tier=claude-code --ak billing=api --ak tarball=$TGZ \
   -n 2 -k 1 -l 5 -o jobs --job-name agentx-claude-code
 
 harbor run -d terminal-bench@2.0 -a codex -m openai/<model> -n 2 -k 1 -l 5 -o jobs --job-name codex
@@ -68,6 +74,7 @@ python3 bench/harbor/report.py jobs/
 | Key | Default | Meaning |
 |---|---|---|
 | `tier` | `claude-code` | agentx execution tier: `claude-code` or `codex-cli` |
+| `billing` | `subscription` | `api` bills `ANTHROPIC_API_KEY` instead of the OAuth token (claude-code tier) |
 | `tarball` | npm `agentix-cli` | local `npm pack` output to install; without it, `--agent-version` pins the npm release |
 | `setup_workspace` | `true` | write agentx's managed workspace files (CLAUDE.md, settings) into the task directory, as daemon boot does. Set `false` if a task's tests object to extra files |
 | `max_minutes` | `240` | agentx's own time cap |

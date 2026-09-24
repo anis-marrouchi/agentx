@@ -23,6 +23,8 @@ Agent kwargs (--ak key=value):
                      make any token or cost comparison wrong.
     tarball          local path to an `npm pack` of agentx; default installs
                      agentix-cli from npm (pin with --agent-version)
+    billing          subscription (default) | api. claude-code tier only: "api"
+                     bills ANTHROPIC_API_KEY instead of CLAUDE_CODE_OAUTH_TOKEN
     setup_workspace  true (default) writes agentx's managed CLAUDE.md etc. into
                      the workspace, as daemon boot does; false leaves it bare
     max_minutes      agentx's own time cap (default 240, the schema maximum)
@@ -49,9 +51,9 @@ STDERR_FILE = "agentx-stderr.log"
 AGENT_ID = "bench"
 SUPPORTED_TIERS = ("claude-code", "codex-cli")
 
-# Credentials forwarded from the host when set. The claude-code tier strips
-# ANTHROPIC_API_KEY before spawning `claude` (agentx bills the subscription),
-# so that tier needs CLAUDE_CODE_OAUTH_TOKEN.
+# Credentials forwarded from the host when set. On the claude-code tier the
+# agent's `billing` picks which one `claude` gets: CLAUDE_CODE_OAUTH_TOKEN
+# (subscription, the default) or ANTHROPIC_API_KEY (billing=api).
 FORWARDED_ENV = (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "ANTHROPIC_API_KEY",
@@ -66,6 +68,7 @@ class AgentX(BaseInstalledAgent):
         *args,
         tier: str = "claude-code",
         tarball: str | None = None,
+        billing: str = "subscription",
         setup_workspace: bool = True,
         max_minutes: int = 240,
         **kwargs,
@@ -75,7 +78,10 @@ class AgentX(BaseInstalledAgent):
             raise ValueError(
                 f"tier={tier!r} is not benchmarkable yet; use one of {SUPPORTED_TIERS}"
             )
+        if billing not in ("subscription", "api"):
+            raise ValueError(f"billing={billing!r}; use 'subscription' or 'api'")
         self._tier = tier
+        self._billing = billing
         self._tarball = Path(tarball).expanduser() if tarball else None
         self._setup_workspace = setup_workspace
         self._max_minutes = int(max_minutes)
@@ -130,6 +136,7 @@ class AgentX(BaseInstalledAgent):
             "workspace": workspace,
             "tier": self._tier,
             "permissionMode": "bypassPermissions",
+            "billing": self._billing,
             "maxExecutionMinutes": self._max_minutes,
         }
         if model := self._agent_model():
