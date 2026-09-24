@@ -2155,7 +2155,8 @@ export class AgentXDaemon {
         if (!this.checkMeshAuth(req, res, path)) return
       }
       // Talk mode and narration make this host speak: same gate as /ask.
-      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live") {
+      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live" ||
+          path === "/voice/hush" || path === "/voice/door") {
         if (!this.checkMeshAuth(req, res, path)) return
         const body = req.method === "POST" ? await readBody(req) : {}
         const reply = this.voiceTalk.handle(req.method || "GET", path, body)

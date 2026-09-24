@@ -153,6 +153,11 @@ export class PresenceHost {
     for (const id of [...this.slots.keys()]) this.hide(id)
   }
 
+  /** The door opened: empty every spoken-answer bubble (lessons hush themselves). */
+  quiet(): void {
+    for (const slot of this.slots.values()) if (slot.use === "talk") slot.presence.say("")
+  }
+
   /** Agents with an overlay on screen right now. */
   get onScreen(): string[] { return [...this.slots.keys()] }
 

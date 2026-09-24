@@ -66,6 +66,10 @@ export class Narrator {
   private idleTimer?: NodeJS.Timeout
   private readonly minGap: number
   private readonly firstDelay: number
+  /** Set by the door: no narration until then. */
+  private heldUntil = 0
+  /** The task narrated most recently, and when. */
+  private lastLine: { taskId: string; agentId: string; at: number } | null = null
 
   constructor(private opts: NarratorOpts) {
     this.minGap = opts.minGapMs ?? 20_000
@@ -79,6 +83,20 @@ export class Narrator {
     if (on === null) map.delete(key)
     else map.set(key, on)
   }
+
+  /**
+   * The listener pressed the door: hold narration for a while (the audio
+   * itself is stopped by the shared SpeechOut). Returns the task that was
+   * narrated in the last `recentMs`, which is what the listener heard.
+   */
+  hush(holdMs = 30_000, recentMs = 30_000): { taskId: string; agentId: string } | null {
+    this.heldUntil = Date.now() + holdMs
+    const l = this.lastLine
+    return l && Date.now() - l.at < recentMs ? { taskId: l.taskId, agentId: l.agentId } : null
+  }
+
+  /** The listener has spoken: narration may carry on. */
+  release(): void { this.heldUntil = 0 }
 
   status(): { agents: Record<string, boolean>; tasks: Record<string, boolean> } {
     return { agents: Object.fromEntries(this.agentSwitch), tasks: Object.fromEntries(this.taskSwitch) }
@@ -135,6 +153,7 @@ export class Narrator {
     if (!s || !voice || !s.steps.length) return null
     const steps = s.steps.splice(0)
     s.lastSpokeAt = Date.now()
+    if (Date.now() < this.heldUntil) return null
     // A talk (or another line) is already speaking: skip rather than queue
     // a stale update behind it.
     if (this.opts.speech.busy) return null
@@ -152,6 +171,8 @@ export class Narrator {
     }
     const line = speakable(text)
     if (!line || /^SKIP\b/i.test(line)) return null
+    if (Date.now() < this.heldUntil) return null
+    this.lastLine = { taskId, agentId: s.agentId, at: Date.now() }
     void this.opts.speech.say({ voiceId: voice.voiceId, text: line })
     return line
   }

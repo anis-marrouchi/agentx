@@ -50,6 +50,9 @@ export type TalkEvent =
 const DONE = /\bDONE\b\.?/g
 const STOP = /^\s*(stop|stop talking|that'?s enough|end( the talk)?|enough)[\s.!]*$/i
 
+/** "stop", "that's enough", "end the lesson": the listener wants quiet. */
+export const isStop = (text: string) => STOP.test(text) || /^\s*end the (lesson|narration)[\s.!]*$/i.test(text)
+
 interface Turn {
   n: number
   who: number
