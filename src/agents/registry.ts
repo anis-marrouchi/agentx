@@ -1155,6 +1155,7 @@ export class AgentRegistry {
     const channel = task.context?.channel || "api"
     const { evaluateRequest, selectRequestContext } = await import("./request-planner")
     const requestGate = await evaluateRequest(task.message, task.agentId, channel)
+    if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
@@ -2114,6 +2115,7 @@ export class AgentRegistry {
         tier2CacheCreateTokens: split?.tier2CacheCreateTokens,
         resumed: Boolean(resumeSessionId),
         resumeSessionId: resumeSessionId || undefined,
+        jevArm: requestGate.arm,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
         // billed; fall back to the agent's configured model so codex-cli

@@ -623,6 +623,10 @@ const decisionSeatSchema = z.object({
    *  Setting this to 0 in active mode means the calibration report stops
    *  being trustworthy the day you promote the seat. */
   explore: z.number().min(0).max(1).default(0.15),
+  /** Fraction of turns that bypass the seat as a randomized control group.
+   *  Unset lets the seat pick its own default; only seats that run an
+   *  experiment read it (today: request-gate, default 0.1). */
+  holdout: z.number().min(0).max(1).optional(),
 }).default({})
 
 const decisionsConfigSchema = z.object({

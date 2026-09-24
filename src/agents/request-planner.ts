@@ -1,4 +1,4 @@
-import { askSeat } from '@/decisions/seat'
+import { askSeat, decisionsRuntime, getSeatMode } from '@/decisions/seat'
 import { noul } from '@/decisions/questions'
 import type { NoulAnswer, Questions } from '@/decisions/types'
 import type { ContextInput } from './context'
@@ -6,8 +6,32 @@ import type { ContextInput } from './context'
 export const REQUEST_GATE_SEAT = 'request-gate'
 export const REQUEST_CONTEXT_SEAT = 'request-context'
 
+/** Share of turns held out of Jev preprocessing when the gate is active.
+ *  Overridden by decisions.seats.request-gate.holdout; 0 turns it off. */
+export const DEFAULT_REQUEST_GATE_HOLDOUT = 0.1
+
+/** Experiment arm for an active gate. "treatment" is assigned before the
+ *  gate is asked, so a failed or skipped gate call stays in treatment —
+ *  the comparison is intent-to-treat, not "turns Jev preprocessed". */
+export type RequestGateArm = 'treatment' | 'holdout'
+
+export interface RequestGate {
+  active: boolean
+  preprocess: boolean
+  arm?: RequestGateArm
+}
+
 // This gate decides whether typed preprocessing helps; it never answers the user.
-export async function evaluateRequest(message: string, agent: string, channel: string) {
+export async function evaluateRequest(message: string, agent: string, channel: string, random: () => number = Math.random): Promise<RequestGate> {
+  // The holdout is the "without Jev" control: no gate call, and the turn
+  // proceeds exactly as a gate "skip" would — existing context, the agent's
+  // own model, no context planner. Drawn before the call so it costs nothing.
+  const assigned = getSeatMode(REQUEST_GATE_SEAT) === 'active'
+  if (assigned) {
+    const rate = decisionsRuntime().seats[REQUEST_GATE_SEAT]?.holdout ?? DEFAULT_REQUEST_GATE_HOLDOUT
+    if (random() < rate) return { active: true, preprocess: false, arm: 'holdout' }
+  }
+  const arm: RequestGateArm | undefined = assigned ? 'treatment' : undefined
   const result = await askSeat(REQUEST_GATE_SEAT, {
     request: message.slice(0, 2000), agent, channel,
     operations: ['select optional context', 'evaluate model routing where permitted'],
@@ -16,9 +40,9 @@ export async function evaluateRequest(message: string, agent: string, channel: s
     true: 'Relevant context must be selected, or a bounded routing decision can help. Follow-ups and ambiguous references need context.',
     false: 'Typed preprocessing adds no useful decision; send the request to the configured main agent with existing context.',
   }) }, { timeoutMs: 3000 })
-  if (!result || result.mode !== 'active') return { active: false, preprocess: false }
+  if (!result || result.mode !== 'active') return { active: false, preprocess: false, arm }
   const p = (result.answers.preprocess as NoulAnswer)?.noul
-  return { active: true, preprocess: Number.isFinite(p) && p >= 0.5 }
+  return { active: true, preprocess: Number.isFinite(p) && p >= 0.5, arm }
 }
 
 // Only optional, application-assembled knowledge is selectable. Identity,

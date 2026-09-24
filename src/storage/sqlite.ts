@@ -398,6 +398,16 @@ function runMigrations(db: Database.Database): void {
         ALTER TABLE task_traces ADD COLUMN resumed INTEGER;
       `,
     },
+    {
+      // Request-gate experiment arm: 'treatment' (asked Jev), 'holdout'
+      // (randomly skipped it), or NULL when the gate was not active. The
+      // with/without-Jev comparison groups turns on this column.
+      v: 13,
+      sql: `
+        ALTER TABLE task_traces ADD COLUMN jev_arm TEXT;
+        CREATE INDEX idx_task_traces_jev_arm ON task_traces(jev_arm, started_at);
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {

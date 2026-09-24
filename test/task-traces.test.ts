@@ -253,6 +253,7 @@ describe("attachSqliteSubscribers — task:started / task:completed → traces",
           tier2CacheCreateTokens: 40_000,
           resumed,
           resumeSessionId: resumed ? "sess-prev" : undefined,
+          jevArm: resumed ? "holdout" : undefined,
           at: new Date().toISOString(),
         })
       }
@@ -265,6 +266,8 @@ describe("attachSqliteSubscribers — task:started / task:completed → traces",
       expect(byChat["c-resumed"].tier2OutputTokens).toBe(900)
       expect(byChat["c-fresh"].resumed).toBe(false)
       expect(byChat["c-fresh"].resumeSessionId).toBeNull()
+      expect(byChat["c-resumed"].jevArm).toBe("holdout")
+      expect(byChat["c-fresh"].jevArm).toBeNull()
     } finally {
       dispose()
       bus.removeAllListeners()
