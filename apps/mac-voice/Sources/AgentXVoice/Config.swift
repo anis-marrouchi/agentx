@@ -10,8 +10,13 @@ enum Config {
     static let daemonURL = env("AGENTX_DAEMON_URL") ?? "http://127.0.0.1:18800"
     static let agentID = env("AGENTX_VOICE_AGENT") ?? "secretary-agent"
 
-    /// ElevenLabs default voice. Override with AGENTX_VOICE_ID.
+    /// ElevenLabs default voice, used when the answering agent has none
+    /// configured. Override with AGENTX_VOICE_ID.
     static let voiceID = env("AGENTX_VOICE_ID") ?? "21m00Tcm4TlvDq8ikWAM"
+
+    /// One voice session per launch. The daemon uses it to decide whether
+    /// an agent still needs to introduce itself.
+    static let voiceSession = UUID().uuidString
     static let sttModel = env("AGENTX_STT_MODEL") ?? "scribe_v1"
 
     /// How to invoke smart paste. Run through a login shell, so this is a

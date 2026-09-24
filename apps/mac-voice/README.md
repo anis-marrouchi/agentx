@@ -57,7 +57,7 @@ All optional; every one has a working default.
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` | daemon to ask |
 | `AGENTX_VOICE_AGENT` | `secretary-agent` | which agent answers |
 | `ELEVENLABS_API_KEY` | `~/.elevenlabs/key` | STT + TTS; absent → local fallbacks |
-| `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice |
+| `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice when the answering agent has no `voice.elevenlabsVoiceId` |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper` | offline STT |
 
 The ElevenLabs key is read from the environment first, then key files: an app launched from

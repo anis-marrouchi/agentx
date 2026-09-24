@@ -22,6 +22,9 @@ enum AgentClient {
         let buttons: [(String, String)]
         let imageURL: String?
         let durationMs: Int?
+        /// The agent that answered and its ElevenLabs voice, when it has one.
+        let agentID: String?
+        let voiceID: String?
     }
 
     /// What, if anything, to say about the step now running.
@@ -49,6 +52,39 @@ enum AgentClient {
         return (try? JSONDecoder().decode(Reply.self, from: data))?.say
     }
 
+    // MARK: Talk mode
+    //
+    // While two agents talk out loud (`agentx talk`), Option-Space is the
+    // door: pressing it hushes them at once, and what is said goes to the
+    // talk instead of /ask. See src/daemon/voice-talk-api.ts.
+
+    /// Silence a running talk. Returns whether one is running, so the
+    /// caller knows where the words about to be spoken should go. Never
+    /// throws: no daemon means no talk.
+    static func talkHush() async -> Bool {
+        guard let (data, _) = try? await post("/talk/hush", [:], timeout: 2) else { return false }
+        struct Reply: Decodable { let active: Bool? }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.active ?? false
+    }
+
+    /// Hand the listener's words to the talk; "stop" ends it.
+    static func talkDoor(_ text: String) async throws {
+        let (_, response) = try await post("/talk/door", ["text": text], timeout: 5)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw NSError(domain: "AgentXVoice", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "The talk has ended"])
+        }
+    }
+
+    private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {
+        var req = URLRequest(url: URL(string: "\(Config.daemonURL)\(path)")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await URLSession.shared.data(for: req)
+    }
+
     static func ask(_ message: String) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
@@ -59,13 +95,17 @@ enum AgentClient {
         req.httpBody = try JSONSerialization.data(withJSONObject: [
             "message": message,
             "agent": Config.agentID,
+            "session": Config.voiceSession,
         ])
 
         let (data, response) = try await URLSession.shared.data(for: req)
         struct UiButton: Decodable { let label: String; let url: String }
         struct UiMedia: Decodable { let type: String; let url: String; let caption: String? }
         struct Ui: Decodable { let buttons: [UiButton]?; let media: UiMedia? }
+        struct Voice: Decodable { let elevenlabsVoiceId: String? }
         struct Reply: Decodable {
+            let agentId: String?
+            let voice: Voice?
             let text: String?
             let full: String?
             let ui: Ui?
@@ -73,6 +113,7 @@ enum AgentClient {
             let duration: Int?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
+        let voiceID = reply?.voice?.elevenlabsVoiceId
 
         // 202 means accepted-but-busy: the daemon has already written a
         // speakable explanation into `text`. Falling through to the error
@@ -81,7 +122,7 @@ enum AgentClient {
         if let http = response as? HTTPURLResponse, http.statusCode == 202,
            let queuedText = reply?.text, !queuedText.isEmpty {
             return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
-                          durationMs: reply?.duration)
+                          durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
         }
 
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -103,6 +144,6 @@ enum AgentClient {
 
         return Answer(text: text, written: reply?.full,
                       buttons: buttons + extra, imageURL: image,
-                      durationMs: reply?.duration)
+                      durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
     }
 }

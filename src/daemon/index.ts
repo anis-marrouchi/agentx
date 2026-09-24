@@ -83,6 +83,8 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
+import { resolveAgentVoice, VoiceIntroTracker, introInstruction } from "@/voice/agent-voice"
+import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
 import {
   VOICE_NARRATION_SEAT,
@@ -149,6 +151,10 @@ export class AgentXDaemon {
   private loadedPlugins: LoadedPlugin[] = []
   private readonly agentMemory: AgentMemory = new AgentMemory()
   private contacts!: ContactDirectory
+  /** Who has already introduced themselves in which voice session. */
+  private voiceIntros = new VoiceIntroTracker()
+  /** Talk mode and task narration: see src/daemon/voice-talk-api.ts. */
+  private voiceTalk!: VoiceTalkService
   /** Persistent-claude process registry. Null when no agent has
    *  persistentProcess: true (legacy spawn-per-task path). */
   private sessionMonitor?: SessionMonitor
@@ -187,9 +193,16 @@ export class AgentXDaemon {
     // frames and nothing else, and any UI built on it sat silent through
     // the entire turn. Forwarding here gives /events the events its own
     // filter name already implies.
+    this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m))
+    this.voiceTalk.narrator.attach(getAgentEventBus())
+
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
       try {
-        this.broadcastSSE("task", JSON.stringify({ kind: "task:step", ...e }))
+        // The voice rides along so a listener can narrate the wait in the
+        // voice of the agent doing the work, before its answer arrives.
+        const agent = this.config?.agents?.[e.agentId]
+        const voice = agent ? resolveAgentVoice(e.agentId, agent) : undefined
+        this.broadcastSSE("task", JSON.stringify({ kind: "task:step", ...e, voice }))
       } catch {
         /* a telemetry frame must never break the step it describes */
       }
@@ -705,6 +718,7 @@ export class AgentXDaemon {
 
   async stop(): Promise<void> {
     const start = Date.now()
+    this.voiceTalk.close()
 
     try {
       this.log("  Stopping channels...")
@@ -2135,6 +2149,14 @@ export class AgentXDaemon {
       // one. Same arbitrary-prompt execution, same gate.
       if (req.method === "GET" && path === "/ask") {
         if (!this.checkMeshAuth(req, res, path)) return
+      }
+      // Talk mode and narration make this host speak: same gate as /ask.
+      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration") {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const reply = this.voiceTalk.handle(req.method || "GET", path, body)
+        this.json(res, reply.status, reply.body)
+        return
       }
 
       if (path === "/monitor" || path.startsWith("/monitor/")) {
@@ -4341,10 +4363,12 @@ export class AgentXDaemon {
           const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           let requestedAgent = url.searchParams.get("agent") || ""
+          let voiceSession = url.searchParams.get("session") || ""
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
+            voiceSession = (body.session as string) || voiceSession
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -4383,6 +4407,13 @@ export class AgentXDaemon {
           // phone shortcuts) is plain voice. Only the ledger sees the
           // difference — the session key stays "voice" for both.
           const origin = /^AgentXVoice\//.test(String(req.headers["user-agent"] || "")) ? "desktop" : "voice"
+
+          // Introduce once per voice session (or after a long silence),
+          // then talk like a colleague. A client that sends no session id
+          // shares one per origin, which the 8h gap still keeps sensible.
+          const voice = resolveAgentVoice(agentId, this.config.agents[agentId])
+          const session = voiceSession.trim() || origin
+          const introduce = this.voiceIntros.needsIntro(session, agentId)
           const intentRef = this.recordInboundDispatch(
             agentId,
             { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
@@ -4391,10 +4422,14 @@ export class AgentXDaemon {
           const response = await this.registry.execute({
             agentId,
             message,
-            systemPromptAppend: voiceInstruction,
+            systemPromptAppend: `${voiceInstruction}\n${introInstruction(voice, introduce)}`,
             context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
             intentRef,
           })
+
+          // Who is speaking, and in what voice — the client has no other
+          // way to know which agent answered.
+          const speaker = { agentId, voice }
 
           // Being busy is not an error.
           //
@@ -4408,6 +4443,7 @@ export class AgentXDaemon {
           if (response.error?.startsWith("__queued__")) {
             const pending = Number(response.error.split(":")[2] || 1)
             this.json(res, 202, {
+              ...speaker,
               text: pending > 1
                 ? `I'm still on your last request, and ${pending} more are waiting. Give me a moment.`
                 : "I'm still working on your last request. Give me a moment.",
@@ -4427,8 +4463,10 @@ export class AgentXDaemon {
           // voice prompt: two parsers drift.
           const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
           const speakable = toSpeakable(withoutDirective)
+          if (!response.error) this.voiceIntros.spoke(session, agentId)
 
           this.json(res, response.error ? 500 : 200, {
+            ...speaker,
             text: speakable,
             // The answer as written — what a client SHOWS, while `text` is
             // what it speaks. They differ: spoken text drops URLs and

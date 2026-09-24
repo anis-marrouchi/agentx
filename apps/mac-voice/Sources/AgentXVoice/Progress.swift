@@ -16,7 +16,8 @@ final class Progress: NSObject, URLSessionDataDelegate {
     private var session: URLSession?
     private var buffer = Data()
     private let agentID: String
-    private let onStep: (String) -> Void
+    /// The step label, and the working agent's voice id when it has one.
+    private let onStep: (String, String?) -> Void
 
     /// Every touch of `buffer`, `task` and `session` happens here.
     ///
@@ -30,7 +31,7 @@ final class Progress: NSObject, URLSessionDataDelegate {
     private let queue = DispatchQueue(label: "tn.acme.agentx.voice.progress")
     private var stopped = false
 
-    init(agentID: String, onStep: @escaping (String) -> Void) {
+    init(agentID: String, onStep: @escaping (String, String?) -> Void) {
         self.agentID = agentID
         self.onStep = onStep
     }
@@ -112,7 +113,8 @@ final class Progress: NSObject, URLSessionDataDelegate {
         // and narrating theirs would be both confusing and a privacy leak.
         guard (obj["agentId"] as? String) == agentID else { return }
         guard let label = summarise(obj) else { return }
-        DispatchQueue.main.async { self.onStep(label) }
+        let voiceID = (obj["voice"] as? [String: Any])?["elevenlabsVoiceId"] as? String
+        DispatchQueue.main.async { self.onStep(label, voiceID) }
     }
 
     /// Turn a step event into something worth showing in 180 points of

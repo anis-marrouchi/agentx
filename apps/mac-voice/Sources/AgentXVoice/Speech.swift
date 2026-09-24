@@ -72,11 +72,12 @@ enum Speech {
 
     // MARK: Text to speech
 
-    static func speak(_ text: String) async {
+    /// `voiceID` is the answering agent's voice; nil means the global default.
+    static func speak(_ text: String, voiceID: String? = nil) async {
         guard !text.isEmpty else { return }
         if let key = Config.elevenLabsKey {
             do {
-                let mp3 = try await elevenLabsTTS(text: text, key: key)
+                let mp3 = try await elevenLabsTTS(text: text, voiceID: voiceID ?? Config.voiceID, key: key)
                 try await Player.shared.play(mp3)
                 return
             } catch {
@@ -86,8 +87,8 @@ enum Speech {
         _ = try? run("/usr/bin/say", [text])
     }
 
-    private static func elevenLabsTTS(text: String, key: String) async throws -> Data {
-        let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(Config.voiceID)")!
+    private static func elevenLabsTTS(text: String, voiceID: String, key: String) async throws -> Data {
+        let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)")!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 60
