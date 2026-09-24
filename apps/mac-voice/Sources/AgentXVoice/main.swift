@@ -31,9 +31,14 @@ final class App: NSObject, NSApplicationDelegate {
     /// The answering agent's voice, learned from the daemon. Nil until
     /// then, which speaks in the global default.
     private var voiceID: String?
-    /// Set on Option-Space: whether a talk was running (and is now hushed),
-    /// so the words spoken go to the talk rather than to /ask.
-    private var talkCheck: Task<Bool, Never>?
+    /// Set when the door opens: what was speaking (and is now hushed), so
+    /// the words spoken go to that activity rather than to /ask.
+    private var talkCheck: Task<AgentClient.Hushed, Never>?
+    /// Words said while our own turn was still running: they go next, and
+    /// the stale answer is not spoken.
+    private var followUp: String?
+    /// "stop" while our own turn was running: drop its answer.
+    private var abandoned = false
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
     private func smartPaste() {
@@ -226,12 +231,16 @@ final class App: NSObject, NSApplicationDelegate {
         // A held key overrides any hands-free window that is open, so the
         // two ways of talking never fight over the microphone.
         stopPolling()
-        // A turn already in flight must not be interrupted by a stray
-        // keypress; the answer is still coming and will be spoken.
-        guard !busy, !recorder.isRecording else { return }
-        // Two agents may be talking out loud. Hush them now, before a word
-        // is said, and remember whether they were there.
-        talkCheck = Task { await AgentClient.talkHush() }
+        guard !recorder.isRecording else { return }
+        // Option-Space is the door to everything spoken, always: our own
+        // answer or step line stops now, and the daemon hushes any talk,
+        // lesson or narration, remembering which it was. Even mid-turn —
+        // ignoring the key while busy is how Anis spoke to a lesson and
+        // nothing listened.
+        Speech.stop()
+        lastSpokeAt = Date()
+        talkCheck = Task { await AgentClient.hush() }
+        Log.info("door: opened\(busy ? " (a turn is running)" : "")")
         do {
             try recorder.start()
             panel.render(.listening)
@@ -242,74 +251,111 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func stopAndSend() {
         guard recorder.isRecording else { return }
-        let talk = talkCheck
+        // Clicked or hands-free: nothing hushed yet. They did speak, so
+        // hush now; whatever was talking gets the words, same as the key.
+        let door = talkCheck ?? Task { await AgentClient.hush() }
         talkCheck = nil
         guard let wav = recorder.stop() else {
             panel.render(.error("Too short — hold while speaking"))
             resetSoon()
             return
         }
+        let midTurn = busy
         busy = true
-        panel.render(.thinking)
+        if !midTurn { panel.render(.thinking) }
 
         Task { @MainActor in
-            do {
-                let heard = try await Speech.transcribe(wav: wav)
-                guard !heard.isEmpty else {
-                    panel.render(.error("Didn't catch that"))
-                    busy = false; resetSoon(); return
-                }
-                Log.info("heard: \(heard)")
-                if await talk?.value == true {
-                    // The talk answers out loud through the daemon; nothing
-                    // to speak here.
-                    try await AgentClient.talkDoor(heard)
-                    Log.info("sent to the talk")
-                    panel.render(.idle)
-                    busy = false
-                    return
-                }
-                beginNarration()
-
-                let answer = try await AgentClient.ask(heard)
-                endNarration()
-                if let v = answer.voiceID { voiceID = v }
-                Log.info("answer (\(answer.agentID ?? "?")): \(answer.text)")
-                // Show BEFORE speaking, but only when there is something
-                // the speech cannot deliver — a link, an image, or more
-                // text than was read aloud. A card that opens on every
-                // "Ok." teaches you to ignore it.
-                if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
-                                             buttons: answer.buttons, imageURL: answer.imageURL) {
-                    card.show(spoken: answer.text, written: answer.written,
-                              buttons: answer.buttons, imageURL: answer.imageURL)
-                } else {
-                    card.orderOut(nil)
-                }
-                // Scroll the sentence being spoken, so it can be read as
-                // well as heard — and re-read after, which speech cannot do.
-                panel.render(.saying(answer.text))
-                await Speech.speak(answer.text, voiceID: voiceID)
-                panel.render(.idle)
-                // Leave the microphone open for a moment. Say nothing and
-                // it closes itself; start talking and the conversation
-                // simply continues.
-                busy = false
-                // A live lesson now runs on screen and speaks for itself; an
-                // open mic would hear the agent. Option-Space is the door.
-                if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
-                listenHandsFree(followUp: true)
-            } catch {
-                endNarration()
-                Log.warn("turn failed: \(error.localizedDescription)")
-                panel.render(.error(short(error.localizedDescription)))
-                // Say it aloud too — a voice assistant that fails only in
-                // a 230px label has failed silently for anyone not looking.
-                await Speech.speak("Sorry, that didn't work.", voiceID: voiceID)
-                resetSoon()
+            let heard = (try? await Speech.transcribe(wav: wav)) ?? ""
+            guard !heard.isEmpty else {
+                if !midTurn { panel.render(.error("Didn't catch that")); busy = false; resetSoon() }
+                return
             }
-            busy = false
+            Log.info("heard: \(heard)")
+            let hushed = await door.value
+            if hushed.kind != nil, await AgentClient.door(heard) {
+                // The talk or lesson answers out loud through the daemon.
+                Log.info("door: \"\(heard)\" → \(hushed.kind!)\(hushed.agentID.map { " (\($0))" } ?? "")")
+                if !midTurn { panel.render(.idle); busy = false }
+                return
+            }
+            if midTurn {
+                // Our own turn is still thinking. The agent cannot change
+                // course mid-turn, so his words go next and the stale
+                // answer is not spoken; "stop" just drops it.
+                if Self.isStop(heard) { abandoned = true; followUp = nil; Log.info("door: stop → dropping the turn in flight") }
+                else { followUp = heard; Log.info("door: \"\(heard)\" → next, instead of the answer in flight") }
+                panel.render(.working("Got it — one moment", 0))
+                return
+            }
+            await runTurn(heard)
         }
+    }
+
+    static func isStop(_ s: String) -> Bool {
+        s.range(of: #"^\s*(stop|stop talking|that'?s enough|enough)[\s.!]*$"#,
+                options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// One question and its spoken answer. Words said through the door
+    /// while it thinks replace the answer with the next turn.
+    private func runTurn(_ heard: String) async {
+        do {
+            beginNarration()
+
+            let answer = try await AgentClient.ask(heard)
+            endNarration()
+            if abandoned {
+                abandoned = false
+                Log.info("dropped answer (\(answer.agentID ?? "?")): \(answer.text)")
+                panel.render(.idle); busy = false; return
+            }
+            if let next = followUp {
+                followUp = nil
+                Log.info("superseded answer (\(answer.agentID ?? "?")): \(answer.text)")
+                panel.render(.thinking)
+                return await runTurn(next)
+            }
+            if let v = answer.voiceID { voiceID = v }
+            Log.info("answer (\(answer.agentID ?? "?")): \(answer.text)")
+            // Show BEFORE speaking, but only when there is something
+            // the speech cannot deliver — a link, an image, or more
+            // text than was read aloud. A card that opens on every
+            // "Ok." teaches you to ignore it.
+            if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
+                                         buttons: answer.buttons, imageURL: answer.imageURL) {
+                card.show(spoken: answer.text, written: answer.written,
+                          buttons: answer.buttons, imageURL: answer.imageURL)
+            } else {
+                card.orderOut(nil)
+            }
+            // Scroll the sentence being spoken, so it can be read as
+            // well as heard — and re-read after, which speech cannot do.
+            panel.render(.saying(answer.text))
+            await Speech.speak(answer.text, voiceID: voiceID)
+            // Cut off by the door: the new words are being recorded.
+            if recorder.isRecording { busy = false; return }
+            if let next = followUp { followUp = nil; return await runTurn(next) }
+            panel.render(.idle)
+            // Leave the microphone open for a moment. Say nothing and
+            // it closes itself; start talking and the conversation
+            // simply continues.
+            busy = false
+            // A live lesson now runs on screen and speaks for itself; an
+            // open mic would hear the agent. Option-Space is the door.
+            if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
+            listenHandsFree(followUp: true)
+        } catch {
+            endNarration()
+            Log.warn("turn failed: \(error.localizedDescription)")
+            if abandoned { abandoned = false; panel.render(.idle); busy = false; return }
+            if let next = followUp { followUp = nil; return await runTurn(next) }
+            panel.render(.error(short(error.localizedDescription)))
+            // Say it aloud too — a voice assistant that fails only in
+            // a 230px label has failed silently for anyone not looking.
+            await Speech.speak("Sorry, that didn't work.", voiceID: voiceID)
+            resetSoon()
+        }
+        busy = false
     }
 
     /// Narrate the wait using what the daemon says it is actually doing.

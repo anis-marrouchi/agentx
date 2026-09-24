@@ -54,28 +54,37 @@ enum AgentClient {
         return (try? JSONDecoder().decode(Reply.self, from: data))?.say
     }
 
-    // MARK: Talk mode
+    // MARK: The door
     //
-    // While two agents talk out loud (`agentx talk`), Option-Space is the
-    // door: pressing it hushes them at once, and what is said goes to the
-    // talk instead of /ask. See src/daemon/voice-talk-api.ts.
+    // Option-Space is one door for everything spoken: a talk, a live
+    // lesson, task narration, an agent's bubble. Pressing it hushes all of
+    // them at once; what is then said goes to the activity that was
+    // speaking, which answers it first. See src/daemon/voice-talk-api.ts.
 
-    /// Silence a running talk. Returns whether one is running, so the
-    /// caller knows where the words about to be spoken should go. Never
-    /// throws: no daemon means no talk.
-    static func talkHush() async -> Bool {
-        guard let (data, _) = try? await post("/talk/hush", [:], timeout: 2) else { return false }
-        struct Reply: Decodable { let active: Bool? }
-        return (try? JSONDecoder().decode(Reply.self, from: data))?.active ?? false
+    /// What was speaking when the door opened.
+    struct Hushed {
+        /// "talk", "lesson" or "narration"; nil when nothing was.
+        let kind: String?
+        let agentID: String?
+        static let nothing = Hushed(kind: nil, agentID: nil)
     }
 
-    /// Hand the listener's words to the talk; "stop" ends it.
-    static func talkDoor(_ text: String) async throws {
-        let (_, response) = try await post("/talk/door", ["text": text], timeout: 5)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw NSError(domain: "AgentXVoice", code: http.statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: "The talk has ended"])
-        }
+    /// Silence everything the daemon is saying. Never throws: no daemon
+    /// means nothing was speaking.
+    static func hush() async -> Hushed {
+        guard let (data, _) = try? await post("/voice/hush", [:], timeout: 2) else { return .nothing }
+        struct Reply: Decodable { let kind: String?; let agentId: String? }
+        let r = try? JSONDecoder().decode(Reply.self, from: data)
+        return Hushed(kind: r?.kind, agentID: r?.agentId)
+    }
+
+    /// Hand the listener's words through the door. True when an activity
+    /// took them (a talk or lesson answers; "stop" ends it); false means
+    /// nothing did, and they are an ordinary question.
+    static func door(_ text: String) async -> Bool {
+        guard let (_, response) = try? await post("/voice/door", ["text": text], timeout: 5),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode)
     }
 
     private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {
