@@ -11,7 +11,11 @@ export type InitiatorKind =
   | "system"
 
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }
-export interface FleetAgent { id: string; name: string; tier: "lead" | "worker"; model: string; role: string }
+export interface FleetAgent {
+  id: string; name: string; tier: "lead" | "worker"; model: string; role: string
+  /** Org-chart role title ("Marketing Lead"), when the agent has one. */
+  title?: string
+}
 export interface FleetChannel { id: string; label: string; color: string }
 export interface FleetInitiator { id: string; name: string; avatar: string; kind: InitiatorKind }
 export interface FleetDispatch {
