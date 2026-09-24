@@ -53,7 +53,7 @@ import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordMeshDispatch } from "@/intent/sources/mesh"
 import { setDefaultGovernance } from "@/intent/governance"
-import { agentCanHandleIntent, withinDelegationBudget } from "@/agents/capabilities"
+import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
@@ -426,24 +426,10 @@ export class AgentXDaemon {
           const agents = this.config.agents
           setDefaultGovernance({
             pmFor: (project) => org.pmFor(project),
-            // canHandle layers two checks:
-            //   1. Org-chart membership (Phase 3) — agent is registered.
-            //   2. Phase 5 typed-capability check — agent's `intents`
-            //      list (when non-empty) must include the dispatched
-            //      intent. When the list is empty (default), handles all.
-            canHandle: (agentId, project, intent) => {
-              // Synthetic dispatch identifiers (workflow runs, mesh
-              // forwards) aren't real agents — they're handles for an
-              // already-decided dispatch. Capability and org-chart
-              // checks were applied before the synthetic ID was minted
-              // (or are simply N/A for the run handle), so the ledger's
-              // canHandle veto here is structurally a no-op for them.
-              // Phase 1 soak finding: gating on these produced 290+
-              // false-positive divergences across both nodes.
-              if (/^(workflow-run|mesh-fwd):/.test(agentId)) return true
-              if (!org.canHandle(agentId, project, intent)) return false
-              return agentCanHandleIntent(agents[agentId], intent)
-            },
+            // canHandle: the agent is configured on this node and its
+            // intents allow the event. Org-chart membership is not a gate
+            // (see canDispatchTo).
+            canHandle: (agentId, _project, intent) => canDispatchTo(agents, agentId, intent),
             // Phase 8 — delegation-depth check. Walks the ledger's
             // prior decisions on (project, subject) and refuses
             // dispatches past the target agent's maxDelegationDepth.

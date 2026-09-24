@@ -4,6 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import {
   agentCanHandleIntent,
+  canDispatchTo,
   delegationChainDepth,
   withinDelegationBudget,
 } from "../src/agents/capabilities"
@@ -172,5 +173,31 @@ describe("Phase 8 — delegation budget (chain-depth check)", () => {
 
   it("withinDelegationBudget: missing agent → false (defensive)", () => {
     expect(withinDelegationBudget(ledger, undefined, "ghost", "p1", "s1")).toBe(false)
+  })
+})
+
+describe("canDispatchTo — the ledger's canHandle veto", () => {
+  // Agents outside the org chart (no role or schedule) still take work.
+  // Before this, every voice/cron/A2A run of such an agent was recorded
+  // as "halted" while it ran, and vanished from the activity map.
+  const agents = { "secretary-agent": agent(), "coder-agent": agent({ intents: ["issue.opened"] }) }
+
+  it("lets any agent configured on this node take a dispatch", () => {
+    expect(canDispatchTo(agents, "secretary-agent", "mesh.voice")).toBe(true)
+    expect(canDispatchTo(agents, "secretary-agent", "cron.fired")).toBe(true)
+  })
+
+  it("still vetoes agents that are not configured here", () => {
+    expect(canDispatchTo(agents, "atlas", "mesh.gitlab")).toBe(false)
+  })
+
+  it("still applies the agent's declared intents", () => {
+    expect(canDispatchTo(agents, "coder-agent", "issue.opened")).toBe(true)
+    expect(canDispatchTo(agents, "coder-agent", "mesh.voice")).toBe(false)
+  })
+
+  it("always passes synthetic dispatch handles", () => {
+    expect(canDispatchTo(agents, "workflow-run:abc", "workflow.hook")).toBe(true)
+    expect(canDispatchTo(agents, "mesh-fwd:clawd", "mesh.gitlab")).toBe(true)
   })
 })

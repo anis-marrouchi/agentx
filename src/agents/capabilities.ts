@@ -52,6 +52,29 @@ export function agentCanHandleIntent(
   return agent.intents.includes(intent)
 }
 
+/**
+ * The ledger's `canHandle` veto for this node. An agent may take a
+ * dispatch when it is configured here and its intents allow it.
+ *
+ * The org chart is deliberately NOT consulted: it lists the agents with a
+ * role and working schedule (standups, work ticks), which is a subset of
+ * the agents that take work. Gating on it recorded every voice, cron and
+ * A2A run of an agent outside the chart as "halted" while the task ran
+ * anyway, so the ledger (and the activity map built on it) lost them.
+ *
+ * Synthetic dispatch handles (workflow runs, mesh forwards) aren't agents;
+ * their checks ran before the handle was minted, so they always pass
+ * (gating them produced 290+ false-positive divergences in the Phase 1 soak).
+ */
+export function canDispatchTo(
+  agents: Record<string, AgentDef>,
+  agentId: string,
+  intent: string | null | undefined,
+): boolean {
+  if (/^(workflow-run|mesh-fwd):/.test(agentId)) return true
+  return agentCanHandleIntent(agents[agentId], intent)
+}
+
 // ---------------------------------------------------------------------------
 // Phase 8 — capability-bounded security. Delegation depth check.
 // ---------------------------------------------------------------------------
