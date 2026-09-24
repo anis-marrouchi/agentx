@@ -121,6 +121,29 @@ export function stripAnthropicApiKey(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   return env
 }
 
+/** How an agent's `claude` CLI is billed. "subscription" (the default) is
+ *  the OAuth login shared by the fleet. "api" bills ANTHROPIC_API_KEY
+ *  instead, for agents that must not draw on that shared quota, such as
+ *  benchmark runs. */
+export type ClaudeBilling = "subscription" | "api"
+
+/** Shape a `claude` spawn env for the agent's billing. Each mode removes the
+ *  other's credential, because the CLI silently uses whichever it finds. An
+ *  "api" agent with no key throws rather than falling back to the
+ *  subscription. */
+export function claudeBillingEnv(
+  env: NodeJS.ProcessEnv,
+  billing: ClaudeBilling = "subscription",
+): NodeJS.ProcessEnv {
+  if (billing !== "api") return stripAnthropicApiKey(env)
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('billing "api" needs ANTHROPIC_API_KEY in the agent\'s environment')
+  }
+  delete env.ANTHROPIC_API_KEY_OLD
+  delete env.CLAUDE_CODE_OAUTH_TOKEN
+  return env
+}
+
 /**
  * Load a dotenv file into process.env for the CURRENT process. Variables
  * already present win, so a systemd/launchd override always beats the file.

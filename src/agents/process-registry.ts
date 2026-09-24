@@ -21,6 +21,8 @@
 //   - Concurrency: same-chat turns serialize through the handle's
 //     own queue; different-chat turns are independent processes.
 
+import type { ClaudeBilling } from "@/utils/workspace-env"
+
 export interface ProcessKey {
   agentId: string
   channel: string
@@ -82,6 +84,8 @@ export interface SpawnOptions {
   workspace: string
   model?: string
   permissionMode?: string
+  /** The agent's `billing`; picks which Anthropic credential the spawn keeps. */
+  billing?: ClaudeBilling
   systemPromptAppend?: string
   /** Pass-through to `claude --resume <id>`. Set when SessionStore has a
    *  stored claudeSessionId for this chat (e.g. across daemon restart). */

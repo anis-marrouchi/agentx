@@ -204,6 +204,12 @@ const agentConfigSchema = z.object({
    *  agents that do long investigations or multi-file refactors. */
   maxExecutionMinutes: z.number().int().min(1).max(240).default(20),
   permissionMode: z.string().default("default"),
+  /** How this agent's `claude` CLI is billed (claude-code tier). Default
+   *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
+   *  "api": bill ANTHROPIC_API_KEY instead and drop the OAuth token, so
+   *  e.g. benchmark agents never draw on the fleet's subscription quota.
+   *  An "api" agent with no key fails its task rather than falling back. */
+  billing: z.enum(["subscription", "api"]).default("subscription"),
   /** Improvement plan #3 — tool-use-required preset. When set,
    *  AgentX inspects the stream-json events from each task and
    *  fails the response with `tool_required_not_called: <name>`

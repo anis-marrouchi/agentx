@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdirSync, writeFileSync, rmSync } from "fs"
 import { resolve } from "path"
-import { loadWorkspaceEnv, buildAgentEnv, _resetDaemonEnvKeysCache } from "../src/utils/workspace-env"
+import { loadWorkspaceEnv, buildAgentEnv, claudeBillingEnv, _resetDaemonEnvKeysCache } from "../src/utils/workspace-env"
 
 const TMP = resolve(__dirname, "../.test-workspace-env")
 const WORKSPACE = resolve(TMP, "agent-workspace")
@@ -99,5 +99,33 @@ describe("buildAgentEnv", () => {
     const env = buildAgentEnv(WORKSPACE, { PATH: "/usr/bin", USER: "alice" }, DAEMON)
     expect(env.PATH).toBe("/usr/bin")
     expect(env.USER).toBe("alice")
+  })
+})
+
+describe("claudeBillingEnv", () => {
+  const both = () => ({
+    ANTHROPIC_API_KEY: "sk-key",
+    ANTHROPIC_API_KEY_OLD: "sk-old",
+    CLAUDE_CODE_OAUTH_TOKEN: "oauth",
+    PATH: "/usr/bin",
+  })
+
+  it("defaults to the subscription: drops the API keys, keeps the OAuth token", () => {
+    const env = claudeBillingEnv(both())
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(env.ANTHROPIC_API_KEY_OLD).toBeUndefined()
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth")
+    expect(env.PATH).toBe("/usr/bin")
+  })
+
+  it("billing api keeps the API key and drops the OAuth token so the CLI cannot fall back to it", () => {
+    const env = claudeBillingEnv(both(), "api")
+    expect(env.ANTHROPIC_API_KEY).toBe("sk-key")
+    expect(env.ANTHROPIC_API_KEY_OLD).toBeUndefined()
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
+  it("billing api without a key refuses instead of silently using the subscription", () => {
+    expect(() => claudeBillingEnv({ CLAUDE_CODE_OAUTH_TOKEN: "oauth" }, "api")).toThrow(/ANTHROPIC_API_KEY/)
   })
 })

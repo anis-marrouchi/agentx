@@ -20,7 +20,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
   }
   return { error: renderFriendlyError(friendly), errorKind: friendly.kind }
 }
-import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
+import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
@@ -727,7 +727,7 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
+      const childEnv = claudeBillingEnv(buildAgentEnv(agent.workspace), agent.billing)
       let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -862,7 +862,7 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const spawnEnv = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
+    const spawnEnv = claudeBillingEnv(buildAgentEnv(agent.workspace), agent.billing)
     const proc = execa("claude", args, {
       cwd: agent.workspace,
       timeout: streamTimeoutMs,
@@ -1811,6 +1811,7 @@ async function executeClaudeCodePersistent(
       workspace: agent.workspace,
       model: task.model || agent.model,
       permissionMode: agent.permissionMode,
+      billing: agent.billing,
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
     })
