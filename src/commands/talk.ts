@@ -6,6 +6,8 @@ import { talkSpeaker } from "@/daemon/voice-talk-api"
 import { Talk, type TalkEvent, type TalkSpeaker } from "@/voice/talk"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel } from "@/voice/talk-model"
+import { MeshVoices, loadVoicePool } from "@/voice/mesh-voice"
+import { elevenLabsKey } from "@/voice/speaker"
 
 // `agentx talk a b "topic"`: two agents talk it through out loud on the
 // daemon's host. Type a line to cut in (the door); "stop" ends the talk.
@@ -38,13 +40,23 @@ function gapSummary(gaps: number[]): string {
 }
 
 async function runLocal(ids: string[], topic: string, opts: { context?: string; turns?: string; config?: string }) {
-  const agents = loadDaemonConfig(opts.config).agents
-  const missing = ids.filter((id) => !agents[id])
+  const config = loadDaemonConfig(opts.config)
+  const agents = config.agents
+  // A mesh agent's card comes from the running daemon's directory; its
+  // voice and persona are then worked out here, as the daemon would.
+  let mesh: MeshVoices | undefined
+  if (ids.some((id) => !agents[id])) {
+    const dir = await call("GET", "/mesh").then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => [])
+    mesh = new MeshVoices(() => config, () => dir)
+    mesh.usePool(await loadVoicePool(elevenLabsKey()))
+  }
+  const speakers = ids.map((id) => (agents[id] ? talkSpeaker(id, agents, true) : mesh?.speaker(id, true)))
+  const missing = ids.filter((_, i) => !speakers[i])
   if (missing.length) throw new Error(`Unknown agent: ${missing.join(", ")}`)
   const t0 = Date.now()
   const talk = new Talk({
     topic, context: opts.context, maxTurns: Number(opts.turns) || 10,
-    speakers: ids.map((id) => talkSpeaker(id, agents, true)) as [TalkSpeaker, TalkSpeaker],
+    speakers: speakers as [TalkSpeaker, TalkSpeaker],
     speech: new SpeechOut(),
     model: (_s, system) => createLineModel({ system }),
   })
@@ -80,7 +92,7 @@ async function runOnDaemon(ids: string[], topic: string, opts: { context?: strin
 
 export const talk = new Command()
   .name("talk")
-  .description("two agents talk a topic through out loud; type to cut in, \"stop\" to end")
+  .description("two agents, local or on a mesh peer, talk a topic through out loud; type to cut in, \"stop\" to end")
   .argument("<agentA>")
   .argument("<agentB>")
   .argument("<topic...>")

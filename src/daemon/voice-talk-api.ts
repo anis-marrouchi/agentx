@@ -3,7 +3,8 @@
 // time — a talk or a lesson — since they share the host's speakers; the
 // /talk/hush and /talk/door routes (Option-Space) reach whichever runs.
 //
-//   POST /talk        {agents: [a, b], topic, context?, maxTurns?}  start one
+//   POST /talk        {agents: [a, b], topic, context?, maxTurns?}  start one;
+//                     either agent may live on a mesh peer
 //   GET  /talk        the active talk (or {active: false})
 //   POST /talk/hush   the listener is about to speak: everyone stops
 //   POST /talk/door   {text}  the listener spoke; "stop" ends the talk
@@ -34,6 +35,8 @@ export interface VoiceTalkDeps {
   speech?: SpeechOut
   model?: (system: string) => LineModel
   presence?: PresenceHostDeps
+  /** A talk participant from a mesh peer, when the id is not local. */
+  remote?: (agentId: string, introduce: boolean) => TalkSpeaker | undefined
 }
 
 type VoiceSession = Talk | LiveTeach
@@ -44,6 +47,7 @@ export class VoiceTalkService {
   readonly presence: PresenceHost
   private session: VoiceSession | null = null
   private model: (system: string) => LineModel
+  private remote: NonNullable<VoiceTalkDeps["remote"]>
 
   constructor(
     private agents: () => Agents,
@@ -53,6 +57,7 @@ export class VoiceTalkService {
   ) {
     this.speech = deps.speech ?? new SpeechOut()
     this.model = deps.model ?? ((system) => createLineModel({ system }))
+    this.remote = deps.remote ?? (() => undefined)
     this.presence = new PresenceHost(agents, log, deps.presence)
     this.narrator = new Narrator({
       speech: this.speech,
@@ -144,11 +149,17 @@ export class VoiceTalkService {
     const topic = String(body.topic ?? "").trim()
     const agents = this.agents()
     if (ids.length !== 2 || ids[0] === ids[1] || !topic) return { status: 400, body: { error: "Required: agents (two different ids) and topic" } }
-    const unknown = ids.filter((id) => !agents[id])
-    if (unknown.length) return { status: 404, body: { error: `Unknown agent: ${unknown.join(", ")}` } }
-
+    // Either side may be a mesh agent: its persona comes from its agent
+    // card and its voice is spoken here.
     const session = "talk"
-    const speakers = ids.map((id) => talkSpeaker(id, agents, this.intros.needsIntro(session, id))) as [TalkSpeaker, TalkSpeaker]
+    const speakerOf = (id: string) => {
+      const introduce = this.intros.needsIntro(session, id)
+      return agents[id] ? talkSpeaker(id, agents, introduce) : this.remote(id, introduce)
+    }
+    const found = ids.map(speakerOf)
+    const unknown = ids.filter((_, i) => !found[i])
+    if (unknown.length) return { status: 404, body: { error: `Unknown agent: ${unknown.join(", ")}` } }
+    const speakers = found as [TalkSpeaker, TalkSpeaker]
     const talk = new Talk({
       topic, speakers, speech: this.speech,
       context: body.context ? String(body.context) : undefined,
