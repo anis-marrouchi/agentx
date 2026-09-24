@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.35.0](https://github.com/anis-marrouchi/agentx/compare/v0.34.0...v0.35.0) (2026-09-24)
+
+
+### Features
+
+* **daemon:** presence on voice turns, POST /teach/live ([a58c62c](https://github.com/anis-marrouchi/agentx/commit/a58c62cd267d8e377df9f4442440ca50100a8fe2))
+* **decisions:** presence-mode seat, decided on every voice turn ([af52077](https://github.com/anis-marrouchi/agentx/commit/af520778e4088656e3304f9b6123ef6354de20ed))
+* **presence:** agents on screen — own cursor, presence-mode seat, live teach ([e307971](https://github.com/anis-marrouchi/agentx/commit/e307971a45de0c80785d8101801db3143df74c57))
+* **presence:** an agent's own cursor on screen ([e644a13](https://github.com/anis-marrouchi/agentx/commit/e644a13ed45f141fde63ff313a9e0bffe8712377))
+* **teach:** live teach for apps with no written lesson ([2760b85](https://github.com/anis-marrouchi/agentx/commit/2760b8593ff25a5b492ced88d373ae1a6cda9c28))
+
 ## [0.34.0](https://github.com/anis-marrouchi/agentx/compare/v0.33.0...v0.34.0) (2026-09-24)
 
 
