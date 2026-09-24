@@ -273,6 +273,9 @@ const agentConfigSchema = z.object({
     style: z.string().optional(),
     /** The one-line self-introduction used on first contact. */
     intro: z.string().optional(),
+    /** Speak short updates from this agent's real tool steps while it
+     *  works: "on" for everything but cron, "all" to include cron. */
+    narrate: z.enum(["off", "on", "all"]).optional(),
   }).optional(),
 })
 
