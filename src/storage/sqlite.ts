@@ -383,6 +383,21 @@ function runMigrations(db: Database.Database): void {
         CREATE INDEX idx_surface_day ON surface_usage(day);
       `,
     },
+    {
+      // Per-turn token accounting that a with/without comparison can trust.
+      // task_traces only carried the tier-1 buckets, and tier-2 turns are
+      // where 90%+ of prompt tokens land, so most big turns read as zero.
+      // `resumed` is explicit rather than inferred from resume_session_id:
+      // NULL means "not recorded" (older rows), 0 a fresh session.
+      v: 12,
+      sql: `
+        ALTER TABLE task_traces ADD COLUMN tier2_input_tokens INTEGER;
+        ALTER TABLE task_traces ADD COLUMN tier2_output_tokens INTEGER;
+        ALTER TABLE task_traces ADD COLUMN tier2_cache_read_tokens INTEGER;
+        ALTER TABLE task_traces ADD COLUMN tier2_cache_create_tokens INTEGER;
+        ALTER TABLE task_traces ADD COLUMN resumed INTEGER;
+      `,
+    },
   ]
 
   const txn = db.transaction((step: { v: number; sql: string }) => {

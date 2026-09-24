@@ -164,6 +164,12 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           outputTokens: p.outputTokens ?? null,
           cacheReadTokens: p.cacheReadTokens ?? null,
           cacheCreateTokens: p.cacheCreateTokens ?? null,
+          tier2InputTokens: p.tier2InputTokens ?? null,
+          tier2OutputTokens: p.tier2OutputTokens ?? null,
+          tier2CacheReadTokens: p.tier2CacheReadTokens ?? null,
+          tier2CacheCreateTokens: p.tier2CacheCreateTokens ?? null,
+          resumed: p.resumed ?? null,
+          resumeSessionId: p.resumeSessionId ?? null,
           error: p.error ?? null,
           // Migration v8 — final response captured so `replay --diff` can
           // show original vs current output without reconstructing from

@@ -135,6 +135,11 @@ export interface AgentXEvents {
     tier2OutputTokens?: number
     tier2CacheReadTokens?: number
     tier2CacheCreateTokens?: number
+    /** Whether this turn continued a provider session, and which one. The
+     *  resume decision happens after task:started (staleness, rotation,
+     *  planner), so it can only be reported here. */
+    resumed?: boolean
+    resumeSessionId?: string
     /** Agent's final reply text — recorded into task_traces.final_response
      *  so `replay --diff` can show original vs current output side-by-side.
      *  Optional for back-compat. */

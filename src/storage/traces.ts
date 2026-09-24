@@ -59,6 +59,15 @@ export interface TraceEndInput {
   outputTokens?: number | null
   cacheReadTokens?: number | null
   cacheCreateTokens?: number | null
+  tier2InputTokens?: number | null
+  tier2OutputTokens?: number | null
+  tier2CacheReadTokens?: number | null
+  tier2CacheCreateTokens?: number | null
+  /** Whether the turn continued a provider session. The resume decision
+   *  is made after task:started, so it is recorded at the end. Omitted
+   *  leaves both resumed and resume_session_id untouched. */
+  resumed?: boolean | null
+  resumeSessionId?: string | null
   error?: string | null
   /** The agent's final reply text. Stored verbatim so `replay --diff`
    *  can compare original output vs the new run's output without
@@ -105,6 +114,12 @@ export interface TraceRecord {
   outputTokens: number | null
   cacheReadTokens: number | null
   cacheCreateTokens: number | null
+  tier2InputTokens: number | null
+  tier2OutputTokens: number | null
+  tier2CacheReadTokens: number | null
+  tier2CacheCreateTokens: number | null
+  /** NULL on rows recorded before migration v12. */
+  resumed: boolean | null
   error: string | null
   messagePreview: string | null
   /** Full untruncated user message — populated for traces from migration v8
@@ -198,6 +213,12 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       output_tokens = ?,
       cache_read_tokens = ?,
       cache_create_tokens = ?,
+      tier2_input_tokens = ?,
+      tier2_output_tokens = ?,
+      tier2_cache_read_tokens = ?,
+      tier2_cache_create_tokens = ?,
+      resumed = COALESCE(?, resumed),
+      resume_session_id = COALESCE(?, resume_session_id),
       error = ?,
       final_response = COALESCE(?, final_response),
       finished_at = ?,
@@ -210,6 +231,12 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.outputTokens ?? null,
     input.cacheReadTokens ?? null,
     input.cacheCreateTokens ?? null,
+    input.tier2InputTokens ?? null,
+    input.tier2OutputTokens ?? null,
+    input.tier2CacheReadTokens ?? null,
+    input.tier2CacheCreateTokens ?? null,
+    input.resumed == null ? null : input.resumed ? 1 : 0,
+    input.resumeSessionId ?? null,
     input.error ?? null,
     input.finalResponse ?? null,
     finishedAt,
@@ -273,6 +300,11 @@ function rowToTrace(row: Record<string, unknown>): TraceRecord {
     outputTokens: (row.output_tokens as number) ?? null,
     cacheReadTokens: (row.cache_read_tokens as number) ?? null,
     cacheCreateTokens: (row.cache_create_tokens as number) ?? null,
+    tier2InputTokens: (row.tier2_input_tokens as number) ?? null,
+    tier2OutputTokens: (row.tier2_output_tokens as number) ?? null,
+    tier2CacheReadTokens: (row.tier2_cache_read_tokens as number) ?? null,
+    tier2CacheCreateTokens: (row.tier2_cache_create_tokens as number) ?? null,
+    resumed: row.resumed == null ? null : row.resumed === 1,
     error: (row.error as string) ?? null,
     messagePreview: (row.message_preview as string) ?? null,
     originalMessage: (row.original_message as string) ?? null,

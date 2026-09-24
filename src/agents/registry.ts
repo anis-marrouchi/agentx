@@ -2112,6 +2112,8 @@ export class AgentRegistry {
         tier2OutputTokens: split?.tier2OutputTokens,
         tier2CacheReadTokens: split?.tier2CacheReadTokens,
         tier2CacheCreateTokens: split?.tier2CacheCreateTokens,
+        resumed: Boolean(resumeSessionId),
+        resumeSessionId: resumeSessionId || undefined,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
         // billed; fall back to the agent's configured model so codex-cli
