@@ -219,3 +219,18 @@ describe("project attribution", () => {
     expect(merged.dispatches[0]).toMatchObject({ projectId: "noqta/minbar", clientId: "noqta", nodeId: "clawd" })
   })
 })
+
+describe("map data scope", () => {
+  it("always asks for the fleet-merged snapshot, like the rest of /activity", async () => {
+    const { fetchSnapshot, fetchDispatchDetail } = await import("../src/web/activity-graph/api")
+    const seen: string[] = []
+    const orig = globalThis.fetch
+    globalThis.fetch = (async (u: string) => { seen.push(String(u)); return { ok: true, json: async () => ({}) } }) as any
+    try {
+      await fetchSnapshot(24)
+      await fetchDispatchDetail("mac::e1|coder")
+    } finally { globalThis.fetch = orig }
+    expect(seen).toHaveLength(2)
+    for (const u of seen) expect(u).toContain("peer=fleet")
+  })
+})

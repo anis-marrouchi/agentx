@@ -58,8 +58,12 @@ export interface FleetDispatchDetail {
   attribution?: { client: string; project: string; via: string }
 }
 
+// The map is a view of /activity, which covers the whole mesh, so it always
+// asks for the fleet-merged snapshot rather than the local node's.
+const FLEET = "peer=fleet"
+
 export async function fetchDispatchDetail(id: string): Promise<FleetDispatchDetail> {
-  const r = await fetch(`/api/admin/activity-graph/dispatch/${encodeURIComponent(id)}`, { credentials: "same-origin" })
+  const r = await fetch(`/api/admin/activity-graph/dispatch/${encodeURIComponent(id)}?${FLEET}`, { credentials: "same-origin" })
   if (!r.ok) throw new Error(`detail fetch ${r.status}`)
   return await r.json() as FleetDispatchDetail
 }
@@ -80,13 +84,13 @@ export interface FleetSnapshot {
 }
 
 export async function fetchSnapshot(windowH: number): Promise<FleetSnapshot> {
-  const r = await fetch(`/api/admin/activity-graph?hours=${encodeURIComponent(windowH)}`, { credentials: "same-origin" })
+  const r = await fetch(`/api/admin/activity-graph?hours=${encodeURIComponent(windowH)}&${FLEET}`, { credentials: "same-origin" })
   if (!r.ok) throw new Error(`activity-graph fetch ${r.status}`)
   return await r.json() as FleetSnapshot
 }
 
 export function subscribeSnapshot(windowH: number, onSnapshot: (s: FleetSnapshot) => void, onError?: () => void): () => void {
-  const url = `/api/admin/activity-graph/stream?hours=${encodeURIComponent(windowH)}`
+  const url = `/api/admin/activity-graph/stream?hours=${encodeURIComponent(windowH)}&${FLEET}`
   const es = new EventSource(url, { withCredentials: true })
   es.addEventListener("snapshot", (ev) => {
     try { onSnapshot(JSON.parse((ev as MessageEvent).data) as FleetSnapshot) }
