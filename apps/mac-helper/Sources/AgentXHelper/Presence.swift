@@ -14,9 +14,15 @@ import AppKit
 ///   {"cmd":"say","text":"The export button is top right."}
 ///   {"cmd":"clear"}   drop the highlight
 ///   {"cmd":"park"}    rest in the bottom-right corner, no highlight
+///   {"cmd":"ping"}    nothing; keeps an idle overlay alive
 ///
 /// Coordinates are accessibility coordinates (top-left origin, global),
-/// the same as `read`, `ocr` and `point`. EOF fades everything out.
+/// the same as `read`, `ocr` and `point`.
+///
+/// It never outlives its owner: EOF, the owner's death (`--parent`, or
+/// being re-parented to launchd) or `--idle` seconds without a command
+/// fade everything out and exit. One process draws one cursor, on one
+/// screen; it follows across Spaces but is never duplicated per display.
 enum Presence {
 
     // MARK: Geometry
@@ -248,18 +254,32 @@ enum Presence {
                        blue: CGFloat(v & 0xff) / 255, alpha: 1)
     }
 
-    /// Read commands until stdin closes.
-    static func run(name: String, initial: String, colorHex: String?) {
+    /// Read commands until stdin closes, the owner dies, or it goes idle.
+    static func run(name: String, initial: String, colorHex: String?, parent: pid_t?, idle: TimeInterval) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let ctl = Controller(color: color(hex: colorHex), initial: initial, name: name)
+        var lastCommand = Date()
+        var quitting = false
+        // Main thread only. The fade is a courtesy: exit follows regardless.
+        func quit() {
+            if quitting { return }
+            quitting = true
+            ctl.fadeOut { exit(0) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+        }
         DispatchQueue(label: "tn.acme.agentx.presence.stdin").async {
             while let line = readLine(strippingNewline: true) {
                 guard let data = line.data(using: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-                DispatchQueue.main.async { ctl.handle(obj) }
+                DispatchQueue.main.async { lastCommand = Date(); ctl.handle(obj) }
             }
-            DispatchQueue.main.async { ctl.fadeOut { app.terminate(nil) } }
+            DispatchQueue.main.async { quit() }
+        }
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            let orphaned = getppid() == 1 || (parent.map { kill($0, 0) != 0 && errno == ESRCH } ?? false)
+            let idled = idle > 0 && Date().timeIntervalSince(lastCommand) > idle
+            if orphaned || idled { quit() }
         }
         app.run()
     }

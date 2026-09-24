@@ -260,7 +260,8 @@ case "presence":
     // Long-lived: the agent's own drawn cursor. Never moves the real mouse.
     let name = flag("name") ?? "Agent"
     Presence.run(name: name, initial: flag("initial") ?? String(name.prefix(1)).uppercased(),
-                 colorHex: flag("color"))
+                 colorHex: flag("color"), parent: flag("parent").flatMap { pid_t($0) },
+                 idle: flag("idle").flatMap { TimeInterval($0) } ?? 60)
 
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
