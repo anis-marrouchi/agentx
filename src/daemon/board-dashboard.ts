@@ -460,7 +460,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   // the client side (topbar.ts). Treat them the same as /api/admin/*
   // so admin pages proxy to the chosen peer when the selector is set.
   if (path.startsWith("/api/admin/") || path.startsWith("/api/workflows") || path.startsWith("/api/agents")) {
-    const peerId = String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    // An explicit ?peer=fleet (the /activity map) beats the topbar's
+    // per-node header: that view is mesh-wide by definition.
+    const peerId = url.searchParams.get("peer") === "fleet" ? "fleet"
+      : String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
     if (peerId === "fleet") {
       if (path === "/api/admin/activity-graph") {
         await handleActivityGraphFleet(req, res, ctx)
