@@ -106,4 +106,20 @@ describe("activity timeline", () => {
       .filter(id => !html.includes(`id="${id}"`))
     expect(missing).toEqual([])
   })
+
+  it("folds the fleet map in as a Map view that loads only when opened", () => {
+    const timeline = renderActivityPage()
+    const map = renderActivityPage({ view: "map" })
+    // Server renders the requested view, so /admin/activity-graph's redirect
+    // to ?view=map lands on the map without a flash of the timeline.
+    expect(timeline).toMatch(/id="view-map" class="ac-map" hidden/)
+    expect(map).toMatch(/id="view-timeline" hidden/)
+    expect(map).toMatch(/data-value="map" aria-checked="true"/)
+    // The bundle is referenced for lazy loading, never as an eager <script src>.
+    expect(map).toMatch(/data-src="[^"]*activity-graph\.global\.js/)
+    expect(map).not.toMatch(/<script src="[^"]*activity-graph/)
+    // One window control drives both views.
+    expect(ACTIVITY_SCRIPT).toContain("new CustomEvent('ax:activity-hours'")
+    expect(renderActivityPage({ view: "bogus" })).toMatch(/data-value="timeline" aria-checked="true"/)
+  })
 })

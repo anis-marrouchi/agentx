@@ -3,10 +3,8 @@ import { clientFromProject, agentClients, matchContact as matchContactRule, type
 import { resolve, join } from "path"
 import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
-import { renderActivityGraphPage } from "./ui/pages/activity-graph"
 import { inferProject, projectFromPreview } from "./activity-graph-attribution"
 import { fetchForgeStatus, refsToLookUp, type ForgeItem } from "./activity-graph-forge"
-import type { TopbarPeer } from "./topbar"
 import type { DaemonConfig } from "./config"
 
 // --- /admin/activity-graph — Fleet activity perspective view ---
@@ -55,11 +53,6 @@ let _lastOpenLedgerErrAt = 0
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" })
   res.end(JSON.stringify(body))
-}
-
-export function handleActivityGraphGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = []): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-  res.end(renderActivityGraphPage({ peers }))
 }
 
 // ---------------------------------------------------------------------------

@@ -15,14 +15,16 @@ function injectStyles() {
   document.head.appendChild(style)
 }
 
+// /activity loads this bundle on demand the first time its Map view opens,
+// so the page may already be past DOMContentLoaded when it runs.
 function mount() {
   injectStyles()
   const root = document.getElementById("ax-fleet-root")
   if (!root) {
-    console.error("[activity-graph] mount point #ax-fleet-root missing")
+    console.error("[fleet-map] mount point #ax-fleet-root missing")
     return
   }
-  createRoot(root).render(<App />)
+  createRoot(root).render(<App initialHours={Number(root.dataset.hours) || 24} />)
 }
 
 if (document.readyState === "loading") {

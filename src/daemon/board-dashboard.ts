@@ -22,7 +22,7 @@ import { renderCostPage } from "./ui/pages/cost"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
-import { handleActivityGraphGet, handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
+import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderMeshPage } from "./ui/pages/mesh"
@@ -145,7 +145,6 @@ const DASHBOARD_PAGES = new Set([
   "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
-  "/admin/activity-graph",
 ])
 
 interface Ctx {
@@ -297,7 +296,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "GET" && path === "/activity") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config) }))
+    res.end(renderActivityPage({ peers: buildTopbarPeers(ctx.config), view: url.searchParams.get("view") }))
     return
   }
   if (method === "GET" && path === "/monitor") {
@@ -580,9 +579,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     await getOrCreateWikiHandler(ctx)(req, res)
     return
   }
-  // /admin/activity-graph — perspective lens over the intent ledger.
+  // /admin/activity-graph retired: its map lives on as the Map view of
+  // /activity. The APIs below still feed that view.
   if (method === "GET" && path === "/admin/activity-graph") {
-    handleActivityGraphGet(req, res, buildTopbarPeers(ctx.config))
+    res.writeHead(302, { Location: "/activity?view=map" })
+    res.end()
     return
   }
   if (method === "GET" && path === "/api/admin/activity-graph") {
@@ -1222,7 +1223,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     const slug = path.replace(/^\/+|\/+$/g, "")
     const SLUG_TO_ADMIN: Record<string, string> = {
       health: "/admin/health",
-      activity: "/admin/activity-graph",
       ledger: "/admin/ledger",
       cost: "/admin/cost",
       projects: "/admin/projects",

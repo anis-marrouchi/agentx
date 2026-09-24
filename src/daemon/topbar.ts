@@ -367,7 +367,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   //   /admin/ledger  /admin/cost         what happened, what it cost
   //   /workflows  /inbox              BPM surfaces
   //   /  (boards)                       Kanban
-  //   /admin/health  /admin/activity-graph  /admin/graph  /admin/projects
+  //   /admin/health  /admin/graph  /admin/projects
   //   /procedures  /admin/wiki  /glossary  /processes
   //
   // The nav is the set of surfaces an operator opens on purpose, not a site

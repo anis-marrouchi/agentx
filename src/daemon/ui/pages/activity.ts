@@ -7,16 +7,25 @@
 // One substrate, several lane keys. Nothing is recomputed when the
 // perspective changes — the runs are already in the browser, only the lane
 // they hang from changes, so switching is instant and always consistent.
+//
+// Two views of the same window: Timeline (runs on lanes, with review
+// findings) and Map (the live fleet map — projects as lines, agents as
+// stations, work as trains). The map is a React bundle fed by
+// /api/admin/activity-graph and its SSE stream; it loads only when the Map
+// view is first opened. /admin/activity-graph redirects to ?view=map.
 
 import { renderShell, type TopbarPeer } from ".."
 import { injectFns } from "../inject"
 import { buildTimeline, computeBands, packTracks } from "../../activity-timeline"
+import { assetUrl } from "../asset-url"
 
 const ICON: Record<string, string> = {
   refresh: '<path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>',
   bot: '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V5M9 14h.01M15 14h.01"/>',
   user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 21a7 7 0 0 1 14 0"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>',
+  timeline: '<path d="M3 6h10M7 12h14M3 18h8"/>',
   mesh: '<circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><circle cx="12" cy="5" r="2.5"/><path d="M7 17.5l4-10M17 17.5l-4-10"/>',
   route: '<circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -35,7 +44,16 @@ const PERSPECTIVES: Array<[string, string, string]> = [
   ["node", "Node", ICON.mesh],
 ]
 
-export function renderActivityPage(opts: { peers?: TopbarPeer[] } = {}): string {
+export type ActivityView = "timeline" | "map"
+
+const SUB: Record<ActivityView, string> = {
+  timeline: "Every run on the mesh, from task traces. The axis breaks over silence &mdash; quiet stretches are labelled, not drawn.",
+  map: "The fleet as a transit map: projects are lines, agents are stations, work in flight is a train. Live.",
+}
+
+export function renderActivityPage(opts: { peers?: TopbarPeer[]; view?: string | null } = {}): string {
+  const view: ActivityView = opts.view === "map" ? "map" : "timeline"
+  const isMap = view === "map"
   return renderShell({
     title: "AgentX · Activity", activeTab: "activity", subtitle: "Activity", peers: opts.peers,
     body: `<div class="ac">
@@ -44,17 +62,22 @@ export function renderActivityPage(opts: { peers?: TopbarPeer[] } = {}): string 
   <div>
     <div class="ac-kicker">Operations</div>
     <h1>What ran, where, and what it decided</h1>
-    <p class="ac-sub">Every run on the mesh, from task traces. The axis breaks over silence &mdash; quiet stretches are labelled, not drawn.</p>
+    <p class="ac-sub" id="sub">${SUB[view]}</p>
   </div>
   <div class="ac-tools">
+    <div class="ac-seg" id="view" role="radiogroup" aria-label="View">
+      ${([["timeline", "Timeline", ICON.timeline], ["map", "Map", ICON.map]] as const).map(([v, t, ic]) =>
+        `<button type="button" role="radio" data-value="${v}" aria-checked="${v === view}"${v === view ? ' class="is-on"' : ""}>${svg(ic, 13)}${t}</button>`).join("")}
+    </div>
     <div class="ac-seg" id="hours" role="radiogroup" aria-label="Window">
       ${[["6", "6h"], ["24", "24h"], ["72", "3d"], ["168", "7d"]].map(([v, t], i) =>
         `<button type="button" role="radio" data-value="${v}" aria-checked="${i === 1}"${i === 1 ? ' class="is-on"' : ""}>${t}</button>`).join("")}
     </div>
-    <button class="ax-btn ax-btn--sm" id="refresh">${svg(ICON.refresh, 13)} Refresh</button>
+    <button class="ax-btn ax-btn--sm" id="refresh"${isMap ? " hidden" : ""}>${svg(ICON.refresh, 13)} Refresh</button>
   </div>
 </div>
 
+<div id="view-timeline"${isMap ? " hidden" : ""}>
 <div class="ac-bar">
   <span class="ac-lbl">Lanes by</span>
   <div class="ac-seg" id="persp" role="radiogroup" aria-label="Perspective">
@@ -73,11 +96,16 @@ export function renderActivityPage(opts: { peers?: TopbarPeer[] } = {}): string 
 <p id="notice" role="status" aria-live="polite"></p>
 <div id="tl" class="ac-tl"></div>
 <div id="detail"></div>
+</div>
+
+<div id="view-map" class="ac-map"${isMap ? "" : " hidden"}>
+  <div id="ax-fleet-root" data-hours="24" data-src="${assetUrl("activity-graph.global.js")}"></div>
+</div>
 
 </div>`,
     css: ACTIVITY_CSS,
     scripts: `<script>${injectFns({ computeBands, packTracks, buildTimeline })}` +
-      `const ICON = ${JSON.stringify(ICON)};${ACTIVITY_SCRIPT}</script>`,
+      `const ICON = ${JSON.stringify(ICON)};const SUB = ${JSON.stringify(SUB)};${ACTIVITY_SCRIPT}</script>`,
   })
 }
 
@@ -153,17 +181,28 @@ export const ACTIVITY_CSS = `
 .ac-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--ax-radius-pill);padding:2px 9px;
   font-size:11.5px;font-weight:600;border:1px solid var(--ax-border-2);background:var(--ax-surface-2);
   color:var(--ax-text-2)}
+.ac-map{height:calc(100vh - 190px);min-height:480px;background:var(--ax-surface);
+  border:var(--ax-border-w) solid var(--ax-border);border-radius:var(--ax-radius-lg);
+  box-shadow:var(--ax-shadow);overflow:hidden}
+#ax-fleet-root{height:100%}
+#ax-fleet-root:empty::before{content:"Loading fleet map…";display:block;padding:40px 24px;
+  color:var(--ax-text-2);font-size:13px;text-align:center}
+[hidden]{display:none!important}
 #notice{margin:0 0 12px;font-size:12.5px;color:var(--ax-text-2)}
 #notice:not(:empty){padding:9px 13px;border-radius:var(--ax-radius-sm);background:var(--ax-surface-2);
   border:var(--ax-border-w) solid var(--ax-border)}
 @media (max-width:900px){.ac-gut{width:120px}.ac-key{display:none}}
+@media (max-width:640px){.ac{padding:16px 16px 32px}.ac-head{flex-direction:column;gap:10px}
+  .ac-tools{flex-wrap:wrap;padding-top:0}.ac-map{height:calc(100vh - 250px);margin:0 -16px;
+  border-left:none;border-right:none;border-radius:0}}
 `
 
 export const ACTIVITY_SCRIPT = String.raw`
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=(n,s)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="'+(s||14)+'" height="'+(s||14)+'" aria-hidden="true">'+ICON[n]+'</svg>';
-let runs=[],marks=[],persp='agent',hours='24',selected=null,busy=false;
+let runs=[],marks=[],persp='agent',hours='24',selected=null,busy=false,loaded=false,
+ view=$('view').querySelector('[aria-checked="true"]').dataset.value;
 
 function fmtDur(ms){if(!ms)return '0s';if(ms<1000)return ms+'ms';const s=Math.round(ms/1000);
 if(s<60)return s+'s';const m=Math.floor(s/60);return m+'m '+(s%60)+'s';}
@@ -259,7 +298,20 @@ b.classList.toggle('is-on',on);b.setAttribute('aria-checked',String(on));}}
 $('persp').addEventListener('click',e=>{const b=e.target.closest('button[data-value]');if(!b)return;
 persp=b.dataset.value;paint('persp',persp);selected=null;render();});
 $('hours').addEventListener('click',e=>{const b=e.target.closest('button[data-value]');if(!b)return;
-hours=b.dataset.value;paint('hours',hours);load();});
+hours=b.dataset.value;paint('hours',hours);$('ax-fleet-root').dataset.hours=hours;
+window.dispatchEvent(new CustomEvent('ax:activity-hours',{detail:Number(hours)}));
+loaded=false;if(view==='timeline'){loaded=true;load();}});
 $('refresh').onclick=load;
-load();
+
+/* The map bundle is heavy (React + xyflow); fetch it only when asked for. */
+function ensureMap(){const root=$('ax-fleet-root');if(root.dataset.loaded)return;root.dataset.loaded='1';
+const sc=document.createElement('script');sc.src=root.dataset.src;document.body.appendChild(sc);}
+function show(v){view=v;paint('view',v);
+$('view-timeline').hidden=v!=='timeline';$('view-map').hidden=v!=='map';$('refresh').hidden=v!=='timeline';
+$('sub').innerHTML=SUB[v];
+const u=new URL(location.href);if(v==='map')u.searchParams.set('view','map');else u.searchParams.delete('view');
+history.replaceState(null,'',u);
+if(v==='map')ensureMap();else if(!loaded){loaded=true;load();}}
+$('view').addEventListener('click',e=>{const b=e.target.closest('button[data-value]');if(!b||b.dataset.value===view)return;show(b.dataset.value);});
+show(view);
 `
