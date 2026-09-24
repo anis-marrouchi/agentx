@@ -52,6 +52,39 @@ enum AgentClient {
         return (try? JSONDecoder().decode(Reply.self, from: data))?.say
     }
 
+    // MARK: Talk mode
+    //
+    // While two agents talk out loud (`agentx talk`), Option-Space is the
+    // door: pressing it hushes them at once, and what is said goes to the
+    // talk instead of /ask. See src/daemon/voice-talk-api.ts.
+
+    /// Silence a running talk. Returns whether one is running, so the
+    /// caller knows where the words about to be spoken should go. Never
+    /// throws: no daemon means no talk.
+    static func talkHush() async -> Bool {
+        guard let (data, _) = try? await post("/talk/hush", [:], timeout: 2) else { return false }
+        struct Reply: Decodable { let active: Bool? }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.active ?? false
+    }
+
+    /// Hand the listener's words to the talk; "stop" ends it.
+    static func talkDoor(_ text: String) async throws {
+        let (_, response) = try await post("/talk/door", ["text": text], timeout: 5)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw NSError(domain: "AgentXVoice", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "The talk has ended"])
+        }
+    }
+
+    private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {
+        var req = URLRequest(url: URL(string: "\(Config.daemonURL)\(path)")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await URLSession.shared.data(for: req)
+    }
+
     static func ask(_ message: String) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"

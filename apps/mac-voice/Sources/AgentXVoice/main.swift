@@ -31,6 +31,9 @@ final class App: NSObject, NSApplicationDelegate {
     /// The answering agent's voice, learned from the daemon. Nil until
     /// then, which speaks in the global default.
     private var voiceID: String?
+    /// Set on Option-Space: whether a talk was running (and is now hushed),
+    /// so the words spoken go to the talk rather than to /ask.
+    private var talkCheck: Task<Bool, Never>?
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
     private func smartPaste() {
@@ -226,6 +229,9 @@ final class App: NSObject, NSApplicationDelegate {
         // A turn already in flight must not be interrupted by a stray
         // keypress; the answer is still coming and will be spoken.
         guard !busy, !recorder.isRecording else { return }
+        // Two agents may be talking out loud. Hush them now, before a word
+        // is said, and remember whether they were there.
+        talkCheck = Task { await AgentClient.talkHush() }
         do {
             try recorder.start()
             panel.render(.listening)
@@ -236,6 +242,8 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func stopAndSend() {
         guard recorder.isRecording else { return }
+        let talk = talkCheck
+        talkCheck = nil
         guard let wav = recorder.stop() else {
             panel.render(.error("Too short — hold while speaking"))
             resetSoon()
@@ -252,6 +260,15 @@ final class App: NSObject, NSApplicationDelegate {
                     busy = false; resetSoon(); return
                 }
                 Log.info("heard: \(heard)")
+                if await talk?.value == true {
+                    // The talk answers out loud through the daemon; nothing
+                    // to speak here.
+                    try await AgentClient.talkDoor(heard)
+                    Log.info("sent to the talk")
+                    panel.render(.idle)
+                    busy = false
+                    return
+                }
                 beginNarration()
 
                 let answer = try await AgentClient.ask(heard)
