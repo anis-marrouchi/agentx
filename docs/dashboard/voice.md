@@ -41,6 +41,63 @@ Without an ElevenLabs key, transcription needs a working local `mlx_whisper` ins
 
 The installer persists the chosen agent, daemon URL, helper path, and CLI command in the login service. Finder does not inherit terminal environment variables. Use a key file for speech credentials or configure the login service environment for advanced speech settings.
 
+## Agent voices
+
+Each agent may carry a `voice` block in `agentx.json`. Every field is optional; an agent without one speaks in `AGENTX_VOICE_ID`.
+
+```json
+"coder-agent": {
+  "voice": {
+    "elevenlabsVoiceId": "CwhRBWXzGAHq8TQ4Fs17",
+    "gender": "male",
+    "style": "laid-back, dry",
+    "intro": "Hello, this is Coder. I write and fix the code for your projects.",
+    "narrate": "on"
+  }
+}
+```
+
+An agent introduces itself the first time it speaks in a voice session, or after eight hours of silence, and talks casually after that. Without `intro`, the line is derived from the first sentence of its system prompt.
+
+## Talk mode
+
+Two agents talk a topic through out loud on the daemon's host:
+
+```bash
+agentx talk secretary-agent marketing-agent "how to open tomorrow's demo"
+```
+
+Each line comes from a fast model with no tools (Haiku 4.5), streamed sentence by sentence into ElevenLabs Flash and played at once. The next speaker writes its reply while the current one is still talking, so hand-overs take milliseconds, not a full agent turn. Agents cannot act during a talk; they say who will do something afterwards.
+
+**The door.** Hold **Option–Space** in AgentX Voice while a talk runs: the talk goes quiet as soon as you press, and what you say goes to the talk instead of to your agent. The agent you name answers you first, or else the one you cut off. Say "stop" to end the talk. From the CLI, type a line to do the same.
+
+There is no hands-free barge-in. The agents' voices come out of the same speakers the microphone would listen to, and the audio plays in a separate process, so echo cancellation has no reference signal to subtract. An open microphone would hear the agents and interrupt them with their own words.
+
+The model runs as one warm `claude -p` per speaker on the subscription login. Set `AGENTX_TALK_BACKEND=api` to call the Messages API through the provider layer instead; that is faster, but needs an API key or OAuth token the provider can resolve.
+
+| Endpoint | |
+|---|---|
+| `POST /talk` | `{agents: [a, b], topic, context?, maxTurns?}` starts a talk; one at a time |
+| `GET /talk` | transcript, state, and measured gaps |
+| `POST /talk/hush` | go quiet now (the app sends this on key-down) |
+| `POST /talk/door` | `{text}`: the listener spoke; `stop` ends the talk |
+| `POST /talk/stop` | end it |
+
+These use the same mesh-token gate as `/ask`.
+
+## Task narration
+
+While an agent works on a real task, it can say what it is doing in its own voice: at most one short line every 20 seconds, written only from the tool steps it actually took since the last line. Paths, commands and anything that looks like a key are neither spoken nor sent to the model.
+
+Narration is off unless switched on. `voice.narrate: "on"` narrates the agent's work except cron jobs; `"all"` includes cron. Turns started from the voice app are not narrated this way, because the app narrates those itself. At runtime:
+
+```bash
+agentx narrate coder-agent on        # or off, or default
+agentx narrate --task <taskId> on    # one task, including a cron run
+```
+
+The same switches are available at `GET/POST /narration`.
+
 ## If it does not answer
 
 - **No recording:** check macOS microphone permission and hold the shortcut while speaking.

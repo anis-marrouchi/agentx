@@ -84,6 +84,7 @@ import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction } from "@/voice/agent-voice"
+import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
 import {
   VOICE_NARRATION_SEAT,
@@ -152,6 +153,8 @@ export class AgentXDaemon {
   private contacts!: ContactDirectory
   /** Who has already introduced themselves in which voice session. */
   private voiceIntros = new VoiceIntroTracker()
+  /** Talk mode and task narration: see src/daemon/voice-talk-api.ts. */
+  private voiceTalk!: VoiceTalkService
   /** Persistent-claude process registry. Null when no agent has
    *  persistentProcess: true (legacy spawn-per-task path). */
   private sessionMonitor?: SessionMonitor
@@ -190,6 +193,9 @@ export class AgentXDaemon {
     // frames and nothing else, and any UI built on it sat silent through
     // the entire turn. Forwarding here gives /events the events its own
     // filter name already implies.
+    this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m))
+    this.voiceTalk.narrator.attach(getAgentEventBus())
+
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
       try {
         // The voice rides along so a listener can narrate the wait in the
@@ -712,6 +718,7 @@ export class AgentXDaemon {
 
   async stop(): Promise<void> {
     const start = Date.now()
+    this.voiceTalk.close()
 
     try {
       this.log("  Stopping channels...")
@@ -2142,6 +2149,14 @@ export class AgentXDaemon {
       // one. Same arbitrary-prompt execution, same gate.
       if (req.method === "GET" && path === "/ask") {
         if (!this.checkMeshAuth(req, res, path)) return
+      }
+      // Talk mode and narration make this host speak: same gate as /ask.
+      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration") {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const reply = this.voiceTalk.handle(req.method || "GET", path, body)
+        this.json(res, reply.status, reply.body)
+        return
       }
 
       if (path === "/monitor" || path.startsWith("/monitor/")) {
