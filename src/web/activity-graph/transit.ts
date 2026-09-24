@@ -80,8 +80,11 @@ export function delegatorOf(d: FleetDispatch): string | null {
   return d.initiatorId
 }
 
+/** Work with no project runs on its agent's own line. */
+const AGENT_LINE = "agent:"
+const isAgentLine = (id: string) => id.startsWith(AGENT_LINE)
+
 const PALETTE = ["#2979FF", "#FFB300", "#22B573", "#F23A3A", "#8E5CF7", "#00A3A3", "#E8710A", "#D63384"]
-const UNASSIGNED = "#8b949e"
 
 const word = (w: string) => (w.length <= 4 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))
 
@@ -98,6 +101,15 @@ export function lineOf(projectId: string): { id: string; name: string; code: str
   const consonant = slug.slice(1).match(/[bcdfghjklmnpqrstvwxz]/i)?.[0] ?? slug[1] ?? ""
   const code = version ?? (words.length > 1 ? words[0][0] + words[1][0] : slug[0] + consonant).toUpperCase()
   return { id: own ? `${head}/_` : projectId, name, code, project: own ? null : projectId }
+}
+
+/** The line for an agent's own work (voice chats, crons, A2A asks with no
+ *  project): named from its org-chart role title, else its display name. */
+export function agentLineOf(agent: { id: string; name?: string; title?: string } | undefined, agentId: string): ReturnType<typeof lineOf> {
+  const name = agent?.title || agent?.name || agentId
+  const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean)
+  const code = (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? agentId).slice(0, 2)).toUpperCase()
+  return { id: AGENT_LINE + agentId, name, code, project: null }
 }
 
 const refLabel = (r: ForgeRef) => `${r.kind === "mr" ? "!" : "#"}${r.n}`
@@ -234,8 +246,10 @@ function lineReason(state: LineState, trains: Train[], c: Record<TrainState, num
 export function buildTransit(snap: FleetSnapshot, dispatches: FleetDispatch[]): Transit {
   const groups = new Map<string, { lineId: string; ds: FleetDispatch[] }>()
   const meta = new Map<string, ReturnType<typeof lineOf>>()
+  const agentById = new Map(snap.agents.map((a) => [a.id, a]))
   for (const d of dispatches) {
-    const line = lineOf(d.projectId)
+    let line = lineOf(d.projectId)
+    if (line.id === "unmapped") line = agentLineOf(agentById.get(d.agentId), d.agentId)
     meta.set(line.id, line)
     const key = trainKey(d, line.id, refsOf(d))
     const g = groups.get(key) ?? { lineId: line.id, ds: [] }
@@ -252,19 +266,20 @@ export function buildTransit(snap: FleetSnapshot, dispatches: FleetDispatch[]): 
   const originOf: OriginOf = (agentId, at) => inbound.find((d) => d.agentId === agentId && d.startedAt <= at)
   const built = [...groups.entries()].map(([key, g]) => buildTrain(key, g.lineId, g.ds, snap, originOf))
   // The chat that started a hand-off is already the head of that train's
-  // route ("Voice › Secretary › …"); don't also run it as an unassigned train.
+  // route ("Voice › Secretary › …"); don't also run it on the agent's own line.
   const origins = new Set(built.flatMap((t) => (t.delegator ? [originOf(t.delegator, t.startedAt)?.id] : [])))
-  const trains = built.filter((t) => t.lineId !== "unmapped" || !t.dispatchIds.every((id) => origins.has(id))).sort(byState)
-  const ids = [...meta.keys()].filter((id) => id !== "unmapped").sort()
+  const trains = built.filter((t) => !isAgentLine(t.lineId) || !t.dispatchIds.every((id) => origins.has(id))).sort(byState)
+  // Projects take the first colours; agent lines follow.
+  const ids = [...meta.keys()].sort((a, b) => Number(isAgentLine(a)) - Number(isAgentLine(b)) || a.localeCompare(b))
   const lines: Line[] = [...meta.values()].map((m) => {
     const own = trains.filter((t) => t.lineId === m.id)
     const counts = Object.fromEntries(STATE_ORDER.map((s) => [s, own.filter((t) => t.state === s).length])) as Record<TrainState, number>
     const state: LineState = !own.length ? "quiet" : counts.delayed ? "delays" : "good"
-    const color = m.id === "unmapped" ? UNASSIGNED : PALETTE[ids.indexOf(m.id) % PALETTE.length]
+    const color = PALETTE[ids.indexOf(m.id) % PALETTE.length]
     return { ...m, color, trains: own, state, reason: lineReason(state, own, counts), counts }
   })
-  const shown = lines.filter((l) => l.id !== "unmapped" || l.trains.length)
-  const rank = (l: Line) => (l.state === "delays" ? 0 : l.state === "good" ? (l.id === "unmapped" ? 2 : 1) : 3)
+  const shown = lines.filter((l) => !isAgentLine(l.id) || l.trains.length)
+  const rank = (l: Line) => (l.state === "delays" ? 0 : l.state === "good" ? (isAgentLine(l.id) ? 2 : 1) : 3)
   shown.sort((a, b) => rank(a) - rank(b) || b.trains.length - a.trains.length || a.name.localeCompare(b.name))
   return { lines: shown, trains }
 }

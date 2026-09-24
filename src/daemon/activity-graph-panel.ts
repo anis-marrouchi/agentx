@@ -59,7 +59,11 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 // Snapshot types
 
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }
-export interface FleetAgent { id: string; name: string; tier: "lead" | "worker"; model: string; role: string }
+export interface FleetAgent {
+  id: string; name: string; tier: "lead" | "worker"; model: string; role: string
+  /** Org-chart role title ("Marketing Lead"), when the agent has one. */
+  title?: string
+}
 export interface FleetChannel { id: string; label: string; color: string }
 export interface FleetInitiator { id: string; name: string; avatar: string; kind: InitiatorKind }
 export interface FleetDispatch {
@@ -654,6 +658,12 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
   const agents: FleetAgent[] = []
   const agentSeen = new Set<string>()
   if (daemonConfig) {
+    const business = (daemonConfig as any).business ?? {}
+    const titleOf = (id: string): string | undefined => {
+      const role = business.orgChart?.[id]?.role
+      const title = role ? business.roles?.[role]?.title : undefined
+      return typeof title === "string" && title.trim() ? title.trim() : undefined
+    }
     for (const [id, def] of Object.entries(daemonConfig.agents || {})) {
       const a: FleetAgent = {
         id,
@@ -661,6 +671,7 @@ function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | 
         tier: def.tier === "claude-code" ? "lead" : "worker",
         model: def.model || "",
         role: def.systemPrompt ? def.systemPrompt.split(/[.\n]/)[0].slice(0, 60) : (def.tier || ""),
+        title: titleOf(id),
       }
       agents.push(a)
       agentSeen.add(id)

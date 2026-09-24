@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { buildTransit, headline, lineOf, routeOf } from "../src/web/activity-graph/transit"
+import { agentLineOf, buildTransit, headline, lineOf, routeOf } from "../src/web/activity-graph/transit"
 import { layoutNetwork, metroPath, spread } from "../src/web/activity-graph/transit-layout"
 import type { FleetDispatch, FleetSnapshot } from "../src/web/activity-graph/api"
 import { inferProject, mentionedMrs, primaryRef, projectFromChatId, projectFromPreview, refsOf } from "../src/daemon/activity-graph-attribution"
@@ -110,6 +110,44 @@ describe("buildTransit", () => {
     const tt = buildTransit(snapshot(ds), ds)
     expect(tt.trains.map((x) => x.tag).sort()).toEqual(["WhatsApp", "cron"])
     expect(tt.trains.find((x) => x.tag === "cron")!.dispatchIds).toHaveLength(2)
+  })
+})
+
+describe("agent lines for work with no project", () => {
+  const snap = (ds: FleetDispatch[]) => {
+    const base = snapshot(ds)
+    return { ...base, agents: base.agents.map((a) => a.id === "coder-agent" ? { ...a, name: "Coder", title: "Software Developer" } : a) }
+  }
+
+  it("runs a project-less chat on its agent's line, never on 'Unassigned'", () => {
+    const voice = dispatch({ agentId: "secretary-agent", channelId: "voice", clientId: "unmapped", projectId: "unmapped/_voice", subject: "chat:voice:secretary-agent" })
+    const t = buildTransit(snap([voice]), [voice])
+    const busy = t.lines.filter((l) => l.trains.length)
+    expect(busy.map((l) => [l.id, l.name])).toEqual([["agent:secretary-agent", "secretary-agent"]])
+    expect(t.lines.some((l) => l.name === "Unassigned")).toBe(false)
+  })
+
+  it("names an agent line after the org-chart title, else the agent's name", () => {
+    expect(agentLineOf({ id: "coder-agent", name: "Coder", title: "Software Developer" }, "coder-agent")).toMatchObject({ name: "Software Developer", code: "SD" })
+    expect(agentLineOf({ id: "secretary-agent", name: "Secretary" }, "secretary-agent")).toMatchObject({ name: "Secretary", code: "SE" })
+    expect(agentLineOf(undefined, "atlas")).toMatchObject({ id: "agent:atlas", name: "atlas" })
+  })
+
+  it("gives each agent its own line and hides quiet ones", () => {
+    const ds = [
+      dispatch({ agentId: "coder-agent", channelId: "cron", clientId: "unmapped", projectId: "unmapped/_cron", subject: "cron:maintainer" }),
+      dispatch({ agentId: "secretary-agent", channelId: "voice", clientId: "unmapped", projectId: "unmapped/_voice", subject: "chat:voice:secretary-agent" }),
+    ]
+    const names = buildTransit(snap(ds), ds).lines.map((l) => l.name)
+    expect(names).toContain("Software Developer")
+    expect(names).toContain("secretary-agent")
+    // Agents with no work in the window don't get a line.
+    expect(names).not.toContain("idle-agent")
+  })
+
+  it("still folds a hand-off's originating chat into the route instead of its own line", () => {
+    const t = buildTransit(snapshot(traffic, forge), traffic)
+    expect(t.lines.find((l) => l.id === "agent:secretary-agent")).toBeUndefined()
   })
 })
 
