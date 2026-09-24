@@ -25,6 +25,8 @@ enum AgentClient {
         /// The agent that answered and its ElevenLabs voice, when it has one.
         let agentID: String?
         let voiceID: String?
+        /// Presence mode the daemon chose for this turn (talk, teach, …).
+        var presenceMode: String? = nil
     }
 
     /// What, if anything, to say about the step now running.
@@ -103,9 +105,11 @@ enum AgentClient {
         struct UiMedia: Decodable { let type: String; let url: String; let caption: String? }
         struct Ui: Decodable { let buttons: [UiButton]?; let media: UiMedia? }
         struct Voice: Decodable { let elevenlabsVoiceId: String? }
+        struct Presence: Decodable { let mode: String? }
         struct Reply: Decodable {
             let agentId: String?
             let voice: Voice?
+            let presence: Presence?
             let text: String?
             let full: String?
             let ui: Ui?
@@ -144,6 +148,7 @@ enum AgentClient {
 
         return Answer(text: text, written: reply?.full,
                       buttons: buttons + extra, imageURL: image,
-                      durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
+                      durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID,
+                      presenceMode: reply?.presence?.mode)
     }
 }
