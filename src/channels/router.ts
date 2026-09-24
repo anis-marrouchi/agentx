@@ -25,6 +25,7 @@ import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
 import type { LegacyOutcome } from "@/intent/divergence"
+import type { IntentResolutionStatus } from "@/intent/types"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 
 /** During streaming, hide a partial or complete `agentx:ui` directive block so
@@ -1622,12 +1623,14 @@ export class MessageRouter {
       this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)
       const typingTimer = this.startTypingLoop(adapter, chatId, replyAccountId)
 
+      const start = Date.now()
       try {
         const response = await this.mesh.sendTask(peer.peer, msg.text, agentId, {
           context: this.buildMeshContext(msg, chatId),
         })
         clearInterval(typingTimer)
         this.clearMeshFailure(msg.channel, chatId)
+        this.resolveIntent(msg, "completed", start, response || null)
 
         if (response) {
           await this.adapterSend(adapter, {
@@ -1646,12 +1649,48 @@ export class MessageRouter {
         // response body) and tell the thread once — see notifyMeshFailure for
         // why ❌-only silence was worse than one comment.
         this.log(`Mesh routing error for ${peer.peer}/${agentId}: ${e.message}`)
+        this.resolveIntent(msg, this.meshErrorStatus(e.message), start, e.message)
         this.notifyMeshFailure(adapter, msg, chatId, agentId, e.message, replyAccountId)
         return true
       }
     }
 
     return false
+  }
+
+  /**
+   * Close the intent-ledger decision for a message this node forwarded to a
+   * mesh peer. Local tasks get their resolution from registry.execute; a
+   * mesh forward never reaches it, so without this the adapter's decision
+   * (e.g. gitlab:merge_request:target-default-route) stays "dispatched"
+   * forever — the activity graph shows it as running and active-task
+   * safety treats the (project, subject) slot as busy (#27).
+   */
+  private resolveIntent(
+    msg: IncomingMessage,
+    status: IntentResolutionStatus,
+    startedAt: number | null,
+    summary: string | null,
+  ): void {
+    if (!msg.intentRef) return
+    try {
+      getDefaultLedger().recordResolution({
+        decisionEventId: msg.intentRef.eventId,
+        decisionDecidedBy: msg.intentRef.decidedBy,
+        resolvedAt: Date.now(),
+        status,
+        durationMs: startedAt === null ? null : Date.now() - startedAt,
+        resultSummary: summary ? summary.slice(0, 200) : null,
+      })
+    } catch (e: any) {
+      // Non-fatal, same as registry.execute: a duplicate resolution or a
+      // broken ledger must not fail the channel reply.
+      this.log(`[ledger] resolution write failed for ${msg.intentRef.eventId}/${msg.intentRef.decidedBy}: ${e?.message ?? e}`)
+    }
+  }
+
+  private meshErrorStatus(message: string): IntentResolutionStatus {
+    return /timed out|timeout|abort/i.test(message) ? "timed-out" : "failed"
   }
 
   // --- Deferred mesh delivery ---
@@ -1680,6 +1719,7 @@ export class MessageRouter {
 
     if (queue.length >= this.MESH_DEFER_MAX_PER_PEER) {
       const dropped = queue.shift()
+      if (dropped) this.resolveIntent(dropped.msg, "canceled", null, `mesh-defer: queue for peer "${peerName}" full`)
       this.log(
         `[mesh-defer] queue for peer "${peerName}" full (${this.MESH_DEFER_MAX_PER_PEER}) — ` +
         `discarding oldest (${dropped?.key})`,
@@ -1710,6 +1750,11 @@ export class MessageRouter {
     const now = Date.now()
     const live = queue.filter((d) => now - d.deferredAt < this.MESH_DEFER_TTL_MS)
     const stale = queue.length - live.length
+    for (const d of queue) {
+      if (now - d.deferredAt >= this.MESH_DEFER_TTL_MS) {
+        this.resolveIntent(d.msg, "canceled", null, `mesh-defer: peer "${peerName}" back after TTL`)
+      }
+    }
     if (stale > 0) {
       this.log(`[mesh-defer] peer "${peerName}" back — discarding ${stale} message(s) past TTL`)
     }
@@ -1778,6 +1823,7 @@ export class MessageRouter {
       const duration = Date.now() - start
       clearInterval(typingTimer)
       this.clearMeshFailure(msg.channel, chatId)
+      this.resolveIntent(msg, "completed", start, response || null)
 
       if (response) {
         await this.adapterSend(adapter, {
@@ -1805,6 +1851,7 @@ export class MessageRouter {
       // See notifyMeshFailure — log the full error (includes the peer's
       // response body via mesh.ts), react ❌ as the agent, and announce once.
       this.log(`Mesh routing error for ${peerName}/${agentId}: ${e.message}`)
+      this.resolveIntent(msg, this.meshErrorStatus(e.message), start, e.message)
       this.notifyMeshFailure(adapter, msg, chatId, agentId, e.message, replyAccountId)
       return true
     } finally {
