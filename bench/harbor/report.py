@@ -2,6 +2,7 @@
 
     python3 bench/harbor/report.py jobs/            # every job under jobs/
     python3 bench/harbor/report.py jobs/a jobs/b --csv out.csv
+    python3 bench/harbor/report.py jobs/ --compare dev-baseline dev-agentx-abc123
 
 Reads each trial's result.json and groups trials by agent, tier and model.
 Only the standard library is needed. A trial counts as solved when its
@@ -16,12 +17,22 @@ Columns:
     cost      mean per trial, and total cost / solved trials. Trials with no
               cost recorded are listed under "unpriced"; if any exist, the
               cost columns undercount.
+
+--compare A B puts two jobs side by side, task by task. That is the mode to
+optimize against: the same task run by both cancels most of the task-to-task
+variance that makes small-sample pass rates useless. Per task it averages
+the attempts each job SOLVED, then reports B/A as a geometric mean over the
+tasks both jobs solved, with a 95% bootstrap interval over tasks. An
+interval that straddles 1.0 means "no measurable change". Pass counts are
+the guardrail: B solving 2+ fewer tasks than A is flagged as a regression
+whatever the tokens say.
 """
 
 import argparse
 import csv
 import json
 import math
+import random
 import statistics
 import sys
 from datetime import datetime
@@ -79,6 +90,7 @@ def load(paths: list[Path]) -> list[dict]:
             except (OSError, json.JSONDecodeError):
                 continue
             if "trial_name" in data:  # skip job-level result.json files
+                data["_job"] = f.parent.parent.name  # jobs/<job>/<trial>/result.json
                 results.append(data)
     return results
 
@@ -123,6 +135,90 @@ def summarize(results: list[dict]) -> list[dict]:
     return rows
 
 
+def total_tokens(ctx: dict) -> int | None:
+    if ctx.get("n_input_tokens") is None and ctx.get("n_output_tokens") is None:
+        return None
+    return (ctx.get("n_input_tokens") or 0) + (ctx.get("n_output_tokens") or 0)
+
+
+def per_task(trials: list[dict]) -> dict[str, dict]:
+    """Per task: attempts, solved attempts, and means over solved attempts."""
+    out: dict[str, dict] = {}
+    for t in trials:
+        row = out.setdefault(t.get("task_name") or "?", {"attempts": 0, "solved": 0, "tokens": [], "cost": [], "time": []})
+        row["attempts"] += 1
+        if not solved(t):
+            continue
+        row["solved"] += 1
+        ctx = t.get("agent_result") or {}
+        if (tok := total_tokens(ctx)) is not None:
+            row["tokens"].append(tok)
+        if ctx.get("cost_usd") is not None:
+            row["cost"].append(ctx["cost_usd"])
+        if (s := seconds(t.get("agent_execution"))) is not None:
+            row["time"].append(s)
+    for row in out.values():
+        for k in ("tokens", "cost", "time"):
+            row[k] = statistics.mean(row[k]) if row[k] else None
+    return out
+
+
+def geomean_ratio(pairs: list[tuple[float, float]], seed: int = 0, n: int = 2000) -> tuple[float, float, float] | None:
+    """Geometric mean of b/a over tasks, with a 95% bootstrap interval."""
+    logs = [math.log(b / a) for a, b in pairs if a and b]
+    if not logs:
+        return None
+    rng = random.Random(seed)
+    boots = sorted(statistics.mean(rng.choices(logs, k=len(logs))) for _ in range(n))
+    return (math.exp(statistics.mean(logs)), math.exp(boots[int(0.025 * n)]), math.exp(boots[int(0.975 * n) - 1]))
+
+
+def compare(results: list[dict], a_job: str, b_job: str) -> dict:
+    a = per_task([r for r in results if r["_job"] == a_job])
+    b = per_task([r for r in results if r["_job"] == b_job])
+    for name, rows in ((a_job, a), (b_job, b)):
+        if not rows:
+            sys.exit(f"no trials found for job {name!r}")
+    tasks = sorted(set(a) | set(b))
+    both = [t for t in tasks if t in a and t in b and a[t]["solved"] and b[t]["solved"]]
+    ratios = {
+        key: geomean_ratio([(a[t][key], b[t][key]) for t in both if a[t][key] and b[t][key]])
+        for key in ("tokens", "cost", "time")
+    }
+    a_solved = sum(1 for t in a.values() if t["solved"])
+    b_solved = sum(1 for t in b.values() if t["solved"])
+    return {"a": a, "b": b, "tasks": tasks, "both": both, "ratios": ratios,
+            "a_solved": a_solved, "b_solved": b_solved, "regression": b_solved <= a_solved - 2}
+
+
+def print_compare(c: dict, a_job: str, b_job: str) -> None:
+    print(f"A = {a_job}\nB = {b_job}\n")
+    header = f"{'task':<30} {'A ok':>6} {'B ok':>6} {'A tok':>8} {'B tok':>8} {'A $':>7} {'B $':>7} {'B/A $':>6}"
+    print(header)
+    print("-" * len(header))
+    k = lambda v: "—" if v is None else f"{v / 1e3:.0f}k"
+    for t in c["tasks"]:
+        ra, rb = c["a"].get(t), c["b"].get(t)
+        ok = lambda r: "—" if r is None else f"{r['solved']}/{r['attempts']}"
+        ca, cb = (ra or {}).get("cost"), (rb or {}).get("cost")
+        ratio = f"{cb / ca:.2f}" if ca and cb and t in c["both"] else ""
+        print(f"{t:<30.30} {ok(ra):>6} {ok(rb):>6} {k((ra or {}).get('tokens')):>8} {k((rb or {}).get('tokens')):>8} "
+              f"{fmt(ca, '.2f'):>7} {fmt(cb, '.2f'):>7} {ratio:>6}")
+
+    n = len(c["tasks"])
+    print(f"\nsolved tasks: A {c['a_solved']}/{n}, B {c['b_solved']}/{n}; compared on {len(c['both'])} solved by both")
+    for key, label in (("cost", "cost"), ("tokens", "tokens"), ("time", "time")):
+        r = c["ratios"][key]
+        if r is None:
+            print(f"  {label:<7} no paired data")
+            continue
+        mid, lo, hi = r
+        verdict = "no measurable change" if lo <= 1 <= hi else ("B lower" if hi < 1 else "B higher")
+        print(f"  {label:<7} B/A {mid:.2f}  [95% {lo:.2f}–{hi:.2f}]  {verdict}")
+    if c["regression"]:
+        print("\nREGRESSION: B solved 2+ fewer tasks than A; reject regardless of cost.")
+
+
 def fmt(v, spec: str) -> str:
     return "—" if v is None else format(v, spec)
 
@@ -131,7 +227,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("paths", nargs="+", type=Path, help="job directories (or a parent of them)")
     ap.add_argument("--csv", type=Path, help="also write the table as CSV")
+    ap.add_argument("--compare", nargs=2, metavar=("A_JOB", "B_JOB"), help="task-by-task comparison of two job names")
     args = ap.parse_args()
+
+    if args.compare:
+        c = compare(load(args.paths), *args.compare)
+        print_compare(c, *args.compare)
+        sys.exit(1 if c["regression"] else 0)
 
     rows = summarize(load(args.paths))
     if not rows:
