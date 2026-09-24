@@ -8,7 +8,11 @@ verifier, and Harbor records pass/fail, timings, tokens and cost per trial.
 | File | What it is |
 |---|---|
 | `agentx_agent.py` | Harbor agent: installs agentx in the task container and runs the task through `agentx exec --json` |
-| `report.py` | Turns Harbor job folders into one comparison table (pass rate, time, tokens, cost) |
+| `report.py` | Turns Harbor job folders into one comparison table (pass rate, time, tokens, cost); `--compare A B` goes task by task |
+| `dev.sh`, `dev-set.txt` | Level 1: cheap cached A/B runs on 8 tasks, see [../README.md](../README.md) |
+
+For day-to-day optimization start with [../README.md](../README.md): the
+free context-size check and the ~$8 dev set. This page is the full run.
 
 ## Setup
 
