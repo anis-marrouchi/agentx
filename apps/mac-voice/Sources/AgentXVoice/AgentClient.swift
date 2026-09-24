@@ -22,6 +22,9 @@ enum AgentClient {
         let buttons: [(String, String)]
         let imageURL: String?
         let durationMs: Int?
+        /// The agent that answered and its ElevenLabs voice, when it has one.
+        let agentID: String?
+        let voiceID: String?
     }
 
     /// What, if anything, to say about the step now running.
@@ -59,13 +62,17 @@ enum AgentClient {
         req.httpBody = try JSONSerialization.data(withJSONObject: [
             "message": message,
             "agent": Config.agentID,
+            "session": Config.voiceSession,
         ])
 
         let (data, response) = try await URLSession.shared.data(for: req)
         struct UiButton: Decodable { let label: String; let url: String }
         struct UiMedia: Decodable { let type: String; let url: String; let caption: String? }
         struct Ui: Decodable { let buttons: [UiButton]?; let media: UiMedia? }
+        struct Voice: Decodable { let elevenlabsVoiceId: String? }
         struct Reply: Decodable {
+            let agentId: String?
+            let voice: Voice?
             let text: String?
             let full: String?
             let ui: Ui?
@@ -73,6 +80,7 @@ enum AgentClient {
             let duration: Int?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
+        let voiceID = reply?.voice?.elevenlabsVoiceId
 
         // 202 means accepted-but-busy: the daemon has already written a
         // speakable explanation into `text`. Falling through to the error
@@ -81,7 +89,7 @@ enum AgentClient {
         if let http = response as? HTTPURLResponse, http.statusCode == 202,
            let queuedText = reply?.text, !queuedText.isEmpty {
             return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
-                          durationMs: reply?.duration)
+                          durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
         }
 
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -103,6 +111,6 @@ enum AgentClient {
 
         return Answer(text: text, written: reply?.full,
                       buttons: buttons + extra, imageURL: image,
-                      durationMs: reply?.duration)
+                      durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
     }
 }

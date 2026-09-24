@@ -28,6 +28,9 @@ final class App: NSObject, NSApplicationDelegate {
     private var lastStep = "Thinking…"
     private var spokenSteps = Set<String>()
     private var lastSpokeAt = Date.distantPast
+    /// The answering agent's voice, learned from the daemon. Nil until
+    /// then, which speaks in the global default.
+    private var voiceID: String?
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
     private func smartPaste() {
@@ -253,7 +256,8 @@ final class App: NSObject, NSApplicationDelegate {
 
                 let answer = try await AgentClient.ask(heard)
                 endNarration()
-                Log.info("answer: \(answer.text)")
+                if let v = answer.voiceID { voiceID = v }
+                Log.info("answer (\(answer.agentID ?? "?")): \(answer.text)")
                 // Show BEFORE speaking, but only when there is something
                 // the speech cannot deliver — a link, an image, or more
                 // text than was read aloud. A card that opens on every
@@ -268,7 +272,7 @@ final class App: NSObject, NSApplicationDelegate {
                 // Scroll the sentence being spoken, so it can be read as
                 // well as heard — and re-read after, which speech cannot do.
                 panel.render(.saying(answer.text))
-                await Speech.speak(answer.text)
+                await Speech.speak(answer.text, voiceID: voiceID)
                 panel.render(.idle)
                 // Leave the microphone open for a moment. Say nothing and
                 // it closes itself; start talking and the conversation
@@ -281,7 +285,7 @@ final class App: NSObject, NSApplicationDelegate {
                 panel.render(.error(short(error.localizedDescription)))
                 // Say it aloud too — a voice assistant that fails only in
                 // a 230px label has failed silently for anyone not looking.
-                await Speech.speak("Sorry, that didn't work.")
+                await Speech.speak("Sorry, that didn't work.", voiceID: voiceID)
                 resetSoon()
             }
             busy = false
@@ -303,9 +307,10 @@ final class App: NSObject, NSApplicationDelegate {
 
         // Progress delivers on its own serial queue; hop to main before
         // touching any view.
-        progress = Progress(agentID: Config.agentID) { [weak self] step in
+        progress = Progress(agentID: Config.agentID) { [weak self] step, voice in
             Task { @MainActor in
                 guard let self, self.busy else { return }
+                if let voice { self.voiceID = voice }
                 self.lastStep = step
                 Log.info("step: \(step)")
                 self.panel.render(.working(step, Int(Date().timeIntervalSince(self.startedAt))))
@@ -356,7 +361,7 @@ final class App: NSObject, NSApplicationDelegate {
                 tool: tool, detail: detail, elapsed: Int(elapsed)) else { return }
             guard !self.spokenSteps.contains(phrase) else { return }
             self.spokenSteps.insert(phrase)
-            await Speech.speak(phrase.prefix(1).capitalized + phrase.dropFirst() + ".")
+            await Speech.speak(phrase.prefix(1).capitalized + phrase.dropFirst() + ".", voiceID: self.voiceID)
         }
     }
 

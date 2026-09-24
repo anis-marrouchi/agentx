@@ -33,7 +33,7 @@ Grant microphone access for voice, and Accessibility / Screen Recording permissi
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` |
 | `AGENTX_VOICE_AGENT` | `secretary-agent`; change it if that agent does not exist |
 | `ELEVENLABS_API_KEY` | Optional hosted transcription and speech |
-| `AGENTX_VOICE_ID` | ElevenLabs voice ID |
+| `AGENTX_VOICE_ID` | ElevenLabs voice ID, used when the answering agent has no `voice` block in agentx.json |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper`, the local transcription executable |
 | `AGENTX_MLX_MODEL` | `mlx-community/whisper-large-v3-turbo` |
 

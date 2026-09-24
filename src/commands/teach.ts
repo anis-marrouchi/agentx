@@ -18,6 +18,8 @@ import {
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
+import { loadDaemonConfig } from "@/daemon/config"
+import { pickVoiceId, resolveAgentVoice } from "@/voice/agent-voice"
 
 const run = promisify(execFile)
 
@@ -41,7 +43,8 @@ export const teach = new Command()
   .name("teach")
   .description("walk through something on screen, speaking and pointing as it goes")
   .argument("[lesson]", "lesson id (omit to list)")
-  .option("--voice <id>", "ElevenLabs voice id")
+  .option("--voice <id>", "ElevenLabs voice id (overrides the agent's)")
+  .option("--agent <id>", "speak in this agent's voice (default: AGENTX_VOICE_AGENT or node.defaultAgent)")
   .option("--no-speak", "point only, print the narration")
   .option("--no-hud", "skip the on-screen callout")
   .option("--record", "record the screen (screencapture) around the lesson")
@@ -64,6 +67,8 @@ export const teach = new Command()
       console.log(chalk.red("  helper not built — run apps/mac-helper/build.sh"))
       process.exit(1)
     }
+
+    const voiceId = opts.speak === false ? undefined : lessonVoice(opts.voice, opts.agent)
 
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
@@ -151,7 +156,7 @@ export const teach = new Command()
       // sentence arrives as confirmation instead of direction.
       const speaking = opts.speak === false
         ? Promise.resolve()
-        : speak(step.say, opts.voice)
+        : speak(step.say, voiceId)
 
       // Locate while the sentence is still playing, so the highlight
       // lands as the sentence ends rather than after a pause.
@@ -373,12 +378,31 @@ async function locate(description: string, priorAttempts: PriorAttempt[] = []): 
   }
 }
 
+/**
+ * The same resolution the voice widget gets from /ask: --voice, then the
+ * agent's configured voice, then AGENTX_VOICE_ID, then the default. No
+ * readable agentx.json is not an error — the lesson still speaks.
+ */
+function lessonVoice(explicit?: string, agentId?: string): string {
+  if (explicit) return pickVoiceId(explicit)
+  try {
+    const config = loadDaemonConfig()
+    const id = agentId || process.env.AGENTX_VOICE_AGENT || config.node.defaultAgent
+    if (id && !config.agents[id]) console.log(chalk.yellow(`  no agent "${id}" in agentx.json — using the default voice`))
+    const agent = id ? config.agents[id] : undefined
+    return pickVoiceId(null, id && agent ? resolveAgentVoice(id, agent).elevenlabsVoiceId : null)
+  } catch (e: any) {
+    console.log(chalk.dim(`  no agent voice (${String(e?.message ?? e).split("\n")[0]}) — using the default`))
+    return pickVoiceId()
+  }
+}
+
 /** ElevenLabs, falling back to `say` — the lesson matters more than the voice. */
 async function speak(text: string, voiceId?: string): Promise<void> {
   const key = elevenLabsKey()
   if (key) {
     try {
-      const voice = voiceId || process.env.AGENTX_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"
+      const voice = voiceId || pickVoiceId()
       const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json" },

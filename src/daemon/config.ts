@@ -262,6 +262,18 @@ const agentConfigSchema = z.object({
    *  declarations + non-secret metadata only. Skills and channel adapters
    *  read from here to know what the agent can use. See INTEGRATION_KINDS. */
   integrations: z.array(integrationSchema).default([]),
+  /** How this agent sounds when it speaks (voice widget, `agentx teach`).
+   *  Every field is optional: no voice id falls back to the global
+   *  AGENTX_VOICE_ID, no intro is derived from the system prompt. See
+   *  src/voice/agent-voice.ts. */
+  voice: z.object({
+    elevenlabsVoiceId: z.string().optional(),
+    gender: z.enum(["female", "male", "neutral"]).optional(),
+    /** A few words on manner, e.g. "warm, upbeat, a little playful". */
+    style: z.string().optional(),
+    /** The one-line self-introduction used on first contact. */
+    intro: z.string().optional(),
+  }).optional(),
 })
 
 const telegramAccountSchema = z.object({
