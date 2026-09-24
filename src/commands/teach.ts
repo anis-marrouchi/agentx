@@ -21,6 +21,7 @@ import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 import { loadDaemonConfig } from "@/daemon/config"
 import { pickVoiceId, resolveAgentVoice } from "@/voice/agent-voice"
 import { elevenLabsKey } from "@/voice/speaker"
+import { runLiveTeach } from "@/commands/live-teach"
 
 const run = promisify(execFile)
 
@@ -50,7 +51,21 @@ export const teach = new Command()
   .option("--no-hud", "skip the on-screen callout")
   .option("--record", "record the screen (screencapture) around the lesson")
   .option("--record-dir <path>", "where to write the recording")
+  .option("--live <goal>", "no lesson: the agent reads the screen and teaches this, step by step")
+  .option("--mode <mode>", "with --live: teach (you do each step), watch (you drive, it coaches) or act (it does it, if allowed)")
+  .option("--app <name>", "with --live: open this app first")
+  .option("-c, --config <path>", "with --live: agentx.json to read the agent from")
+  .option("--steps <n>", "with --live: most steps before it stops (default 12)")
   .action(async (lessonId: string | undefined, opts) => {
+    if (opts.live) {
+      try {
+        await runLiveTeach(String(opts.live), opts)
+        process.exit(0)
+      } catch (e: any) {
+        console.log(chalk.red(`  ${e?.message ?? e}`))
+        process.exit(1)
+      }
+    }
     if (!lessonId) {
       console.log(chalk.bold("\n  lessons\n"))
       for (const l of LESSONS) {

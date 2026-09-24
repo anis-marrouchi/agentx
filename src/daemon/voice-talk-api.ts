@@ -1,12 +1,14 @@
-// Talk mode and task narration on the daemon (see src/voice/talk.ts and
-// src/voice/narrator.ts). One talk at a time: they share the host's
-// speakers, and two conversations at once would be noise.
+// Talk mode, live lessons and task narration on the daemon (see
+// src/voice/talk.ts, live-teach.ts, narrator.ts). One voice session at a
+// time — a talk or a lesson — since they share the host's speakers; the
+// /talk/hush and /talk/door routes (Option-Space) reach whichever runs.
 //
 //   POST /talk        {agents: [a, b], topic, context?, maxTurns?}  start one
 //   GET  /talk        the active talk (or {active: false})
 //   POST /talk/hush   the listener is about to speak: everyone stops
 //   POST /talk/door   {text}  the listener spoke; "stop" ends the talk
 //   POST /talk/stop
+//   POST /teach/live  {agent, goal, mode?: teach | watch | act}  a live lesson
 //   GET  /narration   runtime switches
 //   POST /narration   {agentId? | taskId?, on: true | false | null}
 //
@@ -17,39 +19,30 @@ import { Talk, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
-import { introInstruction, pickVoiceId, resolveAgentVoice, type VoiceIntroTracker } from "@/voice/agent-voice"
+import { pickVoiceId, resolveAgentVoice, talkSpeaker, type VoiceIntroTracker } from "@/voice/agent-voice"
+import { LiveTeach, type TeachMode } from "@/voice/live-teach"
+import { PresenceHost, type PresenceHostDeps } from "@/daemon/voice-presence"
+
+export { talkSpeaker }
 import { NARRATOR_SYSTEM } from "@/voice/narrator"
 
 type Agents = DaemonConfig["agents"]
 export type Reply = { status: number; body: unknown }
 
-/** An agent as a talk participant: who it is, how it sounds, whether it
- *  still owes the listener an introduction. */
-export function talkSpeaker(agentId: string, agents: Agents, introduce: boolean): TalkSpeaker {
-  const agent = agents[agentId]
-  const voice = resolveAgentVoice(agentId, agent)
-  // The first paragraph is where a persona says who it is; the rest is
-  // task instructions, which do not belong in small talk.
-  const persona = (agent?.systemPrompt ?? "").split(/\n\s*\n/)[0].slice(0, 600).trim()
-  return {
-    agentId,
-    name: voice.name,
-    voiceId: pickVoiceId(null, voice.elevenlabsVoiceId),
-    persona: persona || `You are ${voice.name}.`,
-    introLine: introInstruction(voice, introduce),
-  }
-}
-
-/** Swapped in tests: no real model process, no real audio. */
+/** Swapped in tests: no real model process, no real audio or screen. */
 export interface VoiceTalkDeps {
   speech?: SpeechOut
   model?: (system: string) => LineModel
+  presence?: PresenceHostDeps
 }
+
+type VoiceSession = Talk | LiveTeach
 
 export class VoiceTalkService {
   readonly speech: SpeechOut
   readonly narrator: Narrator
-  private talk: Talk | null = null
+  readonly presence: PresenceHost
+  private session: VoiceSession | null = null
   private model: (system: string) => LineModel
 
   constructor(
@@ -60,6 +53,7 @@ export class VoiceTalkService {
   ) {
     this.speech = deps.speech ?? new SpeechOut()
     this.model = deps.model ?? ((system) => createLineModel({ system }))
+    this.presence = new PresenceHost(agents, log, deps.presence)
     this.narrator = new Narrator({
       speech: this.speech,
       model: () => this.model(NARRATOR_SYSTEM),
@@ -73,19 +67,27 @@ export class VoiceTalkService {
   }
 
   handle(method: string, path: string, body: Record<string, unknown>): Reply {
-    const talk = this.talk?.state === "ended" ? null : this.talk
+    const talk = this.live
     switch (`${method} ${path}`) {
       case "GET /talk":
         return { status: 200, body: talk ? this.view(talk) : { active: false } }
       case "POST /talk":
         return this.start(body)
+      case "POST /teach/live": {
+        const agentId = String(body.agent ?? body.agentId ?? "")
+        const goal = String(body.goal ?? "").trim()
+        const mode = String(body.mode ?? "teach") as TeachMode
+        if (!goal || !["teach", "watch", "act"].includes(mode)) return { status: 400, body: { error: "Required: agent, goal, and mode teach | watch | act" } }
+        if (!this.agents()[agentId]) return { status: 404, body: { error: `Unknown agent: ${agentId}` } }
+        return this.startLesson(agentId, goal, mode)
+      }
       case "POST /talk/hush":
         talk?.hush()
         return { status: 200, body: { active: !!talk } }
       case "POST /talk/door": {
         const text = String(body.text ?? "").trim()
         if (!text) return { status: 400, body: { error: "Required: text" } }
-        if (!talk) return { status: 409, body: { active: false, error: "No talk is running" } }
+        if (!talk) return { status: 409, body: { active: false, error: "No talk or lesson is running" } }
         talk.door(text)
         return { status: 200, body: { active: talk.state !== "ended" } }
       }
@@ -109,12 +111,35 @@ export class VoiceTalkService {
   }
 
   close(): void {
-    this.talk?.stop("daemon stopping")
+    this.session?.stop("daemon stopping")
     this.narrator.close()
+    this.presence.close()
+  }
+
+  /** The running talk or lesson, if any. */
+  get live(): VoiceSession | null {
+    return this.session && this.session.state !== "ended" ? this.session : null
+  }
+
+  /** Start a live lesson; used by POST /teach/live and by voice turns the
+   *  presence-mode seat routes to teach, watch or act. */
+  startLesson(agentId: string, goal: string, mode: TeachMode): Reply {
+    if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
+    const lesson = this.presence.lesson(agentId, goal, mode, this.speech, this.model)
+    lesson.on((e) => {
+      if (e.type === "step") this.log(`[teach] ${e.n}. ${e.action}${e.target ? ` "${e.target.slice(0, 60)}"` : ""}: ${e.say}`)
+      else if (e.type === "acted" && e.error) this.log(`[teach] action refused: ${e.error}`)
+      else if (e.type === "error") this.log(`[teach] error: ${e.error}`)
+      else if (e.type === "end") this.log(`[teach] ended (${e.reason})`)
+    })
+    this.session = lesson
+    void lesson.run()
+    this.log(`[teach] ${agentId} (${mode}): ${goal.slice(0, 100)}`)
+    return { status: 201, body: this.view(lesson) }
   }
 
   private start(body: Record<string, unknown>): Reply {
-    if (this.talk && this.talk.state !== "ended") return { status: 409, body: { error: "A talk is already running", ...this.view(this.talk) } }
+    if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
     const ids = Array.isArray(body.agents) ? body.agents.map(String) : []
     const topic = String(body.topic ?? "").trim()
     const agents = this.agents()
@@ -136,13 +161,14 @@ export class VoiceTalkService {
       else if (e.type === "error") this.log(`[talk] error: ${e.error}`)
       else if (e.type === "end") this.log(`[talk] ended (${e.reason})`)
     })
-    this.talk = talk
+    this.session = talk
     void talk.run()
     this.log(`[talk] ${speakers[0].name} and ${speakers[1].name} on "${topic.slice(0, 80)}"`)
     return { status: 201, body: this.view(talk) }
   }
 
-  private view(t: Talk) {
-    return { active: t.state !== "ended", id: t.id, state: t.state, startedAt: t.startedAt, transcript: t.transcript, gaps: t.gaps }
+  private view(t: VoiceSession) {
+    if (t instanceof LiveTeach) return { active: t.state !== "ended", kind: "lesson", id: t.id, state: t.state, step: t.step, saying: t.lastSay }
+    return { active: t.state !== "ended", kind: "talk", id: t.id, state: t.state, startedAt: t.startedAt, transcript: t.transcript, gaps: t.gaps }
   }
 }

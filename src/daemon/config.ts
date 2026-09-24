@@ -277,6 +277,20 @@ const agentConfigSchema = z.object({
      *  works: "on" for everything but cron, "all" to include cron. */
     narrate: z.enum(["off", "on", "all"]).optional(),
   }).optional(),
+  /** How this agent appears on screen: its own cursor, drawn by the Mac
+   *  helper and click-through, never Anis's real mouse. See
+   *  src/voice/presence.ts. */
+  presence: z.object({
+    /** Cursor colour, as #RRGGBB. Default: derived from the agent id. */
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    /** One or two letters on the cursor. Default: from the name. */
+    initial: z.string().max(2).optional(),
+    /** Name shown under the cursor. Default: the agent's name. */
+    label: z.string().optional(),
+    /** May this agent click and type for Anis (presence mode "act")?
+     *  Off by default: without it, "act" becomes "teach". */
+    allowActions: z.boolean().optional(),
+  }).optional(),
 })
 
 const telegramAccountSchema = z.object({

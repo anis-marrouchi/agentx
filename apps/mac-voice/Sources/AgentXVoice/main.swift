@@ -295,6 +295,9 @@ final class App: NSObject, NSApplicationDelegate {
                 // it closes itself; start talking and the conversation
                 // simply continues.
                 busy = false
+                // A live lesson now runs on screen and speaks for itself; an
+                // open mic would hear the agent. Option-Space is the door.
+                if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
                 listenHandsFree(followUp: true)
             } catch {
                 endNarration()

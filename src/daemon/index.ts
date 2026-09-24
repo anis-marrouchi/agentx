@@ -2151,7 +2151,7 @@ export class AgentXDaemon {
         if (!this.checkMeshAuth(req, res, path)) return
       }
       // Talk mode and narration make this host speak: same gate as /ask.
-      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration") {
+      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live") {
         if (!this.checkMeshAuth(req, res, path)) return
         const body = req.method === "POST" ? await readBody(req) : {}
         const reply = this.voiceTalk.handle(req.method || "GET", path, body)
@@ -4414,6 +4414,22 @@ export class AgentXDaemon {
           const voice = resolveAgentVoice(agentId, this.config.agents[agentId])
           const session = voiceSession.trim() || origin
           const introduce = this.voiceIntros.needsIntro(session, agentId)
+
+          // How the agent shows up on screen this turn (the presence-mode
+          // seat, decided on every voice turn). When the seat is active and
+          // says teach, watch or act, a live lesson on this screen answers
+          // instead of a full agent turn; the app only speaks the hand-off.
+          const presence = await this.voiceTalk.presence.decide(agentId, message)
+          if (presence.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
+            const started = this.voiceTalk.startLesson(agentId, message, presence.mode)
+            if (started.status === 201) {
+              this.voiceIntros.spoke(session, agentId)
+              const text = presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen."
+              this.json(res, 200, { agentId, voice, presence, text, full: text, ui: null })
+              break
+            }
+          }
+
           const intentRef = this.recordInboundDispatch(
             agentId,
             { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
@@ -4464,9 +4480,13 @@ export class AgentXDaemon {
           const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
           const speakable = toSpeakable(withoutDirective)
           if (!response.error) this.voiceIntros.spoke(session, agentId)
+          if (!response.error && presence.seat === "active" && presence.mode === "talk") {
+            this.voiceTalk.presence.showTalk(agentId, speakable, presence.persist)
+          }
 
           this.json(res, response.error ? 500 : 200, {
             ...speaker,
+            presence,
             text: speakable,
             // The answer as written — what a client SHOWS, while `text` is
             // what it speaks. They differ: spoken text drops URLs and

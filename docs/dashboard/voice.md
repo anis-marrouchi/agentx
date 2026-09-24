@@ -98,6 +98,50 @@ agentx narrate --task <taskId> on    # one task, including a cron run
 
 The same switches are available at `GET/POST /narration`.
 
+## Presence on screen
+
+An agent can appear on screen as its own cursor: an arrow in its colour, its initial, its name, and a bubble with what it is saying. It is drawn by the Mac helper, is click-through, and never moves your mouse.
+
+```json
+"coder-agent": {
+  "presence": { "color": "#7C3AED", "initial": "C", "label": "Coder", "allowActions": false }
+}
+```
+
+All fields are optional; the colour and initial are derived from the agent otherwise. `allowActions` lets the agent click and type for you in `act` mode. It is off by default, and without it `act` becomes `teach`.
+
+### Presence mode
+
+On every voice turn the `presence-mode` seat decides how the agent shows up:
+
+| Mode | What happens |
+|---|---|
+| `talk` | Voice only; the cursor rests in a corner with the answer in its bubble |
+| `teach` | A live lesson: the agent shows each step with its cursor and says it; you do it |
+| `watch` | You drive; the agent coaches, pointing at what you need |
+| `act` | The agent does the steps itself, if `allowActions` is set |
+| `quiet` | Nothing on screen |
+
+The seat also answers whether the cursor stays after the turn and what the first action is (speak, point, highlight, click, type, wait for you). The chosen mode's probability is logged on every turn; below 0.55, or when the seat is off, slow (2.5 s budget) or down, the turn is plain `talk`. Enable it in `agentx.json`:
+
+```json
+"decisions": { "seats": { "presence-mode": { "mode": "active", "backend": "typesafe" } } }
+```
+
+`shadow` logs the decision without acting on it.
+
+### Live teach
+
+`teach`, `watch` and `act` run a lesson with no script: the agent reads the focused window (accessibility tree, OCR when the tree is thin), a fast model plans one step, the agent points or highlights while saying it, then waits for the screen to change (you did it) or does it itself (`act`). The screen is read again after every step. A lesson stays on the app it started in: while another app is in front it asks you to bring it back, and does nothing else.
+
+Hold **Option–Space** to cut in: the agent stops mid-sentence, and its next step answers you. Say "stop" to end the lesson.
+
+```bash
+agentx teach --live "make a simple table of monthly expenses" --app Numbers --agent coder-agent --mode teach
+```
+
+The daemon runs the same lesson at `POST /teach/live {agent, goal, mode}`, behind the `/ask` gate.
+
 ## If it does not answer
 
 - **No recording:** check macOS microphone permission and hold the shortcut while speaking.

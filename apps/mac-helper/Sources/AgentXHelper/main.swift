@@ -256,10 +256,16 @@ case "hud":
     // Long-lived: reads update lines on stdin until EOF.
     HUD.run()
 
+case "presence":
+    // Long-lived: the agent's own drawn cursor. Never moves the real mouse.
+    let name = flag("name") ?? "Agent"
+    Presence.run(name: name, initial: flag("initial") ?? String(name.prefix(1)).uppercased(),
+                 colorHex: flag("color"))
+
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))
 
 default:
-    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud or trusted")
+    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence or trusted")
 }
