@@ -26,6 +26,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `screen-state` | Does the gathered evidence settle the claim, and does the claim hold? |
 | `wiki-rerank` | Which candidate articles are relevant? |
 | `voice-narration` | Which predefined spoken phrase fits this event? |
+| `presence-mode` | On this voice turn, should the agent talk, act, teach, watch or stay quiet on screen; stay on screen after; and what first? |
 | `guard-risk` | Does an action need additional scrutiny? |
 
 The decision API uses typed questions, including categorical choices and yes/no probabilities. Probability estimates are not proof of correctness. Calibration and evaluation require labeled outcomes for the actual seat.
