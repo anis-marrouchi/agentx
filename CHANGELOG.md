@@ -2,6 +2,24 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.34.0](https://github.com/anis-marrouchi/agentx/compare/v0.33.0...v0.34.0) (2026-09-24)
+
+
+### Features
+
+* **daemon:** /talk and /narration endpoints, `agentx talk` and `narrate` ([969a29d](https://github.com/anis-marrouchi/agentx/commit/969a29d0560c0a389dc862c04b28374acf230368))
+* **mac-voice:** Option-Space is the door to a running talk ([832270b](https://github.com/anis-marrouchi/agentx/commit/832270be02324d0a98d4686c9fc70ce204f88463))
+* **voice:** give each agent its own voice and introduction ([98696d6](https://github.com/anis-marrouchi/agentx/commit/98696d6c4ecfda158949817a8a23695e7c23a1fa))
+* **voice:** narrate an agent's real work in its own voice ([1854708](https://github.com/anis-marrouchi/agentx/commit/1854708d9c8c3988640e993a2415cee81d7827ee))
+* **voice:** per-agent voices, talk mode with a door, task narration ([c006935](https://github.com/anis-marrouchi/agentx/commit/c00693591bc441360dde09fe77ba7de4abcb88b8))
+* **voice:** talk mode, two agents talking out loud with a door ([9c93c62](https://github.com/anis-marrouchi/agentx/commit/9c93c623181cf6dee546c0a82191e4c55275a704))
+
+
+### Bug Fixes
+
+* **router:** resolve intent decisions for mesh-forwarded dispatches ([bdb9afc](https://github.com/anis-marrouchi/agentx/commit/bdb9afcb9a10cdf28f7c13c6541f0e0815a6d710))
+* **router:** resolve intent decisions for mesh-forwarded dispatches ([732ffd5](https://github.com/anis-marrouchi/agentx/commit/732ffd5d541c7d838a9420480018fa9a01dd379d)), closes [#27](https://github.com/anis-marrouchi/agentx/issues/27)
+
 ## [0.33.0](https://github.com/anis-marrouchi/agentx/compare/v0.32.0...v0.33.0) (2026-09-24)
 
 
