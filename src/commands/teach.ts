@@ -20,6 +20,7 @@ import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 import { loadDaemonConfig } from "@/daemon/config"
 import { pickVoiceId, resolveAgentVoice } from "@/voice/agent-voice"
+import { elevenLabsKey } from "@/voice/speaker"
 
 const run = promisify(execFile)
 
@@ -418,20 +419,6 @@ async function speak(text: string, voiceId?: string): Promise<void> {
     } catch { /* fall through to say */ }
   }
   await run("/usr/bin/say", [text]).catch(() => {})
-}
-
-function elevenLabsKey(): string | null {
-  if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY
-  for (const p of [
-    `${process.env.HOME}/.elevenlabs/key`,
-    `${process.env.HOME}/.agentx/elevenlabs-key.txt`,
-  ]) {
-    try {
-      const v = readFileSync(p, "utf8").trim()
-      if (v) return v
-    } catch { /* next */ }
-  }
-  return null
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
