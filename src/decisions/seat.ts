@@ -36,6 +36,11 @@ export interface SeatSettings {
    *  of the skip region. See DEFAULT_EXPLORE_RATE — this is a correctness
    *  requirement, not a tuning knob. */
   explore?: number
+  /** Fraction of turns that skip the seat entirely — no call, incumbent
+   *  behaviour — as a randomized control group. Unlike `explore`, which
+   *  keeps the seat's own grading honest, this measures what the seat is
+   *  worth end to end. Only seats that implement it read it. */
+  holdout?: number
 }
 
 export interface DecisionsRuntime {

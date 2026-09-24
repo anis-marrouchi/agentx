@@ -14,6 +14,14 @@ The demo is a tour of routing, not a populated copy of your business. Some dashb
 
 For the populated documentation tour, leave `pnpm docs:demo` running, then run `pnpm docs:seed` in a second terminal. The seeder adds fictional reviews, disabled schedules, and two disabled workflows. It never connects a real channel. In the workflow editor, **Build the demo report workflow** demonstrates a fixed authoring reply.
 
+To keep the populated demo between sessions, run it in Docker instead. The image plays the scenario and seeds the same fixtures once, then resumes from a named volume on every restart:
+
+```sh
+docker compose -f docker-compose.demo.yml up --build -d
+open http://127.0.0.1:18931/live
+docker compose -f docker-compose.demo.yml down -v   # reset to a fresh demo
+```
+
 ![Three local demo nodes in Live](/screenshots/live.png)
 
 *The isolated scripted demo after a cross-node task.*

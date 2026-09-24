@@ -223,6 +223,51 @@ describe("attachSqliteSubscribers — task:started / task:completed → traces",
       expect(done[0].inputTokens).toBe(50)
       expect(done[0].cacheReadTokens).toBe(100)
       expect(done[0].finishedAt).not.toBeNull()
+      // Not reported by this emitter — stays unknown rather than "fresh".
+      expect(done[0].resumed).toBeNull()
+      expect(done[0].tier2CacheReadTokens).toBeNull()
+    } finally {
+      dispose()
+      bus.removeAllListeners()
+    }
+  })
+
+  it("records tier-2 buckets and the resume decision from task:completed", async () => {
+    const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
+    const { getEventBus } = await import("../src/events/bus")
+    const db = openTmp()
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const dispose = attachSqliteSubscribers(db)
+    try {
+      for (const [chatId, resumed] of [["c-fresh", false], ["c-resumed", true]] as const) {
+        bus.emit("task:started", { agentId: "atlas", channel: "telegram", chatId, messagePreview: "hi", at: new Date().toISOString() })
+        bus.emit("task:completed", {
+          agentId: "atlas",
+          channel: "telegram",
+          chatId,
+          durationMs: 1,
+          tier2InputTokens: 7,
+          tier2OutputTokens: 900,
+          tier2CacheReadTokens: 1_800_000,
+          tier2CacheCreateTokens: 40_000,
+          resumed,
+          resumeSessionId: resumed ? "sess-prev" : undefined,
+          jevArm: resumed ? "holdout" : undefined,
+          at: new Date().toISOString(),
+        })
+      }
+      const byChat = Object.fromEntries(listTraces(db, { agentId: "atlas" }).map(t => [t.chatId, t]))
+      expect(byChat["c-resumed"].resumed).toBe(true)
+      expect(byChat["c-resumed"].resumeSessionId).toBe("sess-prev")
+      expect(byChat["c-resumed"].tier2CacheReadTokens).toBe(1_800_000)
+      expect(byChat["c-resumed"].tier2CacheCreateTokens).toBe(40_000)
+      expect(byChat["c-resumed"].tier2InputTokens).toBe(7)
+      expect(byChat["c-resumed"].tier2OutputTokens).toBe(900)
+      expect(byChat["c-fresh"].resumed).toBe(false)
+      expect(byChat["c-fresh"].resumeSessionId).toBeNull()
+      expect(byChat["c-resumed"].jevArm).toBe("holdout")
+      expect(byChat["c-fresh"].jevArm).toBeNull()
     } finally {
       dispose()
       bus.removeAllListeners()
