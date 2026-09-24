@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.32.0](https://github.com/anis-marrouchi/agentx/compare/v0.31.0...v0.32.0) (2026-09-24)
+
+
+### Features
+
+* **bench:** run agentx on Terminal-Bench ([dc06ca8](https://github.com/anis-marrouchi/agentx/commit/dc06ca8265aa89e2dafce6c22dd9e8dbd760d283))
+
 ## [0.31.0](https://github.com/anis-marrouchi/agentx/compare/v0.30.0...v0.31.0) (2026-09-24)
 
 
