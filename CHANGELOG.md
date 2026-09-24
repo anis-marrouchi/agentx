@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.33.0](https://github.com/anis-marrouchi/agentx/compare/v0.32.0...v0.33.0) (2026-09-24)
+
+
+### Features
+
+* **activity:** give work with no project its agent's own line ([7acddcb](https://github.com/anis-marrouchi/agentx/commit/7acddcbb26b63348278f03bfbbb1706245bf98d9))
+* **activity:** give work with no project its agent's own line ([2bc4439](https://github.com/anis-marrouchi/agentx/commit/2bc44390e610454de8a0c5314b6008c700a263f6))
+
+
+### Bug Fixes
+
+* **activity:** show the whole mesh on the fleet map ([7ade9f9](https://github.com/anis-marrouchi/agentx/commit/7ade9f97106db18a25d0bc87afa91d28f45c8992))
+* **activity:** show the whole mesh on the fleet map ([7d590e0](https://github.com/anis-marrouchi/agentx/commit/7d590e0126332ce7faa493fc7111620322464255))
+* **intent:** stop halting agents that are not in the org chart ([065ba45](https://github.com/anis-marrouchi/agentx/commit/065ba450464b35edfd0dfd0bd61272b4dd648adf))
+* **intent:** stop halting agents that are not in the org chart ([b000640](https://github.com/anis-marrouchi/agentx/commit/b000640479f9275ffc2b16b8cd4c6eaacb04a1df))
+
 ## [0.32.0](https://github.com/anis-marrouchi/agentx/compare/v0.31.0...v0.32.0) (2026-09-24)
 
 
