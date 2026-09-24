@@ -1896,6 +1896,35 @@ export class AgentXDaemon {
   }
 
   /**
+   * Record an inbound dispatch in the intent ledger so the activity graph
+   * sees it. Shared by /task, /ask and /send/agent; `context.channel` is
+   * what the graph shows as the origin. Never throws — the legacy path
+   * stays authoritative, so a ledger failure only costs visibility.
+   */
+  private recordInboundDispatch(
+    agentId: string,
+    context: { channel?: string; chatId?: string; sender?: string; [k: string]: unknown } | undefined,
+    message: unknown,
+    senderAgentId?: string,
+  ): { eventId: string; decidedBy: string } | undefined {
+    if (getLedgerMode("mesh") === "off") return undefined
+    try {
+      const decision = recordMeshDispatch(
+        getDefaultLedger(),
+        { agentId, senderAgentId, context: context as any },
+        JSON.stringify({ agentId, senderAgentId, context, message: typeof message === "string" ? message.slice(0, 200) : "" }),
+        { agentId, outcome: "dispatched", reason: senderAgentId ? `from ${senderAgentId}` : null },
+      )
+      return decision.outcome === "dispatched"
+        ? { eventId: decision.eventId, decidedBy: decision.decidedBy }
+        : undefined
+    } catch (e: any) {
+      this.log(`[ledger] ${context?.channel ?? "mesh"} agent="${agentId}" record failed: ${e?.message ?? e}`)
+      return undefined
+    }
+  }
+
+  /**
    * Broadcast an SSE event to all connected clients.
    */
   private broadcastSSE(event: string, data: string): void {
@@ -3939,10 +3968,20 @@ export class AgentXDaemon {
           if (localDef) {
             try {
               const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+              const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" }
+              // A remote target records on its own node's /task; a local one
+              // has no other hop that would put this delegation in the ledger.
+              const intentRef = this.recordInboundDispatch(
+                targetAgent,
+                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}` },
+                text,
+                senderAgentId,
+              )
               const response = await this.registry.execute({
                 agentId: targetAgent,
                 message: text,
-                context: { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" },
+                context,
+                intentRef,
               })
               this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
             } catch (e: any) {
@@ -4115,30 +4154,7 @@ export class AgentXDaemon {
           // each call records as its own event row (no per-event idempotency).
           // Wrapped in try/catch so a ledger failure cannot break /task —
           // legacy stays authoritative until 1c per-source promotion lands.
-          let intentRef: { eventId: string; decidedBy: string } | undefined
-          if (getLedgerMode("mesh") !== "off") {
-            try {
-              const decision = recordMeshDispatch(
-                getDefaultLedger(),
-                {
-                  agentId,
-                  senderAgentId,
-                  context: body.context as any,
-                },
-                JSON.stringify({ agentId, senderAgentId, context: body.context, message: typeof body.message === "string" ? body.message.slice(0, 200) : "" }),
-                {
-                  agentId,
-                  outcome: "dispatched",
-                  reason: senderAgentId ? `from ${senderAgentId}` : null,
-                },
-              )
-              if (decision.outcome === "dispatched") {
-                intentRef = { eventId: decision.eventId, decidedBy: decision.decidedBy }
-              }
-            } catch (e: any) {
-              this.log(`[ledger] mesh /task agent="${agentId}" record failed: ${e?.message ?? e}`)
-            }
-          }
+          const intentRef = this.recordInboundDispatch(agentId, body.context as any, body.message, senderAgentId)
 
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
@@ -4376,11 +4392,22 @@ export class AgentXDaemon {
             "TTS engine. Answer in two or three short sentences. Plain language, no markdown, no " +
             "code blocks, no bullet points, no URLs. Speak conversationally."
 
+          // The desktop assistant is a URLSession client whose default
+          // User-Agent starts with its bundle name; anything else (Siri,
+          // phone shortcuts) is plain voice. Only the ledger sees the
+          // difference — the session key stays "voice" for both.
+          const origin = /^AgentXVoice\//.test(String(req.headers["user-agent"] || "")) ? "desktop" : "voice"
+          const intentRef = this.recordInboundDispatch(
+            agentId,
+            { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
+            message,
+          )
           const response = await this.registry.execute({
             agentId,
             message,
             systemPromptAppend: voiceInstruction,
             context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
+            intentRef,
           })
 
           // Being busy is not an error.
