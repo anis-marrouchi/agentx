@@ -1,6 +1,6 @@
 import { execFile } from "child_process"
 import type { AgentDef } from "@/daemon/config"
-import { buildAgentEnv, stripAnthropicApiKey } from "@/utils/workspace-env"
+import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 // --- Pre-rotation memo extraction ---
 //
@@ -70,7 +70,7 @@ export async function extractRotationMemo(
     args.push("--dangerously-skip-permissions")
   }
 
-  const env = stripAnthropicApiKey(buildAgentEnv(agent.workspace))
+  const env = claudeBillingEnv(buildAgentEnv(agent.workspace), agent.billing)
 
   return new Promise<RotationMemoResult>((resolve) => {
     let settled = false

@@ -1,0 +1,18 @@
+# Level 1 dev set: 8 Terminal-Bench 2.0 tasks for cheap, repeatable A/B runs.
+#
+# Picked to run on a laptop and give a token signal on a small model:
+# 1 CPU / 2 GB / 900-1200 s agent timeout, no model or dataset downloads,
+# easy-to-medium (5-45 min expert estimate), spread over categories.
+# Tasks the dev model never solves carry no token signal; swap them out
+# after the first baseline run rather than keep paying for them.
+#
+# Changing this list invalidates cached baselines: rerun `dev.sh baseline --force`.
+
+fix-git                   # easy    software-engineering  5 min
+cobol-modernization       # easy    software-engineering  20 min
+polyglot-c-py             # medium  software-engineering  20 min
+openssl-selfsigned-cert   # medium  security              20 min
+nginx-request-logging     # medium  system-administration 20 min
+extract-elf               # medium  file-operations       30 min
+regex-log                 # medium  data-processing       45 min
+constraints-scheduling    # medium  personal-assistant    15 min

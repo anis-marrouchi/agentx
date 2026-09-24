@@ -24,6 +24,17 @@ function fixture(mode = "ok") {
         send({ id: m.id, result: m.method.startsWith("thread/") ? { thread: { id: m.params.threadId || "thread-new" } } : {} })
         if (m.method === "turn/start" && mode !== "hang") {
           send({ method: "item/agentMessage/delta", params: { threadId: "thread-new", delta: "hello" } })
+          if (mode === "usage") {
+            // Two model calls inside one turn. `last` is per call, `total` is
+            // the thread's running sum, and OpenAI's inputTokens INCLUDES the
+            // cached part.
+            send({ method: "thread/tokenUsage/updated", params: { threadId: "thread-new", tokenUsage: {
+              last: { inputTokens: 1000, cachedInputTokens: 0, outputTokens: 50 },
+              total: { inputTokens: 1000, cachedInputTokens: 0, outputTokens: 50 } } } })
+            send({ method: "thread/tokenUsage/updated", params: { threadId: "thread-new", tokenUsage: {
+              last: { inputTokens: 1200, cachedInputTokens: 900, outputTokens: 30 },
+              total: { inputTokens: 2200, cachedInputTokens: 900, outputTokens: 80 } } } })
+          }
           send({ method: "turn/completed", params: { threadId: "thread-new", turn: { status: "completed" } } })
         }
       })
@@ -75,6 +86,13 @@ describe("Codex persistent processes", () => {
     setTimeout(() => controller.abort(), 5)
     expect((await promise).error).toMatch(/cancelled/)
     f.pool.stop()
+  })
+  it("reports the whole turn's usage, with cached input split out", async () => {
+    const f = fixture("usage")
+    try {
+      const { usage } = await f.pool.run(f.options)
+      expect(usage).toEqual({ inputTokens: 1300, outputTokens: 80, cacheReadTokens: 900, cacheCreateTokens: 0 })
+    } finally { f.pool.stop() }
   })
   it("times out and removes idle processes", async () => {
     const f = fixture("hang")

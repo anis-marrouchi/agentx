@@ -56,6 +56,7 @@
     "build:web": "tsup --config tsup.web.config.ts",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "bench:context": "tsx bench/context-size.ts",
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",

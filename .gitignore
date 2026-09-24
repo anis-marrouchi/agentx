@@ -55,3 +55,7 @@ notes/architecture/*
 !notes/architecture/surface-reduction.md
 !notes/architecture/design-system.md
 notes/prd
+
+# Harbor benchmark output (trial logs can contain task content)
+/jobs/
+__pycache__/
