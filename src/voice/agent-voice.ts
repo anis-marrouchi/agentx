@@ -7,6 +7,7 @@
 // it did before.
 
 import type { DaemonConfig } from "@/daemon/config"
+import type { TalkSpeaker } from "./talk"
 
 type AgentConfig = DaemonConfig["agents"][string]
 
@@ -116,4 +117,21 @@ export function introInstruction(voice: AgentVoice, introduce: boolean): string 
     "Do not introduce yourself or greet again; talk casually, like a colleague in the same office." +
     style
   )
+}
+
+/** An agent as a talk participant: who it is, how it sounds, whether it
+ *  still owes the listener an introduction. */
+export function talkSpeaker(agentId: string, agents: DaemonConfig["agents"], introduce: boolean): TalkSpeaker {
+  const agent = agents[agentId]
+  const voice = resolveAgentVoice(agentId, agent)
+  // The first paragraph is where a persona says who it is; the rest is
+  // task instructions, which do not belong in small talk.
+  const persona = (agent?.systemPrompt ?? "").split(/\n\s*\n/)[0].slice(0, 600).trim()
+  return {
+    agentId,
+    name: voice.name,
+    voiceId: pickVoiceId(null, voice.elevenlabsVoiceId),
+    persona: persona || `You are ${voice.name}.`,
+    introLine: introInstruction(voice, introduce),
+  }
 }
