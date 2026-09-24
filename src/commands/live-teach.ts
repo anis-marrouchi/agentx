@@ -59,7 +59,7 @@ export async function runLiveTeach(goal: string, opts: { agent?: string; mode?: 
     { goal, app, mode, speaker, actionsAllowed: look.allowActions, maxSteps: Number(opts.steps) || undefined },
     {
       readScreen: readScreenView,
-      presence: new PresenceOverlay(look, HELPER),
+      presence: new PresenceOverlay(look, HELPER, agentId),
       speech: new SpeechOut(),
       model: createLineModel({ system: teachSystemPrompt(speaker.persona, "Anis") }),
       act: helperAct,

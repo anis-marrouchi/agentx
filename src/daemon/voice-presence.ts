@@ -13,7 +13,7 @@ import {
 import { HELPER } from "@/computer-use/screen"
 import { LiveTeach, teachSystemPrompt, type TeachDeps, type TeachMode } from "@/voice/live-teach"
 import { helperAct, readScreenView } from "@/voice/live-teach-screen"
-import { PresenceOverlay, presenceLook, type Presence, type PresenceLook } from "@/voice/presence"
+import { IDLE_SECONDS, PresenceOverlay, presenceLook, reapPresence, type Presence, type PresenceLook } from "@/voice/presence"
 import type { SpeechOut } from "@/voice/speaker"
 import type { LineModel } from "@/voice/talk-model"
 import { talkSpeaker } from "@/voice/agent-voice"
@@ -21,10 +21,22 @@ import { talkSpeaker } from "@/voice/agent-voice"
 const run = promisify(execFile)
 /** Budget for the per-turn decision; Jev answers in about half a second. */
 const DECIDE_MS = 2_500
+/** A presence kept after its turn (persist) still goes after this long. */
+export const PERSIST_MS = 5 * 60 * 1000
+/** Held overlays are pinged this often, well inside the helper's idle timeout. */
+const PING_MS = (IDLE_SECONDS * 1000) / 3
 type Agents = DaemonConfig["agents"]
 
+/** The one overlay an agent has on screen, and what it is doing. */
+interface Slot {
+  presence: Presence
+  use: "talk" | "lesson"
+  timer?: NodeJS.Timeout
+  ping: NodeJS.Timeout
+}
+
 export interface PresenceHostDeps {
-  overlay?: (look: PresenceLook) => Presence
+  overlay?: (look: PresenceLook, agentId: string) => Presence
   screen?: Pick<TeachDeps, "readScreen" | "act">
   frontmostApp?: () => Promise<string | null>
 }
@@ -44,7 +56,8 @@ async function helperFrontmostApp(): Promise<string | null> {
 }
 
 export class PresenceHost {
-  private shown = new Map<string, { presence: Presence; timer?: NodeJS.Timeout }>()
+  /** At most one overlay per agent; lessons and spoken answers share it. */
+  private slots = new Map<string, Slot>()
   private lastMode = new Map<string, PresenceMode>()
   /** The app in front when the agent was last asked: a lesson it starts
    *  is about that app, and stays on it. */
@@ -89,13 +102,22 @@ export class PresenceHost {
     const agents = this.agents()
     const speaker = talkSpeaker(agentId, agents, false)
     const look = presenceLook(agentId, agents[agentId])
-    this.hide(agentId)
+    const slot = this.acquire(agentId, "lesson")
+    // The lesson ends by closing its presence: that releases the slot,
+    // unless a newer turn has already taken it over.
+    const presence: Presence = {
+      moveTo: (r, o) => slot.presence.moveTo(r, o),
+      say: (t) => slot.presence.say(t),
+      clear: () => slot.presence.clear(),
+      park: () => slot.presence.park(),
+      close: () => { if (this.slots.get(agentId) === slot && slot.use === "lesson") this.hide(agentId) },
+    }
     return new LiveTeach(
       { goal, mode, speaker, actionsAllowed: look.allowActions, app: this.lastApp.get(agentId) ?? undefined },
       {
         readScreen: this.deps.screen?.readScreen ?? readScreenView,
         act: this.deps.screen?.act ?? helperAct,
-        presence: this.overlay(look),
+        presence,
         speech,
         model: model(teachSystemPrompt(speaker.persona, "Anis")),
       },
@@ -103,30 +125,63 @@ export class PresenceHost {
   }
 
   /** The agent's cursor, parked, with its spoken answer in the bubble.
-   *  Gone once the answer has had time to be heard, unless it persists. */
+   *  Gone once the answer has had time to be heard; with persist it stays,
+   *  quiet, until the next turn or PERSIST_MS. */
   showTalk(agentId: string, text: string, persist: boolean): void {
-    const look = presenceLook(agentId, this.agents()[agentId])
-    const cur = this.shown.get(agentId) ?? { presence: this.overlay(look) }
-    if (cur.timer) clearTimeout(cur.timer)
-    cur.presence.park()
-    cur.presence.say(text.length > 220 ? `${text.slice(0, 217)}…` : text)
-    const words = text.split(/\s+/).length
-    cur.timer = setTimeout(() => (persist ? cur.presence.say("") : this.hide(agentId)), 2_000 + words * 400)
-    this.shown.set(agentId, cur)
+    const slot = this.acquire(agentId, "talk")
+    slot.presence.park()
+    slot.presence.say(text.length > 220 ? `${text.slice(0, 217)}…` : text)
+    const heard = 2_000 + text.split(/\s+/).length * 400
+    slot.timer = setTimeout(() => {
+      if (!persist) return this.hide(agentId)
+      slot.presence.say("")
+      slot.timer = setTimeout(() => this.hide(agentId), PERSIST_MS)
+    }, heard)
   }
 
+  /** Fade the agent's overlay out; the helper process exits. */
   hide(agentId: string): void {
-    const cur = this.shown.get(agentId)
-    if (cur?.timer) clearTimeout(cur.timer)
-    cur?.presence.close()
-    this.shown.delete(agentId)
+    const slot = this.slots.get(agentId)
+    if (!slot) return
+    clearTimeout(slot.timer)
+    clearInterval(slot.ping)
+    slot.presence.close()
+    this.slots.delete(agentId)
   }
 
   close(): void {
-    for (const id of [...this.shown.keys()]) this.hide(id)
+    for (const id of [...this.slots.keys()]) this.hide(id)
   }
 
-  private overlay(look: PresenceLook): Presence {
-    return this.deps.overlay?.(look) ?? new PresenceOverlay(look, HELPER)
+  /** Agents with an overlay on screen right now. */
+  get onScreen(): string[] { return [...this.slots.keys()] }
+
+  /** On daemon start: end overlays left by an earlier daemon or a dead parent. */
+  reapOrphans(): void {
+    const n = reapPresence()
+    if (n) this.log(`[presence] ended ${n} leftover overlay${n === 1 ? "" : "s"}`)
+  }
+
+  /** The agent's overlay: the one already on screen, or a new one. Never a second. */
+  private acquire(agentId: string, use: Slot["use"]): Slot {
+    const cur = this.slots.get(agentId)
+    // Its helper may have exited on its own (idle, crash): draw afresh.
+    if (cur && cur.presence.alive === false) this.hide(agentId)
+    else if (cur) {
+      clearTimeout(cur.timer)
+      cur.timer = undefined
+      cur.use = use
+      return cur
+    }
+    const presence = this.overlay(presenceLook(agentId, this.agents()[agentId]), agentId)
+    const ping = setInterval(() => presence.ping?.(), PING_MS)
+    ping.unref?.()
+    const slot: Slot = { presence, use, ping }
+    this.slots.set(agentId, slot)
+    return slot
+  }
+
+  private overlay(look: PresenceLook, agentId: string): Presence {
+    return this.deps.overlay?.(look, agentId) ?? new PresenceOverlay(look, HELPER, agentId)
   }
 }
