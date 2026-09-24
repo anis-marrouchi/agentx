@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.31.0](https://github.com/anis-marrouchi/agentx/compare/v0.30.0...v0.31.0) (2026-09-24)
+
+
+### Features
+
+* **activity-graph:** attach live issue/MR/pipeline state to snapshots ([2add936](https://github.com/anis-marrouchi/agentx/commit/2add936c3e44bd4f914577537b0e48ed8deddcf5))
+* **activity-graph:** Fleet Map tab ([9221a47](https://github.com/anis-marrouchi/agentx/commit/9221a471189c61429695fd1365f3411d9b519bf3))
+* **activity-graph:** rework the Map tab as a transit map ([816e409](https://github.com/anis-marrouchi/agentx/commit/816e409716e16f095ffa31f0b481ab3a65654a5d))
+* **activity:** fold the fleet map into /activity and retire Activity Graph ([4817f16](https://github.com/anis-marrouchi/agentx/commit/4817f1635aa6e7b1d10447ea0473e530a8fb8c52))
+* **decisions:** hold out 10% of turns from Jev preprocessing ([03f572d](https://github.com/anis-marrouchi/agentx/commit/03f572d035f3138f6e0c8bbb489fdf703de613f9))
+* **traces:** record tier-2 tokens and the resume decision per turn ([bf766eb](https://github.com/anis-marrouchi/agentx/commit/bf766ebac852598f4fd3165b7b24b4b1c5586840))
+
 ## [0.30.0](https://github.com/anis-marrouchi/agentx/compare/v0.29.0...v0.30.0) (2026-09-23)
 
 
