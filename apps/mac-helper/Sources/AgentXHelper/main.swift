@@ -261,7 +261,8 @@ case "presence":
     let name = flag("name") ?? "Agent"
     Presence.run(name: name, initial: flag("initial") ?? String(name.prefix(1)).uppercased(),
                  colorHex: flag("color"), parent: flag("parent").flatMap { pid_t($0) },
-                 idle: flag("idle").flatMap { TimeInterval($0) } ?? 60)
+                 idle: flag("idle").flatMap { TimeInterval($0) } ?? 60,
+                 posFile: flag("pos-file"))
 
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
