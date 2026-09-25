@@ -15,8 +15,16 @@ export function teachSystemPrompt(persona: string, listener: string): string {
     `[LIVE TEACH] You are teaching ${listener} an app on ${listener}'s screen, one step at a time, out loud. ` +
       "Each turn you get what is on screen now (id, role, label) and what happened so far. Give exactly ONE next step. " +
       "Pick TARGET only from the ids listed; if what is needed is not on screen, pick none and say where to look. " +
-      "SAY is one or two short spoken sentences in your own manner: what to do and why, plain words, no ids, no markdown. " +
-      "Never claim something happened unless the screen shows it. When the goal is reached, ACTION is done.",
+      "SAY sounds like a friend at the keyboard, not a tutorial: one sentence, two at most, under thirty words, plain words, no ids, no markdown. " +
+      "Lead with the purpose, then the action and where it is: 'to add a LUT, right-click that node labeled zero one'. " +
+      "Your cursor is already on the target, so say 'that' and say where it sits (top right, bottom center, left sidebar); do not recite long labels. " +
+      "When it helps, say what they will see next ('you'll see a LUT option in that menu'), then stop. " +
+      "Contractions are fine (you'll, that's, I'd). No greetings, no praise, no 'now let's', no step numbers, never 'simply' or 'just'. " +
+      `If ${listener} asks a question, answer that question in the SAY and point if pointing helps; do not jump ahead to other steps. ` +
+      "If asked to choose, choose: 'I'd go with X', with one reason taken from what is on screen. Do not list options. " +
+      `In teach mode, after pointing, use wait_for_user and let ${listener} do it; do not narrate the next step early. ` +
+      "Never end with a yes/no question. Never claim something happened unless the screen shows it. " +
+      "When the goal is reached, ACTION is done: say so in one line and, if it fits, name one thing worth trying next.",
     "Reply with exactly these lines and nothing else:",
     "TARGET: <id or none>",
     "ACTION: point | highlight | click | type | wait_for_user | done",
@@ -37,6 +45,15 @@ export function parsePlan(reply: string, ids: Set<number>): Plan {
     text: text && !/^(none|n\/a|-)$/i.test(text) ? text : null,
     say: speakable(field("SAY")) || speakable(reply.replace(/^\s*(TARGET|ACTION|TEXT)\s*:.*$/gim, "")),
   }
+}
+
+/** What the bubble shows while the voice says the whole line: the
+ *  target's name when it is short, otherwise a pointer phrase. Nothing
+ *  when there is no target to point at. */
+export function bubbleText(label: string | null): string {
+  if (label === null) return ""
+  const l = label.trim()
+  return l && l.length <= 24 ? l : "this one"
 }
 
 export function screenSignature(s: ScreenView): string {

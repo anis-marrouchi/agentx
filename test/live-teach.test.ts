@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { LiveTeach, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
-import { findControl } from "../src/voice/live-teach-plan"
+import { bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
 import { presenceLook, type Presence } from "../src/voice/presence"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { toPresence, type PresenceModeAnswers } from "../src/decisions/seats/presence-mode"
@@ -75,13 +75,36 @@ describe("parsePlan", () => {
   })
 })
 
+describe("bubbleText", () => {
+  it("shows a short target name, a pointer phrase for long ones, nothing without a target", () => {
+    expect(bubbleText("Rectangle")).toBe("Rectangle")
+    expect(bubbleText("Export as PNG with a transparent background")).toBe("this one")
+    expect(bubbleText("")).toBe("this one")
+    expect(bubbleText(null)).toBe("")
+  })
+})
+
+describe("teachSystemPrompt", () => {
+  it("asks for short, friend-at-the-keyboard lines and keeps the reply format", () => {
+    const p = teachSystemPrompt("You are Coder.", "Anis")
+    expect(p).toContain("under thirty words")
+    expect(p).toContain("Never end with a yes/no question")
+    expect(p).toContain("If Anis asks a question")
+    expect(p).toMatch(/^SAY: <what you say>$/m)
+  })
+})
+
 describe("LiveTeach", () => {
   it("teach: shows and says the step with its own cursor, waits for Anis, never clicks", async () => {
     const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
     await s.t.run()
     expect(s.acted).toEqual([])
     expect(s.log).toContain("move 10 highlight")
-    expect(s.log).toContain("bubble Click New to start a note.")
+    // The bubble names the target; the voice carries the sentence.
+    expect(s.log).toContain("bubble New")
+    expect(s.log).not.toContain("bubble Click New to start a note.")
+    // After Anis does the step, the cursor goes back to Anis's pointer.
+    expect(s.log.indexOf("park")).toBeGreaterThan(s.log.indexOf("bubble New"))
     expect(s.said).toEqual(["Click New to start a note.", "There's your note."])
     // The second plan saw the new screen and knew Anis had done the step.
     expect(s.model.prompts[1]).toContain('window "Untitled"')

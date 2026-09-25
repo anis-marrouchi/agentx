@@ -18,7 +18,7 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
-import { findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { bubbleText, findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
@@ -243,7 +243,8 @@ export class LiveTeach {
 
     const { presence, speech } = this.deps
     if (rect) presence.moveTo(rect, { highlight: action !== "point" })
-    presence.say(plan.say)
+    // The voice carries the sentence; the bubble only names what is pointed at.
+    presence.say(bubbleText(rect ? label : null))
     this.lastSay = plan.say
     const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say }) : Promise.resolve(true)
     await Promise.race([spoken, this.poked()])
@@ -272,7 +273,9 @@ export class LiveTeach {
 
     // Everything else waits for the listener to act on the step.
     const changed = await this.waitForChange()
-    presence.clear()
+    // Hand control back: the cursor returns to the listener's own pointer.
+    presence.say("")
+    presence.park()
     this.emit({ type: "changed", n, changed })
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
       (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
