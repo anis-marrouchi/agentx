@@ -49,7 +49,8 @@ Out of the box every agent speaks with a free macOS voice, and each agent gets a
 ```bash
 agentx voice list                                  # installed voices, best first, and who uses which
 agentx voice set coder-agent Daniel                # pick a system voice
-agentx voice set secretary-agent system            # follow the OS default voice (a Siri voice, see below)
+agentx voice set secretary-agent system            # follow the OS default voice
+agentx voice set devops-agent siri:aaron           # a Siri voice of its own (see below)
 agentx voice set cx-agent Thomas --lang fr         # French lines in Thomas, other lines as before
 agentx voice set cx-agent --gender female          # an assigned voice will be female
 agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent speaks through ElevenLabs
@@ -59,7 +60,13 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 
 **Better free voices.** Open System Settings → Accessibility → Spoken Content → System Voice → Manage Voices and download a Premium or Enhanced voice (for example Ava, Zoe or Evan). They are picked up within ten minutes, or on the next `agentx voice list`.
 
-**Siri voices.** macOS does not offer Siri voices (Spoken Content's "Voice 1–5") to other apps: they are not in `agentx voice list` and cannot be picked by name. The one way to use one is to make it the System Voice in Spoken Content and set the agent's voice to `system`. The agent then speaks with whatever the OS default voice is, so every agent set to `system` sounds the same.
+**Siri voices.** macOS does not offer Siri voices to other apps, and `say -v` cannot use them. But `say` without `-v` speaks with the Spoken Content System Voice, and that can be a Siri voice. So an agent can have a Siri voice of its own: name it `siri:<name>` (for example `siri:aaron`, or `{ "en": "siri:nora", "fr": "siri:marie", "ar": "siri:soha" }`). For each line, AgentX switches the System Voice for that language to the agent's Siri voice, speaks, then puts your own selection back.
+- **One line at a time.** Lines are spoken one at a time across the daemon, `agentx teach` and the desktop app, which asks the daemon to speak Siri lines, so two agents never switch the voice at once.
+- **Recovery.** If a speaker stops mid-line, the next one restores your selection first.
+- **Which voices.** `agentx voice list` shows the Siri voices installed on this Mac (download more in Spoken Content → System Voice → Manage Voices). They are never assigned automatically.
+- **Not installed.** If a named Siri voice is missing, the regular voice of the same name and language speaks instead, if there is one; otherwise the next choice does.
+- **Sharing the System Voice.** While an agent speaks, the System Voice is the agent's, so VoiceOver or Speak Selection used at that moment speaks in it too.
+- **The OS default.** `system` still means your own System Voice for that agent.
 
 **Configuration.** The global `voice` block sets the defaults; each agent's `voice` block overrides them. Every field is optional.
 
