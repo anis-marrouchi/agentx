@@ -4450,7 +4450,7 @@ export class AgentXDaemon {
           // Remote agents have no presence on this screen.
           const presence = remote ? null : await this.voiceTalk.presence.decide(agentId, message)
           if (presence?.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
-            const started = this.voiceTalk.startLesson(agentId, message, presence.mode)
+            const started = this.voiceTalk.startLesson(agentId, message, presence.mode, presence.app)
             if (started.status === 201) {
               this.voiceIntros.spoke(session, agentId)
               const text = presence.mode === "watch" ? "Go ahead, I'm watching." : "Sure, I'll show you on screen."

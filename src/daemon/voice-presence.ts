@@ -46,6 +46,8 @@ export interface PresenceHostDeps {
 export interface PresenceTurn extends PresenceDecision {
   /** off: no seat, talk as before. shadow: logged only. active: acted on. */
   seat: "off" | "shadow" | "active"
+  /** The app in front for this turn; a lesson the turn starts stays on it. */
+  app?: string | null
 }
 
 async function helperFrontmostApp(): Promise<string | null> {
@@ -61,9 +63,6 @@ export class PresenceHost {
   /** At most one overlay per agent; lessons and spoken answers share it. */
   private slots = new Map<string, Slot>()
   private lastMode = new Map<string, PresenceMode>()
-  /** The app in front when the agent was last asked: a lesson it starts
-   *  is about that app, and stays on it. */
-  private lastApp = new Map<string, string | null>()
 
   constructor(
     private agents: () => Agents,
@@ -93,14 +92,14 @@ export class PresenceHost {
     ]).finally(() => clearTimeout(timer))
     const decision = toPresence((result?.answers as PresenceModeAnswers) ?? null, look.allowActions)
     this.lastMode.set(agentId, decision.mode)
-    this.lastApp.set(agentId, app)
     this.log(`[presence] ${agentId} seat=${seat} chose=${decision.chose ?? "-"} p=${decision.probability.toFixed(2)} → ${decision.mode}` +
       ` next=${decision.nextAction}${decision.persist ? " persist" : ""}${decision.override ? ` (${decision.override})` : ""}`)
-    return { ...decision, seat }
+    return { ...decision, seat, app }
   }
 
-  /** A live lesson on this screen, in the agent's voice and cursor. */
-  lesson(agentId: string, goal: string, mode: TeachMode, speech: SpeechOut, model: (system: string) => LineModel): LiveTeach {
+  /** A live lesson on this screen, in the agent's voice and cursor, about
+   *  `app`, or the app in front when the lesson starts. */
+  lesson(agentId: string, goal: string, mode: TeachMode, speech: SpeechOut, model: (system: string) => LineModel, app?: string | null): LiveTeach {
     const agents = this.agents()
     const speaker = talkSpeaker(agentId, agents, false, this.deps.voiceSettings?.())
     const look = presenceLook(agentId, agents[agentId])
@@ -115,7 +114,7 @@ export class PresenceHost {
       close: () => { if (this.slots.get(agentId) === slot && slot.use === "lesson") this.hide(agentId) },
     }
     return new LiveTeach(
-      { goal, mode, speaker, actionsAllowed: look.allowActions, app: this.lastApp.get(agentId) ?? undefined },
+      { goal, mode, speaker, actionsAllowed: look.allowActions, app: app || undefined },
       {
         readScreen: this.deps.screen?.readScreen ?? readScreenView,
         act: this.deps.screen?.act ?? helperAct,

@@ -193,6 +193,33 @@ describe("LiveTeach", () => {
     expect(s.acted).toEqual(["click New"])
   })
 
+  it("with no app named, stays on the app in front when the lesson starts", async () => {
+    const s = setup("act", [STEP1, DONE], { actionsAllowed: true })
+    let front = "Notes"
+    const inner = (s.t as any).deps.readScreen
+    ;(s.t as any).deps.readScreen = async () => ({ ...(await inner()), app: front })
+    // The first read pins Notes; WhatsApp coming to the front later is waited out.
+    const run = s.t.run()
+    await sleep(1)
+    front = "WhatsApp"
+    setTimeout(() => { front = "Notes" }, 60)
+    await run
+    expect((s.t as any).opts.app).toBe("Notes")
+    expect(s.model.prompts.every((p) => p.includes("App: Notes"))).toBe(true)
+  })
+
+  it("act: never presses keys that leave the app; says so and stops", async () => {
+    for (const keys of ["cmd+space", "cmd+tab", "cmd+q", "ctrl+right"]) {
+      const s = setup("act", [`TARGET: none\nACTION: key\nTEXT: ${keys}\nSAY: Opening Spotlight to find tldraw.`], { actionsAllowed: true })
+      const events: any[] = []
+      s.t.on((e) => events.push(e))
+      await s.t.run()
+      expect(s.acted).toEqual([])
+      expect(s.said).toEqual(["That needs another app, and I won't leave Notes on my own, so I'll stop here."])
+      expect(events.at(-1)).toEqual({ type: "end", reason: `refused to leave Notes (${keys})` })
+    }
+  })
+
   it("stop ends the lesson and removes the presence", async () => {
     const s = setup("watch", [STEP1], { speakMs: 100 })
     const run = s.t.run()

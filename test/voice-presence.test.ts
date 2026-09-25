@@ -117,4 +117,45 @@ describe("POST /teach/live", () => {
     expect(svc.handle("GET", "/talk", {}).body).toEqual({ active: false })
     expect(log).toContain("Coder close")
   })
+
+  it("targets the app in front now, not the one from the last voice turn (#55)", async () => {
+    process.env.AGENTX_DECISION_SEAT_PRESENCE_MODE = "active"
+    answers.current = pick("talk", 0.9)
+    let front = "WhatsApp"
+    const prompts: string[] = []
+    const said: string[] = []
+    const planner: LineModel = {
+      reply(m: string, signal?: AbortSignal) {
+        prompts.push(m)
+        const c = new Channel<string>()
+        setTimeout(() => { c.push("TARGET: none\nACTION: done\nSAY: Done."); c.end() }, 2)
+        return c.read(signal)
+      },
+      close() {},
+    }
+    const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
+      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, stop: () => {} } as any,
+      model: () => planner,
+      presence: {
+        overlay: overlayLog([]),
+        frontmostApp: async () => front,
+        screen: { readScreen: async () => ({ app: front, window: null, candidates: [], rectOf: () => null }), act: async () => ({ error: null }) },
+      },
+    })
+    // A voice turn while WhatsApp was in front, then tldraw comes forward.
+    await svc.presence.decide("helper-agent", "what's new?")
+    front = "tldraw"
+    expect(svc.handle("POST", "/teach/live", { agent: "helper-agent", goal: "draw a box", mode: "act" }).status).toBe(201)
+    await vi.waitFor(() => expect(svc.handle("GET", "/talk", {}).body).toEqual({ active: false }))
+    expect(said.some((t) => t.includes("WhatsApp"))).toBe(false)
+    expect(prompts[0]).toContain("App: tldraw")
+
+    // An explicit app wins over whatever is in front.
+    said.length = 0
+    expect(svc.handle("POST", "/teach/live", { agent: "helper-agent", goal: "draw a box", mode: "act", app: "Notes" }).status).toBe(201)
+    await vi.waitFor(() => expect(said[0]).toBe("Bring Notes to the front and I'll carry on."))
+    svc.handle("POST", "/talk/door", { text: "stop" })
+    delete process.env.AGENTX_DECISION_SEAT_PRESENCE_MODE
+    answers.current = null
+  })
 })

@@ -18,7 +18,7 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
-import { bubbleText, findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { bubbleText, findControl, parsePlan, screenSignature, switchesApp, type Plan } from "./live-teach-plan"
 
 export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
@@ -47,7 +47,8 @@ export interface TeachDeps {
 export interface LiveTeachOpts {
   goal: string
   /** The app this lesson is about. Nothing is planned, and above all
-   *  nothing is clicked, while another app has focus. */
+   *  nothing is clicked, while another app has focus. When not given, it
+   *  is the app in front when the lesson starts. */
   app?: string
   mode: TeachMode
   speaker: { name: string; voice: VoiceRef; agentId?: string }
@@ -169,7 +170,8 @@ export class LiveTeach {
     const deadline = Date.now() + (this.opts.waitMs ?? 45_000)
     for (;;) {
       const screen = await this.deps.readScreen()
-      if (!want || screen.app.toLowerCase() === want) return screen
+      if (!want) { this.opts.app = screen.app; return screen }
+      if (screen.app.toLowerCase() === want) return screen
       if (!asked) {
         asked = true
         const line = `Bring ${this.opts.app} to the front and I'll carry on.`
@@ -245,6 +247,17 @@ export class LiveTeach {
     const rect = target !== null ? screen.rectOf(target) : null
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
+    // Leaving the lesson's app would put its keys and clicks into another
+    // one; say so and stop rather than go looking for an app.
+    if (mayAct && plan.action === "key" && plan.text && switchesApp(plan.text)) {
+      const line = `That needs another app, and I won't leave ${this.opts.app} on my own, so I'll stop here.`
+      this.deps.presence.say(line)
+      this.emit({ type: "step", n, action: "done", target: null, say: line })
+      await this.speaking
+      await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
+      this.stop(`refused to leave ${this.opts.app} (${plan.text})`)
+      return "stopped"
+    }
     // Click and type only when allowed; otherwise show it instead.
     const action: StepAction =
       plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")

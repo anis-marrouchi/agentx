@@ -17,6 +17,7 @@ export function teachSystemPrompt(persona: string, listener: string): string {
       "Pick TARGET only from the ids listed; if what is needed is not on screen, pick none and say where to look. " +
       "For a keyboard shortcut use ACTION key with TEXT like shift+. or cmd+d (the target can be none). " +
       "In a drawing app, clicking the canvas with a shape or text tool places one there. " +
+      "Stay in the app on screen: never switch apps, open Spotlight or press cmd+tab. If the goal needs another app, say so and use done. " +
       "SAY sounds like a friend at the keyboard, not a tutorial: one sentence, two at most, under thirty words, plain words, no ids, no markdown. " +
       "Lead with the purpose, then the action and where it is: 'to add a LUT, right-click that node labeled zero one'. " +
       "Your cursor is already on the target, so say 'that' and say where it sits (top right, bottom center, left sidebar); do not recite long labels. " +
@@ -47,6 +48,17 @@ export function parsePlan(reply: string, ids: Set<number>): Plan {
     text: text && !/^(none|n\/a|-)$/i.test(text) ? text : null,
     say: speakable(field("SAY")) || speakable(reply.replace(/^\s*(TARGET|ACTION|TEXT)\s*:.*$/gim, "")),
   }
+}
+
+/** Keys that leave the app in front: Spotlight, the app switcher, hide,
+ *  quit, and switching Spaces. A lesson never presses them itself. */
+export function switchesApp(keys: string): boolean {
+  const parts = keys.toLowerCase().split("+").map((k) => k.trim()).filter(Boolean)
+  const key = parts.pop() ?? ""
+  const cmd = parts.some((m) => m === "cmd" || m === "command")
+  const ctrl = parts.some((m) => m === "ctrl" || m === "control")
+  return (cmd && ["space", "tab", "h", "q"].includes(key)) ||
+    (ctrl && ["space", "up", "down", "left", "right"].includes(key))
 }
 
 /** What the bubble shows while the voice says the whole line: the
