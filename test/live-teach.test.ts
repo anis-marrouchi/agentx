@@ -53,7 +53,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   const model = new PlanModel(replies)
   const deps: TeachDeps = {
     readScreen: async () => app.view(), presence, speech, model,
-    act: async (s) => { acted.push(`${s.action} ${s.label}`); app.open(); return { error: null } },
+    act: async (s) => { acted.push(s.action === "key" ? `key ${s.keys}` : `${s.action} ${s.label}`); app.open(); return { error: null } },
   }
   if (opts.userActsAfter !== undefined) setTimeout(app.open, opts.userActsAfter)
   const t = new LiveTeach({
@@ -70,6 +70,8 @@ describe("parsePlan", () => {
   it("reads the four fields and refuses ids that are not on screen", () => {
     expect(parsePlan("TARGET: 7\nACTION: Highlight\nTEXT: none\nSAY: **Look** here.", new Set([7])))
       .toEqual({ target: 7, action: "highlight", text: null, say: "Look here." })
+    expect(parsePlan("TARGET: none\nACTION: key\nTEXT: shift+.\nSAY: Turn it.", new Set([7])))
+      .toEqual({ target: null, action: "key", text: "shift+.", say: "Turn it." })
     expect(parsePlan("TARGET: 99\nACTION: jump\nSAY: Hmm.", new Set([7])))
       .toEqual({ target: null, action: "wait_for_user", text: null, say: "Hmm." })
   })
@@ -123,6 +125,19 @@ describe("LiveTeach", () => {
     await denied.t.run()
     expect(denied.acted).toEqual([])
     expect(denied.log).toContain("move 10 highlight")
+  })
+
+  it("key: presses a shortcut in act mode, and only there", async () => {
+    const ROTATE = "TARGET: none\nACTION: key\nTEXT: shift+.\nSAY: Shift and period turns it a little."
+    const allowed = setup("act", [ROTATE, DONE], { actionsAllowed: true })
+    await allowed.t.run()
+    expect(allowed.acted).toEqual(["key shift+."])
+    expect(allowed.model.prompts[1]).toContain("you pressed shift+.")
+
+    const teach = setup("teach", [ROTATE, DONE], { userActsAfter: 40 })
+    await teach.t.run()
+    expect(teach.acted).toEqual([])
+    expect(teach.said[0]).toBe("Shift and period turns it a little.")
   })
 
   it("the door cuts in: speech stops and the next plan answers Anis first", async () => {

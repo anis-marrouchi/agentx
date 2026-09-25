@@ -67,6 +67,17 @@ export function scopeToPage(elements: RawElement[]): RawElement[] {
  * carry no label on macOS, and dropping everything unnamed removes the
  * controls people most often ask for.
  */
+/**
+ * A drawing app's canvas (tldraw, Figma, Excalidraw) is one unnamed image
+ * covering most of the page. It is where shapes and text are placed, so
+ * it is offered as "canvas"; small images are icons and stay out.
+ */
+function isCanvas(e: RawElement, page: RawElement[]): boolean {
+  if (e.role !== "AXImage") return false
+  const area = Math.max(0, ...page.filter((p) => p.role === "AXWebArea").map((p) => p.width * p.height))
+  return area > 0 && e.width * e.height >= area * 0.4
+}
+
 export function buildCandidates(elements: RawElement[], max = 60): UICandidate[] {
   // Rank before capping.
   //
@@ -83,17 +94,19 @@ export function buildCandidates(elements: RawElement[], max = 60): UICandidate[]
     if (/^AX(Row|Cell|Slider|Disclosure|Toolbar)/.test(role)) return 2
     return 3
   }
-  return scopeToPage(elements)
-    .filter((e) => INTERESTING_ROLE.test(e.role))
+  const page = scopeToPage(elements)
+  const canvas = new Set(page.filter((e) => isCanvas(e, page)).map((e) => e.id))
+  return page
+    .filter((e) => INTERESTING_ROLE.test(e.role) || canvas.has(e.id))
     .filter((e) => e.width >= 1 && e.height >= 1)
     .map((e, i) => ({ e, i }))
-    .sort((a, b) => rank(a.e.role) - rank(b.e.role) || a.i - b.i)
+    .sort((a, b) => (canvas.has(a.e.id) ? 1 : rank(a.e.role)) - (canvas.has(b.e.id) ? 1 : rank(b.e.role)) || a.i - b.i)
     .map(({ e }) => e)
     .slice(0, max)
     .map((e, i) => ({
       id: e.id,
       role: e.role,
-      label: (e.label || e.value || "").trim() || `${e.role.replace(/^AX/, "")} ${i + 1}`,
+      label: canvas.has(e.id) ? "canvas" : (e.label || e.value || "").trim() || `${e.role.replace(/^AX/, "")} ${i + 1}`,
       value: e.value ?? null,
       enabled: e.enabled,
     }))

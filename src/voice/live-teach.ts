@@ -23,7 +23,7 @@ import { bubbleText, findControl, parsePlan, screenSignature, type Plan } from "
 export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
 export type TeachMode = "teach" | "watch" | "act"
-export type StepAction = "point" | "highlight" | "click" | "type" | "wait_for_user" | "done"
+export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wait_for_user" | "done"
 
 export interface ScreenView {
   app: string
@@ -38,8 +38,10 @@ export interface TeachDeps {
   speech: SpeechOut
   /** The planner: a warm fast model holding this lesson's history. */
   model: LineModel
-  /** Press or type for real. Only ever called in act mode with actions allowed. */
-  act(step: { action: "click" | "type"; rect: Rect; label: string; text?: string }): Promise<{ error: string | null }>
+  /** Press, type or press keys for real. Only ever called in act mode with
+   *  actions allowed. `role` is the target's, for the helper's check that
+   *  the click lands on it. */
+  act(step: { action: "click" | "type"; rect: Rect; label: string; role?: string; text?: string } | { action: "key"; keys: string }): Promise<{ error: string | null }>
 }
 
 export interface LiveTeachOpts {
@@ -190,7 +192,7 @@ export class LiveTeach {
       `Mode: ${this.opts.mode}. ${modeLine}`,
       `App: ${screen.app}${screen.window ? ` — window "${screen.window}"` : ""}`,
       "On screen:",
-      ...screen.candidates.slice(0, 45).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
+      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
       this.history.length ? `So far:\n${this.history.slice(-8).join("\n")}` : "This is the first step.",
     ].join("\n")
     const signal = this.ac.signal
@@ -238,7 +240,9 @@ export class LiveTeach {
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
     // Click and type only when allowed; otherwise show it instead.
-    const action: StepAction = (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
+    const action: StepAction =
+      plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")
+      : (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
     this.emit({ type: "step", n, action, target: label || null, say: plan.say })
 
     const { presence, speech } = this.deps
@@ -254,13 +258,24 @@ export class LiveTeach {
     }
     if (action === "done") return "done"
 
+    if (action === "key" && plan.text) {
+      const now = await this.recheck({ ...plan, target: null }, screen)
+      if ("stale" in now) return now
+      const r = await this.deps.act({ action: "key", keys: plan.text })
+      this.emit({ type: "acted", n, error: r.error })
+      this.history.push(r.error ? `Step ${n}: you tried to press ${plan.text} and it failed: ${r.error}` : `Step ${n}: you pressed ${plan.text}.`)
+      if (!r.error) await this.settle()
+      return "next"
+    }
+
     if ((action === "click" || action === "type") && rect) {
       // Saying the step took seconds: press only what is there now.
       const now = await this.recheck({ ...plan, target }, screen)
       if ("stale" in now) return now
       const at = now.target !== null ? now.screen.rectOf(now.target) : null
       if (!at) return { stale: `"${label}" is no longer on screen` }
-      const r = await this.deps.act({ action, rect: at, label, text: plan.text ?? undefined })
+      const role = screen.candidates.find((c) => c.id === target)?.role
+      const r = await this.deps.act({ action, rect: at, label, role, text: plan.text ?? undefined })
       this.emit({ type: "acted", n, error: r.error })
       this.history.push(r.error
         ? `Step ${n}: you tried to ${action} "${label}" and it failed: ${r.error}`
