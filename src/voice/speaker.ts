@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { warnOnce } from "./system-voices"
-import { ensureSiriSay, isSiriVoice } from "./siri"
+import { ensureSiriSay, isSiriVoice, siriSupported, type SiriHost } from "./siri"
 import { detectLanguage } from "./language"
 
 /** Which engine speaks a line, and in which voice. */
@@ -109,12 +109,13 @@ export function sayCommand(v: VoiceRef, text: string, siriSay: string | null): [
   return ["/bin/sh", [siriSay, ...(isSiriVoice(id) ? [id] : [])]]
 }
 
-/** The shared script's path on macOS, written if needed; null elsewhere,
- *  or when it cannot be written (plain `say` still speaks). */
-export function siriSayScript(): string | null {
-  if (process.platform !== "darwin") return null
+/** The shared script's path on a Mac that can switch voices, written if
+ *  needed; null elsewhere, or when it cannot be written (plain `say` still
+ *  speaks). Nothing is written on a host that cannot switch. */
+export function siriSayScript(host: SiriHost = {}, home?: string): string | null {
+  if (!siriSupported(host)) return null
   try {
-    return ensureSiriSay()
+    return ensureSiriSay(home)
   } catch (e: any) {
     warnOnce("siri-say", `[voice] could not write the Siri voice script (${String(e?.message ?? e).split("\n")[0]}); Siri voices will not switch`)
     return null

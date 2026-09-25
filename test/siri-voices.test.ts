@@ -3,10 +3,10 @@ import { spawn } from "child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { ensureSiriSay, listSiriVoices, parseSiriAssets, siriSayPath } from "../src/voice/siri"
+import { ensureSiriSay, listSiriVoices, parseSiriAssets, siriSayPath, siriSupported, type SiriHost } from "../src/voice/siri"
 import { findVoice, parseVoiceList, setVoiceLog, type SystemVoice } from "../src/voice/system-voices"
 import { localSystemVoices, resolveAgentVoice, voiceRef } from "../src/voice/agent-voice"
-import { sayArgs, sayCommand } from "../src/voice/speaker"
+import { sayArgs, sayCommand, siriSayScript } from "../src/voice/speaker"
 import { setAgentVoice } from "../src/commands/voice"
 
 const spec = (locale: string, name: string) => `com.apple.siri.tts.voice.${locale}.${name}.neural.premium-${locale}-iPhone`
@@ -22,6 +22,9 @@ const STANDARD = parseVoiceList([
 const INSTALLED: SystemVoice[] = [...STANDARD, ...SIRI]
 const AARON = "com.apple.ttsbundle.gryphon-neural_aaron_en-US_premium"
 const MARIE = "com.apple.ttsbundle.gryphon-neural_marie_fr-FR_premium"
+
+/** A Mac with everything Siri voices need. */
+const MAC: SiriHost = { platform: "darwin", exists: () => true, prefDomain: () => true }
 
 const agents = (o: Record<string, any>) =>
   Object.fromEntries(Object.entries(o).map(([id, v]) => [id, { name: id, voice: v }])) as any
@@ -47,8 +50,39 @@ describe("Siri voice assets", () => {
       writeFileSync(join(dir, a, "Info.plist"), `bplist00\u0000${s}\u0000`)
     }
     mkdirSync(join(dir, "empty.asset"))
-    expect(listSiriVoices([dir, join(dir, "missing")]).map((v) => v.name)).toEqual(["Aaron", "Soha"])
+    expect(listSiriVoices([dir, join(dir, "missing")], MAC).map((v) => v.name)).toEqual(["Aaron", "Soha"])
+    expect(listSiriVoices([dir], { ...MAC, platform: "linux" })).toEqual([])
     rmSync(dir, { recursive: true })
+  })
+})
+
+describe("hosts that cannot switch voices", () => {
+  it("offers Siri only on macOS with say, defaults, plutil and the pref domain", () => {
+    const probed: string[] = []
+    expect(siriSupported({ platform: "linux", exists: () => true, prefDomain: () => { probed.push("pref"); return true } })).toBe(false)
+    expect(probed).toEqual([])
+    expect(siriSupported(MAC)).toBe(true)
+    expect(siriSupported({ ...MAC, exists: (p) => !p.endsWith("/say") })).toBe(false)
+    expect(siriSupported({ ...MAC, exists: (p) => !p.endsWith("/plutil") })).toBe(false)
+    expect(siriSupported({ ...MAC, prefDomain: () => false })).toBe(false)
+  })
+
+  it("writes no script and switches nothing off macOS", () => {
+    const home = mkdtempSync(join(tmpdir(), "siri-linux-"))
+    expect(siriSayScript({ ...MAC, platform: "linux" }, home)).toBeNull()
+    expect(siriSayScript({ ...MAC, prefDomain: () => false }, home)).toBeNull()
+    expect(existsSync(join(home, ".agentx"))).toBe(false)
+    expect(sayCommand({ provider: "system", elevenlabs: "x", system: AARON, fallback: true }, "hi", null)).toEqual(["say", []])
+    expect(siriSayScript(MAC, home)).toBe(siriSayPath(home))
+    rmSync(home, { recursive: true })
+  })
+
+  it("without the Siri asset, a siri: voice falls back to the usual chain", () => {
+    const a = agents({ devops: { system: "siri:aaron" }, other: {} })
+    const v = resolveAgentVoice("devops", a, {}, STANDARD)
+    expect(v.systemVoice).not.toBeNull()
+    expect(v.systemVoice).not.toContain("gryphon")
+    expect(log.some((m) => m.includes('"siri:aaron" is not installed'))).toBe(true)
   })
 })
 
@@ -128,6 +162,7 @@ case "$1" in
   write) shift 3; if [ "$1" = -array ]; then shift; printf 'ARRAY %s' "$*" > "$S"; else printf '%s' "$1" > "$S"; fi ;;
   delete) rm -f "$S" ;;
 esac`)
+    bin("uname", `echo "\${UNAME:-Darwin}"`)
     bin("plutil", `cat > "$5"; [ -s "$5" ] || { rm -f "$5"; exit 1; }`)
     bin("say", `echo "start $(cat "${stub}/pref" 2>/dev/null)" >> "${stub}/log"; cat > /dev/null; sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
     writeFileSync(join(stub, "pref"), ORIGINAL)
@@ -198,6 +233,13 @@ esac`)
     expect(await run([MARIE]).done).toBe(0)
     expect(sayLog()[0]).toContain("marie")
     expect(pref()).toBe(ORIGINAL)
+  })
+
+  it("off macOS, speaks without touching the pref", async () => {
+    expect(await run([AARON], { UNAME: "Linux" }).done).toBe(0)
+    expect(sayLog()).toEqual([`start ${ORIGINAL}`, "end"])
+    expect(pref()).toBe(ORIGINAL)
+    expect(existsSync(join(home, ".agentx", "voice", "siri-saved.plist"))).toBe(false)
   })
 
   it("refuses an id that could break out of the plist", async () => {

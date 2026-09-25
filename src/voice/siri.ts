@@ -12,6 +12,7 @@
 // share the lock and never race. A run killed mid-line leaves its saved
 // selection behind; the next run restores it before anything else.
 
+import { execFileSync } from "child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
@@ -22,6 +23,44 @@ export const SIRI_PREFIX = "siri:"
 const ID_PREFIX = "com.apple.ttsbundle.gryphon-neural_"
 
 export const isSiriVoice = (id: string | null | undefined): id is string => !!id && id.startsWith(ID_PREFIX)
+
+// --- Can this host switch voices at all? ---
+//
+// Only on macOS, and only when the pieces are really there, not because
+// of a version number: `say`, `defaults` and `plutil`, and the Spoken
+// Content pref domain. Anywhere else (Linux, an older macOS) Siri voices
+// are simply not offered, a configured siri:<name> falls back like any
+// voice that is not installed, and no pref is ever written.
+
+export interface SiriHost {
+  platform?: NodeJS.Platform
+  exists?: (path: string) => boolean
+  /** True when the com.apple.Accessibility pref domain can be read. */
+  prefDomain?: () => boolean
+}
+
+const TOOLS = ["/usr/bin/say", "/usr/bin/defaults", "/usr/bin/plutil"]
+
+const readPrefDomain = () => {
+  try {
+    execFileSync("/usr/bin/defaults", ["read", "com.apple.Accessibility"], { stdio: "ignore", timeout: 5_000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+let supported: boolean | undefined
+
+/** Whether Siri voices can be spoken here; checked once per process. */
+export function siriSupported(host: SiriHost = {}): boolean {
+  const probe = host.platform !== undefined || host.exists !== undefined || host.prefDomain !== undefined
+  if (!probe && supported !== undefined) return supported
+  const { platform = process.platform, exists = existsSync, prefDomain = readPrefDomain } = host
+  const ok = platform === "darwin" && TOOLS.every((t) => exists(t)) && prefDomain()
+  if (!probe) supported = ok
+  return ok
+}
 
 /** Where MobileAsset keeps the downloaded Siri voices. */
 const ASSET_DIRS = [
@@ -58,7 +97,8 @@ export function parseSiriAssets(plists: string[]): SystemVoice[] {
 
 /** Installed Siri voices. Binary plists keep strings as plain ASCII, so the
  *  specifier is found without converting each file. */
-export function listSiriVoices(dirs = ASSET_DIRS): SystemVoice[] {
+export function listSiriVoices(dirs = ASSET_DIRS, host: SiriHost = {}): SystemVoice[] {
+  if (!siriSupported(host)) return []
   const plists: string[] = []
   for (const dir of dirs) {
     let assets: string[]
@@ -79,6 +119,8 @@ export const SIRI_SAY = `#!/bin/sh
 D=com.apple.Accessibility K=SpokenContentDefaultVoiceSelectionsByLanguage
 dir="$HOME/.agentx/voice" lock="$HOME/.agentx/voice/siri.lock" saved="$HOME/.agentx/voice/siri-saved.plist"
 case "$1" in *[!A-Za-z0-9._-]*) echo "bad voice id" >&2; exit 2;; esac
+# Not macOS, or no pref tools: speak as is and never touch a pref.
+if [ "$(uname)" != Darwin ] || ! command -v defaults >/dev/null || ! command -v plutil >/dev/null; then exec say; fi
 mkdir -p "$dir" || exit 1
 say_pid=
 restore() {
