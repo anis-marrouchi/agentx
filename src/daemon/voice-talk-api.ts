@@ -264,7 +264,12 @@ export class VoiceTalkService {
   private agentOf(t: VoiceSession): string | null { return t instanceof LiveTeach ? t.agentId : null }
 
   private view(t: VoiceSession) {
-    if (t instanceof LiveTeach) return { active: t.state !== "ended", kind: "lesson", id: t.id, state: t.state, step: t.step, saying: t.lastSay }
+    if (t instanceof LiveTeach) {
+      return {
+        active: t.state !== "ended", kind: "lesson", id: t.id, state: t.state, step: t.step, saying: t.lastSay,
+        agentId: t.agentId, mode: t.mode, goal: t.goal.slice(0, 160), startedAt: t.startedAt,
+      }
+    }
     return { active: t.state !== "ended", kind: "talk", id: t.id, state: t.state, startedAt: t.startedAt, transcript: t.transcript, gaps: t.gaps }
   }
 }

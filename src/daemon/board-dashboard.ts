@@ -830,6 +830,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Stop whatever is speaking or showing on a node's screen: a lesson, a
+  // talk, narration (the daemon's POST /voice/stop).
+  //   POST /api/voice/stop?node=<url>
+  if (method === "POST" && path === "/api/voice/stop") {
+    const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, "/voice/stop")
+    return
+  }
+
   // Agent roster (proxy to configured daemon) — used by draft-agent picker.
   if (method === "GET" && path === "/api/agents") {
     try {
@@ -1479,6 +1489,16 @@ interface NodeLive {
     traceId?: string
     sessionId?: string
   }>
+  /** A live lesson on this node's screen (GET /talk), while one runs. It
+   *  holds the listener's screen and voice, so it is shown with a stop. */
+  lesson?: {
+    agentId: string | null
+    mode: string
+    goal: string
+    step: number
+    saying: string
+    startedAt: string
+  }
 }
 interface LiveSnapshot {
   ts: string
@@ -1496,12 +1516,13 @@ async function fetchDaemonAgents(
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
     const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes] = await Promise.all([
       fetch(url + "/health", { headers, signal }).catch(() => null),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       fetch(url + "/mesh", { headers, signal }).catch(() => null),
       fetch(url + "/crons", { headers, signal }).catch(() => null),
       fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
+      fetch(url + "/talk", { headers, signal }).catch(() => null),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1543,6 +1564,15 @@ async function fetchDaemonAgents(
     if (cronRunsRes && cronRunsRes.ok) {
       const history: any = await cronRunsRes.json()
       base.cronRuns = Array.isArray(history.runs) ? history.runs : []
+    }
+    if (talkRes && talkRes.ok) {
+      const t: any = await talkRes.json().catch(() => null)
+      if (t?.active && t.kind === "lesson") {
+        base.lesson = {
+          agentId: t.agentId ?? null, mode: String(t.mode || "teach"), goal: String(t.goal || ""),
+          step: Number(t.step) || 0, saying: String(t.saying || ""), startedAt: String(t.startedAt || ""),
+        }
+      }
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
@@ -1865,6 +1895,18 @@ async function proxyTaskAction(
   taskId: string,
   kind: "cancel" | "followup",
 ): Promise<void> {
+  await proxyNodePost(req, res, ctx, nodeUrl, `/api/tasks/${encodeURIComponent(taskId)}/${kind}`)
+}
+
+/** POST to a daemon the dashboard may read, with that node's token. The
+ *  node must be in the allowlist, so this is never an open proxy. */
+async function proxyNodePost(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: { config: DaemonConfig },
+  nodeUrl: string,
+  upstreamPath: string,
+): Promise<void> {
   const target = nodeUrl.replace(/\/+$/, "")
   const allowed = new Set<string>()
   allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
@@ -1889,7 +1931,7 @@ async function proxyTaskAction(
     body = parsed ? JSON.stringify(parsed) : "{}"
   } catch { /* leave default */ }
   try {
-    const r = await fetch(`${target}/api/tasks/${encodeURIComponent(taskId)}/${kind}`, {
+    const r = await fetch(`${target}${upstreamPath}`, {
       method: "POST",
       headers,
       body,
