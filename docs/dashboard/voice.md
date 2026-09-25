@@ -44,17 +44,22 @@ The installer persists the chosen agent, daemon URL, helper path, and CLI comman
 
 ## Agent voices
 
-Out of the box every agent speaks with a free macOS voice, and each agent gets a different one: the best installed voices first (Premium, then Enhanced, then standard), alternating female and male. Nothing is sent to a speech service and no key is needed.
+Out of the box every agent speaks with a free macOS voice, and each agent gets a different one: the best installed voices first (Premium, then Enhanced, then standard), of the agent's `gender` when it has one, else alternating female and male. Nothing is sent to a speech service and no key is needed.
 
 ```bash
 agentx voice list                                  # installed voices, best first, and who uses which
 agentx voice set coder-agent Daniel                # pick a system voice
+agentx voice set secretary-agent system            # follow the OS default voice (a Siri voice, see below)
+agentx voice set cx-agent Thomas --lang fr         # French lines in Thomas, other lines as before
+agentx voice set cx-agent --gender female          # an assigned voice will be female
 agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent speaks through ElevenLabs
 ```
 
 `agentx voice set` edits `agentx.json`; a running daemon reloads it, so the next line uses the new voice.
 
-**Better free voices.** Open System Settings → Accessibility → Spoken Content → System Voice → Manage Voices and download a Premium or Enhanced voice (for example Ava, Zoe or Evan). They are picked up within ten minutes, or on the next `agentx voice list`. Siri voices cannot be used: macOS does not offer them to other apps.
+**Better free voices.** Open System Settings → Accessibility → Spoken Content → System Voice → Manage Voices and download a Premium or Enhanced voice (for example Ava, Zoe or Evan). They are picked up within ten minutes, or on the next `agentx voice list`.
+
+**Siri voices.** macOS does not offer Siri voices (Spoken Content's "Voice 1–5") to other apps: they are not in `agentx voice list` and cannot be picked by name. The one way to use one is to make it the System Voice in Spoken Content and set the agent's voice to `system`. The agent then speaks with whatever the OS default voice is, so every agent set to `system` sounds the same.
 
 **Configuration.** The global `voice` block sets the defaults; each agent's `voice` block overrides them. Every field is optional.
 
@@ -67,7 +72,7 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 "agents": {
   "coder-agent": {
     "voice": {
-      "system": "Daniel",
+      "system": { "en": "Daniel", "fr": "Thomas", "ar": "Majed" },
       "provider": "elevenlabs",
       "elevenlabsVoiceId": "CwhRBWXzGAHq8TQ4Fs17",
       "gender": "male",
@@ -83,12 +88,15 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 |---|---|
 | `voice.provider` | `system` (default) or `elevenlabs`, for every agent without its own |
 | `voice.fallback` | `system` (default): when ElevenLabs cannot speak (no key, quota, network), use the system voice. `none`: stay silent |
-| `voice.system` | One system voice for every agent without its own. Unset: each agent gets its own |
+| `voice.system` | One system voice (or one per language) for every agent without its own. Unset: each agent gets its own |
 | `voice.locale` | Language of assigned voices, e.g. `en`, `fr`, `en-GB` (default `en`) |
 | agent `voice.provider` | Overrides the global provider for this agent |
-| agent `voice.system` | This agent's system voice: a name (`Daniel`, `Ava (Premium)`) or an identifier from `agentx voice list` |
+| agent `voice.system` | This agent's system voice: a name (`Daniel`, `Ava (Premium)`), an identifier from `agentx voice list`, `system` for the OS default voice, or one per language: `{ "en": "Samantha", "fr": "Thomas", "ar": "system" }` |
+| agent `voice.gender` | `female`, `male` or `neutral`. An assigned voice, and the global `voice.system`, are used only if they match |
 
-The system voice is chosen in this order: the agent's own, the global `voice.system`, then one assigned to it. A name that is not installed is skipped, and the daemon log says so once. With `provider: "system"`, no request goes to ElevenLabs, even when a key is set. `meshVoices` entries accept the same `provider` and `system` fields.
+The system voice is chosen in this order: the agent's own, the global `voice.system` if it matches the agent's gender, then one assigned to it. A name that is not installed is skipped, and the daemon log says so once. With `provider: "system"`, no request goes to ElevenLabs, even when a key is set. `meshVoices` entries accept the same `provider`, `system` and `gender` fields.
+
+**Per-language voices.** With a list, each line is spoken by the voice of its language (English, French or Arabic, told apart by script and common words); a line in another language, or one too short to tell, uses the voice for `voice.locale`. An agent's list overrides the global one language by language. A plain name speaks every language. An agent without a voice for `voice.locale` in its list gets one assigned. `agentx voice list` shows each agent's voice with its per-language picks.
 
 An agent introduces itself the first time it speaks in a voice session, or after eight hours of silence, and talks casually after that. Without `intro`, the line is derived from the first sentence of its system prompt.
 

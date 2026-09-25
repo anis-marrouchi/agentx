@@ -84,7 +84,7 @@ import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
-import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend } from "@/voice/agent-voice"
+import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText } from "@/voice/agent-voice"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
@@ -4423,7 +4423,7 @@ export class AgentXDaemon {
             const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
             const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
             this.voiceIntros.spoke(session, switched)
-            this.json(res, 200, { agentId: switched, voice, presence: null, text, full: text, ui: null, switched: true })
+            this.json(res, 200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text, full: text, ui: null, switched: true })
             break
           }
 
@@ -4460,9 +4460,10 @@ export class AgentXDaemon {
             const reply = await this.voiceMesh.ask(agentId, message, voice, introduce)
             const { cleanText, ui } = extractUiDirective(reply.content)
             if (!reply.error) this.voiceIntros.spoke(session, agentId)
+            const spoken = reply.error ? null : clipSpeech(toSpeakable(cleanText))
             this.json(res, reply.error ? 502 : 200, {
-              agentId, voice, presence: null,
-              text: reply.error ? null : clipSpeech(toSpeakable(cleanText)),
+              agentId, voice: voiceForText(voice, spoken), presence: null,
+              text: spoken,
               full: reply.error ? null : cleanText,
               ui: ui ?? null,
               error: reply.error,
@@ -4531,6 +4532,8 @@ export class AgentXDaemon {
 
           this.json(res, response.error ? 500 : 200, {
             ...speaker,
+            // The voice of the reply's language, when the agent has one.
+            voice: voiceForText(voice, speakable),
             presence,
             text: speakable,
             // The answer as written — what a client SHOWS, while `text` is

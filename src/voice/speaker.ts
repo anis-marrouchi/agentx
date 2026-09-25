@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { warnOnce } from "./system-voices"
+import { detectLanguage } from "./language"
 
 /** Which engine speaks a line, and in which voice. */
 export interface VoiceRef {
@@ -21,6 +22,8 @@ export interface VoiceRef {
   elevenlabs: string
   /** macOS voice identifier; null for the OS default voice. */
   system: string | null
+  /** Identifiers per language ("fr", "ar"), for lines in that language. */
+  languages?: Record<string, string | null>
   /** When ElevenLabs cannot speak, fall back to the system voice. */
   fallback: boolean
 }
@@ -81,14 +84,23 @@ export function elevenLabsSynth(key: string | null = elevenLabsKey()): Synth {
   }
 }
 
+/** The system voice for a line: its language's voice, else the default. */
+export function systemVoiceFor(v: VoiceRef, text: string): string | null {
+  const lang = v.languages && detectLanguage(text)
+  return lang && v.languages && lang in v.languages ? v.languages[lang] : v.system
+}
+
 /** The `say` arguments for a line. A line that opens with "-" must not be
  *  read as an option, so the text always comes from stdin. */
-export const sayArgs = (v: VoiceRef): string[] => (v.system ? ["-v", v.system] : [])
+export const sayArgs = (v: VoiceRef, text = ""): string[] => {
+  const id = systemVoiceFor(v, text)
+  return id ? ["-v", id] : []
+}
 
 /** afplay on macOS, mpg123 elsewhere; `say` when there is no audio file. */
 export const systemPlay: Play = (file, u) => {
   if (!file) {
-    const p = spawn("say", sayArgs(u.voice), { stdio: ["pipe", "ignore", "ignore"] })
+    const p = spawn("say", sayArgs(u.voice, u.text), { stdio: ["pipe", "ignore", "ignore"] })
     p.stdin?.on("error", () => {})
     p.stdin?.end(u.text)
     return p

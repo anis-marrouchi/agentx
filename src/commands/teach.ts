@@ -19,7 +19,7 @@ import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 import { loadDaemonConfig } from "@/daemon/config"
-import { pickVoiceId, resolveAgentVoice, voiceRef } from "@/voice/agent-voice"
+import { OS_DEFAULT, pickVoiceId, resolveAgentVoice, voiceRef } from "@/voice/agent-voice"
 import { SpeechOut, type VoiceRef } from "@/voice/speaker"
 import { findVoice, listSystemVoices } from "@/voice/system-voices"
 import { runLiveTeach } from "@/commands/live-teach"
@@ -46,7 +46,7 @@ export const teach = new Command()
   .name("teach")
   .description("walk through something on screen, speaking and pointing as it goes")
   .argument("[lesson]", "lesson id (omit to list)")
-  .option("--voice <voice>", "system voice name or ElevenLabs voice id (overrides the agent's)")
+  .option("--voice <voice>", `system voice name, "${OS_DEFAULT}" for the OS default, or ElevenLabs voice id (overrides the agent's)`)
   .option("--agent <id>", "speak in this agent's voice (default: AGENTX_VOICE_AGENT or node.defaultAgent)")
   .option("--no-speak", "point only, print the narration")
   .option("--no-hud", "skip the on-screen callout")
@@ -397,11 +397,12 @@ async function locate(description: string, priorAttempts: PriorAttempt[] = []): 
 
 /**
  * The same resolution the voice widget gets from /ask: --voice (a system
- * voice name, else an ElevenLabs id), then the agent's voice, then the
+ * voice name, "system" for the OS default, else an ElevenLabs id), then the agent's voice, then the
  * global settings. No readable agentx.json is not an error — the lesson
  * still speaks, in the system voice.
  */
 function lessonVoice(explicit?: string, agentId?: string): VoiceRef {
+  if (explicit?.trim().toLowerCase() === OS_DEFAULT) return { provider: "system", elevenlabs: pickVoiceId(), system: null, fallback: true }
   const system = explicit ? findVoice(explicit, listSystemVoices()) : null
   if (system) return { provider: "system", elevenlabs: pickVoiceId(), system: system.id, fallback: true }
   if (explicit) return { provider: "elevenlabs", elevenlabs: explicit, system: null, fallback: true }

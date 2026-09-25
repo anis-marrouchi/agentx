@@ -107,7 +107,7 @@ describe("voice resolution: override → agent → global → auto-assign", () =
   it("auto-assigns distinct voices on a fresh install, best first", () => {
     const voices = localSystemVoices(agents({ front: {}, sales: {}, billing: {} }), {}, [...STANDARD, PREMIUM])
     expect(voices.get("front")?.name).toBe("Ava")
-    expect(new Set([...voices.values()].map((v) => v.name)).size).toBe(3)
+    expect(new Set([...voices.values()].map((v) => v!.name)).size).toBe(3)
   })
 
   it("an agent's own voice wins, and nobody else is given it", () => {
@@ -150,7 +150,7 @@ describe("voice resolution: override → agent → global → auto-assign", () =
     const config = { agents: agents({ front: {}, sales: {} }), meshVoices: {}, voice: {} }
     const directory = [{ peer: "p", healthy: true, skills: [{ id: "remote-a", name: "Remote A" }, { id: "remote-b", name: "Remote B" }] }]
     const mesh = new MeshVoices(() => config, () => directory, () => STANDARD)
-    const local = [...localSystemVoices(config.agents, {}, STANDARD).values()].map((v) => v.name)
+    const local = [...localSystemVoices(config.agents, {}, STANDARD).values()].map((v) => v!.name)
     const remote = [mesh.voice("remote-a").systemVoiceName, mesh.voice("remote-b").systemVoiceName].map((n) => n!.split(" ")[0])
     expect(remote.filter((n) => local.includes(n))).toEqual([])
     expect(mesh.speaker("remote-a", false)?.voice.provider).toBe("system")
@@ -206,16 +206,16 @@ describe("agentx voice set", () => {
 
   it("stores an installed system voice and keeps the rest of the block", async () => {
     const set = await load()
-    const { raw: out, summary } = set(raw(), "front", "Daniel", undefined, STANDARD)
+    const { raw: out, summary } = set(raw(), "front", "Daniel", {}, STANDARD)
     expect(out.agents.front.voice).toEqual({ style: "warm", system: "Daniel" })
     expect(summary).toContain("Daniel en-GB")
   })
 
   it("takes an ElevenLabs id only with that provider, and rejects unknown names", async () => {
     const set = await load()
-    expect(set(raw(), "front", "abc123", "elevenlabs", STANDARD).raw.agents.front.voice)
+    expect(set(raw(), "front", "abc123", { provider: "elevenlabs" }, STANDARD).raw.agents.front.voice)
       .toEqual({ style: "warm", provider: "elevenlabs", elevenlabsVoiceId: "abc123" })
-    expect(() => set(raw(), "front", "Nobody", undefined, STANDARD)).toThrow(/not an installed system voice/)
-    expect(() => set(raw(), "ghost", "Daniel", undefined, STANDARD)).toThrow(/No agent/)
+    expect(() => set(raw(), "front", "Nobody", {}, STANDARD)).toThrow(/not an installed system voice/)
+    expect(() => set(raw(), "ghost", "Daniel", {}, STANDARD)).toThrow(/No agent/)
   })
 })
