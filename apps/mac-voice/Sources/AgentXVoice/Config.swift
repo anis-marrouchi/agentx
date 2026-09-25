@@ -10,6 +10,10 @@ enum Config {
     static let daemonURL = env("AGENTX_DAEMON_URL") ?? "http://127.0.0.1:18800"
     static let agentID = env("AGENTX_VOICE_AGENT") ?? "secretary-agent"
 
+    /// Who speaks before the daemon has said which voice an agent uses:
+    /// "system" (free macOS voices, the default) or "elevenlabs".
+    static let voiceProvider = env("AGENTX_VOICE_PROVIDER") ?? "system"
+
     /// ElevenLabs default voice, used when the answering agent has none
     /// configured. Override with AGENTX_VOICE_ID.
     static let voiceID = env("AGENTX_VOICE_ID") ?? "21m00Tcm4TlvDq8ikWAM"

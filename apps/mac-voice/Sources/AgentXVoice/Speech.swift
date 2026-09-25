@@ -1,13 +1,38 @@
 import AVFoundation
 import Foundation
 
-/// Speech in and out, ElevenLabs first with a local fallback on each side.
+/// How the daemon says an agent should sound (the `voice` of /ask and of
+/// step events). Missing fields mean the free system voice.
+struct VoiceChoice: Decodable {
+    var provider: String?
+    var elevenlabsVoiceId: String?
+    /// A macOS voice identifier for `say -v`; nil for the OS default.
+    var systemVoice: String?
+    /// When ElevenLabs cannot speak, use the system voice instead.
+    var fallback: Bool?
+
+    init(provider: String? = nil, elevenlabsVoiceId: String? = nil, systemVoice: String? = nil, fallback: Bool? = nil) {
+        self.provider = provider; self.elevenlabsVoiceId = elevenlabsVoiceId
+        self.systemVoice = systemVoice; self.fallback = fallback
+    }
+
+    /// From a step event, which arrives as untyped JSON.
+    init?(json: Any?) {
+        guard let o = json as? [String: Any] else { return nil }
+        self.init(provider: o["provider"] as? String, elevenlabsVoiceId: o["elevenlabsVoiceId"] as? String,
+                  systemVoice: o["systemVoice"] as? String, fallback: o["fallback"] as? Bool)
+    }
+}
+
+/// Speech in and out. Speech out uses the free macOS voices unless the
+/// daemon says an agent speaks through ElevenLabs; speech in uses
+/// ElevenLabs when there is a key, with a local fallback.
 ///
 /// The fallbacks are not decoration. This widget is push-to-talk on a
 /// laptop: it will be used on hotel wifi, on a plane, and on the day the
 /// key expires. A voice assistant that answers "network error" out loud is
 /// worse than one that answers in a robot voice, so STT degrades to
-/// on-device mlx-whisper and TTS degrades to `say`.
+/// on-device mlx-whisper and ElevenLabs TTS degrades to `say`.
 enum Speech {
     // MARK: Speech to text
 
@@ -75,19 +100,25 @@ enum Speech {
     /// Silence whatever this app is saying (an answer or a step line).
     static func stop() { Player.shared.stop() }
 
-    /// `voiceID` is the answering agent's voice; nil means the global default.
-    static func speak(_ text: String, voiceID: String? = nil) async {
+    /// `voice` is the answering agent's, as the daemon resolved it; nil
+    /// (no answer yet) means the provider this app is configured with.
+    static func speak(_ text: String, voice: VoiceChoice? = nil) async {
         guard !text.isEmpty else { return }
-        if let key = Config.elevenLabsKey {
-            do {
-                let mp3 = try await elevenLabsTTS(text: text, voiceID: voiceID ?? Config.voiceID, key: key)
-                try await Player.shared.play(mp3)
-                return
-            } catch {
-                Log.warn("ElevenLabs TTS failed (\(error.localizedDescription)); falling back to say")
+        if (voice?.provider ?? Config.voiceProvider) == "elevenlabs" {
+            if let key = Config.elevenLabsKey {
+                do {
+                    let mp3 = try await elevenLabsTTS(text: text, voiceID: voice?.elevenlabsVoiceId ?? Config.voiceID, key: key)
+                    try await Player.shared.play(mp3)
+                    return
+                } catch {
+                    Log.warn("ElevenLabs TTS failed (\(error.localizedDescription))")
+                }
+            } else {
+                Log.warn("ElevenLabs is the voice provider but there is no key")
             }
+            guard voice?.fallback ?? true else { return }
         }
-        _ = try? run("/usr/bin/say", [text])
+        await Player.shared.say(text, voice: voice?.systemVoice)
     }
 
     private static func elevenLabsTTS(text: String, voiceID: String, key: String) async throws -> Data {
@@ -138,11 +169,38 @@ enum VoiceError: LocalizedError {
 }
 
 /// Holds a strong reference to the player for the life of playback —
-/// an AVAudioPlayer that goes out of scope stops mid-sentence.
+/// an AVAudioPlayer that goes out of scope stops mid-sentence — and to the
+/// `say` process, so `stop()` silences either.
 final class Player: NSObject, AVAudioPlayerDelegate {
     static let shared = Player()
     private var player: AVAudioPlayer?
     private var finished: CheckedContinuation<Void, Never>?
+    private var sayProcess: Process?
+
+    /// Speak with a system voice; returns when done or stopped. The text
+    /// goes in on stdin, so a line that starts with "-" is not an option.
+    func say(_ text: String, voice: String?) async {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        p.arguments = voice.map { ["-v", $0] } ?? []
+        let input = Pipe()
+        p.standardInput = input
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            p.terminationHandler = { _ in c.resume() }
+            do { try p.run() } catch {
+                p.terminationHandler = nil
+                Log.warn("say failed to start (\(error.localizedDescription))")
+                c.resume()
+                return
+            }
+            sayProcess = p
+            input.fileHandleForWriting.write(Data(text.utf8))
+            try? input.fileHandleForWriting.close()
+        }
+        if sayProcess === p { sayProcess = nil }
+    }
 
     func play(_ mp3: Data) async throws {
         let p = try AVAudioPlayer(data: mp3)
@@ -160,6 +218,7 @@ final class Player: NSObject, AVAudioPlayerDelegate {
 
     /// Cut the line off now; the `play` awaiting it returns.
     func stop() {
+        sayProcess?.terminate(); sayProcess = nil
         player?.stop()
         finished?.resume(); finished = nil; player = nil
     }

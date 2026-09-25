@@ -29,7 +29,8 @@ places deciding how an agent sounds is how they drift apart.
 ⌥Space held  →  mic capture (16 kHz mono WAV)
              →  STT   ElevenLabs Scribe, falling back to on-device mlx-whisper
              →  POST /ask  { message, agent }      [loopback: no token needed]
-             →  TTS   ElevenLabs, falling back to `say`
+             →  TTS   the agent's macOS voice via `say`; ElevenLabs when the
+                      daemon says the agent uses it, falling back to `say`
 ```
 
 The native helper supplies computer-use capabilities; the desktop app supplies
@@ -56,8 +57,9 @@ All optional; every one has a working default.
 |---|---|---|
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` | daemon to ask |
 | `AGENTX_VOICE_AGENT` | `secretary-agent` | which agent answers |
-| `ELEVENLABS_API_KEY` | `~/.elevenlabs/key` | STT + TTS; absent → local fallbacks |
-| `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice when the answering agent has no `voice.elevenlabsVoiceId` |
+| `ELEVENLABS_API_KEY` | `~/.elevenlabs/key` | STT, and TTS for `elevenlabs` agents; absent → local fallbacks |
+| `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice for an `elevenlabs` agent with no `voice.elevenlabsVoiceId` |
+| `AGENTX_VOICE_PROVIDER` | `system` | engine for lines spoken before the daemon names one |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper` | offline STT |
 
 The ElevenLabs key is read from the environment first, then key files: an app launched from
@@ -77,8 +79,9 @@ over the mesh; its voice is spoken here. Name or pin a remote voice in
 "meshVoices": { "atlas": { "name": "Atlas", "elevenlabsVoiceId": "…", "style": "calm" } }
 ```
 
-Unset, a remote agent's intro comes from its agent card and it gets an
-ElevenLabs voice no local agent and no other remote uses.
+Unset, a remote agent's intro comes from its agent card and it gets a
+system voice (and an ElevenLabs voice, for the `elevenlabs` provider) that no
+local agent and no other remote uses.
 
 ## Permissions
 
