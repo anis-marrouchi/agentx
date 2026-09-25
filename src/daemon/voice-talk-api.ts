@@ -14,7 +14,8 @@
 //                     task. 409 when nothing takes the words (ask instead).
 //   /talk/hush and /talk/door are the same routes, kept for older clients.
 //   POST /talk/stop
-//   POST /teach/live  {agent, goal, mode?: teach | watch | act}  a live lesson
+//   POST /teach/live  {agent, goal, mode?: teach | watch | act, app?}  a live
+//                     lesson on `app`, or on the app in front as it starts
 //   GET  /narration   runtime switches
 //   POST /narration   {agentId? | taskId?, on: true | false | null}
 //
@@ -97,7 +98,7 @@ export class VoiceTalkService {
         const mode = String(body.mode ?? "teach") as TeachMode
         if (!goal || !["teach", "watch", "act"].includes(mode)) return { status: 400, body: { error: "Required: agent, goal, and mode teach | watch | act" } }
         if (!this.agents()[agentId]) return { status: 404, body: { error: `Unknown agent: ${agentId}` } }
-        return this.startLesson(agentId, goal, mode)
+        return this.startLesson(agentId, goal, mode, String(body.app ?? "").trim() || undefined)
       }
       case "POST /talk/hush":
       case "POST /voice/hush":
@@ -174,10 +175,10 @@ export class VoiceTalkService {
   }
 
   /** Start a live lesson; used by POST /teach/live and by voice turns the
-   *  presence-mode seat routes to teach, watch or act. */
-  startLesson(agentId: string, goal: string, mode: TeachMode): Reply {
+   *  presence-mode seat routes to teach, watch or act (with the turn's app). */
+  startLesson(agentId: string, goal: string, mode: TeachMode, app?: string): Reply {
     if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
-    const lesson = this.presence.lesson(agentId, goal, mode, this.speech, this.model)
+    const lesson = this.presence.lesson(agentId, goal, mode, this.speech, this.model, app)
     lesson.on((e) => {
       if (e.type === "step") this.log(`[teach] ${e.n}. ${e.action}${e.target ? ` "${e.target.slice(0, 60)}"` : ""}: ${e.say}`)
       else if (e.type === "acted" && e.error) this.log(`[teach] action refused: ${e.error}`)

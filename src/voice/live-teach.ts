@@ -18,9 +18,9 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
-import { bubbleText, findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
-export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
+export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
 export type TeachMode = "teach" | "watch" | "act"
 export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wait_for_user" | "done"
@@ -47,7 +47,8 @@ export interface TeachDeps {
 export interface LiveTeachOpts {
   goal: string
   /** The app this lesson is about. Nothing is planned, and above all
-   *  nothing is clicked, while another app has focus. */
+   *  nothing is clicked, while another app has focus. Without one, the
+   *  app in front at the first read. */
   app?: string
   mode: TeachMode
   speaker: { name: string; voice: VoiceRef; agentId?: string }
@@ -164,12 +165,12 @@ export class LiveTeach {
    *  (the terminal that started this, a browser) is not what the lesson
    *  is about, and acting on it would be acting on the wrong app. */
   private async onLessonApp(): Promise<ScreenView | null> {
-    const want = this.opts.app?.toLowerCase()
     let asked = false
     const deadline = Date.now() + (this.opts.waitMs ?? 45_000)
     for (;;) {
       const screen = await this.deps.readScreen()
-      if (!want || screen.app.toLowerCase() === want) return screen
+      this.opts.app ??= screen.app
+      if (screen.app.toLowerCase() === this.opts.app.toLowerCase()) return screen
       if (!asked) {
         asked = true
         const line = `Bring ${this.opts.app} to the front and I'll carry on.`
@@ -245,6 +246,8 @@ export class LiveTeach {
     const rect = target !== null ? screen.rectOf(target) : null
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
+    // The lesson never leaves its app to go and find another one.
+    if (mayAct && plan.action === "key" && plan.text && leavesApp(plan.text)) return this.refuseToLeave(n, plan.text, screen.app)
     // Click and type only when allowed; otherwise show it instead.
     const action: StepAction =
       plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")
@@ -306,6 +309,17 @@ export class LiveTeach {
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
       (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
     return "next"
+  }
+
+  /** A key that would leave the lesson's app: say so and stop, pressing nothing. */
+  private async refuseToLeave(n: number, keys: string, app: string): Promise<"stopped"> {
+    const line = `That would take me out of ${app}, so I'll stop here.`
+    this.emit({ type: "acted", n, error: `refused ${keys}: it leaves ${app}` })
+    await this.speaking
+    this.deps.presence.say(line)
+    await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
+    this.stop(`${keys} would leave ${app}`)
+    return "stopped"
   }
 
   /** Poll until the screen settles into something new, the listener

@@ -17,6 +17,7 @@ export function teachSystemPrompt(persona: string, listener: string): string {
       "Pick TARGET only from the ids listed; if what is needed is not on screen, pick none and say where to look. " +
       "For a keyboard shortcut use ACTION key with TEXT like shift+. or cmd+d (the target can be none). " +
       "In a drawing app, clicking the canvas with a shape or text tool places one there. " +
+      "Stay in the app on screen: never open Spotlight or switch apps; if the goal needs another app, ACTION is done and say so. " +
       "SAY sounds like a friend at the keyboard, not a tutorial: one sentence, two at most, under thirty words, plain words, no ids, no markdown. " +
       "Lead with the purpose, then the action and where it is: 'to add a LUT, right-click that node labeled zero one'. " +
       "Your cursor is already on the target, so say 'that' and say where it sits (top right, bottom center, left sidebar); do not recite long labels. " +
@@ -33,6 +34,19 @@ export function teachSystemPrompt(persona: string, listener: string): string {
     "TEXT: <text to type, or the keys for key>",
     "SAY: <what you say>",
   ].join("\n")
+}
+
+/** Keys that leave the app in front: Spotlight or a launcher on
+ *  cmd/ctrl/option+space, the app switcher, hide, quit, minimise, and
+ *  ctrl+arrow for Mission Control and Spaces. */
+export function leavesApp(keys: string): boolean {
+  const alias: Record<string, string> = { command: "cmd", "⌘": "cmd", control: "ctrl", "⌃": "ctrl", option: "alt", opt: "alt", "⌥": "alt" }
+  const parts = keys.toLowerCase().split("+").map((k) => k.trim()).filter(Boolean)
+  const key = parts.pop() ?? ""
+  const mods = new Set(parts.map((m) => alias[m] ?? m))
+  if (key === "space") return mods.has("cmd") || mods.has("ctrl") || mods.has("alt")
+  if (mods.has("cmd") && ["tab", "h", "q", "m"].includes(key)) return true
+  return mods.has("ctrl") && ["up", "down", "left", "right"].includes(key)
 }
 
 /** Read the planner's reply; anything malformed becomes a spoken wait. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { LiveTeach, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
+import { LiveTeach, leavesApp, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
 import { bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
 import { presenceLook, type Presence } from "../src/voice/presence"
 import { Channel, type LineModel } from "../src/voice/talk-model"
@@ -177,6 +177,21 @@ describe("LiveTeach", () => {
     s.t.on((e) => events.push(e))
     await s.t.run()
     expect(events.find((e) => e.type === "changed")).toEqual({ type: "changed", n: 1, changed: false })
+  })
+
+  it("act mode never presses a key that leaves the app: it says so and stops", async () => {
+    const s = setup("act", ["TARGET: none\nACTION: key\nTEXT: cmd+space\nSAY: Let me find tldraw.", DONE], { actionsAllowed: true })
+    const ends: string[] = []
+    s.t.on((e) => { if (e.type === "end") ends.push(e.reason) })
+    await s.t.run()
+    expect(s.acted).toEqual([])
+    expect(s.said).toEqual(["That would take me out of Notes, so I'll stop here."])
+    expect(ends).toEqual(["cmd+space would leave Notes"])
+  })
+
+  it("leavesApp: Spotlight, launchers, the app switcher, hide, quit, Spaces", () => {
+    for (const k of ["cmd+space", "Command + Space", "alt+space", "ctrl+space", "cmd+tab", "cmd+shift+tab", "cmd+h", "cmd+q", "cmd+m", "ctrl+up", "ctrl+right"]) expect(leavesApp(k), k).toBe(true)
+    for (const k of ["shift+.", "cmd+d", "cmd+f", "space", "escape", "r", "cmd+z"]) expect(leavesApp(k), k).toBe(false)
   })
 
   it("never plans or acts while another app has focus", async () => {
