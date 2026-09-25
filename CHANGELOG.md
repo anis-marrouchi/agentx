@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.39.1](https://github.com/anis-marrouchi/agentx/compare/v0.39.0...v0.39.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **mac-voice:** end a spoken line when its voice stops, not when say exits ([5982529](https://github.com/anis-marrouchi/agentx/commit/5982529ec21cae7b4defc4422184b02acc6da5e8))
+* **mac-voice:** end a spoken line when its voice stops, not when say exits ([82dd3c7](https://github.com/anis-marrouchi/agentx/commit/82dd3c779ebe9f3627779f709044b0e0b88e887f)), closes [#58](https://github.com/anis-marrouchi/agentx/issues/58)
+* **teach:** live lessons target the app in front, not the last voice turn's ([409a73e](https://github.com/anis-marrouchi/agentx/commit/409a73e89c9bf221ff9bdc97f8708aaedc0a5f5f))
+* **teach:** live lessons target the app in front, not the last voice turn's ([a6395db](https://github.com/anis-marrouchi/agentx/commit/a6395db20d3f3d0e5c091d9362534a5c00b4e574)), closes [#55](https://github.com/anis-marrouchi/agentx/issues/55)
+
 ## [0.39.0](https://github.com/anis-marrouchi/agentx/compare/v0.38.0...v0.39.0) (2026-09-25)
 
 
