@@ -117,4 +117,43 @@ describe("POST /teach/live", () => {
     expect(svc.handle("GET", "/talk", {}).body).toEqual({ active: false })
     expect(log).toContain("Coder close")
   })
+
+  // #55: a voice turn on WhatsApp, then a lesson with tldraw in front.
+  it("a lesson without app is about the app in front now, not the last voice turn's", async () => {
+    process.env.AGENTX_DECISION_SEAT_PRESENCE_MODE = "active"
+    answers.current = pick("talk", 0.9)
+    const prompts: string[] = []
+    const said: string[] = []
+    let front = "WhatsApp"
+    const planner: LineModel = {
+      reply(m, signal) { prompts.push(m); const c = new Channel<string>(); setTimeout(() => { c.push("TARGET: none\nACTION: done\nSAY: Done."); c.end() }, 5); return c.read(signal) },
+      close() {},
+    }
+    const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
+      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, stop: () => {} } as any,
+      model: () => planner,
+      presence: {
+        overlay: overlayLog([]), frontmostApp: async () => front,
+        screen: { readScreen: async () => ({ app: front, window: null, candidates: [], rectOf: () => null }), act: async () => ({ error: null }) },
+      },
+    })
+    expect((await svc.presence.decide("helper-agent", "what's new?")).app).toBe("WhatsApp")
+    front = "tldraw"
+    expect(svc.handle("POST", "/teach/live", { agent: "helper-agent", goal: "draw a box", mode: "act" }).status).toBe(201)
+    await vi.waitFor(() => expect(svc.live).toBeNull())
+    expect(said).toEqual(["Done."])
+    expect(prompts[0]).toContain("App: tldraw")
+
+    // An explicit app wins over whatever is in front.
+    prompts.length = 0
+    said.length = 0
+    expect(svc.handle("POST", "/teach/live", { agent: "helper-agent", goal: "start a note", mode: "act", app: "Notes" }).status).toBe(201)
+    await vi.waitFor(() => expect(said).toEqual(["Bring Notes to the front and I'll carry on."]))
+    expect(prompts).toEqual([])
+    front = "Notes"
+    await vi.waitFor(() => expect(svc.live).toBeNull())
+    expect(prompts[0]).toContain("App: Notes")
+    delete process.env.AGENTX_DECISION_SEAT_PRESENCE_MODE
+    answers.current = null
+  })
 })
