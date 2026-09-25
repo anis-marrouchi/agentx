@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.37.0](https://github.com/anis-marrouchi/agentx/compare/v0.36.0...v0.37.0) (2026-09-25)
+
+
+### Features
+
+* **mac-voice:** speak in the voice the daemon resolved ([de11ac9](https://github.com/anis-marrouchi/agentx/commit/de11ac98e735d4ea3897e7ed21fc4c27fa0b850c)), closes [#40](https://github.com/anis-marrouchi/agentx/issues/40)
+* **voice:** free macOS system voices by default, one per agent ([458735d](https://github.com/anis-marrouchi/agentx/commit/458735dbc29fd43bd9d4c4425769b67266f7e0ca)), closes [#40](https://github.com/anis-marrouchi/agentx/issues/40)
+* **voice:** free macOS system voices by default, per-agent pick, ElevenLabs opt-in ([8b5868c](https://github.com/anis-marrouchi/agentx/commit/8b5868ccd4e6eec3156e01f77cf32c6fc6b506ef))
+
 ## [0.36.0](https://github.com/anis-marrouchi/agentx/compare/v0.35.0...v0.36.0) (2026-09-25)
 
 
