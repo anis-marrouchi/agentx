@@ -45,7 +45,7 @@ export interface LiveTeachOpts {
    *  nothing is clicked, while another app has focus. */
   app?: string
   mode: TeachMode
-  speaker: { name: string; voiceId: string }
+  speaker: { name: string; voiceId: string; agentId?: string }
   actionsAllowed: boolean
   listener?: string
   maxSteps?: number
@@ -67,6 +67,8 @@ const STOP = /^\s*(stop|stop talking|that'?s enough|end( the lesson)?|enough)[\s
 
 export class LiveTeach {
   readonly id = `teach-${Date.now().toString(36)}`
+  /** Whose lesson this is. */
+  get agentId(): string | null { return this.opts.speaker.agentId ?? null }
   state: "running" | "held" | "ended" = "running"
   step = 0
   lastSay = ""

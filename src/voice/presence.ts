@@ -7,8 +7,10 @@
 // actions allowed, touches it, and that goes through the helper's own
 // point/click/type verbs, not through this overlay.
 
-import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
-import { existsSync } from "fs"
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "child_process"
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "fs"
+import { homedir } from "os"
+import { join } from "path"
 import type { DaemonConfig } from "@/daemon/config"
 
 type AgentConfig = DaemonConfig["agents"][string]
@@ -46,19 +48,105 @@ export interface Presence {
   clear(): void
   park(): void
   close(): void
+  /** Keep-alive: the overlay fades out after IDLE_SECONDS without a command. */
+  ping?(): void
+  /** False once the overlay's process has gone. */
+  readonly alive?: boolean
 }
 
-/** The mac-helper overlay process for one agent. */
+/** The helper fades out and exits after this long with no command, so an
+ *  overlay whose owner forgot it cannot stay on screen. Owners that hold
+ *  one on purpose ping it well inside this. */
+export const IDLE_SECONDS = 60
+
+// --- One overlay per agent, machine-wide ---
+//
+// The daemon, `agentx teach --live` and a daemon from before a restart can
+// all draw the same agent. Each overlay's pid is recorded in
+// ~/.agentx/presence/<agentId>.pid; whoever draws next ends the previous
+// one first, so an agent is never on screen twice.
+
+export const presenceDir = () => process.env.AGENTX_PRESENCE_DIR || join(homedir(), ".agentx", "presence")
+const pidFile = (dir: string, agentId: string) => join(dir, `${agentId.replace(/[^\w.-]/g, "_")}.pid`)
+
+/** Swapped in tests: the process table and signals. */
+export interface ProcessOps {
+  command(pid: number): string | null
+  kill(pid: number): void
+  /** Presence helpers whose parent has died (re-parented to launchd). */
+  orphans(): number[]
+}
+
+const isPresenceHelper = (cmd: string | null) => !!cmd && /agentx-mac-helper\S*\s+presence\b/.test(cmd)
+
+export const systemProcesses: ProcessOps = {
+  command(pid) {
+    try { return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim() || null } catch { return null }
+  },
+  kill(pid) {
+    try { process.kill(pid, "SIGTERM") } catch { /* already gone */ }
+  },
+  orphans() {
+    try {
+      return execFileSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" }).split("\n")
+        .map((l) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(l))
+        .filter((m): m is RegExpExecArray => !!m && m[2] === "1" && isPresenceHelper(m[3]))
+        .map((m) => Number(m[1]))
+    } catch { return [] }
+  },
+}
+
+/** End the overlay recorded for this agent, if it is still a presence helper. */
+export function endRecorded(agentId: string, dir = presenceDir(), ps: ProcessOps = systemProcesses): void {
+  const file = pidFile(dir, agentId)
+  let pid: number
+  try { pid = Number(readFileSync(file, "utf8").trim()) } catch { return }
+  if (pid > 0 && pid !== process.pid && isPresenceHelper(ps.command(pid))) ps.kill(pid)
+  try { unlinkSync(file) } catch { /* raced */ }
+}
+
+/**
+ * On daemon start: end every recorded overlay (their owner is gone or
+ * about to redraw) and every presence helper whose parent has died.
+ * Returns how many were ended.
+ */
+export function reapPresence(dir = presenceDir(), ps: ProcessOps = systemProcesses): number {
+  let n = 0
+  let files: string[] = []
+  try { files = readdirSync(dir).filter((f) => f.endsWith(".pid")) } catch { /* none yet */ }
+  for (const f of files) {
+    const pid = Number(readFileSync(join(dir, f), "utf8").trim())
+    if (pid > 0 && isPresenceHelper(ps.command(pid))) { ps.kill(pid); n++ }
+    try { unlinkSync(join(dir, f)) } catch { /* raced */ }
+  }
+  for (const pid of ps.orphans()) { ps.kill(pid); n++ }
+  return n
+}
+
+/** The mac-helper overlay process for one agent, the only one on this machine. */
 export class PresenceOverlay implements Presence {
   private child: ChildProcessWithoutNullStreams | null
 
-  constructor(look: PresenceLook, helper: string) {
-    this.child = existsSync(helper)
-      ? (spawn(helper, ["presence", "--name", look.name, "--initial", look.initial, "--color", look.color]) as ChildProcessWithoutNullStreams)
-      : null
-    this.child?.on("error", () => { this.child = null })
-    this.child?.on("exit", () => { this.child = null })
-    this.child?.stdin.on("error", () => {})
+  constructor(look: PresenceLook, helper: string, agentId: string, dir = presenceDir()) {
+    if (!existsSync(helper)) { this.child = null; return }
+    endRecorded(agentId, dir)
+    const child = spawn(helper, [
+      "presence", "--name", look.name, "--initial", look.initial, "--color", look.color,
+      // The helper also exits on its own when this process dies or goes quiet.
+      "--parent", String(process.pid), "--idle", String(IDLE_SECONDS),
+    ]) as ChildProcessWithoutNullStreams
+    this.child = child
+    const file = pidFile(dir, agentId)
+    if (child.pid) {
+      try { mkdirSync(dir, { recursive: true }); writeFileSync(file, String(child.pid)) } catch { /* registry is best effort */ }
+    }
+    const gone = () => {
+      if (this.child === child) this.child = null
+      try { if (readFileSync(file, "utf8").trim() === String(child.pid)) unlinkSync(file) } catch { /* not ours */ }
+    }
+    child.on("error", gone)
+    child.on("exit", gone)
+    child.stdin.on("error", () => {})
   }
 
   get alive(): boolean { return this.child !== null }
@@ -69,6 +157,8 @@ export class PresenceOverlay implements Presence {
   say(text: string): void { this.send({ cmd: "say", text }) }
   clear(): void { this.send({ cmd: "clear" }) }
   park(): void { this.send({ cmd: "park" }) }
+  ping(): void { this.send({ cmd: "ping" }) }
+  /** EOF: the helper fades out and exits. */
   close(): void { this.child?.stdin.end(); this.child = null }
 
   private send(o: Record<string, unknown>): void {

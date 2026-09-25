@@ -467,6 +467,10 @@ export class AgentXDaemon {
     this.log(`  Bind: ${this.config.node.bind}`)
     this.log("")
 
+    // Agent cursors left on screen by an earlier daemon go before any new
+    // one is drawn.
+    if (process.platform === "darwin") this.voiceTalk.presence.reapOrphans()
+
     // Deliver anything Focus held, the moment Focus ends. Without a
     // watcher the hold queue is a hole rather than a delay — nothing else
     // ever takes a message back out of it.
@@ -2151,7 +2155,8 @@ export class AgentXDaemon {
         if (!this.checkMeshAuth(req, res, path)) return
       }
       // Talk mode and narration make this host speak: same gate as /ask.
-      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live") {
+      if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live" ||
+          path === "/voice/hush" || path === "/voice/door") {
         if (!this.checkMeshAuth(req, res, path)) return
         const body = req.method === "POST" ? await readBody(req) : {}
         const reply = this.voiceTalk.handle(req.method || "GET", path, body)
@@ -4482,6 +4487,9 @@ export class AgentXDaemon {
           if (!response.error) this.voiceIntros.spoke(session, agentId)
           if (!response.error && presence.seat === "active" && presence.mode === "talk") {
             this.voiceTalk.presence.showTalk(agentId, speakable, presence.persist)
+          } else {
+            // Quiet, a failed turn, or no seat: nothing of this agent stays on screen.
+            this.voiceTalk.presence.hide(agentId)
           }
 
           this.json(res, response.error ? 500 : 200, {

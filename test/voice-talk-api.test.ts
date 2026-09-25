@@ -51,7 +51,7 @@ describe("VoiceTalkService", () => {
     for (let i = 0; i < 100 && !(svc.handle("GET", "/talk", {}).body as any).transcript.length; i++) await new Promise((r) => setTimeout(r, 2))
     // Speaking a line counts as the introduction.
     expect(intros.needsIntro("talk", "secretary-agent")).toBe(false)
-    expect(svc.handle("POST", "/talk/hush", {}).body).toEqual({ active: true })
+    expect(svc.handle("POST", "/talk/hush", {}).body).toEqual({ active: true, kind: "talk", agentId: null })
     expect(svc.handle("POST", "/talk/door", { text: "stop" }).status).toBe(200)
     expect((svc.handle("GET", "/talk", {}).body as any).active).toBe(false)
   })

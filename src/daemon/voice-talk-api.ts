@@ -5,8 +5,13 @@
 //
 //   POST /talk        {agents: [a, b], topic, context?, maxTurns?}  start one
 //   GET  /talk        the active talk (or {active: false})
-//   POST /talk/hush   the listener is about to speak: everyone stops
-//   POST /talk/door   {text}  the listener spoke; "stop" ends the talk
+//   POST /voice/hush  the door (Option-Space): whatever is speaking stops —
+//                     a talk, a lesson, narration, a spoken-answer bubble.
+//                     Returns what was speaking: {active, kind, agentId}.
+//   POST /voice/door  {text}  the listener spoke: a talk or lesson answers
+//                     it first; "stop" ends it, or silences the narrated
+//                     task. 409 when nothing takes the words (ask instead).
+//   /talk/hush and /talk/door are the same routes, kept for older clients.
 //   POST /talk/stop
 //   POST /teach/live  {agent, goal, mode?: teach | watch | act}  a live lesson
 //   GET  /narration   runtime switches
@@ -15,7 +20,7 @@
 // Same gate as /ask: each of these makes the host speak.
 
 import type { DaemonConfig } from "@/daemon/config"
-import { Talk, type TalkSpeaker } from "@/voice/talk"
+import { Talk, isStop, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
@@ -43,6 +48,8 @@ export class VoiceTalkService {
   readonly narrator: Narrator
   readonly presence: PresenceHost
   private session: VoiceSession | null = null
+  /** The narrated task the last hush silenced, until the listener speaks. */
+  private hushed: { taskId: string; agentId: string } | null = null
   private model: (system: string) => LineModel
 
   constructor(
@@ -82,14 +89,13 @@ export class VoiceTalkService {
         return this.startLesson(agentId, goal, mode)
       }
       case "POST /talk/hush":
-        talk?.hush()
-        return { status: 200, body: { active: !!talk } }
-      case "POST /talk/door": {
+      case "POST /voice/hush":
+        return this.hush()
+      case "POST /talk/door":
+      case "POST /voice/door": {
         const text = String(body.text ?? "").trim()
         if (!text) return { status: 400, body: { error: "Required: text" } }
-        if (!talk) return { status: 409, body: { active: false, error: "No talk or lesson is running" } }
-        talk.door(text)
-        return { status: 200, body: { active: talk.state !== "ended" } }
+        return this.door(text)
       }
       case "POST /talk/stop":
         talk?.stop("stopped")
@@ -108,6 +114,41 @@ export class VoiceTalkService {
       default:
         return { status: 404, body: { error: "Not found" } }
     }
+  }
+
+  /** The door opens: everything this daemon is saying stops at once. */
+  hush(): Reply {
+    const live = this.live
+    live?.hush()
+    this.speech.stop()
+    this.presence.quiet()
+    const narrated = this.narrator.hush()
+    this.hushed = live ? null : narrated
+    const kind = live ? this.kind(live) : narrated ? "narration" : null
+    const agentId = live ? this.agentOf(live) : narrated?.agentId ?? null
+    this.log(`[door] hush → ${kind ? `${kind}${agentId ? ` (${agentId})` : ""}` : "nothing was speaking"}`)
+    return { status: 200, body: { active: !!live, kind, agentId } }
+  }
+
+  /** What the listener said through the door. */
+  door(text: string): Reply {
+    const live = this.live
+    const narrated = this.hushed
+    this.hushed = null
+    this.narrator.release()
+    const quote = `"${text.slice(0, 80)}"`
+    if (live) {
+      live.door(text)
+      this.log(`[door] ${quote} → ${this.kind(live)}${live.state === "ended" ? " (ended)" : ""}`)
+      return { status: 200, body: { active: live.state !== "ended", kind: this.kind(live), handled: true } }
+    }
+    if (narrated && isStop(text)) {
+      this.narrator.set({ taskId: narrated.taskId }, false)
+      this.log(`[door] ${quote} → narration of ${narrated.taskId} off`)
+      return { status: 200, body: { active: false, kind: "narration", handled: true } }
+    }
+    this.log(`[door] ${quote} → nothing to take it; the client asks the agent`)
+    return { status: 409, body: { active: false, handled: false, error: "No talk or lesson is running" } }
   }
 
   close(): void {
@@ -166,6 +207,9 @@ export class VoiceTalkService {
     this.log(`[talk] ${speakers[0].name} and ${speakers[1].name} on "${topic.slice(0, 80)}"`)
     return { status: 201, body: this.view(talk) }
   }
+
+  private kind(t: VoiceSession): "talk" | "lesson" { return t instanceof LiveTeach ? "lesson" : "talk" }
+  private agentOf(t: VoiceSession): string | null { return t instanceof LiveTeach ? t.agentId : null }
 
   private view(t: VoiceSession) {
     if (t instanceof LiveTeach) return { active: t.state !== "ended", kind: "lesson", id: t.id, state: t.state, step: t.step, saying: t.lastSay }

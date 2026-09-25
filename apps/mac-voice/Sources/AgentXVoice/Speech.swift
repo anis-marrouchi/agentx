@@ -72,6 +72,9 @@ enum Speech {
 
     // MARK: Text to speech
 
+    /// Silence whatever this app is saying (an answer or a step line).
+    static func stop() { Player.shared.stop() }
+
     /// `voiceID` is the answering agent's voice; nil means the global default.
     static func speak(_ text: String, voiceID: String? = nil) async {
         guard !text.isEmpty else { return }
@@ -153,6 +156,12 @@ final class Player: NSObject, AVAudioPlayerDelegate {
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         finished?.resume(); finished = nil; self.player = nil
+    }
+
+    /// Cut the line off now; the `play` awaiting it returns.
+    func stop() {
+        player?.stop()
+        finished?.resume(); finished = nil; player = nil
     }
 }
 
