@@ -1,0 +1,10 @@
+{
+  "id": "github-owner-sweep",
+  "title": "GitHub owner sweep (#53)",
+  "description": "List new next steps for open issues and PRs (owner + step per line). Read-only on GitHub; keeps its dedupe state in .agentx/owner-sweep/. Always exits 0; the first line is RESULT steps=<n> or RESULT error=<why>.",
+  "kind": "shell",
+  "timeoutMs": 120000,
+  "inputs": [],
+  "command": "node scripts/owner-sweep.mjs --repo anis-marrouchi/agentx --state .agentx/owner-sweep/agentx.json --agent coder-agent --coordinator secretary-agent",
+  "cwd": "<AGENTX_CHECKOUT>"
+}
