@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.40.0](https://github.com/anis-marrouchi/agentx/compare/v0.39.1...v0.40.0) (2026-09-25)
+
+
+### Features
+
+* **mac-voice:** stop speaking with ⌘⌥. or the menu ([0d2058f](https://github.com/anis-marrouchi/agentx/commit/0d2058fcdc4fe34bf032318278c2da5e0214f929))
+
+
+### Bug Fixes
+
+* **voice:** a stuck say can no longer hold the speaker; POST /voice/stop ([8cf8503](https://github.com/anis-marrouchi/agentx/commit/8cf8503d7cc273bfd488ae4c83c52742e4becefa))
+* **voice:** stuck-speaker watchdog, stale-line drop, and stop speaking (⌘⌥., /voice/stop) ([5cfb802](https://github.com/anis-marrouchi/agentx/commit/5cfb802555532e77cb81365a52e52fcae4561896))
+
 ## [0.39.1](https://github.com/anis-marrouchi/agentx/compare/v0.39.0...v0.39.1) (2026-09-25)
 
 
