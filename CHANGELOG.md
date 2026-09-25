@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.41.0](https://github.com/anis-marrouchi/agentx/compare/v0.40.0...v0.41.0) (2026-09-25)
+
+
+### Features
+
+* **live:** show a live lesson on its agent's card, with a stop ([94ca480](https://github.com/anis-marrouchi/agentx/commit/94ca480a8bd5652bebbe58cbee50602598616c88)), closes [#64](https://github.com/anis-marrouchi/agentx/issues/64)
+* **workflows:** owner sweep gives every issue and PR an owner and next step ([f6b0e20](https://github.com/anis-marrouchi/agentx/commit/f6b0e208c702e07eb00c338bcf1f6c53a4e35a5b))
+* **workflows:** owner sweep, an owner and next step for every issue and PR ([6c3fa14](https://github.com/anis-marrouchi/agentx/commit/6c3fa142a1fcd9a6dee567efd6484109f25d1141))
+
+
+### Bug Fixes
+
+* **voice:** lessons only when asked, a hush gives the screen back, and Live shows them ([4dd79a5](https://github.com/anis-marrouchi/agentx/commit/4dd79a59a8fa6af1b43c492db2b55e76eacd5e2a))
+* **voice:** lessons only when asked, and a hush gives the screen back ([7c9debb](https://github.com/anis-marrouchi/agentx/commit/7c9debbaec5d6a480f4ba1744800baefe50814f1)), closes [#64](https://github.com/anis-marrouchi/agentx/issues/64)
+
 ## [0.40.0](https://github.com/anis-marrouchi/agentx/compare/v0.39.1...v0.40.0) (2026-09-25)
 
 
