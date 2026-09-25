@@ -81,7 +81,7 @@ export function resolveAgentVoice(
 }
 
 export const label = (v: SystemVoice) =>
-  `${v.name}${v.quality === "standard" ? "" : ` (${v.quality[0].toUpperCase()}${v.quality.slice(1)})`} ${v.locale}`
+  `${v.name}${v.siri ? " (Siri)" : v.quality === "standard" ? "" : ` (${v.quality[0].toUpperCase()}${v.quality.slice(1)})`} ${v.locale}`
 
 /** A configured name, checked: the installed voice, or null and a warning. */
 export function checkedVoice(owner: string, name: string | undefined, installed: SystemVoice[], locale: string): SystemVoice | null {
@@ -130,7 +130,8 @@ export function castSystemVoices(wishes: VoiceWish[], settings: VoiceSettings, i
     else open.push({ id: w.id, gender: w.gender ?? null })
   }
   const names = new Set([...taken, ...[...out.values()].flatMap((v) => (v ? [v.name] : []))])
-  for (const [id, v] of castVoices(open, candidates(installed, locale), names)) out.set(id, v)
+  // Siri voices switch a pref the user owns, so only an agent that names one gets one.
+  for (const [id, v] of castVoices(open, candidates(installed.filter((v) => !v.siri), locale), names)) out.set(id, v)
   return out
 }
 

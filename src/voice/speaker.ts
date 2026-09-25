@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { warnOnce } from "./system-voices"
+import { ensureSiriSay, isSiriVoice } from "./siri"
 import { detectLanguage } from "./language"
 
 /** Which engine speaks a line, and in which voice. */
@@ -91,16 +92,40 @@ export function systemVoiceFor(v: VoiceRef, text: string): string | null {
 }
 
 /** The `say` arguments for a line. A line that opens with "-" must not be
- *  read as an option, so the text always comes from stdin. */
+ *  read as an option, so the text always comes from stdin. A Siri voice
+ *  cannot be named to `say`; it speaks as the OS default. */
 export const sayArgs = (v: VoiceRef, text = ""): string[] => {
   const id = systemVoiceFor(v, text)
-  return id ? ["-v", id] : []
+  return id && !isSiriVoice(id) ? ["-v", id] : []
+}
+
+/** The command that speaks a line. On macOS a line in the OS default
+ *  voice, Siri or not, goes through the shared script, which switches the
+ *  default when asked and serialises every speaker that depends on it. */
+export function sayCommand(v: VoiceRef, text: string, siriSay: string | null): [string, string[]] {
+  const args = sayArgs(v, text)
+  if (args.length || !siriSay) return ["say", args]
+  const id = systemVoiceFor(v, text)
+  return ["/bin/sh", [siriSay, ...(isSiriVoice(id) ? [id] : [])]]
+}
+
+/** The shared script's path on macOS, written if needed; null elsewhere,
+ *  or when it cannot be written (plain `say` still speaks). */
+export function siriSayScript(): string | null {
+  if (process.platform !== "darwin") return null
+  try {
+    return ensureSiriSay()
+  } catch (e: any) {
+    warnOnce("siri-say", `[voice] could not write the Siri voice script (${String(e?.message ?? e).split("\n")[0]}); Siri voices will not switch`)
+    return null
+  }
 }
 
 /** afplay on macOS, mpg123 elsewhere; `say` when there is no audio file. */
 export const systemPlay: Play = (file, u) => {
   if (!file) {
-    const p = spawn("say", sayArgs(u.voice, u.text), { stdio: ["pipe", "ignore", "ignore"] })
+    const [cmd, args] = sayCommand(u.voice, u.text, siriSayScript())
+    const p = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] })
     p.stdin?.on("error", () => {})
     p.stdin?.end(u.text)
     return p

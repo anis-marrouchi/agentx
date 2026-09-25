@@ -114,9 +114,9 @@ voice
       const shown = opts.all ? candidates(installed, "") : candidates(installed, locale)
       console.log(chalk.bold(`\n  System voices${opts.all ? "" : ` (${locale})`}, best first\n`))
       for (const v of shown) {
-        const tier = v.quality === "standard" ? chalk.dim("standard") : chalk.green(v.quality)
+        const tier = v.siri ? chalk.magenta("siri") : v.quality === "standard" ? chalk.dim("standard") : chalk.green(v.quality)
         const who = users.get(v.id)?.join(", ")
-        console.log(`  ${v.name.padEnd(12)} ${v.locale.padEnd(6)} ${tier.padEnd(18)} ${chalk.dim((v.gender ?? "").padEnd(7))} ${who ? chalk.cyan(who) : ""}`)
+        console.log(`  ${(v.siri ? `siri:${v.name.toLowerCase()}` : v.name).padEnd(12)} ${v.locale.padEnd(6)} ${tier.padEnd(18)} ${chalk.dim((v.gender ?? "").padEnd(7))} ${who ? chalk.cyan(who) : ""}`)
       }
       if (!installed.some((v) => v.quality !== "standard")) {
         console.log(chalk.dim("\n  More natural voices are free: System Settings → Accessibility → Spoken Content →"))
@@ -142,7 +142,7 @@ voice
 
 voice
   .command("set <agent> [voice]")
-  .description(`pick an agent's voice: a system voice name, "${OS_DEFAULT}" for the OS default (Siri voices), or an ElevenLabs id with --provider elevenlabs`)
+  .description(`pick an agent's voice: a system voice name, a Siri voice as siri:<name>, "${OS_DEFAULT}" for the OS default, or an ElevenLabs id with --provider elevenlabs`)
   .option("--provider <provider>", "system or elevenlabs")
   .option("--lang <lang>", "use this voice for lines in one language only: en, fr, ar")
   .option("--gender <gender>", "female, male or neutral; an assigned voice matches it")
