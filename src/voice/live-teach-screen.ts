@@ -50,7 +50,8 @@ export const helperAct: TeachDeps["act"] = async (step) => {
   const where = ["--x", String(rect.x), "--y", String(rect.y), "--w", String(rect.width), "--h", String(rect.height)]
   const pointed = await helper(["point", ...where, "--label", label.slice(0, 40), "--hold", "0.3"])
   if (pointed) return { error: pointed }
-  const clicked = await helper(["click", ...(expect ? ["--expect", expect] : [])])
+  // The lesson waits for the app to settle itself, so the helper need not.
+  const clicked = await helper(["click", "--settle", "0.1", ...(expect ? ["--expect", expect] : [])])
   if (clicked || action === "click") return { error: clicked }
   return { error: await helper(["type", "--text", text ?? ""]) }
 }

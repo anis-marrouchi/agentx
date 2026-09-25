@@ -127,6 +127,21 @@ describe("LiveTeach", () => {
     expect(denied.log).toContain("move 10 highlight")
   })
 
+  it("act: clicks while the line is said, and the next line waits for it to end", async () => {
+    const s = setup("act", [STEP1, DONE], { actionsAllowed: true, speakMs: 80 })
+    const order: string[] = []
+    const deps = (s.t as any).deps as TeachDeps
+    const speak = deps.speech.say.bind(deps.speech)
+    deps.speech.say = async (u: any) => { order.push(`start ${u.text}`); const r = await speak(u); order.push(`end ${u.text}`); return r }
+    const act = deps.act
+    deps.act = async (a) => { order.push("click"); return act(a) }
+    await s.t.run()
+    expect(order).toEqual([
+      "start Click New to start a note.", "click", "end Click New to start a note.",
+      "start There's your note.", "end There's your note.",
+    ])
+  })
+
   it("key: presses a shortcut in act mode, and only there", async () => {
     const ROTATE = "TARGET: none\nACTION: key\nTEXT: shift+.\nSAY: Shift and period turns it a little."
     const allowed = setup("act", [ROTATE, DONE], { actionsAllowed: true })
