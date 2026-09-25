@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "os"
 import { join } from "path"
 import { PERSIST_MS, PresenceHost } from "../src/daemon/voice-presence"
-import { PresenceOverlay, endRecorded, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
+import { PresenceOverlay, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
 import { SpeechOut } from "../src/voice/speaker"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 
@@ -123,6 +123,14 @@ describe("machine-wide registry", () => {
     expect(killed).toEqual([111, 333])
     expect(reapPresence(join(dir, "missing"), ps({}).ops)).toBe(0)
   })
+
+  it("keeps where the person dragged a tag across restarts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-"))
+    writeFileSync(posFile(dir, "secretary-agent"), '{"x":40,"y":900}')
+    reapPresence(dir, ps({}).ops)
+    endRecorded("secretary-agent", dir, ps({}).ops)
+    expect(readFileSync(posFile(dir, "secretary-agent"), "utf8")).toBe('{"x":40,"y":900}')
+  })
 })
 
 describe("PresenceOverlay process", () => {
@@ -152,5 +160,17 @@ describe("PresenceOverlay process", () => {
     await until(() => !running(secondPid) && !existsSync(join(dir, "secretary-agent.pid")))
     expect(running(secondPid)).toBe(false)
     expect(existsSync(join(dir, "secretary-agent.pid"))).toBe(false)
+  })
+
+  it.skipIf(process.platform === "win32")("tells the helper where this agent's tag position lives", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-"))
+    const helper = join(dir, "agentx-mac-helper")
+    writeFileSync(helper, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(dir, "args")}"\ncat >/dev/null\n`)
+    chmodSync(helper, 0o755)
+    const overlay = new PresenceOverlay(presenceLook("secretary-agent", agents["secretary-agent"]), helper, "team/secretary", dir)
+    for (let i = 0; i < 100 && !existsSync(join(dir, "args")); i++) await new Promise((r) => setTimeout(r, 50))
+    const args = readFileSync(join(dir, "args"), "utf8").split("\n")
+    expect(args[args.indexOf("--pos-file") + 1]).toBe(join(dir, "team_secretary.pos"))
+    overlay.close()
   })
 })

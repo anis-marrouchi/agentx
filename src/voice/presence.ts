@@ -67,7 +67,11 @@ export const IDLE_SECONDS = 60
 // one first, so an agent is never on screen twice.
 
 export const presenceDir = () => process.env.AGENTX_PRESENCE_DIR || join(homedir(), ".agentx", "presence")
-const pidFile = (dir: string, agentId: string) => join(dir, `${agentId.replace(/[^\w.-]/g, "_")}.pid`)
+const safeId = (agentId: string) => agentId.replace(/[^\w.-]/g, "_")
+const pidFile = (dir: string, agentId: string) => join(dir, `${safeId(agentId)}.pid`)
+/** Where the person dragged this agent's name tag. The helper reads and
+ *  writes it; it outlives every overlay, so the tag stays where it was put. */
+export const posFile = (dir: string, agentId: string) => join(dir, `${safeId(agentId)}.pos`)
 
 /** Swapped in tests: the process table and signals. */
 export interface ProcessOps {
@@ -134,6 +138,7 @@ export class PresenceOverlay implements Presence {
       "presence", "--name", look.name, "--initial", look.initial, "--color", look.color,
       // The helper also exits on its own when this process dies or goes quiet.
       "--parent", String(process.pid), "--idle", String(IDLE_SECONDS),
+      "--pos-file", posFile(dir, agentId),
     ]) as ChildProcessWithoutNullStreams
     this.child = child
     const file = pidFile(dir, agentId)
