@@ -11,6 +11,7 @@ import type { TalkSpeaker } from "./talk"
 import type { VoiceRef } from "./speaker"
 import { castVoices, candidates, findVoice, listSystemVoices, warnOnce, type CastEntry, type SystemVoice } from "./system-voices"
 import { detectLanguage } from "./language"
+import { isSiriId } from "./siri-voices"
 
 type AgentConfig = DaemonConfig["agents"][string]
 type Agents = DaemonConfig["agents"]
@@ -81,7 +82,7 @@ export function resolveAgentVoice(
 }
 
 export const label = (v: SystemVoice) =>
-  `${v.name}${v.quality === "standard" ? "" : ` (${v.quality[0].toUpperCase()}${v.quality.slice(1)})`} ${v.locale}`
+  `${v.name}${isSiriId(v.id) ? " (Siri)" : v.quality === "standard" ? "" : ` (${v.quality[0].toUpperCase()}${v.quality.slice(1)})`} ${v.locale}`
 
 /** A configured name, checked: the installed voice, or null and a warning. */
 export function checkedVoice(owner: string, name: string | undefined, installed: SystemVoice[], locale: string): SystemVoice | null {

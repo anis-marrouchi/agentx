@@ -5,6 +5,7 @@ import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/agent-voice"
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
+import { isSiriId, SIRI_PREFIX } from "@/voice/siri-voices"
 
 // --- agentx voice: which voice each agent speaks with ---
 //
@@ -117,6 +118,14 @@ voice
         const tier = v.quality === "standard" ? chalk.dim("standard") : chalk.green(v.quality)
         const who = users.get(v.id)?.join(", ")
         console.log(`  ${v.name.padEnd(12)} ${v.locale.padEnd(6)} ${tier.padEnd(18)} ${chalk.dim((v.gender ?? "").padEnd(7))} ${who ? chalk.cyan(who) : ""}`)
+      }
+      const siri = installed.filter((v) => isSiriId(v.id)).sort((a, b) => a.locale.localeCompare(b.locale) || a.name.localeCompare(b.name))
+      if (siri.length) {
+        console.log(chalk.bold(`\n  Siri voices: name them as ${SIRI_PREFIX}<name>; the system voice is switched for each line\n`))
+        for (const v of siri) {
+          const who = users.get(v.id)?.join(", ")
+          console.log(`  ${`${SIRI_PREFIX}${v.name.toLowerCase()}`.padEnd(14)} ${v.locale.padEnd(6)} ${chalk.dim((v.gender ?? "").padEnd(7))} ${who ? chalk.cyan(who) : ""}`)
+        }
       }
       if (!installed.some((v) => v.quality !== "standard")) {
         console.log(chalk.dim("\n  More natural voices are free: System Settings → Accessibility → Spoken Content →"))

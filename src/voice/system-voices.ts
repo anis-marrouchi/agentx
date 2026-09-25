@@ -12,9 +12,13 @@
 //     configured name is always checked against this list first.
 //   - Siri voices appear in the list but third-party apps cannot use them
 //     (`say` falls back or fails), and the novelty voices (Bells, Zarvox…)
-//     are jokes, not voices for an assistant. Both are left out.
+//     are jokes, not voices for an assistant. Both are left out. The
+//     neural Siri voices are added from their assets instead: they are
+//     spoken by switching the system voice (siri-voices.ts), so they are
+//     only used when named as `siri:<name>`, never assigned.
 
 import { execFile, execFileSync } from "child_process"
+import { isSiriId, listSiriVoices, SIRI_PREFIX } from "./siri-voices"
 
 export type Gender = "female" | "male" | "neutral" | null
 
@@ -75,16 +79,16 @@ export function listSystemVoices(now = Date.now()): SystemVoice[] {
   if (process.platform !== "darwin") return []
   if (!cached) {
     try {
-      cached = { at: now, voices: parseVoiceList(execFileSync("osascript", ["-l", "JavaScript", "-e", JXA], { encoding: "utf8", timeout: 10_000 })) }
+      cached = { at: now, voices: [...parseVoiceList(execFileSync("osascript", ["-l", "JavaScript", "-e", JXA], { encoding: "utf8", timeout: 10_000 })), ...listSiriVoices()] }
     } catch (e: any) {
       voiceLog(`[voice] could not list system voices: ${String(e?.message ?? e).split("\n")[0]}`)
-      cached = { at: now, voices: [] }
+      cached = { at: now, voices: listSiriVoices() }
     }
   } else if (now - cached.at > REFRESH_MS && !refreshing) {
     refreshing = true
     execFile("osascript", ["-l", "JavaScript", "-e", JXA], { timeout: 10_000 }, (err, out) => {
       refreshing = false
-      if (!err) cached = { at: Date.now(), voices: parseVoiceList(String(out)) }
+      if (!err) cached = { at: Date.now(), voices: [...parseVoiceList(String(out)), ...listSiriVoices()] }
     })
   }
   return cached.voices
@@ -121,12 +125,14 @@ export function rank(v: SystemVoice): number {
 const language = (locale: string) => locale.toLowerCase().split(/[-_]/)[0]
 
 /** Voices in the configured language (e.g. "en", "fr-FR"), best first; all
- *  of them if none match, so a mislabelled locale still speaks. */
-export function candidates(installed: SystemVoice[], locale = "en"): SystemVoice[] {
+ *  of them if none match, so a mislabelled locale still speaks. Siri
+ *  voices are left out: they are only used when named. */
+export function candidates(installed: SystemVoice[], locale = "en", withSiri = false): SystemVoice[] {
   const exact = locale.toLowerCase().replace("_", "-")
   const lang = language(locale)
-  const pool = installed.filter((v) => language(v.locale) === lang)
-  return (pool.length ? pool : installed).slice().sort((a, b) =>
+  const usable = withSiri ? installed : installed.filter((v) => !isSiriId(v.id))
+  const pool = usable.filter((v) => language(v.locale) === lang)
+  return (pool.length ? pool : usable).slice().sort((a, b) =>
     rank(b) - rank(a)
     || Number(b.locale.toLowerCase() === exact) - Number(a.locale.toLowerCase() === exact)
     || a.name.localeCompare(b.name) || a.locale.localeCompare(b.locale))
@@ -138,16 +144,31 @@ export function candidates(installed: SystemVoice[], locale = "en"): SystemVoice
  * Accepts an identifier, a plain name ("Daniel"), a tier suffix as System
  * Settings shows it ("Ava (Premium)"), or `say`'s language suffix
  * ("Eddy (English (US))"). A name several locales share resolves to the
- * best one in the configured language.
+ * best one in the configured language. A Siri voice is named
+ * `siri:<name>`; when its asset is missing, the system voice of the same
+ * name in the same language stands in, if there is one.
  */
 export function findVoice(name: string, installed: SystemVoice[], locale = "en"): SystemVoice | null {
   const q = name.trim()
   if (!q) return null
   const byId = installed.find((v) => v.id === q)
   if (byId) return byId
+  if (q.toLowerCase().startsWith(SIRI_PREFIX)) {
+    const bare = q.slice(SIRI_PREFIX.length).trim()
+    const siri = findNamed(bare, installed.filter((v) => isSiriId(v.id)), locale)
+    if (siri) return siri
+    const plain = findNamed(bare, installed.filter((v) => !isSiriId(v.id)), locale)
+    if (!plain || language(plain.locale) !== language(locale)) return null
+    warnOnce(`siri-missing:${q}`, `[voice] Siri voice "${bare}" is not installed; using the system voice ${plain.name} (${plain.locale}) instead`)
+    return plain
+  }
+  return findNamed(q, installed.filter((v) => !isSiriId(v.id)), locale)
+}
+
+function findNamed(q: string, installed: SystemVoice[], locale: string): SystemVoice | null {
   const tier = /^(.+?)\s*\((premium|enhanced)\)$/i.exec(q)
   const base = (tier ? tier[1] : q.replace(/\s*\(.*\)\s*$/, "")).trim().toLowerCase()
-  const named = candidates(installed.filter((v) => v.name.toLowerCase() === base), locale)
+  const named = candidates(installed.filter((v) => v.name.toLowerCase() === base), locale, true)
   const wanted = tier ? named.find((v) => v.quality === tier[2].toLowerCase()) : undefined
   return wanted ?? named[0] ?? null
 }

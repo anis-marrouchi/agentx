@@ -14,6 +14,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { warnOnce } from "./system-voices"
 import { detectLanguage } from "./language"
+import { isSiriId, siriSay } from "./siri-voices"
 
 /** Which engine speaks a line, and in which voice. */
 export interface VoiceRef {
@@ -94,12 +95,16 @@ export function systemVoiceFor(v: VoiceRef, text: string): string | null {
  *  read as an option, so the text always comes from stdin. */
 export const sayArgs = (v: VoiceRef, text = ""): string[] => {
   const id = systemVoiceFor(v, text)
-  return id ? ["-v", id] : []
+  return id && !isSiriId(id) ? ["-v", id] : []
 }
 
 /** afplay on macOS, mpg123 elsewhere; `say` when there is no audio file. */
 export const systemPlay: Play = (file, u) => {
   if (!file) {
+    // A Siri voice cannot be named to `say`: it is spoken by switching
+    // the system voice for the line, then switching it back.
+    const siri = systemVoiceFor(u.voice, u.text)
+    if (isSiriId(siri)) return siriSay(siri, u.text, { warn: (m) => warnOnce(m.slice(0, 60), m) })
     const p = spawn("say", sayArgs(u.voice, u.text), { stdio: ["pipe", "ignore", "ignore"] })
     p.stdin?.on("error", () => {})
     p.stdin?.end(u.text)

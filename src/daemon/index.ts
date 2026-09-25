@@ -2168,10 +2168,12 @@ export class AgentXDaemon {
       }
       // Talk mode and narration make this host speak: same gate as /ask.
       if (path === "/talk" || path.startsWith("/talk/") || path === "/narration" || path === "/teach/live" ||
-          path === "/voice/hush" || path === "/voice/door") {
+          path === "/voice/hush" || path === "/voice/door" || path === "/voice/say") {
         if (!this.checkMeshAuth(req, res, path)) return
         const body = req.method === "POST" ? await readBody(req) : {}
-        const reply = this.voiceTalk.handle(req.method || "GET", path, body)
+        const reply = req.method === "POST" && path === "/voice/say"
+          ? await this.voiceTalk.sayLine(body)
+          : this.voiceTalk.handle(req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
         return
       }

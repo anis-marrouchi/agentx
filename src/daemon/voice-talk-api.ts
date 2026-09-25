@@ -25,7 +25,9 @@ import { Talk, isStop, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
-import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
+import { pickVoiceId, resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
+import { isSiriId } from "@/voice/siri-voices"
+import { listSystemVoices, type SystemVoice } from "@/voice/system-voices"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
 import { PresenceHost, type PresenceHostDeps } from "@/daemon/voice-presence"
 
@@ -128,6 +130,23 @@ export class VoiceTalkService {
   }
 
   /** The door opens: everything this daemon is saying stops at once. */
+  /**
+   * A line the Voice app cannot speak itself, because it is in a Siri
+   * voice: spoken here, in the queue every agent shares, so no two lines
+   * switch the system voice at once. Answers once the line has played or
+   * was hushed. Only installed Siri voices, so a client cannot write an
+   * arbitrary value into the system preference.
+   */
+  async sayLine(body: Record<string, unknown>, installed: SystemVoice[] = listSystemVoices()): Promise<Reply> {
+    const text = String(body.text ?? "").trim().slice(0, 4000)
+    const voice = String(body.voice ?? "")
+    if (!text || !isSiriId(voice) || !installed.some((v) => v.id === voice)) {
+      return { status: 400, body: { error: "Required: text, and voice: an installed Siri voice id" } }
+    }
+    const spoken = await this.speech.say({ voice: { provider: "system", elevenlabs: pickVoiceId(), system: voice, fallback: true }, text })
+    return { status: 200, body: { spoken } }
+  }
+
   hush(): Reply {
     const live = this.live
     live?.hush()
