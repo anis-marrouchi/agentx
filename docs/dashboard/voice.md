@@ -49,7 +49,8 @@ Out of the box every agent speaks with a free macOS voice, and each agent gets a
 ```bash
 agentx voice list                                  # installed voices, best first, and who uses which
 agentx voice set coder-agent Daniel                # pick a system voice
-agentx voice set secretary-agent system            # follow the OS default voice (a Siri voice, see below)
+agentx voice set devops-agent siri:aaron           # a Siri voice (see below)
+agentx voice set secretary-agent system            # follow the OS default voice
 agentx voice set cx-agent Thomas --lang fr         # French lines in Thomas, other lines as before
 agentx voice set cx-agent --gender female          # an assigned voice will be female
 agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent speaks through ElevenLabs
@@ -59,7 +60,7 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 
 **Better free voices.** Open System Settings → Accessibility → Spoken Content → System Voice → Manage Voices and download a Premium or Enhanced voice (for example Ava, Zoe or Evan). They are picked up within ten minutes, or on the next `agentx voice list`.
 
-**Siri voices.** macOS does not offer Siri voices (Spoken Content's "Voice 1–5") to other apps: they are not in `agentx voice list` and cannot be picked by name. The one way to use one is to make it the System Voice in Spoken Content and set the agent's voice to `system`. The agent then speaks with whatever the OS default voice is, so every agent set to `system` sounds the same.
+**Siri voices.** `say -v` cannot use the Siri voices, but `say` without a voice follows the Spoken Content System Voice. So an agent set to `siri:<name>` (listed as `siri:aaron`, `siri:marie`… by `agentx voice list`) speaks each line by switching the System Voice to that Siri voice, speaking, and switching your own choice straight back. Every line that uses the OS default voice, from the daemon and from AgentX Voice, goes through one script (`~/.agentx/voice/siri-say.sh`, written by the daemon) that holds a lock, so two agents never switch it at once; lines wait their turn. If a speaker is killed mid-line, the next line restores your choice first. Siri voices are never assigned automatically, only when named. A per-language list works as usual (`"system": { "en": "siri:aaron", "fr": "siri:marie" }`). If the Siri voice is not downloaded, the system voice of the same name speaks instead (`siri:daniel` → Daniel), else the next choice. Download Siri voices in Spoken Content → System Voice → Manage Voices.
 
 **Configuration.** The global `voice` block sets the defaults; each agent's `voice` block overrides them. Every field is optional.
 
