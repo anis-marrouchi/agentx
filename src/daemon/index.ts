@@ -83,7 +83,9 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
-import { resolveAgentVoice, VoiceIntroTracker, introInstruction } from "@/voice/agent-voice"
+import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend } from "@/voice/agent-voice"
+import { clipSpeech } from "@/voice/mesh-voice"
+import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
 import {
@@ -155,6 +157,8 @@ export class AgentXDaemon {
   private voiceIntros = new VoiceIntroTracker()
   /** Talk mode and task narration: see src/daemon/voice-talk-api.ts. */
   private voiceTalk!: VoiceTalkService
+  /** Voice for agents on mesh peers: see src/daemon/voice-mesh-proxy.ts. */
+  private voiceMesh!: VoiceMeshProxy
   /** Persistent-claude process registry. Null when no agent has
    *  persistentProcess: true (legacy spawn-per-task path). */
   private sessionMonitor?: SessionMonitor
@@ -193,7 +197,10 @@ export class AgentXDaemon {
     // frames and nothing else, and any UI built on it sat silent through
     // the entire turn. Forwarding here gives /events the events its own
     // filter name already implies.
-    this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m))
+    this.voiceMesh = new VoiceMeshProxy(() => this.config, () => this.mesh, (m) => this.log(m))
+    this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m), {
+      remote: (id, introduce) => this.voiceMesh.voices.speaker(id, introduce),
+    })
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
@@ -313,6 +320,8 @@ export class AgentXDaemon {
     if (this.config.mesh.enabled) {
       this.mesh = new A2AMesh(this.config, this.log)
       this.router.setMesh(this.mesh)
+      // Distinct default voices for remote agents need the account's list.
+      void this.voiceMesh.loadPool()
       // Register on the singleton so built-in actions (mesh.delegate)
       // can call into the mesh without threading the instance through.
       setMesh(this.mesh)
@@ -4320,6 +4329,9 @@ export class AgentXDaemon {
               contextStrategy,
               intentRef,
               freshSession,
+              // A Mac speaking for this agent sends only a few voice fields;
+              // the instruction itself is built here.
+              systemPromptAppend: remoteVoiceAppend(body.context),
             },
             () => {},
           )
@@ -4379,13 +4391,9 @@ export class AgentXDaemon {
           // An explicit agent is what makes this endpoint useful for more than
           // one voice persona — "ask the secretary" and "ask devops" are
           // different agents with different context, not one default.
-          const agentId = requestedAgent.trim() || this.config.node.defaultAgent
-          if (!agentId) {
+          const requested = requestedAgent.trim() || this.config.node.defaultAgent
+          if (!requested) {
             this.json(res, 400, { error: "No agent (pass ?agent=... or set node.defaultAgent)" })
-            return
-          }
-          if (!this.registry.getAgent(agentId)) {
-            this.json(res, 404, { error: `Unknown agent: "${agentId}"` })
             return
           }
           if (!message) {
@@ -4393,39 +4401,49 @@ export class AgentXDaemon {
             return
           }
 
-          // The voice instruction rides in the system append, NOT in the
-          // message.
-          //
-          // Prefixing it meant the session recorded the scaffolding as the
-          // user's words: a dashboard reading that conversation showed
-          // "[VOICE MODE — Your response will be spoken aloud...]" where
-          // the question should be, for every single turn. It also re-sent
-          // the same 300 characters on every request instead of letting
-          // them sit in the cached system prompt.
-          const voiceInstruction =
-            "[VOICE MODE] This question arrived by voice and your reply will be spoken aloud by a " +
-            "TTS engine. Answer in two or three short sentences. Plain language, no markdown, no " +
-            "code blocks, no bullet points, no URLs. Speak conversationally."
-
           // The desktop assistant is a URLSession client whose default
           // User-Agent starts with its bundle name; anything else (Siri,
           // phone shortcuts) is plain voice. Only the ledger sees the
           // difference — the session key stays "voice" for both.
           const origin = /^AgentXVoice\//.test(String(req.headers["user-agent"] || "")) ? "desktop" : "voice"
-
           // Introduce once per voice session (or after a long silence),
           // then talk like a colleague. A client that sends no session id
           // shares one per origin, which the 8h gap still keeps sensible.
-          const voice = resolveAgentVoice(agentId, this.config.agents[agentId])
           const session = voiceSession.trim() || origin
+
+          // "talk to Atlas" points this session at another agent, local or
+          // on a mesh peer, until "back to secretary". The new agent
+          // answers at once with its introduction; no agent turn is run.
+          const switched = this.voiceMesh.switchTo(session, message, requested)
+          if (switched) {
+            const remoteSwitch = !this.registry.getAgent(switched)
+            const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents[switched])
+            const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
+            this.voiceIntros.spoke(session, switched)
+            this.json(res, 200, { agentId: switched, voice, presence: null, text, full: text, ui: null, switched: true })
+            break
+          }
+
+          const agentId = this.voiceMesh.target(session, requested)
+          const remote = !this.registry.getAgent(agentId) && this.voiceMesh.isRemote(agentId)
+          if (!remote && !this.registry.getAgent(agentId)) {
+            this.json(res, 404, { error: `Unknown agent: "${agentId}"`, agents: this.voiceMesh.known() })
+            return
+          }
+
+          // The voice instruction rides in the system append, NOT in the
+          // message (see VOICE_MODE_INSTRUCTION). A remote agent's node
+          // builds it from the few voice fields the proxy sends.
+          const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents[agentId])
           const introduce = this.voiceIntros.needsIntro(session, agentId)
 
           // How the agent shows up on screen this turn (the presence-mode
           // seat, decided on every voice turn). When the seat is active and
           // says teach, watch or act, a live lesson on this screen answers
           // instead of a full agent turn; the app only speaks the hand-off.
-          const presence = await this.voiceTalk.presence.decide(agentId, message)
-          if (presence.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
+          // Remote agents have no presence on this screen.
+          const presence = remote ? null : await this.voiceTalk.presence.decide(agentId, message)
+          if (presence?.seat === "active" && (presence.mode === "teach" || presence.mode === "watch" || presence.mode === "act")) {
             const started = this.voiceTalk.startLesson(agentId, message, presence.mode)
             if (started.status === 201) {
               this.voiceIntros.spoke(session, agentId)
@@ -4433,6 +4451,22 @@ export class AgentXDaemon {
               this.json(res, 200, { agentId, voice, presence, text, full: text, ui: null })
               break
             }
+          }
+
+          if (remote) {
+            const reply = await this.voiceMesh.ask(agentId, message, voice, introduce)
+            const { cleanText, ui } = extractUiDirective(reply.content)
+            if (!reply.error) this.voiceIntros.spoke(session, agentId)
+            this.json(res, reply.error ? 502 : 200, {
+              agentId, voice, presence: null,
+              text: reply.error ? null : clipSpeech(toSpeakable(cleanText)),
+              full: reply.error ? null : cleanText,
+              ui: ui ?? null,
+              error: reply.error,
+              duration: reply.duration,
+              peer: reply.peer,
+            })
+            break
           }
 
           const intentRef = this.recordInboundDispatch(
@@ -4443,7 +4477,7 @@ export class AgentXDaemon {
           const response = await this.registry.execute({
             agentId,
             message,
-            systemPromptAppend: `${voiceInstruction}\n${introInstruction(voice, introduce)}`,
+            systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}`,
             context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
             intentRef,
           })
@@ -4485,7 +4519,7 @@ export class AgentXDaemon {
           const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
           const speakable = toSpeakable(withoutDirective)
           if (!response.error) this.voiceIntros.spoke(session, agentId)
-          if (!response.error && presence.seat === "active" && presence.mode === "talk") {
+          if (!response.error && presence?.seat === "active" && presence.mode === "talk") {
             this.voiceTalk.presence.showTalk(agentId, speakable, presence.persist)
           } else {
             // Quiet, a failed turn, or no seat: nothing of this agent stays on screen.
