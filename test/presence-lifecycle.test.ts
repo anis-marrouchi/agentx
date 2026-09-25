@@ -130,7 +130,9 @@ describe("PresenceOverlay process", () => {
     const dir = mkdtempSync(join(tmpdir(), "presence-"))
     // A stand-in helper with the real name, so the ps check recognises it.
     const helper = join(dir, "agentx-mac-helper")
-    writeFileSync(helper, "#!/bin/sh\nexec cat >/dev/null\n")
+    // Shell builtins only: an exec would replace the command line ps reads,
+    // and the overlay would no longer recognise the stand-in as a helper.
+    writeFileSync(helper, "#!/bin/sh\nwhile read -r _; do :; done\n")
     chmodSync(helper, 0o755)
     const look = presenceLook("secretary-agent", agents["secretary-agent"])
     const pidOf = () => readFileSync(join(dir, "secretary-agent.pid"), "utf8").trim()
@@ -140,6 +142,7 @@ describe("PresenceOverlay process", () => {
     const first = new PresenceOverlay(look, helper, "secretary-agent", dir)
     const firstPid = pidOf()
     await until(() => (systemProcesses.command(Number(firstPid)) ?? "").includes("presence"))
+    expect(systemProcesses.command(Number(firstPid))).toMatch(/agentx-mac-helper\S*\s+presence\b/)
     const second = new PresenceOverlay(look, helper, "secretary-agent", dir)
     const secondPid = pidOf()
     expect(secondPid).not.toBe(firstPid)
@@ -152,5 +155,5 @@ describe("PresenceOverlay process", () => {
     await until(() => !running(secondPid) && !existsSync(join(dir, "secretary-agent.pid")))
     expect(running(secondPid)).toBe(false)
     expect(existsSync(join(dir, "secretary-agent.pid"))).toBe(false)
-  })
+  }, 20_000) // three waits of up to 5 s each
 })
