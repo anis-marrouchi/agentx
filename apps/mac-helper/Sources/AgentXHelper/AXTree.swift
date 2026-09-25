@@ -48,6 +48,34 @@ enum AXTree {
                             truncated: false, note: "no frontmost application")
         }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        // Electron (tldraw offline, VS Code, Slack) builds its web content's
+        // tree only once an assistive client asks for it; until then the
+        // window is empty. Other apps reject the attribute, harmlessly.
+        let asked = AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
+        var elements: [Element] = []
+        var truncated = false
+        // The first time, Chromium fills the tree in over a moment.
+        for attempt in 0..<6 {
+            (elements, truncated) = walk(axApp, maxElements: maxElements)
+            if !asked || elements.count >= 3 || attempt == 5 { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        var windowRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &windowRef)
+        let windowTitle = string((windowRef as! AXUIElement?) ?? axApp, kAXTitleAttribute)
+
+        return Snapshot(
+            app: app.localizedName ?? "unknown",
+            pid: app.processIdentifier,
+            window: windowTitle,
+            elements: elements,
+            truncated: truncated,
+            note: elements.count < 3
+                ? "this app exposes almost no accessibility information — the tree is not usable here"
+                : nil)
+    }
+
+    private static func walk(_ axApp: AXUIElement, maxElements: Int) -> ([Element], Bool) {
         var elements: [Element] = []
         var truncated = false
 
@@ -57,7 +85,6 @@ enum AXTree {
         var windowRef: CFTypeRef?
         AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &windowRef)
         let root = (windowRef as! AXUIElement?) ?? axApp
-        let windowTitle = string(root, kAXTitleAttribute)
 
         // Traverse everything, but only SPEND the budget on elements worth
         // choosing between.
@@ -84,16 +111,7 @@ enum AXTree {
                 for c in children { queue.append((c, keptIndex)) }
             }
         }
-
-        return Snapshot(
-            app: app.localizedName ?? "unknown",
-            pid: app.processIdentifier,
-            window: windowTitle,
-            elements: elements,
-            truncated: truncated,
-            note: elements.count < 3
-                ? "this app exposes almost no accessibility information — the tree is not usable here"
-                : nil)
+        return (elements, truncated)
     }
 
     /// Containers earn a slot only when they say something.

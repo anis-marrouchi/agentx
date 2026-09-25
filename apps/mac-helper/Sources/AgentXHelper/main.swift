@@ -198,8 +198,10 @@ case "click":
     if !args.contains("--force"), let p = CGEvent(source: nil)?.location {
         if let hit = Vision.hitTest(x: p.x, y: p.y),
            let expected = flag("expect"), !expected.isEmpty {
-            let seen = "\(hit.role) \(hit.label)".lowercased()
-            if !seen.contains(expected.lowercased()) {
+            // The named control may be a parent of what the point lands on.
+            let seen = (["\(hit.role) \(hit.label)"] + hit.ancestors).map { $0.lowercased() }
+            if !seen.contains(where: { $0.contains(expected.lowercased()) }),
+               !(hit.label.isEmpty && Vision.windowShows(expected, at: p)) {
                 fail("refusing to click: \(hit.app) shows \(hit.role) \"\(hit.label)\" at the cursor, not \"\(expected)\" — something is covering it")
             }
         }
