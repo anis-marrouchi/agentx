@@ -5,7 +5,7 @@ import { parseYamlWorkflow } from "../src/workflows/yaml"
 import { workflowSchema, lintWorkflow } from "../src/workflows/types"
 import { evaluateBranch } from "../src/workflows/engine"
 // @ts-expect-error — plain .mjs script, no type declarations
-import { planSweep, ciState, formatSteps } from "../scripts/owner-sweep.mjs"
+import { planSweep, ciState, formatSteps, applyEdits } from "../scripts/owner-sweep.mjs"
 
 const now = new Date("2026-09-25T12:00:00Z")
 const minsAgo = (m: number) => new Date(now.getTime() - m * 60000).toISOString()
@@ -96,6 +96,69 @@ describe("owner sweep (#53)", () => {
   })
 })
 
+describe("owner sweep: applying ownership (#53 decisions)", () => {
+  const opts = { assignee: "anis-marrouchi", owner: "coder-agent", reviewer: "devops-agent" }
+  const issue = (over: Record<string, unknown> = {}) =>
+    ({ number: 53, title: "owners", url: "u", body: "", assignees: [], labels: [], updatedAt: minsAgo(10), ...over })
+
+  it("assigns the login and labels the default owner on a new issue, with no agent step", () => {
+    const r = planSweep({ issues: [issue()], prs: [] }, {}, now, opts)
+    expect(r.apply).toEqual([{ kind: "issue", number: 53, assignee: "anis-marrouchi", labels: ["agent:coder-agent"] }])
+    expect(r.steps).toEqual([])
+  })
+
+  it("an issue marker picks the owner; only what is missing is applied", () => {
+    const r = planSweep({ issues: [issue({ body: "x <!-- agentx:pm-agent -->", assignees: [{ login: "anis-marrouchi" }] })], prs: [] }, {}, now, opts)
+    expect(r.apply).toEqual([{ kind: "issue", number: 53, labels: ["agent:pm-agent"] }])
+    const owned = issue({ assignees: [{ login: "a" }], labels: [{ name: "agent:coder-agent" }] })
+    expect(planSweep({ issues: [owned], prs: [] }, {}, now, opts).apply).toEqual([])
+  })
+
+  it("a new PR is owned by its author agent and reviewed by devops-agent", () => {
+    const fresh = pr({ body: "<!-- agentx:coder-agent -->", assignees: [], reviewRequests: [], labels: [], statusCheckRollup: [check(null, "IN_PROGRESS")] })
+    const r = planSweep({ issues: [], prs: [fresh] }, {}, now, opts)
+    expect(r.apply).toEqual([
+      { kind: "pr", number: 52, assignee: "anis-marrouchi", labels: ["agent:coder-agent"] },
+      { kind: "pr", number: 52, labels: ["review:devops-agent"] },
+    ])
+    expect(steps(r)).toEqual(["devops-agent review"])
+  })
+
+  it("a PR already labelled for review is not reviewed again", () => {
+    const labelled = pr({ reviewRequests: [], labels: [{ name: "agent:coder-agent" }, { name: "review:devops-agent" }] })
+    const r = planSweep({ issues: [], prs: [labelled] }, {}, now, opts)
+    expect(r.apply).toEqual([])
+    expect(steps(r)).toEqual(["coder-agent mark-ready"])
+  })
+
+  it("applies each edit with gh, creating labels first, and reports failures per item", async () => {
+    const calls: string[][] = []
+    const run = async (args: string[]) => {
+      calls.push(args)
+      if (args[0] === "issue" && args[2] === "9") throw Object.assign(new Error("gone"), { code: 1 })
+      return ""
+    }
+    const out = await applyEdits("o/r", [
+      { kind: "issue", number: 53, assignee: "anis-marrouchi", labels: ["agent:coder-agent"] },
+      { kind: "issue", number: 9, labels: ["agent:coder-agent"] },
+      { kind: "pr", number: 52, labels: ["review:devops-agent"] },
+    ], run)
+    expect(calls.slice(0, 2).map((c) => c.slice(0, 3))).toEqual([["label", "create", "agent:coder-agent"], ["label", "create", "review:devops-agent"]])
+    expect(calls).toContainEqual(["issue", "edit", "53", "-R", "o/r", "--add-assignee", "anis-marrouchi", "--add-label", "agent:coder-agent"])
+    expect(calls).toContainEqual(["pr", "edit", "52", "-R", "o/r", "--add-label", "review:devops-agent"])
+    expect(out.map((e: { result: string }) => e.result)).toEqual([
+      "assigned anis-marrouchi, labelled agent:coder-agent",
+      "failed to apply (1): labelled agent:coder-agent",
+      "labelled review:devops-agent",
+    ])
+  })
+
+  it("lists what was applied without counting it as work for the agent", () => {
+    const text = formatSteps([], [{ kind: "issue", number: 53, labels: [], result: "assigned x" }])
+    expect(text).toBe("RESULT steps=0 applied=1\n  applied issue #53: assigned x")
+  })
+})
+
 describe("examples/workflows/github-owner-sweep", () => {
   const text = readFileSync(path.resolve(process.cwd(), "examples/workflows/github-owner-sweep.yaml"), "utf-8")
   const parsed = workflowSchema.safeParse(parseYamlWorkflow(text, { filePath: "github-owner-sweep.yaml" }))
@@ -110,6 +173,7 @@ describe("examples/workflows/github-owner-sweep", () => {
     const route = parsed.data.nodes.find((n) => n.id === "route")!
     const port = (output: string) => evaluateBranch(route, { sweep: { output } })
     expect(port("RESULT steps=0")).toBe("done")
+    expect(port("RESULT steps=0 applied=2\n  applied issue #1: assigned x")).toBe("done")
     expect(port("RESULT error=collection (1)")).toBe("failed")
     expect(port(formatSteps([{ owner: "coder-agent", step: "fix-ci", kind: "pr", number: 1, title: "t", url: "u", why: "w" }]))).toBe("act")
   })

@@ -1,8 +1,11 @@
 # GitHub owner sweep (#53): every open issue and PR has an owner and a next step.
 #
-# Every 15 minutes a read-only script decides, per open issue/PR, who owns the
-# next step (table in issue #53) and prints only steps that are new, or still
-# true after 24 h. When there are any, the coordinator agent carries them out.
+# Every 15 minutes a script decides, per open issue/PR, who owns the next step
+# (table in issue #53) and prints only steps that are new, or still true after
+# 24 h. Ownership needs no judgment, so the script applies it itself: it
+# assigns anis-marrouchi and labels the owning agent (agent:<id>; issues
+# default to coder-agent) and a new PR's reviewer (review:devops-agent). When
+# steps remain, the coordinator agent carries them out.
 # A PR whose session ended with CI red (the #52 case) goes back to its author
 # agent with the failing checks; after two red commits it escalates instead.
 #
@@ -55,22 +58,22 @@ nodes:
 
         {{sweep.output}}
 
+        Assignees and agent:/review: labels are already applied (the
+        "applied" lines); do not redo them.
+
         Steps you do yourself (owner secretary-agent):
-        - assign-owner: pick the agent that owns it, assign anis-marrouchi
-          (agents share one GitHub login), and post one comment naming the
-          owning agent and the next step.
-        - request-review: dispatch an agent review of the PR; Anis gives the
-          final approval.
         - link-issue: find the issue the PR fixes and add "Closes #n" to the
           PR body, or ask the author agent which issue it is.
         - review-and-merge / escalate-ci / nudge: follow your standing
           instructions for agentx (merge/deploy approval, reporting blocked
           work to Anis).
 
-        Steps for another agent (fix-ci, mark-ready): dispatch that agent
-        with the PR URL, branch and the reason text verbatim. fix-ci means
-        read the failing checks, fix them on the branch, push, and mark the
-        PR ready once CI is green.
+        Steps for another agent (review, fix-ci, mark-ready): dispatch that
+        agent with the PR URL, branch and the reason text verbatim. review
+        means read the diff and post one review comment with a verdict
+        (ready, or what must change); Anis gives the final approval. fix-ci
+        means read the failing checks, fix them on the branch, push, and
+        mark the PR ready once CI is green.
 
   - id: done
     type: end
