@@ -62,6 +62,9 @@ export class VoiceTalkService {
   private session: VoiceSession | null = null
   /** The narrated task the last hush silenced, until the listener speaks. */
   private hushed: { taskId: string; agentId: string } | null = null
+  /** The lesson the last hush ended, until the listener speaks: a bare
+   *  "stop" is then already done, anything else goes to the agent. */
+  private ended: LiveTeach | null = null
   private model: (system: string) => LineModel
   private remote: NonNullable<VoiceTalkDeps["remote"]>
   private settings: () => VoiceSettings
@@ -111,8 +114,12 @@ export class VoiceTalkService {
       case "POST /voice/hush":
         return this.hush()
       case "POST /voice/stop": {
+        // A talk hushed by the door waits for the words; a stop ends it too.
+        const talk = this.live
         const reply = this.hush()
+        talk?.stop("stopped")
         this.hushed = null
+        this.ended = null
         return reply
       }
       case "POST /talk/door":
@@ -140,10 +147,17 @@ export class VoiceTalkService {
     }
   }
 
-  /** The door opens: everything this daemon is saying stops at once. */
+  /** The door opens: everything this daemon is saying stops at once. A
+   *  lesson ends here, so the words that follow reach the agent: it holds
+   *  the screen, and a listener who interrupts it wants it gone, not a
+   *  lesson that answers back. A talk between agents only pauses. */
   hush(): Reply {
     const live = this.live
-    live?.hush()
+    this.ended = null
+    if (live instanceof LiveTeach) {
+      live.stop("stopped by the listener")
+      this.ended = live
+    } else live?.hush()
     this.speech.stop()
     this.stopSpeakers()
     this.presence.quiet()
@@ -152,16 +166,22 @@ export class VoiceTalkService {
     const kind = live ? this.kind(live) : narrated ? "narration" : null
     const agentId = live ? this.agentOf(live) : narrated?.agentId ?? null
     this.log(`[door] hush → ${kind ? `${kind}${agentId ? ` (${agentId})` : ""}` : "nothing was speaking"}`)
-    return { status: 200, body: { active: !!live, kind, agentId } }
+    return { status: 200, body: { active: !!live && live.state !== "ended", kind, agentId } }
   }
 
   /** What the listener said through the door. */
   door(text: string): Reply {
     const live = this.live
     const narrated = this.hushed
+    const ended = this.ended
     this.hushed = null
+    this.ended = null
     this.narrator.release()
     const quote = `"${text.slice(0, 80)}"`
+    if (ended && isStop(text)) {
+      this.log(`[door] ${quote} → lesson (${ended.agentId}) already ended`)
+      return { status: 200, body: { active: false, kind: "lesson", handled: true } }
+    }
     if (live) {
       live.door(text)
       this.log(`[door] ${quote} → ${this.kind(live)}${live.state === "ended" ? " (ended)" : ""}`)

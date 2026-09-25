@@ -75,7 +75,7 @@ export class PresenceHost {
   async decide(agentId: string, request: string): Promise<PresenceTurn> {
     const seat = getSeatMode(PRESENCE_MODE_SEAT)
     const look = presenceLook(agentId, this.agents()[agentId])
-    if (seat === "off") return { ...toPresence(null, look.allowActions), seat, app: null }
+    if (seat === "off") return { ...toPresence(null, look.allowActions, request), seat, app: null }
     const app = await (this.deps.frontmostApp ?? helperFrontmostApp)()
     // It runs before the agent's turn, so it gets a hard budget: past it,
     // the turn goes ahead as talk rather than waiting on a slow backend.
@@ -90,7 +90,7 @@ export class PresenceHost {
       ),
       new Promise<null>((r) => { timer = setTimeout(() => { ac.abort(); r(null) }, DECIDE_MS) }),
     ]).finally(() => clearTimeout(timer))
-    const decision = toPresence((result?.answers as PresenceModeAnswers) ?? null, look.allowActions)
+    const decision = toPresence((result?.answers as PresenceModeAnswers) ?? null, look.allowActions, request)
     this.lastMode.set(agentId, decision.mode)
     this.log(`[presence] ${agentId} seat=${seat} chose=${decision.chose ?? "-"} p=${decision.probability.toFixed(2)} → ${decision.mode}` +
       ` next=${decision.nextAction}${decision.persist ? " persist" : ""}${decision.override ? ` (${decision.override})` : ""}`)

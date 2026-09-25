@@ -51,7 +51,7 @@ describe("PresenceHost.decide", () => {
     expect(await host.decide("coder-agent", "teach me Numbers")).toMatchObject({ mode: "teach", seat: "active", probability: 0.82, persist: true })
     expect(logs[0]).toContain("chose=teach p=0.82 → teach")
     answers.current = pick("act", 0.9)
-    expect(await host.decide("coder-agent", "do it for me")).toMatchObject({ mode: "teach", override: "actions-not-allowed" })
+    expect(await host.decide("coder-agent", "do it for me")).toMatchObject({ mode: "talk", override: "actions-not-allowed" })
     expect(await host.decide("helper-agent", "do it for me")).toMatchObject({ mode: "act" })
     answers.current = pick("watch", 0.3)
     expect(await host.decide("coder-agent", "hmm")).toMatchObject({ mode: "talk", override: "low-confidence" })
