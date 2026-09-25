@@ -18,12 +18,12 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
-import { findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { bubbleText, findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
 export type TeachMode = "teach" | "watch" | "act"
-export type StepAction = "point" | "highlight" | "click" | "type" | "wait_for_user" | "done"
+export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wait_for_user" | "done"
 
 export interface ScreenView {
   app: string
@@ -38,8 +38,10 @@ export interface TeachDeps {
   speech: SpeechOut
   /** The planner: a warm fast model holding this lesson's history. */
   model: LineModel
-  /** Press or type for real. Only ever called in act mode with actions allowed. */
-  act(step: { action: "click" | "type"; rect: Rect; label: string; text?: string }): Promise<{ error: string | null }>
+  /** Press, type or press keys for real. Only ever called in act mode with
+   *  actions allowed. `role` is the target's, for the helper's check that
+   *  the click lands on it. */
+  act(step: { action: "click" | "type"; rect: Rect; label: string; role?: string; text?: string } | { action: "key"; keys: string }): Promise<{ error: string | null }>
 }
 
 export interface LiveTeachOpts {
@@ -76,6 +78,9 @@ type Fresh = { screen: ScreenView; target: number | null }
 /** Why a plan no longer fits the screen. */
 type Stale = { stale: string }
 
+/** A read costs about 0.1 s, so a done step is noticed within a second. */
+const POLL_MS = 400
+
 const STOP = /^\s*(stop|stop talking|that'?s enough|end( the lesson)?|enough)[\s.!]*$/i
 
 export class LiveTeach {
@@ -88,6 +93,8 @@ export class LiveTeach {
   private history: string[] = []
   private ac = new AbortController()
   private doorQueue: string[] = []
+  /** The line still being spoken while the next step is planned. */
+  private speaking: Promise<unknown> = Promise.resolve()
   private wake: (() => void) | null = null
   private listeners: Array<(e: TeachEvent) => void> = []
   private readonly listener: string
@@ -143,6 +150,7 @@ export class LiveTeach {
         if (outcome === "next") { replans = 0; continue }
         if (!this.replanned(outcome.stale, ++replans)) break
       }
+      await this.speaking // let the last line finish
       if (!this.is("ended")) this.stop(this.step >= max ? "step limit" : "goal reached")
     } catch (e: any) {
       this.emit({ type: "error", error: String(e?.message ?? e) })
@@ -170,7 +178,7 @@ export class LiveTeach {
         await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
       }
       if (Date.now() > deadline) { this.stop(`${this.opts.app} never came to the front`); return null }
-      await Promise.race([this.sleep(this.opts.pollMs ?? 800), this.poked()])
+      await Promise.race([this.sleep(this.opts.pollMs ?? POLL_MS), this.poked()])
       if (!this.is("running")) return null
     }
   }
@@ -182,7 +190,7 @@ export class LiveTeach {
       teach: `You lead: say the next step, show where, and ${this.listener} does it.`,
       watch: `${this.listener} is driving. Coach briefly: where things are and what to try next. Prefer wait_for_user.`,
       act: this.opts.actionsAllowed
-        ? "You do each step yourself (click or type), saying what you are doing."
+        ? `You do each step yourself (click, type or key), telling ${this.listener} what it is for and where: 'to fill it in, I'm clicking solid on the right'.`
         : `You may not click or type here; show where and let ${this.listener} do it.`,
     }[this.opts.mode]
     const prompt = [
@@ -190,7 +198,7 @@ export class LiveTeach {
       `Mode: ${this.opts.mode}. ${modeLine}`,
       `App: ${screen.app}${screen.window ? ` — window "${screen.window}"` : ""}`,
       "On screen:",
-      ...screen.candidates.slice(0, 45).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
+      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
       this.history.length ? `So far:\n${this.history.slice(-8).join("\n")}` : "This is the first step.",
     ].join("\n")
     const signal = this.ac.signal
@@ -238,28 +246,47 @@ export class LiveTeach {
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
     // Click and type only when allowed; otherwise show it instead.
-    const action: StepAction = (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
+    const action: StepAction =
+      plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")
+      : (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
     this.emit({ type: "step", n, action, target: label || null, say: plan.say })
 
     const { presence, speech } = this.deps
     if (rect) presence.moveTo(rect, { highlight: action !== "point" })
-    presence.say(plan.say)
+    // The voice carries the sentence; the bubble only names what is pointed at.
+    presence.say(bubbleText(rect ? label : null))
     this.lastSay = plan.say
+    await this.speaking
     const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say }) : Promise.resolve(true)
-    await Promise.race([spoken, this.poked()])
+    // Act mode does the step while saying it, and plans the next one while
+    // the line plays out, instead of speaking, then pressing, then thinking.
+    const acts = mayAct && (action === "key" ? !!plan.text : (action === "click" || action === "type") && !!rect)
+    if (acts) this.speaking = spoken
+    else await Promise.race([spoken, this.poked()])
     if (!this.is("running") || this.doorQueue.length) {
       this.history.push(`Step ${n}: you started "${plan.say}" and were cut off.`)
       return this.is("ended") ? "stopped" : "next"
     }
     if (action === "done") return "done"
 
+    if (action === "key" && plan.text) {
+      const now = await this.recheck({ ...plan, target: null }, screen)
+      if ("stale" in now) return now
+      const r = await this.deps.act({ action: "key", keys: plan.text })
+      this.emit({ type: "acted", n, error: r.error })
+      this.history.push(r.error ? `Step ${n}: you tried to press ${plan.text} and it failed: ${r.error}` : `Step ${n}: you pressed ${plan.text}.`)
+      if (!r.error) await this.settle()
+      return "next"
+    }
+
     if ((action === "click" || action === "type") && rect) {
-      // Saying the step took seconds: press only what is there now.
+      // Press only what is there now, not what was planned against.
       const now = await this.recheck({ ...plan, target }, screen)
       if ("stale" in now) return now
       const at = now.target !== null ? now.screen.rectOf(now.target) : null
       if (!at) return { stale: `"${label}" is no longer on screen` }
-      const r = await this.deps.act({ action, rect: at, label, text: plan.text ?? undefined })
+      const role = screen.candidates.find((c) => c.id === target)?.role
+      const r = await this.deps.act({ action, rect: at, label, role, text: plan.text ?? undefined })
       this.emit({ type: "acted", n, error: r.error })
       this.history.push(r.error
         ? `Step ${n}: you tried to ${action} "${label}" and it failed: ${r.error}`
@@ -272,7 +299,9 @@ export class LiveTeach {
 
     // Everything else waits for the listener to act on the step.
     const changed = await this.waitForChange()
-    presence.clear()
+    // Hand control back: the cursor returns to the listener's own pointer.
+    presence.say("")
+    presence.park()
     this.emit({ type: "changed", n, changed })
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
       (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
@@ -291,7 +320,7 @@ export class LiveTeach {
     const deadline = Date.now() + (this.opts.waitMs ?? 45_000)
     let candidate: string | null = null
     while (Date.now() < deadline && this.is("running") && !this.doorQueue.length) {
-      await Promise.race([this.sleep(this.opts.pollMs ?? 800), this.poked()])
+      await Promise.race([this.sleep(this.opts.pollMs ?? POLL_MS), this.poked()])
       if (!this.is("running") || this.doorQueue.length) return false
       const now = await this.signature()
       if (now === null || now === before) { candidate = null; continue }
@@ -306,7 +335,7 @@ export class LiveTeach {
     const deadline = Date.now() + 3_000
     let last = await this.signature()
     while (Date.now() < deadline && this.is("running")) {
-      await this.sleep(Math.min(400, this.opts.pollMs ?? 400))
+      await this.sleep(Math.min(POLL_MS, this.opts.pollMs ?? POLL_MS))
       const now = await this.signature()
       if (now === last) return
       last = now

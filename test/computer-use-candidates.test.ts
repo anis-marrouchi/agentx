@@ -84,6 +84,18 @@ describe("buildCandidates", () => {
     expect(buildCandidates(elements, 10).map((c) => c.label)).toEqual(["Real"])
   })
 
+  it("offers a drawing app's canvas, and not its icons", () => {
+    // tldraw's canvas is one unnamed image the size of the page; without
+    // it a lesson cannot place a shape or a text box.
+    const elements = [
+      el({ id: 1, role: "AXWebArea", label: "tldraw", width: 1440, height: 800 }),
+      el({ id: 2, role: "AXImage", label: "0", parent: 1, width: 1440, height: 800 }),
+      el({ id: 3, role: "AXImage", label: "Comments", parent: 1, width: 20, height: 20 }),
+      el({ id: 4, role: "AXCheckBox", label: "Rectangle — R", parent: 1 }),
+    ]
+    expect(buildCandidates(elements, 10).map((c) => c.label).sort()).toEqual(["Rectangle — R", "canvas"])
+  })
+
   it("honours the cap", () => {
     const elements = Array.from({ length: 80 }, (_, i) =>
       el({ id: i, role: "AXButton", label: `b${i}` }))

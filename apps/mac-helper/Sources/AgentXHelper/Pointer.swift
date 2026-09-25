@@ -57,9 +57,11 @@ enum Pointer {
         let control = CGPoint(x: from.x + dx * 0.5 + nx * bow,
                               y: from.y + dy * 0.5 + ny * bow)
 
-        let steps = max(24, Int(duration * 110))
-        for i in 1...steps {
-            let t = Double(i) / Double(steps)
+        // Paced by the clock, not a step count: each warp costs ~20 ms on
+        // its own, so a fixed ~100 steps stretched a 0.95 s move to ~3 s.
+        let start = Date()
+        while true {
+            let t = min(1, Date().timeIntervalSince(start) / duration)
             // Minimum-jerk: 10t³ − 15t⁴ + 6t⁵. Starts and ends at zero
             // velocity AND zero acceleration, which is why it looks settled
             // rather than braked.
@@ -72,7 +74,8 @@ enum Pointer {
             let jitter = CGPoint(x: Double.random(in: -tremor...tremor),
                                  y: Double.random(in: -tremor...tremor))
             CGWarpMouseCursorPosition(CGPoint(x: p.x + jitter.x, y: p.y + jitter.y))
-            Thread.sleep(forTimeInterval: duration / Double(steps))
+            if t >= 1 { break }
+            Thread.sleep(forTimeInterval: 1.0 / 110)
         }
 
         // Long moves overshoot slightly and correct — the correction is

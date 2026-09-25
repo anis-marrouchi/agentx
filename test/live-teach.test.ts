@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { LiveTeach, parsePlan, type ScreenView, type TeachDeps, type TeachMode } from "../src/voice/live-teach"
-import { findControl } from "../src/voice/live-teach-plan"
+import { bubbleText, findControl, teachSystemPrompt } from "../src/voice/live-teach-plan"
 import { presenceLook, type Presence } from "../src/voice/presence"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { toPresence, type PresenceModeAnswers } from "../src/decisions/seats/presence-mode"
@@ -53,7 +53,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   const model = new PlanModel(replies)
   const deps: TeachDeps = {
     readScreen: async () => app.view(), presence, speech, model,
-    act: async (s) => { acted.push(`${s.action} ${s.label}`); app.open(); return { error: null } },
+    act: async (s) => { acted.push(s.action === "key" ? `key ${s.keys}` : `${s.action} ${s.label}`); app.open(); return { error: null } },
   }
   if (opts.userActsAfter !== undefined) setTimeout(app.open, opts.userActsAfter)
   const t = new LiveTeach({
@@ -70,8 +70,29 @@ describe("parsePlan", () => {
   it("reads the four fields and refuses ids that are not on screen", () => {
     expect(parsePlan("TARGET: 7\nACTION: Highlight\nTEXT: none\nSAY: **Look** here.", new Set([7])))
       .toEqual({ target: 7, action: "highlight", text: null, say: "Look here." })
+    expect(parsePlan("TARGET: none\nACTION: key\nTEXT: shift+.\nSAY: Turn it.", new Set([7])))
+      .toEqual({ target: null, action: "key", text: "shift+.", say: "Turn it." })
     expect(parsePlan("TARGET: 99\nACTION: jump\nSAY: Hmm.", new Set([7])))
       .toEqual({ target: null, action: "wait_for_user", text: null, say: "Hmm." })
+  })
+})
+
+describe("bubbleText", () => {
+  it("shows a short target name, a pointer phrase for long ones, nothing without a target", () => {
+    expect(bubbleText("Rectangle")).toBe("Rectangle")
+    expect(bubbleText("Export as PNG with a transparent background")).toBe("this one")
+    expect(bubbleText("")).toBe("this one")
+    expect(bubbleText(null)).toBe("")
+  })
+})
+
+describe("teachSystemPrompt", () => {
+  it("asks for short, friend-at-the-keyboard lines and keeps the reply format", () => {
+    const p = teachSystemPrompt("You are Coder.", "Anis")
+    expect(p).toContain("under thirty words")
+    expect(p).toContain("Never end with a yes/no question")
+    expect(p).toContain("If Anis asks a question")
+    expect(p).toMatch(/^SAY: <what you say>$/m)
   })
 })
 
@@ -81,7 +102,11 @@ describe("LiveTeach", () => {
     await s.t.run()
     expect(s.acted).toEqual([])
     expect(s.log).toContain("move 10 highlight")
-    expect(s.log).toContain("bubble Click New to start a note.")
+    // The bubble names the target; the voice carries the sentence.
+    expect(s.log).toContain("bubble New")
+    expect(s.log).not.toContain("bubble Click New to start a note.")
+    // After Anis does the step, the cursor goes back to Anis's pointer.
+    expect(s.log.indexOf("park")).toBeGreaterThan(s.log.indexOf("bubble New"))
     expect(s.said).toEqual(["Click New to start a note.", "There's your note."])
     // The second plan saw the new screen and knew Anis had done the step.
     expect(s.model.prompts[1]).toContain('window "Untitled"')
@@ -100,6 +125,34 @@ describe("LiveTeach", () => {
     await denied.t.run()
     expect(denied.acted).toEqual([])
     expect(denied.log).toContain("move 10 highlight")
+  })
+
+  it("act: clicks while the line is said, and the next line waits for it to end", async () => {
+    const s = setup("act", [STEP1, DONE], { actionsAllowed: true, speakMs: 80 })
+    const order: string[] = []
+    const deps = (s.t as any).deps as TeachDeps
+    const speak = deps.speech.say.bind(deps.speech)
+    deps.speech.say = async (u: any) => { order.push(`start ${u.text}`); const r = await speak(u); order.push(`end ${u.text}`); return r }
+    const act = deps.act
+    deps.act = async (a) => { order.push("click"); return act(a) }
+    await s.t.run()
+    expect(order).toEqual([
+      "start Click New to start a note.", "click", "end Click New to start a note.",
+      "start There's your note.", "end There's your note.",
+    ])
+  })
+
+  it("key: presses a shortcut in act mode, and only there", async () => {
+    const ROTATE = "TARGET: none\nACTION: key\nTEXT: shift+.\nSAY: Shift and period turns it a little."
+    const allowed = setup("act", [ROTATE, DONE], { actionsAllowed: true })
+    await allowed.t.run()
+    expect(allowed.acted).toEqual(["key shift+."])
+    expect(allowed.model.prompts[1]).toContain("you pressed shift+.")
+
+    const teach = setup("teach", [ROTATE, DONE], { userActsAfter: 40 })
+    await teach.t.run()
+    expect(teach.acted).toEqual([])
+    expect(teach.said[0]).toBe("Shift and period turns it a little.")
   })
 
   it("the door cuts in: speech stops and the next plan answers Anis first", async () => {

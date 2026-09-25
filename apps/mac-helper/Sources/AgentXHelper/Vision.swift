@@ -37,6 +37,10 @@ enum Vision {
         /// True when the topmost element's frame matches the one asked
         /// about, within a tolerance.
         let matchesExpected: Bool?
+        /// "role label" of the elements containing it, nearest first. Web
+        /// controls answer a hit test with an unnamed inner node (the icon,
+        /// the text span); the control that carries the name is a parent.
+        let ancestors: [String]
     }
 
     /// What is actually on top at a screen point.
@@ -52,9 +56,16 @@ enum Vision {
         else { return nil }
 
         let role = attr(element, kAXRoleAttribute) ?? ""
-        let label = [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
-            .compactMap { attr(element, $0) }
-            .first(where: { !$0.isEmpty }) ?? ""
+        let label = name(element)
+        var ancestors: [String] = []
+        var node = element
+        for _ in 0..<8 {
+            var parent: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(node, kAXParentAttribute as CFString, &parent) == .success,
+                  let p = parent, CFGetTypeID(p) == AXUIElementGetTypeID() else { break }
+            node = p as! AXUIElement
+            ancestors.append("\(attr(node, kAXRoleAttribute) ?? "") \(name(node))")
+        }
 
         var owner = "unknown"
         var pid: pid_t = 0
@@ -77,7 +88,7 @@ enum Vision {
                 matches = false
             }
         }
-        return HitResult(role: role, label: label, app: owner, matchesExpected: matches)
+        return HitResult(role: role, label: label, app: owner, matchesExpected: matches, ancestors: ancestors)
     }
 
     // MARK: Capture
@@ -180,6 +191,44 @@ enum Vision {
     }
 
     // MARK: Helpers
+
+    /// Whether an element named `expected` covers the point in the window
+    /// that `hit` belongs to. Chromium answers a hit test on a web app's
+    /// toolbar with an unnamed full-window layer, not the button under it;
+    /// the window server has still decided which window is in front, so
+    /// looking inside that window for the named control is safe.
+    static func windowShows(_ expected: String, at p: CGPoint) -> Bool {
+        let system = AXUIElementCreateSystemWide()
+        var ref: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(p.x), Float(p.y), &ref) == .success,
+              let hit = ref else { return false }
+        // Web nodes often lack AXWindow; climb to it instead.
+        var w = hit
+        for _ in 0..<32 where attr(w, kAXRoleAttribute) != kAXWindowRole {
+            var parent: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(w, kAXParentAttribute as CFString, &parent) == .success,
+                  let up = parent, CFGetTypeID(up) == AXUIElementGetTypeID() else { break }
+            w = up as! AXUIElement
+        }
+        let want = expected.lowercased()
+        var stack = [w]
+        var budget = 3000
+        while let node = stack.popLast(), budget > 0 {
+            budget -= 1
+            if let f = frame(node), !f.contains(p), f.width >= 1 { continue }
+            if "\(attr(node, kAXRoleAttribute) ?? "") \(name(node))".lowercased().contains(want) { return true }
+            var kids: CFTypeRef?
+            if AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &kids) == .success,
+               let children = kids as? [AXUIElement] { stack.append(contentsOf: children) }
+        }
+        return false
+    }
+
+    private static func name(_ node: AXUIElement) -> String {
+        [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
+            .compactMap { attr(node, $0) }
+            .first(where: { !$0.isEmpty }) ?? ""
+    }
 
     private static func attr(_ node: AXUIElement, _ name: String) -> String? {
         var ref: CFTypeRef?

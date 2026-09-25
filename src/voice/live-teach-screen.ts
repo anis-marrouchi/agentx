@@ -10,7 +10,9 @@ import type { ScreenView, TeachDeps } from "./live-teach"
 const run = promisify(execFile)
 
 export async function readScreenView(): Promise<ScreenView> {
-  const s = await readScreen({ max: 45 })
+  // A drawing app with a shape selected shows ~75 controls (colour, fill,
+  // dash, size, font); at 45 its fonts and canvas were never offered.
+  const s = await readScreen({ max: 80 })
   return {
     app: s.app,
     window: s.window,
@@ -32,11 +34,24 @@ async function helper(argv: string[]): Promise<string | null> {
 
 /** Press or type for real. The helper's own guards still apply: it will
  *  not click what something else covers, nor type into a send field. */
-export const helperAct: TeachDeps["act"] = async ({ action, rect, label, text }) => {
+export const helperAct: TeachDeps["act"] = async (step) => {
+  if (step.action === "key") {
+    // "shift+." → --name . --mod shift
+    const parts = step.keys.toLowerCase().split("+").map((k) => k.trim()).filter(Boolean)
+    const name = parts.pop()
+    if (!name) return { error: `no key in "${step.keys}"` }
+    return { error: await helper(["key", "--name", name, ...(parts.length ? ["--mod", parts.join("+")] : [])]) }
+  }
+  const { action, rect, label, role, text } = step
+  // Check the click lands on the named control; the canvas and controls
+  // named only "0" (an unlabelled web text box) are checked by role.
+  const named = role !== "AXImage" && /\p{L}{2}/u.test(label)
+  const expect = named || !role ? label.slice(0, 40) : role
   const where = ["--x", String(rect.x), "--y", String(rect.y), "--w", String(rect.width), "--h", String(rect.height)]
   const pointed = await helper(["point", ...where, "--label", label.slice(0, 40), "--hold", "0.3"])
   if (pointed) return { error: pointed }
-  const clicked = await helper(["click", ...(label ? ["--expect", label.slice(0, 40)] : [])])
+  // The lesson waits for the app to settle itself, so the helper need not.
+  const clicked = await helper(["click", "--settle", "0.1", ...(expect ? ["--expect", expect] : [])])
   if (clicked || action === "click") return { error: clicked }
   return { error: await helper(["type", "--text", text ?? ""]) }
 }
