@@ -2,6 +2,27 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.39.0](https://github.com/anis-marrouchi/agentx/compare/v0.38.0...v0.39.0) (2026-09-25)
+
+
+### Features
+
+* **presence:** park beside the user's pointer, not the corner ([9d99b6e](https://github.com/anis-marrouchi/agentx/commit/9d99b6ecc380de700a74000cff93c543ebf98e4d)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+* **teach:** Clicky-style narration and tldraw offline act mode ([1934133](https://github.com/anis-marrouchi/agentx/commit/19341332ab229d029e384c1c8c4c1967fcf1b88d))
+* **teach:** Clicky-style narration for live teach ([c6baa3d](https://github.com/anis-marrouchi/agentx/commit/c6baa3d91ab795fe5f7fcb136186121ad564865a)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+* **teach:** key action, canvas target and room for a style panel ([32ccc88](https://github.com/anis-marrouchi/agentx/commit/32ccc8849bef96782665619f3b22e8970ce56ed6)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+
+
+### Bug Fixes
+
+* **mac-helper:** read and click Electron web apps like tldraw offline ([548f4bf](https://github.com/anis-marrouchi/agentx/commit/548f4bf766968803a5a69993459d7d0327bba8d4)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+* **teach:** type into unnamed text boxes; plainer act-mode lines ([5717324](https://github.com/anis-marrouchi/agentx/commit/5717324c5b6d146dc371b7d03ab34eb1e1a530fd)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+
+
+### Performance Improvements
+
+* **teach:** act while speaking, and a pointer move that keeps time ([a1138e9](https://github.com/anis-marrouchi/agentx/commit/a1138e987b64b60a250e1e8f339c402a081793b2)), closes [#51](https://github.com/anis-marrouchi/agentx/issues/51)
+
 ## [0.38.0](https://github.com/anis-marrouchi/agentx/compare/v0.37.0...v0.38.0) (2026-09-25)
 
 
