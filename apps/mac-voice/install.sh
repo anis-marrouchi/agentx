@@ -11,7 +11,27 @@ cd "$(dirname "$0")"
 
 APP_NAME="AgentX Voice.app"
 DEST="/Applications/$APP_NAME"
-PLIST="$HOME/Library/LaunchAgents/tn.acme.agentx.voice.plist"
+BIN="$DEST/Contents/MacOS/AgentXVoice"
+AGENTS="$HOME/Library/LaunchAgents"
+
+# One login item per machine. An earlier install may have used another
+# label (the identifier was renamed); adopt that one instead of adding a
+# second KeepAlive agent, and retire any other that runs the same binary.
+# AGENTX_VOICE_LABEL forces a label.
+LABEL="${AGENTX_VOICE_LABEL:-}"
+PLIST=""
+for p in "$AGENTS"/*agentx.voice*.plist; do
+  [ -e "$p" ] && grep -qF "$BIN" "$p" || continue
+  l=$(/usr/libexec/PlistBuddy -c 'Print :Label' "$p" 2>/dev/null) || continue
+  if [ -z "$LABEL" ] || [ "$l" = "$LABEL" ]; then
+    LABEL="$l"; PLIST="$p"; continue
+  fi
+  echo "→ removing duplicate login item: $l"
+  launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
+  rm -f "$p"
+done
+LABEL="${LABEL:-tn.acme.agentx.voice}"
+PLIST="${PLIST:-$AGENTS/$LABEL.plist}"
 
 echo "→ installing to $DEST"
 rm -rf "$DEST"
@@ -24,9 +44,9 @@ cat > "$PLIST" <<PL
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>tn.acme.agentx.voice</string>
+  <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$DEST/Contents/MacOS/AgentXVoice</string></array>
+  <array><string>$BIN</string></array>
   <key>RunAtLoad</key><true/>
   <!-- KeepAlive so a crash brings it straight back. The widget is
        stateless between turns, so restarting loses nothing. -->
@@ -40,7 +60,6 @@ PL
 # bootout is asynchronous: bootstrapping immediately after can race the
 # teardown and fail with "Input/output error". Wait for the label to
 # actually disappear, then bootstrap only if it is really gone.
-LABEL="tn.acme.agentx.voice"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 for _ in $(seq 1 20); do
   launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break
@@ -58,5 +77,5 @@ echo
 echo "Installed. It is running now and will start at login."
 echo "  Spotlight : ⌘Space, type \"AgentX Voice\""
 echo "  Talk      : hold ⌥Space"
-echo "  Stop      : launchctl bootout gui/\$(id -u)/tn.acme.agentx.voice"
+echo "  Stop      : launchctl bootout gui/\$(id -u)/$LABEL"
 echo "  Logs      : ~/Library/Logs/agentx-voice.log"
