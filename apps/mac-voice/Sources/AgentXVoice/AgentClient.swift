@@ -78,6 +78,12 @@ enum AgentClient {
         return Hushed(kind: r?.kind, agentID: r?.agentId)
     }
 
+    /// Silence everything the daemon is saying, keeping nothing for the
+    /// door. Never throws: no daemon means nothing of its was speaking.
+    static func stopVoice() async {
+        _ = try? await post("/voice/stop", [:], timeout: 2)
+    }
+
     /// Hand the listener's words through the door. True when an activity
     /// took them (a talk or lesson answers; "stop" ends it); false means
     /// nothing did, and they are an ordinary question.

@@ -21,6 +21,9 @@ final class App: NSObject, NSApplicationDelegate {
     private let recorder = Recorder()
     private var hotkey: Hotkey?
     private var pasteHotkey: Hotkey?
+    private var stopHotkey: Hotkey?
+    /// Set by a stop: the answer being spoken ends without reopening the mic.
+    private var silenced = false
     private var busy = false
     private var progress: Progress?
     private var ticker: Timer?
@@ -116,6 +119,16 @@ final class App: NSObject, NSApplicationDelegate {
             onRelease: { [weak self] in self?.smartPaste() })
         pasteHotkey?.register(keyCode: UInt32(kVK_ANSI_V),
                               modifiers: UInt32(cmdKey | optionKey))
+
+        // ⌘⌥. (and the pill's menu): stop every voice now. ⌘. is the Mac's
+        // own "cancel"; Option keeps it from reaching the app in front.
+        stopHotkey = Hotkey(
+            id: 3,
+            onPress: {},
+            onRelease: { [weak self] in self?.stopSpeaking() })
+        stopHotkey?.register(keyCode: UInt32(kVK_ANSI_Period),
+                             modifiers: UInt32(cmdKey | optionKey))
+        panel.onStop = { [weak self] in self?.stopSpeaking() }
 
         recorder.requestPermission { [weak self] granted in
             Task { @MainActor in
@@ -227,6 +240,16 @@ final class App: NSObject, NSApplicationDelegate {
         listenHandsFree(followUp: false)
     }
 
+    /// Barge-in without a question: every voice stops, queued lines are
+    /// dropped, and the widget goes quiet.
+    private func stopSpeaking() {
+        Log.info("stop: silencing every voice")
+        if busy { silenced = true }
+        lastSpokeAt = Date()
+        Task { await Speech.stopAll() }
+        if !recorder.isRecording { panel.render(.idle) }
+    }
+
     private func startListening() {
         // A held key overrides any hands-free window that is open, so the
         // two ways of talking never fight over the microphone.
@@ -299,6 +322,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// One question and its spoken answer. Words said through the door
     /// while it thinks replace the answer with the next turn.
     private func runTurn(_ heard: String) async {
+        silenced = false
         do {
             beginNarration()
 
@@ -328,12 +352,16 @@ final class App: NSObject, NSApplicationDelegate {
             } else {
                 card.orderOut(nil)
             }
+            // Stopped while it was thinking: the answer is not spoken.
+            if silenced { silenced = false; panel.render(.idle); busy = false; return }
             // Scroll the sentence being spoken, so it can be read as
             // well as heard — and re-read after, which speech cannot do.
             panel.render(.saying(answer.text))
             await Speech.speak(answer.text, voice: voice)
             // Cut off by the door: the new words are being recorded.
             if recorder.isRecording { busy = false; return }
+            // Stopped: no follow-up window, the listener asked for quiet.
+            if silenced { silenced = false; panel.render(.idle); busy = false; return }
             if let next = followUp { followUp = nil; return await runTurn(next) }
             panel.render(.idle)
             // Leave the microphone open for a moment. Say nothing and
