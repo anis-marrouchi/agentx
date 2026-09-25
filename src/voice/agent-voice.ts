@@ -10,11 +10,19 @@ import type { DaemonConfig } from "@/daemon/config"
 import type { TalkSpeaker } from "./talk"
 import type { VoiceRef } from "./speaker"
 import { castVoices, candidates, findVoice, listSystemVoices, warnOnce, type CastEntry, type SystemVoice } from "./system-voices"
+import { detectLanguage } from "./language"
 
 type AgentConfig = DaemonConfig["agents"][string]
 type Agents = DaemonConfig["agents"]
 export type VoiceSettings = Partial<DaemonConfig["voice"]>
 export type VoiceProvider = DaemonConfig["voice"]["provider"]
+/** A configured system voice: one name, or one per language. */
+export type SystemChoice = NonNullable<DaemonConfig["voice"]["system"]>
+
+/** The name that means the OS default voice: `say` with no -v follows
+ *  System Settings → Spoken Content, the only way apps get a Siri voice. */
+export const OS_DEFAULT = "system"
+const isOsDefault = (name: string) => name.trim().toLowerCase() === OS_DEFAULT
 
 /** ElevenLabs "Rachel" — the voice every agent used before this existed. */
 export const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
@@ -30,6 +38,9 @@ export interface AgentVoice {
   systemVoice: string | null
   /** Its readable name, e.g. "Daniel (en-GB)". */
   systemVoiceName: string | null
+  /** A voice per language ("fr", "ar"; null for the OS default), used for
+   *  lines in that language. Empty when one voice speaks every language. */
+  systemByLanguage: Record<string, SystemVoice | null>
   /** When ElevenLabs cannot speak, use the system voice instead. */
   fallback: boolean
   gender: "female" | "male" | "neutral" | null
@@ -53,6 +64,7 @@ export function resolveAgentVoice(
   const name = agent?.name || agentId
   const v = agent?.voice
   const sys = localSystemVoices(agents, settings, installed).get(agentId) ?? null
+  const systemByLanguage = languageVoices(agentId, v?.system, v?.gender, settings, installed)
   return {
     agentId,
     name,
@@ -60,6 +72,7 @@ export function resolveAgentVoice(
     elevenlabsVoiceId: v?.elevenlabsVoiceId || null,
     systemVoice: sys?.id ?? null,
     systemVoiceName: sys ? label(sys) : null,
+    systemByLanguage,
     fallback: (settings.fallback ?? "system") === "system",
     gender: v?.gender ?? null,
     style: v?.style || null,
@@ -78,39 +91,94 @@ export function checkedVoice(owner: string, name: string | undefined, installed:
   return v
 }
 
-/** Someone to cast: their configured voice name and gender, if any. */
-export interface VoiceWish { id: string; system?: string; gender?: SystemVoice["gender"] }
+/** Someone to cast: their configured voice and gender, if any. */
+export interface VoiceWish { id: string; system?: SystemChoice; gender?: SystemVoice["gender"] }
+
+const language = (locale: string) => locale.toLowerCase().split(/[-_]/)[0]
+
+/** The configured name for one language: a plain name serves them all. */
+const nameFor = (choice: SystemChoice | undefined, lang: string) =>
+  typeof choice === "string" ? choice : choice?.[language(lang)]
+
+/** A configured name: the installed voice, null for the OS default, or
+ *  undefined when unset or not installed (with a warning). */
+function configured(owner: string, name: string | undefined, installed: SystemVoice[], locale: string): SystemVoice | null | undefined {
+  if (name === undefined) return undefined
+  if (isOsDefault(name)) return null
+  return checkedVoice(owner, name, installed, locale) ?? undefined
+}
+
+/** The global default suits an agent unless both genders are known and differ. */
+const fitsGender = (v: SystemVoice | null, gender: SystemVoice["gender"] | undefined) =>
+  !v || !v.gender || v.gender === "neutral" || !gender || gender === "neutral" || v.gender === gender
 
 /**
  * A system voice for each wish, in order: its own if installed, else the
- * global default, else a distinct one of its own. Names in `taken` are
- * already spoken for (e.g. by local agents, when casting mesh agents).
+ * global default if it is of the wish's gender, else a distinct one of its
+ * own. Null means the OS default voice. Names in `taken` are already
+ * spoken for (e.g. by local agents, when casting mesh agents).
  */
-export function castSystemVoices(wishes: VoiceWish[], settings: VoiceSettings, installed: SystemVoice[], taken: Set<string> = new Set()): Map<string, SystemVoice> {
+export function castSystemVoices(wishes: VoiceWish[], settings: VoiceSettings, installed: SystemVoice[], taken: Set<string> = new Set()): Map<string, SystemVoice | null> {
   const locale = settings.locale ?? "en"
-  const out = new Map<string, SystemVoice>()
+  const out = new Map<string, SystemVoice | null>()
   const open: CastEntry[] = []
-  const fallback = checkedVoice("voice.system", settings.system, installed, locale)
+  const fallback = configured("voice.system", nameFor(settings.system, locale), installed, locale)
   for (const w of wishes) {
-    const own = checkedVoice(w.id, w.system, installed, locale) ?? fallback
-    if (own) out.set(w.id, own)
+    const own = configured(w.id, nameFor(w.system, locale), installed, locale)
+    const pick = own !== undefined ? own : fallback !== undefined && fitsGender(fallback, w.gender) ? fallback : undefined
+    if (pick !== undefined) out.set(w.id, pick)
     else open.push({ id: w.id, gender: w.gender ?? null })
   }
-  const names = new Set([...taken, ...[...out.values()].map((v) => v.name)])
+  const names = new Set([...taken, ...[...out.values()].flatMap((v) => (v ? [v.name] : []))])
   for (const [id, v] of castVoices(open, candidates(installed, locale), names)) out.set(id, v)
   return out
 }
 
+/**
+ * The voice per language for lines not in the default one: the agent's
+ * own list over the global one. A plain name on the agent speaks every
+ * language, so there is nothing to switch to.
+ */
+export function languageVoices(
+  owner: string, own: SystemChoice | undefined, gender: SystemVoice["gender"] | undefined,
+  settings: VoiceSettings, installed: SystemVoice[],
+): Record<string, SystemVoice | null> {
+  if (typeof own === "string") return {}
+  const out: Record<string, SystemVoice | null> = {}
+  const add = (who: string, list: SystemChoice | undefined, suits: (v: SystemVoice | null) => boolean) => {
+    if (!list || typeof list === "string") return
+    for (const [lang, name] of Object.entries(list)) {
+      const v = configured(`${who}.${lang}`, name, installed, lang)
+      if (v !== undefined && suits(v)) out[language(lang)] = v
+    }
+  }
+  add("voice.system", settings.system, (v) => fitsGender(v, gender))
+  add(owner, own, () => true)
+  return out
+}
+
+/** The voice for one line: the voice of its language when the agent has
+ *  one, else its default voice. */
+export function voiceForText(v: AgentVoice, text?: string | null): AgentVoice {
+  const lang = text ? detectLanguage(text) : null
+  if (!lang || !(lang in v.systemByLanguage)) return v
+  const sys = v.systemByLanguage[lang]
+  return { ...v, systemVoice: sys?.id ?? null, systemVoiceName: sys ? label(sys) : null }
+}
+
 /** Every local agent's system voice, assigned in config order, so adding
  *  an agent at the end never changes anyone else's voice. */
-export function localSystemVoices(agents: Agents, settings: VoiceSettings = {}, installed: SystemVoice[] = listSystemVoices()): Map<string, SystemVoice> {
+export function localSystemVoices(agents: Agents, settings: VoiceSettings = {}, installed: SystemVoice[] = listSystemVoices()): Map<string, SystemVoice | null> {
   const wishes = Object.entries(agents).map(([id, a]) => ({ id, system: a.voice?.system, gender: a.voice?.gender }))
   return castSystemVoices(wishes, settings, installed)
 }
 
 /** What the speech engine needs; `explicit` is a one-off ElevenLabs id. */
 export function voiceRef(v: AgentVoice, explicit?: string | null): VoiceRef {
-  return { provider: v.provider, elevenlabs: pickVoiceId(explicit, v.elevenlabsVoiceId), system: v.systemVoice, fallback: v.fallback }
+  const ref: VoiceRef = { provider: v.provider, elevenlabs: pickVoiceId(explicit, v.elevenlabsVoiceId), system: v.systemVoice, fallback: v.fallback }
+  const langs = Object.entries(v.systemByLanguage ?? {})
+  if (langs.length) ref.languages = Object.fromEntries(langs.map(([l, sys]) => [l, sys?.id ?? null]))
+  return ref
 }
 
 /** The voice id to synthesise with: explicit, then agent, then env, then Rachel. */
@@ -233,7 +301,7 @@ export function remoteVoiceAppend(context: unknown): string | undefined {
   const intro = clip(ctx.voice.intro)
   const voice: AgentVoice = {
     agentId: "", name: "", provider: "system", elevenlabsVoiceId: null,
-    systemVoice: null, systemVoiceName: null, fallback: true, gender: null,
+    systemVoice: null, systemVoiceName: null, systemByLanguage: {}, fallback: true, gender: null,
     style: clip(ctx.voice.style) || null,
     intro: intro || "Hello.",
   }

@@ -163,7 +163,9 @@ export interface CastEntry {
  * two agents in a row never sound alike. Distinct means a different NAME:
  * Eddy in en-GB and Eddy in en-US are the same speaker. Names in `taken`
  * (pinned by other agents) are used only once every other voice is; with
- * more agents than voices, voices repeat.
+ * more agents than voices, voices repeat. A known gender wins over being
+ * distinct: once that gender's voices are all used, one is repeated
+ * rather than giving the agent a voice of the other gender.
  */
 export function castVoices(entries: CastEntry[], pool: SystemVoice[], taken: Set<string> = new Set()): Map<string, SystemVoice> {
   const cast = new Map<string, SystemVoice>()
@@ -171,12 +173,15 @@ export function castVoices(entries: CastEntry[], pool: SystemVoice[], taken: Set
   const used = new Set([...taken].map((n) => n.toLowerCase()))
   let turn: "female" | "male" = "female"
   for (const e of entries) {
-    const want = e.gender === "female" || e.gender === "male" ? e.gender : turn
+    const known = e.gender === "female" || e.gender === "male"
+    const want = known ? e.gender : turn
     const free = pool.filter((v) => !used.has(v.name.toLowerCase()))
-    const pick = free.find((v) => v.gender === want) ?? free[0] ?? pool[cast.size % pool.length]
+    const pick = free.find((v) => v.gender === want)
+      ?? (known ? pool.find((v) => v.gender === want) : undefined)
+      ?? free[0] ?? pool[cast.size % pool.length]
     cast.set(e.id, pick)
     used.add(pick.name.toLowerCase())
-    if (!e.gender || e.gender === "neutral") turn = turn === "female" ? "male" : "female"
+    if (!known) turn = turn === "female" ? "male" : "female"
   }
   return cast
 }

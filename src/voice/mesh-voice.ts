@@ -8,7 +8,7 @@
 // already uses.
 
 import type { DaemonConfig } from "@/daemon/config"
-import { castSystemVoices, deriveIntro, introInstruction, label, localSystemVoices, pickVoiceId, voiceRef, type AgentVoice, type VoiceSettings } from "./agent-voice"
+import { castSystemVoices, deriveIntro, introInstruction, label, languageVoices, localSystemVoices, pickVoiceId, voiceRef, type AgentVoice, type VoiceSettings } from "./agent-voice"
 import { listSystemVoices, type SystemVoice } from "./system-voices"
 import type { TalkSpeaker } from "./talk"
 
@@ -174,6 +174,7 @@ export class MeshVoices {
       elevenlabsVoiceId: cfg?.elevenlabsVoiceId || this.assigned().get(id) || null,
       systemVoice: sys?.id ?? null,
       systemVoiceName: sys ? label(sys) : null,
+      systemByLanguage: languageVoices(id, cfg?.system, cfg?.gender ?? genderFromCard(agent?.description ?? ""), settings, this.installed()),
       fallback: (settings.fallback ?? "system") === "system",
       gender: cfg?.gender ?? genderFromCard(agent?.description ?? "") ?? null,
       style: cfg?.style || null,
@@ -196,10 +197,10 @@ export class MeshVoices {
   }
 
   /** System voices for remotes, distinct from every local agent's. */
-  private systemCast(): Map<string, SystemVoice> {
+  private systemCast(): Map<string, SystemVoice | null> {
     const { agents, meshVoices = {}, voice: settings = {} } = this.config()
     const installed = this.installed()
-    const taken = new Set([...localSystemVoices(agents, settings, installed).values()].map((v) => v.name))
+    const taken = new Set([...localSystemVoices(agents, settings, installed).values()].flatMap((v) => (v ? [v.name] : [])))
     const wishes = this.list().sort((a, b) => a.id.localeCompare(b.id)).map((a) => ({
       id: a.id, system: meshVoices[a.id]?.system, gender: meshVoices[a.id]?.gender ?? genderFromCard(a.description),
     }))

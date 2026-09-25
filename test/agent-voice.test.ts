@@ -20,7 +20,7 @@ describe("resolveAgentVoice", () => {
     } as any, {}, [])
     expect(v).toEqual({
       agentId: "marketing-agent", name: "Nadia", provider: "system", elevenlabsVoiceId: "abc",
-      systemVoice: null, systemVoiceName: null, fallback: true,
+      systemVoice: null, systemVoiceName: null, systemByLanguage: {}, fallback: true,
       gender: "female", style: "warm", intro: "Hi, Nadia here.",
     })
   })
