@@ -112,17 +112,42 @@ export function listSiriVoices(dirs = ASSET_DIRS, host: SiriHost = {}): SystemVo
 
 // --- Speaking ---
 
-/** Text on stdin; $1 is a Siri voice id, or nothing for the OS default as
- *  it stands (still locked, so no switch is in effect while it speaks). */
+/** Text on stdin; $1 is a voice id: a Siri id switches the OS default for
+ *  the line, any other id goes to `say -v`, none speaks the OS default as
+ *  it stands. Every line holds one lock, so none talk over each other.
+ *  The text is read before the lock, a watchdog bounds each line, lines
+ *  queued past AGENTX_SAY_STALE_S (30 s) are dropped, and `--stop`
+ *  silences the line speaking and drops every queued one. */
 export const SIRI_SAY = `#!/bin/sh
 # Written by agentx; shared by the daemon and AgentX Voice. Do not edit.
+#   siri-say.sh [voice] < text   speak one line. A Siri voice id switches
+#                                the OS default for it; any other id is
+#                                passed to say -v.
+#   siri-say.sh --stop           silence the line speaking, drop the queue.
 D=com.apple.Accessibility K=SpokenContentDefaultVoiceSelectionsByLanguage
 dir="$HOME/.agentx/voice" lock="$HOME/.agentx/voice/siri.lock" saved="$HOME/.agentx/voice/siri-saved.plist"
-case "$1" in *[!A-Za-z0-9._-]*) echo "bad voice id" >&2; exit 2;; esac
+stops="$dir/stop"
+read_s=\${AGENTX_SAY_READ_S:-5} stale_s=\${AGENTX_SAY_STALE_S:-30} max_s=\${AGENTX_SAY_MAX_S:-300}
+if [ "$1" = --stop ]; then
+  mkdir -p "$dir" || exit 1
+  # Queued lines see this change and drop. The owner's trap stops say,
+  # restores the voice, and frees the lock.
+  echo "$$ $(date +%s)" > "$stops"
+  owner=$(cat "$lock/pid" 2>/dev/null)
+  [ -n "$owner" ] && kill "$owner" 2>/dev/null
+  exit 0
+fi
+case "$1" in com.apple.ttsbundle.gryphon-neural_*) siri=$1 voice= ;; *) siri= voice=$1 ;; esac
+case "$siri" in *[!A-Za-z0-9._-]*) echo "bad voice id" >&2; exit 2;; esac
 # Not macOS, or no pref tools: speak as is and never touch a pref.
-if [ "$(uname)" != Darwin ] || ! command -v defaults >/dev/null || ! command -v plutil >/dev/null; then exec say; fi
+if [ "$(uname)" != Darwin ] || ! command -v defaults >/dev/null || ! command -v plutil >/dev/null; then
+  if [ -n "$voice" ]; then exec say -v "$voice"; else exec say; fi
+fi
 mkdir -p "$dir" || exit 1
-say_pid=
+mine=$(cat "$stops" 2>/dev/null)
+stopped() { [ "$(cat "$stops" 2>/dev/null)" != "$mine" ]; }
+txt=$(mktemp "\${TMPDIR:-/tmp}/agentx-say.XXXXXX") || exit 1
+say_pid= dog=
 restore() {
   [ -f "$saved" ] || return 0
   if [ -s "$saved" ]; then defaults write $D $K "$(cat "$saved")"; else defaults delete $D $K 2>/dev/null; fi
@@ -130,27 +155,51 @@ restore() {
 }
 finish() {
   [ -n "$say_pid" ] && kill "$say_pid" 2>/dev/null
-  restore; rm -rf "$lock"; exit "$1"
+  [ -n "$dog" ] && { pkill -P "$dog" 2>/dev/null; kill "$dog" 2>/dev/null; }
+  restore; rm -rf "$lock"; rm -f "$txt"; exit "$1"
 }
-# One speaker at a time. A lock whose owner died is taken over.
+drop() { rm -f "$txt"; exit 75; }
+# The whole text first, before the lock: a writer that never closes stdin
+# must not hold up every other speaker.
+exec 3<&0 0</dev/null
+cat <&3 > "$txt" & cat_pid=$!
+exec 3<&-
+n=0
+while kill -0 "$cat_pid" 2>/dev/null; do
+  if [ $n -ge $((read_s * 10)) ]; then
+    kill "$cat_pid" 2>/dev/null; echo "stdin never closed; nothing said" >&2; rm -f "$txt"; exit 3
+  fi
+  sleep 0.1; n=$((n + 1))
+done
+# One speaker at a time. A lock whose owner died is taken over. A line
+# that waits past stale_s, or that a stop overtook, is dropped unsaid.
+n=0
 while ! mkdir "$lock" 2>/dev/null; do
+  stopped && drop
+  if [ $n -ge $((stale_s * 10)) ]; then echo "waited \${stale_s}s for the speaker; dropped" >&2; drop; fi
   owner=$(cat "$lock/pid" 2>/dev/null)
   if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then rm -rf "$lock"
   elif [ -z "$owner" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$lock"
-  else sleep 0.1; fi
+  else sleep 0.1; n=$((n + 1)); fi
 done
 echo $$ > "$lock/pid"
 trap 'finish 143' TERM INT HUP
+stopped && finish 75
 restore
-if [ -n "$1" ]; then
+if [ -n "$siri" ]; then
   lang=$(defaults read -g AppleLanguages 2>/dev/null | sed -n '2s/^[^A-Za-z]*\\([A-Za-z]*\\).*/\\1/p')
   defaults export $D - 2>/dev/null | plutil -extract $K xml1 -o "$saved.tmp" - 2>/dev/null || : > "$saved.tmp"
   mv "$saved.tmp" "$saved"
-  defaults write $D $K -array "\${lang:-en}" "{ _type = \\"Speech.VoiceSelection\\"; _version = 0; voiceId = \\"$1\\"; }"
+  defaults write $D $K -array "\${lang:-en}" "{ _type = \\"Speech.VoiceSelection\\"; _version = 0; voiceId = \\"$siri\\"; }"
 fi
-exec 3<&0
-say <&3 & say_pid=$!
-wait $say_pid
+# A watchdog: no line runs past its length's worth of speech (a hung say
+# held the lock for minutes), capped at max_s.
+limit=$((5 + $(wc -w < "$txt") * 6 / 10))
+[ $limit -gt $max_s ] && limit=$max_s
+if [ -n "$voice" ]; then say -v "$voice" -f "$txt" & else say -f "$txt" & fi
+say_pid=$!
+( sleep "$limit"; echo "say ran past \${limit}s; stopped" >&2; kill "$say_pid" 2>/dev/null ) & dog=$!
+wait "$say_pid"
 status=$?
 say_pid=
 finish $status

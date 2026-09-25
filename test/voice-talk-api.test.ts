@@ -25,7 +25,7 @@ function service() {
   const play = () => { const p = new EventEmitter() as ChildProcess; setTimeout(() => p.emit("close", 0), 10); (p as any).kill = () => p.emit("close", null); return p }
   const speech = new SpeechOut(async () => null, play)
   const intros = new VoiceIntroTracker()
-  const svc = new VoiceTalkService(() => agents, intros, () => {}, { speech, model: () => new Model("Short and sweet. DONE") })
+  const svc = new VoiceTalkService(() => agents, intros, () => {}, { speech, model: () => new Model("Short and sweet. DONE"), stopSpeakers: () => {} })
   return { svc, intros }
 }
 

@@ -51,6 +51,9 @@ final class Panel: NSPanel {
         item.target = self
         item.state = holding ? .on : .off
         menu.addItem(item)
+        let stop = NSMenuItem(title: "Stop speaking  ⌘⌥.", action: #selector(stopSpeaking), keyEquivalent: "")
+        stop.target = self
+        menu.addItem(stop)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit AgentX Voice",
                               action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -65,6 +68,11 @@ final class Panel: NSPanel {
 
     /// Told when the hold flips, so the app can redraw and flush.
     var onHoldChanged: ((Bool) -> Void)?
+
+    @objc private func stopSpeaking() { onStop?() }
+
+    /// "Stop speaking" was chosen. Set by the app.
+    var onStop: (() -> Void)?
 
     override func mouseUp(with event: NSEvent) {
         defer { pressedAt = nil }

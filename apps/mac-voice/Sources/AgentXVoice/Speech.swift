@@ -101,6 +101,15 @@ enum Speech {
     /// Silence whatever this app is saying (an answer or a step line).
     static func stop() { Player.shared.stop() }
 
+    /// Barge-in: silence every voice on this Mac and drop every queued
+    /// line. This app's line, whatever holds the shared script's lock, and
+    /// the daemon's talk, lesson or narration (POST /voice/stop).
+    static func stopAll() async {
+        Player.shared.stop()
+        Player.stopScript()
+        await AgentClient.stopVoice()
+    }
+
     /// `voice` is the answering agent's, as the daemon resolved it; nil
     /// (no answer yet) means the provider this app is configured with.
     static func speak(_ text: String, voice: VoiceChoice? = nil) async {
@@ -181,16 +190,19 @@ final class Player: NSObject, AVAudioPlayerDelegate {
     /// Speak with a system voice; returns when done or stopped. The text
     /// goes in on stdin, so a line that starts with "-" is not an option.
     ///
-    /// `say -v` cannot use a Siri voice. A Siri line, and any line in the
-    /// OS default voice, goes through the daemon's script, which switches
-    /// the default for the line and locks it against the daemon's own lines.
+    /// Every line goes through the daemon's script when it can: it switches
+    /// the default for a Siri voice (`say -v` cannot use one), holds the one
+    /// speaker lock, bounds the line, and is what a stop reaches. A script
+    /// from before `--stop` treats any id as a Siri one, so it only gets
+    /// Siri and default lines.
     func say(_ text: String, voice: String?) async {
         let p = Process()
-        let script = NSHomeDirectory() + "/.agentx/voice/siri-say.sh"
+        let script = Self.script
         let siri = voice?.hasPrefix("com.apple.ttsbundle.gryphon-neural_") ?? false
-        if (voice == nil || siri) && FileManager.default.fileExists(atPath: script) {
+        let current = (try? String(contentsOfFile: script, encoding: .utf8))?.contains("--stop") ?? false
+        if (voice == nil || siri || current) && FileManager.default.fileExists(atPath: script) {
             p.executableURL = URL(fileURLWithPath: "/bin/sh")
-            p.arguments = [script] + (siri ? [voice!] : [])
+            p.arguments = [script] + (voice.map { [$0] } ?? [])
         } else {
             p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
             p.arguments = voice.flatMap { siri ? nil : ["-v", $0] } ?? []
@@ -222,6 +234,20 @@ final class Player: NSObject, AVAudioPlayerDelegate {
             }
         }
         if sayProcess === p { sayProcess = nil }
+    }
+
+    static let script = NSHomeDirectory() + "/.agentx/voice/siri-say.sh"
+
+    /// Stop the line holding the script's lock, whoever started it, and
+    /// drop every line queued behind it.
+    static func stopScript() {
+        guard FileManager.default.fileExists(atPath: script) else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = [script, "--stop"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { Log.warn("stop failed to start (\(error.localizedDescription))") }
     }
 
     func play(_ mp3: Data) async throws {

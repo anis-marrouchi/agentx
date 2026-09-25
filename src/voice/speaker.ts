@@ -99,14 +99,32 @@ export const sayArgs = (v: VoiceRef, text = ""): string[] => {
   return id && !isSiriVoice(id) ? ["-v", id] : []
 }
 
-/** The command that speaks a line. On macOS a line in the OS default
- *  voice, Siri or not, goes through the shared script, which switches the
- *  default when asked and serialises every speaker that depends on it. */
+/** The command that speaks a line. On macOS every line goes through the
+ *  shared script: it switches the default for a Siri voice, holds the one
+ *  speaker lock, bounds the line, and is what `stopAllSpeakers` reaches. */
 export function sayCommand(v: VoiceRef, text: string, siriSay: string | null): [string, string[]] {
-  const args = sayArgs(v, text)
-  if (args.length || !siriSay) return ["say", args]
+  if (!siriSay) return ["say", sayArgs(v, text)]
   const id = systemVoiceFor(v, text)
-  return ["/bin/sh", [siriSay, ...(isSiriVoice(id) ? [id] : [])]]
+  return ["/bin/sh", [siriSay, ...(id ? [id] : [])]]
+}
+
+/** How long a line may play before it is taken for hung: its length's
+ *  worth of speech with room to spare, capped. The shared script applies
+ *  the same bound to its own `say`. */
+export function speakLimitMs(text: string): number {
+  const words = text.split(/\s+/).filter(Boolean).length
+  return Math.min(300, 5 + Math.floor((words * 6) / 10)) * 1000
+}
+
+/** Silence every speaker on this host, AgentX Voice's lines included:
+ *  the line holding the shared script's lock stops (the voice is
+ *  restored) and every queued line is dropped. Never throws. */
+export function stopAllSpeakers(script: string | null = siriSayScript()): void {
+  if (!script) return
+  try {
+    const p = spawn("/bin/sh", [script, "--stop"], { stdio: "ignore" })
+    p.on("error", () => {})
+  } catch { /* nothing to stop */ }
 }
 
 /** The shared script's path on a Mac that can switch voices, written if
@@ -150,6 +168,7 @@ export class SpeechOut {
     private synth: Synth = elevenLabsSynth(),
     private play: Play = systemPlay,
     public events: SpeechEvents = {},
+    private limitMs: (text: string) => number = speakLimitMs,
   ) {}
 
   /** True while anything is playing or waiting to play. */
@@ -196,9 +215,13 @@ export class SpeechOut {
       this.events.onStart?.(u, Date.now())
       u.onStart?.()
       let ended = false
+      // A player that never exits (a hung `say`) must not hold every
+      // later line: past its bound it is killed and the line fails.
+      const watchdog = setTimeout(() => { if (!ended) p.kill() }, this.limitMs(u.text))
       const finish = (completed: boolean) => {
         if (ended) return
         ended = true
+        clearTimeout(watchdog)
         if (this.playing === p) this.playing = null
         this.events.onEnd?.(u, Date.now(), completed)
         resolve(completed)

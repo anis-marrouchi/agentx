@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest"
 import { spawn } from "child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { ensureSiriSay, listSiriVoices, parseSiriAssets, siriSayPath, siriSupported, type SiriHost } from "../src/voice/siri"
@@ -129,7 +129,8 @@ describe("speaking a Siri voice", () => {
     expect(sayArgs(ref(AARON))).toEqual([])
     expect(sayCommand(ref(AARON), "hi", "/s.sh")).toEqual(["/bin/sh", ["/s.sh", AARON]])
     expect(sayCommand(ref(null), "hi", "/s.sh")).toEqual(["/bin/sh", ["/s.sh"]])
-    expect(sayCommand(ref("com.apple.voice.compact.en-GB.Daniel"), "hi", "/s.sh")).toEqual(["say", ["-v", "com.apple.voice.compact.en-GB.Daniel"]])
+    // Every line on a Mac goes through the script, so one lock and one stop cover them all.
+    expect(sayCommand(ref("com.apple.voice.compact.en-GB.Daniel"), "hi", "/s.sh")).toEqual(["/bin/sh", ["/s.sh", "com.apple.voice.compact.en-GB.Daniel"]])
     expect(sayCommand(ref(AARON), "hi", null)).toEqual(["say", []])
   })
 })
@@ -164,17 +165,25 @@ case "$1" in
 esac`)
     bin("uname", `echo "\${UNAME:-Darwin}"`)
     bin("plutil", `cat > "$5"; [ -s "$5" ] || { rm -f "$5"; exit 1; }`)
-    bin("say", `echo "start $(cat "${stub}/pref" 2>/dev/null)" >> "${stub}/log"; cat > /dev/null; sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
+    bin("say", `f= v=
+while [ $# -gt 0 ]; do case "$1" in -f) f=$2; shift ;; -v) v=$2; shift ;; esac; shift; done
+echo "start $(cat "${stub}/pref" 2>/dev/null)" >> "${stub}/log"
+[ -n "$v" ] && echo "voice $v" >> "${stub}/log"
+if [ -n "$f" ]; then cat "$f" >> "${stub}/text"; else cat >> "${stub}/text"; fi
+[ "$SAY_SLEEP" = hang ] && exec sleep 1000
+sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
     writeFileSync(join(stub, "pref"), ORIGINAL)
   })
   afterEach(() => { rmSync(home, { recursive: true, force: true }); rmSync(stub, { recursive: true, force: true }) })
 
-  const run = (args: string[], env: Record<string, string> = {}) => {
+  const run = (args: string[], env: Record<string, string> = {}, text: string | null = "hello") => {
     const p = spawn("/bin/sh", [script, ...args], {
-      env: { ...process.env, HOME: home, PATH: `${join(stub, "bin")}:/usr/bin:/bin`, ...env },
+      env: { ...process.env, HOME: home, TMPDIR: stub, PATH: `${join(stub, "bin")}:/usr/bin:/bin`, ...env },
       stdio: ["pipe", "ignore", "pipe"],
     })
-    p.stdin!.end("hello")
+    // text null: write nothing and never close stdin, like the stuck writer.
+    if (text === null) p.stdin!.write("half a line")
+    else p.stdin!.end(text)
     const done = new Promise<number | null>((r) => p.on("exit", (code) => r(code)))
     return { p, done }
   }
@@ -242,8 +251,67 @@ esac`)
     expect(existsSync(join(home, ".agentx", "voice", "siri-saved.plist"))).toBe(false)
   })
 
-  it("refuses an id that could break out of the plist", async () => {
-    expect(await run(['x"; evil = "1']).done).toBe(2)
+  it("refuses a Siri id that could break out of the plist", async () => {
+    expect(await run([`${AARON}"; evil = "1`]).done).toBe(2)
     expect(sayLog()).toEqual([])
+  })
+
+  it("passes any other voice to say -v, under the same lock, without touching the pref", async () => {
+    const amelie = "com.apple.voice.compact.fr-FR.Amélie"
+    expect(await run([amelie]).done).toBe(0)
+    expect(sayLog()).toEqual([`start ${ORIGINAL}`, `voice ${amelie}`, "end"])
+    expect(readFileSync(join(stub, "text"), "utf8")).toBe("hello")
+    expect(existsSync(lock())).toBe(false)
+  })
+
+  it("a writer that never closes stdin holds nothing up: the line gives up, the next one speaks", async () => {
+    const stuck = run([AARON], { AGENTX_SAY_READ_S: "1" }, null)
+    const next = run([MARIE])
+    expect(await next.done).toBe(0)
+    expect(await stuck.done).toBe(3)
+    expect(sayLog()).toHaveLength(2)
+    expect(sayLog()[0]).toContain("marie")
+    expect(existsSync(lock())).toBe(false)
+    stuck.p.stdin!.destroy()
+  })
+
+  it("a say that hangs is stopped by the watchdog; the lock is freed and the voice restored", async () => {
+    const t0 = Date.now()
+    const hung = run([AARON], { SAY_SLEEP: "hang", AGENTX_SAY_MAX_S: "1" })
+    expect(await hung.done).toBe(143)
+    expect(Date.now() - t0).toBeLessThan(4_000)
+    expect(pref()).toBe(ORIGINAL)
+    expect(existsSync(lock())).toBe(false)
+  })
+
+  it("--stop silences the line speaking, drops the queued ones unsaid, and restores the voice", async () => {
+    const speaking = run([AARON], { SAY_SLEEP: "hang" })
+    await until(() => sayLog().length > 0)
+    const queued = run([MARIE])
+    await new Promise((r) => setTimeout(r, 300))
+    expect(await run(["--stop"]).done).toBe(0)
+    expect(await speaking.done).toBe(143)
+    expect(await queued.done).toBe(75)
+    expect(sayLog()).toHaveLength(1)
+    expect(pref()).toBe(ORIGINAL)
+    expect(existsSync(lock())).toBe(false)
+    // A line started after the stop speaks as usual.
+    expect(await run([MARIE]).done).toBe(0)
+    expect(sayLog().at(-2)).toContain("marie")
+  })
+
+  it("a line queued past AGENTX_SAY_STALE_S is dropped rather than replayed late", async () => {
+    const speaking = run([AARON], { SAY_SLEEP: "hang" })
+    await until(() => sayLog().length > 0)
+    expect(await run([MARIE], { AGENTX_SAY_STALE_S: "1" }).done).toBe(75)
+    expect(sayLog()).toHaveLength(1)
+    speaking.p.kill()
+    expect(await speaking.done).toBe(143)
+  })
+
+  it("leaves no text files behind", async () => {
+    await run([AARON]).done
+    await run([AARON], { AGENTX_SAY_READ_S: "1" }, null).done
+    expect(readdirSync(stub).filter((f) => f.startsWith("agentx-say."))).toEqual([])
   })
 })
