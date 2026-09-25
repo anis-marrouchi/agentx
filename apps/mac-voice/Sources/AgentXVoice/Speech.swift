@@ -6,7 +6,8 @@ import Foundation
 struct VoiceChoice: Decodable {
     var provider: String?
     var elevenlabsVoiceId: String?
-    /// A macOS voice identifier for `say -v`; nil for the OS default.
+    /// A macOS voice identifier for `say -v`, or a Siri voice id; nil for
+    /// the OS default.
     var systemVoice: String?
     /// When ElevenLabs cannot speak, use the system voice instead.
     var fallback: Bool?
@@ -179,10 +180,21 @@ final class Player: NSObject, AVAudioPlayerDelegate {
 
     /// Speak with a system voice; returns when done or stopped. The text
     /// goes in on stdin, so a line that starts with "-" is not an option.
+    ///
+    /// `say -v` cannot use a Siri voice. A Siri line, and any line in the
+    /// OS default voice, goes through the daemon's script, which switches
+    /// the default for the line and locks it against the daemon's own lines.
     func say(_ text: String, voice: String?) async {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        p.arguments = voice.map { ["-v", $0] } ?? []
+        let script = NSHomeDirectory() + "/.agentx/voice/siri-say.sh"
+        let siri = voice?.hasPrefix("com.apple.ttsbundle.gryphon-neural_") ?? false
+        if (voice == nil || siri) && FileManager.default.fileExists(atPath: script) {
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = [script] + (siri ? [voice!] : [])
+        } else {
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            p.arguments = voice.flatMap { siri ? nil : ["-v", $0] } ?? []
+        }
         let input = Pipe()
         p.standardInput = input
         p.standardOutput = FileHandle.nullDevice

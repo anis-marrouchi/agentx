@@ -10,11 +10,13 @@
 // what is offered:
 //   - `say -v <unknown>` exits 0 and quietly uses the default voice, so a
 //     configured name is always checked against this list first.
-//   - Siri voices appear in the list but third-party apps cannot use them
-//     (`say` falls back or fails), and the novelty voices (Bells, Zarvox…)
-//     are jokes, not voices for an assistant. Both are left out.
+//   - The compact Siri voices in that list cannot be used by `say -v`, and
+//     the novelty voices (Bells, Zarvox…) are jokes, not voices for an
+//     assistant. Both are left out. The neural Siri voices come from their
+//     assets instead (./siri.ts) and are named "siri:<name>".
 
 import { execFile, execFileSync } from "child_process"
+import { listSiriVoices, SIRI_PREFIX } from "./siri"
 
 export type Gender = "female" | "male" | "neutral" | null
 
@@ -26,6 +28,8 @@ export interface SystemVoice {
   locale: string
   quality: "premium" | "enhanced" | "standard"
   gender: Gender
+  /** A Siri voice: spoken by switching the OS default, only when named. */
+  siri?: boolean
 }
 
 const JXA = `ObjC.import("AVFoundation")
@@ -75,16 +79,16 @@ export function listSystemVoices(now = Date.now()): SystemVoice[] {
   if (process.platform !== "darwin") return []
   if (!cached) {
     try {
-      cached = { at: now, voices: parseVoiceList(execFileSync("osascript", ["-l", "JavaScript", "-e", JXA], { encoding: "utf8", timeout: 10_000 })) }
+      cached = { at: now, voices: [...parseVoiceList(execFileSync("osascript", ["-l", "JavaScript", "-e", JXA], { encoding: "utf8", timeout: 10_000 })), ...listSiriVoices()] }
     } catch (e: any) {
       voiceLog(`[voice] could not list system voices: ${String(e?.message ?? e).split("\n")[0]}`)
-      cached = { at: now, voices: [] }
+      cached = { at: now, voices: listSiriVoices() }
     }
   } else if (now - cached.at > REFRESH_MS && !refreshing) {
     refreshing = true
     execFile("osascript", ["-l", "JavaScript", "-e", JXA], { timeout: 10_000 }, (err, out) => {
       refreshing = false
-      if (!err) cached = { at: Date.now(), voices: parseVoiceList(String(out)) }
+      if (!err) cached = { at: Date.now(), voices: [...parseVoiceList(String(out)), ...listSiriVoices()] }
     })
   }
   return cached.voices
@@ -138,13 +142,23 @@ export function candidates(installed: SystemVoice[], locale = "en"): SystemVoice
  * Accepts an identifier, a plain name ("Daniel"), a tier suffix as System
  * Settings shows it ("Ava (Premium)"), or `say`'s language suffix
  * ("Eddy (English (US))"). A name several locales share resolves to the
- * best one in the configured language.
+ * best one in the configured language. A Siri voice is named "siri:aaron";
+ * when its asset is missing, the system voice of that name stands in.
  */
 export function findVoice(name: string, installed: SystemVoice[], locale = "en"): SystemVoice | null {
   const q = name.trim()
   if (!q) return null
   const byId = installed.find((v) => v.id === q)
   if (byId) return byId
+  if (q.toLowerCase().startsWith(SIRI_PREFIX)) {
+    const base = q.slice(SIRI_PREFIX.length).trim().toLowerCase()
+    const siri = candidates(installed.filter((v) => v.siri && v.name.toLowerCase() === base), locale)[0]
+    if (siri || !base) return siri ?? null
+    const standIn = findVoice(base, installed, locale)
+    if (standIn) warnOnce(`siri:${base}`, `[voice] Siri voice "${base}" is not installed; speaking with ${standIn.name} (${standIn.locale}) instead.`)
+    return standIn
+  }
+  installed = installed.filter((v) => !v.siri)
   const tier = /^(.+?)\s*\((premium|enhanced)\)$/i.exec(q)
   const base = (tier ? tier[1] : q.replace(/\s*\(.*\)\s*$/, "")).trim().toLowerCase()
   const named = candidates(installed.filter((v) => v.name.toLowerCase() === base), locale)

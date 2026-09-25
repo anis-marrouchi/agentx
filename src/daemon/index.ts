@@ -84,6 +84,7 @@ import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
+import { siriSayScript } from "@/voice/speaker"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText } from "@/voice/agent-voice"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
@@ -200,6 +201,8 @@ export class AgentXDaemon {
     // filter name already implies.
     this.voiceMesh = new VoiceMeshProxy(() => this.config, () => this.mesh, (m) => this.log(m))
     setVoiceLog((m) => this.log(m))
+    // AgentX Voice speaks Siri voices through the same script; have it ready.
+    siriSayScript()
     this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m), {
       remote: (id, introduce) => this.voiceMesh.voices.speaker(id, introduce),
       voiceSettings: () => this.config?.voice ?? {},
