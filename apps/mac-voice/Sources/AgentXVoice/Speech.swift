@@ -118,6 +118,13 @@ enum Speech {
             }
             guard voice?.fallback ?? true else { return }
         }
+        // A Siri voice cannot be passed to `say -v`; the daemon speaks it.
+        if let siri = voice?.systemVoice, siri.hasPrefix("com.apple.ttsbundle.gryphon-neural_") {
+            if await AgentClient.say(text, siriVoice: siri) { return }
+            Log.warn("the daemon did not speak the Siri voice line; using the system voice")
+            await Player.shared.say(text, voice: nil)
+            return
+        }
         await Player.shared.say(text, voice: voice?.systemVoice)
     }
 

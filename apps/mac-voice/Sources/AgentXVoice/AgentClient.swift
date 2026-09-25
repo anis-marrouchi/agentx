@@ -87,6 +87,16 @@ enum AgentClient {
         return (200..<300).contains(http.statusCode)
     }
 
+    /// Speak a line in a Siri voice. Only the daemon can: it switches the
+    /// system voice for the line and back, one line at a time for every
+    /// agent. Returns when the line is over (or hushed); false when the
+    /// daemon did not take it.
+    static func say(_ text: String, siriVoice: String) async -> Bool {
+        guard let (_, response) = try? await post("/voice/say", ["text": text, "voice": siriVoice], timeout: 300),
+              let http = response as? HTTPURLResponse else { return false }
+        return http.statusCode == 200
+    }
+
     private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)\(path)")!)
         req.httpMethod = "POST"
