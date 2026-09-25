@@ -23,6 +23,7 @@ import { OS_DEFAULT, pickVoiceId, resolveAgentVoice, voiceRef } from "@/voice/ag
 import { SpeechOut, type VoiceRef } from "@/voice/speaker"
 import { findVoice, listSystemVoices } from "@/voice/system-voices"
 import { runLiveTeach } from "@/commands/live-teach"
+import { runLiveDraw } from "@/commands/live-draw"
 
 const run = promisify(execFile)
 
@@ -53,14 +54,17 @@ export const teach = new Command()
   .option("--record", "record the screen (screencapture) around the lesson")
   .option("--record-dir <path>", "where to write the recording")
   .option("--live <goal>", "no lesson: the agent reads the screen and teaches this, step by step")
-  .option("--mode <mode>", "with --live: teach (you do each step), watch (you drive, it coaches) or act (it does it, if allowed)")
+  .option("--mode <mode>", "with --live: teach (you do each step), watch (you drive, it coaches) act (it does it, if allowed) or draw (plans a tldraw offline illustration in one model turn and draws it)")
   .option("--app <name>", "with --live: open this app first")
   .option("-c, --config <path>", "with --live: agentx.json to read the agent from")
   .option("--steps <n>", "with --live: most steps before it stops (default 12)")
+  .option("--model <id>", "with --mode draw: the planning model (default claude-sonnet-5)")
+  .option("--out <dir>", "with --mode draw: where the .tldraw file and the picture go (default ~/Documents)")
   .action(async (lessonId: string | undefined, opts) => {
     if (opts.live) {
       try {
-        await runLiveTeach(String(opts.live), opts)
+        if (opts.mode === "draw") await runLiveDraw(String(opts.live), opts)
+        else await runLiveTeach(String(opts.live), opts)
         process.exit(0)
       } catch (e: any) {
         console.log(chalk.red(`  ${e?.message ?? e}`))
