@@ -2,6 +2,29 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.36.0](https://github.com/anis-marrouchi/agentx/compare/v0.35.0...v0.36.0) (2026-09-25)
+
+
+### Features
+
+* **mac-helper:** movable presence name tag and bubble ([8140beb](https://github.com/anis-marrouchi/agentx/commit/8140beb10344233a5e64e5a356221fcc4ab7e637))
+* **presence:** movable name tag and bubble, floating level ([9a3010a](https://github.com/anis-marrouchi/agentx/commit/9a3010ac00ee26afc8ac38c83d6911d94463f62a))
+* **presence:** remember each agent's tag position ([3d4a0b5](https://github.com/anis-marrouchi/agentx/commit/3d4a0b525eac5845f34c79de23427b82a6717c2a))
+* **talk:** a mesh agent can take either side of a talk ([0162c58](https://github.com/anis-marrouchi/agentx/commit/0162c58c5a0bbcd8be423e0f6b8fa1cdc1918ce2))
+* **voice:** one door for every spoken activity ([b60897c](https://github.com/anis-marrouchi/agentx/commit/b60897c57ac86867107aa0f0766c833bbdd185e8))
+* **voice:** voice for mesh agents through the local daemon ([1f1b75c](https://github.com/anis-marrouchi/agentx/commit/1f1b75cf786b2e8e181fe9c08aef1a9c742e63d4))
+* **voice:** voice for mesh agents through the local daemon ([da843fa](https://github.com/anis-marrouchi/agentx/commit/da843fa179a46759136b62f960f3d1bbecae4159))
+
+
+### Bug Fixes
+
+* **mac-helper:** presence never outlives its owner ([63a9a71](https://github.com/anis-marrouchi/agentx/commit/63a9a7195c33ec1d026c44bd90cdefca09ccd69d))
+* **mac-voice:** Option-Space always opens the door ([e0aaf30](https://github.com/anis-marrouchi/agentx/commit/e0aaf30783b6f5aca218993c7dea838b7b18b735))
+* **mac-voice:** reuse the existing login item label on reinstall ([eaf0967](https://github.com/anis-marrouchi/agentx/commit/eaf0967c51cbbd541b6e089aa072e3ceca60ff25))
+* **mac-voice:** reuse the existing login item label on reinstall ([636b995](https://github.com/anis-marrouchi/agentx/commit/636b9955b545c7c24fdc86e77a3a86e394e3e2b1)), closes [#38](https://github.com/anis-marrouchi/agentx/issues/38)
+* **presence:** one overlay per agent, gone when the turn ends; one door for every spoken activity ([b3b8165](https://github.com/anis-marrouchi/agentx/commit/b3b816569bdcc79b41211f84765851e6caa67ead))
+* **presence:** one overlay per agent, released when the turn ends ([37915df](https://github.com/anis-marrouchi/agentx/commit/37915df51c1fa1c5d9ee3c9e4f7cc38138facdec))
+
 ## [0.35.0](https://github.com/anis-marrouchi/agentx/compare/v0.34.0...v0.35.0) (2026-09-24)
 
 
