@@ -345,10 +345,22 @@ describe("presence look and mode policy", () => {
   }) as unknown as PresenceModeAnswers
 
   it("falls back to talk when unsure or undecided, and never acts without permission", () => {
-    expect(toPresence(null, true)).toMatchObject({ mode: "talk", override: "no-decision" })
-    expect(toPresence(answers("teach", 0.4), true)).toMatchObject({ mode: "talk", override: "low-confidence", probability: 0.4 })
-    expect(toPresence(answers("act", 0.9), false)).toMatchObject({ mode: "teach", nextAction: "highlight", override: "actions-not-allowed" })
-    expect(toPresence(answers("act", 0.9), true)).toMatchObject({ mode: "act", nextAction: "click", persist: true })
-    expect(toPresence(answers("quiet", 0.9, "point", 0.9), true)).toMatchObject({ mode: "quiet", persist: false, nextAction: "speak" })
+    expect(toPresence(null, true, "")).toMatchObject({ mode: "talk", override: "no-decision" })
+    expect(toPresence(answers("teach", 0.4), true, "teach me")).toMatchObject({ mode: "talk", override: "low-confidence", probability: 0.4 })
+    expect(toPresence(answers("act", 0.9), true, "do it")).toMatchObject({ mode: "act", nextAction: "click", persist: true })
+    expect(toPresence(answers("quiet", 0.9, "point", 0.9), true, "")).toMatchObject({ mode: "quiet", persist: false, nextAction: "speak" })
+  })
+
+  it("an instruction the agent may not act on is answered, never turned into a lesson", () => {
+    expect(toPresence(answers("act", 0.9), false, "Go merge and deploy 40"))
+      .toMatchObject({ mode: "talk", nextAction: "speak", chose: "act", override: "actions-not-allowed" })
+  })
+
+  it("a lesson or coaching only when the listener asked to be shown", () => {
+    for (const request of ["finish the Reddit drafts right now", "Go merge and deploy 40", "what's on my calendar"])
+      expect(toPresence(answers("teach", 0.9), false, request)).toMatchObject({ mode: "talk", nextAction: "speak", override: "not-asked-to-show" })
+    for (const request of ["show me how to export this", "how do I open the drafts?", "where is the export button", "teach me Numbers", "montre-moi comment faire"])
+      expect(toPresence(answers("teach", 0.9, "highlight"), false, request)).toMatchObject({ mode: "teach", nextAction: "highlight" })
+    expect(toPresence(answers("watch", 0.9, "point"), false, "watch me do it")).toMatchObject({ mode: "watch" })
   })
 })

@@ -299,7 +299,7 @@ function render(snapshot) {
     if (node.reachable) summary.reachable++;
     summary.agents += node.agents.length;
     for (const a of node.agents) {
-      const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
+      const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0 || !!lessonOf(a, node);
       if (busy) summary.busy++;
       summary.errors += (a.errors || 0);
     }
@@ -444,9 +444,33 @@ function renderNode(node) {
   return sec;
 }
 
+// The live lesson on this node's screen, when it is this agent's.
+function lessonOf(a, node) {
+  const l = node && node.lesson;
+  return l && l.agentId === a.id ? l : null;
+}
+
+// A lesson holds the listener's screen and voice, so it sits with the
+// running tasks and always carries a stop.
+function lessonHtml(l, nodeUrl) {
+  const elapsed = l.startedAt ? fmtElapsed(Date.now() - new Date(l.startedAt).getTime()) : '';
+  return '<div class="ax-agent__task" title="' + escapeHtml(l.goal || '') + '">' +
+    '<div class="ax-agent__task-head">' +
+      '<span class="ax-dot ax-dot--live ax-dot--pulse"></span>' +
+      '<span>on screen · ' + escapeHtml(l.mode || 'lesson') + ' · step ' + escapeHtml(String(l.step || 0)) + '</span>' +
+      '<span class="elapsed">' + elapsed + '</span>' +
+    '</div>' +
+    '<div class="ax-agent__task-body">' + escapeHtml(l.saying || l.goal || '') + '</div>' +
+    '<div class="ax-agent__task-actions">' +
+      '<button type="button" class="ax-task-action ax-task-action--stop" data-action="voice-stop" data-node-url="' + escapeHtml(nodeUrl) + '" title="End the lesson and give the screen back">✕ stop</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderAgent(a, node) {
   const card = document.createElement('div');
-  const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0;
+  const lesson = lessonOf(a, node);
+  const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0 || !!lesson;
   // Error border reflects the MOST RECENT task's status, not the cumulative
   // error count. A red border drops the moment a new task succeeds — it should
   // not persist forever because of a failure an hour ago. The cumulative
@@ -463,7 +487,7 @@ function renderAgent(a, node) {
   // <div role="button"> so we can nest the Stop / Update action buttons
   // inside (button-in-button is invalid HTML); click handler is delegated
   // via the .ax-agent__task class.
-  const taskHtml = (a.runningTasks || []).map(t => {
+  const taskHtml = (lesson ? lessonHtml(lesson, nodeUrl) : '') + (a.runningTasks || []).map(t => {
     const elapsed = fmtElapsed(Date.now() - new Date(t.startedAt).getTime());
     const dataAttrs = t.id
       ? ' data-task-id="' + escapeHtml(t.id) + '" data-agent-id="' + escapeHtml(a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-channel="' + escapeHtml(t.channel || '') + '" data-agent-name="' + escapeHtml(a.name || a.id) + '"'
@@ -672,6 +696,13 @@ document.getElementById('grid').addEventListener('click', (e) => {
     const action = actionEl.dataset.action;
     const taskId = actionEl.dataset.taskId;
     const nodeUrl = actionEl.dataset.nodeUrl || '';
+    if (action === 'voice-stop') {
+      actionEl.disabled = true;
+      fetch('/api/voice/stop?node=' + encodeURIComponent(nodeUrl), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); })
+        .catch(function (err) { actionEl.disabled = false; alert('Stop failed: ' + (err && err.message || err)); });
+      return;
+    }
     if (!taskId) return;
     if (action === 'cancel') {
       if (!confirm('Stop this running task?')) return;

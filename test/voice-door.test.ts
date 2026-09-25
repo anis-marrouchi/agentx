@@ -63,17 +63,35 @@ describe("the door", () => {
     expect(svc.handle("POST", "/voice/door", {}).status).toBe(400)
   })
 
-  it("reaches a live lesson: hush stops its voice, the lesson takes the words, stop ends it", async () => {
+  it("ends a live lesson: the screen is given back and the words go to the agent", async () => {
     const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
     svc.startLesson("secretary-agent", "open the merge request", "teach")
     await new Promise((r) => setTimeout(r, 30))
-    expect(hush(svc).body).toEqual({ active: true, kind: "lesson", agentId: "secretary-agent" })
+    expect(hush(svc).body).toEqual({ active: false, kind: "lesson", agentId: "secretary-agent" })
     expect(log).toContain("speech stop")
     expect(log).toContain("[door] hush → lesson (secretary-agent)")
-    expect(door(svc, "wait, which one is mine?").body).toMatchObject({ handled: true, kind: "lesson", active: true })
-    expect(log).toContain('[door] "wait, which one is mine?" → lesson')
-    expect(door(svc, "stop").body).toMatchObject({ handled: true, active: false })
-    expect(log).toContain('[door] "stop" → lesson (ended)')
+    expect(log).toContain("Secretary close")
+    expect(svc.live).toBeNull()
+    // Not a lesson that answers back: the client asks the agent.
+    expect(door(svc, "merge and deploy 40").status).toBe(409)
+  })
+
+  it("a bare stop after the hush is already done, not a question for the agent", async () => {
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
+    svc.startLesson("secretary-agent", "open the merge request", "teach")
+    await new Promise((r) => setTimeout(r, 30))
+    hush(svc)
+    expect(door(svc, "stop").body).toMatchObject({ handled: true, kind: "lesson", active: false })
+    expect(log).toContain('[door] "stop" → lesson (secretary-agent) already ended')
+    // Only once: the next "stop" is ordinary again.
+    expect(door(svc, "stop").status).toBe(409)
+  })
+
+  it("/voice/stop ends a lesson too", async () => {
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
+    svc.startLesson("secretary-agent", "open the merge request", "teach")
+    await new Promise((r) => setTimeout(r, 30))
+    expect(svc.handle("POST", "/voice/stop", {}).body).toMatchObject({ active: false, kind: "lesson" })
     expect(log).toContain("Secretary close")
     expect(svc.live).toBeNull()
   })
@@ -85,6 +103,14 @@ describe("the door", () => {
     expect(svc.handle("POST", "/talk/hush", {}).body).toMatchObject({ active: true, kind: "talk" })
     expect(svc.handle("POST", "/talk/door", { text: "stop" }).body).toMatchObject({ handled: true, active: false })
     expect(log).toContain('[door] "stop" → talk (ended)')
+  })
+
+  it("/voice/stop ends a talk rather than leaving it paused", async () => {
+    const { svc } = setup()
+    svc.handle("POST", "/talk", { agents: ["secretary-agent", "coder-agent"], topic: "the release" })
+    await new Promise((r) => setTimeout(r, 10))
+    svc.handle("POST", "/voice/stop", {})
+    expect(svc.live).toBeNull()
   })
 
   it("empties a spoken-answer bubble", () => {

@@ -164,7 +164,7 @@ On every voice turn the `presence-mode` seat decides how the agent shows up:
 | `talk` | Voice only; the cursor rests in a corner with the answer in its bubble |
 | `teach` | A live lesson: the agent shows each step with its cursor and says it; you do it |
 | `watch` | You drive; the agent coaches, pointing at what you need |
-| `act` | The agent does the steps itself, if `allowActions` is set |
+| `act` | The agent does the steps itself, if `allowActions` is set; otherwise the turn is `talk` and the agent does the work in its own turn |
 | `quiet` | Nothing on screen |
 
 The seat also answers whether the cursor stays after the turn and what the first action is (speak, point, highlight, click, type, wait for you). The chosen mode's probability is logged on every turn; below 0.55, or when the seat is off, slow (2.5 s budget) or down, the turn is plain `talk`. Enable it in `agentx.json`:
@@ -175,11 +175,13 @@ The seat also answers whether the cursor stays after the turn and what the first
 
 `shadow` logs the decision without acting on it.
 
+A lesson (`teach` or `watch`) starts only when you ask to be shown or coached: "show me how…", "how do I…", "where is…", "walk me through…", "montre-moi…". An instruction such as "merge and deploy 40" is always `talk`, whatever the seat chose.
+
 ### Live teach
 
 `teach`, `watch` and `act` run a lesson with no script: the agent reads the focused window (accessibility tree, OCR when the tree is thin), a fast model plans one step, the agent points or highlights while saying it, then waits for the screen to change (you did it) or does it itself (`act`). The screen is read again after every step. A lesson stays on the app it started in: while another app is in front it asks you to bring it back, and does nothing else.
 
-Hold **Option–Space** to cut in: the agent stops mid-sentence, and its next step answers you. Say "stop" to end the lesson.
+Hold **Option–Space** to cut in: the lesson ends at once, the screen is yours again, and what you say goes to the agent. **⌘⌥.** ends it too, and so does **✕ stop** on the agent's card in [Live](./live.md), which shows a running lesson with its step and what it is saying.
 
 ```bash
 agentx teach --live "make a simple table of monthly expenses" --app Numbers --agent coder-agent --mode teach

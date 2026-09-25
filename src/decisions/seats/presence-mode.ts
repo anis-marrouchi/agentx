@@ -12,7 +12,12 @@ import type { AnswersFor, ChoiceAnswer, NoulAnswer, StateValue } from "../types"
 // The policy stays in code, not in the seat:
 //   - below MIN_CONFIDENCE (the probability of the chosen mode, the number
 //     that is logged and calibrated) the turn falls back to talk;
-//   - act only when the agent's config allows actions, else teach;
+//   - act only when the agent's config allows actions, else talk: a
+//     request to do something is answered and done by the agent's turn,
+//     never turned into a lesson the listener did not ask for;
+//   - teach and watch only when the listener asked to be shown or
+//     coached (ASKS_TO_BE_SHOWN), else talk: a lesson takes the screen
+//     and the door, so it is never the seat's guess alone;
 //   - click and type only in act, else highlight.
 
 export const PRESENCE_MODE_SEAT = "presence-mode"
@@ -86,13 +91,19 @@ export interface PresenceDecision {
   chose: PresenceMode | null
   probability: number
   /** Why the seat's choice was not used as is, when it was not. */
-  override?: "no-decision" | "low-confidence" | "actions-not-allowed"
+  override?: "no-decision" | "low-confidence" | "actions-not-allowed" | "not-asked-to-show"
 }
 
 export const TALK: PresenceDecision = { mode: "talk", persist: false, nextAction: "speak", chose: null, probability: 0, override: "no-decision" }
 
-/** Apply the policy to the seat's answers; null answers mean talk. */
-export function toPresence(answers: PresenceModeAnswers | null, actionsAllowed: boolean, min = MIN_CONFIDENCE): PresenceDecision {
+/** The listener asked to be shown, taught or coached, in English or French.
+ *  "Go merge PR 40" or "finish the drafts" never match: those are work. */
+export const ASKS_TO_BE_SHOWN =
+  /\b(show|teach|guide|walk|coach|watch)\s+(me|us)\b|\bhow\s+(do|can|would|should|to)\b|\bwhere\s+(is|are|do|can|'s)\b|\bwhere's\b|\bstep\s+by\s+step\b|\b(tutorial|lesson)\b|\b(montre|explique|guide)[- ]moi\b|\bcomment\s+(on|je|faire)\b|\bo[uù]\s+(est|sont|se\s+trouve)\b/i
+
+/** Apply the policy to the seat's answers; null answers mean talk.
+ *  `request` is what the listener said; teach and watch need it to ask. */
+export function toPresence(answers: PresenceModeAnswers | null, actionsAllowed: boolean, request: string, min = MIN_CONFIDENCE): PresenceDecision {
   if (!answers) return TALK
   const mode = answers.mode as ChoiceAnswer<PresenceMode>
   const next = answers.nextAction as ChoiceAnswer<NextAction>
@@ -103,7 +114,8 @@ export function toPresence(answers: PresenceModeAnswers | null, actionsAllowed: 
   let chosen = mode.choice
   let nextAction = next.choice
   let override: PresenceDecision["override"]
-  if (chosen === "act" && !actionsAllowed) { chosen = "teach"; override = "actions-not-allowed" }
+  if (chosen === "act" && !actionsAllowed) { chosen = "talk"; override = "actions-not-allowed" }
+  if ((chosen === "teach" || chosen === "watch") && !ASKS_TO_BE_SHOWN.test(request)) { chosen = "talk"; override = "not-asked-to-show" }
   if ((nextAction === "click" || nextAction === "type") && chosen !== "act") nextAction = "highlight"
   if (chosen === "talk" || chosen === "quiet") nextAction = "speak"
   return { mode: chosen, persist: chosen !== "quiet" && persist, nextAction, chose, probability, ...(override ? { override } : {}) }

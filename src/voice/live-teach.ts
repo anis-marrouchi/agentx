@@ -88,6 +88,9 @@ export class LiveTeach {
   readonly id = `teach-${Date.now().toString(36)}`
   /** Whose lesson this is. */
   get agentId(): string | null { return this.opts.speaker.agentId ?? null }
+  get mode(): TeachMode { return this.opts.mode }
+  get goal(): string { return this.opts.goal }
+  readonly startedAt = new Date().toISOString()
   state: "running" | "held" | "ended" = "running"
   step = 0
   lastSay = ""
