@@ -181,6 +181,9 @@ sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
       env: { ...process.env, HOME: home, TMPDIR: stub, PATH: `${join(stub, "bin")}:/usr/bin:/bin`, ...env },
       stdio: ["pipe", "ignore", "pipe"],
     })
+    // A script that exits before reading (a refused id, --stop) closes the
+    // pipe under the write; that EPIPE is the script's answer, not a fault.
+    p.stdin!.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "EPIPE") throw err })
     // text null: write nothing and never close stdin, like the stuck writer.
     if (text === null) p.stdin!.write("half a line")
     else p.stdin!.end(text)
