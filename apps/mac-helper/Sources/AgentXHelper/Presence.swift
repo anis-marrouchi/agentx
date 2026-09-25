@@ -4,7 +4,7 @@ import AppKit
 ///
 /// Drawn, never driven. `point` moves the person's real mouse, which is
 /// right for a lesson the person watches and wrong for one they take part
-/// in — their hand is on that mouse. This cursor is a click-through window
+/// in — their hand is on that mouse. This cursor is a click-through arrow
 /// that glides to what the agent means, highlights it, and says a line in
 /// a bubble, while the real pointer stays exactly where the person left it.
 ///
@@ -18,6 +18,10 @@ import AppKit
 ///
 /// Coordinates are accessibility coordinates (top-left origin, global),
 /// the same as `read`, `ocr` and `point`.
+///
+/// Only the arrow and highlight are click-through. The name tag and bubble
+/// (PresenceTag) can be dragged out of the way; with `--pos-file` the spot
+/// is remembered for this agent and the tag stays there on later turns.
 ///
 /// It never outlives its owner: EOF, the owner's death (`--parent`, or
 /// being re-parented to launchd) or `--idle` seconds without a command
@@ -41,73 +45,37 @@ enum Presence {
 
     // MARK: Windows
 
-    private static func panel(_ rect: NSRect) -> NSPanel {
+    /// Floating, not screen-saver level: above the windows the person works
+    /// in, below menus, alerts and Spotlight.
+    fileprivate static func panel(_ rect: NSRect, clickThrough: Bool = true) -> NSPanel {
         let p = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
-        p.level = .screenSaver
+        p.level = .floating
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = false
-        // Click-through: the person's clicks land on the app underneath.
-        p.ignoresMouseEvents = true
+        // The arrow and the highlight are click-through: the person's clicks
+        // land on the app underneath. Only the name tag takes the mouse.
+        p.ignoresMouseEvents = clickThrough
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         return p
     }
 
-    /// The arrow, the initial badge, the name, and the speech bubble.
-    private final class AvatarView: NSView {
+    /// The arrow alone: the system cursor's silhouette, in the agent's colour.
+    private final class ArrowView: NSView {
         let color: NSColor
-        let initial: String
-        let name: String
-        let bubble = NSTextField(wrappingLabelWithString: "")
-        /// The bubble's background, so the text gets padding.
-        let box = NSView()
-        /// Wide on both sides of the tip, so the bubble can sit to the left
-        /// when the target is near the right edge of the screen.
-        static let size = NSSize(width: 720, height: 170)
+        static let size = NSSize(width: 30, height: 40)
         /// The arrow tip, in view coordinates (bottom-left origin).
-        static let tip = NSPoint(x: 360, y: size.height - 6)
-        var bubbleLeft = false { didSet { if bubbleLeft != oldValue { layoutBubble() } } }
+        static let tip = NSPoint(x: 4, y: size.height - 4)
 
-        init(color: NSColor, initial: String, name: String) {
-            self.color = color; self.initial = initial; self.name = name
-            super.init(frame: NSRect(origin: .zero, size: AvatarView.size))
-            wantsLayer = true
-            bubble.font = Brand.body(size: 13)
-            bubble.textColor = Brand.ink
-            bubble.maximumNumberOfLines = 4
-            box.wantsLayer = true
-            box.layer?.backgroundColor = Brand.paper.cgColor
-            box.layer?.cornerRadius = Brand.Radius.md
-            box.layer?.borderWidth = 2
-            box.layer?.borderColor = color.cgColor
-            box.isHidden = true
-            box.addSubview(bubble)
-            addSubview(box)
+        init(color: NSColor) {
+            self.color = color
+            super.init(frame: NSRect(origin: .zero, size: ArrowView.size))
         }
         required init?(coder: NSCoder) { fatalError() }
 
-        /// Under the badge and name, never over them.
-        func setBubble(_ text: String) {
-            box.isHidden = text.isEmpty
-            bubble.stringValue = text
-            let textW: CGFloat = 300
-            bubble.preferredMaxLayoutWidth = textW
-            let fit = bubble.sizeThatFits(NSSize(width: textW, height: 90))
-            let w = min(textW, ceil(fit.width)), h = min(90, ceil(fit.height))
-            bubble.frame = NSRect(x: 10, y: 6, width: w, height: h)
-            box.setFrameSize(NSSize(width: w + 20, height: h + 12))
-            layoutBubble()
-        }
-
-        func layoutBubble() {
-            let t = AvatarView.tip, s = box.frame.size
-            box.setFrameOrigin(NSPoint(x: bubbleLeft ? t.x - s.width - 4 : t.x + 16, y: t.y - 58 - s.height))
-        }
-
         override func draw(_ dirtyRect: NSRect) {
-            let t = AvatarView.tip
-            // The arrow: the system cursor's silhouette, in the agent's colour.
+            let t = ArrowView.tip
             let arrow = NSBezierPath()
             arrow.move(to: t)
             arrow.line(to: NSPoint(x: t.x, y: t.y - 26))
@@ -126,43 +94,58 @@ enum Presence {
             color.setFill(); arrow.fill()
             NSGraphicsContext.current?.restoreGraphicsState()
             NSColor.white.setStroke(); arrow.lineWidth = 1.5; arrow.stroke()
-
-            // The badge with the initial, and the name pill beside it.
-            let badge = NSRect(x: t.x + 16, y: t.y - 50, width: 24, height: 24)
-            color.setFill(); NSBezierPath(ovalIn: badge).fill()
-            NSColor.white.setStroke()
-            let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 0.75, dy: 0.75)); ring.lineWidth = 1.5; ring.stroke()
-            draw(initial, in: badge, size: 11, weight: .bold, color: .white)
-
-            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]
-            let nameW = (name as NSString).size(withAttributes: attrs).width + 14
-            let pill = NSRect(x: badge.maxX + 4, y: badge.minY + 3, width: nameW, height: 18)
-            color.setFill(); NSBezierPath(roundedRect: pill, xRadius: 9, yRadius: 9).fill()
-            draw(name, in: pill, size: 11, weight: .semibold, color: .white)
         }
+    }
 
-        private func draw(_ s: String, in r: NSRect, size: CGFloat, weight: NSFont.Weight, color: NSColor) {
-            let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color]
-            let sz = (s as NSString).size(withAttributes: a)
-            (s as NSString).draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2), withAttributes: a)
+    // MARK: Pinned position
+
+    /// Where the person dragged this agent's tag: its top-left, AppKit
+    /// coordinates, as {"x":…,"y":…}. Ignored if no screen shows it any more.
+    static func loadPin(_ file: String?) -> NSPoint? {
+        guard let file, let data = FileManager.default.contents(atPath: file),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let x = o["x"] as? Double, let y = o["y"] as? Double else { return nil }
+        let p = NSPoint(x: x, y: y)
+        // The badge row hangs below the top-left; it must be on a screen.
+        let row = NSPoint(x: x + 12, y: y - 12)
+        return NSScreen.screens.contains(where: { $0.frame.contains(row) }) ? p : nil
+    }
+
+    static func savePin(_ p: NSPoint?, to file: String?) {
+        guard let file else { return }
+        guard let p else { try? FileManager.default.removeItem(atPath: file); return }
+        let url = URL(fileURLWithPath: file)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: ["x": Double(p.x), "y": Double(p.y)])
+            try data.write(to: url, options: .atomic)
+        } catch {
+            FileHandle.standardError.write("presence: could not save position: \(error)\n".data(using: .utf8)!)
         }
     }
 
     // MARK: Behaviour
 
     private final class Controller {
-        let avatar: NSPanel
-        let view: AvatarView
+        let arrow: NSPanel
+        let tagPanel: NSPanel
+        let tag: PresenceTag
         let ring: NSPanel
         let color: NSColor
+        let posFile: String?
         var at: CGPoint          // tip position, AppKit coordinates
+        /// The tag's top-left once the person has dragged it; nil rides with the arrow.
+        var pinned: NSPoint?
         var timer: Timer?
 
-        init(color: NSColor, initial: String, name: String) {
+        init(color: NSColor, initial: String, name: String, posFile: String?) {
             self.color = color
-            view = AvatarView(color: color, initial: initial, name: name)
-            avatar = Presence.panel(NSRect(origin: .zero, size: AvatarView.size))
-            avatar.contentView = view
+            self.posFile = posFile
+            arrow = Presence.panel(NSRect(origin: .zero, size: ArrowView.size))
+            arrow.contentView = ArrowView(color: color)
+            tag = PresenceTag(color: color, initial: initial, name: name)
+            tagPanel = Presence.panel(NSRect(origin: .zero, size: tag.frame.size), clickThrough: false)
+            tagPanel.contentView = tag
             ring = Presence.panel(.zero)
             let ringView = NSView()
             ringView.wantsLayer = true
@@ -171,11 +154,25 @@ enum Presence {
             ringView.layer?.cornerRadius = 8
             ringView.layer?.backgroundColor = color.withAlphaComponent(0.10).cgColor
             ring.contentView = ringView
+            pinned = Presence.loadPin(posFile)
             at = Controller.parking()
+            tag.onPin = { [weak self] p in self?.pinned = p; Presence.savePin(p, to: posFile) }
+            tag.onUnpin = { [weak self] in
+                guard let self else { return }
+                self.pinned = nil
+                Presence.savePin(nil, to: posFile)
+                self.place(self.at)
+            }
             place(at)
-            avatar.alphaValue = 0
-            avatar.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.2; avatar.animator().alphaValue = 1 }
+            for p in [arrow, tagPanel] {
+                p.alphaValue = 0
+                p.orderFrontRegardless()
+            }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                arrow.animator().alphaValue = 1
+                tagPanel.animator().alphaValue = 1
+            }
         }
 
         static func parking() -> CGPoint {
@@ -184,9 +181,16 @@ enum Presence {
         }
 
         func place(_ tip: CGPoint) {
-            avatar.setFrameOrigin(NSPoint(x: tip.x - AvatarView.tip.x, y: tip.y - AvatarView.tip.y))
-            let screen = NSScreen.screens.first(where: { $0.frame.contains(tip) }) ?? NSScreen.main
-            view.bubbleLeft = (screen?.visibleFrame.maxX ?? .greatestFiniteMagnitude) - tip.x < 360
+            arrow.setFrameOrigin(NSPoint(x: tip.x - ArrowView.tip.x, y: tip.y - ArrowView.tip.y))
+            if tag.dragged { return }
+            let size = tagPanel.frame.size
+            var top = pinned ?? NSPoint(x: tip.x + 20, y: tip.y - 26)
+            if pinned == nil {
+                // Near the right edge the tag sits to the left of the arrow.
+                let screen = NSScreen.screens.first(where: { $0.frame.contains(tip) }) ?? NSScreen.main
+                if let edge = screen?.visibleFrame.maxX, top.x + size.width > edge { top.x = tip.x - 4 - size.width }
+            }
+            tagPanel.setFrameOrigin(NSPoint(x: top.x, y: top.y - size.height))
         }
 
         /// Glide with minimum-jerk easing; duration follows distance, as in
@@ -211,7 +215,8 @@ enum Presence {
             guard let rect else { ring.orderOut(nil); return }
             ring.setFrame(Presence.toAppKit(rect).insetBy(dx: -6, dy: -6), display: true)
             ring.orderFrontRegardless()
-            avatar.orderFrontRegardless()
+            arrow.orderFrontRegardless()
+            tagPanel.orderFrontRegardless()
         }
 
         func handle(_ obj: [String: Any]) {
@@ -226,7 +231,8 @@ enum Presence {
                 glide(to: Presence.toAppKit(aim))
                 highlight((obj["highlight"] as? Bool ?? false) && w > 0 && h > 0 ? rect : nil)
             case "say":
-                view.setBubble(obj["text"] as? String ?? "")
+                tag.setBubble(obj["text"] as? String ?? "")
+                place(at)
             case "clear":
                 highlight(nil)
             case "park":
@@ -241,7 +247,8 @@ enum Presence {
             ring.orderOut(nil)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.25
-                avatar.animator().alphaValue = 0
+                arrow.animator().alphaValue = 0
+                tagPanel.animator().alphaValue = 0
             } completionHandler: { done() }
         }
     }
@@ -255,10 +262,11 @@ enum Presence {
     }
 
     /// Read commands until stdin closes, the owner dies, or it goes idle.
-    static func run(name: String, initial: String, colorHex: String?, parent: pid_t?, idle: TimeInterval) {
+    static func run(name: String, initial: String, colorHex: String?, parent: pid_t?, idle: TimeInterval,
+                    posFile: String? = nil) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        let ctl = Controller(color: color(hex: colorHex), initial: initial, name: name)
+        let ctl = Controller(color: color(hex: colorHex), initial: initial, name: name, posFile: posFile)
         var lastCommand = Date()
         var quitting = false
         // Main thread only. The fade is a courtesy: exit follows regardless.
