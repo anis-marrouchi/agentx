@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.42.0](https://github.com/anis-marrouchi/agentx/compare/v0.41.0...v0.42.0) (2026-09-25)
+
+
+### Features
+
+* **teach:** draw mode, a tldraw illustration in one model turn ([85c7545](https://github.com/anis-marrouchi/agentx/commit/85c754598a40bb38c422b525cb2eb626d6d52a34))
+* **workflows:** owner sweep applies ownership itself ([2a2eeb8](https://github.com/anis-marrouchi/agentx/commit/2a2eeb81ea6b185527609d8df2dc8e1d1656f629))
+* **workflows:** owner sweep applies ownership itself ([f0faf7b](https://github.com/anis-marrouchi/agentx/commit/f0faf7b47e8200851891459905b9d8677eaf44a3)), closes [#53](https://github.com/anis-marrouchi/agentx/issues/53)
+
 ## [0.41.0](https://github.com/anis-marrouchi/agentx/compare/v0.40.0...v0.41.0) (2026-09-25)
 
 
