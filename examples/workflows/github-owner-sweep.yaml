@@ -1,0 +1,89 @@
+# GitHub owner sweep (#53): every open issue and PR has an owner and a next step.
+#
+# Every 15 minutes a read-only script decides, per open issue/PR, who owns the
+# next step (table in issue #53) and prints only steps that are new, or still
+# true after 24 h. When there are any, the coordinator agent carries them out.
+# A PR whose session ended with CI red (the #52 case) goes back to its author
+# agent with the failing checks; after two red commits it escalates instead.
+#
+# Runs on the engine as it is today: cron trigger, no GitHub webhook changes.
+#
+# Install:
+#   1. Copy examples/actions/github-owner-sweep.json to .agentx/actions/ and
+#      replace <AGENTX_CHECKOUT> with the absolute checkout path.
+#   2. Copy this file to .agentx/workflows/ (workflows.enabled must be true).
+#      Cron triggers register at daemon start.
+#   3. The author agent defaults to coder-agent. A PR body line
+#      `<!-- agentx:<agent-id> -->` routes that PR to another agent.
+
+id: github-owner-sweep
+version: 2
+title: GitHub owner sweep — owner and next step for every issue and PR
+
+nodes:
+  - id: tick
+    type: trigger.cron
+    config:
+      spec: "*/15 * * * *"
+      timezone: Africa/Tunis
+
+  - id: sweep
+    type: action.run
+    config:
+      actionId: github-owner-sweep
+
+  - id: route
+    type: branch
+    config:
+      cases:
+        - when: { kind: matches, params: { path: sweep.output, regex: "^RESULT steps=0" } }
+          to: done
+        - when: { kind: matches, params: { path: sweep.output, regex: "^RESULT error" } }
+          to: failed
+      default: act
+
+  - id: act
+    type: agent
+    config:
+      agentId: secretary-agent
+      timeoutMinutes: 20
+      maxConcurrent: 1
+      prompt: |
+        Owner sweep for anis-marrouchi/agentx (issue #53). Each line below is
+        "<owner> <step> <issue|pr> #<n> ...". Carry out every line, then reply
+        with one line per item saying what you did or why you could not.
+
+        {{sweep.output}}
+
+        Steps you do yourself (owner secretary-agent):
+        - assign-owner: pick the agent that owns it, assign anis-marrouchi
+          (agents share one GitHub login), and post one comment naming the
+          owning agent and the next step.
+        - request-review: dispatch an agent review of the PR; Anis gives the
+          final approval.
+        - link-issue: find the issue the PR fixes and add "Closes #n" to the
+          PR body, or ask the author agent which issue it is.
+        - review-and-merge / escalate-ci / nudge: follow your standing
+          instructions for agentx (merge/deploy approval, reporting blocked
+          work to Anis).
+
+        Steps for another agent (fix-ci, mark-ready): dispatch that agent
+        with the PR URL, branch and the reason text verbatim. fix-ci means
+        read the failing checks, fix them on the branch, push, and mark the
+        PR ready once CI is green.
+
+  - id: done
+    type: end
+    config: { status: completed }
+
+  - id: failed
+    type: end
+    config: { status: failed }
+
+edges:
+  - { from: tick, to: sweep }
+  - { from: sweep, to: route }
+  - { from: route, fromPort: done, to: done }
+  - { from: route, fromPort: failed, to: failed }
+  - { from: route, fromPort: act, to: act }
+  - { from: act, to: done }
