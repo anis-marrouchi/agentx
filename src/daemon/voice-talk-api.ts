@@ -181,6 +181,7 @@ export class VoiceTalkService {
     lesson.on((e) => {
       if (e.type === "step") this.log(`[teach] ${e.n}. ${e.action}${e.target ? ` "${e.target.slice(0, 60)}"` : ""}: ${e.say}`)
       else if (e.type === "acted" && e.error) this.log(`[teach] action refused: ${e.error}`)
+      else if (e.type === "replanned") this.log(`[teach] replanning: ${e.reason}`)
       else if (e.type === "error") this.log(`[teach] error: ${e.error}`)
       else if (e.type === "end") this.log(`[teach] ended (${e.reason})`)
     })

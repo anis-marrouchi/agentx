@@ -42,3 +42,21 @@ export function parsePlan(reply: string, ids: Set<number>): Plan {
 export function screenSignature(s: ScreenView): string {
   return [s.app, s.window ?? "", ...s.candidates.map((c) => `${c.role}|${c.label}|${c.value ?? ""}`)].join("\n")
 }
+
+/**
+ * Control `id` of an earlier read, found again in a fresh one, or null
+ * when it is gone. Ids are per read, so the match is by role and label;
+ * when several match, the one nearest where it was.
+ */
+export function findControl(before: ScreenView, id: number, after: ScreenView): number | null {
+  const c = before.candidates.find((x) => x.id === id)
+  if (!c) return null
+  const matches = after.candidates.filter((x) => x.role === c.role && x.label === c.label)
+  const was = before.rectOf(id)
+  if (matches.length <= 1 || !was) return matches[0]?.id ?? null
+  const dist = (m: { id: number }) => {
+    const r = after.rectOf(m.id)
+    return r ? Math.hypot(r.x - was.x, r.y - was.y) : Infinity
+  }
+  return matches.reduce((a, b) => (dist(b) < dist(a) ? b : a)).id
+}
