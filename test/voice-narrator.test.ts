@@ -16,7 +16,7 @@ function setup(mode: NarrateMode, answer = "I'm going through the release notes 
   const model = new FakeModel(answer)
   const n = new Narrator({
     speech, model: () => model, minGapMs: 20_000, firstDelayMs: 4_000,
-    voiceOf: (id) => (id === "coder-agent" ? { name: "Coder", voiceId: "roger", style: "laid-back", narrate: mode } : null),
+    voiceOf: (id) => (id === "coder-agent" ? { name: "Coder", voice: { provider: "system", elevenlabs: "roger", system: null, fallback: true }, style: "laid-back", narrate: mode } : null),
   })
   const bus = new EventEmitter() as any
   n.attach(bus)

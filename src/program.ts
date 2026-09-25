@@ -20,6 +20,7 @@ import { notify as notifyCmd } from "@/commands/notify"
 import { decide as decideCmd } from "@/commands/decide"
 import { teach as teachCmd } from "@/commands/teach"
 import { talk as talkCmd, narrate as narrateCmd } from "@/commands/talk"
+import { voice as voiceCmd } from "@/commands/voice"
 import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
@@ -95,6 +96,7 @@ export async function buildProgram(): Promise<Command> {
     decideCmd,                   // typed decisions, for agents
     teachCmd,                    // talk and point, at the same time
     talkCmd, narrateCmd,         // agents talking out loud; narrated work
+    voiceCmd,                    // which voice each agent speaks with
     usage,                       // what it cost, what gets used
     serve,                       // MCP
     token, configCmd, completion,

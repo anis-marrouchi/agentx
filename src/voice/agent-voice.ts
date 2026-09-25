@@ -2,14 +2,19 @@
 //
 // One global voice made every agent sound like the same person, so a
 // voice conversation could not tell you who was answering. Each agent may
-// now carry a `voice` block in agentx.json; anything it leaves out falls
-// back to the global default, so an unconfigured fleet sounds exactly as
-// it did before.
+// carry a `voice` block in agentx.json; anything it leaves out falls back
+// to the global `voice` settings. Out of the box every agent speaks with
+// a free macOS voice of its own; ElevenLabs is opt-in (voice.provider).
 
 import type { DaemonConfig } from "@/daemon/config"
 import type { TalkSpeaker } from "./talk"
+import type { VoiceRef } from "./speaker"
+import { castVoices, candidates, findVoice, listSystemVoices, warnOnce, type CastEntry, type SystemVoice } from "./system-voices"
 
 type AgentConfig = DaemonConfig["agents"][string]
+type Agents = DaemonConfig["agents"]
+export type VoiceSettings = Partial<DaemonConfig["voice"]>
+export type VoiceProvider = DaemonConfig["voice"]["provider"]
 
 /** ElevenLabs "Rachel" — the voice every agent used before this existed. */
 export const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
@@ -17,24 +22,95 @@ export const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 export interface AgentVoice {
   agentId: string
   name: string
+  /** Which engine speaks: the free system voices, or ElevenLabs. */
+  provider: VoiceProvider
   /** Null when the agent has none: the client applies its own default. */
   elevenlabsVoiceId: string | null
+  /** The macOS voice identifier for `say -v`; null for the OS default. */
+  systemVoice: string | null
+  /** Its readable name, e.g. "Daniel (en-GB)". */
+  systemVoiceName: string | null
+  /** When ElevenLabs cannot speak, use the system voice instead. */
+  fallback: boolean
   gender: "female" | "male" | "neutral" | null
   style: string | null
   intro: string
 }
 
-export function resolveAgentVoice(agentId: string, agent?: Partial<AgentConfig>): AgentVoice {
+/**
+ * How an agent sounds. The provider is the agent's, else the global one
+ * (system by default). The system voice is the agent's, else the global
+ * default, else one assigned to it alone; a name that is not installed
+ * is skipped with one warning.
+ */
+export function resolveAgentVoice(
+  agentId: string,
+  agents: Agents,
+  settings: VoiceSettings = {},
+  installed: SystemVoice[] = listSystemVoices(),
+): AgentVoice {
+  const agent: Partial<AgentConfig> | undefined = agents[agentId]
   const name = agent?.name || agentId
   const v = agent?.voice
+  const sys = localSystemVoices(agents, settings, installed).get(agentId) ?? null
   return {
     agentId,
     name,
+    provider: v?.provider ?? settings.provider ?? "system",
     elevenlabsVoiceId: v?.elevenlabsVoiceId || null,
+    systemVoice: sys?.id ?? null,
+    systemVoiceName: sys ? label(sys) : null,
+    fallback: (settings.fallback ?? "system") === "system",
     gender: v?.gender ?? null,
     style: v?.style || null,
     intro: v?.intro || deriveIntro(name, agent?.systemPrompt),
   }
+}
+
+export const label = (v: SystemVoice) =>
+  `${v.name}${v.quality === "standard" ? "" : ` (${v.quality[0].toUpperCase()}${v.quality.slice(1)})`} ${v.locale}`
+
+/** A configured name, checked: the installed voice, or null and a warning. */
+export function checkedVoice(owner: string, name: string | undefined, installed: SystemVoice[], locale: string): SystemVoice | null {
+  if (!name || !installed.length) return null
+  const v = findVoice(name, installed, locale)
+  if (!v) warnOnce(`${owner}:${name}`, `[voice] ${owner}: system voice "${name}" is not installed; using the next choice. Run \`agentx voice list\` to see installed voices.`)
+  return v
+}
+
+/** Someone to cast: their configured voice name and gender, if any. */
+export interface VoiceWish { id: string; system?: string; gender?: SystemVoice["gender"] }
+
+/**
+ * A system voice for each wish, in order: its own if installed, else the
+ * global default, else a distinct one of its own. Names in `taken` are
+ * already spoken for (e.g. by local agents, when casting mesh agents).
+ */
+export function castSystemVoices(wishes: VoiceWish[], settings: VoiceSettings, installed: SystemVoice[], taken: Set<string> = new Set()): Map<string, SystemVoice> {
+  const locale = settings.locale ?? "en"
+  const out = new Map<string, SystemVoice>()
+  const open: CastEntry[] = []
+  const fallback = checkedVoice("voice.system", settings.system, installed, locale)
+  for (const w of wishes) {
+    const own = checkedVoice(w.id, w.system, installed, locale) ?? fallback
+    if (own) out.set(w.id, own)
+    else open.push({ id: w.id, gender: w.gender ?? null })
+  }
+  const names = new Set([...taken, ...[...out.values()].map((v) => v.name)])
+  for (const [id, v] of castVoices(open, candidates(installed, locale), names)) out.set(id, v)
+  return out
+}
+
+/** Every local agent's system voice, assigned in config order, so adding
+ *  an agent at the end never changes anyone else's voice. */
+export function localSystemVoices(agents: Agents, settings: VoiceSettings = {}, installed: SystemVoice[] = listSystemVoices()): Map<string, SystemVoice> {
+  const wishes = Object.entries(agents).map(([id, a]) => ({ id, system: a.voice?.system, gender: a.voice?.gender }))
+  return castSystemVoices(wishes, settings, installed)
+}
+
+/** What the speech engine needs; `explicit` is a one-off ElevenLabs id. */
+export function voiceRef(v: AgentVoice, explicit?: string | null): VoiceRef {
+  return { provider: v.provider, elevenlabs: pickVoiceId(explicit, v.elevenlabsVoiceId), system: v.systemVoice, fallback: v.fallback }
 }
 
 /** The voice id to synthesise with: explicit, then agent, then env, then Rachel. */
@@ -121,16 +197,16 @@ export function introInstruction(voice: AgentVoice, introduce: boolean): string 
 
 /** An agent as a talk participant: who it is, how it sounds, whether it
  *  still owes the listener an introduction. */
-export function talkSpeaker(agentId: string, agents: DaemonConfig["agents"], introduce: boolean): TalkSpeaker {
+export function talkSpeaker(agentId: string, agents: DaemonConfig["agents"], introduce: boolean, settings: VoiceSettings = {}): TalkSpeaker {
   const agent = agents[agentId]
-  const voice = resolveAgentVoice(agentId, agent)
+  const voice = resolveAgentVoice(agentId, agents, settings)
   // The first paragraph is where a persona says who it is; the rest is
   // task instructions, which do not belong in small talk.
   const persona = (agent?.systemPrompt ?? "").split(/\n\s*\n/)[0].slice(0, 600).trim()
   return {
     agentId,
     name: voice.name,
-    voiceId: pickVoiceId(null, voice.elevenlabsVoiceId),
+    voice: voiceRef(voice),
     persona: persona || `You are ${voice.name}.`,
     introLine: introInstruction(voice, introduce),
   }
@@ -156,7 +232,8 @@ export function remoteVoiceAppend(context: unknown): string | undefined {
   const clip = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").slice(0, 200) : "")
   const intro = clip(ctx.voice.intro)
   const voice: AgentVoice = {
-    agentId: "", name: "", elevenlabsVoiceId: null, gender: null,
+    agentId: "", name: "", provider: "system", elevenlabsVoiceId: null,
+    systemVoice: null, systemVoiceName: null, fallback: true, gender: null,
     style: clip(ctx.voice.style) || null,
     intro: intro || "Hello.",
   }

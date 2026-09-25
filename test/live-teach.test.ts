@@ -56,7 +56,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   }
   if (opts.userActsAfter !== undefined) setTimeout(app.open, opts.userActsAfter)
   const t = new LiveTeach({
-    goal: "start a new note", mode, speaker: { name: "Coder", voiceId: "roger" },
+    goal: "start a new note", mode, speaker: { name: "Coder", voice: { provider: "system", elevenlabs: "roger", system: null, fallback: true } },
     actionsAllowed: !!opts.actionsAllowed, waitMs: 300, pollMs: 10, holdMs: 100,
   }, deps)
   return { t, log, said, acted, model, get stopped() { return stopped } }

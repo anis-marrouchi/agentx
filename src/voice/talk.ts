@@ -13,12 +13,12 @@
 
 import { SentenceCutter, speakable } from "./sentences"
 import type { LineModel } from "./talk-model"
-import type { SpeechOut } from "./speaker"
+import type { SpeechOut, VoiceRef } from "./speaker"
 
 export interface TalkSpeaker {
   agentId: string
   name: string
-  voiceId: string
+  voice: VoiceRef
   /** Who this agent is, in a few sentences. */
   persona: string
   /** From introInstruction(): introduce yourself, or talk casually. */
@@ -195,7 +195,7 @@ export class Talk {
       const text = speakable(raw.replace(DONE, ""))
       if (!text || signal.aborted) return
       const firstLine = !t.plays.length
-      const p = this.opts.speech.say({ voiceId: sp.voiceId, text, onStart: firstLine ? () => this.turnStarted(t, startedResolve) : undefined })
+      const p = this.opts.speech.say({ voice: sp.voice, text, onStart: firstLine ? () => this.turnStarted(t, startedResolve) : undefined })
       // Lines play strictly in order, so the last one to finish marks where
       // the next speaker's gap starts.
       t.plays.push(p.then((ok) => { if (ok) { t.heard.push(text); this.lastEndAt = Date.now() } return ok }))

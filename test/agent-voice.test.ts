@@ -13,26 +13,31 @@ import { daemonConfigSchema } from "../src/daemon/config"
 describe("resolveAgentVoice", () => {
   it("uses the configured voice block", () => {
     const v = resolveAgentVoice("marketing-agent", {
-      name: "Nadia",
-      voice: { elevenlabsVoiceId: "abc", gender: "female", style: "warm", intro: "Hi, Nadia here." },
-    })
+      "marketing-agent": {
+        name: "Nadia",
+        voice: { elevenlabsVoiceId: "abc", gender: "female", style: "warm", intro: "Hi, Nadia here." },
+      },
+    } as any, {}, [])
     expect(v).toEqual({
-      agentId: "marketing-agent", name: "Nadia", elevenlabsVoiceId: "abc",
+      agentId: "marketing-agent", name: "Nadia", provider: "system", elevenlabsVoiceId: "abc",
+      systemVoice: null, systemVoiceName: null, fallback: true,
       gender: "female", style: "warm", intro: "Hi, Nadia here.",
     })
   })
 
   it("leaves the voice id null and derives an intro when unconfigured", () => {
     const v = resolveAgentVoice("coder-agent", {
-      name: "Coder",
-      systemPrompt: "You are Coder, Noqta's local coding agent. You write clean code.",
-    })
+      "coder-agent": {
+        name: "Coder",
+        systemPrompt: "You are Coder, Noqta's local coding agent. You write clean code.",
+      },
+    } as any, {}, [])
     expect(v.elevenlabsVoiceId).toBeNull()
     expect(v.intro).toBe("Hello, this is Coder, Noqta's local coding agent.")
   })
 
   it("falls back to the id when the agent is unknown", () => {
-    expect(resolveAgentVoice("ghost").intro).toBe("Hello, this is ghost.")
+    expect(resolveAgentVoice("ghost", {}, {}, []).intro).toBe("Hello, this is ghost.")
   })
 })
 
@@ -96,7 +101,7 @@ describe("VoiceIntroTracker", () => {
 })
 
 describe("introInstruction", () => {
-  const voice = resolveAgentVoice("n", { name: "Nadia", voice: { intro: "Hi, Nadia here.", style: "upbeat" } })
+  const voice = resolveAgentVoice("n", { n: { name: "Nadia", voice: { intro: "Hi, Nadia here.", style: "upbeat" } } } as any, {}, [])
 
   it("asks for the intro on first contact", () => {
     const s = introInstruction(voice, true)

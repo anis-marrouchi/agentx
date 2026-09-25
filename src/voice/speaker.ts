@@ -1,8 +1,10 @@
 // --- Speaking out loud on the daemon's host, one line at a time ---
 //
-// Each line is sent to ElevenLabs the moment it is known, so its audio is
-// usually ready before the line ahead of it finishes playing; lines still
-// play strictly in order. `stop()` silences everything at once: the line
+// With the system provider (the default) a line is spoken by `say` in the
+// agent's macOS voice and nothing leaves the machine. With ElevenLabs, each
+// line is sent the moment it is known, so its audio is usually ready
+// before the line ahead of it finishes playing; lines still play strictly
+// in order. `stop()` silences everything at once: the line
 // playing is killed and queued ones are dropped. Talk mode and task
 // narration share one SpeechOut, so two voices never talk over each other.
 
@@ -10,15 +12,27 @@ import { spawn, type ChildProcess } from "child_process"
 import { readFileSync, writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
+import { warnOnce } from "./system-voices"
+
+/** Which engine speaks a line, and in which voice. */
+export interface VoiceRef {
+  provider: "system" | "elevenlabs"
+  /** ElevenLabs voice id; only used by the elevenlabs provider. */
+  elevenlabs: string
+  /** macOS voice identifier; null for the OS default voice. */
+  system: string | null
+  /** When ElevenLabs cannot speak, fall back to the system voice. */
+  fallback: boolean
+}
 
 export interface Utterance {
-  voiceId: string
+  voice: VoiceRef
   text: string
   /** Called when this line starts playing. */
   onStart?: () => void
 }
 
-/** Audio for a line: an mp3 file, or null to fall back to the OS voice. */
+/** Audio for a line: an mp3 file, or null to speak it with the system voice. */
 export type Synth = (u: Utterance, signal: AbortSignal) => Promise<string | null>
 /** Start playing; the returned process exits when playback ends. */
 export type Play = (file: string | null, u: Utterance) => ChildProcess
@@ -43,23 +57,42 @@ export function elevenLabsKey(): string | null {
 export function elevenLabsSynth(key: string | null = elevenLabsKey()): Synth {
   let n = 0
   return async (u, signal) => {
-    if (!key) return null
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${u.voiceId}/stream?output_format=mp3_44100_128`, {
-      method: "POST",
-      headers: { "xi-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: u.text, model_id: "eleven_flash_v2_5" }),
-      signal,
-    })
-    if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 160)}`)
-    const file = join(tmpdir(), `agentx-say-${process.pid}-${++n}.mp3`)
-    writeFileSync(file, Buffer.from(await res.arrayBuffer()))
-    return file
+    if (u.voice.provider === "system") return null
+    if (!key) {
+      if (u.voice.fallback) return null
+      throw new Error("ElevenLabs is the voice provider but no key is set")
+    }
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${u.voice.elevenlabs}/stream?output_format=mp3_44100_128`, {
+        method: "POST",
+        headers: { "xi-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ text: u.text, model_id: "eleven_flash_v2_5" }),
+        signal,
+      })
+      if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 160)}`)
+      const file = join(tmpdir(), `agentx-say-${process.pid}-${++n}.mp3`)
+      writeFileSync(file, Buffer.from(await res.arrayBuffer()))
+      return file
+    } catch (e: any) {
+      if (signal.aborted || !u.voice.fallback) throw e
+      warnOnce(`elevenlabs:${String(e?.message ?? e).slice(0, 40)}`, `[voice] ElevenLabs failed (${String(e?.message ?? e).slice(0, 160)}); speaking with the system voice`)
+      return null
+    }
   }
 }
 
+/** The `say` arguments for a line. A line that opens with "-" must not be
+ *  read as an option, so the text always comes from stdin. */
+export const sayArgs = (v: VoiceRef): string[] => (v.system ? ["-v", v.system] : [])
+
 /** afplay on macOS, mpg123 elsewhere; `say` when there is no audio file. */
 export const systemPlay: Play = (file, u) => {
-  if (!file) return spawn("say", [u.text], { stdio: "ignore" })
+  if (!file) {
+    const p = spawn("say", sayArgs(u.voice), { stdio: ["pipe", "ignore", "ignore"] })
+    p.stdin?.on("error", () => {})
+    p.stdin?.end(u.text)
+    return p
+  }
   const p = process.platform === "darwin"
     ? spawn("afplay", [file], { stdio: "ignore" })
     : spawn("mpg123", ["-q", file], { stdio: "ignore" })

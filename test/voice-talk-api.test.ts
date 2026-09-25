@@ -32,7 +32,7 @@ function service() {
 describe("talkSpeaker", () => {
   it("takes the persona's first paragraph, the agent's voice, and the intro rule", () => {
     const s = talkSpeaker("secretary-agent", agents, true)
-    expect(s).toMatchObject({ name: "Secretary", voiceId: "sarah", persona: "You are Anis's personal secretary." })
+    expect(s).toMatchObject({ name: "Secretary", voice: { elevenlabs: "sarah" }, persona: "You are Anis's personal secretary." })
     expect(s.introLine).toContain("[VOICE INTRO]")
     expect(talkSpeaker("secretary-agent", agents, false).introLine).toContain("[VOICE CASUAL]")
   })
