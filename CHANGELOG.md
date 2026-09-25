@@ -2,6 +2,23 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.38.0](https://github.com/anis-marrouchi/agentx/compare/v0.37.0...v0.38.0) (2026-09-25)
+
+
+### Features
+
+* **mac-voice:** speak Siri and OS-default lines through the shared script ([437e2fb](https://github.com/anis-marrouchi/agentx/commit/437e2fb1ea99f5a3ac037347b400901349359bf6)), closes [#48](https://github.com/anis-marrouchi/agentx/issues/48)
+* **voice:** offer Siri voices only where the host can switch them ([75d63c3](https://github.com/anis-marrouchi/agentx/commit/75d63c3a252873f9efdac4bd96ab9db36863ce2f)), closes [#48](https://github.com/anis-marrouchi/agentx/issues/48)
+* **voice:** OS default voice, per-language voices, gender-aware casting ([2af6894](https://github.com/anis-marrouchi/agentx/commit/2af68947985d8b04e6f83182cf961adfb679fbc5))
+* **voice:** per-agent Siri voices by switching the system voice ([74a4d72](https://github.com/anis-marrouchi/agentx/commit/74a4d72c534bb827cb1806dce256400570748cd0))
+* **voice:** per-agent Siri voices by switching the system voice ([ce6dd87](https://github.com/anis-marrouchi/agentx/commit/ce6dd87a883e4b62b98af8860fc0e2dc7b2bb731)), closes [#48](https://github.com/anis-marrouchi/agentx/issues/48)
+
+
+### Bug Fixes
+
+* **teach:** re-read the screen before acting on a plan ([25f4e75](https://github.com/anis-marrouchi/agentx/commit/25f4e7525c5cd73f1fac398a0e565c1765e864fa))
+* **teach:** re-read the screen before acting on a plan ([057aed9](https://github.com/anis-marrouchi/agentx/commit/057aed97db1c50d7e206278cb292a76e1777eb67)), closes [#46](https://github.com/anis-marrouchi/agentx/issues/46)
+
 ## [0.37.0](https://github.com/anis-marrouchi/agentx/compare/v0.36.0...v0.37.0) (2026-09-25)
 
 
