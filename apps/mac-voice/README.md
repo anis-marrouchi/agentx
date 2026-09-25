@@ -90,7 +90,8 @@ needs no Accessibility permission — an `NSEvent` global monitor would have.
 
 ## Known limits
 
-- Push-to-talk only; no wake word, and no barge-in while it speaks.
+- Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and
+  talk) or ⌘⌥. (just stop), or use *Stop speaking* in the right-click menu.
 - One turn at a time — a keypress during a running turn is ignored, not queued.
 - ⌥Space is fixed. `⌃Space` was avoided because it's commonly bound to
   input-source switching.
