@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import { execFile, spawn, type ChildProcess } from "child_process"
 import { promisify } from "util"
-import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from "fs"
+import { existsSync, statSync } from "fs"
 import { resolve, join } from "path"
 import { tmpdir } from "os"
 import chalk from "chalk"
@@ -19,8 +19,9 @@ import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 import { loadDaemonConfig } from "@/daemon/config"
-import { pickVoiceId, resolveAgentVoice } from "@/voice/agent-voice"
-import { elevenLabsKey } from "@/voice/speaker"
+import { pickVoiceId, resolveAgentVoice, voiceRef } from "@/voice/agent-voice"
+import { SpeechOut, type VoiceRef } from "@/voice/speaker"
+import { findVoice, listSystemVoices } from "@/voice/system-voices"
 import { runLiveTeach } from "@/commands/live-teach"
 
 const run = promisify(execFile)
@@ -45,7 +46,7 @@ export const teach = new Command()
   .name("teach")
   .description("walk through something on screen, speaking and pointing as it goes")
   .argument("[lesson]", "lesson id (omit to list)")
-  .option("--voice <id>", "ElevenLabs voice id (overrides the agent's)")
+  .option("--voice <voice>", "system voice name or ElevenLabs voice id (overrides the agent's)")
   .option("--agent <id>", "speak in this agent's voice (default: AGENTX_VOICE_AGENT or node.defaultAgent)")
   .option("--no-speak", "point only, print the narration")
   .option("--no-hud", "skip the on-screen callout")
@@ -84,7 +85,7 @@ export const teach = new Command()
       process.exit(1)
     }
 
-    const voiceId = opts.speak === false ? undefined : lessonVoice(opts.voice, opts.agent)
+    const voice = opts.speak === false ? undefined : lessonVoice(opts.voice, opts.agent)
 
     console.log(chalk.bold(`\n  ${lesson.title}`))
     console.log(chalk.dim(`  ${lesson.appHint}\n`))
@@ -172,7 +173,7 @@ export const teach = new Command()
       // sentence arrives as confirmation instead of direction.
       const speaking = opts.speak === false
         ? Promise.resolve()
-        : speak(step.say, voiceId)
+        : speak(step.say, voice)
 
       // Locate while the sentence is still playing, so the highlight
       // lands as the sentence ends rather than after a pause.
@@ -395,45 +396,32 @@ async function locate(description: string, priorAttempts: PriorAttempt[] = []): 
 }
 
 /**
- * The same resolution the voice widget gets from /ask: --voice, then the
- * agent's configured voice, then AGENTX_VOICE_ID, then the default. No
- * readable agentx.json is not an error — the lesson still speaks.
+ * The same resolution the voice widget gets from /ask: --voice (a system
+ * voice name, else an ElevenLabs id), then the agent's voice, then the
+ * global settings. No readable agentx.json is not an error — the lesson
+ * still speaks, in the system voice.
  */
-function lessonVoice(explicit?: string, agentId?: string): string {
-  if (explicit) return pickVoiceId(explicit)
+function lessonVoice(explicit?: string, agentId?: string): VoiceRef {
+  const system = explicit ? findVoice(explicit, listSystemVoices()) : null
+  if (system) return { provider: "system", elevenlabs: pickVoiceId(), system: system.id, fallback: true }
+  if (explicit) return { provider: "elevenlabs", elevenlabs: explicit, system: null, fallback: true }
   try {
     const config = loadDaemonConfig()
     const id = agentId || process.env.AGENTX_VOICE_AGENT || config.node.defaultAgent
     if (id && !config.agents[id]) console.log(chalk.yellow(`  no agent "${id}" in agentx.json — using the default voice`))
-    const agent = id ? config.agents[id] : undefined
-    return pickVoiceId(null, id && agent ? resolveAgentVoice(id, agent).elevenlabsVoiceId : null)
+    if (id && config.agents[id]) return voiceRef(resolveAgentVoice(id, config.agents, config.voice))
+    return { provider: config.voice.provider, elevenlabs: pickVoiceId(), system: null, fallback: config.voice.fallback === "system" }
   } catch (e: any) {
     console.log(chalk.dim(`  no agent voice (${String(e?.message ?? e).split("\n")[0]}) — using the default`))
-    return pickVoiceId()
+    return { provider: "system", elevenlabs: pickVoiceId(), system: null, fallback: true }
   }
 }
 
-/** ElevenLabs, falling back to `say` — the lesson matters more than the voice. */
-async function speak(text: string, voiceId?: string): Promise<void> {
-  const key = elevenLabsKey()
-  if (key) {
-    try {
-      const voice = voiceId || pickVoiceId()
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
-        method: "POST",
-        headers: { "xi-api-key": key, "Content-Type": "application/json" },
-        body: JSON.stringify({ text, model_id: "eleven_turbo_v2_5" }),
-      })
-      if (res.ok) {
-        const file = join(tmpdir(), `agentx-teach-${Date.now()}.mp3`)
-        writeFileSync(file, Buffer.from(await res.arrayBuffer()))
-        await run("/usr/bin/afplay", [file])
-        try { unlinkSync(file) } catch { /* temp file */ }
-        return
-      }
-    } catch { /* fall through to say */ }
-  }
-  await run("/usr/bin/say", [text]).catch(() => {})
+/** One line at a time; the lesson matters more than the voice, so a line
+ *  that cannot be spoken is skipped rather than stopping the lesson. */
+const lessonSpeech = new SpeechOut()
+async function speak(text: string, voice?: VoiceRef): Promise<void> {
+  if (voice) await lessonSpeech.say({ voice, text })
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

@@ -25,7 +25,7 @@ import { Talk, isStop, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
-import { pickVoiceId, resolveAgentVoice, talkSpeaker, type VoiceIntroTracker } from "@/voice/agent-voice"
+import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
 import { PresenceHost, type PresenceHostDeps } from "@/daemon/voice-presence"
 
@@ -42,6 +42,9 @@ export interface VoiceTalkDeps {
   presence?: PresenceHostDeps
   /** A talk participant from a mesh peer, when the id is not local. */
   remote?: (agentId: string, introduce: boolean) => TalkSpeaker | undefined
+  /** The global voice settings (agentx.json `voice`), read per line so a
+   *  change applies to the next one. */
+  voiceSettings?: () => VoiceSettings
 }
 
 type VoiceSession = Talk | LiveTeach
@@ -55,6 +58,7 @@ export class VoiceTalkService {
   private hushed: { taskId: string; agentId: string } | null = null
   private model: (system: string) => LineModel
   private remote: NonNullable<VoiceTalkDeps["remote"]>
+  private settings: () => VoiceSettings
 
   constructor(
     private agents: () => Agents,
@@ -65,15 +69,17 @@ export class VoiceTalkService {
     this.speech = deps.speech ?? new SpeechOut()
     this.model = deps.model ?? ((system) => createLineModel({ system }))
     this.remote = deps.remote ?? (() => undefined)
-    this.presence = new PresenceHost(agents, log, deps.presence)
+    const settings = deps.voiceSettings ?? (() => ({}))
+    this.settings = settings
+    this.presence = new PresenceHost(agents, log, { voiceSettings: settings, ...deps.presence })
     this.narrator = new Narrator({
       speech: this.speech,
       model: () => this.model(NARRATOR_SYSTEM),
       voiceOf: (id) => {
         const agent = this.agents()[id]
         if (!agent) return null
-        const v = resolveAgentVoice(id, agent)
-        return { name: v.name, voiceId: pickVoiceId(null, v.elevenlabsVoiceId), style: v.style, narrate: agent.voice?.narrate ?? "off" }
+        const v = resolveAgentVoice(id, this.agents(), this.settings())
+        return { name: v.name, voice: voiceRef(v), style: v.style, narrate: agent.voice?.narrate ?? "off" }
       },
     })
   }
@@ -195,7 +201,7 @@ export class VoiceTalkService {
     const session = "talk"
     const speakerOf = (id: string) => {
       const introduce = this.intros.needsIntro(session, id)
-      return agents[id] ? talkSpeaker(id, agents, introduce) : this.remote(id, introduce)
+      return agents[id] ? talkSpeaker(id, agents, introduce, this.settings()) : this.remote(id, introduce)
     }
     const found = ids.map(speakerOf)
     const unknown = ids.filter((_, i) => !found[i])

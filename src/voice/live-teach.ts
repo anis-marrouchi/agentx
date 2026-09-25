@@ -13,7 +13,7 @@
 // Option-Space calls, and "stop" ends it.
 
 import type { LineModel } from "./talk-model"
-import type { SpeechOut } from "./speaker"
+import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
 import { parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
@@ -45,7 +45,7 @@ export interface LiveTeachOpts {
    *  nothing is clicked, while another app has focus. */
   app?: string
   mode: TeachMode
-  speaker: { name: string; voiceId: string; agentId?: string }
+  speaker: { name: string; voice: VoiceRef; agentId?: string }
   actionsAllowed: boolean
   listener?: string
   maxSteps?: number
@@ -151,7 +151,7 @@ export class LiveTeach {
         const line = `Bring ${this.opts.app} to the front and I'll carry on.`
         this.deps.presence.say(line)
         this.emit({ type: "step", n: this.step, action: "wait_for_user", target: null, say: line })
-        await this.deps.speech.say({ voiceId: this.opts.speaker.voiceId, text: line })
+        await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
       }
       if (Date.now() > deadline) { this.stop(`${this.opts.app} never came to the front`); return null }
       await Promise.race([this.sleep(this.opts.pollMs ?? 800), this.poked()])
@@ -197,7 +197,7 @@ export class LiveTeach {
     if (rect) presence.moveTo(rect, { highlight: action !== "point" })
     presence.say(plan.say)
     this.lastSay = plan.say
-    const spoken = plan.say ? speech.say({ voiceId: this.opts.speaker.voiceId, text: plan.say }) : Promise.resolve(true)
+    const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say }) : Promise.resolve(true)
     await Promise.race([spoken, this.poked()])
     if (!this.is("running") || this.doorQueue.length) {
       this.history.push(`Step ${n}: you started "${plan.say}" and were cut off.`)

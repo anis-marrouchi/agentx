@@ -6,6 +6,7 @@ import { SpeechOut, type Play, type Synth } from "../src/voice/speaker"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { Talk, type TalkEvent, type TalkSpeaker } from "../src/voice/talk"
 
+const ref = (elevenlabs: string) => ({ provider: "system" as const, elevenlabs, system: null, fallback: true })
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** A player that "plays" for `ms` and can be killed, like afplay. */
@@ -42,8 +43,8 @@ class ScriptModel implements LineModel {
 }
 
 const speakers: [TalkSpeaker, TalkSpeaker] = [
-  { agentId: "secretary-agent", name: "Secretary", voiceId: "v1", persona: "You are the Secretary." },
-  { agentId: "marketing-agent", name: "Nadia", voiceId: "v2", persona: "You are Nadia." },
+  { agentId: "secretary-agent", name: "Secretary", voice: ref("v1"), persona: "You are the Secretary." },
+  { agentId: "marketing-agent", name: "Nadia", voice: ref("v2"), persona: "You are Nadia." },
 ]
 
 function setup(scripts: [string[], string[]], playMs = 30) {
@@ -78,10 +79,10 @@ describe("SpeechOut", () => {
     const { play } = fakeAudio(20, log)
     const synth: Synth = async (u) => { await sleep(u.text === "one" ? 30 : 1); return null }
     const s = new SpeechOut(synth, play)
-    const a = s.say({ voiceId: "v", text: "one" })
-    const b = s.say({ voiceId: "v", text: "two" })
+    const a = s.say({ voice: ref("v"), text: "one" })
+    const b = s.say({ voice: ref("v"), text: "two" })
     expect(await a).toBe(true)
-    const c = s.say({ voiceId: "v", text: "three" })
+    const c = s.say({ voice: ref("v"), text: "three" })
     await sleep(5)
     s.stop()
     expect(await b).toBe(false)

@@ -83,6 +83,7 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
+import { setVoiceLog } from "@/voice/system-voices"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend } from "@/voice/agent-voice"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
@@ -198,8 +199,10 @@ export class AgentXDaemon {
     // the entire turn. Forwarding here gives /events the events its own
     // filter name already implies.
     this.voiceMesh = new VoiceMeshProxy(() => this.config, () => this.mesh, (m) => this.log(m))
+    setVoiceLog((m) => this.log(m))
     this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m), {
       remote: (id, introduce) => this.voiceMesh.voices.speaker(id, introduce),
+      voiceSettings: () => this.config?.voice ?? {},
     })
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
@@ -207,8 +210,8 @@ export class AgentXDaemon {
       try {
         // The voice rides along so a listener can narrate the wait in the
         // voice of the agent doing the work, before its answer arrives.
-        const agent = this.config?.agents?.[e.agentId]
-        const voice = agent ? resolveAgentVoice(e.agentId, agent) : undefined
+        const agents = this.config?.agents ?? {}
+        const voice = agents[e.agentId] ? resolveAgentVoice(e.agentId, agents, this.config.voice) : undefined
         this.broadcastSSE("task", JSON.stringify({ kind: "task:step", ...e, voice }))
       } catch {
         /* a telemetry frame must never break the step it describes */
@@ -4417,7 +4420,7 @@ export class AgentXDaemon {
           const switched = this.voiceMesh.switchTo(session, message, requested)
           if (switched) {
             const remoteSwitch = !this.registry.getAgent(switched)
-            const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents[switched])
+            const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
             const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
             this.voiceIntros.spoke(session, switched)
             this.json(res, 200, { agentId: switched, voice, presence: null, text, full: text, ui: null, switched: true })
@@ -4434,7 +4437,7 @@ export class AgentXDaemon {
           // The voice instruction rides in the system append, NOT in the
           // message (see VOICE_MODE_INSTRUCTION). A remote agent's node
           // builds it from the few voice fields the proxy sends.
-          const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents[agentId])
+          const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
           const introduce = this.voiceIntros.needsIntro(session, agentId)
 
           // How the agent shows up on screen this turn (the presence-mode

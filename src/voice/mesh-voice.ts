@@ -3,11 +3,13 @@
 // A remote agent has no `voice` block here and its node needs no
 // ElevenLabs key: the Mac speaks for it. Its voice comes from
 // `meshVoices` in agentx.json when set; otherwise it is derived from the
-// peer's agent card, and it gets a voice of its own from the ElevenLabs
-// library, one no local agent and no other remote already uses.
+// peer's agent card, and it gets voices of its own, a system voice and
+// one from the ElevenLabs library, that no local agent and no other remote
+// already uses.
 
 import type { DaemonConfig } from "@/daemon/config"
-import { deriveIntro, introInstruction, pickVoiceId, type AgentVoice } from "./agent-voice"
+import { castSystemVoices, deriveIntro, introInstruction, label, localSystemVoices, pickVoiceId, voiceRef, type AgentVoice, type VoiceSettings } from "./agent-voice"
+import { listSystemVoices, type SystemVoice } from "./system-voices"
 import type { TalkSpeaker } from "./talk"
 
 type Gender = AgentVoice["gender"]
@@ -132,8 +134,9 @@ export class MeshVoices {
   private pool: PoolVoice[] = PREMADE_VOICES
 
   constructor(
-    private config: () => Pick<DaemonConfig, "agents" | "meshVoices">,
+    private config: () => Pick<DaemonConfig, "agents" | "meshVoices"> & { voice?: VoiceSettings },
     private directory: () => MeshDirectory,
+    private installed: () => SystemVoice[] = () => listSystemVoices(),
   ) {}
 
   /** Swap in the account's voice list once it has loaded. */
@@ -162,10 +165,16 @@ export class MeshVoices {
     const agent = this.get(id)
     const cfg = this.config().meshVoices?.[id]
     const name = cfg?.name || agent?.name || id
+    const settings = this.config().voice ?? {}
+    const sys = this.systemCast().get(id) ?? null
     return {
       agentId: id,
       name,
+      provider: cfg?.provider ?? settings.provider ?? "system",
       elevenlabsVoiceId: cfg?.elevenlabsVoiceId || this.assigned().get(id) || null,
+      systemVoice: sys?.id ?? null,
+      systemVoiceName: sys ? label(sys) : null,
+      fallback: (settings.fallback ?? "system") === "system",
       gender: cfg?.gender ?? genderFromCard(agent?.description ?? "") ?? null,
       style: cfg?.style || null,
       intro: cfg?.intro || deriveIntro(name, agent?.description),
@@ -180,10 +189,21 @@ export class MeshVoices {
     return {
       agentId: id,
       name: voice.name,
-      voiceId: pickVoiceId(null, voice.elevenlabsVoiceId),
+      voice: voiceRef(voice),
       persona: agent.description || `You are ${voice.name}.`,
       introLine: introInstruction(voice, introduce),
     }
+  }
+
+  /** System voices for remotes, distinct from every local agent's. */
+  private systemCast(): Map<string, SystemVoice> {
+    const { agents, meshVoices = {}, voice: settings = {} } = this.config()
+    const installed = this.installed()
+    const taken = new Set([...localSystemVoices(agents, settings, installed).values()].map((v) => v.name))
+    const wishes = this.list().sort((a, b) => a.id.localeCompare(b.id)).map((a) => ({
+      id: a.id, system: meshVoices[a.id]?.system, gender: meshVoices[a.id]?.gender ?? genderFromCard(a.description),
+    }))
+    return castSystemVoices(wishes, settings, installed, taken)
   }
 
   /** Default voices for every remote not pinned in meshVoices. */

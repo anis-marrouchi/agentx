@@ -142,7 +142,14 @@ export const INTEGRATION_KINDS = [
   "custom",
 ] as const
 
+const voiceProviderSchema = z.enum(["system", "elevenlabs"])
+
 const voiceSchema = z.object({
+  /** Overrides the global voice.provider for this agent. */
+  provider: voiceProviderSchema.optional(),
+  /** A macOS voice: a name ("Daniel", "Ava (Premium)") or identifier.
+   *  Unset: one is assigned, different from every other agent's. */
+  system: z.string().optional(),
   elevenlabsVoiceId: z.string().optional(),
   gender: z.enum(["female", "male", "neutral"]).optional(),
   /** A few words on manner, e.g. "warm, upbeat, a little playful". */
@@ -781,6 +788,20 @@ export const daemonConfigSchema = z.object({
     /** What to call the agent aloud, e.g. "Atlas" for "Main Agent". */
     name: z.string().optional(),
   })).default({}),
+  /** How agents speak. The free system voices by default; ElevenLabs is an
+   *  opt-in upgrade. Each agent's `voice` block can override the provider
+   *  and pick its voice; see src/voice/agent-voice.ts. */
+  voice: z.object({
+    provider: voiceProviderSchema.default("system"),
+    /** When ElevenLabs cannot speak (no key, an error): the system voice,
+     *  or silence. */
+    fallback: z.enum(["system", "none"]).default("system"),
+    /** The system voice for agents without one of their own. Unset: each
+     *  agent gets its own. */
+    system: z.string().optional(),
+    /** Language for assigned system voices, e.g. "en", "fr-FR". */
+    locale: z.string().default("en"),
+  }).default({}),
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,

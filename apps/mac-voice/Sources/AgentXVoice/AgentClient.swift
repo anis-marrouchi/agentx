@@ -22,9 +22,9 @@ enum AgentClient {
         let buttons: [(String, String)]
         let imageURL: String?
         let durationMs: Int?
-        /// The agent that answered and its ElevenLabs voice, when it has one.
+        /// The agent that answered and how it sounds.
         let agentID: String?
-        let voiceID: String?
+        let voice: VoiceChoice?
         /// Presence mode the daemon chose for this turn (talk, teach, …).
         var presenceMode: String? = nil
     }
@@ -113,11 +113,10 @@ enum AgentClient {
         struct UiButton: Decodable { let label: String; let url: String }
         struct UiMedia: Decodable { let type: String; let url: String; let caption: String? }
         struct Ui: Decodable { let buttons: [UiButton]?; let media: UiMedia? }
-        struct Voice: Decodable { let elevenlabsVoiceId: String? }
         struct Presence: Decodable { let mode: String? }
         struct Reply: Decodable {
             let agentId: String?
-            let voice: Voice?
+            let voice: VoiceChoice?
             let presence: Presence?
             let text: String?
             let full: String?
@@ -126,7 +125,7 @@ enum AgentClient {
             let duration: Int?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
-        let voiceID = reply?.voice?.elevenlabsVoiceId
+        let voice = reply?.voice
 
         // 202 means accepted-but-busy: the daemon has already written a
         // speakable explanation into `text`. Falling through to the error
@@ -135,7 +134,7 @@ enum AgentClient {
         if let http = response as? HTTPURLResponse, http.statusCode == 202,
            let queuedText = reply?.text, !queuedText.isEmpty {
             return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
-                          durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID)
+                          durationMs: reply?.duration, agentID: reply?.agentId, voice: voice)
         }
 
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -157,7 +156,7 @@ enum AgentClient {
 
         return Answer(text: text, written: reply?.full,
                       buttons: buttons + extra, imageURL: image,
-                      durationMs: reply?.duration, agentID: reply?.agentId, voiceID: voiceID,
+                      durationMs: reply?.duration, agentID: reply?.agentId, voice: voice,
                       presenceMode: reply?.presence?.mode)
     }
 }

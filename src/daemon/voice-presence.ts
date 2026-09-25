@@ -16,7 +16,7 @@ import { helperAct, readScreenView } from "@/voice/live-teach-screen"
 import { IDLE_SECONDS, PresenceOverlay, presenceLook, reapPresence, type Presence, type PresenceLook } from "@/voice/presence"
 import type { SpeechOut } from "@/voice/speaker"
 import type { LineModel } from "@/voice/talk-model"
-import { talkSpeaker } from "@/voice/agent-voice"
+import { talkSpeaker, type VoiceSettings } from "@/voice/agent-voice"
 
 const run = promisify(execFile)
 /** Budget for the per-turn decision; Jev answers in about half a second. */
@@ -36,6 +36,8 @@ interface Slot {
 }
 
 export interface PresenceHostDeps {
+  /** The global voice settings (agentx.json `voice`). */
+  voiceSettings?: () => VoiceSettings
   overlay?: (look: PresenceLook, agentId: string) => Presence
   screen?: Pick<TeachDeps, "readScreen" | "act">
   frontmostApp?: () => Promise<string | null>
@@ -100,7 +102,7 @@ export class PresenceHost {
   /** A live lesson on this screen, in the agent's voice and cursor. */
   lesson(agentId: string, goal: string, mode: TeachMode, speech: SpeechOut, model: (system: string) => LineModel): LiveTeach {
     const agents = this.agents()
-    const speaker = talkSpeaker(agentId, agents, false)
+    const speaker = talkSpeaker(agentId, agents, false, this.deps.voiceSettings?.())
     const look = presenceLook(agentId, agents[agentId])
     const slot = this.acquire(agentId, "lesson")
     // The lesson ends by closing its presence: that releases the slot,
