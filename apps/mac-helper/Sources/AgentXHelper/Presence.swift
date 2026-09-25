@@ -13,7 +13,7 @@ import AppKit
 ///   {"cmd":"move","x":120,"y":80,"w":90,"h":24,"highlight":true}
 ///   {"cmd":"say","text":"The export button is top right."}
 ///   {"cmd":"clear"}   drop the highlight
-///   {"cmd":"park"}    rest in the bottom-right corner, no highlight
+///   {"cmd":"park"}    return beside the person's own pointer, no highlight
 ///   {"cmd":"ping"}    nothing; keeps an idle overlay alive
 ///
 /// Coordinates are accessibility coordinates (top-left origin, global),
@@ -175,9 +175,13 @@ enum Presence {
             }
         }
 
+        /// Just below and right of the person's real pointer, so handing
+        /// back reads as returning to them, without covering their cursor.
         static func parking() -> CGPoint {
-            let v = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-            return CGPoint(x: v.maxX - 380, y: v.minY + 170)
+            let m = NSEvent.mouseLocation
+            let v = (NSScreen.screens.first(where: { $0.frame.contains(m) }) ?? NSScreen.main)?.visibleFrame
+                ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            return CGPoint(x: min(max(m.x + 28, v.minX), v.maxX - 40), y: min(max(m.y - 28, v.minY + 40), v.maxY))
         }
 
         func place(_ tip: CGPoint) {
