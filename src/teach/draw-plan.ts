@@ -31,7 +31,7 @@ export function drawSystemPrompt(): string {
     `geo is one of: ${GEOS.join(", ")}.`,
     `color is one of: ${COLORS.join(", ")}. fill is fill (strong colour), solid (pale tint), semi, none or pattern; prefer fill for the main shapes. size is s, m, l or xl. font is draw, sans, serif or mono.`,
     "Keep everything inside the canvas. Use 3 to 5 colours that go together. Give text room: an xl word is about 40 px tall and 28 px wide per letter.",
-    "say is a short spoken caption for that step, at most 8 words, in the voice of someone drawing it live.",
+    "say is a short caption, at most 8 words, in the voice of someone drawing it live. Caption only the steps worth narrating (about one in three) and leave say empty on the rest: captioned steps pause so they can be read, the others draw straight through.",
   ].join("\n")
 }
 

@@ -28,7 +28,8 @@ export interface DrawDeps {
 
 export interface DrawOpts {
   docId: string
-  /** Shortest time one element takes on screen, so its caption can be read. */
+  /** Shortest time a captioned element takes on screen, so the caption can
+   *  be read. Uncaptioned detail goes at drawing speed. */
   stepMs?: number
   /** Namespaces shape ids, so a second drawing in the same doc can't collide. */
   runTag?: string
@@ -151,7 +152,8 @@ export async function drawLive(goal: string, deps: DrawDeps, opts: DrawOpts, emi
     }
     const started = now()
     const [from, to] = path(el, placed)
-    deps.presence.say(el.say)
+    // An uncaptioned step keeps the last caption up rather than blanking it.
+    if (el.say) deps.presence.say(el.say)
     deps.presence.moveTo(toScreen(frame, from.x, from.y))
     await sleep(250)
     deps.presence.moveTo(toScreen(frame, to.x, to.y))
@@ -164,7 +166,7 @@ export async function drawLive(goal: string, deps: DrawDeps, opts: DrawOpts, emi
     placed.set(el.id, el.kind === "geo" ? el : el.kind === "text" ? textBox(el) : pt(0, 0))
     steps++
     emit({ type: "drawn", n: steps, el, ms: now() - started })
-    const left = stepMs - (now() - started)
+    const left = (el.say ? stepMs : 0) - (now() - started)
     if (left > 0) await sleep(left)
   }
   await plan

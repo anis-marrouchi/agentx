@@ -67,7 +67,8 @@ describe("drawLive", () => {
   const plan = [
     '{"id":"sea","say":"The sea.","geo":"rectangle","x":0,"y":400,"w":1000,"h":240,"color":"blue","fill":"fill"}\n{"id":"sun",',
     '"say":"A sun.","geo":"ellipse","x":800,"y":60,"w":120,"h":120,"color":"orange","fill":"fill"}\n',
-    'not json\n{"id":"a1","say":"Look.","arrow":["sea","sun"]}',
+    'not json\n{"id":"a1","say":"Look.","arrow":["sea","sun"]}\n',
+    '{"id":"dot","say":"","geo":"ellipse","x":10,"y":10,"w":8,"h":8}',
   ]
 
   async function go(stepMs = 0) {
@@ -88,8 +89,8 @@ describe("drawLive", () => {
 
   it("makes one model turn and one request per element, streamed as planned", async () => {
     const { r, execs, events } = await go()
-    expect(r.steps).toBe(3)
-    expect(execs).toHaveLength(4) // frame + three elements
+    expect(r.steps).toBe(4)
+    expect(execs).toHaveLength(5) // frame + four elements
     expect(execs[3]).toContain("createArrowBetweenShapes")
     expect(events.filter((e) => e === "skipped")).toHaveLength(1)
   })
@@ -102,8 +103,10 @@ describe("drawLive", () => {
     expect(presence.said).toEqual(["The sea.", "A sun.", "Look."])
   })
 
-  it("holds each step for stepMs so the caption can be read", async () => {
-    const { t } = await go(1500)
-    expect(t).toBe(3 * 1500)
+  it("holds captioned steps for stepMs and draws uncaptioned detail straight through", async () => {
+    const { t, presence } = await go(1500)
+    // Three captioned holds, plus the uncaptioned dot's 250 ms glide only.
+    expect(t).toBe(3 * 1500 + 250)
+    expect(presence.said).toEqual(["The sea.", "A sun.", "Look."])
   })
 })
