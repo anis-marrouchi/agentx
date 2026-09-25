@@ -184,7 +184,7 @@ export class LiveTeach {
       teach: `You lead: say the next step, show where, and ${this.listener} does it.`,
       watch: `${this.listener} is driving. Coach briefly: where things are and what to try next. Prefer wait_for_user.`,
       act: this.opts.actionsAllowed
-        ? "You do each step yourself (click or type), saying what you are doing."
+        ? `You do each step yourself (click, type or key), telling ${this.listener} what it is for and where: 'to fill it in, I'm clicking solid on the right'.`
         : `You may not click or type here; show where and let ${this.listener} do it.`,
     }[this.opts.mode]
     const prompt = [

@@ -43,8 +43,10 @@ export const helperAct: TeachDeps["act"] = async (step) => {
     return { error: await helper(["key", "--name", name, ...(parts.length ? ["--mod", parts.join("+")] : [])]) }
   }
   const { action, rect, label, role, text } = step
-  // The canvas is an unnamed image: check the click lands on an image.
-  const expect = role === "AXImage" ? "AXImage" : label.slice(0, 40)
+  // Check the click lands on the named control; the canvas and controls
+  // named only "0" (an unlabelled web text box) are checked by role.
+  const named = role !== "AXImage" && /\p{L}{2}/u.test(label)
+  const expect = named || !role ? label.slice(0, 40) : role
   const where = ["--x", String(rect.x), "--y", String(rect.y), "--w", String(rect.width), "--h", String(rect.height)]
   const pointed = await helper(["point", ...where, "--label", label.slice(0, 40), "--hold", "0.3"])
   if (pointed) return { error: pointed }
