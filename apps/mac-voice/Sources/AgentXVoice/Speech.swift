@@ -200,7 +200,8 @@ final class Player: NSObject, AVAudioPlayerDelegate {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            p.terminationHandler = { _ in c.resume() }
+            let line = LineWatch(c)
+            p.terminationHandler = { _ in DispatchQueue.main.async { line.finish() } }
             do { try p.run() } catch {
                 p.terminationHandler = nil
                 Log.warn("say failed to start (\(error.localizedDescription))")
@@ -210,6 +211,15 @@ final class Player: NSObject, AVAudioPlayerDelegate {
             sayProcess = p
             input.fileHandleForWriting.write(Data(text.utf8))
             try? input.fileHandleForWriting.close()
+            // The line ends when its voice stops, even if `say` does not exit.
+            let pid = p.processIdentifier
+            line.watch { AudioOutput.playing(pid: pid) } onEnd: {
+                guard p.isRunning else { return }
+                // The script's trap stops `say`, restores the voice, and
+                // frees the lock for the next line.
+                Log.warn("say went quiet but kept running; stopping it")
+                p.terminate()
+            }
         }
         if sayProcess === p { sayProcess = nil }
     }
@@ -233,6 +243,36 @@ final class Player: NSObject, AVAudioPlayerDelegate {
         sayProcess?.terminate(); sayProcess = nil
         player?.stop()
         finished?.resume(); finished = nil; player = nil
+    }
+}
+
+/// One `say` line: resumed once, by the process exiting or by its voice
+/// going quiet (SpeechEnd), whichever comes first. Main-queue confined.
+private final class LineWatch: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var timer: DispatchSourceTimer?
+
+    init(_ c: CheckedContinuation<Void, Never>) { continuation = c }
+
+    func watch(_ playing: @escaping () -> Bool, onEnd: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            guard self.continuation != nil else { return }
+            var end = SpeechEnd()
+            let t = DispatchSource.makeTimerSource(queue: .main)
+            t.schedule(deadline: .now() + 0.1, repeating: 0.1)
+            t.setEventHandler {
+                guard end.ended(playing: playing(), at: Date()) else { return }
+                onEnd()
+                self.finish()
+            }
+            self.timer = t
+            t.resume()
+        }
+    }
+
+    func finish() {
+        timer?.cancel(); timer = nil
+        continuation?.resume(); continuation = nil
     }
 }
 
