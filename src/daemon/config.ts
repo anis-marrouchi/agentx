@@ -142,6 +142,18 @@ export const INTEGRATION_KINDS = [
   "custom",
 ] as const
 
+const voiceSchema = z.object({
+  elevenlabsVoiceId: z.string().optional(),
+  gender: z.enum(["female", "male", "neutral"]).optional(),
+  /** A few words on manner, e.g. "warm, upbeat, a little playful". */
+  style: z.string().optional(),
+  /** The one-line self-introduction used on first contact. */
+  intro: z.string().optional(),
+  /** Speak short updates from this agent's real tool steps while it
+   *  works: "on" for everything but cron, "all" to include cron. */
+  narrate: z.enum(["off", "on", "all"]).optional(),
+})
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -266,17 +278,7 @@ const agentConfigSchema = z.object({
    *  Every field is optional: no voice id falls back to the global
    *  AGENTX_VOICE_ID, no intro is derived from the system prompt. See
    *  src/voice/agent-voice.ts. */
-  voice: z.object({
-    elevenlabsVoiceId: z.string().optional(),
-    gender: z.enum(["female", "male", "neutral"]).optional(),
-    /** A few words on manner, e.g. "warm, upbeat, a little playful". */
-    style: z.string().optional(),
-    /** The one-line self-introduction used on first contact. */
-    intro: z.string().optional(),
-    /** Speak short updates from this agent's real tool steps while it
-     *  works: "on" for everything but cron, "all" to include cron. */
-    narrate: z.enum(["off", "on", "all"]).optional(),
-  }).optional(),
+  voice: voiceSchema.optional(),
   /** How this agent appears on screen: its own cursor, drawn by the Mac
    *  helper and click-through, never Anis's real mouse. See
    *  src/voice/presence.ts. */
@@ -772,6 +774,13 @@ export const daemonConfigSchema = z.object({
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   mesh: meshConfigSchema.default({}),
+  /** Voices for agents on mesh peers, keyed by remote agent id. The Mac
+   *  speaks for them, so their nodes need no ElevenLabs key. Unset fields
+   *  are derived from the agent card; see src/voice/mesh-voice.ts. */
+  meshVoices: z.record(z.string(), voiceSchema.extend({
+    /** What to call the agent aloud, e.g. "Atlas" for "Main Agent". */
+    name: z.string().optional(),
+  })).default({}),
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,

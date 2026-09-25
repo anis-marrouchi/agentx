@@ -64,6 +64,22 @@ The ElevenLabs key is read from the environment first, then key files: an app la
 Finder inherits nothing from your login shell, so an env-only design works
 from a terminal and fails mysteriously when double-clicked.
 
+## Talking to other agents
+
+Say "talk to Atlas" (or "switch to Nadia", "put me through to …") and the
+following turns go to that agent, local or on a mesh peer, until "back to
+secretary". The daemon does the switch, per voice session, and answers at
+once in the new agent's voice. A remote agent runs its turn on its own node
+over the mesh; its voice is spoken here. Name or pin a remote voice in
+`agentx.json`:
+
+```json
+"meshVoices": { "atlas": { "name": "Atlas", "elevenlabsVoiceId": "…", "style": "calm" } }
+```
+
+Unset, a remote agent's intro comes from its agent card and it gets an
+ElevenLabs voice no local agent and no other remote uses.
+
 ## Permissions
 
 Microphone only. The hotkey uses Carbon's `RegisterEventHotKey`, which

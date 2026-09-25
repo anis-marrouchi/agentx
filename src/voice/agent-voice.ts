@@ -135,3 +135,30 @@ export function talkSpeaker(agentId: string, agents: DaemonConfig["agents"], int
     introLine: introInstruction(voice, introduce),
   }
 }
+
+/** Rides in the system append of every voice turn, never in the message,
+ *  or the session would record the scaffolding as the person's words. */
+export const VOICE_MODE_INSTRUCTION =
+  "[VOICE MODE] This question arrived by voice and your reply will be spoken aloud by a " +
+  "TTS engine. Answer in two or three short sentences. Plain language, no markdown, no " +
+  "code blocks, no bullet points, no URLs. Speak conversationally."
+
+/** What a mesh peer sends in `context.voice` when a remote Mac speaks for
+ *  one of this node's agents. Only these fields cross the mesh, never
+ *  free-form system text. */
+export interface RemoteVoiceTurn { introduce?: boolean; intro?: string; style?: string }
+
+/** The system append for a voice turn that arrived over the mesh, or
+ *  undefined when the task is not a voice turn. */
+export function remoteVoiceAppend(context: unknown): string | undefined {
+  const ctx = context as { channel?: unknown; voice?: RemoteVoiceTurn } | undefined
+  if (ctx?.channel !== "voice" || !ctx.voice || typeof ctx.voice !== "object") return undefined
+  const clip = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").slice(0, 200) : "")
+  const intro = clip(ctx.voice.intro)
+  const voice: AgentVoice = {
+    agentId: "", name: "", elevenlabsVoiceId: null, gender: null,
+    style: clip(ctx.voice.style) || null,
+    intro: intro || "Hello.",
+  }
+  return `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, ctx.voice.introduce === true && !!intro)}`
+}
