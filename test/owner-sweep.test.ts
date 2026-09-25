@@ -175,6 +175,8 @@ describe("examples/workflows/github-owner-sweep", () => {
     expect(port("RESULT steps=0")).toBe("done")
     expect(port("RESULT steps=0 applied=2\n  applied issue #1: assigned x")).toBe("done")
     expect(port("RESULT error=collection (1)")).toBe("failed")
+    expect(port("")).toBe("failed")
+    expect(port("node: some crash")).toBe("failed")
     expect(port(formatSteps([{ owner: "coder-agent", step: "fix-ci", kind: "pr", number: 1, title: "t", url: "u", why: "w" }]))).toBe("act")
   })
 })
