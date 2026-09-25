@@ -20,6 +20,7 @@ function print(e: TeachEvent): void {
   if (e.type === "step") console.log(`${chalk.cyan(`  ${e.n}. ${e.action}`)}${e.target ? chalk.dim(` "${e.target}"`) : ""}  ${e.say}`)
   else if (e.type === "changed") console.log(chalk.dim(`     ${e.changed ? "screen changed" : "no change"}`))
   else if (e.type === "acted") console.log(e.error ? chalk.red(`     failed: ${e.error}`) : chalk.dim("     done it"))
+  else if (e.type === "replanned") console.log(chalk.yellow(`     screen changed, looking again: ${e.reason}`))
   else if (e.type === "door") console.log(chalk.cyan(`  you: ${e.text}`))
   else if (e.type === "error") console.log(chalk.red(`  error: ${e.error}`))
   else if (e.type === "end") console.log(chalk.dim(`  · ended (${e.reason})`))

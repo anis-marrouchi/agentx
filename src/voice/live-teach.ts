@@ -7,7 +7,10 @@
 // outlines the control, then either wait for Anis to do it (teach, watch)
 // or do it itself (act, only when the agent is allowed to). The screen is
 // read again after every step, so the next step starts from what is
-// actually there, not from what the plan assumed.
+// actually there, not from what the plan assumed. It is also read again
+// right before the cursor moves and right before a click or type: the
+// planner and the spoken line take seconds, and a window that changed
+// meanwhile means the plan is about a screen that is gone.
 //
 // It is a voice session like a talk: hush() and door() are what
 // Option-Space calls, and "stop" ends it.
@@ -15,7 +18,7 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
-import { parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { findControl, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
@@ -53,15 +56,25 @@ export interface LiveTeachOpts {
   waitMs?: number
   pollMs?: number
   holdMs?: number
+  /** Plans thrown away in a row, because the screen changed before they
+   *  were carried out, before the lesson gives up. */
+  maxReplans?: number
 }
 
 export type TeachEvent =
   | { type: "step"; n: number; action: StepAction; target: string | null; say: string }
   | { type: "changed"; n: number; changed: boolean }
   | { type: "acted"; n: number; error: string | null }
+  | { type: "replanned"; n: number; reason: string }
   | { type: "door"; text: string }
   | { type: "end"; reason: string }
   | { type: "error"; error: string }
+
+/** What a plan is carried out on: a read taken after planning, and the
+ *  plan's target on it. */
+type Fresh = { screen: ScreenView; target: number | null }
+/** Why a plan no longer fits the screen. */
+type Stale = { stale: string }
 
 const STOP = /^\s*(stop|stop talking|that'?s enough|end( the lesson)?|enough)[\s.!]*$/i
 
@@ -115,6 +128,7 @@ export class LiveTeach {
 
   async run(): Promise<void> {
     const max = this.opts.maxSteps ?? 12
+    let replans = 0
     try {
       while (!this.is("ended") && this.step < max) {
         await this.waitOutHush()
@@ -123,9 +137,11 @@ export class LiveTeach {
         if (!screen) continue
         const plan = await this.plan(screen)
         if (!plan) continue // interrupted while planning: plan again with what was said
-        const n = ++this.step
-        const done = await this.perform(n, plan, screen)
-        if (done) break
+        const fresh = await this.recheck(plan, screen)
+        const outcome = "stale" in fresh ? fresh : await this.perform(++this.step, plan, fresh)
+        if (outcome === "done" || outcome === "stopped") break
+        if (outcome === "next") { replans = 0; continue }
+        if (!this.replanned(outcome.stale, ++replans)) break
       }
       if (!this.is("ended")) this.stop(this.step >= max ? "step limit" : "goal reached")
     } catch (e: any) {
@@ -184,10 +200,42 @@ export class LiveTeach {
     return parsePlan(reply, new Set(screen.candidates.map((c) => c.id)))
   }
 
-  /** Show, say, then do or wait. Returns true when the lesson is over. */
-  private async perform(n: number, plan: Plan, screen: ScreenView): Promise<boolean> {
-    const rect = plan.target !== null ? screen.rectOf(plan.target) : null
-    const label = plan.target !== null ? screen.candidates.find((c) => c.id === plan.target)?.label ?? "" : ""
+  /**
+   * Read the screen again before carrying out a plan made from `before`.
+   * Returns the fresh read with the target found on it, or why the plan
+   * no longer fits: another app or window in front, or the target gone.
+   * Nothing else counts, so the pointer moving or a tooltip showing up
+   * does not throw a plan away; a target that only moved is used where
+   * it is now.
+   */
+  private async recheck(plan: Plan, before: ScreenView): Promise<Fresh | Stale> {
+    const now = await this.deps.readScreen()
+    if (now.app !== before.app) return { stale: `${now.app} is in front now, not ${before.app}` }
+    if ((now.window ?? "") !== (before.window ?? "")) return { stale: `the window changed from "${before.window ?? ""}" to "${now.window ?? ""}"` }
+    if (plan.target === null) return { screen: now, target: null }
+    const target = findControl(before, plan.target, now)
+    if (target !== null) return { screen: now, target }
+    const label = before.candidates.find((c) => c.id === plan.target)?.label ?? ""
+    return { stale: `"${label}" is no longer on screen` }
+  }
+
+  /** A plan was thrown away. False when that has happened too often in a
+   *  row, and the lesson has stopped. */
+  private replanned(reason: string, inARow: number): boolean {
+    this.emit({ type: "replanned", n: this.step, reason })
+    this.deps.presence.clear()
+    this.history.push(`The screen changed before you acted (${reason}); plan again from what is there now.`)
+    if (inARow <= (this.opts.maxReplans ?? 3)) return true
+    this.stop("the screen kept changing")
+    return false
+  }
+
+  /** Show, say, then do or wait; stale when the screen changed before a
+   *  click or type. */
+  private async perform(n: number, plan: Plan, fresh: Fresh): Promise<"done" | "next" | "stopped" | Stale> {
+    const { screen, target } = fresh
+    const rect = target !== null ? screen.rectOf(target) : null
+    const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
     // Click and type only when allowed; otherwise show it instead.
     const action: StepAction = (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
@@ -201,12 +249,17 @@ export class LiveTeach {
     await Promise.race([spoken, this.poked()])
     if (!this.is("running") || this.doorQueue.length) {
       this.history.push(`Step ${n}: you started "${plan.say}" and were cut off.`)
-      return false
+      return this.is("ended") ? "stopped" : "next"
     }
-    if (action === "done") return true
+    if (action === "done") return "done"
 
     if ((action === "click" || action === "type") && rect) {
-      const r = await this.deps.act({ action, rect, label, text: plan.text ?? undefined })
+      // Saying the step took seconds: press only what is there now.
+      const now = await this.recheck({ ...plan, target }, screen)
+      if ("stale" in now) return now
+      const at = now.target !== null ? now.screen.rectOf(now.target) : null
+      if (!at) return { stale: `"${label}" is no longer on screen` }
+      const r = await this.deps.act({ action, rect: at, label, text: plan.text ?? undefined })
       this.emit({ type: "acted", n, error: r.error })
       this.history.push(r.error
         ? `Step ${n}: you tried to ${action} "${label}" and it failed: ${r.error}`
@@ -214,7 +267,7 @@ export class LiveTeach {
       // Let the app react before the next read: a window that opens late
       // would otherwise be planned against as if it were not there.
       if (!r.error) await this.settle()
-      return false
+      return "next"
     }
 
     // Everything else waits for the listener to act on the step.
@@ -223,7 +276,7 @@ export class LiveTeach {
     this.emit({ type: "changed", n, changed })
     this.history.push(`Step ${n}: you said "${plan.say}"${label ? ` about "${label}"` : ""}. ` +
       (changed ? `${this.listener} did something; the screen changed.` : `Nothing changed on screen.`))
-    return false
+    return "next"
   }
 
   /** Poll until the screen settles into something new, the listener
