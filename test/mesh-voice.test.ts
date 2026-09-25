@@ -221,7 +221,7 @@ describe("talk with a remote agent", () => {
     const play = () => { const p = new EventEmitter() as ChildProcess; setTimeout(() => p.emit("close", 0), 5); (p as any).kill = () => p.emit("close", null); return p }
     const mesh = new MeshVoices(() => config(), () => directory)
     const svc = new VoiceTalkService(() => config().agents, new VoiceIntroTracker(), () => {}, {
-      speech: new SpeechOut(async () => null, play),
+      speech: new SpeechOut(async () => null, play), stopSpeakers: () => {},
       model: () => new Model(),
       remote: (id, introduce) => mesh.speaker(id, introduce),
     })

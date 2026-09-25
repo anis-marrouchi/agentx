@@ -7,8 +7,11 @@
 //                     either agent may live on a mesh peer
 //   GET  /talk        the active talk (or {active: false})
 //   POST /voice/hush  the door (Option-Space): whatever is speaking stops —
-//                     a talk, a lesson, narration, a spoken-answer bubble.
+//                     a talk, a lesson, narration, a spoken-answer bubble,
+//                     AgentX Voice's own line — and queued lines are dropped.
 //                     Returns what was speaking: {active, kind, agentId}.
+//   POST /voice/stop  the same silence, for a hotkey, menu, Siri or a
+//                     Shortcut; nothing is kept waiting for the door.
 //   POST /voice/door  {text}  the listener spoke: a talk or lesson answers
 //                     it first; "stop" ends it, or silences the narrated
 //                     task. 409 when nothing takes the words (ask instead).
@@ -24,7 +27,7 @@
 import type { DaemonConfig } from "@/daemon/config"
 import { Talk, isStop, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
-import { SpeechOut } from "@/voice/speaker"
+import { SpeechOut, stopAllSpeakers } from "@/voice/speaker"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
 import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
@@ -46,6 +49,8 @@ export interface VoiceTalkDeps {
   /** The global voice settings (agentx.json `voice`), read per line so a
    *  change applies to the next one. */
   voiceSettings?: () => VoiceSettings
+  /** Silence every speaker on the host, not only this daemon's. */
+  stopSpeakers?: () => void
 }
 
 type VoiceSession = Talk | LiveTeach
@@ -60,6 +65,7 @@ export class VoiceTalkService {
   private model: (system: string) => LineModel
   private remote: NonNullable<VoiceTalkDeps["remote"]>
   private settings: () => VoiceSettings
+  private stopSpeakers: () => void
 
   constructor(
     private agents: () => Agents,
@@ -70,6 +76,7 @@ export class VoiceTalkService {
     this.speech = deps.speech ?? new SpeechOut()
     this.model = deps.model ?? ((system) => createLineModel({ system }))
     this.remote = deps.remote ?? (() => undefined)
+    this.stopSpeakers = deps.stopSpeakers ?? (() => stopAllSpeakers())
     const settings = deps.voiceSettings ?? (() => ({}))
     this.settings = settings
     this.presence = new PresenceHost(agents, log, { voiceSettings: settings, ...deps.presence })
@@ -103,6 +110,11 @@ export class VoiceTalkService {
       case "POST /talk/hush":
       case "POST /voice/hush":
         return this.hush()
+      case "POST /voice/stop": {
+        const reply = this.hush()
+        this.hushed = null
+        return reply
+      }
       case "POST /talk/door":
       case "POST /voice/door": {
         const text = String(body.text ?? "").trim()
@@ -133,6 +145,7 @@ export class VoiceTalkService {
     const live = this.live
     live?.hush()
     this.speech.stop()
+    this.stopSpeakers()
     this.presence.quiet()
     const narrated = this.narrator.hush()
     this.hushed = live ? null : narrated

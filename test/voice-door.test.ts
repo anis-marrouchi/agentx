@@ -38,7 +38,7 @@ function setup(model: () => LineModel = () => new Lines("Hi there.")) {
     say: (t) => log.push(`${look.name} say ${t}`), close: () => log.push(`${look.name} close`),
   })
   const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), (m) => log.push(m), {
-    speech, model,
+    speech, model, stopSpeakers: () => { log.push("stop speakers") },
     presence: {
       overlay,
       screen: {
@@ -130,6 +130,24 @@ describe("the door and narration", () => {
     expect(svc.narrator.enabled("coder-agent", "telegram", "t1")).toBe(true)
     svc.narrator.onStep({ taskId: "t1", agentId: "coder-agent", name: "tool_use", action: "Edit", inputSummary: "{}", at: "" } as any)
     expect(await svc.narrator.flush("t1")).toBe("Reading the release notes now.")
+  })
+
+  it("hush silences every speaker on the host, AgentX Voice's lines included", () => {
+    const { svc, log } = setup()
+    hush(svc)
+    expect(log).toContain("speech stop")
+    expect(log).toContain("stop speakers")
+  })
+
+  it("/voice/stop silences everything and keeps nothing waiting for the door", async () => {
+    const { svc, log } = narrated()
+    svc.narrator.onStep({ taskId: "t1", agentId: "coder-agent", name: "tool_use", action: "Read", inputSummary: "{}", at: "" } as any)
+    await svc.narrator.flush("t1")
+    expect(svc.handle("POST", "/voice/stop", {}).body).toEqual({ active: false, kind: "narration", agentId: "coder-agent" })
+    expect(log).toContain("speech stop")
+    expect(log).toContain("stop speakers")
+    // Unlike the door, a stop does not hand the next words to the task.
+    expect(door(svc, "stop").status).toBe(409)
   })
 
   it("an old narration line is not what the listener heard", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { EventEmitter } from "events"
 import type { ChildProcess } from "child_process"
 import { SentenceCutter, speakable } from "../src/voice/sentences"
-import { SpeechOut, type Play, type Synth } from "../src/voice/speaker"
+import { SpeechOut, speakLimitMs, type Play, type Synth } from "../src/voice/speaker"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { Talk, type TalkEvent, type TalkSpeaker } from "../src/voice/talk"
 
@@ -89,6 +89,25 @@ describe("SpeechOut", () => {
     expect(await c).toBe(false)
     expect(log[0]).toBe("play one")
     expect(log).not.toContain("play three")
+  })
+
+  it("kills a player that runs past its line's bound, and the next line plays", async () => {
+    const log: string[] = []
+    const { play, synth } = fakeAudio(60_000, log)
+    const s = new SpeechOut(synth, play, {}, (text) => (text === "hung" ? 30 : 60_000))
+    const hung = s.say({ voice: ref("v"), text: "hung" })
+    const next = s.say({ voice: ref("v"), text: "next" })
+    expect(await hung).toBe(false)
+    await sleep(5)
+    expect(log.slice(0, 3)).toEqual(["play hung", "kill hung", "play next"])
+    s.stop()
+    expect(await next).toBe(false)
+  })
+
+  it("bounds a line by its length, with a hard cap", () => {
+    expect(speakLimitMs("")).toBe(5_000)
+    expect(speakLimitMs("one two three four five six seven eight nine ten")).toBe(11_000)
+    expect(speakLimitMs("word ".repeat(2_000))).toBe(300_000)
   })
 })
 

@@ -96,7 +96,7 @@ describe("POST /teach/live", () => {
     const log: string[] = []
     const speech = { busy: false, say: async () => { await new Promise((r) => setTimeout(r, 30)); return true }, stop: () => log.push("speech stop") } as any
     const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
-      speech, model: () => new Planner(),
+      speech, model: () => new Planner(), stopSpeakers: () => {},
       presence: {
         overlay: overlayLog(log),
         screen: {
@@ -130,7 +130,7 @@ describe("POST /teach/live", () => {
       close() {},
     }
     const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
-      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, stop: () => {} } as any,
+      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, stop: () => {} } as any, stopSpeakers: () => {},
       model: () => planner,
       presence: {
         overlay: overlayLog([]), frontmostApp: async () => front,
