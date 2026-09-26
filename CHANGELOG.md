@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.44.1](https://github.com/anis-marrouchi/agentx/compare/v0.44.0...v0.44.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **daemon:** refuse browser requests from pages on other origins ([#104](https://github.com/anis-marrouchi/agentx/issues/104)) ([1c3feb6](https://github.com/anis-marrouchi/agentx/commit/1c3feb619c5d1637b75248c5d0a0b7a8bcd10cbf)), closes [#100](https://github.com/anis-marrouchi/agentx/issues/100)
+
 ## [0.44.0](https://github.com/anis-marrouchi/agentx/compare/v0.43.0...v0.44.0) (2026-09-26)
 
 
