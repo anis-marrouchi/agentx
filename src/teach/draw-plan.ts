@@ -19,14 +19,16 @@ type Color = typeof COLORS[number]
 
 type Fill = typeof FILLS[number]
 
-export interface GeoEl { kind: "geo"; id: string; say: string; geo: typeof GEOS[number]; x: number; y: number; w: number; h: number; color: Color; fill: Fill; label: string; opacity: number }
+export interface GeoEl { kind: "geo"; id: string; say: string; geo: typeof GEOS[number]; x: number; y: number; w: number; h: number; color: Color; fill: Fill; label: string; opacity: number; rot: number }
 /** A free outline: closed and filled, or an open stroke when fill is none. */
-export interface PathEl { kind: "path"; id: string; say: string; pts: Array<[number, number]>; color: Color; fill: Fill; opacity: number }
+export interface PathEl { kind: "path"; id: string; say: string; pts: Array<[number, number]>; color: Color; fill: Fill; opacity: number; rot: number }
 export interface TextEl { kind: "text"; id: string; say: string; text: string; x: number; y: number; size: typeof SIZES[number]; color: Color; font: typeof FONTS[number] }
 export interface ArrowEl { kind: "arrow"; id: string; say: string; from: string; to: string; label: string; color: Color }
+/** Slides, turns and/or rescales an element already on the canvas. */
+export interface MoveEl { kind: "move"; id: string; say: string; target: string; dx: number; dy: number; rot: number; scale: number }
 /** Remaps colour names to hex values for this drawing's theme. */
 export interface PaletteEl { kind: "palette"; id: string; say: string; colors: Partial<Record<Color, string>> }
-export type DrawEl = GeoEl | PathEl | TextEl | ArrowEl | PaletteEl
+export type DrawEl = GeoEl | PathEl | TextEl | ArrowEl | MoveEl | PaletteEl
 
 export function drawSystemPrompt(): string {
   return [
@@ -37,6 +39,8 @@ export function drawSystemPrompt(): string {
     `Path: {"id":"dome","say":"","path":[[400,200],[410,170],[440,150],[470,170],[480,200],[400,200]],"color":"white","fill":"fill","opacity":1} is a free outline of 3 to ${MAX_POINTS} points, closed and filled, for any silhouette a box can't make: domes, arches, hills, foliage, stairs, shadows, reflections. Straight edges stay straight; give curves enough points. With fill none it is an open stroke: a railing, a grille bar, a crack, a horizon line.`,
     `Text: {"id":"title","say":"And a title.","text":"Sidi Bou Said","x":330,"y":40,"size":"xl","color":"black","font":"serif"}`,
     `Arrow: {"id":"a1","say":"That's the sun.","arrow":["sun-note","sun"],"label":"","color":"black"}`,
+    `Shapes and paths take an optional "rot": degrees clockwise, -90 to 90, applied after they are drawn (a tilted parasol, cocked sunglasses).`,
+    `Move: {"id":"m1","say":"Nudge the boat left.","move":"boat","dx":-60,"dy":0,"rot":0,"scale":1} slides an EARLIER shape or path by dx,dy, turns it by rot degrees and resizes it by scale (0.3 to 3), animated. The viewer is watching you work, so show the craft: tilt anything that leans with rot, and after the main pieces are down use 3 to 6 moves to adjust the composition (slide pieces side by side, straighten or tilt, grow or shrink them), each placed right after the elements it adjusts.`,
     "An arrow joins two DIFFERENT earlier elements. To label something, first add a small text element beside it, then an arrow from that text to the thing.",
     `geo is one of: ${GEOS.join(", ")}.`,
     `color is one of: ${COLORS.join(", ")}. fill is fill (strong colour), solid (pale tint), semi, none or pattern. opacity is 0.1 to 1: use it for shadows, haze and atmospheric depth. size is s, m, l or xl. font is draw (hand-lettered), sans, serif or mono.`,
@@ -55,6 +59,7 @@ function num(v: unknown): number | null {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 const opacity = (v: unknown) => clamp(num(v) ?? 1, 0.1, 1)
+const rot = (v: unknown) => clamp(num(v) ?? 0, -90, 90)
 const HEX = /^#[0-9a-f]{6}$/i
 
 function palette(v: unknown): Partial<Record<Color, string>> | null {
@@ -105,11 +110,20 @@ export function parseDrawLine(line: string, known: ReadonlySet<string>): DrawEl 
     return { kind: "arrow", id, say, from, to, label: typeof o.label === "string" ? o.label.slice(0, 40) : "", color }
   }
 
+  if (typeof o.move === "string") {
+    const target = o.move
+    if (!known.has(target) || target === "palette") return null
+    const dx = clamp(num(o.dx) ?? 0, -CANVAS.w, CANVAS.w), dy = clamp(num(o.dy) ?? 0, -CANVAS.h, CANVAS.h)
+    const scale = clamp(num(o.scale) ?? 1, 0.3, 3), r = rot(o.rot)
+    if (!dx && !dy && !r && scale === 1) return null
+    return { kind: "move", id, say, target, dx, dy, rot: r, scale }
+  }
+
   if ("path" in o) {
     const pts = points(o.path)
     const fill = pick(o.fill, FILLS, "fill")
     if (!pts || (fill !== "none" && pts.length < 3)) return null
-    return { kind: "path", id, say, pts, color, fill, opacity: opacity(o.opacity) }
+    return { kind: "path", id, say, pts, color, fill, opacity: opacity(o.opacity), rot: rot(o.rot) }
   }
 
   const x = num(o.x), y = num(o.y)
@@ -129,7 +143,7 @@ export function parseDrawLine(line: string, known: ReadonlySet<string>): DrawEl 
       kind: "geo", id, say, geo: pick(o.geo, GEOS, "rectangle"),
       x: cx, y: cy, w: Math.min(w, CANVAS.w - cx), h: Math.min(h, CANVAS.h - cy),
       color, fill: pick(o.fill, FILLS, "solid"), label: typeof o.label === "string" ? o.label.slice(0, 40) : "",
-      opacity: opacity(o.opacity),
+      opacity: opacity(o.opacity), rot: rot(o.rot),
     }
   }
   return null
