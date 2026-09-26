@@ -50,12 +50,15 @@ export interface GitLabChannelConfig {
    *  username mappings so operators don't have to hand-register every agent
    *  for @mentions to work. Explicit entries in `agentMappings` always take
    *  precedence (they carry per-agent tokens, non-standard usernames, etc.)
-   *  The auto-derived defaults use the convention `{agentId, acme-<agentId>}`
-   *  which mirrors the existing hand-maintained rows (pm-globex, atlas, ...).
+   *  The auto-derived defaults are `@<agentId>` plus `@<prefix><agentId>`
+   *  for each of `agentUsernamePrefixes`.
    *
    *  Removal: when an agent is deleted from agents.<id>, its default mapping
    *  disappears on next daemon restart. */
   knownAgentIds?: string[]
+  /** Prefixes for extra derived usernames (e.g. "team-" → @team-<agentId>).
+   *  An organisation's naming convention, so it lives in config, not code. */
+  agentUsernamePrefixes?: string[]
 }
 
 interface GitLabNoteEvent {
@@ -210,6 +213,39 @@ export class GitLabAdapter implements ChannelAdapter {
     this.handler = handler
   }
 
+  /** Give every agent without an explicit agentMappings row its default
+   *  @-mention usernames. Returns the agents that got one. */
+  private deriveDefaultMappings(): string[] {
+    // Auto-derived defaults: every agent in the daemon that doesn't have an
+    // explicit `agentMappings` row gets a default entry so @-mentions route
+    // without operators hand-maintaining a parallel list.
+    //
+    // Convention: `@<agentId>` routes to the agent, and so does
+    // `@<prefix><agentId>` for each configured agentUsernamePrefixes entry
+    // (an organisation's bot-naming scheme). Author explicit entries in
+    // agentMappings when an agent needs a per-agent token or a non-standard
+    // username.
+    const explicitAgentIds = new Set((this.config.agentMappings ?? []).map((m) => m.agentId))
+    const autoMapped: string[] = []
+    for (const agentId of this.config.knownAgentIds ?? []) {
+      if (explicitAgentIds.has(agentId)) continue
+      // Skip internal/utility ids that aren't actual agents in the GitLab
+      // sense (e.g. "graph-agent" only ever talks on the a2a mesh).
+      const defaultUsernames = [agentId, ...(this.config.agentUsernamePrefixes ?? []).map((p) => `${p}${agentId}`)]
+      for (const username of defaultUsernames) {
+        this.botUsernames.add(username)
+        if (!this.usernameToAgent.has(username.toLowerCase())) {
+          this.usernameToAgent.set(username.toLowerCase(), agentId)
+        }
+      }
+      if (!this.agentToUsername.has(agentId)) {
+        this.agentToUsername.set(agentId, agentId.toLowerCase())
+      }
+      autoMapped.push(agentId)
+    }
+    return autoMapped
+  }
+
   async start(): Promise<void> {
     // Resolve bot usernames from ALL tokens (global + per-agent)
     // This is critical for cascade prevention — we must know every username
@@ -271,33 +307,7 @@ export class GitLabAdapter implements ChannelAdapter {
       }
     }
 
-    // Auto-derived defaults: every agent in the daemon that doesn't have an
-    // explicit `agentMappings` row gets a default entry so @-mentions route
-    // without operators hand-maintaining a parallel list.
-    //
-    // Convention: `@<agentId>` and `@acme-<agentId>` both route to the
-    // agent — mirrors existing hand-maintained rows (pm-globex → [pm-globex,
-    // acme-pm-globex], atlas → [atlas, acme-atlas], ...). Author explicit
-    // entries in agentMappings when an agent needs a per-agent token or a
-    // non-standard username.
-    const explicitAgentIds = new Set((this.config.agentMappings ?? []).map((m) => m.agentId))
-    const autoMapped: string[] = []
-    for (const agentId of this.config.knownAgentIds ?? []) {
-      if (explicitAgentIds.has(agentId)) continue
-      // Skip internal/utility ids that aren't actual agents in the GitLab
-      // sense (e.g. "graph-agent" only ever talks on the a2a mesh).
-      const defaultUsernames = [agentId, `acme-${agentId}`]
-      for (const username of defaultUsernames) {
-        this.botUsernames.add(username)
-        if (!this.usernameToAgent.has(username.toLowerCase())) {
-          this.usernameToAgent.set(username.toLowerCase(), agentId)
-        }
-      }
-      if (!this.agentToUsername.has(agentId)) {
-        this.agentToUsername.set(agentId, agentId.toLowerCase())
-      }
-      autoMapped.push(agentId)
-    }
+    const autoMapped = this.deriveDefaultMappings()
 
     this.log(`Bot users (${this.botUsernames.size}): ${[...this.botUsernames].join(", ")}`)
     this.log(`Username->Agent map: ${[...this.usernameToAgent.entries()].map(([u, a]) => `@${u}->${a}`).join(", ")}`)

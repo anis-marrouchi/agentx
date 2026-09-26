@@ -30,6 +30,8 @@ GitLab sends events to that port on the AgentX machine, not to the dashboard. Gi
 
 By default, each agent answers to the GitLab username that matches its agent ID. To map other usernames or give each agent its own token, edit `channels.gitlab.agentMappings` in **Settings › Advanced**.
 
+If your team names its GitLab bot accounts with a common prefix, for example `team-reviewer` for the agent `reviewer`, set it once instead of mapping every agent: add `"agentUsernamePrefixes": ["team-"]` under `channels.gitlab`. Each agent then also answers to `@team-<agent-id>`.
+
 ## 3. Add the webhook in GitLab
 
 1. **Browser, in GitLab:** open the test project.

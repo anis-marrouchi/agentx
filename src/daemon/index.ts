@@ -1549,6 +1549,7 @@ export class AgentXDaemon {
           // custom usernames); anything else gets a default derivation on
           // (re)start. Add/remove an agent → no GitLab config change needed.
           knownAgentIds: Object.keys(this.config.agents),
+          agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
         },
         this.log,
         this.hooks,
