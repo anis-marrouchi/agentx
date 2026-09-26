@@ -828,6 +828,28 @@ export const daemonConfigSchema = z.object({
   crons: z.record(z.string(), cronJobSchema).default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
+  /** What happens to runs a restart cuts off (agents/resume). Chat messages
+   *  are resumed in their chat; scheduled jobs never are (the next run
+   *  covers them); everything else is reported unless its channel is in
+   *  directChannels. */
+  resume: z.object({
+    enabled: z.boolean().default(true),
+    /** Older runs are reported, not resumed. */
+    maxAgeMinutes: z.number().int().positive().default(30),
+    /** A run cut off while resuming is not retried past this. */
+    maxAttempts: z.number().int().min(0).default(1),
+    /** Channels whose runs are only reported, even from a chat. */
+    reportOnlyChannels: z.array(z.string()).default([]),
+    /** Non-chat runs (voice, agent-to-agent, webhooks…) resumed on these
+     *  channels. Their answer isn't delivered anywhere; opt in only for
+     *  runs whose work is the point. */
+    directChannels: z.array(z.string()).default([]),
+    /** This many restarts within the window pauses resuming. */
+    crashLoop: z.object({
+      restarts: z.number().int().positive().default(3),
+      windowMinutes: z.number().positive().default(10),
+    }).default({}),
+  }).default({}),
   mesh: meshConfigSchema.default({}),
   /** Voices for agents on mesh peers, keyed by remote agent id. The Mac
    *  speaks for them, so their nodes need no ElevenLabs key. Unset fields

@@ -124,6 +124,12 @@ export interface AgentTask {
   /** Called with `runningTaskId` as soon as the run starts. Never fires for
    *  a message that was queued or dropped instead of run. */
   onStart?: (runningTaskId: string) => void
+  /** How to re-enter this run if a restart cuts it off (agents/resume).
+   *  Absent: recorded as a direct run with this task's context. */
+  origin?: import("./resume/origin").RunOrigin
+  /** Set on a run that resumes one cut off by a restart. */
+  resumeAttempt?: number
+  resumedFrom?: string
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and

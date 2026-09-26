@@ -80,6 +80,11 @@ export interface AgentXEvents {
     fullMessage?: string
     at: string
     taskId?: string
+    /** Resume after restart (#103): how to re-enter the run (JSON), its
+     *  attempt number, and the cut-off run it continues. */
+    resumeOrigin?: string | null
+    resumeAttempt?: number
+    resumedFrom?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or

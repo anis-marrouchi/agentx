@@ -50,6 +50,12 @@ export interface TraceStartInput {
   intentDecidedBy?: string | null
   resumeSessionId?: string | null
   model?: string | null
+  /** How to re-enter this run after a restart (JSON, see agents/resume). */
+  resumeOrigin?: string | null
+  /** 0 for a fresh run; n for the n-th resume of a cut-off run. */
+  resumeAttempt?: number | null
+  /** The cut-off run this one continues. */
+  resumedFrom?: string | null
 }
 
 export interface TraceEndInput {
@@ -179,8 +185,9 @@ export function recordTraceStart(
     INSERT INTO task_traces (
       task_id, agent_id, channel, chat_id, workflow_run_id, workflow_id,
       workflow_node_id, intent_event_id, intent_decided_by, resume_session_id,
-      model, status, started_at, message_preview, original_message
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?)
+      model, status, started_at, message_preview, original_message,
+      resume_origin, resume_attempt, resumed_from
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?, ?, ?, ?)
   `).run(
     taskId,
     input.agentId,
@@ -196,6 +203,9 @@ export function recordTraceStart(
     Date.now(),
     input.messagePreview ?? null,
     input.originalMessage ?? null,
+    input.resumeOrigin ?? null,
+    input.resumeAttempt ?? 0,
+    input.resumedFrom ?? null,
   )
   return taskId
 }
@@ -371,6 +381,81 @@ export function cleanupOrphanedTraces(db: Database.Database): number {
      WHERE status = 'in-flight'
   `).run(now)
   return (r.changes ?? 0) as number
+}
+
+// --- Resume after restart (#103) -------------------------------------------
+
+/** A run that was still going when the previous daemon stopped. */
+export interface InterruptedRun {
+  taskId: string
+  agentId: string
+  channel: string | null
+  chatId: string | null
+  workflowRunId: string | null
+  startedAt: number
+  originalMessage: string | null
+  resumeOrigin: string | null
+  resumeAttempt: number
+  /** Tool calls it had made, in order, for the resume note. */
+  toolCalls: Array<{ action: string | null; inputSummary: string | null }>
+}
+
+/** Close every run left in flight by the previous daemon, marking it
+ *  `interrupted` for the resume planner, and return them. One transaction,
+ *  so a second process booting on the same database gets nothing. */
+export function takeInterruptedRuns(db: Database.Database, now = Date.now()): InterruptedRun[] {
+  const take = db.transaction(() => {
+    const rows = db.prepare(`
+      SELECT task_id, agent_id, channel, chat_id, workflow_run_id, started_at,
+             original_message, resume_origin, resume_attempt
+        FROM task_traces WHERE status = 'in-flight' ORDER BY started_at
+    `).all() as Array<Record<string, any>>
+    db.prepare(`
+      UPDATE task_traces
+         SET status = 'canceled', error = 'daemon-restart (interrupted)',
+             finished_at = ?, resume_decision = 'interrupted'
+       WHERE status = 'in-flight'
+    `).run(now)
+    return rows
+  })
+  const steps = db.prepare(`
+    SELECT action, input_summary FROM task_trace_steps
+     WHERE task_id = ? AND name = 'tool_use' ORDER BY seq
+  `)
+  return take().map((r) => ({
+    taskId: r.task_id,
+    agentId: r.agent_id,
+    channel: r.channel ?? null,
+    chatId: r.chat_id ?? null,
+    workflowRunId: r.workflow_run_id ?? null,
+    startedAt: r.started_at,
+    originalMessage: r.original_message ?? null,
+    resumeOrigin: r.resume_origin ?? null,
+    resumeAttempt: r.resume_attempt ?? 0,
+    toolCalls: (steps.all(r.task_id) as Array<Record<string, any>>).map((s) => ({
+      action: s.action ?? null, inputSummary: s.input_summary ?? null,
+    })),
+  }))
+}
+
+/** Claim an interrupted run before deciding what to do with it. Returns
+ *  false when another process already claimed or decided it, so a run is
+ *  never resumed — or its chat told — twice. */
+export function claimResume(db: Database.Database, taskId: string): boolean {
+  const r = db.prepare(`
+    UPDATE task_traces SET resume_decision = 'deciding'
+     WHERE task_id = ? AND resume_decision = 'interrupted'
+  `).run(taskId)
+  return (r.changes ?? 0) === 1
+}
+
+export type ResumeDecision = "resumed" | "reported" | "skipped" | "resume-failed"
+
+export function recordResumeDecision(
+  db: Database.Database, taskId: string, decision: ResumeDecision, reason: string,
+): void {
+  db.prepare("UPDATE task_traces SET resume_decision = ?, resume_reason = ? WHERE task_id = ?")
+    .run(decision, reason.slice(0, 500), taskId)
 }
 
 /** Triage / dashboard surface — list traces newest-first, filtered. */

@@ -418,6 +418,12 @@ function runMigrations(db: Database.Database): void {
   for (const step of steps) {
     if (step.v > current) txn(step)
   }
+
+  // Columns added by name, not by version number. Several branches can each
+  // claim the next migration number; a database that already recorded that
+  // number from another branch would silently skip ours. Checking the
+  // table itself makes these columns appear on every database.
+  ensureColumns(db, "task_traces", RESUME_COLUMNS)
 }
 
 /** Schema version check for tests. */
@@ -606,4 +612,22 @@ export function pruneSqliteTables(
   }
 
   return { taskHistory, rotations, routeTraces, taskTraces }
+}
+
+/** Resume after restart (#103): how to re-enter a run (JSON), its attempt
+ *  number, the cut-off run it continues, and the boot decision made for it. */
+const RESUME_COLUMNS: Array<[string, string]> = [
+  ["resume_origin", "TEXT"],
+  ["resume_attempt", "INTEGER NOT NULL DEFAULT 0"],
+  ["resumed_from", "TEXT"],
+  ["resume_decision", "TEXT"],
+  ["resume_reason", "TEXT"],
+]
+
+/** Add any of `columns` the table lacks. Idempotent. */
+export function ensureColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
+  const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
+  for (const [name, type] of columns) {
+    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+  }
 }
