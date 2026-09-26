@@ -111,6 +111,13 @@ Telegram and WhatsApp have pairing flows. GitLab, GitHub, and generic webhooks c
 
 Real agents need a configured model. An API provider needs a key; Claude Code, Codex CLI, and OpenCode need their CLI installed and authenticated on the host. Model-provider charges or subscription terms depend on your chosen provider.
 
+## Integrations
+
+- **Channels:** Telegram, WhatsApp, GitLab, GitHub, and generic webhooks. [Channel reference](docs/reference/channels.md).
+- **Models:** API providers, plus the Claude Code, Codex CLI, and OpenCode CLIs.
+- **Other programs:** the local daemon accepts tasks over HTTP, and `agentx a2a` serves the A2A protocol. [Agent-to-agent reference](docs/reference/a2a.md).
+- **Raycast (planned):** an extension to talk to your agents from Raycast. Not built yet; follow [#146](https://github.com/anis-marrouchi/agentx/issues/146).
+
 ## Help test and improve AgentX
 
 The most valuable contribution right now is **trying AgentX and reporting what happens**. You do not need to write code to help.
@@ -122,6 +129,16 @@ The most valuable contribution right now is **trying AgentX and reporting what h
 [Report an issue](https://github.com/anis-marrouchi/agentx/issues/new) with your version, operating system, steps to reproduce, and relevant logs or screenshots. Remove secrets and private data before sharing. Report security vulnerabilities through the [security policy](SECURITY.md).
 
 See [Contributing](CONTRIBUTING.md) for testing, issue triage, and development instructions.
+
+## Sponsors
+
+We are grateful for the support of our sponsors, who help make AgentX possible.
+
+<p align="center">
+  <a href="https://noqta.tn"><img src="docs/public/sponsors/noqta.svg" alt="Noqta" height="48" /></a>
+</p>
+
+Want to sponsor AgentX? [Start a discussion](https://github.com/anis-marrouchi/agentx/discussions) and we will add you here.
 
 ## Help and development
 
