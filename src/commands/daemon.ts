@@ -3,6 +3,7 @@ import { AgentXDaemon } from "@/daemon"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
+import { restartCommand } from "./daemon-restart"
 
 // --- agentx daemon: start/stop/status/logs ---
 
@@ -226,6 +227,9 @@ daemon
       console.log(chalk.yellow("No daemon process found"))
     }
   })
+
+// agentx daemon restart [--when-idle] (daemon-restart.ts)
+daemon.addCommand(restartCommand)
 
 // agentx daemon status
 daemon
@@ -500,10 +504,12 @@ daemon
       console.log(chalk.green("  ✓ Deploy complete"))
 
       if (opts.restart) {
-        console.log(chalk.dim("  Restarting remote daemon..."))
+        // Waits for running tasks, restarts through the remote's own service
+        // manager (or stop + start), and fails unless the daemon comes back.
+        console.log(chalk.dim("  Restarting remote daemon once no task is running..."))
         const ssh = opts.identity ? `ssh -i ${opts.identity}` : "ssh"
         execSync(
-          `${ssh} ${opts.user}@${host} "pkill -f 'node dist/cli.js daemon' 2>/dev/null; sleep 2; cd ${opts.path} && nohup node dist/cli.js daemon start > /tmp/agentx-daemon.log 2>&1 &"`,
+          `${ssh} -t ${opts.user}@${host} "cd ${opts.path} && node dist/cli.js daemon restart --when-idle"`,
           { stdio: "inherit" },
         )
         console.log(chalk.green("  Remote daemon restarted"))

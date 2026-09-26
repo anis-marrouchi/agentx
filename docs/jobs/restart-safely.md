@@ -11,9 +11,76 @@ When AgentX is asked to stop, it now:
 
 This page shows how to restart so that this works, including when AgentX runs as a background service.
 
-## Restart from the terminal
+The daemon is the AgentX program that keeps running in the background. It can be started three ways, and the restart command works with each:
 
-1. **Terminal:** stop the daemon (the AgentX background service). The command waits until running tasks have finished:
+- by **launchd**, the Mac's built-in service manager (a `.plist` settings file in `~/Library/LaunchAgents/`),
+- by **systemd**, the Linux service manager (an `agentx.service` unit),
+- or by hand, with `agentx daemon start --detach`.
+
+## Restart when no task is running (recommended)
+
+Use this after an update, and in deploy scripts, instead of `launchctl kickstart -k` or `systemctl restart`.
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run:
+   ```sh
+   agentx daemon restart --when-idle
+   ```
+3. Read what it prints. It names the service manager it found, then:
+   - `Waiting: 2 task(s) running...` while agents are still busy. It checks every 5 seconds.
+   - `No tasks running.` once it has seen zero running tasks twice in a row.
+   - `Daemon is back (PID …) after 4s.` when the new daemon answers. The command only reports success at this point.
+
+It waits up to 30 minutes. If tasks are still running after that, it restarts anyway and says so. Those tasks still get the usual time to finish, and anything cut off is picked up again after the restart ([see below](#work-that-gets-cut-off-anyway)).
+
+Options:
+
+| Option | What it does |
+|---|---|
+| `--timeout <minutes>` | Wait this long instead of 30 minutes. |
+| `--abort-on-timeout` | When the wait runs out, don't restart. The command exits with an error and AgentX keeps running. Use this in deploy scripts that can try again later. |
+| `--interval <seconds>` | How often to check. The default is 5. |
+| `--reload-service` | Also re-read the service's settings file. Use it after you edit the `.plist` or the systemd unit. |
+| `--dry-run` | Show what it would run, without restarting. |
+
+Without `--when-idle`, the restart starts right away. Running tasks still get the usual time to finish.
+
+### What it runs
+
+| AgentX runs under | The command |
+|---|---|
+| launchd | Asks launchd to stop AgentX, waits for it to exit, then starts the job again. With `--reload-service`, it unloads the job, waits until launchd has let it go, then loads the `.plist` again. |
+| systemd, system unit | `systemctl restart <unit>`. When you are not root, it uses `sudo`, which may ask for your password. Without a terminal it won't ask. If `sudo` needs a password, it stops and prints the exact command to run. |
+| systemd, user unit | `systemctl --user restart <unit>`. No `sudo`. |
+| Started by hand | Stops the daemon, waits until it has exited, then runs `agentx daemon start --detach` in the same folder. |
+
+If a step fails before AgentX was stopped, it stays running and the command prints how to restart it by hand. `agentx daemon deploy <host> --restart` runs this same command on the other machine.
+
+## Restart from the dashboard
+
+The dashboard can ask a node to restart itself as soon as no task is running. This needs launchd or systemd, because a service manager has to start AgentX again after it exits. On a daemon started by hand, use the terminal command above.
+
+1. **Browser:** open the dashboard's **Live** page.
+2. **Browser:** find the node, then select **Restart when idle** at the right of its name.
+
+   ![A node on the Live page, with the Restart when idle button at the right](/screenshots/live/restart-when-idle.png)
+3. **Browser:** confirm.
+4. The node shows `restart pending · 2 running · until 14:30` while it waits. To call it off, select **Cancel restart**.
+5. When no task is running, it shows `restarting…`, drops offline for a few seconds, then comes back online.
+
+The node waits up to 30 minutes, then restarts anyway. It refuses straight away, with a message saying why, when nothing would start it again:
+
+- It was started by hand.
+- On a Mac, the `.plist` has no `KeepAlive`, or sets it to `false`.
+- On Linux, the unit has `Restart=no` (the default), `on-abnormal`, `on-abort` or `on-watchdog`. Set `Restart=always` to use the button.
+
+With `Restart=on-failure`, or a Mac `KeepAlive` that only restarts after a failed exit, AgentX exits with code 75 so that the service manager starts it again.
+
+Only you can use the button: the request must come from the same machine, or from another node with its mesh token. Pages from other websites are refused.
+
+## Stop and start by hand
+
+1. **Terminal:** stop the daemon. The command waits until running tasks have finished:
    ```sh
    agentx daemon stop
    ```
@@ -58,9 +125,9 @@ If AgentX runs as a service that the system starts for you, the system decides h
    Without it, macOS forces AgentX closed after about 20 seconds.
 3. **Terminal:** reload the service so the setting applies:
    ```sh
-   launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.example.agentx.plist
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.agentx.plist
+   agentx daemon restart --when-idle --reload-service
    ```
+   This unloads the job, waits until macOS has let it go, then loads the settings file again. Running the two `launchctl` commands back to back can fail, because the second one runs before the first has finished, and AgentX then stays stopped.
 
 ## Change how long it waits
 
@@ -116,6 +183,21 @@ Set these in `agentx.json` under `resume`. Every value shown is the default:
 
 ## Check it worked
 
+To check the restart command:
+
+1. **Terminal:** while an agent is working on something, run `agentx daemon restart --when-idle`.
+2. It prints `Waiting: 1 task(s) running...`, then `No tasks running.` once the agent has answered.
+3. It ends with `Daemon is back (PID …) after …s.`
+4. **Terminal:** `agentx daemon logs` shows `Shutdown: SIGTERM requested by agentx daemon restart (…); 0 task(s) in flight; …`
+
+To check the dashboard button:
+
+1. **Browser:** select **Restart when idle** on a node of the **Live** page, and confirm.
+2. The node shows `restart pending`, then `restarting…`, then `online` again.
+3. **Terminal:** on that node, `agentx daemon logs` shows `Restart when idle: no tasks running`, then `Shutdown: restart requested by restart-when-idle from the dashboard (…)`.
+
+To check a plain stop:
+
 1. **Terminal:** while an agent is working on something, run `agentx daemon stop`.
 2. **Terminal:** open the log with `agentx daemon logs`. You should see, in order:
    - `Shutdown: SIGTERM requested by agentx daemon stop (…); 1 task(s) in flight; …`
@@ -134,6 +216,13 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 
 ## If something is wrong
 
+- **`restart` says `The daemon is not answering`:** AgentX isn't running, or listens on another address. Check `node.bind` in `agentx.json`, then start it with `agentx daemon start --detach` or through its service.
+- **`restart` stops and prints a `sudo systemctl restart …` command:** `sudo` needed a password and no terminal was attached. AgentX is still running. Run the printed command yourself, or allow that one command in `sudoers`.
+- **`restart` says `The daemon did not come back within 2 min`:** the new daemon didn't start. Run the `Start it with:` command it printed, then read `agentx daemon logs`.
+- **`restart --abort-on-timeout` exited with `Not restarting`:** tasks were still running when the wait ran out. Try again later, or raise `--timeout`.
+- **The dashboard says `would not start AgentX again`:** set `KeepAlive` to `true` in the `.plist`, or `Restart=always` on the unit, as the message says. Or use `agentx daemon restart --when-idle` in a terminal.
+- **The dashboard has no Restart when idle button:** the node runs an older AgentX. Update it first.
+- **The restart button gives `401` for another node:** the dashboard needs that node's mesh token in `dashboard.daemons`.
 - **Tasks still fail right away on a Linux service:** check `systemctl show -p KillMode agentx`. It must say `mixed`.
 - **The log shows no `Shutdown:` line at all:** the system forced AgentX closed before it could start. Raise `TimeoutStopSec` or `ExitTimeOut` as above.
 - **`Drain timeout after … task(s) still in flight`:** a task took longer than the limit and was stopped. Raise `AGENTX_DRAIN_TIMEOUT_MS`, and the service's stop time with it.
