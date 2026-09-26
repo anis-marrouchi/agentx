@@ -1469,6 +1469,8 @@ interface NodeLive {
     schedule: string
     timezone?: string
     agent: string
+    /** "command" jobs run a shell command, never an agent — no task to open. */
+    kind: "agent" | "command"
     model?: string
     nextRun?: string
     retryPending?: boolean
@@ -1555,6 +1557,7 @@ async function fetchDaemonAgents(
         schedule: String(job.schedule || ""),
         timezone: job.timezone,
         agent: String(job.agent || ""),
+        kind: typeof job.command === "string" && job.command.trim() ? "command" : "agent",
         model: job.model,
         nextRun: job.nextRun,
         retryPending: job.retryPending === true,

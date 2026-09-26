@@ -42,4 +42,12 @@ export interface CronRunResult {
   retryAttempt?: number
   /** Started on demand via POST /routines/:id/fire, not by the schedule. */
   fired?: boolean
+  /** Dashboard task id of the agent run (RunningTask.id / TaskRecord.id),
+   *  so the run opens on the Task page. Absent for command jobs, which
+   *  never reach an agent. */
+  taskId?: string
+  /** Per-execution trace id (task_traces row, /api/mesh/run). */
+  traceId?: string
+  /** Native provider session the run resumed or started, when reported. */
+  sessionId?: string
 }

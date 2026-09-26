@@ -122,6 +122,12 @@ export interface TaskRecord {
   transcript: string
 }
 
+/** Outcome of AgentRegistry.continueFinishedTask. `taskId` is the new run's
+ *  dashboard id; absent when the message was queued behind a busy slot. */
+export type ContinueFinishedTaskResult =
+  | { ok: true; agentId: string; channel: string; chatId: string; taskId?: string; queued: boolean }
+  | { ok: false; status: 404 | 409 | 500; error: string }
+
 const TASK_HISTORY_DIR = ".agentx/task-history"
 /** Default retention for persisted task records. Set for business audit trails;
  *  bump via the `dashboard.taskHistoryRetentionDays` config field if you need more. */
@@ -1070,6 +1076,8 @@ export class AgentRegistry {
       startedAt: new Date(),
     }
     state.runningTasks.push(runningTask)
+    task.runningTaskId = runningTask.id
+    if (task.onStart) { try { task.onStart(runningTask.id) } catch { /* caller bug must not break the run */ } }
 
     // AbortController for operator stop / replace. Stored under the running
     // task id so /api/tasks/:id/cancel can resolve and abort it.
@@ -2688,6 +2696,64 @@ export class AgentRegistry {
       this.log(`[${agentId}] follow-up queued for task ${taskId} (pending=${pending}${edited ? ", edited cancelled turn" : ""})`)
     }
     return { agentId, channel, chatId, replaced, edited, pending }
+  }
+
+  /**
+   * Operator follow-up on a task that has already finished: dispatch the
+   * message as a new turn on the same (channel, chatId), so the session
+   * resumes with the finished run's context.
+   *
+   * Scheduled runs only. A cron chat has no person on the other end, so the
+   * Task page is the only place its reply is read. Resuming a Telegram or
+   * GitLab conversation from here would run a turn whose reply never reaches
+   * the person in that chat, which is worse than refusing.
+   *
+   * Resolves once the new run starts (with its task id, for the Task page)
+   * or, if the agent is busy and the message was queued, once execute
+   * returns without one.
+   */
+  async continueFinishedTask(
+    agentId: string,
+    taskId: string,
+    message: string,
+    sender: string,
+    opts: { model?: (chatId: string) => string | undefined } = {},
+  ): Promise<ContinueFinishedTaskResult> {
+    const record = this.getTaskRecord(agentId, taskId)
+    if (!record) return { ok: false, status: 404, error: `no task ${taskId} for agent ${agentId}` }
+    if (record.channel !== "cron" || !record.chatId) {
+      return { ok: false, status: 409, error: `task ${taskId} is finished; only scheduled (cron) runs can be resumed from the dashboard` }
+    }
+    const channel = record.channel
+    const chatId = record.chatId
+    return new Promise<ContinueFinishedTaskResult>((resolveStart) => {
+      let settled = false
+      const settle = (result: ContinueFinishedTaskResult) => {
+        if (settled) return
+        settled = true
+        resolveStart(result)
+      }
+      this.log(`[${agentId}] operator resumed ${channel}:${chatId} from finished task ${taskId}`)
+      this.execute({
+        message,
+        agentId,
+        // The job's model override, so the resumed turn runs on the same
+        // model as the scheduled one did.
+        model: opts.model?.(chatId),
+        context: { channel, chatId, sender },
+        onStart: (id) => settle({ ok: true, agentId, channel, chatId, taskId: id, queued: false }),
+      })
+        .then((resp) => {
+          // Only reached first when the run never started: it was queued
+          // behind a busy slot (the flush dispatches it later) or refused.
+          if (resp.error?.startsWith("__queued__")) {
+            settle({ ok: true, agentId, channel, chatId, queued: true })
+          } else {
+            settle({ ok: false, status: 500, error: resp.error || "run did not start" })
+          }
+        })
+        .catch((e) => settle({ ok: false, status: 500, error: e?.message ?? String(e) }))
+    })
   }
 
   /**
