@@ -27,6 +27,7 @@ import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/ro
 import type { LegacyOutcome } from "@/intent/divergence"
 import type { IntentResolutionStatus } from "@/intent/types"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
+import type { Resumer } from "@/agents/resume/coordinator"
 
 /** During streaming, hide a partial or complete `agentx:ui` directive block so
  *  a half-written fence never flashes as raw text in the live preview. The
@@ -112,6 +113,25 @@ class InflightLog {
       const out = unfinished.map((e) => JSON.stringify(e)).join("\n") + (unfinished.length ? "\n" : "")
       writeFileSync(this.filePath, out)
     } catch { /* */ }
+  }
+}
+
+/** The parts of an incoming message needed to handle it again after a
+ *  restart (same shape the inflight log keeps, plus adapter context). */
+export function serializeIncoming(msg: IncomingMessage): Record<string, unknown> {
+  return {
+    id: msg.id, channel: msg.channel, accountId: msg.accountId, sender: msg.sender, group: msg.group,
+    text: msg.text, replyTo: msg.replyTo, replyToText: msg.replyToText,
+    timestamp: (msg.timestamp instanceof Date ? msg.timestamp : new Date()).toISOString(),
+    resolvedAgent: msg.resolvedAgent, preferNode: msg.preferNode, channelMeta: msg.channelMeta,
+    runbookPath: msg.runbookPath, runbookFiles: msg.runbookFiles, media: msg.media,
+  }
+}
+
+function incomingFrom(stored: Record<string, any>): IncomingMessage {
+  return {
+    ...(stored as any),
+    timestamp: new Date(stored.timestamp ?? Date.now()),
   }
 }
 
@@ -514,6 +534,41 @@ export class MessageRouter {
     this.inflight.compact()
   }
 
+  /** Re-enter chat messages a restart cut off (agents/resume). The message
+   *  goes through the normal path, so its answer lands in the same chat. */
+  createResumer(): Resumer {
+    return {
+      resume: async ({ origin, note, attempt, run }) => {
+        if (origin.kind !== "router") throw new Error("not a router run")
+        const adapter = this.channels.get(origin.adapter)
+        if (!adapter) throw new Error(`channel "${origin.adapter}" is not running`)
+        const msg = incomingFrom(origin.message)
+        msg.resume = { note, attempt, resumedFrom: run.taskId }
+        // Handed over, not awaited: the run may take minutes, and one slow
+        // run mustn't hold up the rest of the resume queue.
+        this.handleMessage(adapter, msg, { replay: true })
+          .catch((e) => this.log(`Resume of ${run.taskId} failed: ${e.message}`))
+      },
+      tell: async (origin, text) => {
+        if (origin.kind !== "router") return
+        const adapter = this.channels.get(origin.adapter)
+        if (!adapter) throw new Error(`channel "${origin.adapter}" is not running`)
+        const msg = incomingFrom(origin.message)
+        await this.adapterSend(adapter, {
+          channel: msg.channel,
+          chatId: msg.group?.id || msg.sender.id,
+          text,
+          // Only Telegram threads a reply by message id; elsewhere replyTo
+          // means something else (a discussion, a note), so leave it out.
+          replyTo: msg.channel === "telegram" ? msg.id : undefined,
+          accountId: msg.accountId,
+          agentId: msg.resolvedAgent,
+          parseMode: "plain",
+        })
+      },
+    }
+  }
+
   async stopAll(): Promise<void> {
     for (const [name, adapter] of this.channels) {
       this.log(`Stopping channel: ${name}`)
@@ -891,8 +946,15 @@ export class MessageRouter {
     // Execute agent task
     const response = await this.registry.execute(
       {
-        message: messageWithContext,
+        message: msg.resume ? `${msg.resume.note}\n${messageWithContext}` : messageWithContext,
         agentId,
+        // Resume after restart (#103): record how to re-enter this run, and
+        // hand it from the inflight log to the run journal once it starts,
+        // so a restart can't resume it twice.
+        origin: { kind: "router", adapter: msg.channel, message: serializeIncoming(msg) },
+        resumeAttempt: msg.resume?.attempt,
+        resumedFrom: msg.resume?.resumedFrom,
+        onStart: () => this.inflight.done(msg.id),
         // Phase 1 / 6 — propagate the intent-ledger reference so the
         // registry can record a resolution on completion. Set by
         // gitlab/router shadow-mode wiring; absent under mode=off.

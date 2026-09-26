@@ -132,6 +132,9 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           // not present (older emitters); this branch is the new path.
           originalMessage: p.fullMessage ?? p.messagePreview,
           workflowRunId,
+          resumeOrigin: p.resumeOrigin ?? null,
+          resumeAttempt: p.resumeAttempt ?? 0,
+          resumedFrom: p.resumedFrom ?? null,
         },
         p.taskId,
       )

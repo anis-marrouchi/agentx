@@ -76,6 +76,9 @@ export interface IncomingMessage {
    *  Carried alongside the path so per-project customisation applies
    *  without the registry re-reading the rule. */
   runbookFiles?: string[]
+  /** Set when this message re-runs one a restart cut off (agents/resume):
+   *  the note for the agent, the attempt number, and the run it continues. */
+  resume?: { note: string; attempt: number; resumedFrom: string }
 }
 
 export interface OutgoingMessage {

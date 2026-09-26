@@ -22,6 +22,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
+import { serializeOrigin } from "./resume/origin"
 import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
@@ -1224,6 +1225,14 @@ export class AgentRegistry {
       fullMessage: task.message || "",
       at: new Date(taskStartedAt).toISOString(),
       taskId: traceTaskId,
+      resumeOrigin: serializeOrigin(task.origin ?? {
+        kind: "direct",
+        context: task.context as Record<string, unknown> | undefined,
+        model: task.model,
+        autonomy: task.autonomy,
+      }),
+      resumeAttempt: task.resumeAttempt ?? 0,
+      resumedFrom: task.resumedFrom,
     })
 
     // Classify the message through the intent graph when enabled. Skip for

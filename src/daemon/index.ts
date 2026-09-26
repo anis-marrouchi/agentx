@@ -40,7 +40,9 @@ import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
-import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
+import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
+import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { recordBoot } from "@/agents/resume/note"
 import {
   listPublishedInboxes, validateRelayRequest, renderRelayMessage,
   relayChatId, relayRateLimiter, unresolvableInboxes, RELAY_CHANNEL,
@@ -394,14 +396,20 @@ export class AgentXDaemon {
       const db = openDb()
       this.db = db
       if (db) {
-        // Cancel any traces left in-flight from a previous daemon lifetime.
-        // Without this, hard-killed tasks accumulate forever and clutter
-        // `agentx trace list --status in-flight`. Mirrors the intent
-        // ledger's startup cleanup (rescue plan a8514d9). Runs BEFORE
-        // subscribers attach so the cleanup can't race with new starts.
-        const cleaned = cleanupOrphanedTraces(db)
-        if (cleaned > 0) {
-          this.log(`  Traces: canceled ${cleaned} orphaned in-flight row(s) from prior run`)
+        // Close the runs the previous daemon left in flight, keeping them
+        // as `interrupted` for the resume step once startup finishes
+        // (agents/resume). Runs BEFORE subscribers attach so no new run can
+        // be mistaken for a cut-off one.
+        try {
+          this.interruptedRuns = takeInterruptedRuns(db)
+          if (this.interruptedRuns.length > 0) {
+            this.log(`  Traces: ${this.interruptedRuns.length} run(s) cut off by the last restart`)
+          }
+        } catch (e: any) {
+          // Never let resume bookkeeping stop the daemon: close the rows the
+          // old way and resume nothing.
+          this.log(`  Traces: couldn't collect cut-off runs (${e?.message ?? e}); closing them without resuming`)
+          try { cleanupOrphanedTraces(db) } catch { /* nothing more to do */ }
         }
         attachSqliteSubscribers(db)
         // Typed-decision seats. Registering a backend is lazy and opening
@@ -738,6 +746,14 @@ export class AgentXDaemon {
 
     this.log("")
     this.log("  Ready.")
+
+    // Resume what the last restart cut off. Deferred so channel adapters
+    // finish connecting; fully isolated so nothing in it can affect the
+    // running daemon.
+    this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
+    if (this.interruptedRuns.length > 0) {
+      setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
+    }
     this.log("")
 
     // Write PID file
@@ -916,6 +932,54 @@ export class AgentXDaemon {
   private midnightTimer?: ReturnType<typeof setTimeout>
   /** Set on the first stop signal: new work is refused while tasks drain. */
   private shuttingDown = false
+  /** Runs the previous daemon left in flight (agents/resume). */
+  private interruptedRuns: InterruptedRun[] = []
+  private bootTimes: number[] = []
+
+  /** Resume, report or skip each run the last restart cut off. Never throws. */
+  private async resumeInterruptedRuns(): Promise<void> {
+    const runs = this.interruptedRuns
+    this.interruptedRuns = []
+    if (!this.db || runs.length === 0) return
+    try {
+      const coordinator = new ResumeCoordinator()
+      coordinator.register("router", this.router.createResumer())
+      coordinator.register("direct", {
+        // Non-chat runs, only for channels opted in via resume.directChannels.
+        // Nothing delivers their answer; it stays in the agent's session.
+        resume: async ({ origin, note, attempt, run }) => {
+          if (origin.kind !== "direct") throw new Error("not a direct run")
+          void this.registry.execute({
+            message: `${note}\n${run.originalMessage ?? ""}`,
+            agentId: run.agentId,
+            context: origin.context as any,
+            model: origin.model,
+            autonomy: origin.autonomy as any,
+            origin,
+            resumeAttempt: attempt,
+            resumedFrom: run.taskId,
+          }).catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
+        },
+      })
+      const dest = this.config.notifications?.destination
+      const outcomes = await coordinator.run({
+        db: this.db,
+        runs,
+        settings: this.config.resume,
+        now: Date.now(),
+        boots: this.bootTimes,
+        log: this.log,
+        staggerMs: 2_000,
+        notifyOperator: dest
+          ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
+          : undefined,
+      })
+      const count = (d: string) => outcomes.filter((o) => o.decision === d).length
+      this.log(`  Resume: ${count("resumed")} resumed, ${count("reported")} reported, ${count("skipped")} skipped, ${count("resume-failed")} failed`)
+    } catch (e: any) {
+      this.log(`[resume] step failed, nothing more resumed: ${e?.message ?? e}`)
+    }
+  }
 
   /**
    * Watch agentx.json for external edits (e.g. `agentx config set ...`) and
