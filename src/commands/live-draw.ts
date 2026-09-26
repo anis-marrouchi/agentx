@@ -1,6 +1,6 @@
 import chalk from "chalk"
 import { execFile } from "child_process"
-import { copyFileSync, existsSync } from "fs"
+import { existsSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { join, resolve } from "path"
 import { promisify } from "util"
@@ -58,12 +58,14 @@ export async function runLiveDraw(goal: string, opts: { agent?: string; config?:
     const r = await drawLive(goal, { api, presence, model: line }, { docId: doc.id, signal: ac.signal }, print)
 
     await api.exec(doc.id, "await helpers.saveDoc(); return true")
-    const shot = await api.search<{ filePath: string }>(`return await api.getScreenshot(${JSON.stringify(doc.id)}, { size: 'full' })`)
-    const picture = doc.filePath ? doc.filePath.replace(/\.tldraw$/, ".jpg") : join(out, `agentx-draw-${stamp}.jpg`)
-    copyFileSync(shot.filePath, picture)
+    const png = await api.exec<string>(doc.id, "const r = await editor.toImageDataUrl([...editor.getCurrentPageShapeIds()], { format: 'png', scale: 2, background: true }); return r.url")
+    const picture = doc.filePath ? doc.filePath.replace(/\.tldraw$/, ".png") : join(out, `agentx-draw-${stamp}.png`)
+    writeFileSync(picture, Buffer.from(png.slice(png.indexOf(",") + 1), "base64"))
 
     console.log(chalk.bold(`\n  ${r.steps} steps in ${(r.totalMs / 1000).toFixed(1)} s`) + chalk.dim(
       `  (first shape planned at ${r.firstLineMs === null ? "–" : (r.firstLineMs / 1000).toFixed(1)} s, plan done at ${(r.planMs / 1000).toFixed(1)} s)`))
+    const u = line.lastUsage
+    if (u) console.log(chalk.dim(`  tokens: ${u.inputTokens} in, ${u.outputTokens} out, ${u.cacheReadTokens} cache read, ${u.cacheWriteTokens} cache write; cost ${u.costUsd === null ? "not reported" : `$${u.costUsd.toFixed(4)}`}`))
     console.log(chalk.dim(`  ${doc.filePath}\n  ${picture}\n`))
   } finally {
     line.close()

@@ -19,11 +19,15 @@ import { stripAnthropicApiKey } from "@/utils/workspace-env"
 
 export const TALK_MODEL = "claude-haiku-4-5-20251001"
 
+export interface TurnUsage { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number | null }
+
 export interface LineModel {
   /** Stream the reply to `message`; the model keeps the conversation. An
    *  aborted reply stops yielding at once. */
   reply(message: string, signal?: AbortSignal): AsyncIterable<string>
   close(): void
+  /** Tokens and cost of the last finished turn, when the backend reports them. */
+  lastUsage?: TurnUsage
 }
 
 export interface LineModelOpts {
@@ -45,6 +49,7 @@ export class CliLineModel implements LineModel {
   private queue: Promise<void> = Promise.resolve()
   private dead: string | null = null
   private seq = 0
+  lastUsage?: TurnUsage
 
   constructor(opts: LineModelOpts, binary = "claude") {
     const env = stripAnthropicApiKey({ ...process.env })
@@ -93,6 +98,12 @@ export class CliLineModel implements LineModel {
       let ev: any
       try { ev = JSON.parse(next.value) } catch { continue }
       if (ev.type === "result") {
+        const u = ev.usage ?? {}
+        this.lastUsage = {
+          inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0,
+          cacheReadTokens: u.cache_read_input_tokens ?? 0, cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+          costUsd: typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : null,
+        }
         // An interrupted turn ends as an error; that is the abort working.
         if (ev.is_error && !signal?.aborted) throw new Error(String(ev.result ?? ev.subtype ?? "model error").slice(0, 200))
         return out.end()

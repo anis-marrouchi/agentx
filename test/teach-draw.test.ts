@@ -28,6 +28,21 @@ describe("draw plan lines", () => {
     expect(parseDrawLine('{"id":"sun","text":"hi","x":1,"y":1}', new Set(["sun"]))).toBeNull()
   })
 
+  it("reads a path, clamped, closed only with three points or more", () => {
+    const el = parseDrawLine('{"id":"dome","path":[[-5,10],[50,-9],[90,10]],"color":"white","fill":"fill","opacity":0.02}', none)
+    expect(el).toMatchObject({ kind: "path", pts: [[0, 10], [50, 0], [90, 10]], fill: "fill", opacity: 0.1 })
+    expect(parseDrawLine('{"id":"bar","path":[[1,1],[9,9]],"fill":"none"}', none)).toMatchObject({ kind: "path", fill: "none" })
+    expect(parseDrawLine('{"id":"bad","path":[[1,1],[9,9]],"fill":"fill"}', none)).toBeNull()
+    expect(parseDrawLine('{"id":"bad","path":[[1,"x"],[9,9],[3,3]]}', none)).toBeNull()
+  })
+
+  it("keeps only valid palette entries, once", () => {
+    const el = parseDrawLine('{"palette":{"blue":"#1F5FA6","teal":"#00ffff","red":"pink"},"say":"Colours."}', none)
+    expect(el).toEqual({ kind: "palette", id: "palette", say: "Colours.", colors: { blue: "#1F5FA6" } })
+    expect(parseDrawLine('{"palette":{"red":"pink"}}', none)).toBeNull()
+    expect(parseDrawLine('{"palette":{"blue":"#000000"}}', new Set(["palette"]))).toBeNull()
+  })
+
   it("splits streamed chunks into whole lines", () => {
     const s = new LineSplitter()
     expect(s.push('{"a":1}\n{"b"')).toEqual(['{"a":1}'])
@@ -48,6 +63,8 @@ describe("drawSnippet", () => {
     const els = [
       { kind: "geo", id: "g", say: "", geo: "star", x: 1, y: 1, w: 9, h: 9, color: "red", fill: "fill", label: "x" },
       { kind: "arrow", id: "a", say: "", from: "g", to: "t", label: "", color: "black" },
+      { kind: "path", id: "p", say: "", pts: [[0, 0], [10, 0], [5, 8]], color: "blue", fill: "fill", opacity: 0.5 },
+      { kind: "palette", id: "palette", say: "", colors: { blue: "#1f5fa6" } },
     ] as const
     for (const el of els) expect(() => new Function(`return (async () => { ${drawSnippet(el as any, "r")} })`)).not.toThrow()
   })
