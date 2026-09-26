@@ -18,11 +18,15 @@ export interface MeshAuthRequest {
   acceptedTokens: ReadonlySet<string>
   /** AGENTX_MESH_AUTH=off escape hatch. */
   enforcementDisabled?: boolean
+  /** A browser says the request comes from another origin's page (see
+   *  browser-origin.ts). Such a page is not the operator, even though the
+   *  browser that sends it sits on loopback. */
+  foreignBrowser?: boolean
 }
 
 export type MeshAuthDecision =
   | { allowed: true; reason: "disabled" | "loopback" | "token" | "no-tokens-configured" }
-  | { allowed: false; reason: "missing-or-invalid-token" }
+  | { allowed: false; reason: "missing-or-invalid-token" | "foreign-browser-origin" }
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 
@@ -42,6 +46,9 @@ export function isLoopback(remoteAddress: string): boolean {
 }
 
 export function decideMeshAuth(req: MeshAuthRequest): MeshAuthDecision {
+  // Checked before every exemption: loopback, the no-token grace path and
+  // the off switch all exist for the operator's own tools, not for pages.
+  if (req.foreignBrowser) return { allowed: false, reason: "foreign-browser-origin" }
   if (req.enforcementDisabled) return { allowed: true, reason: "disabled" }
   if (LOOPBACK.has(req.remoteAddress)) return { allowed: true, reason: "loopback" }
   if (req.acceptedTokens.size === 0) return { allowed: true, reason: "no-tokens-configured" }

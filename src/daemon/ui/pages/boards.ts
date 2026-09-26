@@ -1345,15 +1345,8 @@ if (descEl) descEl.addEventListener('input', () => {
 // --- Agent activity panel (live polling of the daemon API) ---
 
 const activity = {
-  open: false, timer: null, daemonUrl: null, lastEventAt: 0, eventsRing: [],
+  open: false, timer: null, lastEventAt: 0, eventsRing: [],
 };
-
-function resolveDaemonUrl() {
-  // Allow ?daemon=http://host:port override; fall back to localhost:18800 (MacBook) then 19900 (peer).
-  const q = new URLSearchParams(window.location.search).get('daemon');
-  if (q) return q.replace(/\\/+\$/, '');
-  return localStorage.getItem('agentx.daemon') || 'http://localhost:18800';
-}
 
 function toggleActivity(force) {
   activity.open = typeof force === 'boolean' ? force : !activity.open;
@@ -1367,8 +1360,9 @@ function toggleActivity(force) {
 }
 
 async function startActivity() {
-  activity.daemonUrl = resolveDaemonUrl();
-  document.getElementById('activity-source').textContent = activity.daemonUrl.replace(/^https?:\\/\\//, '');
+  // Same-origin: the dashboard proxies its configured daemon. A direct call
+  // to the daemon would be cross-origin, and the daemon no longer allows it.
+  document.getElementById('activity-source').textContent = 'dashboard daemon';
   await tickActivity();
   activity.timer = setInterval(tickActivity, 3000);
 }
@@ -1381,10 +1375,10 @@ async function tickActivity() {
   try {
     // Fetch /agents (always present) + /business/status (optional — 404 tolerated)
     const [agentsRes, bizRes] = await Promise.all([
-      fetch(activity.daemonUrl + '/agents').catch(() => null),
-      fetch(activity.daemonUrl + '/business/status').catch(() => null),
+      fetch('/api/agents').catch(() => null),
+      fetch('/api/business/status').catch(() => null),
     ]);
-    if (!agentsRes || !agentsRes.ok) throw new Error('daemon unreachable at ' + activity.daemonUrl);
+    if (!agentsRes || !agentsRes.ok) throw new Error('daemon unreachable');
     const agents = await agentsRes.json();
     const biz = bizRes && bizRes.ok ? await bizRes.json() : null;
 
