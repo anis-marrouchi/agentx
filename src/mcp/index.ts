@@ -494,6 +494,41 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_schedule",
+    description:
+      "Manage recurring routines (schedules) in plain English. Actions: list, create, pause, resume, delete. " +
+      "create and delete are REQUESTS: nothing takes effect until the operator approves (the operator is sent the parsed cron and next fire time). " +
+      "Tell the user it is pending approval. You can pause/resume/delete only routines you created, unless you are an admin agent. " +
+      "Example: {action:'create', when:'every monday at 10am', prompt:'Check the open invoices and summarise'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "create", "pause", "resume", "delete"],
+          description: "What to do. Default: list.",
+        },
+        id: { type: "string", description: "Schedule id. Required for pause/resume/delete; optional for create (auto-generated)." },
+        when: {
+          type: "string",
+          description: "create: plain-English timing, e.g. 'every monday at 10am', 'weekdays at 6pm', 'every 15 minutes', '1st of every month at noon'.",
+        },
+        prompt: { type: "string", description: "create: what the agent should do at each run." },
+        agent: { type: "string", description: "create: agent that runs the routine. Default: you." },
+        timezone: { type: "string", description: "create: IANA timezone. Default: the node's schedule default." },
+        notify: {
+          type: "string",
+          description: "create: where results/failures go. 'here' (default: the current chat), 'none', or 'channel:chatId'.",
+        },
+        mine: { type: "boolean", description: "list: only routines you created." },
+        channel: { type: "string", description: "Current chat's channel, from your task context. Used as the default notify target when the runtime didn't provide it." },
+        chatId: { type: "string", description: "Current chat id, from your task context." },
+        accountId: { type: "string", description: "Optional bot account for multi-account channels." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_debug",
     description:
       "Toggle debug mode on the daemon. Enable verbose logging for specific categories (webhook, agent, channel, cron, mesh, context, memory, all) or disable it.",
@@ -1063,6 +1098,25 @@ async function handleToolCall(
         `  ${j.id}: ${j.status}${j.consecutiveErrors ? ` (${j.consecutiveErrors} errors)` : ""}${j.lastError ? ` — ${j.lastError.slice(0, 100)}` : ""}`
       ).join("\n")
       return { content: [{ type: "text", text: `${summary}\n\n${jobs}` }] }
+    }
+
+    case "agentx_schedule": {
+      const { runScheduleTool, resolveScheduleCaller } = await import("@/crons/schedule-tool")
+      const text = await runScheduleTool(args, resolveScheduleCaller(args), {
+        notifyOperator: async (dest, message) => {
+          const res = await fetch(`${daemonUrl()}/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text: message }),
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({})) as any
+            throw new Error(data?.error || `HTTP ${res.status}`)
+          }
+        },
+      })
+      return { content: [{ type: "text", text }] }
     }
 
     case "agentx_wiki_query": {

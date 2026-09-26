@@ -722,6 +722,10 @@ cron
   .action(async (id) => {
     const config = loadConfig()
     if (!config.crons?.[id]) { console.log(chalk.red(`  Cron "${id}" not found`)); return }
+    if (config.crons[id].approval?.action === "create") {
+      console.log(chalk.yellow(`  Cron "${id}" is awaiting approval — run: agentx schedule approve ${id}`))
+      return
+    }
     config.crons[id].enabled = true
     await saveConfig(config)
     console.log(chalk.green(`  Cron "${id}" enabled`))

@@ -447,6 +447,15 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
     "/usr/local/bin",
   ].filter(Boolean)
   env.PATH = Array.from(new Set(pathParts.flatMap((p) => p.split(":")).filter(Boolean))).join(":")
+  return withCallerEnv(env, task)
+}
+
+/** Export who is running and for which chat, so tools the agent launches
+ *  (the agentx MCP server in particular) can identify the caller without
+ *  trusting model-supplied arguments. Only per-spawn processes get this;
+ *  a persistent process serves many chats, so a chat id baked into its env
+ *  would be stale. */
+export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
@@ -742,7 +751,7 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = claudeBillingEnv(buildAgentEnv(agent.workspace), agent.billing)
+      const childEnv = claudeBillingEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), agent.billing)
       let killed = false
       const proc = execFile("claude", args, {
         cwd: agent.workspace,
@@ -877,7 +886,7 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const spawnEnv = claudeBillingEnv(buildAgentEnv(agent.workspace), agent.billing)
+    const spawnEnv = claudeBillingEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), agent.billing)
     const proc = execa("claude", args, {
       cwd: agent.workspace,
       timeout: streamTimeoutMs,

@@ -281,6 +281,11 @@ const agentConfigSchema = z.object({
    *   - "public": external apps can POST /api/public/agents/<id>/messages
    *     with a scoped token (agent:<id> or agent:*). */
   access: z.enum(["private", "public"]).default("private"),
+  /** Governance override for agent-facing management tools. An admin agent
+   *  may pause, resume and request deletion of schedules created by other
+   *  agents or by the operator. It never approves anything: approval of a
+   *  create/delete request stays operator-only (`agentx schedule approve`). */
+  admin: z.boolean().optional(),
   /** Per-agent third-party integrations registry. Declares which services
    *  this agent has credentials for (telegram-bot, hubspot, gitlab-user,
    *  gmail, etc.). Secrets stay in env vars / keyring; this block holds
@@ -556,6 +561,19 @@ const cronJobSchema = z.object({
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
   fireToken: z.string().optional(),
+  /** Agent id that created this job through the agent `schedule` tool.
+   *  Absent for operator-created jobs. Drives the ownership rule: an agent
+   *  manages only the routines it created, unless it is `admin`. */
+  createdBy: z.string().optional(),
+  /** Pending operator approval for an agent-requested change. While a
+   *  `create` is pending the job never runs, whatever `enabled` says; a
+   *  pending `delete` leaves the job as it was until approved. Cleared by
+   *  `agentx schedule approve|reject <id>`. */
+  approval: z.object({
+    action: z.enum(["create", "delete"]),
+    requestedBy: z.string(),
+    requestedAt: z.string(),
+  }).optional(),
 }).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
 })
