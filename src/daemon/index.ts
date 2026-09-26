@@ -61,6 +61,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
+import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest } from "@/daemon/shutdown"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -754,12 +755,17 @@ export class AgentXDaemon {
       this.log(`UNHANDLED REJECTION: ${reason}`)
     })
 
-    // Graceful shutdown
-    let stopping = false
+    // Graceful shutdown (shutdown.ts): log who asked, refuse new work, drain.
     const shutdown = async (signal: string) => {
-      if (stopping) return
-      stopping = true
-      this.log(`\n  Received ${signal}, shutting down gracefully...`)
+      if (this.shuttingDown) return
+      this.shuttingDown = true
+      this.log("\n  " + describeShutdown({
+        signal,
+        request: takeShutdownRequest(resolve(process.cwd(), ".agentx")),
+        manager: serviceManager(),
+        inflight: this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount(),
+        uptimeSec: process.uptime(),
+      }))
       await this.stop()
     }
     process.on("SIGINT", () => shutdown("SIGINT"))
@@ -768,6 +774,7 @@ export class AgentXDaemon {
 
   async stop(): Promise<void> {
     const start = Date.now()
+    this.shuttingDown = true
     this.voiceTalk.close()
 
     try {
@@ -776,6 +783,25 @@ export class AgentXDaemon {
     } catch (e: any) {
       this.log(`  Channel stop error: ${e.message}`)
     }
+
+    // Everything else that starts agent work stops BEFORE the drain, or the
+    // drain waits on tasks that began after the stop was requested.
+    try {
+      this.log("  Stopping crons (saving last run times)...")
+      await this.cron.stop()
+    } catch {}
+
+    try {
+      this.log("  Stopping heartbeats...")
+      this.heartbeat.stopAll()
+    } catch {}
+
+    try {
+      if (this.business) {
+        this.log("  Stopping business layer...")
+        this.business.stop()
+      }
+    } catch {}
 
     // Drain active agent tasks before exit. Channels are already stopped, so
     // the active count can only shrink. This is what lets `systemctl restart`
@@ -830,24 +856,7 @@ export class AgentXDaemon {
     }
 
     try {
-      this.log("  Stopping crons (saving last run times)...")
-      await this.cron.stop()
-    } catch {}
-
-    try {
       this.projectRules.stop()
-    } catch {}
-
-    try {
-      this.log("  Stopping heartbeats...")
-      this.heartbeat.stopAll()
-    } catch {}
-
-    try {
-      if (this.business) {
-        this.log("  Stopping business layer...")
-        this.business.stop()
-      }
     } catch {}
 
     try {
@@ -905,6 +914,8 @@ export class AgentXDaemon {
   }
 
   private midnightTimer?: ReturnType<typeof setTimeout>
+  /** Set on the first stop signal: new work is refused while tasks drain. */
+  private shuttingDown = false
 
   /**
    * Watch agentx.json for external edits (e.g. `agentx config set ...`) and
@@ -1906,6 +1917,14 @@ export class AgentXDaemon {
       if (classifyBrowserRequest(req.headers) === "foreign" && isStateChangingOrPreflight(req.method)) {
         this.log(`[auth] ✗ refused ${req.method} ${(req.url || "").split("?")[0]} from a page on another origin (${req.headers.origin || req.headers["sec-fetch-site"]})`)
         this.json(res, 403, { error: "Forbidden: request from a page on another origin" })
+        return
+      }
+
+      // Draining for a restart: nothing new starts; in-flight work still
+      // reaches what it needs (shutdown.ts startsNewWork).
+      if (this.shuttingDown && startsNewWork(req.method, (req.url || "/").split("?")[0])) {
+        res.setHeader("Retry-After", "30")
+        this.json(res, 503, { error: "daemon is restarting; retry shortly" })
         return
       }
 

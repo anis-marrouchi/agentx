@@ -49,7 +49,7 @@ agentx desktop start
 | `agentx daemon start` | Foreground daemon; `--detach` for background, `--config <path>` for another config |
 | `agentx daemon status` | Inspect the daemon |
 | `agentx daemon logs` | Read logs; check `--help` for follow options |
-| `agentx daemon stop` | Stop the daemon |
+| `agentx daemon stop` | Stop the daemon after its running tasks finish ([restart without losing work](../jobs/restart-safely.md)) |
 | `agentx config check` | Validate the configuration |
 | `agentx config get <path>` | Read one configuration field |
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
