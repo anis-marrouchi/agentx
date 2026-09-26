@@ -43,4 +43,37 @@ The level applies to that run only. It is enforced by a guard hook on the run's 
 
 Only the `claude-code` tier can enforce `report` and `propose`. On any other tier, or when the agent is only reachable through a mesh peer, the run fails with an error; it is never run with full permissions instead. A restricted run always starts its own process and does not reuse a warm persistent process. `report` is an allowlist. `propose` is a denylist of act-level steps, so an agent that tries hard enough can get around it through indirection. Use `report` when you need a hard boundary.
 
+## Time limits and cancel
+
+A run is one piece of work an agent does, such as answering a message or running a scheduled job. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.
+
+**Scheduled jobs (`crons`).** Every job has a `timeout` in seconds (default 600).
+
+- For a **command** job, `timeout` is the limit for the shell command.
+- For an **agent** job, the limit is the larger of `timeout` and 2 hours. Agent jobs often take longer than their `timeout`, so a short `timeout` does not cut them off. The 2-hour minimum exists to end a run that is stuck.
+- The run record for an agent job stores the limit that was used, in seconds, as `timeout`.
+
+```json
+"crons": {
+  "weekly-review": { "schedule": "0 8 * * 1", "agent": "writer", "prompt": "Review last week", "timeout": 10800 }
+}
+```
+
+Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minimum.
+
+**Other runs.** A workflow `agent` step, `agentx exec --timeout <minutes>` and a workflow API request can set `timeoutMinutes`. When set, the run is stopped once that many minutes have passed, including runs on this machine. Leave room for slow work: an agent that edits code or reviews a pull request can take 20 minutes or more.
+
+**Stopping a run.** When you cancel a run, or its time limit passes, the run ends and its slot is freed, even if the step it was on never answers. The agents list (`/agents`) shows the step each running task is on, for example `classify` or `agent`, so you can see where a run is waiting.
+
+### Check it worked
+
+1. List the agents: `curl -s http://127.0.0.1:18800/agents`. Under the agent, `runningTasks` shows each run with its `id` and `step`.
+2. Cancel the run: `curl -s -X POST http://127.0.0.1:18800/api/tasks/<id>/cancel`. The answer is `{"ok":true,…}`.
+3. List the agents again. The run is gone and the agent's `active` count went down by one.
+
+### If something is wrong
+
+- **A run ended with "timed out after …s".** Its limit was too short for the work. Raise `timeoutMinutes` (or the job's `timeout`) and run it again.
+- **A cancelled run is still listed.** Check the daemon log for a line ending in `aborted in step "<name>"`. If it is missing, the cancel did not reach this daemon: check that you cancelled on the machine running the agent.
+
 <!-- No screenshot needed: field reference, with the web flow shown in Settings. -->
