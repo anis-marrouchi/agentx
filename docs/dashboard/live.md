@@ -13,7 +13,7 @@ Live is a current view. For completed work and the route it took, use [Activity]
 A busy agent shows a **running** card with the channel the task came from, how long it has been running, and the start of the message.
 
 1. **Browser:** open the dashboard and select the **Live** tab.
-2. Find the agent's card. A running task shows **running · <channel>** and a timer.
+2. Find the agent's card. A running task shows **running · `channel`**, where `channel` is where the task came from, and a timer.
 3. To watch the agent work, select the task card. Its progress opens as it happens.
 4. To add something to the conversation, select **✎ update**. The Task page opens; type your message and send it. The current step keeps running, and your message is handled next.
 5. To stop the task, select **✕ stop**, then confirm.
