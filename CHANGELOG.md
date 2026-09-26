@@ -2,6 +2,27 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.44.0](https://github.com/anis-marrouchi/agentx/compare/v0.43.0...v0.44.0) (2026-09-26)
+
+
+### Features
+
+* **crons:** enforce report, propose and act autonomy per routine ([#89](https://github.com/anis-marrouchi/agentx/issues/89)) ([a1a0305](https://github.com/anis-marrouchi/agentx/commit/a1a03057ef6529a22759abae6745f95e5081e706)), closes [#80](https://github.com/anis-marrouchi/agentx/issues/80)
+* **crons:** link cron runs to their task for watch and steer ([#85](https://github.com/anis-marrouchi/agentx/issues/85)) ([e6f4c89](https://github.com/anis-marrouchi/agentx/commit/e6f4c8974fc85b24b9d6ac78665ddbd170d008ad)), closes [#76](https://github.com/anis-marrouchi/agentx/issues/76)
+* **mac-helper:** post banners as AgentX Helper with the AgentX logo ([95d8bd7](https://github.com/anis-marrouchi/agentx/commit/95d8bd71933a40805e84442cc572d1138b6455ec)), closes [#74](https://github.com/anis-marrouchi/agentx/issues/74)
+* **mesh:** routines view for schedules and triggered workflows ([#86](https://github.com/anis-marrouchi/agentx/issues/86)) ([cdd564a](https://github.com/anis-marrouchi/agentx/commit/cdd564a7a45bf43a63e20e4f4460c7c0e672e9fe)), closes [#77](https://github.com/anis-marrouchi/agentx/issues/77)
+* **notify:** banner through the helper, icon set from agentx.json ([95d3eb6](https://github.com/anis-marrouchi/agentx/commit/95d3eb67c7619d68f69e10aa28823813a2df3c65)), closes [#74](https://github.com/anis-marrouchi/agentx/issues/74)
+* **notify:** local Mac banner and sound, configurable and documented ([27c55a0](https://github.com/anis-marrouchi/agentx/commit/27c55a0673afbd1c7177aa27b204545d5060a778))
+* **notify:** local Mac banner and sound, set from agentx.json ([6f40b60](https://github.com/anis-marrouchi/agentx/commit/6f40b60ddc3a1bd71181a3d930d8e5995c93783d)), closes [#74](https://github.com/anis-marrouchi/agentx/issues/74)
+* **routines:** fire one routine on demand via POST /routines/:id/fire ([#84](https://github.com/anis-marrouchi/agentx/issues/84)) ([6688e88](https://github.com/anis-marrouchi/agentx/commit/6688e885dbef1a2d2f7bd14aadab847b8b4556b1))
+* **schedule:** agent schedule tool with operator approval ([#87](https://github.com/anis-marrouchi/agentx/issues/87)) ([503c44a](https://github.com/anis-marrouchi/agentx/commit/503c44ac5a5c7094d90b41a83e7622bf655c70df)), closes [#79](https://github.com/anis-marrouchi/agentx/issues/79)
+* **workflows:** loop guard for event-triggered workflows ([#82](https://github.com/anis-marrouchi/agentx/issues/82)) ([457b71c](https://github.com/anis-marrouchi/agentx/commit/457b71c3ec281436681088ae686d71e8c6d334d5))
+
+
+### Bug Fixes
+
+* **daemon:** mesh auth for the memory API and the right port in the remember skill ([#101](https://github.com/anis-marrouchi/agentx/issues/101)) ([743c391](https://github.com/anis-marrouchi/agentx/commit/743c3918680cfe3c008d0f26a53b4a4cb7313121))
+
 ## [0.43.0](https://github.com/anis-marrouchi/agentx/compare/v0.42.0...v0.43.0) (2026-09-26)
 
 
