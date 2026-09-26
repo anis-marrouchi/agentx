@@ -552,6 +552,10 @@ const cronJobSchema = z.object({
     chatId: z.string(),
     accountId: z.string().optional(),
   }).optional(),
+  /** Secret that lets an external system fire this job now via
+   *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
+   *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
+  fireToken: z.string().optional(),
 }).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
 })

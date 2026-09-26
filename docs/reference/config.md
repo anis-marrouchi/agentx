@@ -12,7 +12,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `agents` | Workspace, engine (`tier`), model, mentions and concurrency per agent |
 | `providers` | API credentials and provider defaults |
 | `channels` | Enabled adapters and their routing rules |
-| `crons` | Timed prompts or commands, timezone and failure behavior |
+| `crons` | Timed prompts or commands, timezone, failure behavior and an optional `fireToken` ([fire a routine](/jobs/fire-a-routine)) |
 | `workflows` | Whether the workflow engine is enabled |
 | `dashboard` | Browser bind address, port and `daemonUrl` |
 | `mesh` | Peer URLs and authentication |

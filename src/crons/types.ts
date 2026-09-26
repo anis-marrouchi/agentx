@@ -40,4 +40,6 @@ export interface CronRunResult {
   /** Was this a retry attempt? */
   isRetry?: boolean
   retryAttempt?: number
+  /** Started on demand via POST /routines/:id/fire, not by the schedule. */
+  fired?: boolean
 }
