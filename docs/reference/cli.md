@@ -93,6 +93,18 @@ agentx attach as coder-agent
 
 Start with the [visual workflow guide](../tutorials/first-workflow.md) before enabling a live automation.
 
+## Agent memory
+
+After each reply, agentx pulls facts out of the conversation and gives them to the agent in later tasks. Credentials are never kept. Facts from channels anyone can write to, such as a public web chat, wait for your approval before agents see them.
+
+| Command | What it does |
+|---|---|
+| `agentx memory facts summary` | Count each agent's facts by source trust and review state |
+| `agentx memory facts held` | List facts waiting for approval |
+| `agentx memory facts approve <id> --agent <id>` | Let a held fact be used |
+| `agentx memory facts reject <id> --agent <id>` | Keep a held fact out for good |
+| `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
+
 ## Computer use and teaching
 
 Install the [desktop assistant](../dashboard/voice.md) first. These tools interact with the current macOS desktop, not the browser tab displaying this documentation.

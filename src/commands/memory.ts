@@ -1,7 +1,10 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { readFileSync } from "fs"
+import { existsSync, readdirSync } from "fs"
+import { resolve } from "path"
 import { AgentMemory, type MemoryType } from "@/agents/agent-memory"
+import { MemoryStore } from "@/agents/memory-store"
 
 // --- agentx memory — audit + edit an agent's structured memory ---
 //
@@ -136,6 +139,90 @@ memory
       return
     }
     console.log(md)
+  })
+
+// --- agentx memory facts — the facts extracted after every reply ---
+//
+// A second, automatic memory: after each reply a small model pulls out
+// facts and they are injected into later tasks by relevance. Facts from
+// external sources wait here for review (see agents/memory-trust.ts), and
+// credentials stored before extraction stopped keeping them can be purged.
+
+const facts = memory
+  .command("facts")
+  .description("review facts extracted from conversations (held, approve, reject, scrub)")
+
+/** Agents with an extracted-facts file, or the one asked for. */
+function factAgents(agent?: string): string[] {
+  if (agent) return [agent]
+  const dir = resolve(process.cwd(), ".agentx/memory")
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter((f) => f.endsWith(".jsonl")).map((f) => f.slice(0, -6)).sort()
+}
+
+facts
+  .command("summary")
+  .description("count facts per agent by source trust and review state")
+  .option("--agent <id>", "one agent (default: all)")
+  .action((opts: { agent?: string }) => {
+    const store = new MemoryStore()
+    for (const id of factAgents(opts.agent)) {
+      const counts = Object.entries(store.trustSummary(id)).map(([k, n]) => `${k}: ${n}`).join(", ")
+      console.log(`  ${chalk.bold(id)}  ${counts || chalk.dim("(none)")}`)
+    }
+  })
+
+facts
+  .command("held")
+  .description("list facts waiting for review before they are used")
+  .option("--agent <id>", "one agent (default: all)")
+  .action((opts: { agent?: string }) => {
+    const store = new MemoryStore()
+    let total = 0
+    for (const id of factAgents(opts.agent)) {
+      for (const f of store.held(id)) {
+        total++
+        console.log(`  ${chalk.bold(id)} ${chalk.cyan(f.id)}  ${chalk.dim(`${f.source.channel} · ${f.source.date}`)}`)
+        console.log(`    ${f.content}`)
+      }
+    }
+    if (total === 0) console.log(chalk.dim("  nothing held"))
+  })
+
+for (const decision of ["approve", "reject"] as const) {
+  facts
+    .command(decision)
+    .description(decision === "approve"
+      ? "let a held fact be used in prompts"
+      : "keep a held fact out of prompts for good")
+    .requiredOption("--agent <id>", "agent id")
+    .argument("<id>", "fact id (from `agentx memory facts held`)")
+    .action((id: string, opts: { agent: string }) => {
+      const store = new MemoryStore()
+      if (!store.review(opts.agent, id, decision === "approve" ? "approved" : "rejected")) {
+        console.error(chalk.red(`  no fact "${id}" for agent "${opts.agent}"`))
+        process.exitCode = 1; return
+      }
+      console.log(chalk.green(`  ✓ ${id} ${decision === "approve" ? "approved" : "rejected"}`))
+    })
+}
+
+facts
+  .command("scrub")
+  .description("find stored facts that contain credentials; --apply deletes them")
+  .option("--agent <id>", "one agent (default: all)")
+  .option("--apply", "delete them (default: count only)")
+  .action((opts: { agent?: string; apply?: boolean }) => {
+    const store = new MemoryStore()
+    let total = 0
+    for (const id of factAgents(opts.agent)) {
+      const n = store.scrubSecrets(id, !!opts.apply)
+      if (n) console.log(`  ${chalk.bold(id)}  ${n}`)
+      total += n
+    }
+    console.log(opts.apply
+      ? chalk.green(`  ✓ deleted ${total} fact(s) containing credentials`)
+      : chalk.dim(`  ${total} fact(s) contain credentials (never injected). Run with --apply to delete them.`))
   })
 
 async function readStdin(): Promise<string> {

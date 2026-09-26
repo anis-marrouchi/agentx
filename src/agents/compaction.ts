@@ -84,6 +84,8 @@ export async function compactSession(
   messages: SessionMessage[],
   agentId: string,
   memoryStore?: MemoryStore,
+  /** The session's chat, so flushed facts carry its channel's trust. */
+  origin?: { channel: string; chatId: string },
 ): Promise<CompactionResult> {
   if (messages.length < MIN_MESSAGES_TO_COMPACT) {
     return {
@@ -116,7 +118,7 @@ export async function compactSession(
   let memoryFlushed = false
   if (memoryStore) {
     try {
-      await flushMemories(agentId, toCompact, memoryStore)
+      await flushMemories(agentId, toCompact, memoryStore, origin)
       memoryFlushed = true
     } catch {
       // Best-effort memory flush
@@ -258,6 +260,7 @@ async function flushMemories(
   agentId: string,
   messages: SessionMessage[],
   store: MemoryStore,
+  origin?: { channel: string; chatId: string },
 ): Promise<void> {
   // Build a conversation block from the messages
   const userMessages: string[] = []
@@ -279,7 +282,7 @@ async function flushMemories(
     agentId,
     userMessages.join("\n"),
     agentMessages.join("\n"),
-    { channel: "compaction", chatId: "flush", sender: "compaction" },
+    { channel: origin?.channel ?? "compaction", chatId: origin?.chatId ?? "flush", sender: "compaction" },
     store,
   )
 }
