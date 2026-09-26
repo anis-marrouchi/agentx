@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.46.1](https://github.com/anis-marrouchi/agentx/compare/v0.46.0...v0.46.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **voice:** reach ffmpeg from the login item and never forward Whisper errors ([#119](https://github.com/anis-marrouchi/agentx/issues/119)) ([6223b4a](https://github.com/anis-marrouchi/agentx/commit/6223b4a2d67a3b7dd346d8f01150ea56573ee675))
+
 ## [0.46.0](https://github.com/anis-marrouchi/agentx/compare/v0.45.1...v0.46.0) (2026-09-26)
 
 
