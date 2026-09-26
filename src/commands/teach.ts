@@ -17,6 +17,7 @@ import {
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { verify as verifyClaim } from "@/computer-use/verify"
+import { readScreenSettings } from "@/computer-use/capture-settings"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, pickVoiceId, resolveAgentVoice, voiceRef } from "@/voice/agent-voice"
@@ -262,11 +263,16 @@ export const teach = new Command()
       // runs last so the page has settled. A refuted or inconclusive claim
       // stops the lesson: continuing would narrate a result nobody
       // verified, which is the failure this whole path exists to prevent.
+      //
+      // After an action, the capture also waits for the screen to stop
+      // moving: a fixed pause is either too short for a slow page or
+      // wasted on a fast one, and a half-drawn page is judged wrongly.
       if (step.verify) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, "Checking that worked…", "waiting")
+        const acted = Boolean(step.click || step.type || step.key)
         let checked
         try {
-          checked = await verifyClaim(step.verify)
+          checked = await verifyClaim(step.verify, acted ? { settle: true, screen: readScreenSettings() } : {})
         } catch (e: any) {
           checked = null
           console.log(chalk.yellow(`      ? could not check: ${e?.message ?? e}`))

@@ -12,6 +12,9 @@ import {
   type Sender,
 } from "@/notify"
 import { loadDaemonConfig } from "@/daemon/config"
+import { proofAlert, type Proof } from "@/notify/proof"
+import { resolveRegion } from "@/computer-use/capture"
+import { readScreenSettings } from "@/computer-use/capture-settings"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -57,7 +60,7 @@ function daemonSender(defaultChannel: string, defaultChatId: string): Sender {
  *  sets them, minus whatever the flags switch off. A missing or invalid
  *  config means the defaults: a notification should never fail over a
  *  settings file. */
-function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean }): LocalAlert {
+function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean }): { alert: LocalAlert; banner: boolean } {
   let local
   try {
     local = loadDaemonConfig(opts.config).notifications.local
@@ -67,7 +70,7 @@ function configuredAlert(opts: { config?: string; sound: boolean; banner: boolea
   const settings = localSettings(local)
   if (!opts.sound) settings.sound = false
   if (!opts.banner) settings.banner = false
-  return localAlert(settings)
+  return { alert: localAlert(settings), banner: settings.banner }
 }
 
 export const notify = new Command()
@@ -83,13 +86,28 @@ export const notify = new Command()
   .option("--no-sound", "do not play a sound on this machine")
   .option("--no-banner", "do not show a banner on this machine")
   .option("-c, --config <path>", "agentx.json to read local settings from (default: ./agentx.json)")
+  .option("--proof", "capture the banner as it shows and print the frame's path")
   .option("--status", "show Focus state and anything being held")
   .option("--flush", "deliver everything held, as one message")
   .option("--json", "emit the result as JSON")
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
     const state = readFocus()
-    const alert = configuredAlert(opts)
+    const { alert, banner } = configuredAlert(opts)
+    // --proof applies to this call's own banner only: not to --flush, and
+    // not to the fallback alert after a failed push.
+    let sendAlert = alert
+    let proof: (() => Proof) | undefined
+    if (opts.proof && !banner) {
+      proof = () => ({ shot: null, error: "the banner is off, so there is nothing to capture" })
+    } else if (opts.proof) {
+      // The banner region from agentx.json when one is named
+      // "notifications", else the helper's built-in corner.
+      const settings = readScreenSettings(opts.config)
+      const wrapped = proofAlert(alert, resolveRegion("notifications", settings), { settings })
+      sendAlert = wrapped.alert
+      proof = wrapped.proof
+    }
 
     if (opts.status) {
       const waiting = queue.list()
@@ -131,10 +149,11 @@ export const notify = new Command()
           chatId: opts.chatId,
         },
         send,
-        { queue, alert, focus: state },
+        { queue, alert: sendAlert, focus: state },
       )
+      const p = proof?.()
       if (opts.json) {
-        console.log(JSON.stringify(result, null, 2))
+        console.log(JSON.stringify(p ? { ...result, proof: p } : result, null, 2))
         return
       }
       const mark = result.delivered ? chalk.green("→") : chalk.yellow("⏸")
@@ -142,6 +161,8 @@ export const notify = new Command()
       if (result.held) {
         console.log(chalk.dim("    it will arrive with the others when Focus ends"))
       }
+      if (p?.shot) console.log(`  ${p.error ? chalk.yellow("?") : chalk.green("✓")} banner: ${p.shot.path}${chalk.dim(` · ${p.shot.waitedMs}ms`)}`)
+      if (p?.error) console.log(chalk.yellow(`    ${p.error}`))
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))
       // A failed push should still show up on this machine rather than

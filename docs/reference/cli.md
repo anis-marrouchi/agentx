@@ -54,7 +54,7 @@ agentx desktop start
 | `agentx config get <path>` | Read one configuration field |
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
 | `agentx doctor` | Check local installation and prerequisites |
-| `agentx notify "<message>"` | Push to your phone and show a Mac banner, held during Focus; see [Get notified](../jobs/notifications.md) |
+| `agentx notify "<message>"` | Push to your phone and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
 | `agentx notifications show` | Notification routing, the local banner and sound, ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
 | `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for phone push |
@@ -121,6 +121,11 @@ Install the [desktop assistant](../dashboard/voice.md) first. These tools intera
 | `agentx look "What is visible?"` | Capture the focused window and request a vision observation |
 | `agentx look "The command palette is open" --verify --json` | Check a claim and return structured evidence |
 | `agentx look "What is visible?" --screen` | Capture the full screen instead |
+| `agentx look "The page has loaded" --verify --settle` | Wait for the window to stop moving before looking |
+| `agentx screen capture --region notifications -- <command>` | Run a command and capture what it changed; see [Capture the screen at the right moment](../jobs/screen-capture.md) |
+| `agentx screen capture --until-changed` / `--until-stable` | Capture once a region changes, or once it stops moving |
+| `agentx screen recent --seconds 5` | Frames from the in-memory buffer (`screen.buffer`) |
+| `agentx screen config` | Show or change the `screen` settings: size budget, waits, named regions, buffer |
 | `agentx teach` | List bundled lessons |
 | `agentx teach <lesson>` | Run a lesson; can narrate, point, click, type, and verify |
 | `agentx teach <lesson> --record --record-dir <directory>` | Record with macOS screencapture |

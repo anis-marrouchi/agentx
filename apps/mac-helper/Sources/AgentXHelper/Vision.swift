@@ -121,6 +121,11 @@ enum Vision {
         guard let image = CGWindowListCreateImage(
             rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution])
         else { return false }
+        return write(scaled(image, maxWidth: maxWidth, maxPixels: maxPixels), to: path)
+    }
+
+    /// The image within the pixel budget and width cap, aspect kept.
+    static func scaled(_ image: CGImage, maxWidth: Int? = nil, maxPixels: Int? = nil) -> CGImage {
         var target = maxWidth
         if let budget = maxPixels, budget > 0 {
             let area = image.width * image.height
@@ -131,8 +136,11 @@ enum Vision {
                 target = min(target ?? fit, fit)
             }
         }
-        let out = target.flatMap { downscale(image, maxWidth: $0) } ?? image
-        let rep = NSBitmapImageRep(cgImage: out)
+        return target.flatMap { downscale(image, maxWidth: $0) } ?? image
+    }
+
+    static func write(_ image: CGImage, to path: String) -> Bool {
+        let rep = NSBitmapImageRep(cgImage: image)
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil
     }
@@ -165,11 +173,8 @@ enum Vision {
         guard let now = CGWindowListCreateImage(a, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]),
               let before = b
         else { return nil }
-        guard let g1 = grid(before), let g2 = grid(now), g1.count == g2.count, !g1.isEmpty
-        else { return nil }
-        var total = 0.0
-        for i in 0..<g1.count { total += abs(Double(g1[i]) - Double(g2[i])) / 255.0 }
-        return total / Double(g1.count)
+        guard let g1 = grid(before), let g2 = grid(now) else { return nil }
+        return Watch.difference(g1, g2)
     }
 
     static func snapshot(_ rect: CGRect) -> CGImage? {
@@ -178,7 +183,7 @@ enum Vision {
 
     /// 16×16 greyscale, which is plenty to notice a page changing and
     /// cheap enough to run between every action.
-    private static func grid(_ image: CGImage, side: Int = 16) -> [UInt8]? {
+    static func grid(_ image: CGImage, side: Int = 16) -> [UInt8]? {
         let space = CGColorSpaceCreateDeviceGray()
         var pixels = [UInt8](repeating: 0, count: side * side)
         guard let ctx = CGContext(data: &pixels, width: side, height: side,

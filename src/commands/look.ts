@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { look as lookAtScreen, type Region } from "@/computer-use/look"
 import { verify } from "@/computer-use/verify"
+import { readScreenSettings } from "@/computer-use/capture-settings"
 
 // --- `agentx look "<what you want to know>"` ---
 //
@@ -33,6 +34,7 @@ export const look = new Command()
   .option("--menubar", "capture the menu bar instead of the focused window")
   .option("--screen", "capture the whole screen instead of the focused window")
   .option("--rect <x,y,w,h>", "capture an explicit region")
+  .option("--settle", "wait for the region to stop moving before capturing it")
   .option("--model <id>", "vision model to use")
   .option("--json", "emit the result as JSON")
   .action(async (question: string, opts) => {
@@ -50,7 +52,7 @@ export const look = new Command()
 
     try {
       if (opts.verify) {
-        const v = await verify(question, { region, model: opts.model })
+        const v = await verify(question, { region, model: opts.model, settle: opts.settle, screen: opts.settle ? readScreenSettings() : undefined })
         if (opts.json) {
           console.log(JSON.stringify({
             claim: v.claim, outcome: v.outcome, ok: v.ok,
@@ -73,7 +75,7 @@ export const look = new Command()
         process.exit(v.outcome === "confirmed" ? 0 : v.outcome === "refuted" ? 3 : 4)
       }
 
-      const s = await lookAtScreen(question, { region, model: opts.model })
+      const s = await lookAtScreen(question, { region, model: opts.model, settle: opts.settle, screen: opts.settle ? readScreenSettings() : undefined })
       if (opts.json) {
         console.log(JSON.stringify(s, null, 2))
         return

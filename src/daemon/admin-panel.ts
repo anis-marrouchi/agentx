@@ -5,6 +5,7 @@ import { mutateAgentxConfig } from "./config-mutate"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
+import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
@@ -115,6 +116,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // Notifications — single mutation endpoint that takes a partial body
       // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
       "POST /api/admin/notifications":   () => updateNotifications(body),
+      "POST /api/admin/screen":          () => updateScreen(body),
       // Webhook triggers + defaultWorkflow editor (in addition to existing
       // /api/admin/webhooks add/edit/delete).
       "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
@@ -347,7 +349,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
 }
 
 // ========================================================================
@@ -1456,6 +1458,17 @@ async function updateNotifications(body: any) {
     }
     if (changes.length === 0) throw new Error("nothing to update")
     return `notifications updated (${changes.join(", ")})`
+  })
+  return { summary }
+}
+
+// Screen capture — mirrors `agentx screen config`. The daemon applies a
+// change on its config reload, buffer included; no restart.
+async function updateScreen(body: any) {
+  if (!body || typeof body !== "object") throw new Error("nothing to update")
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.screen = patchScreen(cfg.screen, body)
+    return `screen updated (buffer ${cfg.screen.buffer?.enabled ? "on" : "off"})`
   })
   return { summary }
 }

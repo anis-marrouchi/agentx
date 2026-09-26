@@ -222,6 +222,7 @@ agentx notify --flush         # deliver what is held now
 | `--channel`, `--chat-id` | Deliver somewhere other than ntfy |
 | `--no-banner`, `--no-sound` | Skip the banner or the sound for this message |
 | `-c <path>` | Read the settings from this `agentx.json` |
+| `--proof` | Capture the banner as it shows and print the picture's location; see [Capture the screen at the right moment](./screen-capture.md) |
 | `--json` | Print the result as JSON |
 
 - `agentx notify` reads its settings from `./agentx.json`. When it runs from another folder, as scheduled jobs do, add `-c /path/to/agentx.json`. Without a settings file it uses the defaults.
