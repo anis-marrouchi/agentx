@@ -4,6 +4,8 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
+import { localSettings, patchLocal } from "@/notify/local"
+import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
 import type { TopbarPeer } from "./topbar"
@@ -315,6 +317,8 @@ function getAdminState() {
       taskError: notificationsCfg.on?.taskError !== false,
       taskQueued: !!notificationsCfg.on?.taskQueued,
     },
+    local: localSettings(notificationsCfg.local),
+    ntfy: ntfyStatus((cfg.channels as any)?.ntfy),
   }
   // Actions — load all registered actions for the Actions tab.
   let actions: Array<any> = []
@@ -1439,6 +1443,15 @@ async function updateNotifications(body: any) {
         if (!Number.isFinite(n) || n < 0) throw new Error("longTaskThreshold must be a non-negative number")
         cfg.notifications.longTaskThreshold = n
         changes.push(`threshold=${n}s`)
+      }
+      if ("local" in body && body.local && typeof body.local === "object") {
+        cfg.notifications.local = patchLocal(cfg.notifications.local, body.local)
+        changes.push("local=" + JSON.stringify(cfg.notifications.local))
+      }
+      if ("ntfy" in body && body.ntfy && typeof body.ntfy === "object") {
+        cfg.channels = cfg.channels || {}
+        cfg.channels.ntfy = patchNtfy(cfg.channels.ntfy, body.ntfy)
+        changes.push(`ntfy ${cfg.channels.ntfy.enabled ? "on" : "off"} (restart the daemon to apply)`)
       }
     }
     if (changes.length === 0) throw new Error("nothing to update")

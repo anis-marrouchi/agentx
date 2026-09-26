@@ -38,6 +38,7 @@ import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
+import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import {
@@ -522,10 +523,13 @@ export class AgentXDaemon {
           text: message,
           title,
           priority,
-          agentId: "secretary-agent",
+          agentId: this.config.node.defaultAgent,
         } as any)
       },
       (m) => this.log(m),
+      // Read the settings per flush so a dashboard change applies without
+      // a restart.
+      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
 
     // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
@@ -1259,16 +1263,11 @@ export class AgentXDaemon {
   private scheduleMidnightHook(): void {
     const scheduleNext = () => {
       const now = new Date()
-      // Next midnight in Africa/Tunis (5s buffer to ensure day rollover)
-      const tunisStr = now.toLocaleString("en-US", { timeZone: "Africa/Tunis" })
-      const tunisNow = new Date(tunisStr)
-
-      const target = new Date(tunisNow)
+      // Next midnight in the host's timezone (5s buffer to ensure day rollover)
+      const target = new Date(now)
       target.setDate(target.getDate() + 1)
       target.setHours(0, 0, 5, 0)
-
-      const tunisOffset = tunisNow.getTime() - now.getTime()
-      const delay = target.getTime() - tunisOffset - now.getTime()
+      const delay = target.getTime() - now.getTime()
 
       this.log(`  Cost tracking: next run in ${Math.round(delay / 60_000)}min`)
 

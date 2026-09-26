@@ -17,6 +17,7 @@ import { IDLE_SECONDS, PresenceOverlay, presenceLook, reapPresence, type Presenc
 import type { SpeechOut } from "@/voice/speaker"
 import type { LineModel } from "@/voice/talk-model"
 import { talkSpeaker, type VoiceSettings } from "@/voice/agent-voice"
+import { DEFAULT_LISTENER } from "@/voice/talk"
 
 const run = promisify(execFile)
 /** Budget for the per-turn decision; Jev answers in about half a second. */
@@ -101,7 +102,9 @@ export class PresenceHost {
    *  `app`; without one, about the app in front when the lesson starts. */
   lesson(agentId: string, goal: string, mode: TeachMode, speech: SpeechOut, model: (system: string) => LineModel, app?: string): LiveTeach {
     const agents = this.agents()
-    const speaker = talkSpeaker(agentId, agents, false, this.deps.voiceSettings?.())
+    const settings = this.deps.voiceSettings?.()
+    const speaker = talkSpeaker(agentId, agents, false, settings)
+    const listener = settings?.listener ?? DEFAULT_LISTENER
     const look = presenceLook(agentId, agents[agentId])
     const slot = this.acquire(agentId, "lesson")
     // The lesson ends by closing its presence: that releases the slot,
@@ -114,13 +117,13 @@ export class PresenceHost {
       close: () => { if (this.slots.get(agentId) === slot && slot.use === "lesson") this.hide(agentId) },
     }
     return new LiveTeach(
-      { goal, mode, speaker, actionsAllowed: look.allowActions, app },
+      { goal, mode, speaker, actionsAllowed: look.allowActions, app, listener },
       {
         readScreen: this.deps.screen?.readScreen ?? readScreenView,
         act: this.deps.screen?.act ?? helperAct,
         presence,
         speech,
-        model: model(teachSystemPrompt(speaker.persona, "Anis")),
+        model: model(teachSystemPrompt(speaker.persona, listener)),
       },
     )
   }

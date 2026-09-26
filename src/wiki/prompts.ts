@@ -71,7 +71,7 @@ The wiki is a compounding knowledge base of interlinked markdown articles that a
 
 Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
-- People: \`people/anis-marrouchi.md\`
+- People: \`people/jane-doe.md\`
 - Projects: \`projects/globex-system-v2.md\`
 - Concepts: \`concepts/staging-deployment.md\`
 - Events: \`events/YYYY-MM-DD-<slug>.md\` (date in path)
@@ -276,7 +276,7 @@ Corroboration across agents (shown per candidate) is a confidence signal, not a 
 
 Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
-- People: \`people/anis-marrouchi.md\`
+- People: \`people/jane-doe.md\`
 - Projects: \`projects/globex-system-v2.md\`
 - Concepts: \`concepts/staging-deployment.md\`
 - Events: \`events/YYYY-MM-DD-<slug>.md\` (date in path)

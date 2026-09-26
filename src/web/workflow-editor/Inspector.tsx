@@ -722,8 +722,8 @@ function TriggerCronForm({ node, patchData }: FormProps) {
       <Field label="When it runs" hint="5 fields: minute hour day month weekday. E.g. '0 9 * * 1-5' = 9am Mon–Fri.">
         <Input mono value={String(cfg.spec ?? "0 * * * *")} onChange={(v) => patchData({ spec: v })} placeholder="0 9 * * *" />
       </Field>
-      <Field label="Timezone" hint="IANA timezone (e.g. Africa/Tunis, America/New_York). Defaults to UTC.">
-        <Input mono value={String(cfg.timezone ?? "UTC")} onChange={(v) => patchData({ timezone: v })} placeholder="Africa/Tunis" />
+      <Field label="Timezone" hint="IANA timezone (e.g. Europe/London, America/New_York). Defaults to UTC.">
+        <Input mono value={String(cfg.timezone ?? "UTC")} onChange={(v) => patchData({ timezone: v })} placeholder="Europe/London" />
       </Field>
       <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 4 }}>
         Fires the workflow on the schedule. The trigger payload is empty — downstream nodes won't have <span className="mono">{"{{start.*}}"}</span> data unless you wire it.

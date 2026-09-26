@@ -88,7 +88,7 @@ const PALETTE = ["#2979FF", "#FFB300", "#22B573", "#F23A3A", "#8E5CF7", "#00A3A3
 
 const word = (w: string) => (w.length <= 4 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))
 
-/** "noqta/minbar" → minbar line; "mtgl/_mesh" → the client's own line. */
+/** "acme/web" → web line; "globex/_mesh" → the client's own line. */
 export function lineOf(projectId: string): { id: string; name: string; code: string; project: string | null } {
   const [head, ...rest] = projectId.split("/")
   if (head === "unmapped" || !head) return { id: "unmapped", name: "Unassigned", code: "··", project: null }

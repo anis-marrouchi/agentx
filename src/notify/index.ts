@@ -1,10 +1,10 @@
-import { execFile } from "child_process"
-import { existsSync } from "fs"
 import { readFocus, focusLabel, type FocusState } from "./focus"
 import { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
+import { localAlert, DEFAULT_LOCAL, type LocalAlert } from "./local"
 
 export { readFocus, focusLabel, type FocusState } from "./focus"
 export { NotificationQueue, digest, byDestination, type PendingNotification } from "./queue"
+export { localAlert, localSettings, DEFAULT_LOCAL, type LocalAlert, type LocalSettings } from "./local"
 
 // Telling the person something, at a moment they have agreed to be told.
 //
@@ -14,11 +14,12 @@ export { NotificationQueue, digest, byDestination, type PendingNotification } fr
 //      not dropped and not sent anyway.
 //   2. Otherwise hand it to the channel router, which already knows how to
 //      push (ntfy), so this adds no new delivery path.
-//   3. Play a sound locally, because a push to a phone in another room is
-//      not a notification to someone sitting at the machine.
+//   3. Show a banner and play a sound locally, because a push to a phone
+//      in another room is not a notification to someone sitting at the
+//      machine. A held message gets neither: Focus holds all of it.
 //
-// The sound is its own step rather than a property of the push for a
-// reason: ntfy's sound plays on the phone, and the person this is for is
+// The local alert is its own step rather than a property of the push for
+// a reason: ntfy's sound plays on the phone, and the person this is for is
 // usually in front of the Mac that raised the event.
 
 export type Sender = (msg: {
@@ -51,19 +52,23 @@ export interface NotifyResult {
   reason: string
 }
 
-/** macOS system sounds, by name. Glass is the gentlest of the set that is
- *  still audible over a keyboard — Basso and Sosumi are alerts, Funk and
- *  Frog are jokes, and Ping is the one every other app already uses. */
-const DEFAULT_SOUND = "Glass"
+/** What a caller passes to control the local step: its own alert, or
+ *  false for none. Omitted means the defaults (banner and Glass). */
+type AlertOption = LocalAlert | false
+
+function alertFor(opt: AlertOption | undefined): LocalAlert | null {
+  if (opt === false) return null
+  return opt ?? localAlert(DEFAULT_LOCAL)
+}
 
 export async function notify(
   input: NotifyInput,
   send: Sender,
-  opts: { queue?: NotificationQueue; sound?: string | false; focus?: FocusState } = {},
+  opts: { queue?: NotificationQueue; alert?: AlertOption; focus?: FocusState } = {},
 ): Promise<NotifyResult> {
   const queue = opts.queue ?? new NotificationQueue()
   const state = opts.focus ?? readFocus()
-  const title = input.title ?? "Secretary"
+  const title = input.title ?? "AgentX"
 
   if (state.active && !input.urgent) {
     const entry: PendingNotification = {
@@ -85,7 +90,7 @@ export async function notify(
     title, message: input.message, priority: input.priority,
     channel: input.channel, chatId: input.chatId,
   })
-  if (opts.sound !== false) playSound(typeof opts.sound === "string" ? opts.sound : DEFAULT_SOUND)
+  await alertFor(opts.alert)?.(title, input.message)
   return { delivered: true, held: false, reason: state.active ? "urgent, sent during Focus" : "sent" }
 }
 
@@ -97,7 +102,7 @@ export async function notify(
  */
 export async function flushHeld(
   send: Sender,
-  opts: { queue?: NotificationQueue; sound?: string | false } = {},
+  opts: { queue?: NotificationQueue; alert?: AlertOption } = {},
 ): Promise<number> {
   const queue = opts.queue ?? new NotificationQueue()
   // Read, send, THEN clear.
@@ -125,23 +130,8 @@ export async function flushHeld(
     })
   }
   queue.drain()
-  if (opts.sound !== false) playSound(typeof opts.sound === "string" ? opts.sound : DEFAULT_SOUND)
+  // One banner for the whole backlog, whatever channels it went to.
+  const all = digest(waiting)
+  if (all) await alertFor(opts.alert)?.(all.title, all.message)
   return waiting.length
-}
-
-/**
- * Play a short sound on this machine.
- *
- * Fire-and-forget and never fatal: a notification that failed to make a
- * noise still arrived, and a caller should not have to handle an audio
- * error to tell someone their build finished.
- */
-export function playSound(name = DEFAULT_SOUND): void {
-  const path = `/System/Library/Sounds/${name}.aiff`
-  if (!existsSync(path)) return
-  try {
-    execFile("/usr/bin/afplay", ["-v", "0.4", path], () => {})
-  } catch {
-    /* no audio on this machine, or no afplay — not worth reporting */
-  }
 }

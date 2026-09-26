@@ -266,10 +266,24 @@ case "presence":
                  idle: flag("idle").flatMap { TimeInterval($0) } ?? 60,
                  posFile: flag("pos-file"))
 
+case "notify":
+    // A banner under AgentX Helper's name and icon. Exit 2 means macOS has
+    // not allowed it (yet), so the caller can fall back to osascript.
+    guard let title = flag("title"), let message = flag("message") else {
+        fail("notify needs --title and --message")
+    }
+    let outcome = Notify.post(title: title, message: message)
+    guard outcome == .posted else {
+        fail(outcome == .notAllowed
+             ? "notifications not allowed — System Settings › Notifications › AgentX Helper"
+             : "macOS refused the notification", code: outcome.rawValue)
+    }
+    FileHandle.standardOutput.write(#"{"ok":true,"notified":true}"#.data(using: .utf8)!)
+
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))
 
 default:
-    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence or trusted")
+    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence, notify or trusted")
 }

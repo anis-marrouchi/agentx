@@ -107,7 +107,7 @@ export const watchCommand = new Command()
   .option("--off", "disable scheduled extraction")
   .option("--via <agentId>", "agent that runs the extraction (LLM distillation goes through its session)")
   .option("--min-occurrences <n>", "recurrences before a pattern becomes a draft", String(DEFAULT_MIN_OCCURRENCES))
-  .option("--timezone <tz>", "IANA timezone", "Africa/Tunis")
+  .option("--timezone <tz>", "IANA timezone (default: this machine's)", Intl.DateTimeFormat().resolvedOptions().timeZone)
   .option("-c, --config <path>", "path to agentx.json")
   .option("--dry-run", "print what would be written without writing")
   .action(async (opts) => {

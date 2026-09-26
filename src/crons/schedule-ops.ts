@@ -27,9 +27,9 @@ export interface ScheduleApproval {
   requestedAt: string
 }
 
-/** Default timezone for schedules created without one. Kept identical to the
- *  CLI's historical `--timezone` default. */
-export const DEFAULT_SCHEDULE_TIMEZONE = "Africa/Tunis"
+/** Default timezone for schedules created without one: this machine's, the
+ *  same as the CLI's `--timezone` default. */
+export const DEFAULT_SCHEDULE_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 export const DEFAULT_SCHEDULE_TIMEOUT = 600
 
 export const SUPPORTED_PHRASES_HINT =

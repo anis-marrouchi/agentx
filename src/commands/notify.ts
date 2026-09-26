@@ -6,9 +6,12 @@ import {
   readFocus,
   focusLabel,
   NotificationQueue,
-  playSound,
+  localAlert,
+  localSettings,
+  type LocalAlert,
   type Sender,
 } from "@/notify"
+import { loadDaemonConfig } from "@/daemon/config"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -50,24 +53,43 @@ function daemonSender(defaultChannel: string, defaultChatId: string): Sender {
   }
 }
 
+/** The local banner and sound, as `notifications.local` in agentx.json
+ *  sets them, minus whatever the flags switch off. A missing or invalid
+ *  config means the defaults: a notification should never fail over a
+ *  settings file. */
+function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean }): LocalAlert {
+  let local
+  try {
+    local = loadDaemonConfig(opts.config).notifications.local
+  } catch {
+    local = undefined
+  }
+  const settings = localSettings(local)
+  if (!opts.sound) settings.sound = false
+  if (!opts.banner) settings.banner = false
+  return localAlert(settings)
+}
+
 export const notify = new Command()
   .name("notify")
   .description("tell the operator something, holding it if they are in Focus")
   .argument("[message]", "what to say")
   .option("--from <who>", "who is speaking", "agentx")
-  .option("--title <text>", "notification title", "Secretary")
+  .option("--title <text>", "notification title", "AgentX")
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus")
   .option("--channel <name>", "delivery channel", "ntfy")
   .option("--chat-id <id>", "channel address", "default")
   .option("--no-sound", "do not play a sound on this machine")
+  .option("--no-banner", "do not show a banner on this machine")
+  .option("-c, --config <path>", "agentx.json to read local settings from (default: ./agentx.json)")
   .option("--status", "show Focus state and anything being held")
   .option("--flush", "deliver everything held, as one message")
   .option("--json", "emit the result as JSON")
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
     const state = readFocus()
-    const sound = opts.sound === false ? false : undefined
+    const alert = configuredAlert(opts)
 
     if (opts.status) {
       const waiting = queue.list()
@@ -87,7 +109,7 @@ export const notify = new Command()
     const send = daemonSender(opts.channel, opts.chatId)
 
     if (opts.flush) {
-      const n = await flushHeld(send, { queue, sound })
+      const n = await flushHeld(send, { queue, alert })
       console.log(n ? chalk.green(`  delivered ${n} held notification(s)`) : chalk.dim("  nothing was held"))
       return
     }
@@ -109,7 +131,7 @@ export const notify = new Command()
           chatId: opts.chatId,
         },
         send,
-        { queue, sound, focus: state },
+        { queue, alert, focus: state },
       )
       if (opts.json) {
         console.log(JSON.stringify(result, null, 2))
@@ -122,9 +144,9 @@ export const notify = new Command()
       }
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))
-      // A failed push should still make a noise on this machine rather
-      // than failing completely silently.
-      if (sound !== false) playSound()
+      // A failed push should still show up on this machine rather than
+      // failing completely silently.
+      await alert(opts.title, message.trim())
       process.exit(1)
     }
   })

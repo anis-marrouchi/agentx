@@ -4,7 +4,7 @@
 // the unscripted version: read the screen (accessibility tree, OCR when
 // the tree is thin), let a fast model plan ONE step toward the goal, say
 // it in the agent's voice while the agent's own cursor points at or
-// outlines the control, then either wait for Anis to do it (teach, watch)
+// outlines the control, then either wait for the person to do it (teach, watch)
 // or do it itself (act, only when the agent is allowed to). The screen is
 // read again after every step, so the next step starts from what is
 // actually there, not from what the plan assumed. It is also read again
@@ -18,6 +18,7 @@
 import type { LineModel } from "./talk-model"
 import type { SpeechOut, VoiceRef } from "./speaker"
 import type { Presence, Rect } from "./presence"
+import { DEFAULT_LISTENER } from "./talk"
 import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
@@ -104,7 +105,7 @@ export class LiveTeach {
   private readonly listener: string
 
   constructor(private opts: LiveTeachOpts, private deps: TeachDeps) {
-    this.listener = opts.listener ?? "Anis"
+    this.listener = opts.listener ?? DEFAULT_LISTENER
   }
 
   on(fn: (e: TeachEvent) => void): void { this.listeners.push(fn) }

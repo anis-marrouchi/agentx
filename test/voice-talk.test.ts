@@ -152,7 +152,7 @@ describe("Talk", () => {
     await done
     expect(log.some((l) => l.startsWith("kill"))).toBe(true)
     const nadia = models[1].messages.at(-1)!
-    expect(nadia).toContain('Anis just said: "Nadia, what about pricing?"')
+    expect(nadia).toContain('the user just said: "Nadia, what about pricing?"')
     expect(nadia).toContain("Secretary was cut off after saying")
     // Nadia's pre-written line was never heard, so the Secretary never gets it.
     expect(models[0].messages.join("\n")).not.toContain("Something unheard")

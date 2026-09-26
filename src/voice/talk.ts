@@ -67,6 +67,9 @@ interface Turn {
   relayed?: string
 }
 
+/** Who agents address when no `voice.listener` is configured. */
+export const DEFAULT_LISTENER = "the user"
+
 export function talkSystemPrompt(s: TalkSpeaker, listener: string): string {
   return [
     s.persona,
@@ -100,7 +103,7 @@ export class Talk {
   private listeners: Array<(e: TalkEvent) => void> = []
 
   constructor(private opts: TalkOpts) {
-    this.listener = opts.listener ?? "Anis"
+    this.listener = opts.listener ?? DEFAULT_LISTENER
     this.models = opts.speakers.map((s) => opts.model(s, talkSystemPrompt(s, this.listener)))
     const setup = (i: number) => {
       const other = opts.speakers[1 - i].name

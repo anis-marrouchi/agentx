@@ -58,6 +58,7 @@ async function runLocal(ids: string[], topic: string, opts: { context?: string; 
     topic, context: opts.context, maxTurns: Number(opts.turns) || 10,
     speakers: speakers as [TalkSpeaker, TalkSpeaker],
     speech: new SpeechOut(),
+    listener: config.voice.listener,
     model: (_s, system) => createLineModel({ system }),
   })
   talk.on(printEvent)

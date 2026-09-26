@@ -64,7 +64,7 @@ STRICT RULES for procedure text — violations get your output rejected:
 1. Write everything from the PERSON's perspective. Whatever software or assistant executed the work is a black box — describe the activity, never the machinery.
 2. FORBIDDEN words anywhere in id/title/trigger/steps/notes: tool or command names (bash, grep, curl, script, terminal, CLI, MCP, API, JSON, SQL, regex...), "agent", "assistant", "LLM", "AI", "model", "session", "prompt", "database", "daemon", "workflow".
 3. Every step starts with an activity verb: Receive, Check, Open, Read, Download, Fill, Rename, Save, Prepare, Send, Reply, Verify, Notify, Archive, File, Forward...
-4. The id/title name the person's OUTCOME (e.g. "process-zitouna-payment-notice", "Monthly report for the lab"), never the mechanism.
+4. The id/title name the person's OUTCOME (e.g. "process-bank-payment-notice", "Monthly report for the lab"), never the mechanism.
 5. Keep stable concrete details verbatim: sender identities, destination folders, file naming conventions, recipients, schedules. Turn the parts that vary between occurrences into inputs, written like "<statement month>".
 6. "trigger" is ONE sentence starting with "When ".
 7. 3–8 steps. Each step is one concrete action a person could follow.

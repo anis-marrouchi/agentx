@@ -31,6 +31,7 @@
     "apps/mac-voice/Resources",
     "apps/mac-voice/build.sh",
     "apps/mac-helper/Sources",
+    "apps/mac-helper/Resources",
     "apps/mac-helper/build.sh"
   ],
   "keywords": [
