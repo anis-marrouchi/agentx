@@ -113,6 +113,11 @@ export interface AgentTask {
    *  parser can append rows under the same id. Optional — when unset,
    *  step capture is a no-op. */
   taskId?: string
+  /** Id of the RunningTask / TaskRecord — what `/tasks/:id` opens, streams
+   *  and steers. Set by registry.execute when the task runs on this node;
+   *  unset when it was forwarded to a mesh peer or answered by an attached
+   *  session. Distinct from `taskId`, which keys the trace row. */
+  runningTaskId?: string
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and

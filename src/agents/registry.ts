@@ -1070,6 +1070,7 @@ export class AgentRegistry {
       startedAt: new Date(),
     }
     state.runningTasks.push(runningTask)
+    task.runningTaskId = runningTask.id
 
     // AbortController for operator stop / replace. Stored under the running
     // task id so /api/tasks/:id/cancel can resolve and abort it.

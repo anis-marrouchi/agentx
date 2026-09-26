@@ -40,4 +40,11 @@ export interface CronRunResult {
   /** Was this a retry attempt? */
   isRetry?: boolean
   retryAttempt?: number
+  /** Task page id of the agent run (`/tasks/:id`). Absent for command jobs
+   *  and for runs forwarded to a mesh peer. */
+  taskId?: string
+  /** Trace row id (task_traces) of the agent run. */
+  traceId?: string
+  /** Provider session the run used, so a follow-up can resume it. */
+  sessionId?: string
 }

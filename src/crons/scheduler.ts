@@ -1,5 +1,6 @@
 import type { DaemonConfig, CronJobDef } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
+import type { AgentResponse, AgentTask } from "@/agents/runtime"
 import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
 import { execFile } from "child_process"
@@ -24,6 +25,20 @@ function withOutputCap(prompt: string, maxOutputTokens?: number): string {
   if (!maxOutputTokens) return prompt
   const approxChars = maxOutputTokens * 4
   return `${prompt}\n\n[Response budget]\nKeep your response under ~${maxOutputTokens} tokens (~${approxChars} chars). Be concise — this is automated batch work, not a conversation.`
+}
+
+/**
+ * The ids that let an operator open a finished cron run on the Task page
+ * (`/tasks/:taskId`) and resume its session. The registry writes them onto
+ * the task object it was handed; each is absent when unknown (mesh-forwarded
+ * or attached-session runs), and JSON.stringify drops undefined keys.
+ */
+function runIds(task: AgentTask, response: AgentResponse): Pick<CronRunResult, "taskId" | "traceId" | "sessionId"> {
+  return {
+    taskId: task.runningTaskId,
+    traceId: task.taskId,
+    sessionId: response.claudeSessionId ?? response.codexSessionId ?? response.opencodeSessionId,
+  }
 }
 
 /**
@@ -466,7 +481,7 @@ export class CronScheduler {
     })
 
     try {
-      const response = await this.registry.execute({
+      const task: AgentTask = {
         message: withOutputCap(job.prompt, job.maxOutputTokens),
         agentId: job.agent,
         model: job.model,
@@ -476,7 +491,8 @@ export class CronScheduler {
         // daily-brief and the marketing weekly-report cron share history,
         // and one job's prompt context bleeds into the other.
         context: { channel: "cron", chatId: `cron:${jobId}` },
-      })
+      }
+      const response = await this.registry.execute(task)
 
       const result: CronRunResult = {
         jobId,
@@ -488,6 +504,7 @@ export class CronScheduler {
         duration: response.duration || Date.now() - startedAt.getTime(),
         isRetry,
         retryAttempt,
+        ...runIds(task, response),
       }
 
       if (response.error) {
@@ -610,14 +627,15 @@ export class CronScheduler {
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
       try {
-        const response = await this.registry.execute({
+        const task: AgentTask = {
           message: withOutputCap(
             `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,
           context: { channel: "cron", chatId: `cron:${jobId}` },
-        })
+        }
+        const response = await this.registry.execute(task)
 
         const result: CronRunResult = {
           jobId,
@@ -628,6 +646,7 @@ export class CronScheduler {
           error: response.error,
           duration: response.duration || 0,
           isRetry: false,
+          ...runIds(task, response),
         }
 
         this.logRun(result)

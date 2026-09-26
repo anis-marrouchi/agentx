@@ -26,7 +26,19 @@ export const MESH_OPS_SCRIPT = `<script>
       +'<span class="ax-row-card__actions">'+(actions||'')+'</span></'+tag+'>';
   }
   function detail(data){
-    return '<div class="mx-detail">'+MX.fields(data.fields)+(data.note?'<pre>'+esc(data.note)+'</pre>':'')+'</div>';
+    return '<div class="mx-detail">'+(data.open?'<p><a class="ax-btn ax-btn--primary" href="'+esc(data.open.href)+'">'+esc(data.open.label)+'</a></p>':'')
+      +MX.fields(data.fields)+(data.note?'<pre>'+esc(data.note)+'</pre>':'')+'</div>';
+  }
+  /** The Task page for a schedule's run: the one running now, else today's
+   *  latest persisted attempt. Command jobs never reach an agent, so they
+   *  have neither and get no link. */
+  function runLink(n,job,latest,agent){
+    var live=agent&&(agent.runningTasks||[]).find(function(t){return t.channel==='cron'&&t.chatId==='cron:'+job.id});
+    var id=live?live.id:latest&&latest.taskId;
+    if(!id)return null;
+    return {label:live?'Watch live →':'Open run →',href:'/tasks/'+encodeURIComponent(id)+'?node='+encodeURIComponent(n.url)
+      +'&agent='+encodeURIComponent(job.agent)+'&name='+encodeURIComponent((agent&&agent.name)||job.agent)
+      +'&channel=cron'+(live?'':'&archived=1')};
   }
   showAll.addEventListener('click',function(){
     expanded=!expanded;
@@ -58,7 +70,7 @@ export const MESH_OPS_SCRIPT = `<script>
       var summary=latest?(latest.errorSummary||latest.responseSummary||'No summary')
         :(job.enabled?'No attempt persisted today':'Schedule disabled');
       var agent=(n.agents||[]).find(function(a){return a.id===job.agent});
-      cards.push({node:n,job:job,run:latest,status:status,summary:summary,agent:agent});
+      cards.push({node:n,job:job,run:latest,status:status,summary:summary,agent:agent,open:runLink(n,job,latest,agent)});
     })});
     var root=document.getElementById('mx-runs');
     document.getElementById('mx-run-count').textContent=cards.length+' schedules';
@@ -75,7 +87,7 @@ export const MESH_OPS_SCRIPT = `<script>
       el.addEventListener('click',function(){
         var x=cards[Number(el.dataset.run)],runtime=(x.agent&&x.agent.tier)||'unknown';
         var model=x.job.model||(x.agent&&x.agent.model);
-        MX.open('Automation',x.job.id,detail({fields:[
+        MX.open('Automation',x.job.id,detail({open:x.open,fields:[
           ['Node',x.node.name],['Agent',x.job.agent],['Runtime',runtime],
           ['Model',x.job.model?model:(model?model+' (inherited)':'default')],
           ['Status',x.status],['Schedule',x.job.schedule],['Timezone',x.job.timezone||'local'],
