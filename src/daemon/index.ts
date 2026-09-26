@@ -26,7 +26,8 @@ import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
-import { readCronRunHistory } from "@/crons/run-history"
+import { readCronRunHistory, readRecentCronRuns } from "@/crons/run-history"
+import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
@@ -150,6 +151,27 @@ export class AgentXDaemon {
       this.wfHealth = { at: Date.now(), rows }
       return rows
     } catch { return [] }
+  }
+
+  private routinesCache?: { at: number; rows: Routine[] }
+  /** Schedules and cron/hook-triggered workflows merged into one bounded
+   *  list (GET /routines). Cached briefly: the mesh overview polls every
+   *  few seconds and each build opens the newest run files per job. */
+  private async routines(): Promise<Routine[]> {
+    if (this.routinesCache && Date.now() - this.routinesCache.at < 30_000) return this.routinesCache.rows
+    const crons = this.cron.list()
+    const cronRuns = await readRecentCronRuns({ perJob: 10, jobIds: crons.map((j) => j.id) })
+    let workflows: RoutineWorkflow[] = []
+    let workflowRuns: ReturnType<typeof scanRuns> = []
+    if (this.workflowStore && this.workflowRuns) {
+      try {
+        workflows = this.workflowStore.list()
+        workflowRuns = scanRuns(this.workflowRuns.runsDir)
+      } catch { /* a broken workflow dir must not hide the schedules */ }
+    }
+    const rows = buildRoutines({ crons, cronRuns, workflows, workflowRuns })
+    this.routinesCache = { at: Date.now(), rows }
+    return rows
   }
   private db: import("better-sqlite3").Database | null = null
   private loadedPlugins: LoadedPlugin[] = []
@@ -3696,6 +3718,10 @@ export class AgentXDaemon {
           break
         }
 
+        case "GET /routines":
+          this.json(res, 200, { routines: await this.routines() })
+          break
+
         case "GET /mesh":
           this.json(res, 200, this.mesh?.directory() || [])
           break
@@ -4951,6 +4977,7 @@ export class AgentXDaemon {
               "GET  /health",
               "GET  /agents",
               "GET  /crons",
+              "GET  /routines  — schedules + cron/hook workflows with staleness flags",
               "GET  /mesh",
               "GET  /wiki/agents",
               "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",

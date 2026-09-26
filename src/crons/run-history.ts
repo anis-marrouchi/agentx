@@ -206,3 +206,67 @@ function isValidDate(value: string): boolean {
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
+
+export interface ReadRecentCronRunsOptions {
+  /** Most recent attempts to keep per job. */
+  perJob: number;
+  runsDir?: string;
+  /** Restrict to these job ids. Directories of removed jobs are skipped. */
+  jobIds?: string[];
+}
+
+/**
+ * Reads the latest persisted attempts per job regardless of calendar day,
+ * newest first. Run files are named by their ISO start time, so only the
+ * newest `perJob` names are opened; corrupt files are skipped.
+ */
+export async function readRecentCronRuns(
+  options: ReadRecentCronRunsOptions,
+): Promise<Map<string, CronRunHistoryItem[]>> {
+  const out = new Map<string, CronRunHistoryItem[]>();
+  const runsDir =
+    options.runsDir ?? resolve(process.cwd(), ".agentx/cron/runs");
+  const perJob = Math.max(0, Math.floor(options.perJob));
+  const wanted = options.jobIds ? new Set(options.jobIds) : null;
+  let jobEntries;
+  try {
+    jobEntries = await readdir(runsDir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+
+  for (const jobEntry of jobEntries) {
+    if (!jobEntry.isDirectory()) continue;
+    if (wanted && !wanted.has(jobEntry.name)) continue;
+    let names: string[];
+    try {
+      names = (await readdir(resolve(runsDir, jobEntry.name)))
+        .filter((name) => name.endsWith(".json"))
+        .sort()
+        .reverse();
+    } catch {
+      continue;
+    }
+
+    const runs: CronRunHistoryItem[] = [];
+    for (const name of names) {
+      if (runs.length >= perJob) break;
+      try {
+        const contents = await readFile(
+          resolve(runsDir, jobEntry.name, name),
+          "utf8",
+        );
+        const run = parseRun(JSON.parse(contents), jobEntry.name);
+        if (run) runs.push(run);
+      } catch {
+        // Unreadable or mid-write; older files still tell the story.
+      }
+    }
+    runs.sort(
+      (a, b) =>
+        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
+    out.set(jobEntry.name, runs);
+  }
+  return out;
+}
