@@ -185,9 +185,30 @@ daemon
       if (!existsSync(pidFile)) continue
       try {
         const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10)
+        // A signal carries no sender; leave a note so the daemon's log can
+        // say who stopped it (daemon/shutdown.ts).
+        try {
+          const { writeShutdownRequest } = await import("@/daemon/shutdown")
+          writeShutdownRequest(resolve(process.cwd(), ".agentx"), { by: "agentx daemon stop", pid: process.pid, at: new Date().toISOString() })
+        } catch { /* best effort */ }
         process.kill(pid, "SIGTERM")
-        // Wait briefly for graceful shutdown
-        await new Promise(r => setTimeout(r, 2000))
+        // The daemon finishes in-flight agent tasks before it exits (up to
+        // AGENTX_DRAIN_TIMEOUT_MS). Wait for that, rather than reporting
+        // "stopped" while it drains and letting a second daemon start.
+        const limitMs = parseInt(process.env.AGENTX_DRAIN_TIMEOUT_MS || "300000", 10) + 60_000
+        const started = Date.now()
+        let told = false
+        while (isAlive(pid) && Date.now() - started < limitMs) {
+          if (!told && Date.now() - started > 3000) {
+            console.log(chalk.dim(`  Waiting for in-flight tasks to finish (up to ${Math.round(limitMs / 60_000)} min)...`))
+            told = true
+          }
+          await new Promise(r => setTimeout(r, 500))
+        }
+        if (isAlive(pid)) {
+          console.log(chalk.yellow(`Daemon (PID: ${pid}) is still finishing tasks. Check again with: agentx daemon status`))
+          return
+        }
         try { unlinkSync(pidFile) } catch {}
         console.log(chalk.green(`Daemon stopped (PID: ${pid})`))
         return
@@ -503,4 +524,9 @@ function formatDuration(seconds: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`
   return `${Math.round(seconds / 86400)}d ${Math.round((seconds % 86400) / 3600)}h`
+}
+
+/** Whether a process exists (signal 0 checks without sending anything). */
+function isAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (e: any) { return e?.code === "EPERM" }
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { buildProgram } from "@/program"
+import { installCliSignalExit } from "@/utils/signal-exit"
 
-process.on("SIGINT", () => process.exit(0))
-process.on("SIGTERM", () => process.exit(0))
+installCliSignalExit()
 
 async function main() {
   const program = await buildProgram()
