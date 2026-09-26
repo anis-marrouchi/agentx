@@ -1,4 +1,6 @@
 import type { MemoryStore } from "./memory-store"
+import { shouldCaptureEntry } from "@/wiki/capture-filter"
+import { containsSecret, trustForChannel } from "./memory-trust"
 
 // --- Haiku-powered memory extraction ---
 // Fire-and-forget after each agent response.
@@ -9,7 +11,6 @@ const EXTRACTION_MODEL = "claude-haiku-4-20250514"
 const EXTRACTION_PROMPT = `You are a memory extraction system for an AI agent. Given a conversation exchange, extract facts worth remembering for future conversations across different chat sessions.
 
 Extract ONLY facts that would help the agent in FUTURE, DIFFERENT conversations:
-- Credentials, tokens, API keys shared by the user
 - User preferences and instructions ("never do X", "always use Y")
 - Commitments the agent made ("I will deploy by Friday")
 - Relationships ("Alex is the admin", "Marketing handles content")
@@ -17,13 +18,14 @@ Extract ONLY facts that would help the agent in FUTURE, DIFFERENT conversations:
 - Important facts about infrastructure, config, or processes
 
 SKIP:
+- Credentials of any kind: passwords, tokens, API keys, private keys, connection strings. Never repeat one, not even partly. At most note that a credential exists and where it is kept, without its value.
 - Routine greetings, acknowledgments, status updates
 - Information derivable from code or config files
 - Transient conversation flow ("let me check", "here's what I found")
 - Facts already obvious from the agent's system prompt
 
 For each fact, output a JSON array:
-[{"category":"fact|secret|preference|commitment|task-state","content":"concise fact, 1-2 sentences","keywords":["keyword1","keyword2"]}]
+[{"category":"fact|preference|commitment|task-state","content":"concise fact, 1-2 sentences","keywords":["keyword1","keyword2"]}]
 
 If nothing worth remembering, output: []`
 
@@ -36,6 +38,15 @@ export async function extractMemories(
 ): Promise<void> {
   // Skip very short exchanges (unlikely to contain memorable facts)
   if (userMessage.length < 20 && agentResponse.length < 50) return
+
+  // Same gate as wiki capture: machine channels (cron, a2a, workflow) and
+  // prompt-shaped messages hold configuration, not facts about the world.
+  const gate = shouldCaptureEntry({
+    channel: source.channel,
+    content: `User: ${userMessage}`,
+    responseLength: agentResponse.length,
+  })
+  if (!gate.capture) return
 
   const { createProvider } = await import("@/agent/providers")
   const provider = createProvider("claude")
@@ -65,8 +76,13 @@ export async function extractMemories(
   if (!Array.isArray(facts) || facts.length === 0) return
 
   const date = new Date().toISOString().slice(0, 10)
+  const trust = trustForChannel(source.channel)
 
   for (const fact of facts) {
+    if (typeof fact?.content !== "string") continue
+    // The prompt says never to extract credentials; this holds when the
+    // model does it anyway. addMemory refuses them too.
+    if (fact.category === "secret" || containsSecret(fact.content)) continue
     // Skip duplicates
     if (store.hasSimilar(agentId, fact.content)) continue
 
@@ -75,7 +91,7 @@ export async function extractMemories(
       category: fact.category as any,
       content: fact.content,
       keywords: fact.keywords || [],
-      source: { ...source, date },
+      source: { ...source, date, trust },
       expiresAt: fact.category === "task-state"
         ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         : undefined,

@@ -929,7 +929,7 @@ export class SessionStore {
 
     if (!needsCompaction(session.messages)) return { compacted: false }
 
-    const result = await compactSession(session.messages, agentId, memoryStore)
+    const result = await compactSession(session.messages, agentId, memoryStore, { channel, chatId })
     if (result.compactedCount === 0) return { compacted: false }
 
     session.messages = applyCompaction(session.messages, result)
