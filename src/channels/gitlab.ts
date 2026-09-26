@@ -571,6 +571,10 @@ export class GitLabAdapter implements ChannelAdapter {
           noteableTitle,
           text: note,
           authorUsername: user.username,
+          author: user.username,
+          // The agentx signature is authoritative for who wrote the note —
+          // agents on the shared global token all post as one GitLab user.
+          authorAgent: sourceAgent ?? this.usernameToAgent.get(user.username.toLowerCase()) ?? null,
           mentions,
         })
         const claimed = (result?.modified as { __workflowClaimed?: unknown } | undefined)?.__workflowClaimed
@@ -780,6 +784,8 @@ export class GitLabAdapter implements ChannelAdapter {
           description: attrs.description || "",
           url: attrs.url,
           action: attrs.action,
+          author: event.user.username,
+          authorAgent: this.usernameToAgent.get(event.user.username.toLowerCase()) ?? null,
           assigneesAdded: issueAssigneesAdded,
           labelsAdded: issueLabelsAdded,
           usernameToAgent: Object.fromEntries(this.usernameToAgent.entries()),
@@ -1171,6 +1177,8 @@ export class GitLabAdapter implements ChannelAdapter {
           source_branch: attrs.source_branch,
           target_branch: attrs.target_branch,
           labels: mrLabels,
+          author: event.user.username,
+          authorAgent: this.usernameToAgent.get(event.user.username.toLowerCase()) ?? null,
           assigneesAdded: mrAssigneesAdded,
           reviewersAdded: mrReviewersAdded,
           labelsAdded: mrLabelsAdded,
@@ -1357,6 +1365,7 @@ export class GitLabAdapter implements ChannelAdapter {
         duration: attrs.duration,
         project,
         projectId: (event as any).project?.id,
+        author: (event as any).user?.username,
         raw: event,
       }).catch((e: Error) => this.log(`on:gitlab-pipeline hook error: ${e.message}`))
     }

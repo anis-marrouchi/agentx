@@ -86,6 +86,23 @@ export class WebhookHandler {
     const event = this.hookEventFor(source, eventType)
     if (!event || !this.hooks) return
     if (!this.hooks.has(event)) return
+    // GitHub: lift the event author and target (repo + issue/PR number) to
+    // the top level so workflow filters and the loop guard don't have to
+    // dig through the raw payload. `repo` rather than `project` on purpose:
+    // `project` is the per-workflow scope gate and GitHub never set it.
+    const gh: Record<string, unknown> = {}
+    if (source === "github") {
+      const p = payload as {
+        sender?: { login?: unknown }
+        repository?: { full_name?: unknown }
+        issue?: { number?: unknown }
+        pull_request?: { number?: unknown }
+      }
+      if (typeof p.sender?.login === "string") gh.author = p.sender.login
+      if (typeof p.repository?.full_name === "string") gh.repo = p.repository.full_name
+      const num = p.issue?.number ?? p.pull_request?.number
+      if (typeof num === "number") gh.number = num
+    }
     try {
       await this.hooks.execute(event, {
         event,
@@ -93,6 +110,7 @@ export class WebhookHandler {
         eventType,
         agentId,
         payload,
+        ...gh,
       } as any)
     } catch (e: any) {
       this.log(`${event} hook error (non-fatal): ${e?.message ?? e}`)

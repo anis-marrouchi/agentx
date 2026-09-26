@@ -1835,6 +1835,13 @@ export class AgentXDaemon {
     // above.
     const { cronTimers, hookSubscribers } = startWorkflowTriggers({
       store, dispatcher, hooks: this.hooks, log: (m) => this.log(m),
+      // Loop guard: an agent's configured forge usernames are its "own bot
+      // identity" for the self-authored skip. The GitLab adapter also stamps
+      // ctx.authorAgent from its token-resolved map, which covers the rest.
+      forgeUsernames: (agentId) => [
+        ...(this.config.channels.gitlab?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.gitlabUsernames),
+        ...(this.config.channels.github?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.githubUsernames),
+      ],
     })
 
     const count = store.list().length
