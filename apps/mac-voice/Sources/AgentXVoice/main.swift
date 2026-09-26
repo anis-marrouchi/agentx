@@ -288,9 +288,16 @@ final class App: NSObject, NSApplicationDelegate {
         if !midTurn { panel.render(.thinking) }
 
         Task { @MainActor in
-            let heard = (try? await Speech.transcribe(wav: wav)) ?? ""
+            var heard = ""
+            do { heard = try await Speech.transcribe(wav: wav) }
+            catch { Log.warn("transcription failed: \(error.localizedDescription)") }
             guard !heard.isEmpty else {
-                if !midTurn { panel.render(.error("Didn't catch that")); busy = false; resetSoon() }
+                if !midTurn {
+                    panel.render(.error("Didn't catch that"))
+                    // Say it aloud: someone not looking would think it was sent.
+                    await Speech.speak("Sorry, I didn't hear that. Please say it again.", voice: voice)
+                    busy = false; resetSoon()
+                }
                 return
             }
             Log.info("heard: \(heard)")

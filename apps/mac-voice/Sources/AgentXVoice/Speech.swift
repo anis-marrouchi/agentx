@@ -86,14 +86,16 @@ enum Speech {
         let out = try run(Config.mlxWhisper,
                           ["--model", Config.mlxModel, "--output-format", "txt",
                            "--output-dir", dir.path, audio.path])
-        // mlx_whisper writes <name>.txt next to the audio; prefer that over
-        // stdout, which also carries progress noise.
+        // mlx_whisper writes <name>.txt next to the audio. Without it the run
+        // failed, even on exit 0: it prints "Skipping … due to <error>" to
+        // stdout and moves on. Never pass stdout on as the user's words.
         let txt = audio.deletingPathExtension().appendingPathExtension("txt")
         defer { try? FileManager.default.removeItem(at: txt) }
-        if let s = try? String(contentsOf: txt, encoding: .utf8) {
-            return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let s = try? String(contentsOf: txt, encoding: .utf8) else {
+            let detail = out.trimmingCharacters(in: .whitespacesAndNewlines).suffix(300)
+            throw VoiceError.api("mlx_whisper wrote no transcript: \(detail)")
         }
-        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: Text to speech

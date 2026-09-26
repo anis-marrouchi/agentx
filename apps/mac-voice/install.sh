@@ -37,7 +37,20 @@ echo "→ installing to $DEST"
 rm -rf "$DEST"
 cp -R "build/$APP_NAME" "$DEST"
 
-echo "→ login item: $PLIST"
+# A login item gets launchd's bare PATH (/usr/bin:/bin:/usr/sbin:/sbin),
+# where mlx_whisper cannot find ffmpeg. Put the folder of the ffmpeg found
+# now in front of it. AGENTX_VOICE_PATH replaces the whole value.
+LAUNCHD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+if [ -n "${AGENTX_VOICE_PATH:-}" ]; then
+  VOICE_PATH="$AGENTX_VOICE_PATH"
+elif FFMPEG=$(command -v ffmpeg); then
+  VOICE_PATH="$(dirname "$FFMPEG"):$LAUNCHD_PATH"
+else
+  echo "! ffmpeg not found: local Whisper transcription needs it (brew install ffmpeg), then rerun"
+  VOICE_PATH="$LAUNCHD_PATH"
+fi
+
+echo "→ login item: $PLIST (PATH=$VOICE_PATH)"
 mkdir -p "$(dirname "$PLIST")"
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,6 +60,8 @@ cat > "$PLIST" <<PL
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array><string>$BIN</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>$VOICE_PATH</string></dict>
   <key>RunAtLoad</key><true/>
   <!-- KeepAlive so a crash brings it straight back. The widget is
        stateless between turns, so restarting loses nothing. -->
@@ -56,6 +71,7 @@ cat > "$PLIST" <<PL
 </dict>
 </plist>
 PL
+plutil -lint -s "$PLIST"
 
 # bootout is asynchronous: bootstrapping immediately after can race the
 # teardown and fail with "Input/output error". Wait for the label to

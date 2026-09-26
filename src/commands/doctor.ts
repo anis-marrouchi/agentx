@@ -1,10 +1,12 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
-import { existsSync, readFileSync, readdirSync, statSync } from "fs"
-import { resolve } from "path"
+import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from "fs"
+import { join, resolve } from "path"
+import { homedir } from "os"
 import { createRequire } from "module"
 import { loadDaemonConfig } from "@/daemon/config"
+import { findOnPath, plistPathEnv } from "@/desktop/install"
 
 // --- agentx doctor ---
 //
@@ -38,6 +40,7 @@ export async function runDoctorChecks(
 ): Promise<{ checks: Check[]; summary: { errors: number; warnings: number; ok: number } }> {
   const checks: Check[] = []
   await runEnvChecks(checks)
+  runDesktopChecks(checks)
   const cfg = runConfigChecks(checks)
   if (cfg) runReferenceChecks(checks, cfg)
   if (cfg) runWorkspaceChecks(checks, cfg)
@@ -152,6 +155,30 @@ async function runEnvChecks(checks: Check[]): Promise<void> {
       detail: e?.message ?? String(e),
       fix: `Run "pnpm rebuild better-sqlite3" with the same Node used by the daemon (${process.version}, modules ${process.versions.modules}).`,
     })
+  }
+}
+
+/** The desktop app's login item runs with only the PATH its plist sets, so
+ *  check that local Whisper's ffmpeg is reachable there, not in this shell. */
+function runDesktopChecks(checks: Check[]): void {
+  if (process.platform !== "darwin") return
+  // Older installs used another label; apps/mac-voice/install.sh keeps it.
+  const agents = join(homedir(), "Library/LaunchAgents")
+  let names: string[] = []
+  try { names = readdirSync(agents).filter(n => /agentx\.voice.*\.plist$/.test(n)) } catch { return }
+  const isExecutable = (file: string) => { try { accessSync(file, constants.X_OK); return true } catch { return false } }
+  for (const name of names) {
+    const path = plistPathEnv(readFileSync(join(agents, name), "utf-8"))
+    const ffmpeg = findOnPath("ffmpeg", path, isExecutable)
+    checks.push(ffmpeg
+      ? { severity: "ok", group: "Desktop", title: "ffmpeg reachable by the desktop app", detail: `${ffmpeg} (${name})` }
+      : {
+          severity: "warn",
+          group: "Desktop",
+          title: "ffmpeg not reachable by the desktop app",
+          detail: `Local Whisper transcription fails without it. ${name} sets PATH to ${path}.`,
+          fix: "Install ffmpeg (brew install ffmpeg), then rerun agentx desktop install.",
+        })
   }
 }
 

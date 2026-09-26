@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export const DESKTOP_LABEL = 'tn.acme.agentx.voice'
 export const DESKTOP_APP = 'AgentX Desktop.app'
@@ -16,9 +16,30 @@ export function selectDesktopAgent(agents: Record<string, unknown>, requested?: 
   return id
 }
 export function shellQuote(value: string): string { return `'${value.replace(/'/g, "'\\''")}'` }
-export function desktopPlist(opts: { executable: string; cwd: string; agent: string; url: string; helper: string; cli: string; node: string; log: string }): string {
+/** launchd's default PATH, which is all a login item gets unless the plist sets one. */
+export const LAUNCHD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+/** PATH for the login item: AGENTX_VOICE_PATH when set, else the folder of
+ *  the ffmpeg found at install time (mlx_whisper needs it) ahead of launchd's default. */
+export function desktopPath(ffmpeg: string | null, override?: string): string {
+  if (override) return override
+  return [...new Set([...(ffmpeg ? [dirname(ffmpeg)] : []), ...LAUNCHD_PATH.split(':')])].join(':')
+}
+/** The PATH a login item plist sets, or launchd's default when it sets none. */
+export function plistPathEnv(plist: string): string {
+  const m = plist.match(/<key>PATH<\/key>\s*<string>([^<]*)<\/string>/)
+  if (!m) return LAUNCHD_PATH
+  const ents: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+  return m[1].replace(/&(amp|lt|gt|quot|apos);/g, (_, e) => ents[e])
+}
+/** The file that a process with this PATH would run, or null. */
+export function findOnPath(bin: string, path: string, isExecutable: (file: string) => boolean): string | null {
+  for (const dir of path.split(':')) if (dir && isExecutable(join(dir, bin))) return join(dir, bin)
+  return null
+}
+export function desktopPlist(opts: { executable: string; cwd: string; agent: string; url: string; helper: string; cli: string; node: string; log: string; path: string }): string {
   const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
   const env = {
+    PATH: opts.path,
     AGENTX_VOICE_AGENT: opts.agent,
     AGENTX_DAEMON_URL: opts.url,
     AGENTX_MAC_HELPER: opts.helper,
