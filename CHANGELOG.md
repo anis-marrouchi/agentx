@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.46.2](https://github.com/anis-marrouchi/agentx/compare/v0.46.1...v0.46.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **daemon:** let a stop signal drain in-flight tasks instead of exiting ([#122](https://github.com/anis-marrouchi/agentx/issues/122)) ([b56752d](https://github.com/anis-marrouchi/agentx/commit/b56752da1f3792e289d3720e9942aeb240f6c938)), closes [#103](https://github.com/anis-marrouchi/agentx/issues/103)
+
 ## [0.46.1](https://github.com/anis-marrouchi/agentx/compare/v0.46.0...v0.46.1) (2026-09-26)
 
 
