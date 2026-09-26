@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { atomicWrite, checkCondition, etagOf, readVersions, snapshot, type WriteCondition } from "./memory-versions"
 
 // --- AgentMemory: Claude-Code-style structured memory per agent ---
 //
@@ -17,6 +18,7 @@ import { resolve } from "path"
 //     user_deep_backend_expertise.md
 //     feedback_no_mock_database.md
 //     ...
+//     _versions/<type>_<name>/<timestamp>.md   — prior versions (memory-versions.ts)
 //
 // Philosophy: the wiki is authoritative / cross-agent / documented.
 // Memory is experiential / per-agent / "what I learned across runs."
@@ -38,6 +40,26 @@ export interface MemoryRecord {
   body: string
   createdAt: string
   updatedAt: string
+  /** Who wrote this version: an agent id verified against its running
+   *  task, "operator" (CLI), or "unverified" (a caller we couldn't check). */
+  author?: string
+  /** The running task that wrote it; opens on the Task page. */
+  taskId?: string
+  /** Content hash of the file as stored. Pass back as `ifMatch` to change
+   *  it only if nobody else has since. Not stored in the file. */
+  etag?: string
+}
+
+/** Who is making a change, recorded in the memory's frontmatter. */
+export interface MemoryProvenance {
+  author?: string
+  taskId?: string
+}
+
+/** One entry in a memory's history. */
+export interface MemoryVersion {
+  id: string
+  record: MemoryRecord | null
 }
 
 const TYPES: MemoryType[] = ["user", "feedback", "project", "reference"]
@@ -70,22 +92,25 @@ export class AgentMemory {
   }
 
   /** Save (create or update) a memory. Keeps createdAt stable across
-   *  updates; bumps updatedAt. Always rewrites MEMORY.md. */
+   *  updates; bumps updatedAt. The replaced version goes to history first.
+   *  With `cond`, throws MemoryConflictError instead of overwriting a
+   *  version the caller hasn't seen. Always rewrites MEMORY.md. */
   save(args: {
     agentId: string
     type: MemoryType
     name: string
     description: string
     body: string
-  }): MemoryRecord {
+  } & MemoryProvenance, cond?: WriteCondition): MemoryRecord {
     if (!TYPES.includes(args.type)) throw new Error(`invalid memory type: ${args.type}`)
     if (!args.name.trim()) throw new Error("memory name is required")
     if (!args.description.trim()) throw new Error("memory description is required")
 
     const path = this.fileFor(args.agentId, args.type, args.name)
+    const existing = safeRead(path)
+    checkCondition(existing, cond)
     const now = new Date().toISOString()
     let createdAt = now
-    const existing = safeRead(path)
     if (existing) {
       const parsed = parseMemoryFile(existing)
       if (parsed) createdAt = parsed.createdAt
@@ -97,18 +122,37 @@ export class AgentMemory {
       body: args.body.trimEnd(),
       createdAt,
       updatedAt: now,
+      ...(args.author ? { author: args.author } : {}),
+      ...(args.taskId ? { taskId: args.taskId } : {}),
     }
-    writeFileSync(path, serialize(record))
+    const content = serialize(record)
+    snapshot(path, existing)
+    atomicWrite(path, content)
     this.rewriteIndex(args.agentId)
-    return record
+    return { ...record, etag: etagOf(content) }
+  }
+
+  /** Add to the end of an existing memory's body (or create it) in one
+   *  step, so two appends can't lose each other. */
+  append(args: {
+    agentId: string
+    type: MemoryType
+    name: string
+    description: string
+    body: string
+  } & MemoryProvenance, cond?: WriteCondition): MemoryRecord {
+    const existing = this.get(args.agentId, args.name)
+    const body = existing ? `${existing.body.trimEnd()}\n\n${args.body.trim()}` : args.body
+    return this.save({ ...args, type: existing?.type ?? args.type, body }, cond)
   }
 
   get(agentId: string, name: string): MemoryRecord | null {
     for (const type of TYPES) {
       const path = this.fileFor(agentId, type, name)
       if (!existsSync(path)) continue
-      const parsed = parseMemoryFile(safeRead(path) ?? "")
-      if (parsed) return parsed
+      const raw = safeRead(path) ?? ""
+      const parsed = parseMemoryFile(raw)
+      if (parsed) return { ...parsed, etag: etagOf(raw) }
     }
     return null
   }
@@ -121,8 +165,9 @@ export class AgentMemory {
     const out: MemoryRecord[] = []
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name === "MEMORY.md") continue
-      const parsed = parseMemoryFile(safeRead(resolve(dir, entry.name)) ?? "")
-      if (parsed) out.push(parsed)
+      const raw = safeRead(resolve(dir, entry.name)) ?? ""
+      const parsed = parseMemoryFile(raw)
+      if (parsed) out.push({ ...parsed, etag: etagOf(raw) })
     }
     return out.sort((a, b) => {
       const ta = TYPES.indexOf(a.type)
@@ -132,15 +177,41 @@ export class AgentMemory {
     })
   }
 
-  /** Remove a memory by name. Returns true on success, false if none found. */
-  remove(agentId: string, name: string): boolean {
-    let removed = false
-    for (const type of TYPES) {
-      const path = this.fileFor(agentId, type, name)
-      if (existsSync(path)) { unlinkSync(path); removed = true }
+  /** Remove a memory by name. The removed version stays in history, so
+   *  `restore` can bring it back. With `cond.ifMatch`, throws
+   *  MemoryConflictError if it changed since the caller read it. Returns
+   *  true on success, false if none found. */
+  remove(agentId: string, name: string, cond?: WriteCondition): boolean {
+    const paths = TYPES.map((t) => this.fileFor(agentId, t, name)).filter((p) => existsSync(p))
+    if (paths.length === 0) return false
+    if (cond) checkCondition(safeRead(paths[0]), cond)
+    for (const path of paths) {
+      snapshot(path, safeRead(path))
+      unlinkSync(path)
     }
-    if (removed) this.rewriteIndex(agentId)
-    return removed
+    this.rewriteIndex(agentId)
+    return true
+  }
+
+  /** Prior versions of a memory, newest first, including ones kept after
+   *  it was deleted. */
+  versions(agentId: string, name: string): MemoryVersion[] {
+    return TYPES
+      .flatMap((t) => readVersions(this.fileFor(agentId, t, name)))
+      .sort((a, b) => b.id.localeCompare(a.id))
+      .map((v) => {
+        const parsed = parseMemoryFile(v.content)
+        return { id: v.id, record: parsed ? { ...parsed, etag: etagOf(v.content) } : null }
+      })
+  }
+
+  /** Put a prior version back as the current one. The version it replaces
+   *  goes to history, so a restore can itself be undone. */
+  restore(agentId: string, name: string, versionId: string, by: MemoryProvenance = {}): MemoryRecord | null {
+    const version = this.versions(agentId, name).find((v) => v.id === versionId)
+    if (!version?.record) return null
+    const { type, description, body } = version.record
+    return this.save({ agentId, type, name, description, body, ...by })
   }
 
   /** The content of MEMORY.md — used at prompt-build time to inline into
@@ -251,6 +322,8 @@ function serialize(r: MemoryRecord): string {
     `type: ${r.type}`,
     `created: ${r.createdAt}`,
     `updated: ${r.updatedAt}`,
+    ...(r.author ? [`author: ${escapeYaml(r.author)}`] : []),
+    ...(r.taskId ? [`task: ${escapeYaml(r.taskId)}`] : []),
     "---",
     "",
   ].join("\n")
@@ -283,6 +356,8 @@ export function parseMemoryFile(raw: string): MemoryRecord | null {
     body,
     createdAt: fm.created ?? "",
     updatedAt: fm.updated ?? fm.created ?? "",
+    ...(fm.author ? { author: fm.author } : {}),
+    ...(fm.task ? { taskId: fm.task } : {}),
   }
 }
 
