@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.48.0](https://github.com/anis-marrouchi/agentx/compare/v0.47.1...v0.48.0) (2026-09-26)
+
+
+### Features
+
+* **approvals:** one inbox for every pending decision ([#134](https://github.com/anis-marrouchi/agentx/issues/134)) ([aab18ca](https://github.com/anis-marrouchi/agentx/commit/aab18ca91b08b9be4e5713442d6ad6db71902133)), closes [#102](https://github.com/anis-marrouchi/agentx/issues/102)
+* **daemon:** restart when idle, from the CLI or the dashboard ([#133](https://github.com/anis-marrouchi/agentx/issues/133)) ([f29a512](https://github.com/anis-marrouchi/agentx/commit/f29a51241d532e7c630f1e964a48ed01c08fa8fd))
+* **screen:** capture the screen at the right moment ([#131](https://github.com/anis-marrouchi/agentx/issues/131)) ([851fed7](https://github.com/anis-marrouchi/agentx/commit/851fed78c835d14f1bdd761f1fe8d853f248de41)), closes [#83](https://github.com/anis-marrouchi/agentx/issues/83)
+
 ## [0.47.1](https://github.com/anis-marrouchi/agentx/compare/v0.47.0...v0.47.1) (2026-09-26)
 
 
