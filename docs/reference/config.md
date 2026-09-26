@@ -16,6 +16,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `workflows` | Whether the workflow engine is enabled |
 | `dashboard` | Browser bind address, port and `daemonUrl` |
 | `mesh` | Peer URLs and authentication |
+| `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
 
 For a local installation, `node.bind` normally stays `127.0.0.1:18800` and `dashboard.daemonUrl` points to `http://127.0.0.1:18800`. In the supplied Compose setup they are `0.0.0.0:18800` and `http://daemon:18800`; host port bindings remain local.
 

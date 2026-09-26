@@ -1,0 +1,314 @@
+import { existsSync, readdirSync, readFileSync } from "fs"
+import { resolve } from "path"
+import { MemoryStore } from "@/agents/memory-store"
+import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSchedule } from "@/crons/schedule-ops"
+import { listProposals, readProposal } from "@/wiki/proposals"
+import { approveProposal, rejectProposal } from "@/wiki/promote"
+import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
+import { readInboxState, snooze } from "./state"
+
+// --- The Approvals inbox: one list over every pending decision ---
+//
+// A read model, not a store. Each source keeps its own records and its own
+// approve/reject; the inbox lists them in one shape and hands a verdict to
+// the source's existing function:
+//
+//   card      decision cards agents raise (cards.ts)
+//   schedule  schedules an agent asked to create or delete (crons/schedule-ops)
+//   memory    facts from outside sources held before agents may use them
+//   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
+//
+// Only operator surfaces call decide(): the `agentx approvals` CLI and the
+// dashboard's /api/admin/approvals. The daemon's agent-facing API and the
+// MCP tool can create cards and read, never decide.
+
+export type ApprovalKind = "card" | "schedule" | "memory" | "wiki"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki"]
+
+export type InboxAction = "yes" | "no" | "later"
+
+/** One pending decision, in bounded summary form. */
+export interface InboxItem {
+  /** `<kind>:<ref>`: what the CLI and the dashboard pass back. */
+  key: string
+  kind: ApprovalKind
+  title: string
+  /** The yes/no question. */
+  ask: string
+  /** What yes and no do, in words. */
+  yes: string
+  no: string
+  recommend?: string
+  if_silent?: IfSilent
+  expires?: string
+  source?: string
+  raised_by: string
+  created_at: string
+  /** A short excerpt of what is being decided. */
+  detail?: string
+  /** The source's own command for the full record. */
+  more?: string
+  snoozed_until?: string
+}
+
+export interface InboxContext {
+  /** Directory holding agentx.json and .agentx/. */
+  root: string
+  configPath?: string
+  wikiDir?: string
+  /** Hot-reload the daemon after a schedule decision. Default true. */
+  reload?: boolean
+  now?: number
+}
+
+export const DETAIL_MAX = 280
+
+function clip(s: string, n = DETAIL_MAX): string {
+  const flat = s.replace(/\s+/g, " ").trim()
+  return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat
+}
+
+function configPathFor(ctx: InboxContext): string {
+  if (ctx.configPath) return resolve(ctx.configPath)
+  const candidates = [resolve(ctx.root, "agentx.json"), resolve(ctx.root, ".agentx", "config.json")]
+  return candidates.find((c) => existsSync(c)) ?? candidates[0]
+}
+
+function wikiDirFor(ctx: InboxContext): string {
+  return ctx.wikiDir ? resolve(ctx.wikiDir) : resolve(ctx.root, ".agentx", "wiki")
+}
+
+// ── Sources ──────────────────────────────────────────────────────────
+
+function cardItems(ctx: InboxContext): InboxItem[] {
+  return listCards(ctx.root, "pending").map(cardItem)
+}
+
+function cardItem(c: DecisionCard): InboxItem {
+  return {
+    key: `card:${c.id}`,
+    kind: "card",
+    title: c.title,
+    ask: c.ask,
+    yes: `tell ${c.raised_by} yes`,
+    no: `tell ${c.raised_by} no`,
+    recommend: c.recommend,
+    if_silent: c.if_silent,
+    expires: c.expires,
+    ...(c.source ? { source: c.source } : {}),
+    raised_by: c.raised_by,
+    created_at: c.created_at,
+  }
+}
+
+function scheduleItems(ctx: InboxContext): InboxItem[] {
+  const path = configPathFor(ctx)
+  if (!existsSync(path)) return []
+  let cfg: any
+  try { cfg = JSON.parse(readFileSync(path, "utf-8")) } catch { return [] }
+  const now = new Date(ctx.now ?? Date.now())
+  const out: InboxItem[] = []
+  for (const [id, job] of Object.entries<any>(cfg?.crons ?? {})) {
+    const approval = job?.approval
+    if (!approval || (approval.action !== "create" && approval.action !== "delete")) continue
+    const tz = job.timezone || "UTC"
+    const human = job.schedule ? humanizeCron(job.schedule) : ""
+    const when = job.schedule ? `${human.charAt(0).toLowerCase()}${human.slice(1)} (${job.schedule})` : "no schedule"
+    const what = String(job.prompt ?? job.command ?? "")
+    const creating = approval.action === "create"
+    out.push({
+      key: `schedule:${id}`,
+      kind: "schedule",
+      title: creating ? `New schedule "${id}" for ${job.agent ?? "an agent"}` : `Delete schedule "${id}"`,
+      ask: creating ? `Let ${job.agent ?? "the agent"} run this ${when}?` : `Remove the schedule "${id}" (${when})?`,
+      yes: creating ? "enable it" : "remove it",
+      no: creating ? "drop the request" : "keep the schedule",
+      raised_by: String(approval.requestedBy ?? "unknown"),
+      created_at: String(approval.requestedAt ?? ""),
+      detail: clip(`${what}${creating && job.schedule ? ` · first run ${formatFireTime(nextFireTime(job.schedule, tz, now), tz)}` : ""}`),
+      more: "agentx schedule list",
+    })
+  }
+  return out
+}
+
+function memoryAgents(root: string): string[] {
+  const dir = resolve(root, ".agentx", "memory")
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter((f) => f.endsWith(".jsonl")).map((f) => f.slice(0, -6)).sort()
+}
+
+function memoryItems(ctx: InboxContext): InboxItem[] {
+  const agents = memoryAgents(ctx.root)
+  if (agents.length === 0) return []
+  const store = new MemoryStore(ctx.root)
+  const out: InboxItem[] = []
+  for (const agent of agents) {
+    for (const f of store.held(agent)) {
+      out.push({
+        key: `memory:${agent}/${f.id}`,
+        kind: "memory",
+        title: `Fact ${agent} learned from ${f.source.channel}`,
+        ask: `Let ${agent} use this fact in its prompts?`,
+        yes: "use it",
+        no: "keep it out for good",
+        raised_by: agent,
+        created_at: f.createdAt,
+        detail: clip(f.content),
+        more: `agentx memory facts held --agent ${agent}`,
+      })
+    }
+  }
+  return out
+}
+
+function wikiItems(ctx: InboxContext): InboxItem[] {
+  return listProposals(wikiDirFor(ctx), "pending").map((p) => {
+    const e = p.evidence
+    return {
+      key: `wiki:${p.id}`,
+      kind: "wiki" as const,
+      title: p.article.title,
+      ask: p.replaces ? `Update "${p.article.path}" in the shared wiki?` : `Add "${p.article.path}" to the shared wiki?`,
+      yes: "write the article",
+      no: "decline it",
+      raised_by: e.agents.join(", ") || "wiki promote",
+      created_at: p.createdAt,
+      detail: clip(`${e.sources.length} source(s)${e.occurrences > 1 ? `, seen in ${e.occurrences} sessions` : ""}. ${p.article.content}`),
+      more: `agentx wiki proposals show ${p.id}`,
+    }
+  })
+}
+
+const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
+  card: cardItems,
+  schedule: scheduleItems,
+  memory: memoryItems,
+  wiki: wikiItems,
+}
+
+// ── Read model ───────────────────────────────────────────────────────
+
+export interface InboxListing {
+  items: InboxItem[]
+  /** Hidden because the operator said "later". */
+  snoozed: number
+  /** Sources that couldn't be read, so an empty list isn't mistaken for "nothing waiting". */
+  errors: Array<{ kind: ApprovalKind; error: string }>
+}
+
+/** Soonest expiry first; then oldest first. */
+export function byUrgency(a: InboxItem, b: InboxItem): number {
+  const ea = a.expires ? Date.parse(a.expires) : Infinity
+  const eb = b.expires ? Date.parse(b.expires) : Infinity
+  if (ea !== eb) return ea - eb
+  return (Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0)
+}
+
+export function listInbox(ctx: InboxContext, opts: { includeSnoozed?: boolean; kinds?: ApprovalKind[] } = {}): InboxListing {
+  const now = ctx.now ?? Date.now()
+  const { snoozed } = readInboxState(ctx.root)
+  const items: InboxItem[] = []
+  const errors: InboxListing["errors"] = []
+  let hidden = 0
+  for (const kind of opts.kinds ?? APPROVAL_KINDS) {
+    let found: InboxItem[]
+    try { found = SOURCES[kind](ctx) } catch (e: any) {
+      errors.push({ kind, error: String(e?.message ?? e).slice(0, 200) })
+      continue
+    }
+    for (const item of found) {
+      const until = snoozed[item.key]
+      if (until && Date.parse(until) > now) {
+        if (!opts.includeSnoozed) { hidden++; continue }
+        item.snoozed_until = until
+      }
+      items.push(item)
+    }
+  }
+  items.sort(byUrgency)
+  return { items, snoozed: hidden, errors }
+}
+
+// ── Decide ───────────────────────────────────────────────────────────
+
+export interface DecideOptions {
+  /** Wiki: approve even if the article changed since the proposal. */
+  force?: boolean
+  /** Kept with the decision where the source records one. */
+  note?: string
+  /** "later": how long to put it off. */
+  laterHours?: number
+  by?: string
+}
+
+export type DecideResult = { ok: true; message: string } | { ok: false; error: string }
+
+export function parseKey(key: string): { kind: ApprovalKind; ref: string } | null {
+  const i = key.indexOf(":")
+  if (i <= 0) return null
+  const kind = key.slice(0, i) as ApprovalKind
+  const ref = key.slice(i + 1)
+  if (!APPROVAL_KINDS.includes(kind) || !ref) return null
+  return { kind, ref }
+}
+
+/** True while the item is still waiting in its source. */
+function stillPending(ctx: InboxContext, kind: ApprovalKind, ref: string): boolean {
+  switch (kind) {
+    case "card": return readCard(ctx.root, ref)?.status === "pending"
+    case "wiki": return readProposal(wikiDirFor(ctx), ref)?.status === "pending"
+    default: return SOURCES[kind](ctx).some((i) => i.key === `${kind}:${ref}`)
+  }
+}
+
+/**
+ * Apply the operator's answer through the source's own approve/reject.
+ * Operator surfaces only: never expose this to agents.
+ */
+export async function decide(ctx: InboxContext, key: string, action: InboxAction, opts: DecideOptions = {}): Promise<DecideResult> {
+  const parsed = parseKey(key)
+  if (!parsed) return { ok: false, error: `unknown item "${key}": use a key from \`agentx approvals list\`` }
+  const { kind, ref } = parsed
+  const now = ctx.now ?? Date.now()
+  const by = opts.by ?? "operator"
+
+  if (action === "later") {
+    if (!stillPending(ctx, kind, ref)) return { ok: false, error: `nothing waiting for "${key}"` }
+    const hours = opts.laterHours && opts.laterHours > 0 ? opts.laterHours : 24
+    const until = new Date(now + hours * 3_600_000)
+    snooze(ctx.root, key, until, now)
+    return { ok: true, message: `${key} put off until ${until.toISOString()}` }
+  }
+
+  const yes = action === "yes"
+  switch (kind) {
+    case "card": {
+      const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now })
+      return r.ok ? { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}` } : r
+    }
+    case "schedule": {
+      const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })
+      return r.success ? { ok: true, message: r.message } : { ok: false, error: r.message }
+    }
+    case "memory": {
+      const slash = ref.indexOf("/")
+      if (slash <= 0) return { ok: false, error: `memory keys look like memory:<agent>/<fact-id>` }
+      const agent = ref.slice(0, slash)
+      const id = ref.slice(slash + 1)
+      if (!memoryAgents(ctx.root).includes(agent)) return { ok: false, error: `no memory for agent "${agent}"` }
+      const store = new MemoryStore(ctx.root)
+      if (!store.held(agent).some((f) => f.id === id)) return { ok: false, error: `fact "${id}" isn't waiting for review` }
+      store.review(agent, id, yes ? "approved" : "rejected", by)
+      return { ok: true, message: `${key} ${yes ? "approved: the agent may use it" : "rejected: it stays out of prompts"}` }
+    }
+    case "wiki": {
+      const dir = wikiDirFor(ctx)
+      const r = yes
+        ? approveProposal(dir, ref, { by, force: opts.force, now })
+        : rejectProposal(dir, ref, { by, reason: opts.note, now })
+      if (!r.ok) return r
+      return { ok: true, message: yes ? `${r.proposal.article.path} written to the shared wiki` : `${key} rejected` }
+    }
+  }
+}

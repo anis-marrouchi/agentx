@@ -13,6 +13,8 @@ This page shows how to review each one. Everything here happens in a **terminal*
 - **Passwords, tokens and keys.** If a conversation contains one, it isn't saved as a fact, even when someone asks.
 - **Facts from public channels without your approval.** Anyone can write to a public web chat, so facts from there wait for you before any agent sees them. Facts from your own tools, your team's chats, GitLab and GitHub are used straight away.
 
+Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
+
 ## 1. Approve or reject facts from public channels
 
 1. See which facts are waiting:

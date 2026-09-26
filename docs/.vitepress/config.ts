@@ -8,7 +8,7 @@ const groups = [
     { text: "Your first agent", link: "/first-agent" }, { text: "Connect Telegram", link: "/connect-telegram" },
   ] },
   { text: "Running it day to day", items: [
-    { text: "Dashboard", link: "/dashboard/" }, { text: "Monitor", link: "/dashboard/monitor" },
+    { text: "Dashboard", link: "/dashboard/" }, { text: "Monitor", link: "/dashboard/monitor" }, { text: "Approvals", link: "/dashboard/approvals" },
     { text: "Live", link: "/dashboard/live" }, { text: "Operations", link: "/dashboard/operations" },
     { text: "Activity", link: "/dashboard/activity" }, { text: "Workflows", link: "/dashboard/workflows" },
     { text: "Settings", link: "/dashboard/settings" },

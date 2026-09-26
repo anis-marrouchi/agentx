@@ -41,6 +41,13 @@ cfg.crons = Object.fromEntries([
   ["weekly-review", "0 9 * * 1", "Review the demo shop week."],
   ["afternoon-check", "0 15 * * 1-5", "Check the demo office queue."],
 ].map(([id, schedule, prompt]) => [id, { enabled: false, schedule, timezone: "UTC", agent: "cx", prompt }]))
+// A schedule an agent asked for and nobody has approved yet: it shows up in
+// the Approvals inbox next to the decision cards seeded below.
+cfg.crons["friday-summary"] = {
+  enabled: false, schedule: "0 16 * * 5", timezone: "UTC", agent: "cx",
+  prompt: "Summarise the demo shop week for the team.", createdBy: "cx",
+  approval: { action: "create", requestedBy: "cx", requestedAt: new Date(Date.now() - 2 * 3600000).toISOString() },
+}
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 const fixture = JSON.parse(readFileSync(resolve(repo, "docs/public/examples/demo-report.json"), "utf8"))
@@ -54,6 +61,12 @@ for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", 
   const result = await post("/task", { agent: "cx", message: "Prepare the demo shop report.", context: { channel, chatId, sender: "Demo operator" } })
   if (result.error) throw new Error(result.error)
 }
+
+// Decision cards go through the daemon's real agent-facing endpoint.
+for (const card of [
+  { title: "Send the demo shop newsletter", ask: "Send the October newsletter to the demo shop list on Monday?", recommend: "Yes: the draft is reviewed and the links are checked", if_silent: "discard", expires: "20h", source: "https://example.com/drafts/newsletter-october" },
+  { title: "Merge the demo office FAQ update", ask: "Merge MR !12 with the new support hours?", recommend: "Yes: the hours match what the office confirmed", if_silent: "keep", expires: "3d" },
+]) await post("/approvals", { ...card, raised_by: "cx" })
 
 const db = new Database(resolve(root, ".agentx/db.sqlite"))
 const insert = db.prepare(`INSERT OR REPLACE INTO session_reviews
@@ -80,4 +93,4 @@ db.transaction(() => {
   }
 })()
 db.close()
-console.log("Seeded two workflows, three disabled schedules, two clients, six fictional reviews, and two real scripted task runs.")
+console.log("Seeded two workflows, three disabled schedules, one schedule request, two decision cards, two clients, six fictional reviews, and two real scripted task runs.")

@@ -36,7 +36,10 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
  *  agent noted down. Agents reach it with `curl localhost` from their own
  *  Bash, which the loopback exemption keeps working. */
 export function isMeshGatedPath(path: string): boolean {
-  return path === "/api/memory" || path.startsWith("/api/memory/")
+  return path === "/api/memory" || path.startsWith("/api/memory/") ||
+    // Approvals list held memory facts and draft wiki articles, and a card
+    // written from off-box would ask the operator in an agent's name.
+    path === "/approvals" || path.startsWith("/approvals/")
 }
 
 /** True when the socket peer is on this host. Used by loopback-only

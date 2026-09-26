@@ -27,6 +27,7 @@ import { process_ as processCmd } from "@/commands/process"
 import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
+import { approvals } from "@/commands/approvals"
 import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
 import { board } from "@/commands/board"
@@ -88,6 +89,7 @@ export async function buildProgram(): Promise<Command> {
     setup, init, connect, desktop,        // get running
     daemon, doctor,              // operate
     agent, channel, schedule,    // configure the things that carry work
+    approvals,                   // decisions waiting for you
     attachCmd, monitorCmd, tui,  // connect editor sessions and terminal UI
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
