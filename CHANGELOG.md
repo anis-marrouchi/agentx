@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.47.1](https://github.com/anis-marrouchi/agentx/compare/v0.47.0...v0.47.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **agents:** end runs stuck before spawn on cancel or deadline ([#125](https://github.com/anis-marrouchi/agentx/issues/125)) ([3202145](https://github.com/anis-marrouchi/agentx/commit/3202145679fbb54b8f31cc66e4a0f81e6ac92829))
+
 ## [0.47.0](https://github.com/anis-marrouchi/agentx/compare/v0.46.2...v0.47.0) (2026-09-26)
 
 
