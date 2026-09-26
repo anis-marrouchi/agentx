@@ -15,6 +15,7 @@ import { trace as traceCmd } from "@/commands/trace"
 import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
 import { look as lookCmd } from "@/commands/look"
+import { screen as screenCmd } from "@/commands/screen"
 import { paste as pasteCmd } from "@/commands/paste"
 import { notify as notifyCmd } from "@/commands/notify"
 import { decide as decideCmd } from "@/commands/decide"
@@ -91,6 +92,7 @@ export async function buildProgram(): Promise<Command> {
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click
     lookCmd,                     // computer use: see state the tree cannot report
+    screenCmd,                   // computer use: capture at the right moment
     pasteCmd,                    // clipboard, reshaped for where it lands
     notifyCmd,                   // tell the operator, unless they are in Focus
     decideCmd,                   // typed decisions, for agents

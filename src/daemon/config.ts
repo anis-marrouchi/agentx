@@ -784,6 +784,38 @@ const notificationsSchema = z.object({
   }).default({}),
 }).default({})
 
+const screenRectSchema = z.object({
+  x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive(),
+})
+
+/** Screen capture for agents: how captures are cropped and scaled, how
+ *  long they wait for the right moment, named regions, and the opt-in
+ *  in-memory buffer. See src/computer-use/capture.ts. */
+const screenSchema = z.object({
+  /** Pixel budget for a captured frame; larger captures are downscaled. */
+  maxPixels: z.number().int().positive().default(1_200_000),
+  /** Longest a capture waits for a change or for the screen to settle. */
+  timeoutMs: z.number().int().positive().default(5_000),
+  /** Time between samples while waiting. */
+  intervalMs: z.number().int().positive().default(100),
+  /** Mean difference (0–1) above which two samples count as different. */
+  changeThreshold: z.number().min(0).max(1).default(0.015),
+  /** How long a region must stay unchanged to count as stable. */
+  stableMs: z.number().int().nonnegative().default(400),
+  /** Named regions in screen points, e.g. { "chat": { x, y, width, height } }.
+   *  A name here overrides the built-in region of the same name. */
+  regions: z.record(z.string().regex(/^[a-z][\w-]*$/), screenRectSchema).default({}),
+  /** The last few seconds of a region, kept in memory by the daemon. Off
+   *  unless enabled; frames are written out only when asked for. */
+  buffer: z.object({
+    enabled: z.boolean().default(false),
+    seconds: z.number().positive().max(120).default(10),
+    fps: z.number().positive().max(10).default(2),
+    region: z.string().default("screen"),
+    maxPixels: z.number().int().positive().default(300_000),
+  }).default({}),
+}).default({})
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -798,6 +830,7 @@ export const daemonConfigSchema = z.object({
   crons: z.record(z.string(), cronJobSchema).default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
+  screen: screenSchema,
   mesh: meshConfigSchema.default({}),
   /** Voices for agents on mesh peers, keyed by remote agent id. The Mac
    *  speaks for them, so their nodes need no ElevenLabs key. Unset fields

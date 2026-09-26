@@ -388,6 +388,41 @@ const ADMIN_PAGE_BODY = `
       </div>
     </details>
 
+    <details class="add-form" style="margin-top:14px;margin-bottom:18px" id="screen-section">
+      <summary class="primary">⚙ Screen capture</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">How agents capture the screen: cropped and scaled, at the moment something changes or settles. Mirrors <code>agentx screen config</code>. Applies without a restart.</p>
+        <label>Pixel budget per frame <span class="hint">(larger captures are downscaled)</span></label>
+        <input id="screen-max-pixels" type="number" min="1" step="1" />
+        <label>Wait timeout <span class="hint">(ms)</span></label>
+        <input id="screen-timeout" type="number" min="1" step="1" />
+        <label>Sample every <span class="hint">(ms)</span></label>
+        <input id="screen-interval" type="number" min="1" step="1" />
+        <label>Change threshold <span class="hint">(0 to 1; mean difference that counts as a change)</span></label>
+        <input id="screen-threshold" type="number" min="0" max="1" step="0.005" />
+        <label>Stable after <span class="hint">(ms without change)</span></label>
+        <input id="screen-stable" type="number" min="0" step="1" />
+        <label>Named regions <span class="hint">(one per line: name=x,y,width,height in screen points)</span></label>
+        <textarea id="screen-regions" rows="3" placeholder="chat=0,60,720,800"></textarea>
+        <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
+          <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">Recent-frames buffer — in memory only, off by default</legend>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="screen-buffer-enabled" /> keep recent frames</label>
+          <label>Region <span class="hint">(window, screen, menubar, notifications, a named region, or x,y,w,h)</span></label>
+          <input id="screen-buffer-region" placeholder="screen" />
+          <label>Seconds kept</label>
+          <input id="screen-buffer-seconds" type="number" min="0.1" max="120" step="1" />
+          <label>Samples per second</label>
+          <input id="screen-buffer-fps" type="number" min="0.1" max="10" step="0.5" />
+          <label>Pixel budget per buffered frame</label>
+          <input id="screen-buffer-max-pixels" type="number" min="1" step="1" />
+        </fieldset>
+        <div class="actions" style="margin-top:10px">
+          <button class="primary" onclick="saveScreen()">Save screen capture</button>
+          <div id="screen-msg" class="msg"></div>
+        </div>
+      </div>
+    </details>
+
     <div id="ch-chatapps-label">${secLabel({ label: "Chat apps" })}</div>
     <div class="ax-connectors" id="ch-chatapps"></div>
 
@@ -1092,6 +1127,7 @@ async function refresh() {
     renderBoardsCfg();
     wireBoardsCfgHandlers();
     renderNotifications();
+    renderScreen();
     renderActions();
     wireActionsHandlers();
     wireActionKindToggle();
@@ -1722,6 +1758,56 @@ window.saveNotifications = async function() {
     showMsg($('notif-msg'), 'ok', 'Saved');
     await load();
   } catch (e) { showMsg($('notif-msg'), 'err', e.message); }
+}
+
+function renderScreen() {
+  const s = state.screen;
+  if (!s || !$('screen-max-pixels')) return;
+  $('screen-max-pixels').value = s.maxPixels;
+  $('screen-timeout').value = s.timeoutMs;
+  $('screen-interval').value = s.intervalMs;
+  $('screen-threshold').value = s.changeThreshold;
+  $('screen-stable').value = s.stableMs;
+  $('screen-regions').value = Object.entries(s.regions || {})
+    .map(([n, r]) => n + '=' + [r.x, r.y, r.width, r.height].join(',')).join('\\n');
+  $('screen-buffer-enabled').checked = !!s.buffer.enabled;
+  $('screen-buffer-region').value = s.buffer.region;
+  $('screen-buffer-seconds').value = s.buffer.seconds;
+  $('screen-buffer-fps').value = s.buffer.fps;
+  $('screen-buffer-max-pixels').value = s.buffer.maxPixels;
+}
+
+window.saveScreen = async function() {
+  // Regions removed from the text box are sent as null so they are deleted.
+  const regions = {};
+  for (const name of Object.keys((state.screen || {}).regions || {})) regions[name] = null;
+  for (const line of $('screen-regions').value.split('\\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    const at = t.indexOf('=');
+    if (at < 1) { showMsg($('screen-msg'), 'err', 'Each region line is name=x,y,width,height'); return; }
+    regions[t.slice(0, at).trim()] = t.slice(at + 1).trim();
+  }
+  const body = {
+    maxPixels: $('screen-max-pixels').value,
+    timeoutMs: $('screen-timeout').value,
+    intervalMs: $('screen-interval').value,
+    changeThreshold: $('screen-threshold').value,
+    stableMs: $('screen-stable').value,
+    regions,
+    buffer: {
+      enabled: $('screen-buffer-enabled').checked,
+      region: $('screen-buffer-region').value.trim() || 'screen',
+      seconds: $('screen-buffer-seconds').value,
+      fps: $('screen-buffer-fps').value,
+      maxPixels: $('screen-buffer-max-pixels').value,
+    },
+  };
+  try {
+    await req('POST', '/api/admin/screen', body);
+    showMsg($('screen-msg'), 'ok', 'Saved');
+    await load();
+  } catch (e) { showMsg($('screen-msg'), 'err', e.message); }
 }
 
 window.clearNotificationsDestination = async function() {

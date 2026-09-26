@@ -64,4 +64,11 @@ enum Screens {
     static func menuBar(_ info: Info) -> CGRect {
         CGRect(x: info.x, y: info.y, width: info.width, height: 26)
     }
+
+    /// Where macOS shows notification banners: the top-right corner of the
+    /// primary screen, under the menu bar. Generous, because banner size
+    /// varies with the text; a caller that knows better passes a rect.
+    static func notifications(_ info: Info) -> CGRect {
+        CGRect(x: info.x + info.width - 420, y: info.y + 26, width: 420, height: 180)
+    }
 }

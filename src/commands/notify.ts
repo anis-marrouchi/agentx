@@ -12,6 +12,9 @@ import {
   type Sender,
 } from "@/notify"
 import { loadDaemonConfig } from "@/daemon/config"
+import { proofAlert, type Proof } from "@/notify/proof"
+import { resolveRegion } from "@/computer-use/capture"
+import { screenSettings } from "@/computer-use/capture-settings"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -83,13 +86,24 @@ export const notify = new Command()
   .option("--no-sound", "do not play a sound on this machine")
   .option("--no-banner", "do not show a banner on this machine")
   .option("-c, --config <path>", "agentx.json to read local settings from (default: ./agentx.json)")
+  .option("--proof", "capture the banner as it shows and print the frame's path")
   .option("--status", "show Focus state and anything being held")
   .option("--flush", "deliver everything held, as one message")
   .option("--json", "emit the result as JSON")
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
     const state = readFocus()
-    const alert = configuredAlert(opts)
+    let alert = configuredAlert(opts)
+    let proof: (() => Proof) | undefined
+    if (opts.proof) {
+      // The banner region from agentx.json when one is named
+      // "notifications", else the helper's built-in corner.
+      let settings
+      try { settings = screenSettings(loadDaemonConfig(opts.config).screen) } catch { settings = screenSettings(undefined) }
+      const wrapped = proofAlert(alert, resolveRegion("notifications", settings), { settings })
+      alert = wrapped.alert
+      proof = wrapped.proof
+    }
 
     if (opts.status) {
       const waiting = queue.list()
@@ -133,8 +147,9 @@ export const notify = new Command()
         send,
         { queue, alert, focus: state },
       )
+      const p = proof?.()
       if (opts.json) {
-        console.log(JSON.stringify(result, null, 2))
+        console.log(JSON.stringify(p ? { ...result, proof: p } : result, null, 2))
         return
       }
       const mark = result.delivered ? chalk.green("→") : chalk.yellow("⏸")
@@ -142,6 +157,8 @@ export const notify = new Command()
       if (result.held) {
         console.log(chalk.dim("    it will arrive with the others when Focus ends"))
       }
+      if (p?.shot) console.log(`  ${p.error ? chalk.yellow("?") : chalk.green("✓")} banner: ${p.shot.path}${chalk.dim(` · ${p.shot.waitedMs}ms`)}`)
+      if (p?.error) console.log(chalk.yellow(`    ${p.error}`))
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))
       // A failed push should still show up on this machine rather than

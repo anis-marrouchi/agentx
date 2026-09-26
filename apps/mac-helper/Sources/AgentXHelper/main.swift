@@ -35,6 +35,34 @@ func flag(_ name: String) -> String? {
     return args[i + 1]
 }
 
+/// The region a capture or buffer covers: an explicit rect, a named part
+/// of a screen, or the focused window.
+func captureRegion() -> CGRect {
+    let screen = Screens.list().first(where: { $0.index == Int(flag("screen") ?? "") })
+        ?? Screens.active()
+    if let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
+       let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? "") {
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+    if args.contains("--notifications") {
+        // Banners always appear on the primary screen.
+        guard let s = Screens.list().first(where: { $0.primary }) else { fail("no screen found") }
+        return Screens.notifications(s)
+    }
+    if args.contains("--menubar") {
+        guard let s = screen else { fail("no screen found") }
+        return Screens.menuBar(s)
+    }
+    if args.contains("--screen-full") {
+        guard let s = screen else { fail("no screen found") }
+        return Screens.rect(s)
+    }
+    guard let win = OCR.focusedWindowFrame() else {
+        fail("no focused window — pass --x/--y/--w/--h, --notifications, --menubar or --screen-full")
+    }
+    return win
+}
+
 switch verb {
 case "read":
     guard AXTree.trusted() else {
@@ -110,36 +138,58 @@ case "capture":
     // without the caller knowing the display's size, because the state
     // worth checking — a recording indicator, a capture pill — lives in
     // the menu bar, which belongs to no window at all.
+    //
+    // --until-changed / --until-stable wait for the right moment instead
+    // of taking whatever is there now. With --armed, a line goes to stderr
+    // once the baseline is taken, so a caller can start its action only
+    // then and never race the thing it wants to see.
     guard let out = flag("out") else { fail("capture needs --out") }
-    let screen = Screens.list().first(where: { $0.index == Int(flag("screen") ?? "") })
-        ?? Screens.active()
-    let region: CGRect
-    if let x = Double(flag("x") ?? ""), let y = Double(flag("y") ?? ""),
-       let w = Double(flag("w") ?? ""), let h = Double(flag("h") ?? "") {
-        region = CGRect(x: x, y: y, width: w, height: h)
-    } else if args.contains("--menubar") {
-        guard let s = screen else { fail("no screen found") }
-        region = Screens.menuBar(s)
-    } else if args.contains("--screen-full") {
-        guard let s = screen else { fail("no screen found") }
-        region = Screens.rect(s)
-    } else if let win = OCR.focusedWindowFrame() {
-        region = win
-    } else {
-        fail("no focused window — pass --x/--y/--w/--h, --menubar or --screen-full")
+    let region = captureRegion()
+    var outcome: Watch.Outcome?
+    let untilChanged = args.contains("--until-changed"), untilStable = args.contains("--until-stable")
+    if untilChanged || untilStable {
+        let sample = { Vision.snapshot(region).flatMap { Vision.grid($0) } }
+        let baseline = untilChanged ? sample() : nil
+        if untilChanged && baseline == nil { fail("capture failed — check Screen Recording permission") }
+        if args.contains("--armed") { FileHandle.standardError.write("armed\n".data(using: .utf8)!) }
+        var o = Watch.Options()
+        if let v = Double(flag("threshold") ?? "") { o.threshold = v }
+        if let v = Double(flag("interval") ?? "") { o.interval = v / 1000 }
+        if let v = Double(flag("timeout") ?? "") { o.timeout = v / 1000 }
+        if let v = Double(flag("stable-ms") ?? "") { o.stableFor = v / 1000 }
+        outcome = Watch.wait(baseline: baseline, untilStable: untilStable, options: o, sample: sample,
+                             now: { ProcessInfo.processInfo.systemUptime },
+                             sleep: { Thread.sleep(forTimeInterval: $0) })
     }
     guard Vision.capture(region, to: out,
                          maxWidth: Int(flag("max-width") ?? ""),
                          maxPixels: Int(flag("max-pixels") ?? "")) else {
         fail("capture failed — check Screen Recording permission")
     }
-    let shot: [String: Any] = [
+    var shot: [String: Any] = [
         "ok": true, "captured": true, "path": out,
         "region": ["x": region.minX, "y": region.minY,
                    "w": region.width, "h": region.height],
     ]
+    if let o = outcome {
+        shot["changed"] = o.changed
+        shot["stable"] = o.stable
+        shot["timedOut"] = o.timedOut
+        shot["waitedMs"] = Int(o.waited * 1000)
+    }
     FileHandle.standardOutput.write(
         (try? JSONSerialization.data(withJSONObject: shot)) ?? Data())
+
+case "buffer":
+    // Long-lived: keeps the last --seconds of a region in memory, sampled
+    // --fps times a second, and writes frames out only when asked on
+    // stdin ("dump SECONDS DIR"). Ends at EOF, so it never outlives the
+    // daemon that started it.
+    Buffer.run(region: captureRegion(),
+               fps: Double(flag("fps") ?? "") ?? 2,
+               seconds: Double(flag("seconds") ?? "") ?? 10,
+               maxPixels: Int(flag("max-pixels") ?? "") ?? 300_000,
+               threshold: Double(flag("threshold") ?? "") ?? 0.015)
 
 case "screens":
     // Display geometry in top-left coordinates, so a caller can aim at a
@@ -285,5 +335,5 @@ case "trusted":
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))
 
 default:
-    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence, notify or trusted")
+    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence, buffer, notify or trusted")
 }

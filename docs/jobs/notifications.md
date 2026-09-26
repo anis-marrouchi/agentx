@@ -103,6 +103,7 @@ agentx notify --flush         # deliver what is held now
 | `--channel`, `--chat-id` | Deliver somewhere other than ntfy |
 | `--no-banner`, `--no-sound` | Skip the local banner or sound for this call |
 | `-c <path>` | Read the banner and sound settings from this `agentx.json` |
+| `--proof` | Capture the banner as it shows and print the frame's path; see [Capture the screen at the right moment](./screen-capture.md) |
 | `--json` | Print the result as JSON |
 
 The push goes through the running daemon. If the daemon is down, the command exits with an error, but the banner and sound still play so you know something tried to reach you.
