@@ -1,4 +1,4 @@
-import { readFocus, focusLabel, flushHeld, NotificationQueue, type Sender } from "@/notify"
+import { readFocus, focusLabel, flushHeld, NotificationQueue, type LocalAlert, type Sender } from "@/notify"
 
 // Delivering what Focus held, the moment Focus ends.
 //
@@ -24,7 +24,7 @@ const POLL_MS = 30_000
 export function attachFocusWatcher(
   send: Sender,
   log: (msg: string) => void,
-  opts: { pollMs?: number; queue?: NotificationQueue } = {},
+  opts: { pollMs?: number; queue?: NotificationQueue; alert?: LocalAlert | false } = {},
 ): () => void {
   const queue = opts.queue ?? new NotificationQueue()
   // Seed from the CURRENT state rather than assuming Focus is off. Starting
@@ -50,7 +50,7 @@ export function attachFocusWatcher(
     if (!wasActive) return
     wasActive = false
 
-    void flushHeld(send, { queue })
+    void flushHeld(send, { queue, alert: opts.alert })
       .then((n) => {
         if (n > 0) log(`[notify] Focus ended — delivered ${n} held notification(s)`)
       })

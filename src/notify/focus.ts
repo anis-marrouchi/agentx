@@ -76,7 +76,13 @@ export function readSystemFocus(path = ASSERTIONS): FocusState {
   let raw: string
   try {
     raw = readFileSync(path, "utf-8")
-  } catch {
+  } catch (e: any) {
+    // The file exists on every recent macOS but is private: without Full
+    // Disk Access for the process reading it, the answer is "denied", and
+    // saying so is the difference between a fixable setup and a mystery.
+    if (e?.code === "EPERM" || e?.code === "EACCES") {
+      return { active: false, mode: null, reason: "Focus database not readable — grant Full Disk Access to the app running agentx" }
+    }
     return { active: false, mode: null, reason: "no Focus database on this machine" }
   }
 

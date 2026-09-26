@@ -770,6 +770,15 @@ const notificationsSchema = z.object({
     taskError: z.boolean().default(true),
     taskQueued: z.boolean().default(false),
   }).default({}),
+  /** What `agentx notify` does on this machine when it delivers: a desktop
+   *  banner and a system sound. macOS only; see src/notify/local.ts. */
+  local: z.object({
+    banner: z.boolean().default(true),
+    sound: z.boolean().default(true),
+    /** A name from /System/Library/Sounds, without the extension. */
+    soundName: z.string().regex(/^[\w -]+$/).default("Glass"),
+    volume: z.number().min(0).max(1).default(0.4),
+  }).default({}),
 }).default({})
 
 export const daemonConfigSchema = z.object({

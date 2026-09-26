@@ -343,7 +343,7 @@ const ADMIN_PAGE_BODY = `
     <details class="add-form" style="margin-top:14px;margin-bottom:18px" id="notif-section">
       <summary class="primary">⚙ Notifications routing</summary>
       <div style="margin-top:10px">
-        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Where AgentX pings you when a task finishes, errors, or runs long. Mirrors <code>agentx notifications</code>.</p>
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">Where AgentX pings you when a task finishes, errors, or runs long, and what <code>agentx notify</code> does on this Mac. Mirrors <code>agentx notifications</code>.</p>
         <div id="notif-current" style="font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--ax-surface);border-radius:4px;color:var(--ax-muted)">—</div>
         <label>Channel<span class="hint">(telegram | whatsapp — leave blank to clear)</span></label>
         <input id="notif-channel" placeholder="telegram" />
@@ -358,6 +358,25 @@ const ADMIN_PAGE_BODY = `
           <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-complete" /> task complete</label>
           <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-on-error" /> task error</label>
           <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="notif-on-queued" /> task queued</label>
+        </fieldset>
+        <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
+          <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">On this Mac, when <code>agentx notify</code> delivers</legend>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px;margin-right:14px"><input type="checkbox" id="notif-local-banner" /> show a banner</label>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="notif-local-sound" /> play a sound</label>
+          <label>Sound <span class="hint">(a name from /System/Library/Sounds, e.g. Glass, Ping, Tink)</span></label>
+          <input id="notif-local-sound-name" placeholder="Glass" />
+          <label>Volume <span class="hint">(0 to 1)</span></label>
+          <input id="notif-local-volume" type="number" min="0" max="1" step="0.1" />
+        </fieldset>
+        <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
+          <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">Phone push (ntfy) — used by <code>agentx notify</code>; restart the daemon after changing</legend>
+          <label class="ax-inline" style="display:inline-flex;gap:6px;font-size:12px"><input type="checkbox" id="notif-ntfy-enabled" /> enabled</label>
+          <label>Server</label>
+          <input id="notif-ntfy-server" placeholder="https://ntfy.sh" />
+          <label>Topic <span class="hint" id="notif-ntfy-topic-hint">(treat it as a password; blank keeps the current one)</span></label>
+          <input id="notif-ntfy-topic" type="password" autocomplete="off" placeholder="\${NTFY_TOPIC}" />
+          <label>Access token <span class="hint" id="notif-ntfy-token-hint">(optional; blank keeps the current one)</span></label>
+          <input id="notif-ntfy-token" type="password" autocomplete="off" placeholder="\${NTFY_TOKEN}" />
         </fieldset>
         <div class="actions" style="margin-top:10px">
           <button class="primary" onclick="saveNotifications()">Save notifications</button>
@@ -1644,6 +1663,18 @@ function renderNotifications() {
   if ($('notif-on-complete')) $('notif-on-complete').checked = n.on?.taskComplete !== false;
   if ($('notif-on-error')) $('notif-on-error').checked = n.on?.taskError !== false;
   if ($('notif-on-queued')) $('notif-on-queued').checked = !!n.on?.taskQueued;
+  const local = n.local || {};
+  if ($('notif-local-banner')) $('notif-local-banner').checked = local.banner !== false;
+  if ($('notif-local-sound')) $('notif-local-sound').checked = local.sound !== false;
+  if ($('notif-local-sound-name')) $('notif-local-sound-name').value = local.soundName || 'Glass';
+  if ($('notif-local-volume')) $('notif-local-volume').value = local.volume ?? 0.4;
+  const ntfy = n.ntfy || {};
+  if ($('notif-ntfy-enabled')) $('notif-ntfy-enabled').checked = !!ntfy.enabled;
+  if ($('notif-ntfy-server')) $('notif-ntfy-server').value = ntfy.server || 'https://ntfy.sh';
+  if ($('notif-ntfy-topic')) $('notif-ntfy-topic').value = '';
+  if ($('notif-ntfy-token')) $('notif-ntfy-token').value = '';
+  if ($('notif-ntfy-topic-hint')) $('notif-ntfy-topic-hint').textContent = ntfy.topicSet ? '(set; blank keeps it)' : '(not set; treat it as a password)';
+  if ($('notif-ntfy-token-hint')) $('notif-ntfy-token-hint').textContent = ntfy.tokenSet ? '(set; blank keeps it)' : '(optional, for protected topics)';
 }
 
 window.saveNotifications = async function() {
@@ -1651,6 +1682,7 @@ window.saveNotifications = async function() {
   const chatId = $('notif-chat-id').value.trim();
   const accountId = $('notif-account-id').value.trim();
   const threshold = parseInt($('notif-threshold').value, 10);
+  const volume = parseFloat($('notif-local-volume').value);
   const body = {
     on: {
       taskComplete: $('notif-on-complete').checked,
@@ -1658,7 +1690,26 @@ window.saveNotifications = async function() {
       taskQueued: $('notif-on-queued').checked,
     },
     longTaskThreshold: Number.isFinite(threshold) ? threshold : 30,
+    local: {
+      banner: $('notif-local-banner').checked,
+      sound: $('notif-local-sound').checked,
+      soundName: $('notif-local-sound-name').value.trim() || 'Glass',
+      volume: Number.isFinite(volume) ? volume : 0.4,
+    },
   };
+  // Only a real ntfy change is sent: any write to channels.* asks for a
+  // daemon restart.
+  const was = (state.notifications || {}).ntfy || {};
+  const ntfy = {};
+  const enabled = $('notif-ntfy-enabled').checked;
+  const server = $('notif-ntfy-server').value.trim() || 'https://ntfy.sh';
+  const topic = $('notif-ntfy-topic').value.trim();
+  const token = $('notif-ntfy-token').value.trim();
+  if (enabled !== !!was.enabled) ntfy.enabled = enabled;
+  if (server !== (was.server || 'https://ntfy.sh')) ntfy.server = server;
+  if (topic) ntfy.topic = topic;
+  if (token) ntfy.token = token;
+  if (Object.keys(ntfy).length) body.ntfy = ntfy;
   if (channel && chatId) {
     body.destination = { channel, chatId, ...(accountId ? { accountId } : {}) };
   }

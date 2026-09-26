@@ -85,7 +85,7 @@ describe("notify", () => {
   it("delivers when the person is not in Focus", async () => {
     const send = vi.fn(async () => {})
     const r = await notify({ message: "build finished" }, send,
-      { focus: focusOff, sound: false, queue: tempQueue() })
+      { focus: focusOff, alert: false, queue: tempQueue() })
     expect(r.delivered).toBe(true)
     expect(send).toHaveBeenCalledOnce()
   })
@@ -94,7 +94,7 @@ describe("notify", () => {
     const send = vi.fn(async () => {})
     const queue = tempQueue()
     const r = await notify({ message: "a client replied", from: "cx" }, send,
-      { focus: focusOn, queue, sound: false })
+      { focus: focusOn, queue, alert: false })
 
     expect(r.held).toBe(true)
     expect(send).not.toHaveBeenCalled()
@@ -107,7 +107,7 @@ describe("notify", () => {
   it("lets something genuinely urgent through Focus", async () => {
     const send = vi.fn(async () => {})
     const r = await notify({ message: "production is down", urgent: true }, send,
-      { focus: focusOn, sound: false, queue: tempQueue() })
+      { focus: focusOn, alert: false, queue: tempQueue() })
     expect(r.delivered).toBe(true)
     expect(send).toHaveBeenCalledOnce()
   })
@@ -118,11 +118,11 @@ describe("notify", () => {
     const queue = tempQueue()
     const send = vi.fn(async () => {})
     for (const m of ["one", "two", "three"]) {
-      await notify({ message: m, from: "cx" }, send, { focus: focusOn, queue, sound: false })
+      await notify({ message: m, from: "cx" }, send, { focus: focusOn, queue, alert: false })
     }
     expect(send).not.toHaveBeenCalled()
 
-    const n = await flushHeld(send, { queue, sound: false })
+    const n = await flushHeld(send, { queue, alert: false })
     expect(n).toBe(3)
     expect(send).toHaveBeenCalledOnce()
     const sent = send.mock.calls[0][0] as any
@@ -130,7 +130,7 @@ describe("notify", () => {
     expect(sent.message).toContain("one")
     expect(sent.message).toContain("three")
     // Drained, so the next flush has nothing to say.
-    expect(await flushHeld(send, { queue, sound: false })).toBe(0)
+    expect(await flushHeld(send, { queue, alert: false })).toBe(0)
   })
 
   it("keeps the backlog when delivery fails", async () => {
@@ -140,15 +140,15 @@ describe("notify", () => {
     const queue = tempQueue()
     const held = vi.fn(async () => {})
     await notify({ message: "still important", from: "cx" }, held,
-      { focus: focusOn, queue, sound: false })
+      { focus: focusOn, queue, alert: false })
 
     const failing = vi.fn(async () => { throw new Error("network down") })
-    await expect(flushHeld(failing, { queue, sound: false })).rejects.toThrow("network down")
+    await expect(flushHeld(failing, { queue, alert: false })).rejects.toThrow("network down")
     expect(queue.list()).toHaveLength(1)
 
     // And the next attempt still has it.
     const working = vi.fn(async () => {})
-    expect(await flushHeld(working, { queue, sound: false })).toBe(1)
+    expect(await flushHeld(working, { queue, alert: false })).toBe(1)
     expect(queue.list()).toHaveLength(0)
   })
 
@@ -160,11 +160,11 @@ describe("notify", () => {
     const send = vi.fn(async () => {})
     await notify({ message: "Client request #142", from: "wa-triage",
                    channel: "telegram", chatId: "1816212449" },
-      send, { focus: focusOn, queue, sound: false })
+      send, { focus: focusOn, queue, alert: false })
     await notify({ message: "disk filling up", from: "devops" },
-      send, { focus: focusOn, queue, sound: false })
+      send, { focus: focusOn, queue, alert: false })
 
-    const n = await flushHeld(send, { queue, sound: false })
+    const n = await flushHeld(send, { queue, alert: false })
     expect(n).toBe(2)
     // One digest per destination, not one overall.
     expect(send).toHaveBeenCalledTimes(2)

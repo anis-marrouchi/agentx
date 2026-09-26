@@ -37,6 +37,7 @@ import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
+import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces } from "@/storage/traces"
 import {
@@ -497,10 +498,13 @@ export class AgentXDaemon {
           text: message,
           title,
           priority,
-          agentId: "secretary-agent",
+          agentId: this.config.node.defaultAgent,
         } as any)
       },
       (m) => this.log(m),
+      // Read the settings per flush so a dashboard change applies without
+      // a restart.
+      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
 
     // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
