@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.49.0](https://github.com/anis-marrouchi/agentx/compare/v0.48.0...v0.49.0) (2026-09-26)
+
+
+### Features
+
+* **trace:** measure whether lessons make repeated tasks better ([#139](https://github.com/anis-marrouchi/agentx/issues/139)) ([55891be](https://github.com/anis-marrouchi/agentx/commit/55891be18af652b6c6e0393fef67e9a5700da0e8)), closes [#98](https://github.com/anis-marrouchi/agentx/issues/98)
+* **wiki:** turn repeated failures into proposed lessons ([#140](https://github.com/anis-marrouchi/agentx/issues/140)) ([8204a4a](https://github.com/anis-marrouchi/agentx/commit/8204a4ac386171c88ee013cdf04d96f32dd4a734)), closes [#96](https://github.com/anis-marrouchi/agentx/issues/96)
+
+
+### Bug Fixes
+
+* **gitlab:** bot-username prefix as a setting; neutral defaults in public code ([#137](https://github.com/anis-marrouchi/agentx/issues/137)) ([ffc0dc5](https://github.com/anis-marrouchi/agentx/commit/ffc0dc5317250fd2bbe21a90aa241a3593dee933))
+
 ## [0.48.0](https://github.com/anis-marrouchi/agentx/compare/v0.47.1...v0.48.0) (2026-09-26)
 
 
