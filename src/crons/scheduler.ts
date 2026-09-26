@@ -1,5 +1,6 @@
 import type { DaemonConfig, CronJobDef } from "@/daemon/config"
 import type { AgentRegistry } from "@/agents/registry"
+import type { AgentTask, AgentResponse } from "@/agents/runtime"
 import type { HookRegistry } from "@/hooks"
 import type { CronJobState, CronRunResult } from "./types"
 import { execFile } from "child_process"
@@ -25,6 +26,24 @@ function withOutputCap(prompt: string, maxOutputTokens?: number): string {
   if (!maxOutputTokens) return prompt
   const approxChars = maxOutputTokens * 4
   return `${prompt}\n\n[Response budget]\nKeep your response under ~${maxOutputTokens} tokens (~${approxChars} chars). Be concise — this is automated batch work, not a conversation.`
+}
+
+/**
+ * The ids that make a finished cron run openable: the dashboard task id
+ * (Task page, follow-up), the trace id, and the provider session when the
+ * runtime reported one. registry.execute writes the first two onto the task
+ * object it was handed, so they are read back from there after the call.
+ */
+export function runLinkIds(
+  task: Pick<AgentTask, "runningTaskId" | "taskId">,
+  response: Pick<AgentResponse, "claudeSessionId" | "codexSessionId" | "opencodeSessionId">,
+): Pick<CronRunResult, "taskId" | "traceId" | "sessionId"> {
+  const ids: Pick<CronRunResult, "taskId" | "traceId" | "sessionId"> = {}
+  if (task.runningTaskId) ids.taskId = task.runningTaskId
+  if (task.taskId) ids.traceId = task.taskId
+  const sessionId = response.claudeSessionId || response.codexSessionId || response.opencodeSessionId
+  if (sessionId) ids.sessionId = sessionId
+  return ids
 }
 
 /**
@@ -524,7 +543,7 @@ export class CronScheduler {
     })
 
     try {
-      const response = await this.registry.execute({
+      const task: AgentTask = {
         message: withOutputCap(
           fire ? withEventPayload(job.prompt, fire.payload) : job.prompt,
           job.maxOutputTokens,
@@ -537,7 +556,8 @@ export class CronScheduler {
         // daily-brief and the marketing weekly-report cron share history,
         // and one job's prompt context bleeds into the other.
         context: { channel: "cron", chatId: `cron:${jobId}` },
-      })
+      }
+      const response = await this.registry.execute(task)
 
       const result: CronRunResult = {
         jobId,
@@ -550,6 +570,7 @@ export class CronScheduler {
         isRetry,
         retryAttempt,
         ...(fire ? { fired: true } : {}),
+        ...runLinkIds(task, response),
       }
 
       if (response.error) {
@@ -672,14 +693,15 @@ export class CronScheduler {
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
       try {
-        const response = await this.registry.execute({
+        const task: AgentTask = {
           message: withOutputCap(
             `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,
           context: { channel: "cron", chatId: `cron:${jobId}` },
-        })
+        }
+        const response = await this.registry.execute(task)
 
         const result: CronRunResult = {
           jobId,
@@ -690,6 +712,7 @@ export class CronScheduler {
           error: response.error,
           duration: response.duration || 0,
           isRetry: false,
+          ...runLinkIds(task, response),
         }
 
         this.logRun(result)

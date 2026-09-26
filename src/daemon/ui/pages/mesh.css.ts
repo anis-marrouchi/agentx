@@ -148,6 +148,10 @@ export const MESH_CSS = `
 .mx-empty{padding:28px 18px;text-align:center;color:var(--ax-muted);font-size:12px;border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);background:var(--ax-surface)}
 .mx-link{display:inline-block;margin-top:14px;color:var(--ax-accent);font-size:12px;font-weight:600;text-decoration:none}
 .mx-link:hover{text-decoration:underline}
+.mx-run-links{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:12px}
+.mx-run-links li{display:flex;align-items:center;gap:10px}
+.mx-run-links li span:first-child{font-family:var(--ax-mono);color:var(--ax-muted);min-width:84px}
+.mx-run-links .mx-link{margin:0 0 0 auto}
 .mx-scrim{position:fixed;inset:0;background:color-mix(in oklch,var(--ax-bg) 55%,black);z-index:29}
 .mx-drawer{position:fixed;z-index:30;top:0;right:0;width:min(520px,calc(100vw - 20px));height:100vh;box-sizing:border-box;background:var(--ax-surface);border-left:var(--ax-border-w) solid var(--ax-border-2);transform:translateX(102%);transition:transform 180ms ease;overflow:auto;box-shadow:-12px 0 36px rgba(0,0,0,.2)}
 .mx-drawer.is-open{transform:translateX(0)}

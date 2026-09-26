@@ -113,6 +113,15 @@ export interface AgentTask {
    *  parser can append rows under the same id. Optional — when unset,
    *  step capture is a no-op. */
   taskId?: string
+  /** The id the dashboard knows this run by (RunningTask.id — live stream,
+   *  cancel, follow-up, persisted TaskRecord). Set by registry.execute once
+   *  the run holds a slot; distinct from `taskId`, which is the trace id.
+   *  Callers that dispatch without an HTTP stream (cron) read it back to
+   *  link the run to the Task page. */
+  runningTaskId?: string
+  /** Called with `runningTaskId` as soon as the run starts. Never fires for
+   *  a message that was queued or dropped instead of run. */
+  onStart?: (runningTaskId: string) => void
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and

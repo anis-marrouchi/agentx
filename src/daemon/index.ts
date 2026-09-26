@@ -3428,9 +3428,11 @@ export class AgentXDaemon {
       // Operator follow-up: enqueue a correction/update message for an in-flight
       // task. With replace=true the current run is aborted so the new message
       // runs immediately; otherwise it waits for the current run to finish.
-      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender? }
+      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent? }
       // 200 → { ok, agentId, channel, chatId, replaced, pending }
-      // 404 → task not running
+      // 200 → { ok, resumed: true, taskId: <new run>|undefined, queued }  (finished cron run, `agent` given)
+      // 404 → task not running (and no stored record when `agent` given)
+      // 409 → finished, but not a cron run
       const followupMatch = req.method === "POST" && path.match(/^\/api\/tasks\/([^/]+)\/followup$/)
       if (followupMatch) {
         const taskId = decodeURIComponent(followupMatch[1])
@@ -3443,8 +3445,17 @@ export class AgentXDaemon {
             ? (body as any).sender.trim()
             : "operator"
           const result = this.registry.queueFollowUp(taskId, message, sender, { replace })
-          if (!result) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
-          this.json(res, 200, { ok: true, taskId, ...result })
+          if (result) { this.json(res, 200, { ok: true, taskId, ...result }); return }
+          // Not running. A finished scheduled run can still be continued:
+          // the message becomes a new turn in the same cron:<jobId> chat, so
+          // the session resumes. Needs the agent to find the stored record.
+          const agentId = typeof (body as any)?.agent === "string" ? (body as any).agent : ""
+          if (!agentId) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
+          const resumed = await this.registry.continueFinishedTask(agentId, taskId, message, sender, {
+            model: (chatId) => this.cron.list().find((j) => `cron:${j.id}` === chatId)?.model,
+          })
+          if (!resumed.ok) { this.json(res, resumed.status, { error: resumed.error }); return }
+          this.json(res, 200, { ...resumed, resumed: true, fromTaskId: taskId })
         } catch (e: any) {
           this.json(res, 500, { error: e?.message || String(e) })
         }
