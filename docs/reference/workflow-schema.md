@@ -46,7 +46,7 @@ The daemon must have `workflows.enabled: true`. These commands use `http://127.0
 
 Node configuration can reference earlier outputs with templates such as <code v-pre>{{trigger.payload.text}}</code>. A manual run can supply JSON using `--input '{"text":"Prepare a summary"}'`. Each node may declare `retry: { maxAttempts, backoffMs }`; retrying an external write can repeat its side effect, so use it only when the action can safely be repeated.
 
-An `agent` node needs a registered `agentId`. An `action.send` node needs a live channel and destination. `branch` uses named ports to choose an edge; `checkpoint` pauses for review. Node configuration is validated by the corresponding handler, so passing the top-level file validator alone does not prove that credentials or destinations work.
+An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. When set, AgentX stops the step once that many minutes have passed and frees the agent's slot, and the step fails with "timed out after …s". Leave it empty for no limit. Give agent work room: a review or a code change can take 20 minutes or more. See [time limits and cancel](/reference/config#time-limits-and-cancel). An `action.send` node needs a live channel and destination. `branch` uses named ports to choose an edge; `checkpoint` pauses for review. Node configuration is validated by the corresponding handler, so passing the top-level file validator alone does not prove that credentials or destinations work.
 
 ## Event trigger filters
 
