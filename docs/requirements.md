@@ -178,7 +178,7 @@ This is an optional local transcription setup for Apple Silicon. It needs Python
 3. Turn on access for the app named in the macOS prompt.
 4. Relaunch the app if macOS asks.
 
-<!-- Screenshot needed: System Settings › Privacy & Security with the AgentX apps listed (macOS System Settings). Needs a manual capture outside the docs demo. -->
+![Privacy & Security › Accessibility with access turned on for AgentX, which macOS lists as node](/screenshots/requirements/accessibility.png)
 
 | Permission | Needed for | App normally requesting it |
 |---|---|---|

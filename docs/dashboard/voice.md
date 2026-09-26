@@ -79,7 +79,7 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 3. Download a Premium or Enhanced voice (for example Ava, Zoe or Evan).
 4. **Terminal:** run `agentx voice list`. The new voice is listed. (AgentX also notices it on its own within ten minutes.)
 
-<!-- Screenshot needed: System Settings › Accessibility › Spoken Content › Manage Voices. Needs a manual capture outside the docs demo. -->
+![The Manage Voices list in System Settings, with voices to download for each language](/screenshots/voice/manage-voices.png)
 
 **Siri voices.** `say -v` cannot use the Siri voices, but `say` without a voice follows the Spoken Content System Voice. So an agent set to `siri:<name>` (listed as `siri:aaron`, `siri:marie`… by `agentx voice list`) speaks each line by switching the System Voice to that Siri voice, speaking, and switching your own choice straight back. Every line that uses the OS default voice, from the daemon and from AgentX Voice, goes through one script (`~/.agentx/voice/siri-say.sh`, written by the daemon) that holds a lock, so two agents never switch it at once; lines wait their turn. If a speaker is killed mid-line, the next line restores your choice first. On a Mac every system-voice line goes through that script, Siri or not: it reads the text before taking the lock (a caller that never closes stdin gives up after 5 s without blocking anyone), stops a line that runs past its length's worth of speech (5 s plus 0.6 s a word, at most 5 minutes), and drops a line that waited more than 30 s rather than play it late. Siri voices are never assigned automatically, only when named. A per-language list works as usual (`"system": { "en": "siri:aaron", "fr": "siri:marie" }`). If the Siri voice is not downloaded, the system voice of the same name speaks instead (`siri:daniel` → Daniel), else the next choice. Download Siri voices in Spoken Content → System Voice → Manage Voices.
 
@@ -183,7 +183,7 @@ Or use the menu instead:
 1. **Mac:** right-click the widget.
 2. **Mac:** choose **Stop speaking**.
 
-<!-- Screenshot needed: the desktop widget's right-click menu with Stop speaking (native macOS app). Needs a manual capture outside the docs demo. -->
+![The desktop widget right-click menu: Hold notifications, Stop speaking and Quit AgentX Voice](/screenshots/voice/widget-menu.png)
 
 Holding **Option–Space** also silences everything before the widget starts listening. To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
 
