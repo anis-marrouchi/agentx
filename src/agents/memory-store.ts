@@ -207,9 +207,12 @@ export class MemoryStore {
     return lines.join("\n")
   }
 
-  /** Facts waiting for an operator's review, oldest first. */
+  /** Facts waiting for an operator's review, oldest first. Includes
+   *  external facts stored before review existed: they have no review
+   *  state, and are kept out of prompts all the same. */
   held(agentId: string): MemoryFact[] {
-    return this.getAll(agentId).filter((m) => m.review === "held")
+    return this.getAll(agentId).filter((m) =>
+      m.review === "held" || (m.review === undefined && factTrust(m) === "external"))
   }
 
   /** Approve or reject a fact. Returns false when the id is unknown. */

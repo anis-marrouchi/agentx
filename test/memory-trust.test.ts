@@ -112,6 +112,17 @@ describe("MemoryStore with trust", () => {
     expect(store.findRelevant("deploy", "atlas")).toHaveLength(2)
   })
 
+  it("lists external facts stored before review existed, and approval releases them", () => {
+    const file = resolve(root, ".agentx/memory/atlas.jsonl")
+    const legacy = fact({ id: "old-ext", channel: "web-chat", content: "deploy freeze on fridays" })
+    appendFileSync(file, JSON.stringify(legacy) + "\n")
+    expect(store.held("atlas").map((f) => f.id)).toEqual(["old-ext"])
+    expect(store.findRelevant("deploy", "atlas")).toHaveLength(0)
+    store.review("atlas", "old-ext", "approved")
+    expect(store.held("atlas")).toHaveLength(0)
+    expect(store.findRelevant("deploy", "atlas").map((f) => f.id)).toEqual(["old-ext"])
+  })
+
   it("the recent-facts fallback respects the same rules", () => {
     add("unrelated but internal", "telegram")
     add("unrelated and external", "web-chat")
