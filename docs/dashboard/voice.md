@@ -68,7 +68,8 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 "voice": {
   "provider": "system",
   "fallback": "system",
-  "locale": "en"
+  "locale": "en",
+  "listener": "Sam"
 },
 "agents": {
   "coder-agent": {
@@ -91,6 +92,7 @@ agentx voice set coder-agent <voice-id> --provider elevenlabs   # this agent spe
 | `voice.fallback` | `system` (default): when ElevenLabs cannot speak (no key, quota, network), use the system voice. `none`: stay silent |
 | `voice.system` | One system voice (or one per language) for every agent without its own. Unset: each agent gets its own |
 | `voice.locale` | Language of assigned voices, e.g. `en`, `fr`, `en-GB` (default `en`) |
+| `voice.listener` | Who agents address in talk and live teach, e.g. `"Sam"`. Unset: they say "the user" |
 | agent `voice.provider` | Overrides the global provider for this agent |
 | agent `voice.system` | This agent's system voice: a name (`Daniel`, `Ava (Premium)`), an identifier from `agentx voice list`, `system` for the OS default voice, or one per language: `{ "en": "Samantha", "fr": "Thomas", "ar": "system" }` |
 | agent `voice.gender` | `female`, `male` or `neutral`. An assigned voice, and the global `voice.system`, are used only if they match |

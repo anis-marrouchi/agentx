@@ -126,7 +126,7 @@ const NODE_CATALOG = `# V2 Node catalog
 ## Triggers (exactly one per workflow)
 - \`trigger.channel\` — inbound channel event.
     config: { "source": "whatsapp-message" | "telegram-message" | "slack-message" | "discord-message" | "gitlab-issue" | "gitlab-pipeline", "filter": { "chat"?: "*", "project"?: "acme/web", "labels"?: ["x"] } }
-- \`trigger.cron\` — scheduled.           config: { "spec": "0 9 * * *", "timezone": "Africa/Tunis" }
+- \`trigger.cron\` — scheduled.           config: { "spec": "0 9 * * *", "timezone": "UTC" }
 - \`trigger.hook\` — subscribes to any on:* hook event. config: { "event": "on:gitlab-issue" }
 - \`trigger.manual\` — kicked off by CLI or API. config: {}
 - \`trigger.form\` — human fills a form to start. config: { "form": FormSchema, "startableBy": "role:public" }
