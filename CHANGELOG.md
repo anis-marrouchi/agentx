@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.47.0](https://github.com/anis-marrouchi/agentx/compare/v0.46.2...v0.47.0) (2026-09-26)
+
+
+### Features
+
+* **daemon:** resume runs a restart cut off, with safety limits ([#126](https://github.com/anis-marrouchi/agentx/issues/126)) ([06b1dce](https://github.com/anis-marrouchi/agentx/commit/06b1dce75fd644a8fcb0094c0a65c9dde89711ba)), closes [#103](https://github.com/anis-marrouchi/agentx/issues/103)
+
 ## [0.46.2](https://github.com/anis-marrouchi/agentx/compare/v0.46.1...v0.46.2) (2026-09-26)
 
 
