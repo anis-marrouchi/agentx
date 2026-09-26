@@ -6,7 +6,7 @@ import { homedir, release, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
-import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, selectDesktopAgent } from '@/desktop/install'
+import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPath, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -54,6 +54,10 @@ desktop.command('install').description('build, install, and start voice and comp
     if (opts.dryRun) return
     try { execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'pipe' }) }
     catch { throw new Error('Apple command-line tools are required. Run xcode-select --install, finish installation, then retry.') }
+    // A login item gets launchd's bare PATH, where local Whisper cannot find ffmpeg.
+    let ffmpeg: string | null = null
+    try { ffmpeg = execFileSync('/bin/sh', ['-c', 'command -v ffmpeg'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { /* not installed */ }
+    if (!ffmpeg && !process.env.AGENTX_VOICE_PATH) console.warn('ffmpeg was not found. Local Whisper transcription needs it: install ffmpeg (for example brew install ffmpeg), then rerun this install.')
     // Compile in a temporary directory: npm installations may be read-only.
     const stage = mkdtempSync(join(tmpdir(), 'agentx-desktop-'))
     try {
@@ -64,7 +68,8 @@ desktop.command('install').description('build, install, and start voice and comp
       }
       const log = join(homedir(), 'Library/Logs/agentx-desktop.err.log')
       const plist = desktopPlist({ executable: join(apps, DESKTOP_APP, 'Contents/MacOS/AgentXVoice'), cwd: process.cwd(), agent, url,
-        helper: installedHelper(homedir()), cli: join(root, 'dist/cli.js'), node: process.execPath, log })
+        helper: installedHelper(homedir()), cli: join(root, 'dist/cli.js'), node: process.execPath, log,
+        path: desktopPath(ffmpeg, process.env.AGENTX_VOICE_PATH) })
       const stagedPlist = join(stage, 'desktop.plist')
       writeFileSync(stagedPlist, plist, { mode: 0o600 })
       execFileSync('plutil', ['-lint', stagedPlist], { stdio: 'pipe' })
