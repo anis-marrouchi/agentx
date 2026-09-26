@@ -1,15 +1,40 @@
 # Add a second machine
 
-You can keep the first agent on one machine. Add another only when an agent needs access to tools or files that live elsewhere. Each machine runs its own AgentX daemon and needs a network path to its peer.
+You can keep all your agents on one machine. Add another only when an agent needs tools or files that live elsewhere.
 
-::: info Terminal, on the first machine
-Run `agentx connect mesh invite`. It prints a join link. Treat the link as a credential and share it only with the person setting up the second machine.
-:::
+Each machine runs its own AgentX daemon (the background service). Connected machines form a **mesh**, and each machine in it is a **peer** (or **node**) of the others. Peers need a private network path to each other; [Tailscale setup](tailscale.md) shows one way to get it.
 
-::: info Terminal, on the second machine
-Install AgentX, run its setup, then run `agentx connect mesh join '<link>'` with the invite. Start the daemon on both machines.
-:::
+## Pair the machines
 
-Use [Operations](../dashboard/operations.md) to confirm the two nodes appear. Run `agentx mesh health` if a peer does not connect. Do not expose the daemon publicly just to make pairing work; use a private network between hosts.
+1. **Terminal, on the first machine:** in the folder that holds `agentx.json`, create an invite:
+   ```sh
+   agentx connect mesh invite
+   ```
+   If the second machine reaches this one on a different address (such as a Tailscale address), add `--url http://<this-machine's-address>:18800`.
+2. Copy the join link it prints. It contains a password: share it only with the person setting up the second machine.
+3. **Terminal, on the second machine:** install AgentX and run its setup. See [Install](../install.md).
+4. **Terminal, on the second machine:** join with the link:
+   ```sh
+   agentx connect mesh join '<link>'
+   ```
+5. **Terminal, on both machines:** restart the daemon so it loads the new mesh settings: `agentx daemon stop`, then `agentx daemon start --detach`.
 
-For network configuration and reciprocal pairing, follow [Tailscale setup](tailscale.md). Joining an invite adds the inviting node to the joining node's peer list; repeat in the other direction for two-way discovery. Then [send a peer task](../reference/a2a.md).
+Joining adds the first machine to the second machine's peer list. For each machine to see the other, repeat steps 1–5 in the other direction. See [Tailscale setup › Pair AgentX in both directions](tailscale.md#_3-pair-agentx-in-both-directions).
+
+Don't make the daemon reachable from the public internet just to get pairing working. Use a private network between the machines.
+
+<!-- Screenshot needed: Operations tab showing two paired machines. Not defined in docs/.scripts/capture.mjs yet (the existing operations.png shows the three-node demo). -->
+
+## Check it worked
+
+1. **Terminal, on either machine:** run `agentx mesh list`. The other machine is listed as `healthy`, with its number of agents.
+2. **Browser:** open the **Operations** tab. Both machines appear. See [Operations](../dashboard/operations.md).
+3. Send a small test task to an agent on the other machine: see [Agent-to-agent (A2A)](../reference/a2a.md).
+
+## If something is wrong
+
+- **`join` says it could not reach the peer:** the second machine can't reach the first machine's address. Check the address in the invite, the network and any firewall.
+- **`agentx mesh list` shows the peer as `unreachable`:** check that its daemon is running (`agentx daemon status`) and listens on an address the other machine can reach. See [Tailscale setup](tailscale.md).
+- **`agentx mesh list` says `Mesh: disabled`:** this machine hasn't joined a mesh yet, or its daemon settings weren't saved. Run the join step again.
+- **An authentication error:** the machines hold different mesh tokens, or a daemon wasn't restarted after joining. Restart both daemons.
+- **Only one machine sees the other:** pairing was done in one direction. Repeat it the other way.

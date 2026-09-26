@@ -2,57 +2,75 @@
 
 Use the [network prerequisites checklist](../requirements.md#two-machines-and-a2a) before pairing.
 
-Tailscale supplies the private network between your AgentX machines. AgentX mesh pairing supplies peer addresses and authentication. Set up both before expecting agents on different machines to communicate.
+[Tailscale](https://tailscale.com) is a private network that links your own machines over the internet. Your private Tailscale network is called a **tailnet**. Tailscale lets the machines reach each other; AgentX **mesh pairing** then tells each AgentX daemon (the background service) where its peers are and gives them a shared password. You need both before agents on different machines can work together.
+
+The address `100.64.0.10` below is an example. Replace it with each machine's own Tailscale address.
 
 ## 1. Join the same private network
 
-Install Tailscale on both machines and sign into the intended tailnet using the [official installation guide](https://tailscale.com/docs/install). Check each machine's address and connectivity:
+1. Install Tailscale on both machines, following the [official installation guide](https://tailscale.com/docs/install).
+2. Sign in to the same tailnet on both machines.
+3. **Terminal, on each machine:** print its Tailscale address and note it down:
+   ```sh
+   tailscale ip -4
+   ```
+4. **Terminal, on one machine:** check that it reaches the other one:
+   ```sh
+   tailscale ping <other-machine-name-or-address>
+   ```
 
-```sh
-tailscale status
-tailscale ip -4
-tailscale ping <other-machine-name-or-IP>
-```
+These commands are described in the [Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli). Your tailnet access rules and each machine's firewall must let the machines reach AgentX's port, normally `18800`.
 
-These commands are described in the [Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli). Your tailnet access policy and host firewall must permit the intended peers to reach AgentX's TCP port, normally `18800`.
+<!-- Screenshot needed: the Tailscale app listing both machines. Not defined in docs/.scripts/capture.mjs yet (external app). -->
 
 ## 2. Make the daemon reachable
 
-For a native installation, set `node.bind` in each machine's `agentx.json` to its own Tailscale IPv4 address and daemon port, for example `100.64.0.10:18800`. Restart that daemon after changing its bind address. Update local clients' daemon URLs, including `dashboard.daemonUrl`, if they previously used loopback.
+By default the daemon only listens on the machine itself (`127.0.0.1`, also called loopback), so other machines can't reach it.
 
-From the other machine, check:
+**For a normal (non-Docker) install, on each machine:**
 
-```sh
-curl http://100.64.0.10:18800/health
-```
+1. Open `agentx.json`.
+2. Set `node.bind` to the machine's Tailscale address and the daemon port, for example `"bind": "100.64.0.10:18800"` inside `"node"`.
+3. If a local tool used `http://127.0.0.1:18800` to reach the daemon, including `dashboard.daemonUrl`, change it to the new address.
+4. **Terminal:** restart the daemon: `agentx daemon stop`, then `agentx daemon start --detach`.
+5. **Terminal, on the other machine:** check that the daemon answers:
+   ```sh
+   curl http://100.64.0.10:18800/health
+   ```
 
-Replace the example address with your machine's address. A successful Tailscale ping alone does not establish that the daemon's HTTP port is reachable.
+A successful `tailscale ping` alone doesn't prove the daemon's port is reachable; the `curl` check does.
 
-The supplied Docker Compose file publishes ports on host loopback. For a Docker node, adapt the daemon's host port mapping to your host's Tailscale address, for example `100.64.0.10:18800:18800`, while retaining `0.0.0.0:18800` **inside** the daemon container. Recreate that service. The dashboard can remain local; it does not need to be published to pair agents.
+**For a Docker install:** the supplied Compose file only publishes ports on loopback. Change the daemon's host port mapping to the machine's Tailscale address, for example `100.64.0.10:18800:18800`, and keep `0.0.0.0:18800` as the bind address **inside** the daemon container. Then recreate that service. The dashboard can stay local; it doesn't need to be published for pairing.
 
 ## 3. Pair AgentX in both directions
 
-Run commands from the configuration directory on each machine. On machine A:
+Run these commands in the folder that holds `agentx.json` on each machine. For Docker, run them inside the daemon container from `/data`.
 
-```sh
-agentx connect mesh invite --url http://100.64.0.10:18800
-```
+1. **Terminal, on machine A:** create an invite with A's address:
+   ```sh
+   agentx connect mesh invite --url http://100.64.0.10:18800
+   ```
+2. Copy the printed link. It contains a password: share it privately.
+3. **Terminal, on machine B:** join with it:
+   ```sh
+   agentx connect mesh join '<invite-from-A>'
+   ```
+4. **Terminal, on machine B:** create an invite with B's own address (`agentx connect mesh invite --url http://<B's address>:18800`). It reuses the shared password.
+5. **Terminal, on machine A:** join with B's link.
+6. **Terminal, on both machines:** restart the daemon so it loads the new password from `.env`. For Docker, restart the services.
 
-On machine B, consume the printed link:
+Joining only adds the inviting machine to the joining machine's list, which is why steps 4 and 5 repeat it the other way.
 
-```sh
-agentx connect mesh join '<invite-from-A>'
-```
+## Check it worked
 
-Joining adds A to B's peer list. For two-way discovery, create an invite on B with B's address and join it on A. After B joins A, its invite reuses the shared token. Invite links contain a credential: share them privately.
+1. **Terminal, on each machine:** run `agentx mesh list`. The other machine shows as `healthy`, with its number of agents.
+2. **Browser:** open the **Operations** tab and check that both machines appear. See [Operations](../dashboard/operations.md).
+3. Send a small test task by following [Agent-to-agent communication](../reference/a2a.md).
 
-Restart both daemons after first pairing so newly written `.env` tokens are loaded. For Docker, run the pairing commands inside the daemon container from `/data`, and restart the services afterward.
+## If something is wrong
 
-## 4. Verify and send a task
-
-```sh
-agentx mesh list
-agentx mesh health
-```
-
-Open **Operations** and check the peer nodes, then follow [Agent-to-agent communication](../reference/a2a.md) to send a small test task. An unreachable peer points to address, bind, firewall, or tailnet policy problems; an authentication error points to mismatched tokens or a daemon that has not reloaded its environment.
+- **`tailscale ping` fails:** the machines aren't in the same tailnet, or the tailnet's access rules block them. Check the Tailscale app on both.
+- **`curl …/health` fails but `tailscale ping` works:** check `node.bind`, that the daemon was restarted, and the firewall on port `18800`.
+- **`agentx mesh list` shows `unreachable`:** the same checks as above, on the peer that is unreachable.
+- **An authentication error:** the two machines hold different mesh passwords, or a daemon hasn't restarted since pairing. Restart both daemons.
+- **Only one machine sees the other:** pairing was done in one direction only. Do steps 4 and 5 of section 3.

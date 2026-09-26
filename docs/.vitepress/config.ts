@@ -39,6 +39,9 @@ const groups = [
     { text: "Record a VS Code walkthrough", link: "/tutorials/record-vscode" },
     { text: "Architecture", link: "/architecture/overview" },
     { text: "Jev and typed decisions", link: "/architecture/jev" },
+    { text: "Persistent Codex processes", link: "/architecture/persistent-codex-process" },
+    { text: "Persistent OpenCode servers", link: "/architecture/persistent-opencode-process" },
+    { text: "Author a teach lesson", link: "/guides/teach-authoring" },
   ] },
   { text: "Reference for engineers", items: [
     { text: "CLI", link: "/reference/cli" }, { text: "Configuration", link: "/reference/config" },

@@ -30,4 +30,16 @@ Build with Node 22 using `npm run build`, then run `agentx teach example-tour`. 
 
 - Run it from a project directory whose `agentx.json` enables the `ui-element` and `screen-state` decision seats. Without them, every `find` reports "Could not find" and every claim is unverifiable.
 - `start.cleanWindow: true` opens a throwaway Chrome profile in app mode. An everyday window's tabs, bookmarks and extensions use up the screen reader's candidates before it reaches the page, and would appear in a recording. The window opens below the callout, which otherwise covers the page's top navigation.
-- Write each claim as one plainly visible fact, such as `The text laptop-paris is visible on the page`. Compound claims ("A and B listed") and claims about the browser rather than the page often come back inconclusive, which stops the lesson.
+- Write each claim as one plainly visible fact, such as `The text laptop-paris is visible on the page` (`laptop-paris` is the name of a fictional machine in the demo). Compound claims ("A and B listed") and claims about the browser rather than the page often come back inconclusive, which stops the lesson.
+
+## Check it worked
+
+1. **Terminal:** after building, run `agentx teach`. Your lesson's `id` and `title` appear in the list.
+2. **Terminal:** run `agentx teach <your-lesson-id>`. Each step's narration is spoken and its target is highlighted, and the lesson finishes without stopping on a failed check.
+
+## If something is wrong
+
+- **Your lesson isn't listed:** check that it is included in `LESSONS` in `src/teach/lessons.ts`, then build again.
+- **A step reports "Could not find":** the `ui-element` seat is off or unavailable, or the `find` description doesn't match anything visible. Enable the seat (see [Jev and typed decisions](../architecture/jev.md)) and describe the control the way it reads on screen.
+- **The lesson stops on a claim:** the claim couldn't be confirmed. Make it one plainly visible fact about the page, then run the lesson again.
+- **The page wasn't ready:** a slow page or the wrong browser window stops the lesson at `start`. Fix the screen, then run it again.

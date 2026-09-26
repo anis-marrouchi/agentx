@@ -34,7 +34,15 @@ A machine that can't be reached shows **Routines unknown while this node is unre
 
 ## Open, watch and continue a scheduled run
 
-Click a schedule's row to open its drawer. While the job is running, the row shows **running** and the drawer has a **Watch live run** link to the run's Task page, on the node that runs it. **Runs today** lists the latest 10 runs, each with an **Open** link to its archived Task page. Command jobs run a shell command, not an agent, so they have no links. Runs recorded before the node was upgraded have no link either.
+1. **Browser:** in the **Operations** view, find the schedule under **Today's automations**.
+2. Select its row. Its drawer opens.
+3. While it's running, select **Watch live run** to follow it.
+4. To look at a finished run, select **Open** next to it under **Runs today**.
+5. To continue that run's conversation, type a message on its Task page and select **Send**.
+
+<!-- Screenshot needed: a schedule drawer with Watch live run and Runs today. Not defined in docs/.scripts/capture.mjs yet. -->
+
+Details: while the job is running, the row shows **running** and the drawer has a **Watch live run** link to the run's Task page, on the node that runs it. **Runs today** lists the latest 10 runs, each with an **Open** link to its archived Task page. Command jobs run a shell command, not an agent, so they have no links. Runs recorded before the node was upgraded have no link either.
 
 On the archived Task page of a scheduled run, **Send** continues the conversation. The message becomes a new turn in the job's `cron:<jobId>` chat, so the agent picks up the run's context, and the page moves to the new run. If the agent is busy, the message waits as the next turn. If an attached Claude Code session answers it, the page says so, and there is no new run to open. Finished runs from other channels, such as Telegram or GitLab, stay read-only: a reply sent from here would never reach the person in that chat.
 
@@ -44,7 +52,7 @@ The Task page calls the daemon's follow-up endpoint:
 
 ```
 POST /api/tasks/<taskId>/followup
-{ "message": "and tomorrow?", "sender": "operator", "replace": false, "agent": "ops-agent" }
+{ "message": "and tomorrow?", "sender": "operator", "replace": false, "agent": "support" }
 ```
 
 Without `agent`, it only reaches a running task. With `agent`, a finished scheduled run of that agent is continued too.

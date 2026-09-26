@@ -53,3 +53,15 @@ Execution events include `codex.ready` (`reused`, `startupMs`) and
 execution logs. Ready time includes initialization and thread start/resume;
 first-output time also includes model latency. No production speedup is assumed
 without these measurements.
+
+## Check it worked
+
+1. Send the agent two short messages in the same chat.
+2. **Browser:** open each run's Task page from **Live** or **Activity** and read its live output.
+3. The first run shows `. codex started ready=…ms`. The second shows `. codex reused ready=…ms`: the process was kept between requests.
+
+## If something is wrong
+
+- **Nothing changed after editing the setting:** the daemon only reads `persistentProcess` when it starts. Restart it once running tasks have finished (see [Restart without losing work](../jobs/restart-safely.md)).
+- **Every request shows `. codex using CLI fallback: …`:** the reason follows the colon. Usually the installed Codex is too old for `codex app-server`, or it isn't signed in. Update Codex, run `codex login`, then restart the daemon.
+- **A reused process behaves differently from `codex exec`:** app-server loads your own Codex configuration (see **Configuration difference** above). Review it, or turn `persistentProcess` off and restart the daemon.

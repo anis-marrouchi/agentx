@@ -48,6 +48,29 @@ Node configuration can reference earlier outputs with templates such as <code v-
 
 An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. When set, AgentX stops the step once that many minutes have passed and frees the agent's slot, and the step fails with "timed out after …s". Leave it empty for no limit. Give agent work room: a review or a code change can take 20 minutes or more. See [time limits and cancel](/reference/config#time-limits-and-cancel). An `action.send` node needs a live channel and destination. `branch` uses named ports to choose an edge; `checkpoint` pauses for review. Node configuration is validated by the corresponding handler, so passing the top-level file validator alone does not prove that credentials or destinations work.
 
+## Node types
+
+| Type | What it does |
+|---|---|
+| `trigger.manual`, `trigger.channel`, `trigger.cron`, `trigger.hook`, `trigger.form` | Starts a run: by hand, from a channel message, on a schedule, on an `on:*` event, or from a form |
+| `agent` | Runs an agent with a prompt and passes its answer on |
+| `classify` | Picks one label with a confidence; the port named after the label fires, or `unsure` |
+| `transform` | Picks or reshapes values from earlier steps |
+| `branch` | Chooses an outgoing port; edges match it with `fromPort` |
+| `rule` | Checks a declared rule and can stop the run early |
+| `gateway.parallel` | Waits for parallel branches to join |
+| `action.send`, `action.react`, `action.editMessage` | Sends a message, reacts to one, or edits one, through a channel |
+| `action.createIssue`, `action.setLabel`, `action.readLabel`, `action.logTime` | Creates an issue (GitLab or GitHub), or changes labels, reads labels or logs time on a GitLab issue or merge request |
+| `action.callHTTP` | Makes an outgoing HTTP request |
+| `action.run`, `action.builtin` | Runs a registered action, or a built-in one, by name |
+| `signal.emit`, `signal.wait` | Publishes a signal, or pauses until one arrives |
+| `timer.boundary` | Pauses until a timer runs out |
+| `subProcess` | Starts another workflow and waits for it to finish |
+| `checkpoint` | Pauses for review until a resume event arrives |
+| `end` | Closes the run with the given status |
+
+Each type's config is checked by its handler in `src/workflows/nodes/`.
+
 ## Event trigger filters
 
 A `trigger.hook` node subscribes to an `on:*` event, such as `on:gitlab-mr` or `on:github-pr`. Its `config.filter` narrows which events start a run. Events that don't match are dropped before any agent is woken.
@@ -78,3 +101,16 @@ A note and an update on the same MR count toward the same limit. Every loop-guar
 The editor's assistant can propose a workflow from a request. **Apply to canvas replaces the current graph.** Review the agent, input, destination, and error path before saving. The complete implementation is in `src/workflows/types.ts` and `src/workflows/nodes/`.
 
 <!-- No screenshot needed: this is the machine-readable counterpart to the illustrated automation guide. -->
+
+## Check it worked
+
+1. **Terminal:** run `agentx workflow validate <file>`. It reports no errors.
+2. **Terminal:** run `agentx workflow list`. Your workflow is listed with its state.
+3. **Terminal:** after a test run, `agentx workflow runs <id>` shows the run and its result.
+
+## If something is wrong
+
+- **The workflow never fires:** check `state` is `active` (not only `status`) and that the daemon has `workflows.enabled: true`.
+- **An `agent` step fails:** its `agentId` must match an agent in `agentx.json`.
+- **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
+- **A run stops partway:** `agentx workflow trace <runId>` shows which step failed and why.

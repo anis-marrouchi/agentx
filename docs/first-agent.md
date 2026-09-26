@@ -1,15 +1,60 @@
 # Create your first agent
 
-::: info In the browser
-Open `/setup` on your dashboard. Enter a **Team name**, an **Agent name**, and an **Agent id** such as `support` (lowercase, no spaces). Set **Trigger words** to `@support, support`. Give it one narrow job under **Personality / instructions**, such as answering questions from your approved support material.
+An agent is an AI helper with one job. This page creates one from the setup page, then checks that it answers. You need AgentX [installed](./install.md) and a model connection:
 
-Choose an **AI engine**. For **Anthropic API (BYO key)**, enter your Anthropic key in the last section. For a CLI engine, have the installer sign in to that tool on the host first. Leave **Connect Telegram now** unchecked if you want to test the agent before connecting a channel. Select **Save and continue**.
-:::
+- **An API provider** (such as the Anthropic API) needs an API key.
+- **A command-line tool** (Claude Code, Codex CLI or OpenCode) must be installed and signed in on the machine that runs AgentX. The setup page calls these **CLI engines**.
 
-A model is required for real replies. An API provider needs a key. Claude Code, Codex CLI, and OpenCode need their corresponding CLI installed and authenticated on the host. The scripted [demo](./see-it-first.md) is the way to explore without either.
+No model yet? The scripted [demo](./see-it-first.md) lets you look around without one.
 
-::: info Terminal
-Start the daemon if it is not running. If you added an agent to an already running daemon, restart it so the new agent loads. In Docker, use `docker compose restart daemon dashboard`. For a local install, stop and start the daemon from the installation directory (`agentx daemon stop`, then `agentx daemon start --detach`). In a source checkout, replace `agentx` with `node dist/cli.js`.
-:::
+## Fill in the setup page
 
-Open **Settings → Agents** and select **Test drive** beside the new agent. Send a small task with an answer you can check. This uses the configured model and may consume paid usage. Check [Live](./dashboard/live.md) for the run and [Activity](./dashboard/activity.md) for its record. Then [connect Telegram](./connect-telegram.md) if you want to talk to the agent from your phone.
+1. **Browser:** open `/setup` on your dashboard, for example `http://127.0.0.1:4202/setup`.
+2. Under **Team basics**, enter a **Team name**, such as `My Team`.
+3. Under **First agent**, enter an **Agent name**, such as `Support`.
+4. Enter an **Agent id**, such as `support`. Use lowercase letters, numbers and dashes, with no spaces.
+5. Set **Trigger words** to `@support, support`. A message that contains a trigger word goes to this agent.
+6. Choose an **AI engine**. For an API key, choose **Anthropic API (BYO key)**. For a CLI engine, choose the tool that's installed on the machine.
+7. Leave **Model** as it is, unless you know which model you want.
+8. Under **Personality / instructions**, describe one narrow job in plain words, for example: "Answer questions about our opening hours and returns policy. Keep replies short."
+9. Leave **Connect Telegram now** unticked. You'll test the agent first.
+10. If you chose **Anthropic API (BYO key)**, paste your key into **API key** under **Anthropic API key**. It's saved in the `.env` file next to `agentx.json`, not in the dashboard.
+11. Select **Save and continue**.
+
+<!-- Screenshot needed: the /setup page filled in. Not defined in docs/.scripts/capture.mjs yet. -->
+
+## Start or restart the daemon
+
+The daemon (the background service that runs agents) only loads new agents when it starts.
+
+- **Nothing running yet (local install):** select **Start daemon now** on the setup page.
+- **Docker:**
+  1. **Terminal:** in the AgentX folder, run `docker compose restart daemon dashboard`.
+- **The daemon was already running (local install):**
+  1. **Terminal:** stop it with `agentx daemon stop`.
+  2. **Terminal:** start it again with `agentx daemon start --detach`.
+
+In a source checkout, type `node dist/cli.js` instead of `agentx`.
+
+## Try it out
+
+1. **Browser:** open the **Settings** tab. The **Agents** section opens first.
+2. Select **Test drive** next to your new agent.
+3. Send a small question with an answer you can check. This uses your model and may cost money.
+
+![Settings, Agents tab, with a Test drive button beside each agent](/screenshots/settings.png)
+
+Then [connect Telegram](./connect-telegram.md) if you want to talk to the agent from your phone.
+
+## Check it worked
+
+1. The **Test drive** window shows the agent's reply.
+2. **Browser:** the **Live** tab shows the agent, and the run appears there while it works.
+3. **Browser:** the **Activity** tab lists the finished run. See [Activity](./dashboard/activity.md).
+
+## If something is wrong
+
+- **Save and continue shows an error about the Agent id:** use only lowercase letters, numbers, `-` and `_`, starting with a letter or number.
+- **The agent isn't listed in Settings or Live:** the daemon hasn't loaded it. Restart the daemon as above.
+- **Test drive returns an error about a key or login:** for **Anthropic API (BYO key)**, check `ANTHROPIC_API_KEY` in `.env`. For a CLI engine, check the tool on the machine, for example `claude --version`, and sign in to it.
+- **Nothing happens at all:** run `agentx daemon status`. If it says `Daemon is not running`, start it. Then see [It's not answering](./help/its-not-answering.md).
