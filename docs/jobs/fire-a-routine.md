@@ -48,7 +48,7 @@ The daemon replies `202 Accepted` as soon as the run starts. The run itself cont
 { "ok": true, "routine": "deploy-verifier", "kind": "cron", "runId": "deploy-verifier/2026-01-01T06-00-00-000Z", "startedAt": "2026-01-01T06:00:00.000Z" }
 ```
 
-For a schedule, `runId` names the run record under `.agentx/cron/runs/`. That record has `"fired": true`. For a workflow, `runId` is the ID of the workflow run.
+For a schedule, `runId` names the run record under `.agentx/cron/runs/`. That record has `"fired": true`. Like every agent run record there, it also stores `taskId` (the run's Task page ID), `traceId` and, when the runtime reported one, `sessionId`. Runs that were queued, forwarded to another node or answered by an attached session have no `taskId`. See [Open, watch and continue a scheduled run](../dashboard/operations.md#open-watch-and-continue-a-scheduled-run). For a workflow, `runId` is the ID of the workflow run.
 
 | Status | Meaning |
 |---|---|
