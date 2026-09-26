@@ -44,6 +44,7 @@ export function drawSystemPrompt(): string {
     "An arrow joins two DIFFERENT earlier elements. To label something, first add a small text element beside it, then an arrow from that text to the thing.",
     `geo is one of: ${GEOS.join(", ")}.`,
     `color is one of: ${COLORS.join(", ")}. fill is fill (strong colour), solid (pale tint), semi, none or pattern. opacity is 0.1 to 1: use it for shadows, haze and atmospheric depth. size is s, m, l or xl. font is draw (hand-lettered), sans, serif or mono.`,
+    "Keep the subject readable: no prop may cover a face, eyes or the props that matter. Put tall props (a parasol, a tree, a sign) beside the subject or behind it, drawing them before the subject so it sits in front, and keep a clear gap around the head.",
     "Keep everything inside the canvas. Give text room: an xl word is about 40 px tall and 28 px wide per letter.",
     "say is a short caption, at most 8 words, in the voice of someone drawing it live. Caption only the steps worth narrating (about one in five) and leave say empty on the rest: captioned steps pause so they can be read, the others draw straight through.",
   ].join("\n")
