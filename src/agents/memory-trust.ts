@@ -15,7 +15,7 @@
 // Pure functions, unit tested.
 
 export type SourceTrust =
-  /** Only the operator can reach it: CLI, dashboard, local voice and TUI. */
+  /** Only the operator can reach it: CLI, dashboard, local voice, TUI and Raycast. */
   | "operator"
   /** Authenticated people or peers: allow-listed chat senders, forge
    *  project members, mesh callers. */
@@ -27,7 +27,7 @@ export type FactReview = "held" | "approved" | "rejected"
 
 const OPERATOR_CHANNELS = new Set([
   "cli", "chat-cli", "exec", "tui", "dashboard", "admin", "test-drive",
-  "workflow-editor", "voice", "opencode", "mcp", "ntfy",
+  "workflow-editor", "voice", "opencode", "mcp", "ntfy", "raycast",
 ])
 
 /** People behind an allow-list or project membership, mesh peers, and

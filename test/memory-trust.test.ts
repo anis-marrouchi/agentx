@@ -18,6 +18,7 @@ describe("trustForChannel", () => {
     expect(trustForChannel("gitlab")).toBe("internal")
     expect(trustForChannel("cron")).toBe("internal")
     expect(trustForChannel("ntfy")).toBe("operator")
+    expect(trustForChannel("raycast")).toBe("operator")
     expect(trustForChannel("web-chat")).toBe("external")
     expect(trustForChannel("public-api")).toBe("external")
     expect(trustForChannel("webhook")).toBe("external")
