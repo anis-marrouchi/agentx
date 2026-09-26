@@ -51,3 +51,15 @@ Execution events expose `opencode.ready` with `startupMs` and `reused`, plus
 `opencode.first_output` with `elapsedMs`. Ready time measures server acquisition;
 it excludes the small per-turn CLI client and model latency. Compare repeated
 requests before drawing conclusions about end-to-end response speed.
+
+## Check it worked
+
+1. Send the agent two short messages in the same chat.
+2. **Browser:** open each run's Task page from **Live** or **Activity** and read its live output.
+3. The first run shows `. opencode started ready=…ms`. The second shows `. opencode reused ready=…ms`: the process was kept between requests.
+
+## If something is wrong
+
+- **Nothing changed after editing the setting:** the daemon only reads `persistentProcess` when it starts. Restart it once running tasks have finished (see [Restart without losing work](../jobs/restart-safely.md)).
+- **Every request shows `. opencode using CLI fallback: …`:** the reason follows the colon. Check `opencode --version` reports v2 or newer and that a provider is configured, then restart the daemon.
+- **Replies use the wrong model:** check the agent's `model` is available through your OpenCode provider. This setting never changes the model.

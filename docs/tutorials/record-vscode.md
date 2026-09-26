@@ -2,59 +2,91 @@
 
 **Goal:** produce a short recording that shows a real action in VS Code, with a highlight and a short explanation at each step.
 
-The current source records a Screen Studio attempt where the recording picker opened but recording did not begin. The run nevertheless reported success. That incident informed the screen-observation and verification code. The exact recording from the earlier conversation has not yet been attached to this guide; the steps below are a reproducible procedure, not a replay of that session.
+This procedure comes from a real attempt: the Screen Studio recording picker opened, recording never started, and the run still reported success. That's why every step below checks the result instead of trusting that a command was sent. The steps are a procedure you can repeat, not a replay of that session.
+
+**Before you start:** install the [desktop assistant](../dashboard/voice.md) and give it the Accessibility and Screen Recording permissions listed in [Before you start](../requirements.md#macos-permissions). The optional [Screen Studio](https://screen.studio/) app is used for the recording itself.
 
 ## 1. Prepare a clean scene
 
-Open a small demo project in VS Code. Choose one action to teach, such as finding a symbol or opening the command palette. Keep the intended controls visible and move unrelated windows out of the capture area.
-
-Install the [desktop assistant](../dashboard/voice.md). Computer-use commands require the macOS helper and appropriate Accessibility and Screen Recording permissions.
+1. Open a small demo project in VS Code. Don't use a real client project: screen captures may be sent to a vision provider.
+2. Choose one action to teach, such as opening the command palette.
+3. Make sure the controls you'll use are visible.
+4. Move unrelated windows out of the way.
 
 ## 2. Start the recording and check it
 
-Open Screen Studio and use its recording controls to select the VS Code window or screen. Complete the recording picker. Confirm recording in the recorder itself before beginning the demonstration.
+1. Open Screen Studio.
+2. Select the VS Code window (or the screen) in its recording picker.
+3. Start recording.
+4. Check in Screen Studio itself that it is recording before you begin the demonstration. An open picker, or a shortcut that was sent, doesn't prove recording started. Small menu-bar icons proved unreliable as evidence, too.
 
-An open picker or a successfully sent shortcut is not enough. AgentX's source notes show that small menu-bar indicators were unreliable visual evidence. Check the recorder's actual state and, after stopping, the saved clip and its duration.
+<!-- Screenshot needed: the Screen Studio recording picker over VS Code. Not defined in docs/.scripts/capture.mjs yet (it only shoots the dashboard). -->
 
 ## 3. Point, then explain
 
-With VS Code visible, you can try:
+1. **Terminal:** with VS Code visible, ask AgentX to find a control:
+   ```sh
+   agentx point "the search field"
+   ```
+   AgentX highlights the best match on screen. It never clicks.
+2. Check that the highlight sits on the control you meant.
+3. **Terminal:** ask what is on screen:
+   ```sh
+   agentx look "What panel is open in VS Code?" --json
+   ```
+4. **Terminal:** check that a step worked by stating what should be true:
+   ```sh
+   agentx look "The command palette is open" --verify --json
+   ```
+   It exits with `0` when the claim is confirmed, `3` when it's refuted and `4` when it can't tell. An error (for example a missing key) exits with `1`.
 
-```sh
-agentx point "the search field"
-```
+`point` needs the `ui-element` *seat*: a small, fixed-choice question AgentX hands to its fast decision model. See [Jev and typed decisions](../architecture/jev.md). `look` sends a picture of the window to the vision provider you configured, so use a demo workspace.
 
-This locates and highlights a candidate without clicking. It requires an available `ui-element` seat; see [Jev configuration](../architecture/jev.md). If the control is not present or the decision is unavailable, fix that before proceeding.
-
-For a visible state check:
-
-```sh
-agentx look "What panel is open in VS Code?" --json
-agentx look "The command palette is open" --verify --json
-```
-
-`look` uploads a captured region to the configured vision provider. Use a demo workspace. Verification exits `0` when confirmed, `3` when refuted, and `4` when unknown; operational errors exit `1`.
+<!-- Screenshot needed: VS Code with an `agentx point` highlight. Not defined in docs/.scripts/capture.mjs yet. -->
 
 ## 4. Stop, inspect, then annotate
 
-Stop the recording in Screen Studio. Open the saved clip, scrub the beginning and end, and verify that the intended VS Code action is visible. Add annotations to explain the purpose of each step, keeping labels away from the control being demonstrated.
+1. Stop the recording in Screen Studio.
+2. Open the saved clip.
+3. Scrub through the start and the end, and check that the VS Code action is visible and that the clip has the length you expect.
+4. Add annotations that explain each step. Keep labels away from the control you're showing.
 
-For the documentation, pair each recorded action with:
+For the written guide, pair each recorded action with:
 
-- **Do:** the click, keystroke, or command.
+- **Do:** the click, keystroke or command.
 - **Look for:** the visible result that confirms it worked.
 - **Why:** one sentence of explanation.
 - **If it fails:** a concrete recovery step.
 
 ## How AgentX can automate a lesson
 
-`agentx teach` lists the lessons shipped in this checkout. Lessons can narrate, locate, highlight, click, type, press keys, and verify claims. Inspect a lesson before running it: it can interact with real applications. There is currently no bundled VS Code lesson.
+A *lesson* is a script that narrates, finds and highlights controls, clicks, types, presses keys and checks the result. Lessons act on real applications, so read one before you run it. There is no ready-made VS Code lesson yet.
 
-```sh
-agentx teach
-agentx teach --help
-```
+1. **Terminal:** list the lessons in your installation:
+   ```sh
+   agentx teach
+   ```
+2. **Terminal:** see every option:
+   ```sh
+   agentx teach --help
+   ```
 
-The `--record` option uses macOS `screencapture`, not Screen Studio. `--no-speak` only disables narration; it does **not** disable clicks or typing. The current runner stops for a returned non-confirmed required verification, but a verification exception is logged without always stopping the lesson. Check the recording yourself before treating a lesson as successfully completed.
+- `--record` records with the macOS `screencapture` tool, not Screen Studio.
+- `--no-speak` only turns off the spoken narration. It does **not** stop clicks or typing.
+- A lesson stops when a required check comes back as not confirmed. If the check itself fails with an error, the lesson may carry on, so always watch the recording yourself before calling a lesson a success.
 
-Continue with [the architecture](../architecture/overview.md) to see how perception, typed decisions, and native actions fit together.
+See [the architecture](../architecture/overview.md) for how seeing the screen, typed decisions and native actions fit together.
+
+## Check it worked
+
+1. The saved clip plays from start to end.
+2. The VS Code action you chose is visible in it.
+3. `agentx look "…" --verify` returned exit code `0` for the step you checked. In the terminal, `echo $?` right after the command prints it.
+
+## If something is wrong
+
+- **The clip is empty or missing:** recording never started. Repeat step 2 and check the recorder's state before you begin.
+- **`agentx point` highlights nothing or the wrong control:** make sure the control is visible and not covered. If it reports that the decision is unavailable, set up the `ui-element` seat in [Jev and typed decisions](../architecture/jev.md).
+- **`agentx look` fails straight away:** it needs an OpenRouter key; see [Computer use](../requirements.md#computer-use).
+- **`--verify` exits with `4` (unknown):** the model couldn't tell from the picture. Make the result bigger on screen, or use `--screen` to capture the whole screen, then try again.
+- **Nothing happens on screen:** check the Accessibility and Screen Recording permissions in System Settings › Privacy & Security.

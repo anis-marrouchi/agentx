@@ -2,14 +2,14 @@
 
 Before enabling a backend, check [computer-use credentials and requirements](../requirements.md#computer-use).
 
-In AgentX, Jev is an optional backend for typed decisions. The integration gives it structured state and explicit questions, then receives answers used by the calling code. The agent's main model still handles open-ended reasoning and writing.
+In AgentX, Jev is an optional backend for typed decisions: small questions with a fixed set of possible answers ("which of these controls?", "yes or no?") that a fast model answers in a fraction of a second. The integration gives it structured state and explicit questions, then receives answers used by the calling code. The agent's main model still handles open-ended reasoning and writing.
 
 ## Start with one example: point at a control
 
 When you run `agentx point "the search field"`:
 
-1. The native helper reads the active application's accessibility tree.
-2. If the tree is too sparse, local OCR supplies readable text and its position.
+1. The native helper reads the active application's accessibility tree (the list of buttons, fields and labels that macOS exposes for screen readers).
+2. If the tree is too sparse, local OCR (reading text from the screen image) supplies readable text and its position.
 3. AgentX creates a bounded list of candidate controls.
 4. The `ui-element` decision seat asks whether the requested control is present, and which candidate matches it.
 5. The caller checks the answer and maps the chosen ID to coordinates before drawing a highlight.
@@ -28,6 +28,11 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `voice-narration` | Which predefined spoken phrase fits this event? |
 | `presence-mode` | On this voice turn, should the agent talk, act, teach, watch or stay quiet on screen; stay on screen after; and what first? |
 | `guard-risk` | Does an action need additional scrutiny? |
+| `request-gate` | Would this new request benefit from Jev preprocessing? |
+| `request-context` | Which optional pieces of context should this request receive? |
+| `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
+
+More seats exist in `src/decisions/seats/`; the table lists the ones this page refers to.
 
 The decision API uses typed questions, including categorical choices and yes/no probabilities. Probability estimates are not proof of correctness. Calibration and evaluation require labeled outcomes for the actual seat.
 
@@ -35,27 +40,41 @@ The decision API uses typed questions, including categorical choices and yes/no 
 
 Decisions are disabled by default. Each seat supports `off`, `shadow`, and `active`. Shadow mode records decisions while keeping the existing behavior authoritative.
 
-Merge this example into your configuration; it is not a complete `agentx.json`:
+Turn a seat on in three stages: watch it, check it, then let it act.
 
-```json
-{
-  "decisions": {
-    "enabled": true,
-    "defaultBackend": "jev",
-    "seats": {
-      "ui-element": { "mode": "shadow" }
-    }
-  }
-}
-```
+1. Put the backend's key in the `.env` file next to `agentx.json`. The `jev` adapter reads `OPENROUTER_API_KEY` (it uses OpenRouter's decisions endpoint); the `typesafe` adapter reads `TYPESAFE_API_KEY` for the direct endpoint. These are the backend defaults in this code, not a promise that the external service is available. The local and `simple-jev` adapters are separate alternatives.
+2. Add the seat in shadow mode. Merge this into your `agentx.json`; it isn't a complete file:
+   ```json
+   {
+     "decisions": {
+       "enabled": true,
+       "defaultBackend": "jev",
+       "seats": {
+         "ui-element": { "mode": "shadow" }
+       }
+     }
+   }
+   ```
+3. **Terminal:** restart the daemon so it reads the change:
+   ```sh
+   agentx daemon stop
+   agentx daemon start --detach
+   ```
+4. Use the feature for a while (for `ui-element`, run `agentx point` a few times).
+5. **Terminal:** check that the backend answers:
+   ```sh
+   agentx decisions backends
+   ```
+6. **Terminal:** read the recorded calls, failures and latency for the last day:
+   ```sh
+   agentx decisions stats --since 1d
+   ```
+7. When the answers look right, change `"mode": "shadow"` to `"mode": "active"`.
+8. **Terminal:** restart the daemon again.
 
-The current code's `jev` adapter uses OpenRouter's decisions endpoint and reads `OPENROUTER_API_KEY`. The `typesafe` adapter reads `TYPESAFE_API_KEY` for the direct endpoint. These are backend defaults in this checkout, not a guarantee of external service availability. The local and `simple-jev` adapters are separate alternatives.
-
-Inspect the recorded behavior before moving a seat to active:
+For deeper inspection and calibration, see:
 
 ```sh
-agentx decisions backends
-agentx decisions stats --since 1d
 agentx decisions calls --help
 agentx decisions calibrate --help
 agentx decisions recalibrate --help
@@ -111,3 +130,14 @@ An active gate replaces the legacy Haiku context-planner call. When the gate is 
 ### Desktop model guarantee
 
 Desktop requests arriving through `/ask` use the `voice` channel. Both `voice` and `desktop` requests are excluded from automatic cheap-model routing, even for greetings, short confirmations, and cold sessions. They also skip the legacy Haiku context planner. Jev may still perform typed context decisions; the main response and computer-use task stay on the assigned agent's configured model. This preserves that configured model rather than selecting a hard-coded premium model; provider failures do not authorize a downgrade.
+
+## Check it worked
+
+1. **Terminal:** run `agentx decisions stats --since 1d`.
+2. Your seat appears with its mode (`shadow` or `active`), a call count above zero, and few or no failed calls.
+
+## If something is wrong
+
+- **The seat doesn't appear in `decisions stats`:** check that `decisions.enabled` is `true`, that the seat's name is spelled exactly as in the table, that the daemon was restarted, and that the feature that uses the seat actually ran.
+- **Every call fails:** run `agentx decisions backends`. A missing or wrong `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is the usual cause.
+- **Behavior changed in a way you didn't want:** set the seat back to `shadow` or `off` and restart the daemon. In shadow mode the existing behavior is authoritative again.
