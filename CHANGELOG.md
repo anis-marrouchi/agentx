@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.45.1](https://github.com/anis-marrouchi/agentx/compare/v0.45.0...v0.45.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **memory:** list pre-review external facts as held ([#113](https://github.com/anis-marrouchi/agentx/issues/113)) ([dab23bc](https://github.com/anis-marrouchi/agentx/commit/dab23bcaa4bf73419ee7758b662f688f956829d3)), closes [#97](https://github.com/anis-marrouchi/agentx/issues/97)
+
 ## [0.45.0](https://github.com/anis-marrouchi/agentx/compare/v0.44.1...v0.45.0) (2026-09-26)
 
 
