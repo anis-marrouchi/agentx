@@ -104,3 +104,20 @@ That's the same shape Claude Code's own memory system uses. Keeps the memory use
 
 Before saving, scan the AGENTX-MEMORY section of your CLAUDE.md. If a similar entry exists, prefer updating it over creating a new one — the index gets noisy otherwise.
 `
+
+/** Port the skill's examples are written against — the daemon default. */
+const DEFAULT_PORT = 18800
+const DEFAULT_URL = `http://localhost:${DEFAULT_PORT}/api/memory`
+
+/** The skill body for a daemon listening on `port`. */
+export function rememberSkillBody(port: number): string {
+  return REMEMBER_SKILL_BODY.split(DEFAULT_URL).join(`http://localhost:${port}/api/memory`)
+}
+
+/** An installed skill that still calls the default port on a daemon that
+ *  listens elsewhere, pointed at the right port. Only the API URL changes,
+ *  so operator edits survive. Null when nothing needs to change. */
+export function retargetRememberSkill(installed: string, port: number): string | null {
+  if (port === DEFAULT_PORT || !installed.includes(DEFAULT_URL)) return null
+  return installed.split(DEFAULT_URL).join(`http://localhost:${port}/api/memory`)
+}

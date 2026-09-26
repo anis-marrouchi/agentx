@@ -80,7 +80,7 @@ import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
 import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
-import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
+import { REMEMBER_SKILL_FILENAME, rememberSkillBody, retargetRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
@@ -5139,6 +5139,8 @@ export class AgentXDaemon {
    *  run on every daemon start. Write-if-absent for the skill, sentinel-
    *  replace for CLAUDE.md, so operator edits survive. */
   private installAgentMemorySurface(): void {
+    // The skill's curl examples must hit this daemon's port, not the default.
+    const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
     for (const agent of this.registry.list()) {
       const ws = agent.workspace
       if (!ws || !existsSync(ws)) continue
@@ -5147,8 +5149,16 @@ export class AgentXDaemon {
         mkdirSync(skillsDir, { recursive: true })
         const skillPath = resolve(skillsDir, REMEMBER_SKILL_FILENAME)
         if (!existsSync(skillPath)) {
-          writeFileSync(skillPath, REMEMBER_SKILL_BODY)
+          writeFileSync(skillPath, rememberSkillBody(port))
           this.log(`  memory-skill: installed remember.md → ${agent.id}`)
+        } else {
+          // Installs from before the port was rendered call the default
+          // port, which is nothing on a node that listens elsewhere.
+          const fixed = retargetRememberSkill(readFileSync(skillPath, "utf-8"), port)
+          if (fixed) {
+            writeFileSync(skillPath, fixed)
+            this.log(`  memory-skill: pointed remember.md at port ${port} → ${agent.id}`)
+          }
         }
         // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
         // sentinel block from whatever is currently on disk.
