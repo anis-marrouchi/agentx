@@ -190,6 +190,7 @@ export class CronScheduler {
         timeout: def.timeout,
         model: def.model,
         maxOutputTokens: def.maxOutputTokens,
+        autonomy: def.autonomy,
         onError: def.onError,
         consecutiveErrors: 0,
         totalRuns: 0,
@@ -553,6 +554,7 @@ export class CronScheduler {
         ),
         agentId: job.agent,
         model: job.model,
+        autonomy: job.autonomy,
         intentRef,
         // chatId per-job so different cron jobs for the same agent don't
         // collide in one "default" session. Without this, the marketing
@@ -574,6 +576,11 @@ export class CronScheduler {
         retryAttempt,
         ...(fire ? { fired: true } : {}),
         ...runLinkIds(task, response),
+        ...(response.autonomy ? { autonomy: response.autonomy } : {}),
+        ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
+      }
+      if (result.autonomyBlocks) {
+        this.log(`Job "${jobId}" (autonomy ${result.autonomy}): ${result.autonomyBlocks.length} action(s) blocked: ${result.autonomyBlocks.map((b) => b.ruleId).join(", ")}`)
       }
 
       if (response.error) {
@@ -702,6 +709,9 @@ export class CronScheduler {
             job.maxOutputTokens,
           ),
           agentId: job.agent,
+          // Catch-up runs keep the job's autonomy — a missed report job
+          // must not come back at full power.
+          autonomy: job.autonomy,
           context: { channel: "cron", chatId: `cron:${jobId}` },
         }
         const response = await this.registry.execute(task)
@@ -716,6 +726,8 @@ export class CronScheduler {
           duration: response.duration || 0,
           isRetry: false,
           ...runLinkIds(task, response),
+          ...(response.autonomy ? { autonomy: response.autonomy } : {}),
+          ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
         }
 
         this.logRun(result)

@@ -83,7 +83,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
-import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
+import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
 import { siriSayScript } from "@/voice/speaker"
@@ -268,6 +268,8 @@ export class AgentXDaemon {
     // Set up agent workspaces with Claude Code best practices (non-destructive)
     const [, portStr] = this.config.node.bind.split(":")
     setupAllWorkspaces(this.config.agents, portStr || "19900", this.log)
+    // Restricted-autonomy routines point their per-task hook here.
+    setAutonomyHookPort(portStr || "19900")
 
     // Initialize hooks
     this.hooks = new HookRegistry()
@@ -1662,6 +1664,7 @@ export class AgentXDaemon {
             message: req.message,
             workflowRunId: req.workflowRunId,
             timeoutMinutes: req.timeoutMinutes,
+            autonomy: req.autonomy,
             context: {
               channel: "workflow",
               chatId: wfChatId,
@@ -1672,6 +1675,7 @@ export class AgentXDaemon {
             content: resp.content ?? "",
             error: resp.error,
             errorKind: resp.errorKind,
+            autonomyBlocks: resp.autonomyBlocks,
             taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
             durationMs: Date.now() - start,
           }
@@ -2276,6 +2280,19 @@ export class AgentXDaemon {
         const agentId = url.searchParams.get("agent") || undefined
         const envScope = url.searchParams.get("env") || undefined
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        // Per-task autonomy hook (report/propose routines). Always enforced;
+        // an allow returns "" so the workspace guard hook still has its say.
+        if (url.searchParams.has("autonomy")) {
+          const { stdout } = checkAutonomyPayload(payload as PreToolUsePayload, {
+            root: process.cwd(),
+            agentId,
+            level: url.searchParams.get("autonomy"),
+            taskId: url.searchParams.get("task"),
+          })
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(stdout)
+          return
+        }
         const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {
           root: process.cwd(),
           agentId,

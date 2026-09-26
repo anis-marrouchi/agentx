@@ -1,3 +1,6 @@
+import type { AutonomyLevel } from "@/guard/autonomy"
+import type { AutonomyBlock } from "@/guard/autonomy-enforce"
+
 // --- Cron system types ---
 
 export interface CronJobState {
@@ -17,6 +20,8 @@ export interface CronJobState {
    *  via the prompt tail; reliably honored and keeps cache-hit intact
    *  (hint text is per-job, not per-run). */
   maxOutputTokens?: number
+  /** Routine autonomy level; unset = act (full agent permissions). */
+  autonomy?: AutonomyLevel
   onError: Array<"log" | "notify" | "disable">
   lastRun?: Date
   nextRun?: Date
@@ -50,4 +55,9 @@ export interface CronRunResult {
   traceId?: string
   /** Native provider session the run resumed or started, when reported. */
   sessionId?: string
+  /** Autonomy level the run was held to (absent = act). */
+  autonomy?: AutonomyLevel
+  /** Tool calls the autonomy guard blocked — what the routine would have
+   *  done with more power. */
+  autonomyBlocks?: AutonomyBlock[]
 }

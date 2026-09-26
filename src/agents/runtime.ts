@@ -27,6 +27,8 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
 import { TurnDeadlineExceeded } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
+import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
+import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -141,6 +143,11 @@ export interface AgentTask {
    *  Seeds an empty AgentX session the same way a channel adapter's
    *  seedHistory does, so a new or rotated session starts with it. */
   seedHistory?: SeededMessage[]
+  /** Routine autonomy level (cron job / workflow agent step). `report` and
+   *  `propose` are enforced for THIS task only via a per-spawn guard hook
+   *  (see guard/autonomy-enforce.ts); unset or `act` = the agent's normal
+   *  permissions. Tiers that cannot enforce it refuse the task. */
+  autonomy?: AutonomyLevel
   context?: {
     channel?: string
     sender?: string
@@ -222,6 +229,11 @@ export interface AgentResponse {
    *  the task instead of a spawned provider (attach mode). Claude Code
    *  session id of the terminal that wrote the reply. */
   viaAttachedSession?: string
+  /** Set on tasks that ran under a restricted autonomy level. */
+  autonomy?: AutonomyLevel
+  /** Tool calls the autonomy guard blocked during this task — what the
+   *  routine would have done with more power. */
+  autonomyBlocks?: AutonomyBlock[]
 }
 
 /** Callback for streaming text deltas */
@@ -326,6 +338,8 @@ function buildClaudeArgs(
    *  of the user-message body and into this arg avoids paying cache-create
    *  for it on every new session. */
   systemPromptAppend?: string,
+  /** Per-task flags (autonomy enforcement). Appended last. */
+  extraArgs: string[] = [],
 ): string[] {
   const args: string[] = [
     "-p", prompt,
@@ -355,6 +369,7 @@ function buildClaudeArgs(
     args.push("--append-system-prompt", systemPromptAppend)
   }
 
+  args.push(...extraArgs)
   return args
 }
 
@@ -738,7 +753,9 @@ export async function executeClaudeCode(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend)
+  const restricted = restrictedClaudeArgs(task)
+  if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
   // If the caller already aborted before we spawned, short-circuit so we
@@ -866,7 +883,9 @@ export async function executeClaudeCodeStreaming(
   // Claude CLI --resume carries its own conversation history, but the
   // landscape + rules must be fresh so the agent sees capability updates.
   const prompt = buildPrompt(agent, task, historyContext)
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend)
+  const restricted = restrictedClaudeArgs(task)
+  if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
@@ -2003,6 +2022,45 @@ async function executeClaudeCodePersistent(
   }
 }
 
+/** Autonomy flags for a claude spawn. Restricted tasks always carry a
+ *  taskId by the time they get here (executeRestrictedTask assigns one). */
+function restrictedClaudeArgs(task: AgentTask): { args: string[] } | { error: string } {
+  if (!isRestricted(task.autonomy)) return { args: [] }
+  if (!task.taskId) return { error: `autonomy "${task.autonomy}" requires a task id to enforce` }
+  return autonomyClaudeArgs(task.autonomy, task.agentId, task.taskId)
+}
+
+/**
+ * Run a task under a restricted autonomy level (report | propose).
+ *
+ * Always a fresh spawn-per-task claude process carrying the autonomy hook:
+ * a warm persistent process was spawned without it (and serves other turns
+ * of the chat), so reusing it would silently skip enforcement. Session
+ * continuity survives through --resume. Tiers that cannot carry the hook
+ * refuse rather than run at full power.
+ */
+async function executeRestrictedTask(
+  agent: AgentDef,
+  task: AgentTask,
+  onDelta?: StreamCallback,
+  historyContext?: string,
+  resumeSessionId?: string,
+  onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
+): Promise<AgentResponse> {
+  const level = task.autonomy!
+  const unsupported = autonomyUnsupported(level, agent.tier)
+  if (unsupported) return { content: "", error: unsupported, autonomy: level }
+  const taskId = task.taskId || `autonomy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const restricted: AgentTask = { ...task, taskId, message: `${autonomyBrief(level)}\n\n${task.message}` }
+  process.stderr.write(`[claude-autonomy] agent=${task.agentId} level=${level} task=${taskId} via=spawn (persistent process bypassed)\n`)
+  const response = onDelta
+    ? await executeClaudeCodeStreaming(agent, restricted, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+    : await executeClaudeCode(agent, restricted, historyContext, resumeSessionId, abortSignal)
+  const blocks = takeAutonomyBlocks(taskId)
+  return { ...response, autonomy: level, ...(blocks.length ? { autonomyBlocks: blocks } : {}) }
+}
+
 export async function executeTask(
   agent: AgentDef,
   task: AgentTask,
@@ -2014,6 +2072,9 @@ export async function executeTask(
   abortSignal?: AbortSignal,
   onThinking?: ThinkingCallback,
 ): Promise<AgentResponse> {
+  if (isRestricted(task.autonomy)) {
+    return executeRestrictedTask(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+  }
   switch (agent.tier) {
     case "claude-code":
       // Persistent-process path (improvement plan #5, persistent flavor).

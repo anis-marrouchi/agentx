@@ -32,6 +32,7 @@ import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
 import { newEventId } from "@/intent/ulid"
 import { getAttachRegistry } from "@/attach"
+import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -948,7 +949,11 @@ export class AgentRegistry {
     // human doesn't pick the message up we fall through to the normal spawn
     // path below, and the offer is atomically expired so a late drain can't
     // answer it a second time. Attach is a preference, never a black hole.
-    const offered = getAttachRegistry().offer({
+    // A restricted-autonomy routine never goes to an attached session: that
+    // terminal runs with its own (full) permissions, outside the per-task
+    // guard hook, so enforcement would be silently skipped.
+    const restricted = isRestricted(task.autonomy)
+    const offered = restricted ? null : getAttachRegistry().offer({
       agentId: task.agentId,
       text: task.message,
       channel: task.context?.channel || "api",
@@ -966,6 +971,11 @@ export class AgentRegistry {
 
     const state = this.agents.get(task.agentId)
     if (!state) {
+      // The autonomy hook is spawned by THIS daemon; a peer would receive a
+      // bare message and run it at full power. Refuse instead.
+      if (restricted) {
+        return { content: "", error: `autonomy "${task.autonomy}" cannot be enforced on a mesh peer — agent "${task.agentId}" is not local`, autonomy: task.autonomy }
+      }
       // Mesh fallback: the agent isn't local but a healthy peer may host
       // it. Look it up in the mesh directory and forward via A2A sendTask.
       // Streaming callbacks are dropped — sendTask doesn't stream today.
@@ -1006,7 +1016,9 @@ export class AgentRegistry {
       // from peer" comment on whatever channel the upstream is bridged to.
       // For these callers, BLOCK and wait for a slot (up to 25 min — slightly
       // under mesh.sendTask's 30 min default cap) instead of queueing.
-      if (qChannel === "api") {
+      // Restricted routines wait too: a queued message is later re-routed
+      // as plain channel text, which would drop its autonomy level.
+      if (qChannel === "api" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
@@ -1237,7 +1249,9 @@ export class AgentRegistry {
     // the workflow yet — that happens inside the outer try/finally so
     // runningTask + activeTasks bookkeeping always cleans up.
     let pendingAutoRun: { workflowId: string; confidence: number } | undefined
-    if (this.config.workflows?.enabled && wfMatching?.enabled) {
+    // Restricted routines never auto-run a workflow: its agent steps would
+    // run at their own autonomy, not this task's.
+    if (this.config.workflows?.enabled && wfMatching?.enabled && !restricted) {
       try {
         const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
         const match = matchWorkflow({

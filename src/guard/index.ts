@@ -33,4 +33,10 @@ export function guessInstallRoot(): string {
   return process.cwd()
 }
 export { checkPayload, checkPayloadWithConfirmation, getPolicy, resetPolicyCache } from "./service"
+export { autonomyLevelSchema, evaluateAutonomy, isRestricted, autonomyBrief } from "./autonomy"
+export type { AutonomyLevel, AutonomyInput, AutonomyDecision } from "./autonomy"
+export {
+  checkAutonomyPayload, setAutonomyHookPort, autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks,
+} from "./autonomy-enforce"
+export type { AutonomyBlock } from "./autonomy-enforce"
 export type { GuardServiceResult } from "./service"
