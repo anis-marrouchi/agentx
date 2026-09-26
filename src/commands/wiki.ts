@@ -451,8 +451,9 @@ wiki
 
 // agentx wiki promote — memory→wiki promotion. Reads per-agent memories
 // (.agentx/agent-memory/), has an LLM judge which are durable and
-// cross-agent relevant, and writes them as [[wikilinked]] articles in the
-// SHARED store under owner "memory-promoter". Idempotent via stamps in
+// cross-agent relevant, and proposes them as [[wikilinked]] articles for
+// the SHARED store (owner "memory-promoter"); `wiki proposals approve`
+// writes them. Idempotent via stamps in
 // article sources[] + the _memory-promotions.json skip ledger — the
 // planned follow-up documented in agents/agent-memory.ts.
 wiki
@@ -469,7 +470,8 @@ wiki
   .option("--daemon <url>", "daemon API base URL for --via", "http://127.0.0.1:18800")
   .option("--reviews", "also promote findings from session-monitor reviews")
   .option("--review-kinds <list>", "which review kinds", "decisions,warnings,friction,context")
-  .option("--commit", "write articles and ledger (default: dry-run)", false)
+  .option("--commit", "judge and write proposals for review (default: dry-run)", false)
+  .option("--budget <tokens>", "max estimated tokens for the judge prompt", "60000")
   .action(async (opts) => {
     const sinceMs = parsePromoteSince(opts.since)
     const types = String(opts.types).split(",").map((t: string) => t.trim()).filter(Boolean)
@@ -532,6 +534,7 @@ wiki
       model: opts.model,
       daemonUrl: opts.daemon,
       commit: opts.commit,
+      budgetTokens: Number(opts.budget) || undefined,
       log: (msg) => console.log(chalk.dim(`  ${msg}`)),
     })
 
@@ -553,18 +556,16 @@ wiki
     console.log()
 
     if (report.dryRun) {
-      console.log(chalk.dim("  Dry run — pass --commit to promote"))
+      console.log(chalk.dim("  Dry run — pass --commit to judge and propose"))
       console.log()
       return
     }
 
-    for (const w of report.written) {
-      const typeTag = w.type ? chalk.magenta(`[${w.type}]`) + " " : ""
-      const relStr = w.related?.length
-        ? ` → ${w.related.slice(0, 3).join(", ")}${w.related.length > 3 ? ", …" : ""}`
-        : ""
-      console.log(`  ${chalk.green("+")} ${typeTag}${w.path}: ${w.title}${chalk.dim(relStr)}`)
-      console.log(chalk.dim(`     from: ${w.stamps.join(", ")}`))
+    for (const p of report.proposed) {
+      const typeTag = p.type ? chalk.magenta(`[${p.type}]`) + " " : ""
+      const backing = `${p.agents.length} agent(s)${p.occurrences > 1 ? `, seen in ${p.occurrences} sessions` : ""}`
+      console.log(`  ${chalk.green("?")} ${typeTag}${p.path}: ${p.title} ${chalk.dim(`(${backing})`)}`)
+      console.log(chalk.dim(`     proposal ${p.id}`))
     }
     for (const s of report.skipped) {
       console.log(`  ${chalk.yellow("-")} ${s.stamp} ${chalk.dim(`— ${s.reason}`)}`)
@@ -579,11 +580,91 @@ wiki
     console.log()
     console.log(
       report.errors.length
-        ? chalk.red(`  ${report.written.length} promoted, ${report.errors.length} error(s)`)
-        : chalk.green(`  ${report.written.length} promoted, ${report.skipped.length} skipped`),
+        ? chalk.red(`  ${report.proposed.length} proposed, ${report.errors.length} error(s)`)
+        : chalk.green(`  ${report.proposed.length} proposed, ${report.skipped.length} skipped`),
     )
+    if (report.proposed.length) console.log(chalk.dim("  Nothing is in the wiki yet. Review with: agentx wiki proposals list"))
     console.log()
     if (report.errors.length) process.exit(1)
+  })
+
+// agentx wiki proposals — review what `wiki promote` wants to add to the
+// shared wiki. Nothing reaches the wiki (or any agent) until approved.
+const proposals = wiki
+  .command("proposals")
+  .description("review lessons proposed for the shared wiki (list, show, approve, reject)")
+
+function proposalWikiDir(dir?: string): string {
+  return dir ? resolve(dir) : resolve(process.cwd(), ".agentx", "wiki")
+}
+
+proposals
+  .command("list")
+  .description("list proposals (pending by default)")
+  .option("--all", "include approved and rejected")
+  .option("--dir <path>", "wiki directory (default .agentx/wiki)")
+  .action(async (opts: { all?: boolean; dir?: string }) => {
+    const { listProposals } = await import("@/wiki/proposals")
+    const list = listProposals(proposalWikiDir(opts.dir), opts.all ? undefined : "pending")
+    if (list.length === 0) { console.log(chalk.dim(opts.all ? "  no proposals" : "  nothing pending")); return }
+    for (const p of list) {
+      const e = p.evidence
+      const backing = `${e.agents.join(", ")}${e.occurrences > 1 ? ` · seen in ${e.occurrences} sessions` : ""} · ${e.sources.length} source(s)`
+      const state = p.status === "pending" ? "" : chalk.dim(` [${p.status}]`)
+      const kind = p.replaces ? chalk.yellow("update") : chalk.green("new")
+      console.log(`  ${chalk.cyan(p.id)}${state}`)
+      console.log(`    ${kind} ${p.article.path}: ${p.article.title}`)
+      console.log(chalk.dim(`    ${backing}`))
+    }
+  })
+
+proposals
+  .command("show")
+  .description("the proposed article and the evidence behind it")
+  .argument("<id>", "proposal id")
+  .option("--dir <path>", "wiki directory (default .agentx/wiki)")
+  .action(async (id: string, opts: { dir?: string }) => {
+    const { readProposal } = await import("@/wiki/proposals")
+    const p = readProposal(proposalWikiDir(opts.dir), id)
+    if (!p) { console.error(chalk.red(`  no proposal "${id}"`)); process.exitCode = 1; return }
+    console.log(chalk.bold(`  ${p.article.title}`) + chalk.dim(`  → ${p.article.path} (${p.replaces ? "updates an existing article" : "new article"}, ${p.status})`))
+    console.log()
+    console.log(p.article.content.split("\n").map((l) => `    ${l}`).join("\n"))
+    console.log()
+    console.log(chalk.bold("  Evidence"))
+    for (const src of p.evidence.sources) {
+      const who = src.author ? `${src.author}${src.taskId ? ` · task ${src.taskId}` : ""}` : src.agentId
+      const seen = src.occurrences && src.occurrences > 1 ? ` · seen in ${src.occurrences} sessions` : ""
+      console.log(`  - ${chalk.cyan(src.kind)} ${src.type}/${src.name} ${chalk.dim(`(${who}, ${src.updatedAt.slice(0, 10)}${seen})`)}`)
+      console.log(chalk.dim(`    ${src.description}`))
+      if (src.sessions?.length) console.log(chalk.dim(`    sessions: ${src.sessions.join(", ")}`))
+    }
+  })
+
+proposals
+  .command("approve")
+  .description("write the proposed article into the shared wiki")
+  .argument("<id>", "proposal id")
+  .option("--force", "approve even if the article changed since the proposal")
+  .option("--dir <path>", "wiki directory (default .agentx/wiki)")
+  .action(async (id: string, opts: { force?: boolean; dir?: string }) => {
+    const { approveProposal } = await import("@/wiki/promote")
+    const r = approveProposal(proposalWikiDir(opts.dir), id, { force: opts.force })
+    if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ ${r.proposal.article.path} written to the shared wiki`))
+  })
+
+proposals
+  .command("reject")
+  .description("decline a proposal; its sources aren't judged again until they change")
+  .argument("<id>", "proposal id")
+  .option("--reason <text>", "why, kept with the decision")
+  .option("--dir <path>", "wiki directory (default .agentx/wiki)")
+  .action(async (id: string, opts: { reason?: string; dir?: string }) => {
+    const { rejectProposal } = await import("@/wiki/promote")
+    const r = rejectProposal(proposalWikiDir(opts.dir), id, { reason: opts.reason })
+    if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ ${id} rejected`))
   })
 
 /** "24h" / "7d" / "30m" → window in ms. (Same grammar as workflow absorb's

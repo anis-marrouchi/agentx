@@ -105,6 +105,15 @@ After each reply, agentx pulls facts out of the conversation and gives them to t
 | `agentx memory facts reject <id> --agent <id>` | Keep a held fact out for good |
 | `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
 
+Every night, `agentx wiki promote --commit` asks a judge which agent memories and repeated session findings deserve a place in the shared wiki. Nothing is written until you approve it: each suggestion becomes a proposal, with the memories, agents and sessions behind it.
+
+| Command | What it does |
+|---|---|
+| `agentx wiki proposals list` | Proposed lessons waiting for review |
+| `agentx wiki proposals show <id>` | The proposed article and its evidence |
+| `agentx wiki proposals approve <id>` | Write it into the shared wiki; refuses if the article changed since, unless `--force` |
+| `agentx wiki proposals reject <id> [--reason]` | Decline it; its sources aren't judged again until they change |
+
 ## Computer use and teaching
 
 Install the [desktop assistant](../dashboard/voice.md) first. These tools interact with the current macOS desktop, not the browser tab displaying this documentation.
