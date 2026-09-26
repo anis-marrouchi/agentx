@@ -63,7 +63,7 @@ A `trigger.hook` node subscribes to an `on:*` event, such as `on:gitlab-mr` or `
 | `ignoreAuthors` | Events with an author | The author is not in the list. Leading `@` and letter case are ignored |
 | `maxFiresPerTarget` | Issue, MR, PR, and note events | This workflow has fired fewer than `count` times for the same issue, MR, or PR within `windowMinutes` (default 60) |
 
-**Loop guard.** With `skipSelfAuthored: true`, a workflow skips events written by the bot identity of any agent it runs, so a routine's own comment or label change cannot restart it. It is off by default, because label-driven lifecycle workflows react to their own agent's transitions on purpose. To find that identity, AgentX checks the GitLab adapter's username-to-agent map, the signature on AgentX comments, and each agent's `gitlabUsernames` or `githubUsernames` in `agentMappings`. If the identity can't be resolved, the daemon logs this once and only `ignoreAuthors` applies.
+**Loop guard.** With `skipSelfAuthored: true`, a workflow skips events written by the bot identity of any agent it runs, so a routine's own comment or label change cannot restart it. It is off by default, because label-driven lifecycle workflows react to their own agent's transitions on purpose. To find that identity, AgentX checks the GitLab adapter's username-to-agent map, the signature on AgentX comments, and each agent's `gitlabUsernames` or `githubUsernames` in `agentMappings`. If the identity can't be resolved, the daemon logs this once and only `ignoreAuthors` applies. On GitLab issue and MR events the identity comes only from the username map. When all agents share one GitLab token, they post as one user, which maps to a single agent, so a workflow run by a different agent won't see those events as self-authored. Comments avoid this because AgentX reads the signature on each comment.
 
 This check can't catch two routines that trigger each other, such as a generator and a critic. Neither one sees its own identity. Use `maxFiresPerTarget` for that case:
 
@@ -73,7 +73,7 @@ This check can't catch two routines that trigger each other, such as a generator
               "maxFiresPerTarget": { "count": 3, "windowMinutes": 60 } } }
 ```
 
-A note and an update on the same MR count toward the same limit. When the limit is reached, the workflow still claims the event, so the legacy @-mention path doesn't restart the agent. Every skip is logged as `[workflows] <id> skipping <event> (<reason>)`. The counters are held in memory, so a daemon restart resets them.
+A note and an update on the same MR count toward the same limit. Every loop-guard skip still claims the event, unless the trigger sets `passthrough`. That way the adapter's fallback (the project's default agent, or the legacy @-mention path) doesn't wake the agent instead. Every skip is logged as `[workflows] <id> skipping <event> (<reason>)`. The counters are held in memory, so a daemon restart resets them.
 
 The editor's assistant can propose a workflow from a request. **Apply to canvas replaces the current graph.** Review the agent, input, destination, and error path before saving. The complete implementation is in `src/workflows/types.ts` and `src/workflows/nodes/`.
 

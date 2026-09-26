@@ -199,13 +199,13 @@ export function startWorkflowTriggers(args: {
           }
           // Loop guard — runs after the filters above so the chain-limit
           // counter only advances for events this workflow would act on.
-          // Self-authored events are skipped by default; a chain-limit hit
-          // still claims the event so the legacy dispatch path doesn't
-          // re-spawn the agent behind the limit's back.
+          // Every guard skip still claims the event (unless passthrough) so
+          // the adapter's fallback — default-agent route or legacy @-mention
+          // dispatch — doesn't spawn the agent behind the guard's back.
           const guard = checkLoopGuard(wf, cfg.event!, ctx, cfg.filter, loopGuard)
           if (guard.skip) {
             args.log(`[workflows] ${wf.id} skipping ${cfg.event} (${guard.reason}): ${guard.detail}`)
-            if (guard.reason !== "chain-limit" || cfg.passthrough) return {}
+            if (cfg.passthrough) return {}
             const prev = (ctx as { __workflowClaimed?: unknown }).__workflowClaimed
             return { modified: { __workflowClaimed: [...(Array.isArray(prev) ? prev as string[] : []), wf.id] } }
           }

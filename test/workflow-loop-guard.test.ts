@@ -130,6 +130,23 @@ describe("workflow loop guard — two-routine ping-pong", () => {
     expect(await fire("on:gitlab-mr", { project: "acme/app", iid: 2, author: "human-dev" })).toEqual(["gen"])
     expect(await fire("on:gitlab-mr", { project: "acme/app", iid: 2, author: "human-dev" })).toEqual(["gen"])
   })
+
+  it("self-authored and ignored-author skips also claim the event", async () => {
+    const { fire, dispatched } = boot([
+      wf("self", "coder", "on:gitlab-issue", { skipSelfAuthored: true }),
+      wf("ignore", "coder", "on:gitlab-note", { ignoreAuthors: ["ci-bot"] }),
+    ])
+    expect(await fire("on:gitlab-issue", { project: "acme/app", iid: 1, author: "coder-bot", authorAgent: "coder" })).toEqual(["self"])
+    expect(await fire("on:gitlab-note", { project: "acme/app", noteableType: "issue", noteableIid: "1", authorUsername: "ci-bot" })).toEqual(["ignore"])
+    expect(dispatched).toEqual([])
+  })
+
+  it("passthrough skips don't claim the event", async () => {
+    const w = wf("pt", "coder", "on:gitlab-note", { ignoreAuthors: ["ci-bot"] })
+    ;(w.nodes[0].config as Record<string, unknown>).passthrough = true
+    const { fire } = boot([w])
+    expect(await fire("on:gitlab-note", { project: "acme/app", noteableType: "issue", noteableIid: "1", authorUsername: "ci-bot" })).toEqual([])
+  })
 })
 
 describe("loop-guard helpers", () => {
