@@ -59,6 +59,7 @@ import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -1898,9 +1899,14 @@ export class AgentXDaemon {
     const port = parseInt(portStr || "18800", 10)
 
     this.httpServer = createServer(async (req, res) => {
-      res.setHeader("Access-Control-Allow-Origin", "*")
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+      // No CORS headers: nothing legitimate calls this server from a page on
+      // another origin (browser-origin.ts). Without them a foreign page can't
+      // read a response or pass a preflight, and its writes stop here.
+      if (classifyBrowserRequest(req.headers) === "foreign" && isStateChangingOrPreflight(req.method)) {
+        this.log(`[auth] ✗ refused ${req.method} ${(req.url || "").split("?")[0]} from a page on another origin (${req.headers.origin || req.headers["sec-fetch-site"]})`)
+        this.json(res, 403, { error: "Forbidden: request from a page on another origin" })
+        return
+      }
 
       if (req.method === "OPTIONS") {
         res.writeHead(204)
@@ -1996,7 +2002,6 @@ export class AgentXDaemon {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
     })
 
     // Parse filter query-string. ?type=run,task filters which event
@@ -2049,7 +2054,6 @@ export class AgentXDaemon {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
       "X-Accel-Buffering": "no",
     })
     let closed = false
@@ -2117,7 +2121,6 @@ export class AgentXDaemon {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
       "X-Accel-Buffering": "no",
     })
     res.write(`event: ready\ndata: ${JSON.stringify({ callId, as })}\n\n`)
@@ -2175,6 +2178,7 @@ export class AgentXDaemon {
       authorizationHeader: String(req.headers["authorization"] || ""),
       acceptedTokens: accepted,
       enforcementDisabled: process.env.AGENTX_MESH_AUTH === "off",
+      foreignBrowser: classifyBrowserRequest(req.headers) === "foreign",
     })
 
     if (decision.allowed) {
@@ -2184,6 +2188,11 @@ export class AgentXDaemon {
       return true
     }
 
+    if (decision.reason === "foreign-browser-origin") {
+      this.log(`[auth] ✗ rejected ${path} from a page on another origin (${req.headers.origin || req.headers["sec-fetch-site"]})`)
+      this.json(res, 403, { error: "Forbidden: request from a page on another origin" })
+      return false
+    }
     this.log(`[auth] ✗ rejected ${path} from ${addr} — missing or invalid mesh token`)
     this.json(res, 401, { error: "Unauthorized: mesh token required (Authorization: Bearer <MESH_TOKEN>)" })
     return false
@@ -2826,7 +2835,6 @@ export class AgentXDaemon {
             "Content-Type": "text/event-stream; charset=utf-8",
             "Cache-Control": "no-cache, no-store, must-revalidate",
             Connection: "keep-alive",
-            "Access-Control-Allow-Origin": "*",
           })
           const sseId = `chatcmpl-${newEventId()}`
           const created = Math.floor(Date.now() / 1000)
@@ -3055,7 +3063,6 @@ export class AgentXDaemon {
         res.writeHead(200, {
           "Content-Type": contentType,
           "Cache-Control": "private, max-age=3600",
-          "Access-Control-Allow-Origin": "*",
         })
         createReadStream(resolvedFile).pipe(res)
         return
@@ -4299,7 +4306,6 @@ export class AgentXDaemon {
               "Cache-Control": "no-cache, no-store, must-revalidate",
               Connection: "keep-alive",
               "X-Accel-Buffering": "no",
-              "Access-Control-Allow-Origin": "*",
             })
             const writeSse = (event: string, payload: unknown) => {
               try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`) } catch { /* socket gone */ }
@@ -4651,7 +4657,6 @@ export class AgentXDaemon {
               "Cache-Control": "no-cache, no-store, must-revalidate",
               Connection: "keep-alive",
               "X-Accel-Buffering": "no",
-              "Access-Control-Allow-Origin": "*",
             })
             const writeSse = (event: string, payload: unknown) => {
               try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`) } catch { /* */ }

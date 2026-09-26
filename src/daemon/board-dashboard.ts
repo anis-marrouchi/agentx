@@ -38,6 +38,7 @@ import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
+import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { setTopbarFeatures, type TopbarPeer } from "./topbar"
 
 // --- Kanban Board Dashboard ---
@@ -163,9 +164,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   const path = url.pathname
   const method = (req.method || "GET").toUpperCase()
 
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+  // No CORS headers: every dashboard page calls this server on its own
+  // origin (browser-origin.ts). A page on another origin, localhost on
+  // another port included, can't read responses, can't pass a preflight,
+  // and its writes stop here: the X-Requested-With check below only holds
+  // while no foreign page is allowed to send that header.
+  if (classifyBrowserRequest(req.headers) === "foreign" && isStateChangingOrPreflight(method)) {
+    sendJson(res, 403, { error: "Forbidden: request from a page on another origin" })
+    return
+  }
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
   // Count which dashboard pages operators actually open. Page paths only —
@@ -854,6 +861,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
+  // Business status (proxy to configured daemon) — used by the boards
+  // Activity panel, which used to call the daemon cross-origin.
+  if (method === "GET" && path === "/api/business/status") {
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/business/status", { headers })
+      if (!r.ok) { sendJson(res, r.status, { error: `HTTP ${r.status}` }); return }
+      sendJson(res, 200, await r.json())
+    } catch (e: any) { sendJson(res, 502, { error: e.message || "business status fetch failed" }) }
+    return
+  }
+
   // AI-assisted issue draft — proxies to daemon /task with convention-aware prompt.
   if (method === "POST" && path === "/api/draft") {
     const body = await readJson(req)
@@ -911,7 +931,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
     })
     const targets: Array<{ name: string; url: string; token?: string }> = [
       { name: ctx.config.node.name || "local", url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
@@ -1751,7 +1770,6 @@ async function proxyTaskStream(
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
-    "Access-Control-Allow-Origin": "*",
     "X-Accel-Buffering": "no",
   })
   const reader = upstreamRes.body.getReader()
@@ -1841,7 +1859,6 @@ async function proxyPublicAgentMessage(
     const text = await upstream.text()
     res.writeHead(upstream.status, {
       "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
     })
     res.end(text)
   } catch (e: any) {
@@ -1887,7 +1904,6 @@ async function proxyTaskHistory(
     const body = await r.text()
     res.writeHead(r.status, {
       "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
     })
     res.end(body)
   } catch (e: any) {
@@ -1953,7 +1969,6 @@ async function proxyNodePost(
     const text = await r.text()
     res.writeHead(r.status, {
       "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
     })
     res.end(text)
   } catch (e: any) {
@@ -2355,7 +2370,6 @@ async function proxyAdminToPeer(
     res.writeHead(upstream.status, {
       "Content-Type": upstream.headers.get("content-type") || "application/json",
       "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": "*",
     })
     res.end(respBody)
   } catch (e: any) {
