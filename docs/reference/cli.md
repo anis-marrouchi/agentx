@@ -16,10 +16,45 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Open terminal UI | `agentx tui` |
 | Inspect usage | `agentx usage` |
 | Validate configuration | `agentx config check` |
+| Create a starter `agentx.json` without the browser | `agentx init` |
+| Issue API tokens for peers and integrations | `agentx token create`, `agentx token list`, `agentx token revoke` |
+| Check a risky command against the guardrails | `agentx guard test`, `agentx guard log` |
+| Ask a typed question and get a calibrated answer | `agentx decide` |
+| Pick each agent's voice | `agentx voice list`, `agentx voice set` |
+| Shell tab-completion | `agentx completion` |
 | Expose MCP over stdio | `agentx serve --stdio` |
 | Run a scripted tour | `agentx demo` |
 
-Advanced commands remain callable even though they do not appear in the main help list: `board`, `workflow`, `webhook`, `cron`, `mesh`, `wiki`, `watch`, `trace`, `ledger`, `decisions`, `graph`, `procedure`, `token`, and others. Use each command's `--help` rather than assuming its flags.
+## Advanced commands
+
+These are callable but hidden from `agentx --help` (its footer names them all). Use each command's `--help` rather than assuming its flags.
+
+| Command | What it manages |
+|---|---|
+| `workflow` | Workflow definitions: list, show, validate, run, and manage runs |
+| `cron` | Schedules in their raw form (`schedule` is the friendlier front door) |
+| `webhook` | Incoming webhook entries (GitLab, GitHub, Sentry, Stripe, Vercel, custom) |
+| `mesh` | Mesh peers: add, list, remove, health-check timing |
+| `a2a` | A standalone agent-to-agent protocol server ([A2A](a2a.md)) |
+| `notifications` | Where AgentX pings you, and the Mac banner and phone push |
+| `board` | Kanban boards over configured sources, and the dashboard server (`board serve`) |
+| `wiki` | The agents' knowledge base |
+| `memory` | Each agent's memory notes and extracted facts |
+| `procedure` | Procedures learned from recurring activity: extract, review, match |
+| `graph` | The intent graph: review and label classifications |
+| `watch` | Stream live daemon events: workflow runs, tasks, mesh health |
+| `trace` | Per-task execution traces: list, show, replay |
+| `ledger` | The intent ledger: events, decisions, divergences |
+| `decisions` | The typed-decision store: calls, labels, calibration |
+| `process` | Warm agent processes: list, kill |
+| `db` | Read-only views of the operational database |
+| `skill`, `hook`, `plugin`, `actions`, `references`, `rag` | Extensions: skills, hooks, plugins, reusable actions, the references registry, search indexes |
+| `business`, `backlog`, `plan` | The business layer: org chart and projects, a local backlog, day/week/month plans |
+| `whatsapp` | WhatsApp chats and contacts, and ingesting them into the wiki |
+| `retention` | Prune old workspace state |
+| `migrate` | Import configuration from another tool |
+| `exec` | Run one task through an agent and exit, for scripts |
+| `chat` | Deprecated; use `attach` |
 
 `agentx monitor` is hook plumbing for external CLI-session reviews; it does not open the **Monitor** dashboard tab. `agentx chat` is deprecated in favor of `attach`.
 
@@ -34,7 +69,7 @@ Run commands from the directory containing your `agentx.json`, unless a command 
 ## Desktop assistant
 
 ```sh
-agentx desktop install --agent coder-agent
+agentx desktop install --agent helper
 agentx desktop status
 agentx desktop stop
 agentx desktop start
@@ -48,7 +83,7 @@ agentx desktop start
 |---|---|
 | `agentx daemon start` | Foreground daemon; `--detach` for background, `--config <path>` for another config |
 | `agentx daemon status` | Inspect the daemon |
-| `agentx daemon logs` | Read logs; check `--help` for follow options |
+| `agentx daemon logs` | Read logs; `-f` to follow, `-n <lines>` for more |
 | `agentx daemon stop` | Stop the daemon after its running tasks finish ([restart without losing work](../jobs/restart-safely.md)) |
 | `agentx daemon restart` | Restart through launchd, systemd, or stop + start, and wait until it answers again; `--when-idle` waits for running tasks first (`--timeout`, `--abort-on-timeout`, `--reload-service`, `--dry-run`). See [restart without losing work](../jobs/restart-safely.md) |
 | `agentx config check` | Validate the configuration |
@@ -65,10 +100,10 @@ Do not share `config show` output without checking it for credentials. Starting 
 ## Talk to an agent
 
 ```sh
-agentx daemon send coder-agent "Explain this project's purpose"
-agentx tui --agent coder-agent
+agentx daemon send helper "Explain this project's purpose"
+agentx tui --agent helper
 agentx tui --legacy
-agentx attach as coder-agent
+agentx attach as helper
 ```
 
 `daemon send` runs a task. `tui` opens the interactive terminal interface. `attach as` binds an external editor/CLI session to an AgentX identity; it does not open a chat. Use `agentx attach list` to inspect bindings and `agentx attach detach` to release them.
@@ -151,8 +186,8 @@ For `look --verify`, exit codes are **0 confirmed**, **3 refuted**, **4 unknown*
 
 ```sh
 agentx mesh list
-agentx mesh health
-agentx daemon send coder-agent "Reply with a short hello" --peer work-machine
+agentx mesh health --show
+agentx daemon send helper "Reply with a short hello" --peer work-machine
 agentx decisions backends
 agentx decisions stats --since 1d
 ```
@@ -162,3 +197,14 @@ See [Tailscale pairing](../jobs/tailscale.md), [A2A communication](a2a.md), and 
 ## Find every command and flag
 
 `agentx --help` lists the primary commands and names the advanced groups. Hidden groups remain callable. Use `agentx <group> --help`, then `agentx <group> <command> --help` for exact arguments, options, and defaults from your installed version. This matters when your installation differs from the documentation checkout.
+
+## Check it worked
+
+1. **Terminal:** run `agentx --version`. It prints the installed version.
+2. **Terminal:** run `agentx doctor`. It checks Node, the configuration, credentials and the daemon.
+
+## If something is wrong
+
+- **`command not found: agentx`:** the npm package isn't installed globally, or you're in a source checkout. Use `node dist/cli.js` there.
+- **`unknown command`:** check the spelling against `agentx --help` and its advanced list; your installed version may be older than these docs.
+- **A command can't find your agents:** run it from the folder that holds `agentx.json`.

@@ -8,15 +8,26 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 
 | Section | What it controls |
 |---|---|
-| `node` | Host identity, API bind address, default agent |
+| `node` | Machine identity, API bind address, default agent |
 | `agents` | Workspace, engine (`tier`), model, mentions and concurrency per agent |
 | `providers` | API credentials and provider defaults |
-| `channels` | Enabled adapters and their routing rules |
+| `channels` | Enabled adapters and their routing rules ([channels](./channels.md)) |
 | `crons` | Timed prompts or commands, timezone, failure behavior and an optional `fireToken` ([fire a routine](/jobs/fire-a-routine)) |
-| `workflows` | Whether the workflow engine is enabled |
+| `services` | Named services with trigger patterns and allowed contacts |
+| `notifications` | Where AgentX pings you about finished, failed or long tasks ([get notified](/jobs/notifications)) |
+| `resume` | What happens to work a restart cut off ([restart without losing work](/jobs/restart-safely)) |
+| `voice`, `meshVoices` | How agents speak aloud ([desktop assistant](/dashboard/voice)) |
+| `workflows` | Whether the workflow engine is enabled, where definitions live, and the editor mode |
+| `webhooks` | Incoming webhook sources and the workflows they start |
+| `session` | When a conversation's memory is rotated or considered stale |
+| `processPool` | How long warm agent processes are kept |
+| `decisions` | Typed-decision backends ([Jev](/architecture/jev)) |
+| `procedures`, `graph`, `business`, `boards`, `plugins` | Optional layers: learned procedures, the intent graph, org chart and projects, kanban boards, and plugins |
 | `dashboard` | Browser bind address, port and `daemonUrl` |
 | `mesh` | Peer URLs and authentication |
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
+
+Field-by-field coverage of every section is not written yet. Until it is, `src/daemon/config.ts` is the list of accepted fields and defaults.
 
 For a local installation, `node.bind` normally stays `127.0.0.1:18800` and `dashboard.daemonUrl` points to `http://127.0.0.1:18800`. In the supplied Compose setup they are `0.0.0.0:18800` and `http://daemon:18800`; host port bindings remain local.
 
@@ -36,7 +47,7 @@ A cron job, or an `agent` step in a workflow, can run with less than its agent's
 
 ```json
 "crons": {
-  "dependency-audit": { "schedule": "0 7 * * 1", "agent": "coder", "prompt": "Audit outdated dependencies", "autonomy": "report" }
+  "dependency-audit": { "schedule": "0 7 * * 1", "agent": "reviewer", "prompt": "Audit outdated dependencies", "autonomy": "report" }
 }
 ```
 
@@ -78,3 +89,15 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 - **A cancelled run is still listed.** Check the daemon log for a line ending in `aborted in step "<name>"`. If it is missing, the cancel did not reach this daemon: check that you cancelled on the machine running the agent.
 
 <!-- No screenshot needed: field reference, with the web flow shown in Settings. -->
+
+## Check it worked
+
+1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
+2. **Terminal:** run `agentx config get <path>` for the field you changed, for example `agentx config get workflows.enabled`. It prints the new value.
+3. **Terminal:** run `agentx daemon status` to confirm the daemon is running with it.
+
+## If something is wrong
+
+- **`config check` reports an error:** it names the field. Fix that field, or restore a backup: every dashboard save leaves a copy named `agentx.json.bak.<timestamp>` next to the file.
+- **A value is empty at runtime:** an `${ENV_VAR}` reference points at a variable missing from `.env`. Add it, then restart the daemon.
+- **The change isn't picked up:** `config set` and dashboard saves reload the daemon, but some settings (such as a model change) only apply after a full restart: `agentx daemon stop`, then `agentx daemon start --detach`.

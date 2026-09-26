@@ -57,7 +57,7 @@
     "morning-standup": {
       "enabled": true,
       "schedule": "0 9 * * *",
-      "timezone": "Africa/Tunis",
+      "timezone": "UTC",
       "agent": "devops",
       "timeout": 600,
       "model": "claude-sonnet-4-6",
@@ -72,7 +72,7 @@
     "wiki-absorb-midnight": {
       "enabled": true,
       "schedule": "0 0 * * *",
-      "timezone": "Africa/Tunis",
+      "timezone": "UTC",
       "agent": "devops",
       "timeout": 600,
       "model": "claude-sonnet-4-6",
@@ -90,7 +90,7 @@
     "peers": [
       {
         "name": "vps",
-        "url": "http://100.0.0.1:19900",
+        "url": "http://192.0.2.10:18800",
         "token": "${MESH_TOKEN}"
       }
     ],
@@ -102,7 +102,7 @@
   },
   "business": {
     "enabled": true,
-    "timezone": "Africa/Tunis",
+    "timezone": "UTC",
     "mainChannel": {
       "channel": "telegram",
       "chatId": "-1001234567890",
