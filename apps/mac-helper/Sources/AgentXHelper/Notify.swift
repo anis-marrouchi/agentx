@@ -48,4 +48,30 @@ enum Notify {
         guard done.wait(timeout: .now() + timeout) == .success else { return .notAllowed }
         return outcome
     }
+
+    /// What macOS allows right now, without posting a banner or showing the
+    /// "allow notifications" prompt. `agentx notifications show` and
+    /// `agentx doctor` read it to explain a banner that shows the wrong icon.
+    static func status(timeout: TimeInterval = 4) -> [String: Any] {
+        let done = DispatchSemaphore(value: 0)
+        var payload: [String: Any] = ["ok": true, "authorization": "unknown", "alertStyle": "unknown"]
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .notDetermined: payload["authorization"] = "notDetermined"
+            case .denied: payload["authorization"] = "denied"
+            case .authorized: payload["authorization"] = "authorized"
+            case .provisional: payload["authorization"] = "provisional"
+            @unknown default: break
+            }
+            switch settings.alertStyle {
+            case .none: payload["alertStyle"] = "none"
+            case .banner: payload["alertStyle"] = "banner"
+            case .alert: payload["alertStyle"] = "alert"
+            @unknown default: break
+            }
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + timeout)
+        return payload
+    }
 }

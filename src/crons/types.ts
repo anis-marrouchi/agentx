@@ -45,6 +45,9 @@ export interface CronRunResult {
   /** Was this a retry attempt? */
   isRetry?: boolean
   retryAttempt?: number
+  /** Hard deadline applied to an agent run, in seconds. Absent for command
+   *  jobs, whose `timeout` is the shell timeout. */
+  timeout?: number
   /** Started on demand via POST /routines/:id/fire, not by the schedule. */
   fired?: boolean
   /** Dashboard task id of the agent run (RunningTask.id / TaskRecord.id),

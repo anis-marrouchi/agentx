@@ -7,6 +7,8 @@ import { homedir } from "os"
 import { createRequire } from "module"
 import { loadDaemonConfig } from "@/daemon/config"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
+import { localSettings } from "@/notify/local"
+import { helperStatus } from "@/notify/helper-status"
 
 // --- agentx doctor ---
 //
@@ -47,6 +49,7 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
   if (cfg) runCodegraphChecks(checks, cfg)
+  if (cfg) await runNotificationChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -69,6 +72,20 @@ export const doctor = new Command()
 // ---------------------------------------------------------------------------
 // Checks
 // ---------------------------------------------------------------------------
+
+/** On a Mac with banners on: can AgentX Helper post them with its icon? */
+export async function runNotificationChecks(checks: Check[], cfg: any, status = helperStatus): Promise<void> {
+  if (!localSettings(cfg.notifications?.local).banner) return
+  const helper = await status()
+  if (helper.state === "unsupported") return
+  checks.push({
+    severity: helper.state === "ready" ? "ok" : "warn",
+    group: "Notifications",
+    title: helper.message,
+    detail: helper.path,
+    fix: helper.fix,
+  })
+}
 
 async function runEnvChecks(checks: Check[]): Promise<void> {
   const nodeMajor = Number(process.versions.node.split(".")[0])

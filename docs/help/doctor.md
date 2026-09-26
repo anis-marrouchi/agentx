@@ -6,6 +6,6 @@ agentx doctor
 ```
 :::
 
-Doctor checks the environment, configuration, agent workspaces, and the running daemon. Read any failure and its suggested fix. `agentx doctor --json` gives the same checks in a machine-readable format; `--no-running` skips the daemon probe when the service is intentionally stopped.
+Doctor checks the environment, configuration, agent workspaces, and the running daemon. On a Mac with banners turned on, it also checks under **Notifications** whether AgentX Helper is installed and allowed to show banners ([Get notified](../jobs/notifications.md#if-something-is-wrong)). Read any failure and its suggested fix. `agentx doctor --json` gives the same checks in a machine-readable format; `--no-running` skips the daemon probe when the service is intentionally stopped.
 
 Doctor is a check, not an installer or a repair command. If the browser opens but messages do not arrive, start with [It's not answering](./its-not-answering.md).
