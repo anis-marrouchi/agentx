@@ -104,9 +104,15 @@ Wire the adapter into `src/daemon/index.ts` and add its Zod schema under `channe
 
 ## Docs conventions
 
-- Write for an operator first. Label terminal and browser steps explicitly.
+Every docs change follows these rules.
+
+- Write for a non-technical reader. Use plain words, and explain a term the first time it appears (or avoid it).
+- Write procedures as numbered steps, one action per step. Label terminal and browser steps explicitly.
+- Show, don't only tell: add a screenshot wherever a step touches a screen (dashboard, System Settings, a phone app). Store them under `docs/public/screenshots/<page>/`.
+- Document everything we ship. Every feature, setting, CLI command and integration has a page or section; no setting exists only in code. A change that adds or renames a setting or command updates the docs in the same PR.
+- End every page with a **Check it worked** section and an **If something is wrong** section.
+- Use neutral examples only: no real company, people, agent names, hosts, IPs or tokens. Take screenshots from a demo instance, never a live fleet.
 - Keep reference pages concise and validate examples against the current code.
-- Keep screenshots sourced from a demo instance, never a live fleet.
 - Run `pnpm docs:check` before submitting a documentation change.
 
 ### Reproduce the screenshots
