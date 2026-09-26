@@ -178,7 +178,10 @@ export class CronScheduler {
     for (const [id, def] of Object.entries(config.crons)) {
       this.jobs.set(id, {
         id,
-        enabled: def.enabled,
+        // A job whose creation is still awaiting operator approval must
+        // never fire, even if something flipped `enabled` behind the
+        // approval flow (hand edit, `cron enable`, dashboard toggle).
+        enabled: def.enabled && def.approval?.action !== "create",
         schedule: def.schedule,
         timezone: def.timezone,
         agent: def.agent,

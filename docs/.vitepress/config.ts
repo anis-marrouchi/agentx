@@ -18,6 +18,7 @@ const groups = [
   { text: "Automations", items: [
     { text: "Overview", link: "/automations/" }, { text: "Describe what you want", link: "/automations/describe-it" },
     { text: "Check that it worked", link: "/automations/check-it-worked" },
+    { text: "Schedules from chat", link: "/automations/schedules-from-chat" },
   ] },
   { text: "Common jobs", items: [
     { text: "Answer questions", link: "/jobs/answer-questions" }, { text: "Send a daily report", link: "/jobs/daily-report" },

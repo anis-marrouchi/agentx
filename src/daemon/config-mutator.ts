@@ -43,7 +43,7 @@ export interface MutationResult {
   dryRun?: boolean
 }
 
-function findConfigPath(override?: string): string {
+export function findConfigPath(override?: string): string {
   if (override) return resolve(override)
   const candidates = [
     resolve(process.cwd(), "agentx.json"),
