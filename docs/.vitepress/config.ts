@@ -26,6 +26,8 @@ const groups = [
     { text: "Tailscale setup", link: "/jobs/tailscale" }, { text: "Keep it safe", link: "/jobs/keep-it-safe" },
     { text: "Get notified", link: "/jobs/notifications" },
     { text: "Fire a routine from outside", link: "/jobs/fire-a-routine" },
+    { text: "Dashboard on your own address", link: "/jobs/reverse-proxy" },
+    { text: "Review what agents learn", link: "/jobs/agent-memory" },
   ] },
   { text: "When something goes wrong", items: [
     { text: "It's not answering", link: "/help/its-not-answering" }, { text: "Run a health check", link: "/help/doctor" },
