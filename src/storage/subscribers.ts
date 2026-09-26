@@ -174,6 +174,8 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           resumed: p.resumed ?? null,
           resumeSessionId: p.resumeSessionId ?? null,
           jevArm: p.jevArm ?? null,
+          numTurns: p.numTurns ?? null,
+          injectedContext: p.injectedContext ?? null,
           error: p.error ?? null,
           // Migration v8 — final response captured so `replay --diff` can
           // show original vs current output without reconstructing from

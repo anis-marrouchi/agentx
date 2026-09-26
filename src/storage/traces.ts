@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 import { newEventId } from "@/intent/ulid"
+import { boundInjectedContext } from "@/agents/injected-context"
 
 // --- Task trace store ---
 //
@@ -76,12 +77,25 @@ export interface TraceEndInput {
   resumeSessionId?: string | null
   /** Request-gate experiment arm: "treatment" | "holdout". */
   jevArm?: string | null
+  /** Runtime-reported turn count (Claude `num_turns`). */
+  numTurns?: number | null
+  /** Lessons injected into the prompt. See InjectedContext. */
+  injectedContext?: InjectedContext | null
   error?: string | null
   /** The agent's final reply text. Stored verbatim so `replay --diff`
    *  can compare original output vs the new run's output without
    *  reconstructing it from the step ledger. NULL when the response
    *  wasn't captured (older rows or non-text outputs). */
   finalResponse?: string | null
+}
+
+/** Ids of the lessons injected into one task's prompt. Memory facts and
+ *  procedures are matched per message, so their ids are recorded; the wiki
+ *  is injected as a whole catalog, so only its presence is. */
+export interface InjectedContext {
+  memory: string[]
+  procedures: string[]
+  wiki: boolean
 }
 
 export interface TraceStepInput {
@@ -130,6 +144,11 @@ export interface TraceRecord {
   resumed: boolean | null
   /** NULL when the request gate was not active (or before migration v13). */
   jevArm: string | null
+  /** NULL on rows recorded before lesson-impact capture (#98) or when the
+   *  runtime does not report a turn count. */
+  numTurns: number | null
+  /** NULL on rows recorded before lesson-impact capture (#98). */
+  injectedContext: InjectedContext | null
   error: string | null
   messagePreview: string | null
   /** Full untruncated user message — populated for traces from migration v8
@@ -234,6 +253,8 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       resumed = COALESCE(?, resumed),
       resume_session_id = COALESCE(?, resume_session_id),
       jev_arm = COALESCE(?, jev_arm),
+      num_turns = COALESCE(?, num_turns),
+      injected_context = COALESCE(?, injected_context),
       error = ?,
       final_response = COALESCE(?, final_response),
       finished_at = ?,
@@ -253,6 +274,8 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.resumed == null ? null : input.resumed ? 1 : 0,
     input.resumeSessionId ?? null,
     input.jevArm ?? null,
+    input.numTurns ?? null,
+    input.injectedContext ? JSON.stringify(boundInjectedContext(input.injectedContext)) : null,
     input.error ?? null,
     input.finalResponse ?? null,
     finishedAt,
@@ -294,6 +317,18 @@ export function recordTraceStep(db: Database.Database, taskId: string, input: Tr
   return allocateAndInsert()
 }
 
+export function parseInjectedContext(raw: unknown): InjectedContext | null {
+  if (typeof raw !== "string") return null
+  try {
+    const v = JSON.parse(raw)
+    if (!v || typeof v !== "object") return null
+    const ids = (x: unknown) => (Array.isArray(x) ? x.filter((i): i is string => typeof i === "string") : [])
+    return { memory: ids(v.memory), procedures: ids(v.procedures), wiki: v.wiki === true }
+  } catch {
+    return null
+  }
+}
+
 function rowToTrace(row: Record<string, unknown>): TraceRecord {
   return {
     taskId: row.task_id as string,
@@ -322,6 +357,8 @@ function rowToTrace(row: Record<string, unknown>): TraceRecord {
     tier2CacheCreateTokens: (row.tier2_cache_create_tokens as number) ?? null,
     resumed: row.resumed == null ? null : row.resumed === 1,
     jevArm: (row.jev_arm as string) ?? null,
+    numTurns: (row.num_turns as number) ?? null,
+    injectedContext: parseInjectedContext(row.injected_context),
     error: (row.error as string) ?? null,
     messagePreview: (row.message_preview as string) ?? null,
     originalMessage: (row.original_message as string) ?? null,

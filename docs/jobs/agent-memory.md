@@ -89,6 +89,33 @@ Every time a memory is changed or deleted, the previous version is kept (the las
 
 Each memory also records who wrote it: the agent and the task it was working on, or `unverified` when that couldn't be checked. An agent can only change its own memories.
 
+## 5. See whether what agents learn helps
+
+In this report, a *lesson* is anything the agent was reminded of for a task: a fact, a procedure (a step-by-step routine AgentX learned from repeated work) or the shared wiki's table of contents. Every task records which lessons reached the agent. Only their IDs are kept, never the text.
+
+AgentX groups tasks that repeat, such as "send the weekly report", the same way it does when it learns procedures. For each lesson, it compares that task's runs from before the lesson was first used with the runs that got the lesson.
+
+1. **Terminal:** run the report for the last 30 days:
+   ```sh
+   agentx trace lessons
+   ```
+   Each lesson shows two lines. `before` covers the runs without it and `after` covers the runs that got it. Each line gives the number of runs (`n`), how many succeeded, and the typical (median) tokens, turns and time. The `after` line shows the change, for example `tokens 9.1k (-26%)`.
+2. **Terminal:** look further back, or at one agent:
+   ```sh
+   agentx trace lessons --since 90d --agent <agent>
+   ```
+3. **Terminal:** ask for more runs on each side before a lesson is shown (the default is 2):
+   ```sh
+   agentx trace lessons --min 5
+   ```
+4. **Terminal:** to use the numbers in a spreadsheet or script, add `--json`:
+   ```sh
+   agentx trace lessons --json
+   ```
+5. **Terminal:** to see which lessons one task got, run `agentx trace show <task-id>` and read the `lessons` line.
+
+A few runs prove little. Treat a change as a hint until `n` is in the tens.
+
 <!-- No screenshot: every step here is a terminal command. -->
 
 ## Check it worked
@@ -97,6 +124,7 @@ Each memory also records who wrote it: the agent and the task it was working on,
 2. `agentx memory facts held` lists nothing you haven't decided on.
 3. After you approve a lesson, `agentx wiki proposals list --all` shows it as `approved`, and the article is in the shared wiki under `.agentx/wiki/`.
 4. After a restore, the memory's `versions` list includes the version you replaced.
+5. `agentx trace show <task-id>` for a recent task prints a `lessons` line.
 
 ## If something is wrong
 
@@ -105,4 +133,7 @@ Each memory also records who wrote it: the agent and the task it was working on,
 - **No proposals ever appear:** check that the nightly `wiki promote --commit` job is switched on (`agentx schedule list`) and that agents have saved memories recently.
 - **A fact you expected isn't used:** it may come from a public channel and be waiting in `agentx memory facts held`, or it contained a password or token and was never kept.
 - **`restore` answers `no such version`:** list the versions again and copy the `id` exactly.
+- **`agentx trace lessons` says no lesson has enough runs:** only tasks run since this version record their lessons, and a task has to repeat on both sides of a lesson. Wait for more runs, widen `--since`, or lower `--min`.
+- **`agentx trace lessons` says `No db at`:** run it in the folder that holds `agentx.json`, or name that folder with `--cwd <folder>`. To read a database copied from another machine, add `--path <file>`.
+- **A lesson you expected is missing from the report:** procedures and the wiki's table of contents are only given at the start of a fresh conversation, so runs that continue an earlier conversation don't count for them.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.

@@ -43,7 +43,7 @@ These are callable but hidden from `agentx --help` (its footer names them all). 
 | `procedure` | Procedures learned from recurring activity: extract, review, match |
 | `graph` | The intent graph: review and label classifications |
 | `watch` | Stream live daemon events: workflow runs, tasks, mesh health |
-| `trace` | Per-task execution traces: list, show, replay |
+| `trace` | Per-task execution traces: list, show, replay, and `lessons` (did a lesson make a repeated task better) |
 | `ledger` | The intent ledger: events, decisions, divergences |
 | `decisions` | The typed-decision store: calls, labels, calibration |
 | `process` | Warm agent processes: list, kill |
@@ -153,6 +153,7 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx memory facts approve <id> --agent <id>` | Let a held fact be used |
 | `agentx memory facts reject <id> --agent <id>` | Keep a held fact out for good |
 | `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
+| `agentx trace lessons [--since 30d] [--agent <id>] [--min 2] [--json]` | Compare repeated tasks before and after each fact, procedure or wiki was first used |
 | `agentx wiki promote [--commit]` | Preview (or, with `--commit`, judge and propose) lessons for the shared wiki |
 | `agentx wiki proposals list` | Proposed lessons waiting for review |
 | `agentx wiki proposals show <id>` | The proposed article and its evidence |

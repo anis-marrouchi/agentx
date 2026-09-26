@@ -17,6 +17,7 @@ import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
 import { TokenTracker, splitTaskUsageByTier } from "@/daemon/token-tracker"
 import { buildAgentContext, type ContextInput } from "./context"
+import { injectedContextOf } from "./injected-context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
 import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
@@ -1431,6 +1432,9 @@ export class AgentRegistry {
     // `let`, not `const`, because the planner strategy (below) may overwrite
     // this with its own curated memory bundle when enabled.
     let memoryContext = this.memoryStore.buildContext(relevantMemories)
+    // Candidates only; what actually reached the prompt is decided after
+    // the context is assembled (see injectedContextOf).
+    let memoryFacts = this.memoryStore.contextFacts(relevantMemories)
 
     // Load behavioral patterns (self-improving loop)
     const relevantPatterns = this.patternStore.findRelevant(task.message, task.agentId, 5)
@@ -1603,6 +1607,7 @@ export class AgentRegistry {
     // and per-turn re-injection is the bloat that forces tier-2 rotation.
     // Warm sessions can pull one on demand via `agentx procedure match`.
     let procedureContext: string | undefined
+    let procedureCandidates: Array<{ id: string; title: string }> = []
     if (this.config.procedures?.injection?.enabled && !resumeSessionId && !isCodexCli) {
       try {
         const procStore = new ProcedureStore({
@@ -1614,6 +1619,7 @@ export class AgentRegistry {
         })
         if (procMatches.length > 0) {
           procedureContext = renderProcedureContext(procMatches)
+          procedureCandidates = procMatches.map((m) => ({ id: m.procedure.meta.id, title: m.procedure.meta.title }))
           for (const m of procMatches) {
             this.log(`[${task.agentId}] procedure match ${m.procedure.meta.id} score=${m.score.toFixed(2)} (${m.reasons.join(",")})`)
           }
@@ -1782,6 +1788,7 @@ export class AgentRegistry {
           plannerSucceeded = true
           sessionHistoryOverride = plan.sessionHistory
           memoryContext = plan.memoryContext
+          memoryFacts = plan.memoryFacts
           crossChatContext = plan.crossChatContext
           planDebug = plan.debug as unknown as Record<string, unknown>
           this.log(`[${task.agentId}] planner: turns=${plan.debug.recentTurns}, mem=${plan.debug.memoryIncluded ? "yes" : "no"}, xchat=${plan.debug.crossChatIncluded ? "yes" : "no"} (${plan.debug.planLatencyMs}ms) — ${plan.debug.reasoning ?? ""}`)
@@ -2012,6 +2019,14 @@ export class AgentRegistry {
           }
         : undefined,
     )
+
+    // Lesson impact (#98): the memory, procedure and wiki ids that made it
+    // into this prompt, for `agentx trace lessons`. Ids only, capped.
+    const injectedContext = injectedContextOf(historyContext, {
+      memory: memoryFacts,
+      procedures: procedureCandidates,
+      wikiContext: selectedContext.input.wikiContext,
+    })
 
     // Context-size telemetry. Bytes we control: the layered context string +
     // the cacheable system-prompt append + the current message. Bytes we
@@ -2283,6 +2298,8 @@ export class AgentRegistry {
         resumed: Boolean(resumeSessionId),
         resumeSessionId: resumeSessionId || undefined,
         jevArm: requestGate.arm,
+        numTurns: response.numTurns,
+        injectedContext,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
         // billed; fall back to the agent's configured model so codex-cli

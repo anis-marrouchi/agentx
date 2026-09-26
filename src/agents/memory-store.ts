@@ -113,10 +113,20 @@ export class MemoryStore {
   }
 
   buildContext(memories: MemoryFact[]): string {
-    if (memories.length === 0) return ""
+    const lines = this.contextLines(memories).map((l) => l.line)
+    if (lines.length === 0) return ""
+    return ["[Agent Memory — persistent facts from past conversations]", ...lines, "[End Memory]"].join("\n")
+  }
 
-    const lines = ["[Agent Memory — persistent facts from past conversations]"]
-    let chars = lines[0].length
+  /** The facts buildContext actually renders — the rest fall past its
+   *  character budget. Trace capture records these ids, not the candidates. */
+  contextFacts(memories: MemoryFact[]): MemoryFact[] {
+    return this.contextLines(memories).map((l) => l.fact)
+  }
+
+  private contextLines(memories: MemoryFact[]): Array<{ fact: MemoryFact; line: string }> {
+    const kept: Array<{ fact: MemoryFact; line: string }> = []
+    let chars = "[Agent Memory — persistent facts from past conversations]".length
 
     for (const m of memories) {
       const isDM = !m.source.chatId.startsWith("-") && /^\d+$/.test(m.source.chatId)
@@ -124,12 +134,10 @@ export class MemoryStore {
       const line = `- [${m.category}] ${m.content} (${scope}, ${m.source.date})`
 
       if (chars + line.length > 2400) break
-      lines.push(line)
+      kept.push({ fact: m, line })
       chars += line.length
     }
-
-    lines.push("[End Memory]")
-    return lines.join("\n")
+    return kept
   }
 
   /**
