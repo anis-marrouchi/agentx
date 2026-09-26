@@ -55,7 +55,7 @@ agentx desktop start
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Push to your phone and show a Mac banner, held during Focus; see [Get notified](../jobs/notifications.md) |
-| `agentx notifications show` | Notification routing, the local banner and sound, and ntfy status |
+| `agentx notifications show` | Notification routing, the local banner and sound, ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
 | `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for phone push |
 

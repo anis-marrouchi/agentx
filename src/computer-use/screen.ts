@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { resolveHelper } from "@/desktop/install"
+import { packageRoot, resolveHelper } from "@/desktop/install"
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { existsSync } from "fs"
@@ -9,7 +9,7 @@ import type { UICandidate } from "@/decisions/seats/ui-element"
 
 const run = promisify(execFile)
 
-export const HELPER = resolveHelper(process.cwd(), homedir(), process.env.AGENTX_MAC_HELPER)
+export const HELPER = resolveHelper(packageRoot(), homedir(), process.env.AGENTX_MAC_HELPER)
 
 // --- Reading the screen, with a fallback that changes what is possible ---
 //

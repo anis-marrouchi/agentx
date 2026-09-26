@@ -40,6 +40,8 @@ const shots = [
   { name: "settings-channels", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }] },
   { name: "settings-crons", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="crons"]' }] },
   { name: "settings-tokens", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="tokens"]' }] },
+  { name: "notifications/dashboard-routing", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }, { click: "#notif-section summary" }, { scroll: "#notif-section" }] },
+  { name: "notifications/dashboard-this-mac", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }, { click: "#notif-section summary" }, { type: "#notif-local-icon", text: "/Users/you/Pictures/team-logo.png" }, { scroll: "fieldset:has(#notif-local-banner)" }] },
   { name: "workflows-list", path: "/workflows", wait: "body" },
   { name: "editor-chat-closed", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill" },
   { name: "editor-chat-reply", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill", steps: askSteps },

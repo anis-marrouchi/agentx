@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { LAUNCHD_PATH, desktopPath, desktopPlatformError, desktopPlist, findOnPath, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper } from '../src/desktop/install'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { LAUNCHD_PATH, desktopPath, desktopPlatformError, desktopPlist, findOnPath, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
 
 describe('desktop installation', () => {
   it('rejects unsupported systems and supports macOS 14 on Apple Silicon', () => {
@@ -43,5 +46,19 @@ describe('desktop installation', () => {
   })
   it('honors an explicit helper path', () => {
     expect(resolveHelper('/tmp/repo', '/tmp/home', '/custom/helper')).toBe('/custom/helper')
+  })
+  it('finds a package-built helper from any working folder, not only the checkout', () => {
+    const repo = resolve(fileURLToPath(import.meta.url), '../..')
+    const before = process.cwd()
+    try {
+      process.chdir(tmpdir())
+      const root = packageRoot()
+      expect(root).toBe(repo)
+      expect(resolveHelper(root, '/nonexistent-home')).toBe(join(root!, 'apps/mac-helper/build/AgentX Helper.app/Contents/MacOS/agentx-mac-helper'))
+    } finally { process.chdir(before) }
+  })
+  it('falls back to the ~/Applications path when there is no package folder', () => {
+    expect(packageRoot('/')).toBeNull()
+    expect(resolveHelper(null, '/tmp/home')).toBe(installedHelper('/tmp/home'))
   })
 })

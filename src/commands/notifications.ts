@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import { loadDaemonConfig } from "@/daemon/config"
 import { localSettings, patchLocal } from "@/notify/local"
+import { helperStatus } from "@/notify/helper-status"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 
 // --- agentx notifications — manage where + when AgentX pings the operator ---
@@ -42,7 +43,7 @@ notifications
   .command("show")
   .description("print current notifications config")
   .option("--json", "JSON output")
-  .action((opts) => {
+  .action(async (opts) => {
     const n = readNotifications()
     if (opts.json) { console.log(JSON.stringify(n, null, 2)); return }
     console.log()
@@ -61,6 +62,13 @@ notifications
     console.log(`  local.banner      ${local.banner ? "on" : chalk.dim("off")}`)
     console.log(`  local.sound       ${local.sound ? `${local.soundName} at ${local.volume}` : chalk.dim("off")}`)
     console.log(`  local.icon        ${local.icon ?? chalk.dim("AgentX logo")}`)
+    if (local.banner) {
+      const helper = await helperStatus()
+      if (helper.state !== "unsupported") {
+        console.log(`  local.helper      ${helper.state === "ready" ? helper.message : chalk.yellow(helper.message)}`)
+        if (helper.fix) console.log(`                    ${chalk.dim("Fix: " + helper.fix)}`)
+      }
+    }
     const ntfy = ntfyStatus(readNtfy())
     console.log(`  ntfy              ${ntfy.enabled ? "on" : chalk.dim("off")} ${chalk.dim(`${ntfy.server} · topic ${ntfy.topicSet ? "set" : "unset"} · token ${ntfy.tokenSet ? "set" : "unset"}`)}`)
     console.log()

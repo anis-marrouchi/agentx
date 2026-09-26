@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const DESKTOP_LABEL = 'tn.acme.agentx.voice'
 export const DESKTOP_APP = 'AgentX Desktop.app'
@@ -65,8 +66,22 @@ export function helperBuildArgs(icon?: string): string[] {
 export function installedHelper(home: string): string {
   return join(home, 'Applications', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
 }
-export function resolveHelper(cwd: string, home: string, override?: string): string {
+/** The AgentX package folder, found by walking up from this file (dist/
+ *  when installed, src/ in a checkout) — never from the caller's cwd, so
+ *  `agentx notify` finds a repo-built helper from any folder. */
+export function packageRoot(from = dirname(fileURLToPath(import.meta.url))): string | null {
+  for (let dir = from; ; dir = dirname(dir)) {
+    try {
+      if (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name === 'agentix-cli') return dir
+    } catch { /* no package.json here — keep walking up */ }
+    if (dirname(dir) === dir) return null
+  }
+}
+/** The helper to run: an explicit path, else the one `agentx desktop
+ *  install` put in ~/Applications, else one built in the package. */
+export function resolveHelper(root: string | null, home: string, override?: string): string {
   if (override) return override
   const installed = installedHelper(home)
-  return existsSync(installed) ? installed : join(cwd, 'apps/mac-helper/build/AgentX Helper.app/Contents/MacOS/agentx-mac-helper')
+  if (existsSync(installed) || !root) return installed
+  return join(root, 'apps/mac-helper/build', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
 }

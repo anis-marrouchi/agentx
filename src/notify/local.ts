@@ -2,7 +2,7 @@ import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { homedir } from "os"
 import { isAbsolute } from "path"
-import { resolveHelper } from "@/desktop/install"
+import { packageRoot, resolveHelper } from "@/desktop/install"
 
 // What happens on THIS machine when a notification is delivered: a banner
 // on screen and a short sound. The push goes to the phone; these are for
@@ -73,9 +73,10 @@ export function soundPath(name: string): string | null {
   return existsSync(path) ? path : null
 }
 
-/** The AgentX Helper binary when one is built or installed, else null. */
+/** The AgentX Helper binary when one is built or installed, else null.
+ *  AGENTX_MAC_HELPER points at a helper somewhere else. */
 export function findHelper(): string | null {
-  const path = resolveHelper(process.cwd(), homedir())
+  const path = resolveHelper(packageRoot(), homedir(), process.env.AGENTX_MAC_HELPER)
   return existsSync(path) ? path : null
 }
 
