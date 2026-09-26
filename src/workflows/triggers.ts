@@ -3,6 +3,7 @@ import type { WorkflowDispatcher } from "./dispatcher"
 import type { WorkflowStore } from "./store"
 import type { HookEvent } from "@/hooks/types"
 import type { HookRegistry } from "@/hooks"
+import { checkLoopGuard, FireWindow, type LoopGuardFilter } from "./loop-guard"
 
 // --- Trigger wiring for Phase 3 ---
 //
@@ -33,8 +34,14 @@ export function startWorkflowTriggers(args: {
   dispatcher: WorkflowDispatcher
   hooks: HookRegistry
   log: (msg: string) => void
+  /** Configured forge usernames (GitLab/GitHub agentMappings) for an agent.
+   *  Feeds the loop guard's self-authored skip; see loop-guard.ts. */
+  forgeUsernames?: (agentId: string) => string[]
 }): { cronTimers: number; hookSubscribers: number } {
   const workflows = args.store.list()
+  // Loop-guard state shared by every trigger.hook subscriber registered in
+  // this call. In-memory; resets on daemon restart (see FireWindow).
+  const loopGuard = { fireWindow: new FireWindow(), log: args.log, forgeUsernames: args.forgeUsernames, logged: new Set<string>() }
   let cronTimers = 0
   let hookSubscribers = 0
 
@@ -100,7 +107,11 @@ export function startWorkflowTriggers(args: {
            *  `changes.labels.{previous,current}` and exposes it as
            *  `ctx.labelsAdded`. Labels are matched case-insensitive. */
           labelsAdded?: string[]
-        }
+        } & LoopGuardFilter
+        // LoopGuardFilter adds (see loop-guard.ts):
+        //   ignoreAuthors      — skip events authored by these usernames
+        //   skipSelfAuthored   — skip events authored by this workflow's own agents
+        //   maxFiresPerTarget  — { count, windowMinutes } per issue/MR/PR
       }
       if (!cfg.event || !cfg.event.startsWith("on:")) {
         args.log(`[workflows] ${wf.id} trigger.hook config.event must start with "on:" — skipping`)
@@ -185,6 +196,18 @@ export function startWorkflowTriggers(args: {
               const hit = wanted.some((w) => ctxAdded.includes(w))
               if (!hit) return {}
             }
+          }
+          // Loop guard — runs after the filters above so the chain-limit
+          // counter only advances for events this workflow would act on.
+          // Every guard skip still claims the event (unless passthrough) so
+          // the adapter's fallback — default-agent route or legacy @-mention
+          // dispatch — doesn't spawn the agent behind the guard's back.
+          const guard = checkLoopGuard(wf, cfg.event!, ctx, cfg.filter, loopGuard)
+          if (guard.skip) {
+            args.log(`[workflows] ${wf.id} skipping ${cfg.event} (${guard.reason}): ${guard.detail}`)
+            if (cfg.passthrough) return {}
+            const prev = (ctx as { __workflowClaimed?: unknown }).__workflowClaimed
+            return { modified: { __workflowClaimed: [...(Array.isArray(prev) ? prev as string[] : []), wf.id] } }
           }
           // Go direct: this hook subscriber is registered per-workflow,
           // so we already know which workflow to fire. Going through

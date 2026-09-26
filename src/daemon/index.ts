@@ -26,7 +26,8 @@ import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
-import { readCronRunHistory } from "@/crons/run-history"
+import { readCronRunHistory, readRecentCronRuns } from "@/crons/run-history"
+import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
@@ -58,6 +59,7 @@ import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -82,7 +84,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_BODY, REMEMBER_SKILL_FILENAME } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
-import { checkPayloadWithConfirmation, type PreToolUsePayload } from "@/guard"
+import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
 import { siriSayScript } from "@/voice/speaker"
@@ -151,6 +153,27 @@ export class AgentXDaemon {
       this.wfHealth = { at: Date.now(), rows }
       return rows
     } catch { return [] }
+  }
+
+  private routinesCache?: { at: number; rows: Routine[] }
+  /** Schedules and cron/hook-triggered workflows merged into one bounded
+   *  list (GET /routines). Cached briefly: the mesh overview polls every
+   *  few seconds and each build opens the newest run files per job. */
+  private async routines(): Promise<Routine[]> {
+    if (this.routinesCache && Date.now() - this.routinesCache.at < 30_000) return this.routinesCache.rows
+    const crons = this.cron.list()
+    const cronRuns = await readRecentCronRuns({ perJob: 10, jobIds: crons.map((j) => j.id) })
+    let workflows: RoutineWorkflow[] = []
+    let workflowRuns: ReturnType<typeof scanRuns> = []
+    if (this.workflowStore && this.workflowRuns) {
+      try {
+        workflows = this.workflowStore.list()
+        workflowRuns = scanRuns(this.workflowRuns.runsDir)
+      } catch { /* a broken workflow dir must not hide the schedules */ }
+    }
+    const rows = buildRoutines({ crons, cronRuns, workflows, workflowRuns })
+    this.routinesCache = { at: Date.now(), rows }
+    return rows
   }
   private db: import("better-sqlite3").Database | null = null
   private loadedPlugins: LoadedPlugin[] = []
@@ -246,6 +269,8 @@ export class AgentXDaemon {
     // Set up agent workspaces with Claude Code best practices (non-destructive)
     const [, portStr] = this.config.node.bind.split(":")
     setupAllWorkspaces(this.config.agents, portStr || "19900", this.log)
+    // Restricted-autonomy routines point their per-task hook here.
+    setAutonomyHookPort(portStr || "19900")
 
     // Initialize hooks
     this.hooks = new HookRegistry()
@@ -1638,6 +1663,7 @@ export class AgentXDaemon {
             message: req.message,
             workflowRunId: req.workflowRunId,
             timeoutMinutes: req.timeoutMinutes,
+            autonomy: req.autonomy,
             context: {
               channel: "workflow",
               chatId: wfChatId,
@@ -1648,6 +1674,7 @@ export class AgentXDaemon {
             content: resp.content ?? "",
             error: resp.error,
             errorKind: resp.errorKind,
+            autonomyBlocks: resp.autonomyBlocks,
             taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
             durationMs: Date.now() - start,
           }
@@ -1834,6 +1861,13 @@ export class AgentXDaemon {
     // above.
     const { cronTimers, hookSubscribers } = startWorkflowTriggers({
       store, dispatcher, hooks: this.hooks, log: (m) => this.log(m),
+      // Loop guard: an agent's configured forge usernames are its "own bot
+      // identity" for the self-authored skip. The GitLab adapter also stamps
+      // ctx.authorAgent from its token-resolved map, which covers the rest.
+      forgeUsernames: (agentId) => [
+        ...(this.config.channels.gitlab?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.gitlabUsernames),
+        ...(this.config.channels.github?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.githubUsernames),
+      ],
     })
 
     const count = store.list().length
@@ -2245,6 +2279,19 @@ export class AgentXDaemon {
         const agentId = url.searchParams.get("agent") || undefined
         const envScope = url.searchParams.get("env") || undefined
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        // Per-task autonomy hook (report/propose routines). Always enforced;
+        // an allow returns "" so the workspace guard hook still has its say.
+        if (url.searchParams.has("autonomy")) {
+          const { stdout } = checkAutonomyPayload(payload as PreToolUsePayload, {
+            root: process.cwd(),
+            agentId,
+            level: url.searchParams.get("autonomy"),
+            taskId: url.searchParams.get("task"),
+          })
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(stdout)
+          return
+        }
         const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {
           root: process.cwd(),
           agentId,
@@ -3042,6 +3089,20 @@ export class AgentXDaemon {
       }
 
       // Dynamic routes (before static switch)
+      // Fire one routine (cron job or workflow) now. Carries its own
+      // per-routine token auth — see routine-fire.ts.
+      const routineFire = req.method === "POST" && path.match(ROUTINE_FIRE_PATH)
+      if (routineFire) {
+        await handleRoutineFire(req, res, routineFire[1], {
+          cron: this.cron,
+          workflows: this.workflowDispatcher && this.workflowStore
+            ? { get: (id) => this.workflowStore!.get(id), dispatchWorkflow: (a) => this.workflowDispatcher!.dispatchWorkflow(a) }
+            : undefined,
+          meshTokens: collectAcceptedMeshTokens(this.config),
+          log: (m) => this.log(m),
+        })
+        return
+      }
       // n8n (or anything that can POST JSON) hands work to agentx here. We do
       // not reimplement n8n's connectors: it keeps the integrations, we keep
       // the agents, and this is the seam. Auth is the same mesh token every
@@ -3405,9 +3466,11 @@ export class AgentXDaemon {
       // Operator follow-up: enqueue a correction/update message for an in-flight
       // task. With replace=true the current run is aborted so the new message
       // runs immediately; otherwise it waits for the current run to finish.
-      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender? }
+      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent? }
       // 200 → { ok, agentId, channel, chatId, replaced, pending }
-      // 404 → task not running
+      // 200 → { ok, resumed: true, taskId: <new run>|undefined, queued }  (finished cron run, `agent` given)
+      // 404 → task not running (and no stored record when `agent` given)
+      // 409 → finished, but not a cron run
       const followupMatch = req.method === "POST" && path.match(/^\/api\/tasks\/([^/]+)\/followup$/)
       if (followupMatch) {
         const taskId = decodeURIComponent(followupMatch[1])
@@ -3420,8 +3483,17 @@ export class AgentXDaemon {
             ? (body as any).sender.trim()
             : "operator"
           const result = this.registry.queueFollowUp(taskId, message, sender, { replace })
-          if (!result) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
-          this.json(res, 200, { ok: true, taskId, ...result })
+          if (result) { this.json(res, 200, { ok: true, taskId, ...result }); return }
+          // Not running. A finished scheduled run can still be continued:
+          // the message becomes a new turn in the same cron:<jobId> chat, so
+          // the session resumes. Needs the agent to find the stored record.
+          const agentId = typeof (body as any)?.agent === "string" ? (body as any).agent : ""
+          if (!agentId) { this.json(res, 404, { error: `no running task with id ${taskId}` }); return }
+          const resumed = await this.registry.continueFinishedTask(agentId, taskId, message, sender, {
+            model: (chatId) => this.cron.list().find((j) => `cron:${j.id}` === chatId)?.model,
+          })
+          if (!resumed.ok) { this.json(res, resumed.status, { error: resumed.error }); return }
+          this.json(res, 200, { ...resumed, resumed: true, fromTaskId: taskId })
         } catch (e: any) {
           this.json(res, 500, { error: e?.message || String(e) })
         }
@@ -3694,6 +3766,10 @@ export class AgentXDaemon {
           this.json(res, 200, { date, timezone, runs })
           break
         }
+
+        case "GET /routines":
+          this.json(res, 200, { routines: await this.routines() })
+          break
 
         case "GET /mesh":
           this.json(res, 200, this.mesh?.directory() || [])
@@ -4950,6 +5026,7 @@ export class AgentXDaemon {
               "GET  /health",
               "GET  /agents",
               "GET  /crons",
+              "GET  /routines  — schedules + cron/hook workflows with staleness flags",
               "GET  /mesh",
               "GET  /wiki/agents",
               "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",

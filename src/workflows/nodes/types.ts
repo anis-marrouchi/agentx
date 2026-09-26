@@ -18,6 +18,8 @@ export interface AgentExecuteRequest {
   message: string
   workflowRunId?: string
   timeoutMinutes?: number
+  /** Step autonomy (report | propose | act). Unset = act. */
+  autonomy?: "report" | "propose" | "act"
 }
 
 export interface AgentExecuteResponse {
@@ -31,6 +33,8 @@ export interface AgentExecuteResponse {
   errorKind?: string
   taskId?: string
   durationMs?: number
+  /** Tool calls blocked by the step's autonomy level. */
+  autonomyBlocks?: Array<{ tool: string; target: string | null; ruleId: string; reason: string }>
 }
 
 export interface NodeContext {

@@ -87,6 +87,9 @@ agentx attach as coder-agent
 | `agentx cron list` | List schedules |
 | `agentx cron disable <id>` | Disable a schedule |
 | `agentx cron enable <id>` | Enable a schedule |
+| `agentx schedule list` | List schedules, including agent requests awaiting approval |
+| `agentx schedule approve <id>` | Approve an agent's pending create or delete ([schedules from chat](../automations/schedules-from-chat.md)) |
+| `agentx schedule reject <id>` | Reject an agent's pending create or delete |
 
 Start with the [visual workflow guide](../tutorials/first-workflow.md) before enabling a live automation.
 

@@ -10,7 +10,7 @@ export const MESH_OPS_SCRIPT = `<script>
   var esc=MX.esc;
   function initials(v){return String(v||'?').split(/[-_ ]+/).slice(0,2).map(function(x){return x.charAt(0)}).join('').toUpperCase()}
   function badge(status){
-    var kind=(status==='success'||status==='active'||status==='online')?'ax-badge--live'
+    var kind=(status==='success'||status==='active'||status==='online'||status==='running')?'ax-badge--live'
       :(status==='failed'||status==='timeout'||status==='offline')?'ax-badge--err'
       :status==='retrying'?'ax-badge--warn':'ax-badge--ghost';
     return '<span class="ax-badge '+kind+'">'+esc(status)+'</span>';
@@ -27,6 +27,35 @@ export const MESH_OPS_SCRIPT = `<script>
   }
   function detail(data){
     return '<div class="mx-detail">'+MX.fields(data.fields)+(data.note?'<pre>'+esc(data.note)+'</pre>':'')+'</div>';
+  }
+  // A cron run opens on the node's Task page: live while it runs (SSE,
+  // follow-up, stop), archived once done (Send resumes its cron chat).
+  // Command jobs never reach an agent, so their runs have no task to open.
+  var RUN_LINK_LIMIT=10;
+  function runHref(x,taskId,archived){
+    return '/tasks/'+encodeURIComponent(taskId)+'?node='+encodeURIComponent(x.node.url)
+      +'&agent='+encodeURIComponent(x.job.agent)
+      +'&name='+encodeURIComponent((x.agent&&x.agent.name)||x.job.agent)
+      +'&channel=cron'+(archived?'&archived=1':'');
+  }
+  /** The in-flight run of a job: the agent's running task in its cron chat. */
+  function liveRun(n,job){
+    var agent=(n.agents||[]).find(function(a){return a.id===job.agent});
+    return ((agent&&agent.runningTasks)||[]).find(function(t){
+      return t.channel==='cron'&&t.chatId==='cron:'+job.id});
+  }
+  function runLinks(x){
+    if(x.job.kind==='command')return '';
+    var html='';
+    if(x.live)html+='<a class="mx-link" href="'+runHref(x,x.live.id,false)+'">Watch live run</a>';
+    var linked=x.history.filter(function(r){return r.taskId}).slice(0,RUN_LINK_LIMIT);
+    if(linked.length){
+      html+=MX.section('Runs today','<ul class="mx-run-links">'+linked.map(function(r){
+        return '<li><span>'+esc(new Date(r.startedAt).toLocaleTimeString())+'</span>'+badge(r.status)
+          +'<a class="mx-link" href="'+runHref(x,r.taskId,true)+'">Open</a></li>'}).join('')+'</ul>'
+        +(x.history.length>linked.length?'<p class="mx-note">Only the latest '+RUN_LINK_LIMIT+' runs with a task are listed. Runs recorded before this node linked tasks have none.</p>':''));
+    }
+    return html;
   }
   showAll.addEventListener('click',function(){
     expanded=!expanded;
@@ -54,11 +83,13 @@ export const MESH_OPS_SCRIPT = `<script>
     var cards=[];
     nodes.forEach(function(n){(n.crons||[]).forEach(function(job){
       var history=(n.cronRuns||[]).filter(function(r){return r.jobId===job.id}),latest=history[0];
-      var status=!job.enabled?'disabled':latest?latest.status:job.retryPending?'retrying':'waiting';
-      var summary=latest?(latest.errorSummary||latest.responseSummary||'No summary')
+      var live=job.kind==='command'?null:liveRun(n,job);
+      var status=live?'running':!job.enabled?'disabled':latest?latest.status:job.retryPending?'retrying':'waiting';
+      var summary=live?'Running now, started '+MX.age(live.startedAt)
+        :latest?(latest.errorSummary||latest.responseSummary||'No summary')
         :(job.enabled?'No attempt persisted today':'Schedule disabled');
       var agent=(n.agents||[]).find(function(a){return a.id===job.agent});
-      cards.push({node:n,job:job,run:latest,status:status,summary:summary,agent:agent});
+      cards.push({node:n,job:job,run:latest,history:history,live:live,status:status,summary:summary,agent:agent});
     })});
     var root=document.getElementById('mx-runs');
     document.getElementById('mx-run-count').textContent=cards.length+' schedules';
@@ -67,7 +98,7 @@ export const MESH_OPS_SCRIPT = `<script>
     root.innerHTML=cards.map(function(x,i){
       var sub='<code>'+esc(x.job.agent)+'</code><span>'+esc(x.job.schedule)+'</span>'
         +'<span class="mx-summary">'+esc(x.summary)+'</span>';
-      var variant=x.status==='success'?'teal':(x.status==='failed'||x.status==='timeout')?'coral':'plain';
+      var variant=x.status==='running'?'blue':x.status==='success'?'teal':(x.status==='failed'||x.status==='timeout')?'coral':'plain';
       return item({title:x.job.id,slug:x.node.name,sub:sub},badge(x.status),
         'data-run="'+i+'"'+(!expanded&&i>=8?' hidden':''),variant);
     }).join('');
@@ -83,7 +114,7 @@ export const MESH_OPS_SCRIPT = `<script>
           ['Duration',x.run?MX.dur(x.run.duration):'-'],
           ['Retry',x.run&&x.run.isRetry?'Attempt '+x.run.retryAttempt:'No'],
           ['Task ID',(x.run&&x.run.taskId)||'-'],['Session ID',(x.run&&x.run.sessionId)||'-']
-        ],note:x.summary}));
+        ],note:x.summary})+runLinks(x));
       });
     });
   }
@@ -146,7 +177,7 @@ export const MESH_OPS_SCRIPT = `<script>
     var date=new Date().toLocaleDateString('en-CA');
     var tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
     MX.get('/api/mesh?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent(tz))
-      .then(render)
+      .then(function(s){render(s);document.dispatchEvent(new CustomEvent('mx:snapshot',{detail:s}))})
       .catch(function(e){document.getElementById('mx-updated').textContent='Fleet snapshot unavailable: '+e.message});
   }
   load();setInterval(load,5000);

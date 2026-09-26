@@ -32,6 +32,7 @@ import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
 import { newEventId } from "@/intent/ulid"
 import { getAttachRegistry } from "@/attach"
+import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -121,6 +122,12 @@ export interface TaskRecord {
   /** Terminal-style transcript captured from stream-json events. */
   transcript: string
 }
+
+/** Outcome of AgentRegistry.continueFinishedTask. `taskId` is the new run's
+ *  dashboard id; absent when the message was queued behind a busy slot. */
+export type ContinueFinishedTaskResult =
+  | { ok: true; agentId: string; channel: string; chatId: string; taskId?: string; queued: boolean }
+  | { ok: false; status: 404 | 409 | 500; error: string }
 
 const TASK_HISTORY_DIR = ".agentx/task-history"
 /** Default retention for persisted task records. Set for business audit trails;
@@ -942,7 +949,11 @@ export class AgentRegistry {
     // human doesn't pick the message up we fall through to the normal spawn
     // path below, and the offer is atomically expired so a late drain can't
     // answer it a second time. Attach is a preference, never a black hole.
-    const offered = getAttachRegistry().offer({
+    // A restricted-autonomy routine never goes to an attached session: that
+    // terminal runs with its own (full) permissions, outside the per-task
+    // guard hook, so enforcement would be silently skipped.
+    const restricted = isRestricted(task.autonomy)
+    const offered = restricted ? null : getAttachRegistry().offer({
       agentId: task.agentId,
       text: task.message,
       channel: task.context?.channel || "api",
@@ -960,6 +971,11 @@ export class AgentRegistry {
 
     const state = this.agents.get(task.agentId)
     if (!state) {
+      // The autonomy hook is spawned by THIS daemon; a peer would receive a
+      // bare message and run it at full power. Refuse instead.
+      if (restricted) {
+        return { content: "", error: `autonomy "${task.autonomy}" cannot be enforced on a mesh peer — agent "${task.agentId}" is not local`, autonomy: task.autonomy }
+      }
       // Mesh fallback: the agent isn't local but a healthy peer may host
       // it. Look it up in the mesh directory and forward via A2A sendTask.
       // Streaming callbacks are dropped — sendTask doesn't stream today.
@@ -1000,7 +1016,9 @@ export class AgentRegistry {
       // from peer" comment on whatever channel the upstream is bridged to.
       // For these callers, BLOCK and wait for a slot (up to 25 min — slightly
       // under mesh.sendTask's 30 min default cap) instead of queueing.
-      if (qChannel === "api") {
+      // Restricted routines wait too: a queued message is later re-routed
+      // as plain channel text, which would drop its autonomy level.
+      if (qChannel === "api" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
@@ -1070,6 +1088,8 @@ export class AgentRegistry {
       startedAt: new Date(),
     }
     state.runningTasks.push(runningTask)
+    task.runningTaskId = runningTask.id
+    if (task.onStart) { try { task.onStart(runningTask.id) } catch { /* caller bug must not break the run */ } }
 
     // AbortController for operator stop / replace. Stored under the running
     // task id so /api/tasks/:id/cancel can resolve and abort it.
@@ -1229,7 +1249,9 @@ export class AgentRegistry {
     // the workflow yet — that happens inside the outer try/finally so
     // runningTask + activeTasks bookkeeping always cleans up.
     let pendingAutoRun: { workflowId: string; confidence: number } | undefined
-    if (this.config.workflows?.enabled && wfMatching?.enabled) {
+    // Restricted routines never auto-run a workflow: its agent steps would
+    // run at their own autonomy, not this task's.
+    if (this.config.workflows?.enabled && wfMatching?.enabled && !restricted) {
       try {
         const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
         const match = matchWorkflow({
@@ -2688,6 +2710,64 @@ export class AgentRegistry {
       this.log(`[${agentId}] follow-up queued for task ${taskId} (pending=${pending}${edited ? ", edited cancelled turn" : ""})`)
     }
     return { agentId, channel, chatId, replaced, edited, pending }
+  }
+
+  /**
+   * Operator follow-up on a task that has already finished: dispatch the
+   * message as a new turn on the same (channel, chatId), so the session
+   * resumes with the finished run's context.
+   *
+   * Scheduled runs only. A cron chat has no person on the other end, so the
+   * Task page is the only place its reply is read. Resuming a Telegram or
+   * GitLab conversation from here would run a turn whose reply never reaches
+   * the person in that chat, which is worse than refusing.
+   *
+   * Resolves once the new run starts (with its task id, for the Task page)
+   * or, if the agent is busy and the message was queued, once execute
+   * returns without one.
+   */
+  async continueFinishedTask(
+    agentId: string,
+    taskId: string,
+    message: string,
+    sender: string,
+    opts: { model?: (chatId: string) => string | undefined } = {},
+  ): Promise<ContinueFinishedTaskResult> {
+    const record = this.getTaskRecord(agentId, taskId)
+    if (!record) return { ok: false, status: 404, error: `no task ${taskId} for agent ${agentId}` }
+    if (record.channel !== "cron" || !record.chatId) {
+      return { ok: false, status: 409, error: `task ${taskId} is finished; only scheduled (cron) runs can be resumed from the dashboard` }
+    }
+    const channel = record.channel
+    const chatId = record.chatId
+    return new Promise<ContinueFinishedTaskResult>((resolveStart) => {
+      let settled = false
+      const settle = (result: ContinueFinishedTaskResult) => {
+        if (settled) return
+        settled = true
+        resolveStart(result)
+      }
+      this.log(`[${agentId}] operator resumed ${channel}:${chatId} from finished task ${taskId}`)
+      this.execute({
+        message,
+        agentId,
+        // The job's model override, so the resumed turn runs on the same
+        // model as the scheduled one did.
+        model: opts.model?.(chatId),
+        context: { channel, chatId, sender },
+        onStart: (id) => settle({ ok: true, agentId, channel, chatId, taskId: id, queued: false }),
+      })
+        .then((resp) => {
+          // Only reached first when the run never started: it was queued
+          // behind a busy slot (the flush dispatches it later) or refused.
+          if (resp.error?.startsWith("__queued__")) {
+            settle({ ok: true, agentId, channel, chatId, queued: true })
+          } else {
+            settle({ ok: false, status: 500, error: resp.error || "run did not start" })
+          }
+        })
+        .catch((e) => settle({ ok: false, status: 500, error: e?.message ?? String(e) }))
+    })
   }
 
   /**

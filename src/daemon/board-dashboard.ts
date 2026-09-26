@@ -35,6 +35,7 @@ import { renderProcessesPage } from "./ui/pages/processes"
 import { renderTaskPage } from "./ui/pages/task"
 import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
+import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { setTopbarFeatures, type TopbarPeer } from "./topbar"
@@ -1469,6 +1470,8 @@ interface NodeLive {
     schedule: string
     timezone?: string
     agent: string
+    /** "command" jobs run a shell command, never an agent — no task to open. */
+    kind: "agent" | "command"
     model?: string
     nextRun?: string
     retryPending?: boolean
@@ -1489,6 +1492,9 @@ interface NodeLive {
     traceId?: string
     sessionId?: string
   }>
+  /** Schedules and cron/hook workflows with staleness flags (GET /routines).
+   *  Undefined when the node predates the endpoint. */
+  routines?: Routine[]
   /** A live lesson on this node's screen (GET /talk), while one runs. It
    *  holds the listener's screen and voice, so it is shown with a stop. */
   lesson?: {
@@ -1516,13 +1522,14 @@ async function fetchDaemonAgents(
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
     const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes] = await Promise.all([
       fetch(url + "/health", { headers, signal }).catch(() => null),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       fetch(url + "/mesh", { headers, signal }).catch(() => null),
       fetch(url + "/crons", { headers, signal }).catch(() => null),
       fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
       fetch(url + "/talk", { headers, signal }).catch(() => null),
+      fetch(url + "/routines", { headers, signal }).catch(() => null),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1555,6 +1562,7 @@ async function fetchDaemonAgents(
         schedule: String(job.schedule || ""),
         timezone: job.timezone,
         agent: String(job.agent || ""),
+        kind: typeof job.command === "string" && job.command.trim() ? "command" : "agent",
         model: job.model,
         nextRun: job.nextRun,
         retryPending: job.retryPending === true,
@@ -1564,6 +1572,12 @@ async function fetchDaemonAgents(
     if (cronRunsRes && cronRunsRes.ok) {
       const history: any = await cronRunsRes.json()
       base.cronRuns = Array.isArray(history.runs) ? history.runs : []
+    }
+    // Older daemons 404 here; leaving `routines` unset tells the page the
+    // node does not report them rather than that it has none.
+    if (routinesRes && routinesRes.ok) {
+      const body: any = await routinesRes.json().catch(() => null)
+      if (body && Array.isArray(body.routines)) base.routines = body.routines.slice(0, ROUTINE_LIMITS.routines)
     }
     if (talkRes && talkRes.ok) {
       const t: any = await talkRes.json().catch(() => null)

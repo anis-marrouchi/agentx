@@ -18,12 +18,14 @@ const groups = [
   { text: "Automations", items: [
     { text: "Overview", link: "/automations/" }, { text: "Describe what you want", link: "/automations/describe-it" },
     { text: "Check that it worked", link: "/automations/check-it-worked" },
+    { text: "Schedules from chat", link: "/automations/schedules-from-chat" },
   ] },
   { text: "Common jobs", items: [
     { text: "Answer questions", link: "/jobs/answer-questions" }, { text: "Send a daily report", link: "/jobs/daily-report" },
     { text: "Watch GitLab", link: "/jobs/watch-gitlab" }, { text: "Add a second machine", link: "/jobs/second-machine" },
     { text: "Tailscale setup", link: "/jobs/tailscale" }, { text: "Keep it safe", link: "/jobs/keep-it-safe" },
     { text: "Get notified", link: "/jobs/notifications" },
+    { text: "Fire a routine from outside", link: "/jobs/fire-a-routine" },
   ] },
   { text: "When something goes wrong", items: [
     { text: "It's not answering", link: "/help/its-not-answering" }, { text: "Run a health check", link: "/help/doctor" },

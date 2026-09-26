@@ -19,6 +19,11 @@ import { renderShell, esc, type TopbarPeer } from ".."
 //   send    — queue a message as the next turn (current turn keeps running)
 //   stop    — cancel the current turn
 //
+// A finished scheduled (cron) run keeps `send`: nobody reads a cron chat
+// anywhere else, so the message resumes that cron:<jobId> session as a new
+// turn and the page moves to it. Finished runs from other channels are
+// read-only.
+//
 // Reads: GET /api/task/stream?node=&agent=&task=   (SSE: start / chunk / end)
 // Writes: POST /api/task/action?node=&task=&kind=cancel|followup
 
@@ -258,6 +263,7 @@ const TASK_PAGE_JS = `
   var hintEl    = document.getElementById('task-hint');
   var sendBtn   = document.getElementById('task-send');
   var stopBtn   = document.getElementById('task-stop');
+  var composeEl = root.querySelector('.ax-task-page__compose');
 
   var buffer = '';
   var raf = 0;
@@ -503,6 +509,59 @@ const TASK_PAGE_JS = `
   var seededAsk = root.getAttribute('data-ask');
   if (seededAsk) showAsk(seededAsk, '', root.getAttribute('data-ask-at'));
 
+  function action(kind, message) {
+    var q = '/api/task/action?node=' + encodeURIComponent(nodeUrl)
+      + '&task=' + encodeURIComponent(taskId) + '&kind=' + encodeURIComponent(kind);
+    // agent lets the daemon find the stored record when the task has
+    // already finished, so a follow-up on a scheduled run resumes its chat.
+    var payload = message ? { message: message, agent: agentId } : {};
+    return fetch(q, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json().catch(function () { return {}; }); });
+  }
+
+  /** The Task page for another run of the same agent on this node. */
+  function taskHref(id, channel) {
+    var q = new URLSearchParams(location.search);
+    q.set('agent', agentId);
+    q.set('node', nodeUrl);
+    if (channel) q.set('channel', channel);
+    q.delete('archived'); q.delete('ask'); q.delete('at');
+    return '/tasks/' + encodeURIComponent(id) + '?' + q.toString();
+  }
+
+  sendBtn.addEventListener('click', function () {
+    var text = (inputEl.value || '').trim();
+    if (!text) { inputEl.focus(); return; }
+    sendBtn.disabled = true;
+    hintEl.textContent = 'queuing…';
+    action('followup', text).then(function (r) {
+      sendBtn.disabled = false;
+      if (r && r.error) { hintEl.textContent = 'failed: ' + r.error; return; }
+      inputEl.value = '';
+      // A finished scheduled run was continued as a new turn in its chat.
+      // Follow that turn: it is where the reply will appear.
+      if (r && r.resumed && r.taskId) { location.href = taskHref(r.taskId, r.channel); return; }
+      if (r && r.resumed) { hintEl.textContent = 'agent busy — queued as the next turn in this chat'; return; }
+      hintEl.textContent = 'queued — dispatches as the next turn';
+    });
+  });
+
+  stopBtn.addEventListener('click', function () {
+    stopBtn.disabled = true;
+    hintEl.textContent = 'stopping…';
+    action('cancel').then(function (r) {
+      stopBtn.disabled = false;
+      hintEl.textContent = (r && r.error) ? 'failed: ' + r.error : 'stop requested';
+    });
+  });
+
+  inputEl.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); sendBtn.click(); }
+  });
+
   // Archived: one fetch of the stored record, no SSE. Opening a stream for a
   // task that ended hours ago would sit "connecting…" forever and then report
   // a disconnect, which reads as breakage rather than as history.
@@ -517,6 +576,14 @@ const TASK_PAGE_JS = `
       .then(function (rec) {
         setStatus(rec.ok ? 'archived' : 'failed', rec.ok ? 'done' : 'err');
         showAsk(rec.message, rec.sender, rec.startedAt);
+        // A scheduled run's chat has nobody on the other end, so this page is
+        // where it continues: Send resumes the cron session with a new turn.
+        // Other channels stay read-only — their replies belong in their chat.
+        if (rec.channel === 'cron') {
+          composeEl.hidden = false;
+          stopBtn.style.display = 'none'; // nothing is running to stop
+          inputEl.placeholder = 'Continue this scheduled run — your message starts a new turn in the same session. ⌘/Ctrl+Enter to send.';
+        }
         var tx = rec.transcript || '';
         if (tx) append(tx);
         // Only append the final reply when the transcript didn't already
@@ -563,40 +630,5 @@ const TASK_PAGE_JS = `
     if (!finished) setStatus('disconnected', 'err');
   });
 
-  function action(kind, message) {
-    var q = '/api/task/action?node=' + encodeURIComponent(nodeUrl)
-      + '&task=' + encodeURIComponent(taskId) + '&kind=' + encodeURIComponent(kind);
-    return fetch(q, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message ? { message: message } : {})
-    }).then(function (r) { return r.json().catch(function () { return {}; }); });
-  }
-
-  sendBtn.addEventListener('click', function () {
-    var text = (inputEl.value || '').trim();
-    if (!text) { inputEl.focus(); return; }
-    sendBtn.disabled = true;
-    hintEl.textContent = 'queuing…';
-    action('followup', text).then(function (r) {
-      sendBtn.disabled = false;
-      if (r && r.error) { hintEl.textContent = 'failed: ' + r.error; return; }
-      inputEl.value = '';
-      hintEl.textContent = 'queued — dispatches as the next turn';
-    });
-  });
-
-  stopBtn.addEventListener('click', function () {
-    stopBtn.disabled = true;
-    hintEl.textContent = 'stopping…';
-    action('cancel').then(function (r) {
-      stopBtn.disabled = false;
-      hintEl.textContent = (r && r.error) ? 'failed: ' + r.error : 'stop requested';
-    });
-  });
-
-  inputEl.addEventListener('keydown', function (e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); sendBtn.click(); }
-  });
 })();
 `
