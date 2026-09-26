@@ -16,11 +16,11 @@ import { markBody, detectAgentxMarker } from "./outbound-marker"
 //   webhookSecret: "secret"          # validates X-Hub-Signature-256
 //   routes:
 //     - repo: "owner/repo"
-//       agent: "coder-agent"
+//       agent: "coder"
 //     - repo: "*"
-//       agent: "atlas"
+//       agent: "helper"
 //   agentMappings:
-//     - agentId: "coder-agent"
+//     - agentId: "coder"
 //       githubUsernames: ["my-bot"]
 //       node: "hq-local"        # forward to mesh peer
 

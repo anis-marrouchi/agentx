@@ -8,7 +8,12 @@ import Foundation
 /// from a terminal and mysteriously fails when you double-click it.
 enum Config {
     static let daemonURL = env("AGENTX_DAEMON_URL") ?? "http://127.0.0.1:18800"
-    static let agentID = env("AGENTX_VOICE_AGENT") ?? "secretary-agent"
+    /// The agent that answers. Unset: the daemon's `node.defaultAgent`.
+    static let agentID = env("AGENTX_VOICE_AGENT")
+
+    /// The agent actually answering: `agentID`, or the daemon's default,
+    /// read once at launch (AgentClient.resolveAgent). Progress follows it.
+    @MainActor static var effectiveAgentID: String = ""
 
     /// Who speaks before the daemon has said which voice an agent uses:
     /// "system" (free macOS voices, the default) or "elevenlabs".
