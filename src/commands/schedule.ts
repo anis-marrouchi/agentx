@@ -72,7 +72,7 @@ schedule
   .option("--id <name>", "explicit cron id (default: auto-slug of <when>-<agent>)")
   .option("--notify <target>", '"me" (use notifications.destination) or "channel:chatId[:accountId]"')
   .option("--on-error <modes>", 'comma list of "log|notify|disable" (default: log; notify implies "notify")')
-  .option("--timezone <tz>", "IANA timezone (default: Africa/Tunis)", "Africa/Tunis")
+  .option("--timezone <tz>", "IANA timezone (default: this machine's)", Intl.DateTimeFormat().resolvedOptions().timeZone)
   .option("--timeout <seconds>", "max run time", "600")
   .option("--model <model>", "override model")
   .option("--disabled", "create but leave disabled")

@@ -451,7 +451,7 @@ export class TokenTracker {
     if (!existsSync(file)) {
       const header =
         "# Token Costs\n\n" +
-        "Daily token cost tracking. Auto-appended at midnight (Africa/Tunis).\n" +
+        "Daily token cost tracking. Auto-appended at midnight, host time.\n" +
         "Agent breakdown: `agent: $cost (Ns, T.Tt/s)` — sessions, tasks/session.\n\n" +
         "| Date | Tasks | Input | Output | Cache R | Cache W | Cost | Per Agent | Per Channel |\n" +
         "|------|-------|-------|--------|---------|---------|------|-----------|-------------|\n"

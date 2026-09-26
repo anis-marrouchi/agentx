@@ -246,6 +246,7 @@ export class VoiceTalkService {
       topic, speakers, speech: this.speech,
       context: body.context ? String(body.context) : undefined,
       maxTurns: Math.max(2, Math.min(40, Number(body.maxTurns) || 10)),
+      listener: this.settings().listener,
       model: (_s, system) => this.model(system),
     })
     talk.on((e) => {

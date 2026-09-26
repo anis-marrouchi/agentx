@@ -188,8 +188,8 @@ export function pickVoiceId(explicit?: string | null, agentVoiceId?: string | nu
 }
 
 /**
- * "Hello, this is Nadia, the marketing agent for Noqta." from a system
- * prompt that opens "You are Nadia, the marketing agent for Noqta (…).".
+ * "Hello, this is Nadia, the marketing agent for Acme." from a system
+ * prompt that opens "You are Nadia, the marketing agent for Acme (…).".
  *
  * Only the first sentence is used, because that is where every persona
  * says who it is; the rest is instructions, which make terrible speech.
@@ -198,13 +198,13 @@ export function deriveIntro(name: string, systemPrompt?: string): string {
   const first = (systemPrompt ?? "").split(/(?<=\.)\s/)[0] ?? ""
   const m = /^You are (.+?)\.?$/i.exec(first.trim())
   if (!m) return `Hello, this is ${name}.`
-  // Parentheticals ("(noqta.tn)") read badly aloud.
+  // Parentheticals ("(acme.com)") read badly aloud.
   const who = m[1].replace(/\s*\([^)]*\)/g, "").trim()
   const [lead, ...rest] = who.split(/,\s*/)
   const role = rest.join(", ")
   // "You are Nadia, the marketing agent" — lead is the name.
   if (role && lead.toLowerCase() === name.toLowerCase()) return `Hello, this is ${name}, ${role}.`
-  // "You are the Accountant agent for Noqta" — the name is already in it.
+  // "You are the Accountant agent for Acme" — the name is already in it.
   // Not for "a taxonomy/graph agent": a generic kind still needs the name.
   if (!/^an? /i.test(who) && who.toLowerCase().includes(name.toLowerCase())) return `Hello, this is ${who}.`
   return `Hello, this is ${name}, ${who}.`

@@ -10,6 +10,7 @@ import { helperAct, readScreenView } from "@/voice/live-teach-screen"
 import { PresenceOverlay, presenceLook } from "@/voice/presence"
 import { SpeechOut } from "@/voice/speaker"
 import { createLineModel } from "@/voice/talk-model"
+import { DEFAULT_LISTENER } from "@/voice/talk"
 
 // `agentx teach --live "goal"`: an unscripted lesson in this process. The
 // daemon runs the same thing when a voice turn asks for it.
@@ -55,14 +56,15 @@ export async function runLiveTeach(goal: string, opts: { agent?: string; mode?: 
     if (!app) throw new Error(`${opts.app} did not come to the front`)
   }
   const speaker = talkSpeaker(agentId, config.agents, false)
+  const listener = config.voice.listener ?? DEFAULT_LISTENER
   const look = presenceLook(agentId, config.agents[agentId])
   const t = new LiveTeach(
-    { goal, app, mode, speaker, actionsAllowed: look.allowActions, maxSteps: Number(opts.steps) || undefined },
+    { goal, app, mode, speaker, actionsAllowed: look.allowActions, maxSteps: Number(opts.steps) || undefined, listener },
     {
       readScreen: readScreenView,
       presence: new PresenceOverlay(look, HELPER, agentId),
       speech: new SpeechOut(),
-      model: createLineModel({ system: teachSystemPrompt(speaker.persona, "Anis") }),
+      model: createLineModel({ system: teachSystemPrompt(speaker.persona, listener) }),
       act: helperAct,
     },
   )

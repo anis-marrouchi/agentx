@@ -4,7 +4,7 @@ import type { AnswersFor, ChoiceAnswer, NoulAnswer, StateValue } from "../types"
 // How an agent shows up on screen for this voice turn.
 //
 // Decided on every voice turn, because the same agent should sometimes
-// only talk, sometimes point at the screen while Anis drives, and
+// only talk, sometimes point at the screen while the user drives, and
 // sometimes run a live lesson. A rule cannot tell "what's on my calendar"
 // (talk) from "show me how to export this" (teach) from "where's the
 // export button" (watch); a person hears the difference at once.
@@ -31,10 +31,10 @@ export const presenceModeQuestions = {
   mode: choice(
     {
       talk: "Answer by voice only: a question, a status, a decision. Nothing on screen needs showing.",
-      act: "Anis asks the agent to do something on screen itself: click, fill in, operate an app for him.",
-      teach: "Anis wants to learn how to do something in an app, step by step, with the agent leading and showing where.",
-      watch: "Anis is driving and wants a coach: where a control is, what to do next, while he does it himself.",
-      quiet: "The agent should not appear on screen at all: a private matter, or Anis is presenting or recording.",
+      act: "The user asks the agent to do something on screen itself: click, fill in, operate an app for them.",
+      teach: "The user wants to learn how to do something in an app, step by step, with the agent leading and showing where.",
+      watch: "The user is driving and wants a coach: where a control is, what to do next, while they do it themselves.",
+      quiet: "The agent should not appear on screen at all: a private matter, or the user is presenting or recording.",
     },
     "How the agent should show up on screen for this turn.",
   ),
@@ -42,11 +42,11 @@ export const presenceModeQuestions = {
   nextAction: choice(
     {
       speak: "Just say something.",
-      point: "Move the agent's cursor to a control so Anis sees where it is.",
-      highlight: "Outline a control or area so Anis sees what to look at.",
-      click: "Press a control for Anis.",
-      type: "Type text into a field for Anis.",
-      wait_for_user: "Wait for Anis to do something or say something first.",
+      point: "Move the agent's cursor to a control so the user sees where it is.",
+      highlight: "Outline a control or area so the user sees what to look at.",
+      click: "Press a control for the user.",
+      type: "Type text into a field for the user.",
+      wait_for_user: "Wait for the user to do something or say something first.",
     },
     "The agent's first on-screen action this turn.",
   ),
@@ -56,12 +56,12 @@ export type PresenceModeAnswers = AnswersFor<typeof presenceModeQuestions>
 
 export interface PresenceModeInput {
   agent: string
-  /** What Anis just said. */
+  /** What the user just said. */
   request: string
   /** Frontmost app and window, when known. */
   app?: string | null
   window?: string | null
-  /** Whether this agent may click and type for Anis. */
+  /** Whether this agent may click and type for the user. */
   actionsAllowed: boolean
   /** Mode of the previous voice turn, if the agent is still on screen. */
   previousMode?: PresenceMode | null

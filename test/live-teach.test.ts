@@ -97,7 +97,7 @@ describe("teachSystemPrompt", () => {
 })
 
 describe("LiveTeach", () => {
-  it("teach: shows and says the step with its own cursor, waits for Anis, never clicks", async () => {
+  it("teach: shows and says the step with its own cursor, waits for the user, never clicks", async () => {
     const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
     await s.t.run()
     expect(s.acted).toEqual([])
@@ -105,12 +105,12 @@ describe("LiveTeach", () => {
     // The bubble names the target; the voice carries the sentence.
     expect(s.log).toContain("bubble New")
     expect(s.log).not.toContain("bubble Click New to start a note.")
-    // After Anis does the step, the cursor goes back to Anis's pointer.
+    // After the user does the step, the cursor goes back to their pointer.
     expect(s.log.indexOf("park")).toBeGreaterThan(s.log.indexOf("bubble New"))
     expect(s.said).toEqual(["Click New to start a note.", "There's your note."])
-    // The second plan saw the new screen and knew Anis had done the step.
+    // The second plan saw the new screen and knew the user had done the step.
     expect(s.model.prompts[1]).toContain('window "Untitled"')
-    expect(s.model.prompts[1]).toContain("Anis did something; the screen changed.")
+    expect(s.model.prompts[1]).toContain("the user did something; the screen changed.")
     expect(s.t.state).toBe("ended")
     expect(s.log.at(-1)).toBe("close")
   })
@@ -155,14 +155,14 @@ describe("LiveTeach", () => {
     expect(teach.said[0]).toBe("Shift and period turns it a little.")
   })
 
-  it("the door cuts in: speech stops and the next plan answers Anis first", async () => {
+  it("the door cuts in: speech stops and the next plan answers the user first", async () => {
     const s = setup("teach", [STEP1, "TARGET: none\nACTION: wait_for_user\nSAY: It's the plus-shaped button.", DONE], { speakMs: 200 })
     const run = s.t.run()
     await sleep(40)
     s.t.door("which one is New?")
     await run
     expect(s.stopped).toBeGreaterThan(0)
-    expect(s.model.prompts[1]).toContain('Anis said: "which one is New?"')
+    expect(s.model.prompts[1]).toContain('the user said: "which one is New?"')
     expect(s.model.prompts[1]).toContain("were cut off")
   })
 

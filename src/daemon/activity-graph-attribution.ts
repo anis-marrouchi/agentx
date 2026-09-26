@@ -2,9 +2,9 @@
 //
 // Most mesh-routed events arrive with `project = null`: the GitLab/GitHub
 // channel forwards the forge path inside the chat id
-// ("noqta/minbar:issue:152", "owner/repo:pull:16") and peers that relay a
+// ("acme/web:issue:152", "owner/repo:pull:16") and peers that relay a
 // webhook as bare A2A only mention it in the message text
-// ("[GitLab noqta/minbar MR !51 update]: …"). Without reading those, every
+// ("[GitLab acme/web MR !51 update]: …"). Without reading those, every
 // dispatch lands on "unmapped". Kept separate from the snapshot builder so
 // the fleet merger can re-attribute rows from peers running older code.
 
@@ -13,7 +13,7 @@ const CHAT_ID_RE = new RegExp(`^(?:chat:)?(${FORGE_PATH}):(?:issue|issues|merge_
 const PREVIEW_RE = new RegExp(`^\\[(?:GitLab|GitHub) (${FORGE_PATH}) `)
 
 /** Forge project path from a chat id or subject, e.g.
- *  "chat:noqta/minbar:merge_request:51" → "noqta/minbar". */
+ *  "chat:acme/web:merge_request:51" → "acme/web". */
 export function projectFromChatId(chatId: string | null | undefined): string | null {
   if (!chatId) return null
   const m = chatId.match(CHAT_ID_RE)
@@ -43,7 +43,7 @@ export function inferProject(raw: any, subject: string | null, preview: string):
 
 export interface ForgeRef { kind: "issue" | "mr"; n: number }
 
-/** Forge path of a project id, or null for synthetic ids ("mtgl/_mesh"). */
+/** Forge path of a project id, or null for synthetic ids ("globex/_mesh"). */
 export function forgePath(projectId: string): string | null {
   const [head, ...rest] = projectId.split("/")
   if (!rest.length || head === "unmapped" || rest[0].startsWith("_")) return null

@@ -1238,16 +1238,11 @@ export class AgentXDaemon {
   private scheduleMidnightHook(): void {
     const scheduleNext = () => {
       const now = new Date()
-      // Next midnight in Africa/Tunis (5s buffer to ensure day rollover)
-      const tunisStr = now.toLocaleString("en-US", { timeZone: "Africa/Tunis" })
-      const tunisNow = new Date(tunisStr)
-
-      const target = new Date(tunisNow)
+      // Next midnight in the host's timezone (5s buffer to ensure day rollover)
+      const target = new Date(now)
       target.setDate(target.getDate() + 1)
       target.setHours(0, 0, 5, 0)
-
-      const tunisOffset = tunisNow.getTime() - now.getTime()
-      const delay = target.getTime() - tunisOffset - now.getTime()
+      const delay = target.getTime() - now.getTime()
 
       this.log(`  Cost tracking: next run in ${Math.round(delay / 60_000)}min`)
 

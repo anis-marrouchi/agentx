@@ -293,7 +293,7 @@ const agentConfigSchema = z.object({
    *  src/voice/agent-voice.ts. */
   voice: voiceSchema.optional(),
   /** How this agent appears on screen: its own cursor, drawn by the Mac
-   *  helper and click-through, never Anis's real mouse. See
+   *  helper and click-through, never the person's real mouse. See
    *  src/voice/presence.ts. */
   presence: z.object({
     /** Cursor colour, as #RRGGBB. Default: derived from the agent id. */
@@ -302,7 +302,7 @@ const agentConfigSchema = z.object({
     initial: z.string().max(2).optional(),
     /** Name shown under the cursor. Default: the agent's name. */
     label: z.string().optional(),
-    /** May this agent click and type for Anis (presence mode "act")?
+    /** May this agent click and type for the person (presence mode "act")?
      *  Off by default: without it, "act" becomes "teach". */
     allowActions: z.boolean().optional(),
   }).optional(),
@@ -816,6 +816,9 @@ export const daemonConfigSchema = z.object({
     system: systemVoiceSchema.optional(),
     /** Language for assigned system voices, e.g. "en", "fr-FR". */
     locale: z.string().default("en"),
+    /** What agents call the person they talk with, e.g. a first name.
+     *  Unset: "the user". */
+    listener: z.string().optional(),
   }).default({}),
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
