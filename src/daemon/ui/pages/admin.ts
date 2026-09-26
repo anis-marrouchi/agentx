@@ -1178,7 +1178,7 @@ function renderWebhooks() {
             '<div class="ax-name">' + escapeHtml(w.id) + ' ' + statusPill + '</div>' +
             '<div class="ax-sub">' +
               escapeHtml(meta.label) + ' · routes to <b>' + escapeHtml(w.agentId) + '</b>' +
-              (w.secretEnv ? ' · secret: <code>${' + escapeHtml(w.secretEnv) + '}</code>' : '') +
+              (w.secretEnv ? ' · secret: <code>\${' + escapeHtml(w.secretEnv) + '}</code>' : '') +
               (w.description ? ' · ' + escapeHtml(w.description) : '') +
             '</div>' +
           '</div>' +
