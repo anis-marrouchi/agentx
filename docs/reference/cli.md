@@ -56,7 +56,7 @@ agentx desktop start
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Push to your phone and show a Mac banner, held during Focus; see [Get notified](../jobs/notifications.md) |
 | `agentx notifications show` | Notification routing, the local banner and sound, and ntfy status |
-| `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume` for the Mac banner and sound |
+| `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
 | `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for phone push |
 
 Do not share `config show` output without checking it for credentials. Starting a daemon does not start the separate browser dashboard.

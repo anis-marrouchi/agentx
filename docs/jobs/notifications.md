@@ -48,7 +48,27 @@ agentx notifications show
 ```
 :::
 
-The first banner comes from **Script Editor**, because macOS attributes `osascript` notifications to it. If no banner appears, open **System Settings → Notifications → Script Editor** and allow notifications with the **Banners** style. Do Not Disturb hides banners too.
+### The banner icon
+
+With the AgentX desktop apps installed (`agentx desktop install`), the **AgentX Helper** app posts the banner, so it shows the AgentX logo. The first time, macOS asks whether AgentX Helper may send notifications. Choose **Allow**, or turn it on later in **System Settings → Notifications → AgentX Helper**, with the **Banners** style.
+
+Until you allow it, and on a Mac without the helper, the banner comes from `osascript` instead. macOS files those under **Script Editor** and shows its icon. If no banner appears at all, allow **System Settings → Notifications → Script Editor** too. Do Not Disturb hides both.
+
+To show your own image instead of the AgentX logo, set an icon: the full path to a `.png`, `.jpg` or `.icns` file. A square image of at least 512 × 512 looks best. macOS takes a banner's icon from the app that posts it, not from the banner, so the icon is built into the helper: run `agentx desktop install` after changing it. Leave it blank to go back to the AgentX logo.
+
+::: info In the browser
+Under **On this Mac**, put the path in **Banner icon** and select **Save notifications**. Then run `agentx desktop install`.
+:::
+
+::: info Terminal
+```sh
+agentx notifications local --icon ~/Pictures/team-logo.png
+agentx desktop install
+agentx notifications local --icon ""   # back to the AgentX logo
+```
+:::
+
+Rebuilding the helper gives it a new signature, so macOS may ask again whether it may send notifications.
 
 `agentx notify` waits for the banner and the sound to finish before it exits (about two seconds). A job that runs `agentx notify` and then ends straight away, such as a `launchctl submit` job that removes itself, still gets both.
 
@@ -90,5 +110,5 @@ The push goes through the running daemon. If the daemon is down, the command exi
 ## Check it worked
 
 1. Run `agentx notifications show`. It should list `ntfy on` with the topic `set`, and your banner and sound settings.
-2. Run `agentx notify "hello" --title "Test"`. The phone should buzz and a banner should appear on the Mac.
+2. Run `agentx notify "hello" --title "Test"`. The phone should buzz and a banner should appear on the Mac, with the AgentX logo once AgentX Helper is allowed to notify.
 3. Create `~/.agentx/focus.json` containing `{"active": true}`, send another message, and check that it is held (`agentx notify --status`). Delete the file. Within 30 seconds the held message arrives.
