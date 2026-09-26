@@ -6,6 +6,7 @@ import { runScheduleTool, resolveScheduleCaller, type ScheduleCaller } from "../
 import {
   approveSchedule,
   buildScheduleJob,
+  DEFAULT_SCHEDULE_TIMEZONE,
   rejectSchedule,
   setScheduleEnabled,
 } from "../src/crons/schedule-ops"
@@ -98,7 +99,8 @@ describe("agentx_schedule tool", () => {
     const [dest, text] = notify.mock.calls[0] as unknown as [any, string]
     expect(dest).toEqual({ channel: "telegram", chatId: "1000", accountId: undefined })
     expect(text).toContain("cron `0 10 * * 1`")
-    expect(text).toMatch(/Next fire: Mon, 28 Sept? 2026, 10:00 \(Africa\/Tunis\)/)
+    const tz = DEFAULT_SCHEDULE_TIMEZONE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")
+    expect(text).toMatch(new RegExp(`Next fire: Mon, 28 Sept? 2026, 10:00 \\(${tz}\\)`))
     expect(text).toContain("agentx schedule approve weekly-x")
   })
 
