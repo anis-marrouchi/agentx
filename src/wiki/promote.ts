@@ -34,6 +34,13 @@ export const DEFAULT_PROMOTE_TYPES: MemoryType[] = ["project", "reference", "fee
 export const PROMOTION_LEDGER_FILE = "_memory-promotions.json"
 
 const STAMP_PREFIX = "memory:"
+const FAILURE_PREFIX = "failure:"
+
+/** `failure:<signature digest>@<recurrence bucket>` without the bucket. */
+function failureIdentity(stamp: string): string {
+  const at = stamp.lastIndexOf("@")
+  return at === -1 ? stamp : stamp.slice(0, at)
+}
 const MEMORY_TYPES: MemoryType[] = ["user", "feedback", "project", "reference"]
 
 export interface MemoryCandidate {
@@ -41,8 +48,18 @@ export interface MemoryCandidate {
   memory: MemoryRecord
   /** Identity without version: `<agentId>/<type>_<name>` */
   key: string
-  /** Identity + version: `memory:<key>@<updatedAt>` */
+  /** Identity + version: `memory:<key>@<updatedAt>`. Other sources use
+   *  their own namespace (`review:`, `failure:`). */
   stamp: string
+  /** Distinct sessions a review finding or failure recurred in. More
+   *  occurrences rank first. */
+  occurrences?: number
+  /** Some of those sessions, kept as proposal evidence. */
+  sessions?: string[]
+  /** Some of the runs (task ids) behind a failure, kept as evidence. */
+  tasks?: string[]
+  /** What a recurring failure has in common: its signature and run count. */
+  failure?: { tool: string; errorClass: string; runs: number }
 }
 
 export interface PromotionLedgerEntry {
@@ -163,7 +180,8 @@ export function readPromotionLedger(wikiBaseDir: string): PromotionLedger {
 }
 
 /** Append entries and compact: keep only the newest entry per memory key
- *  so the ledger stays bounded. */
+ *  (per exact stamp for `review:` and `failure:` sources, where the later
+ *  entry wins) so the ledger stays bounded. */
 export function appendPromotionLedger(wikiBaseDir: string, entries: PromotionLedgerEntry[]): void {
   const merged = [...readPromotionLedger(wikiBaseDir), ...entries]
   const byKey = new Map<string, PromotionLedgerEntry>()
@@ -171,7 +189,9 @@ export function appendPromotionLedger(wikiBaseDir: string, entries: PromotionLed
     const parsed = parseMemoryStamp(e.stamp)
     const key = parsed?.key ?? e.stamp
     const prev = byKey.get(key)
-    if (!prev || (parsed && (parseMemoryStamp(prev.stamp)?.updatedAt ?? "") <= parsed.updatedAt)) {
+    // A non-memory stamp has no version to compare: the later decision
+    // (rejected after proposed) must replace the earlier one.
+    if (!prev || !parsed || (parseMemoryStamp(prev.stamp)?.updatedAt ?? "") <= parsed.updatedAt) {
       byKey.set(key, e)
     }
   }
@@ -333,16 +353,11 @@ export interface UnpromotedOptions {
  *  `updatedAt` is newer than the recorded one — ISO-8601 strings compare
  *  lexicographically, so plain `>` is safe. */
 export function getUnpromotedMemories(
-  all: Array<{
-    agentId: string
-    memory: MemoryRecord
-    /** Supplied by non-memory sources so their namespace survives. */
-    stamp?: string
-    /** Optional rank — more occurrences sort first. */
-    occurrences?: number
-    /** Example sessions (review findings), kept as proposal evidence. */
-    sessions?: string[]
-  }>,
+  all: Array<
+    // `stamp` is supplied by non-memory sources so their namespace
+    // survives; the evidence fields travel through to the proposal.
+    Pick<MemoryCandidate, "agentId" | "memory"> & Partial<Omit<MemoryCandidate, "agentId" | "memory" | "key">>
+  >,
   index: WikiIndex,
   ledger: PromotionLedger,
   opts: UnpromotedOptions = {},
@@ -353,7 +368,13 @@ export function getUnpromotedMemories(
 
   // key → newest updatedAt already handled (promoted or skipped)
   const seen = new Map<string, string>()
+  // Exact stamps already handled. Non-memory sources (`review:`,
+  // `failure:`) have no parseable key/version, so this is how they are
+  // recognised as proposed, promoted, skipped or rejected instead of
+  // being offered again every night.
+  const handledStamps = new Set<string>()
   const record = (stamp: string) => {
+    handledStamps.add(stamp)
     const parsed = parseMemoryStamp(stamp)
     if (!parsed) return
     const prev = seen.get(parsed.key)
@@ -363,15 +384,22 @@ export function getUnpromotedMemories(
     for (const s of article.sources ?? []) record(s)
   }
   for (const e of ledger) record(e.stamp)
+  // A failure's stamp moves on as it recurs more (failure-candidates.ts);
+  // while one proposal for it waits for review, don't open a second.
+  const pendingFailures = new Set(ledger
+    .filter((e) => e.decision === "proposed" && e.stamp.startsWith(FAILURE_PREFIX))
+    .map((e) => failureIdentity(e.stamp)))
 
-  const candidates: Array<MemoryCandidate & { occurrences?: number; sessions?: string[] }> = []
-  for (const { agentId, memory, stamp, occurrences, sessions } of all) {
+  const candidates: MemoryCandidate[] = []
+  for (const { agentId, memory, stamp, occurrences, sessions, tasks, failure } of all) {
     if (!types.includes(memory.type)) continue
     if (opts.agentFilter && agentId !== opts.agentFilter) continue
     if (opts.sinceMs !== undefined) {
       const updated = Date.parse(memory.updatedAt)
       if (!Number.isFinite(updated) || updated < now - opts.sinceMs) continue
     }
+    if (stamp && handledStamps.has(stamp)) continue
+    if (stamp?.startsWith(FAILURE_PREFIX) && pendingFailures.has(failureIdentity(stamp))) continue
     const key = memoryKey(agentId, memory)
     const handled = seen.get(key)
     if (handled && memory.updatedAt <= handled) continue
@@ -381,6 +409,8 @@ export function getUnpromotedMemories(
     candidates.push({
       agentId, memory, key, stamp: stamp ?? memoryStamp(agentId, memory), occurrences,
       ...(sessions?.length ? { sessions } : {}),
+      ...(tasks?.length ? { tasks } : {}),
+      ...(failure ? { failure } : {}),
     })
   }
 
@@ -497,8 +527,8 @@ export interface RunPromotionOptions extends PromotionLlmOptions {
   agentFilter?: string
   types?: MemoryType[]
   max?: number
-  /** Candidates from somewhere other than agent memory — currently
-   *  session-monitor reviews. They join the same pool so they inherit
+  /** Candidates from somewhere other than agent memory — session-monitor
+   *  reviews and recurring failures. They join the same pool so they inherit
    *  the ledger, the dedupe and the judge rather than getting a second
    *  pipeline that drifts from this one. */
   extraCandidates?: MemoryCandidate[]
@@ -644,23 +674,32 @@ function contentHash(content: string): string {
 
 const EXCERPT_CHARS = 600
 
-/** What a reviewer needs to judge a proposal: each source memory or
- *  review finding, who wrote it and in which task, how often a finding
- *  recurred, and some of the sessions it came from. */
+/** Which pipeline a stamp came from. */
+export function sourceKind(stamp: string): ProposalSource["kind"] {
+  if (stamp.startsWith("review:")) return "review"
+  if (stamp.startsWith(FAILURE_PREFIX)) return "failure"
+  return "memory"
+}
+
+/** What a reviewer needs to judge a proposal: each source memory, review
+ *  finding or recurring failure, who wrote it and in which task, how often
+ *  it recurred, and some of the sessions and runs it came from. */
 export function evidenceFor(stamps: string[], byStamp: Map<string, MemoryCandidate>): PromotionProposal["evidence"] {
   const sources: ProposalSource[] = []
   for (const stamp of stamps) {
-    const c = byStamp.get(stamp) as (MemoryCandidate & { occurrences?: number; sessions?: string[] }) | undefined
+    const c = byStamp.get(stamp)
     if (!c) continue
     sources.push({
       stamp,
-      kind: stamp.startsWith("review:") ? "review" : "memory",
+      kind: sourceKind(stamp),
       agentId: c.agentId,
       type: c.memory.type,
       name: c.memory.name,
       description: c.memory.description,
       ...(c.occurrences ? { occurrences: c.occurrences } : {}),
       ...(c.sessions?.length ? { sessions: c.sessions } : {}),
+      ...(c.tasks?.length ? { tasks: c.tasks } : {}),
+      ...(c.failure ? { failure: c.failure } : {}),
       ...(c.memory.author ? { author: c.memory.author } : {}),
       ...(c.memory.taskId ? { taskId: c.memory.taskId } : {}),
       updatedAt: c.memory.updatedAt,

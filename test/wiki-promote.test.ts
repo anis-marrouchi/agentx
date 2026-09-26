@@ -23,6 +23,7 @@ import { PROMOTE_BODY_LIMIT, buildMemoryPromotePrompt } from "../src/wiki/prompt
 import { PROMOTER_OWNER, approveProposal, estimateTokens, rejectProposal, runPromotion } from "../src/wiki/promote"
 import { listProposals, readProposal } from "../src/wiki/proposals"
 import { WikiStore } from "../src/wiki/store"
+import { failuresToCandidates } from "../src/wiki/failure-candidates"
 
 const ROOT = resolve(__dirname, "../.test-wiki-promote")
 const WIKI_DIR = resolve(ROOT, "wiki")
@@ -484,6 +485,83 @@ describe("promotion proposals", () => {
     const p = readProposal(WIKI_DIR, r.proposed[0].id)!
     expect(p.evidence.occurrences).toBe(7)
     expect(p.evidence.sources[0]).toMatchObject({ kind: "review", occurrences: 7, sessions: ["s1", "s2", "s3"] })
+  })
+
+  it("carries a recurring failure's signature, counts, sessions and example runs", async () => {
+    const traces = [1, 2, 3, 4].map((i) => ({
+      taskId: `task-${i}`, agentId: "ops", chatId: "cron:nightly", sessionId: `sess-${i}`, status: "error",
+      startedAt: NOW - i * 3_600_000, error: `exit 127: command not found: deploy-cli (pid ${i})`,
+      messagePreview: "Ship the release", tool: "Bash",
+    }))
+    const [failure] = failuresToCandidates(traces)
+    const r = await runPromotion({ ...baseOpts, extraCandidates: [failure], fetchImpl: judge([failure.stamp]) })
+    const p = readProposal(WIKI_DIR, r.proposed[0].id)!
+    expect(p.evidence).toMatchObject({ agents: ["ops"], occurrences: 4 })
+    expect(p.evidence.sources[0]).toMatchObject({
+      stamp: failure.stamp, kind: "failure", agentId: "ops", occurrences: 4,
+      sessions: ["sess-1", "sess-2", "sess-3", "sess-4"],
+      tasks: ["task-1", "task-2", "task-3", "task-4"],
+      failure: { tool: "Bash", errorClass: failure.failure.errorClass, runs: 4 },
+    })
+    expect(p.evidence.sources[0].excerpt).toContain("4 separate sessions")
+  })
+
+  // Only `memory:` stamps parse into a key and version, so review and
+  // failure stamps used to be invisible to the "already handled" check
+  // and came back as a fresh proposal every night.
+  for (const decision of ["pending", "rejected"] as const) {
+    it(`review and failure findings aren't offered again once ${decision}`, async () => {
+      const review = {
+        agentId: "ops", key: "ops/feedback_restart-needed", stamp: "review:rv1/warnings@0123456789", occurrences: 3,
+        memory: { name: "restart-needed", type: "feedback" as const, description: "config changes need a restart",
+          body: "Observed in 3 separate sessions.", createdAt: "2026-06-30T10:00:00.000Z", updatedAt: "2026-06-30T10:00:00.000Z" },
+      }
+      const [failure] = failuresToCandidates([1, 2, 3].map((i) => ({
+        taskId: `t-${i}`, agentId: "ops", chatId: null, sessionId: `s-${i}`, status: "timeout",
+        startedAt: NOW - i * 3_600_000, error: null, messagePreview: null, tool: null,
+      })))
+      const extra = [review, failure]
+      const stamps = [review.stamp, failure.stamp]
+      const first = await runPromotion({ ...baseOpts, extraCandidates: extra, fetchImpl: judge(stamps) })
+      expect(first.proposed).toHaveLength(1)
+      if (decision === "rejected") {
+        expect(rejectProposal(WIKI_DIR, first.proposed[0].id).ok).toBe(true)
+        // The later decision replaces "proposed" for stamps with no version.
+        const ledger = readPromotionLedger(WIKI_DIR)
+        expect(ledger.filter((e) => stamps.includes(e.stamp)).map((e) => e.decision)).toEqual(["rejected", "rejected"])
+      }
+
+      const again = judge(stamps)
+      const rerun = await runPromotion({ ...baseOpts, extraCandidates: extra, fetchImpl: again })
+      expect(rerun.candidates).toEqual([])
+      expect((again as any).calls).toHaveLength(0)
+      expect(listProposals(WIKI_DIR)).toHaveLength(1)
+    })
+  }
+
+  it("a failure is offered again once its recurrence doubles", async () => {
+    const run = (n: number) => failuresToCandidates(Array.from({ length: n }, (_, i) => ({
+      taskId: `t-${i}`, agentId: "ops", chatId: null, sessionId: `s-${i}`, status: "timeout",
+      startedAt: NOW - (i + 1) * 3_600_000, error: null, messagePreview: null, tool: null,
+    })))
+    const [three] = run(3)
+    const first = await runPromotion({ ...baseOpts, extraCandidates: [three], fetchImpl: judge([three.stamp]) })
+    expect(rejectProposal(WIKI_DIR, first.proposed[0].id).ok).toBe(true)
+    const [four] = run(4)
+    expect(four.stamp).not.toBe(three.stamp)
+    const dry = await runPromotion({ ...baseOpts, commit: false, extraCandidates: [four] })
+    expect(dry.candidates.map((c) => c.stamp)).toEqual([four.stamp])
+  })
+
+  it("a failure with a proposal still waiting isn't proposed a second time as it recurs more", async () => {
+    const run = (n: number) => failuresToCandidates(Array.from({ length: n }, (_, i) => ({
+      taskId: `t-${i}`, agentId: "ops", chatId: null, sessionId: `s-${i}`, status: "timeout",
+      startedAt: NOW - (i + 1) * 3_600_000, error: null, messagePreview: null, tool: null,
+    })))
+    const [three] = run(3)
+    await runPromotion({ ...baseOpts, extraCandidates: [three], fetchImpl: judge([three.stamp]) })
+    const dry = await runPromotion({ ...baseOpts, commit: false, extraCandidates: run(8) })
+    expect(dry.candidates).toEqual([])
   })
 
   it("refuses to approve over an article that changed since the proposal, unless forced", async () => {

@@ -266,6 +266,8 @@ Memory is "what one agent learned"; the wiki is "what every agent should know." 
 
 Corroboration across agents (shown per candidate) is a confidence signal, not a requirement — a single-agent memory that passes the test above should be promoted.
 
+Candidates stamped \`failure:\` are not memories: they are the same failure recurring across several sessions, with example runs. The recurrence is what makes them durable. Promote one only when the examples share a cause, as a \`pattern\` article saying what fails, why, and what to do instead (including a tool or configuration change, if that is the fix). Never copy task text or error output verbatim beyond what the lesson needs.
+
 **Three rules for the articles you write, in priority order:**
 
 1. **\`type\` is the organizational spine.** Every article has exactly one of: \`person | project | place | concept | event | decision | pattern\`. Choose the type BEFORE writing; if you can't pick one, skip the memory instead.

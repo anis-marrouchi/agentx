@@ -470,6 +470,8 @@ wiki
   .option("--daemon <url>", "daemon API base URL for --via", "http://127.0.0.1:18800")
   .option("--reviews", "also promote findings from session-monitor reviews")
   .option("--review-kinds <list>", "which review kinds", "decisions,warnings,friction,context")
+  .option("--failures", "also propose lessons from failures that recur across sessions")
+  .option("--min-sessions <n>", "sessions a failure must recur in for --failures", "3")
   .option("--commit", "judge and write proposals for review (default: dry-run)", false)
   .option("--budget <tokens>", "max estimated tokens for the judge prompt", "60000")
   .action(async (opts) => {
@@ -516,6 +518,35 @@ wiki
           if (top && (top.occurrences ?? 1) > 1) {
             console.log(chalk.dim(`  most recurrent (${top.occurrences} sessions): ${top.memory.description.slice(0, 84)}`))
           }
+        } finally {
+          db.close()
+        }
+      }
+    }
+
+    // Successes are mined and memories are promoted; failures were read by
+    // nothing. Only failure signatures that recur across sessions are
+    // offered — a one-off failure is session state, not a lesson.
+    if (opts.failures) {
+      const minSessions = Number(opts.minSessions)
+      if (!Number.isInteger(minSessions) || minSessions < 2) {
+        console.log(chalk.red(`  Invalid --min-sessions "${opts.minSessions}". Use a whole number of 2 or more.`))
+        process.exit(1)
+      }
+      const { loadFailedTraces, failuresToCandidates } = await import("@/wiki/failure-candidates")
+      const { default: Database } = await import("better-sqlite3")
+      const dbPath = resolve(process.cwd(), ".agentx/db.sqlite")
+      if (!existsSync(dbPath)) {
+        console.log(chalk.yellow(`  --failures: no ${dbPath}`))
+      } else {
+        const db = new Database(dbPath, { readonly: true })
+        try {
+          const failed = loadFailedTraces(db, { since: Date.now() - (sinceMs ?? 7 * 864e5) })
+          const recurring = failuresToCandidates(failed, { minSessions })
+          console.log(chalk.dim(`  ${failed.length} failed run(s) in window → ${recurring.length} failure(s) seen in ${minSessions}+ sessions`))
+          const top = recurring[0]
+          if (top) console.log(chalk.dim(`  most recurrent (${top.occurrences} sessions, ${top.failure.runs} runs): ${top.memory.description.slice(0, 84)}`))
+          extraCandidates = [...extraCandidates, ...recurring]
         } finally {
           db.close()
         }
@@ -609,7 +640,8 @@ proposals
     if (list.length === 0) { console.log(chalk.dim(opts.all ? "  no proposals" : "  nothing pending")); return }
     for (const p of list) {
       const e = p.evidence
-      const backing = `${e.agents.join(", ")}${e.occurrences > 1 ? ` · seen in ${e.occurrences} sessions` : ""} · ${e.sources.length} source(s)`
+      const failure = e.sources.some((src) => src.kind === "failure") ? " · from a recurring failure" : ""
+      const backing = `${e.agents.join(", ")}${e.occurrences > 1 ? ` · seen in ${e.occurrences} sessions` : ""} · ${e.sources.length} source(s)${failure}`
       const state = p.status === "pending" ? "" : chalk.dim(` [${p.status}]`)
       const kind = p.replaces ? chalk.yellow("update") : chalk.green("new")
       console.log(`  ${chalk.cyan(p.id)}${state}`)
@@ -637,7 +669,9 @@ proposals
       const seen = src.occurrences && src.occurrences > 1 ? ` · seen in ${src.occurrences} sessions` : ""
       console.log(`  - ${chalk.cyan(src.kind)} ${src.type}/${src.name} ${chalk.dim(`(${who}, ${src.updatedAt.slice(0, 10)}${seen})`)}`)
       console.log(chalk.dim(`    ${src.description}`))
+      if (src.failure) console.log(chalk.dim(`    failing tool: ${src.failure.tool} · error: ${src.failure.errorClass} · ${src.failure.runs} run(s)`))
       if (src.sessions?.length) console.log(chalk.dim(`    sessions: ${src.sessions.join(", ")}`))
+      if (src.tasks?.length) console.log(chalk.dim(`    runs: ${src.tasks.join(", ")} (agentx trace show <id>)`))
     }
   })
 

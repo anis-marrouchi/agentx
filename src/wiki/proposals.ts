@@ -26,18 +26,23 @@ export interface ProposedArticle {
   promotedFrom: string[]
 }
 
-/** One memory or review finding behind the proposal. */
+/** One memory, review finding or recurring failure behind the proposal. */
 export interface ProposalSource {
   stamp: string
-  kind: "memory" | "review"
+  kind: "memory" | "review" | "failure"
   agentId: string
   type: string
   name: string
   description: string
-  /** Distinct sessions a review finding appeared in. */
+  /** Distinct sessions a review finding or failure appeared in. */
   occurrences?: number
   /** Some of those sessions, for a reviewer to open. */
   sessions?: string[]
+  /** Some of the failed runs (task ids), for `agentx trace show`. */
+  tasks?: string[]
+  /** A recurring failure's signature: the failing tool, the error class
+   *  and how many runs hit it. The agent is `agentId`. */
+  failure?: { tool: string; errorClass: string; runs: number }
   /** Who wrote the memory, and in which task (agent-memory provenance). */
   author?: string
   taskId?: string
@@ -47,7 +52,7 @@ export interface ProposalSource {
 }
 
 export interface ProposalEvidence {
-  /** Agents whose memories or reviews back it. */
+  /** Agents whose memories, reviews or failures back it. */
   agents: string[]
   /** Highest recurrence among its sources (1 for plain memories). */
   occurrences: number

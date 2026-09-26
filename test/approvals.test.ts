@@ -151,6 +151,23 @@ describe("the inbox read model", () => {
     return c.card
   }
 
+  it("says when a wiki proposal is a lesson from a recurring failure", () => {
+    const p = proposal("2026-09-24-deploy-cli-cd34")
+    p.evidence = {
+      agents: ["beta"], occurrences: 4,
+      sources: [{
+        stamp: "failure:0123456789@2", kind: "failure", agentId: "beta", type: "feedback", name: "failure-0123456789",
+        description: "beta: Bash keeps failing", occurrences: 4, sessions: ["s1", "s2"], tasks: ["t1", "t2"],
+        failure: { tool: "Bash", errorClass: "command not found", runs: 6 },
+        updatedAt: "2026-09-24T08:00:00.000Z", excerpt: "",
+      }],
+    }
+    saveProposal(join(root, ".agentx", "wiki"), p)
+    const [item] = listInbox(ctx(), { kinds: ["wiki"] }).items
+    expect(item.detail).toMatch(/^Recurring failure: beta's Bash fails with "command not found" in 4 sessions \(6 runs\)\. When a call/)
+    expect(item.more).toBe("agentx wiki proposals show 2026-09-24-deploy-cli-cd34")
+  })
+
   it("lists every source in one shape, most urgent first", () => {
     const c = seedAll()
     const { items, errors } = listInbox(ctx())
