@@ -60,6 +60,7 @@ notifications
     const local = localSettings(n.local)
     console.log(`  local.banner      ${local.banner ? "on" : chalk.dim("off")}`)
     console.log(`  local.sound       ${local.sound ? `${local.soundName} at ${local.volume}` : chalk.dim("off")}`)
+    console.log(`  local.icon        ${local.icon ?? chalk.dim("AgentX logo")}`)
     const ntfy = ntfyStatus(readNtfy())
     console.log(`  ntfy              ${ntfy.enabled ? "on" : chalk.dim("off")} ${chalk.dim(`${ntfy.server} · topic ${ntfy.topicSet ? "set" : "unset"} · token ${ntfy.tokenSet ? "set" : "unset"}`)}`)
     console.log()
@@ -126,11 +127,12 @@ notifications
 
 notifications
   .command("local")
-  .description("set what `agentx notify` does on this Mac: banner, sound, sound name, volume")
+  .description("set what `agentx notify` does on this Mac: banner, sound, sound name, volume, banner icon")
   .option("--banner <state>", "on | off")
   .option("--sound <state>", "on | off")
   .option("--sound-name <name>", "a macOS system sound, e.g. Glass, Ping, Tink")
   .option("--volume <n>", "0 to 1")
+  .option("--icon <path>", 'image for the banner icon (.png, .jpg, .icns); "" for the AgentX logo')
   .action((opts) => {
     const onOff = (flag: string, v: string): boolean => {
       const s = v.toLowerCase()
@@ -144,8 +146,9 @@ notifications
     if (opts.sound !== undefined) patch.sound = onOff("--sound", opts.sound)
     if (opts.soundName !== undefined) patch.soundName = opts.soundName
     if (opts.volume !== undefined) patch.volume = opts.volume
+    if (opts.icon !== undefined) patch.icon = opts.icon
     if (Object.keys(patch).length === 0) {
-      console.log(chalk.red("  nothing to change — pass --banner, --sound, --sound-name or --volume"))
+      console.log(chalk.red("  nothing to change — pass --banner, --sound, --sound-name, --volume or --icon"))
       process.exit(1)
     }
     try {
@@ -153,6 +156,7 @@ notifications
         n.local = patchLocal(n.local, patch)
         return `notifications.local = ${JSON.stringify(n.local)}`
       })
+      if (opts.icon !== undefined) console.log(chalk.dim(`  Run agentx desktop install to put the new icon on the helper.\n`))
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))
       process.exit(1)

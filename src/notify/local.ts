@@ -1,5 +1,8 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
+import { homedir } from "os"
+import { isAbsolute } from "path"
+import { resolveHelper } from "@/desktop/install"
 
 // What happens on THIS machine when a notification is delivered: a banner
 // on screen and a short sound. The push goes to the phone; these are for
@@ -9,6 +12,11 @@ import { existsSync } from "fs"
 // straight after notifying — a `launchctl submit` job that removes itself,
 // a cron one-liner — used to take the sound down with it before it
 // played. Waiting costs about a second and makes the step reliable.
+//
+// The banner is posted by the AgentX Helper app when it is installed, so
+// it carries the helper's icon (the AgentX logo by default). Without the
+// helper, or before macOS has allowed it to notify, osascript posts it,
+// and macOS shows it as coming from Script Editor.
 //
 // Never fatal: a notification whose banner failed still arrived, and no
 // caller should have to handle an audio error to say a build finished.
@@ -22,6 +30,10 @@ export interface LocalSettings {
   soundName: string
   /** 0 (silent) … 1 (full). */
   volume: number
+  /** Image for the helper's app icon, which macOS puts on its banners.
+   *  Unset: the AgentX logo. Applied when `agentx desktop install` builds
+   *  the helper, since macOS reads the icon from the app, not the banner. */
+  icon?: string
 }
 
 /** Glass is the gentlest system sound that is still audible over a
@@ -32,7 +44,8 @@ export const DEFAULT_LOCAL: LocalSettings = { banner: true, sound: true, soundNa
 /** Shows the banner and plays the sound for one delivered notification. */
 export type LocalAlert = (title: string, message: string) => Promise<void>
 
-type Run = (file: string, args: string[]) => Promise<void>
+/** Runs a command; resolves true when it exited 0. */
+type Run = (file: string, args: string[]) => Promise<boolean>
 
 /** Neither step may hold a caller hostage: afplay on a long custom sound,
  *  or osascript stuck on a permission prompt, is cut off here. */
@@ -41,9 +54,9 @@ const STEP_TIMEOUT_MS = 5_000
 const run: Run = (file, args) =>
   new Promise((done) => {
     try {
-      execFile(file, args, { timeout: STEP_TIMEOUT_MS }, () => done())
+      execFile(file, args, { timeout: STEP_TIMEOUT_MS }, (err) => done(!err))
     } catch {
-      done() // no osascript / afplay on this machine — not worth reporting
+      done(false) // no osascript / afplay on this machine — not worth reporting
     }
   })
 
@@ -60,25 +73,36 @@ export function soundPath(name: string): string | null {
   return existsSync(path) ? path : null
 }
 
+/** The AgentX Helper binary when one is built or installed, else null. */
+export function findHelper(): string | null {
+  const path = resolveHelper(process.cwd(), homedir())
+  return existsSync(path) ? path : null
+}
+
 export function localAlert(
   settings: LocalSettings,
-  deps: { run?: Run; platform?: NodeJS.Platform } = {},
+  deps: { run?: Run; platform?: NodeJS.Platform; helper?: string | null } = {},
 ): LocalAlert {
   const exec = deps.run ?? run
   const platform = deps.platform ?? process.platform
+  const banner = async (title: string, message: string): Promise<void> => {
+    const helper = deps.helper === undefined ? findHelper() : deps.helper
+    // A non-zero exit is usually "not allowed to notify yet" — the first
+    // banner asks — so this one goes through osascript instead.
+    if (helper && await exec(helper, ["notify", "--title", title, "--message", message])) return
+    // Title and message travel as argv, never spliced into the script,
+    // so a quote in either cannot turn into AppleScript.
+    await exec("/usr/bin/osascript", [
+      "-e", "on run argv",
+      "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+      "-e", "end run",
+      title, message,
+    ])
+  }
   return async (title, message) => {
     if (platform !== "darwin") return
-    const steps: Promise<void>[] = []
-    if (settings.banner) {
-      // Title and message travel as argv, never spliced into the script,
-      // so a quote in either cannot turn into AppleScript.
-      steps.push(exec("/usr/bin/osascript", [
-        "-e", "on run argv",
-        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-        "-e", "end run",
-        title, message,
-      ]))
-    }
+    const steps: Promise<unknown>[] = []
+    if (settings.banner) steps.push(banner(title, message))
     const path = settings.sound ? soundPath(settings.soundName) : null
     if (path) {
       const volume = Math.min(1, Math.max(0, settings.volume))
@@ -108,6 +132,15 @@ export function patchLocal(
     const ok = platform === "darwin" ? soundPath(name) !== null : /^[\w -]+$/.test(name)
     if (!ok) throw new Error(`no system sound named "${name}" in /System/Library/Sounds`)
     next.soundName = name
+  }
+  if ("icon" in patch) {
+    const icon = String(patch.icon ?? "").trim().replace(/^~(?=\/)/, homedir())
+    if (!icon) delete next.icon
+    else {
+      if (!isAbsolute(icon) || !/\.(png|jpe?g|icns)$/i.test(icon)) throw new Error("icon must be the full path to a .png, .jpg or .icns file")
+      if (platform === "darwin" && !existsSync(icon)) throw new Error(`no icon file at ${icon}`)
+      next.icon = icon
+    }
   }
   if ("volume" in patch) {
     const v = Number(patch.volume)

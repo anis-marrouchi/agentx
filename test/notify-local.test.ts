@@ -50,17 +50,55 @@ describe("patchLocal — the one write rule for the CLI and the dashboard", () =
   it("on a Mac, rejects a sound that is not installed", () => {
     expect(() => patchLocal({}, { soundName: "NoSuchSoundHere" }, "darwin")).toThrow(/no system sound/)
   })
+
+  it("takes an icon as a full image path, and blank means the AgentX logo", () => {
+    expect(patchLocal({}, { icon: "/opt/brand/logo.png" }, "linux")).toEqual({ icon: "/opt/brand/logo.png" })
+    expect(patchLocal({ icon: "/opt/brand/logo.png", sound: false }, { icon: "" }, "linux")).toEqual({ sound: false })
+    expect(() => patchLocal({}, { icon: "logo.png" }, "linux")).toThrow(/full path/)
+    expect(() => patchLocal({}, { icon: "/etc/passwd" }, "linux")).toThrow(/full path/)
+  })
+
+  it("on a Mac, rejects an icon file that does not exist", () => {
+    expect(() => patchLocal({}, { icon: "/no/such/dir/icon.png" }, "darwin")).toThrow(/no icon file/)
+  })
+})
+
+describe("desktop install — the banner icon", () => {
+  it("builds the helper with the configured icon, or the bundled logo", async () => {
+    const { helperBuildArgs } = await import("../src/desktop/install")
+    expect(helperBuildArgs("/opt/brand/logo.png")).toEqual(["--icon", "/opt/brand/logo.png"])
+    expect(helperBuildArgs(undefined)).toEqual([])
+  })
+
+  it("keeps the icon in agentx.json", () => {
+    const cfg = daemonConfigSchema.parse({ ...minimal, notifications: { local: { icon: "/opt/brand/logo.png" } } })
+    expect(cfg.notifications.local.icon).toBe("/opt/brand/logo.png")
+  })
 })
 
 describe("localAlert", () => {
-  const calls = () => {
-    const run = vi.fn(async (_file: string, _args: string[]) => {})
+  const calls = (ok = true) => {
+    const run = vi.fn(async (_file: string, _args: string[]) => ok)
     return run
   }
+  const HELPER = "/Apps/AgentX Helper.app/Contents/MacOS/agentx-mac-helper"
+
+  it("posts the banner through the AgentX Helper when it is installed", async () => {
+    const run = calls()
+    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin", helper: HELPER })("CI", "build done")
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0]).toEqual([HELPER, ["notify", "--title", "CI", "--message", "build done"]])
+  })
+
+  it("falls back to osascript when the helper may not notify yet", async () => {
+    const run = vi.fn(async (file: string, _args: string[]) => file !== HELPER)
+    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin", helper: HELPER })("CI", "build done")
+    expect(run.mock.calls.map(([file]) => file)).toEqual([HELPER, "/usr/bin/osascript"])
+  })
 
   it("shows the banner with title and message as argv, never inside the script", async () => {
     const run = calls()
-    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin" })('Build "done"', "it's green")
+    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin", helper: null })('Build "done"', "it's green")
     expect(run).toHaveBeenCalledOnce()
     const [file, args] = run.mock.calls[0]
     expect(file).toBe("/usr/bin/osascript")
@@ -84,8 +122,8 @@ describe("localAlert", () => {
     // A detached job exits the moment notify returns; the sound must be
     // over by then, not merely started.
     let finished = false
-    const run = vi.fn(() => new Promise<void>((r) => setTimeout(() => { finished = true; r() }, 20)))
-    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin" })("t", "m")
+    const run = vi.fn(() => new Promise<boolean>((r) => setTimeout(() => { finished = true; r(true) }, 20)))
+    await localAlert({ ...DEFAULT_LOCAL, sound: false }, { run, platform: "darwin", helper: null })("t", "m")
     expect(finished).toBe(true)
   })
 })
@@ -141,7 +179,7 @@ describe("dashboard Notifications card", () => {
   it("ships the local controls in a page script that parses", async () => {
     const { renderAdminPage } = await import("../src/daemon/ui/pages/admin")
     const html = renderAdminPage()
-    for (const id of ["notif-local-banner", "notif-local-sound", "notif-local-sound-name", "notif-local-volume"]) {
+    for (const id of ["notif-local-banner", "notif-local-sound", "notif-local-sound-name", "notif-local-volume", "notif-local-icon"]) {
       expect(html).toContain(`id="${id}"`)
     }
     const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])

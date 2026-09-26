@@ -36,6 +36,11 @@ export function desktopPlist(opts: { executable: string; cwd: string; agent: str
 <key>StandardErrorPath</key><string>${xml(opts.log)}</string>
 </dict></plist>\n`
 }
+/** build.sh arguments for the helper: the banner icon from
+ *  notifications.local.icon, or none for the bundled AgentX logo. */
+export function helperBuildArgs(icon?: string): string[] {
+  return icon ? ['--icon', icon] : []
+}
 export function installedHelper(home: string): string {
   return join(home, 'Applications', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
 }

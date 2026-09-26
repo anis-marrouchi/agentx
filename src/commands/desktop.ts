@@ -6,7 +6,7 @@ import { homedir, release, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
-import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPlatformError, desktopPlist, installedHelper, selectDesktopAgent } from '@/desktop/install'
+import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -59,7 +59,8 @@ desktop.command('install').description('build, install, and start voice and comp
     try {
       for (const name of ['mac-helper', 'mac-voice']) {
         cpSync(join(root, 'apps', name), join(stage, name), { recursive: true, filter: source => !source.split('/').includes('build') })
-        execFileSync('/bin/bash', [join(stage, name, 'build.sh')], { stdio: 'inherit' })
+        const args = name === 'mac-helper' ? helperBuildArgs(config.notifications.local.icon) : []
+        execFileSync('/bin/bash', [join(stage, name, 'build.sh'), ...args], { stdio: 'inherit' })
       }
       const log = join(homedir(), 'Library/Logs/agentx-desktop.err.log')
       const plist = desktopPlist({ executable: join(apps, DESKTOP_APP, 'Contents/MacOS/AgentXVoice'), cwd: process.cwd(), agent, url,

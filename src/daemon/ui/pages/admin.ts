@@ -367,6 +367,8 @@ const ADMIN_PAGE_BODY = `
           <input id="notif-local-sound-name" placeholder="Glass" />
           <label>Volume <span class="hint">(0 to 1)</span></label>
           <input id="notif-local-volume" type="number" min="0" max="1" step="0.1" />
+          <label>Banner icon <span class="hint">(full path to a .png, .jpg or .icns; blank for the AgentX logo; applies on the next <code>agentx desktop install</code>)</span></label>
+          <input id="notif-local-icon" placeholder="AgentX logo" />
         </fieldset>
         <fieldset style="margin-top:8px;border:1px solid var(--ax-border);border-radius:4px;padding:8px 10px">
           <legend style="font-size:11px;color:var(--ax-muted);padding:0 4px">Phone push (ntfy) — used by <code>agentx notify</code>; restart the daemon after changing</legend>
@@ -1668,6 +1670,7 @@ function renderNotifications() {
   if ($('notif-local-sound')) $('notif-local-sound').checked = local.sound !== false;
   if ($('notif-local-sound-name')) $('notif-local-sound-name').value = local.soundName || 'Glass';
   if ($('notif-local-volume')) $('notif-local-volume').value = local.volume ?? 0.4;
+  if ($('notif-local-icon')) $('notif-local-icon').value = local.icon || '';
   const ntfy = n.ntfy || {};
   if ($('notif-ntfy-enabled')) $('notif-ntfy-enabled').checked = !!ntfy.enabled;
   if ($('notif-ntfy-server')) $('notif-ntfy-server').value = ntfy.server || 'https://ntfy.sh';
@@ -1695,6 +1698,7 @@ window.saveNotifications = async function() {
       sound: $('notif-local-sound').checked,
       soundName: $('notif-local-sound-name').value.trim() || 'Glass',
       volume: Number.isFinite(volume) ? volume : 0.4,
+      icon: $('notif-local-icon').value.trim(),
     },
   };
   // Only a real ntfy change is sent: any write to channels.* asks for a

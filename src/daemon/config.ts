@@ -778,6 +778,9 @@ const notificationsSchema = z.object({
     /** A name from /System/Library/Sounds, without the extension. */
     soundName: z.string().regex(/^[\w -]+$/).default("Glass"),
     volume: z.number().min(0).max(1).default(0.4),
+    /** Image for the AgentX Helper icon on banners (.png, .jpg, .icns).
+     *  Unset: the AgentX logo. Applied by `agentx desktop install`. */
+    icon: z.string().optional(),
   }).default({}),
 }).default({})
 
