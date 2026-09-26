@@ -1,0 +1,99 @@
+{
+  "docsDir": "docs",
+  "surface": {
+    "paths": [
+      "src/program.ts",
+      "src/commands/**",
+      "src/daemon/config.ts",
+      "agentx.example.json",
+      "src/daemon/ui/pages/**",
+      "src/web/**",
+      "skills/**",
+      "apps/**"
+    ],
+    "ignorePaths": ["test/**", "**/*.test.ts", "**/__fixtures__/**", ".github/**"],
+    "addedLinePatterns": [
+      { "name": "environment variable", "pattern": "process\\.env\\.([A-Z][A-Z0-9_]+)", "paths": ["src/**", "apps/**"] }
+    ]
+  },
+  "exempt": {
+    "titleTypes": ["refactor", "test", "ci"],
+    "label": "no-docs-needed",
+    "reasonPattern": "^\\s*Docs: not needed because \\S.*$"
+  },
+  "extract": {
+    "binName": "agentx",
+    "program": { "module": "src/program.ts", "export": "buildProgram" },
+    "configSchema": { "module": "src/daemon/config.ts", "export": "daemonConfigSchema" }
+  },
+  "coverage": {
+    "mode": "warn",
+    "includeHiddenCommands": true,
+    "ignoreCommands": [],
+    "ignoreFlags": ["--help", "-h", "--version", "-v"],
+    "ignoreConfigKeys": []
+  },
+  "rules": {
+    "scope": "changed",
+    "include": ["docs/**/*.md"],
+    "exclude": ["docs/index.md", "docs/.vitepress/**", "docs/public/**", "docs/.scripts/**", "docs/**/node_modules/**"],
+    "baseline": [
+      "docs/architecture/jev.md",
+      "docs/architecture/overview.md",
+      "docs/architecture/persistent-codex-process.md",
+      "docs/architecture/persistent-opencode-process.md",
+      "docs/automations/check-it-worked.md",
+      "docs/automations/describe-it.md",
+      "docs/automations/index.md",
+      "docs/connect-telegram.md",
+      "docs/dashboard/activity.md",
+      "docs/dashboard/chat.md",
+      "docs/dashboard/index.md",
+      "docs/dashboard/live.md",
+      "docs/dashboard/monitor.md",
+      "docs/dashboard/settings.md",
+      "docs/dashboard/tui.md",
+      "docs/dashboard/voice.md",
+      "docs/dashboard/workflows.md",
+      "docs/first-agent.md",
+      "docs/guides/teach-authoring.md",
+      "docs/help/costs.md",
+      "docs/help/doctor.md",
+      "docs/help/its-not-answering.md",
+      "docs/install.md",
+      "docs/jobs/answer-questions.md",
+      "docs/jobs/daily-report.md",
+      "docs/jobs/keep-it-safe.md",
+      "docs/jobs/notifications.md",
+      "docs/jobs/second-machine.md",
+      "docs/jobs/tailscale.md",
+      "docs/jobs/watch-gitlab.md",
+      "docs/reference/a2a.md",
+      "docs/reference/channels.md",
+      "docs/reference/cli.md",
+      "docs/reference/config.md",
+      "docs/reference/dashboard-map.md",
+      "docs/reference/glossary.md",
+      "docs/reference/workflow-schema.md",
+      "docs/requirements.md",
+      "docs/see-it-first.md",
+      "docs/tutorials/first-workflow.md",
+      "docs/tutorials/record-vscode.md",
+      "docs/what-it-is.md"
+    ],
+    "publicDir": "docs/public",
+    "endingHeadings": ["Check it worked", "If something is wrong"],
+    "stepVerbs": ["Run", "Open", "Click", "Type", "Press", "Select", "Choose", "Go to", "Enter", "Paste", "Copy", "Install", "Start", "Restart", "Stop", "Save", "Set", "Add", "Edit", "Create"],
+    "minUnnumberedSteps": 2,
+    "forbidden": [
+      { "pattern": "noqta\\.(tn|com|io)", "why": "a real company host; use example.com" },
+      { "pattern": "/Users/[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
+      { "pattern": "/home/[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
+      { "pattern": "\\bghp_[A-Za-z0-9]{20,}", "why": "looks like a GitHub token" },
+      { "pattern": "\\bglpat-[A-Za-z0-9_-]{20,}", "why": "looks like a GitLab token" },
+      { "pattern": "\\bsk-ant-[A-Za-z0-9_-]{10,}", "why": "looks like an Anthropic key" },
+      { "pattern": "\\bxox[abp]-[A-Za-z0-9-]{10,}", "why": "looks like a Slack token" },
+      { "pattern": "\\b\\d{8,10}:[A-Za-z0-9_-]{35}\\b", "why": "looks like a Telegram bot token" }
+    ]
+  }
+}

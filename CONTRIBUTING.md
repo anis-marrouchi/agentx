@@ -115,6 +115,47 @@ Every docs change follows these rules.
 - Keep reference pages concise and validate examples against the current code.
 - Run `pnpm docs:check` before submitting a documentation change.
 
+### Docs gate
+
+Every pull request runs the **Docs gate** check (`.github/workflows/docs-gate.yml`). It enforces the rules above without any AI: the same input always gives the same result. All paths, patterns and lists live in one file, `scripts/docs-gate.config.json`.
+
+The gate runs three checks:
+
+1. **Code changes come with docs.** If the PR changes something users see (CLI commands, the config schema, `agentx.example.json`, dashboard pages, `skills/`, `apps/`, or a new `process.env.` variable) and adds or edits no page under `docs/`, the check fails. Tests, CI files and internal code do not count. PRs titled `refactor:`, `test:` or `ci:` pass.
+2. **Removed things leave the docs.** The gate reads every CLI command, flag and setting before and after the PR. If the PR removes or renames one that a page still mentions, the check fails and names the page and line. This applies even when docs are skipped.
+3. **Changed pages follow the docs rule.** Every page the PR adds or edits must end with **Check it worked** then **If something is wrong**, use numbered lists for steps, point only at images that exist, and contain no tokens, personal home paths or real company hosts.
+
+A fourth step lists every command, flag and setting that no page mentions. It only warns for now; it will block once the docs catch up.
+
+**Skip docs for one PR.** Use this when a user-facing file changed but users see no difference, such as a reworded help string:
+
+1. In the browser, ask a maintainer to add the `no-docs-needed` label to the PR.
+2. Add a line of its own to the PR description: `Docs: not needed because <reason>`.
+3. Wait for the check to run again; editing the description or the labels restarts it.
+
+The label without a reason still fails, and so does a reason without the label.
+
+**Older pages.** Pages written before the gate are listed in `rules.baseline` in the config file. On those pages, missing ending sections and unnumbered steps show as warnings instead of errors. Images and private data are always errors. When you fix a listed page, remove it from the list; the gate reminds you, so the list only shrinks.
+
+**Organisation names.** Checks for a team's own host and agent names go in the `DOCS_GATE_EXTRA_FORBIDDEN` repository secret, as a JSON list of `{ "pattern": "…", "why": "…" }`. They never go in the public config file.
+
+**Run it locally** (in a terminal, from the repo root):
+
+1. Check your branch's changed pages: `node scripts/docs-gate.mjs rules --base origin/main --head HEAD`
+2. Check every page: `node scripts/docs-gate.mjs rules --all`
+3. Check the docs change: `PR_TITLE="feat: my change" node scripts/docs-gate.mjs impact --base origin/main --head HEAD`
+4. List undocumented commands and settings: `pnpm exec tsx scripts/docs-surface.mts > /tmp/surface.json`, then `node scripts/docs-gate.mjs coverage --surface /tmp/surface.json`
+
+#### Check it worked
+
+The **Docs gate** check on your PR is green. Its log ends with `Checked N page(s) against the docs rule: 0 error(s)`.
+
+#### If something is wrong
+
+- **It says users see a change but you only refactored.** Title the PR `refactor: …`, or use the label and reason above.
+- **It names a page that mentions a removed setting.** Edit that line of the page; the log gives the file and line.
+- **It flags a word that is fine.** Adjust the pattern in `scripts/docs-gate.config.json` in the same PR and say why in the description.
+
 ### Reproduce the screenshots
 
 With Node 22 and Chrome or Chromium installed:
