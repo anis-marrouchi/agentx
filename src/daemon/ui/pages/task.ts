@@ -544,6 +544,8 @@ const TASK_PAGE_JS = `
       // A finished scheduled run was continued as a new turn in its chat.
       // Follow that turn: it is where the reply will appear.
       if (r && r.resumed && r.taskId) { location.href = taskHref(r.taskId, r.channel); return; }
+      if (r && r.resumed && r.answeredBy === 'attached') { hintEl.textContent = 'answered by the attached session — no new run here'; return; }
+      if (r && r.resumed && r.answeredBy) { hintEl.textContent = 'delivered and answered — no new run on this node'; return; }
       if (r && r.resumed) { hintEl.textContent = 'agent busy — queued as the next turn in this chat'; return; }
       hintEl.textContent = 'queued — dispatches as the next turn';
     });

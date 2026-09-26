@@ -124,9 +124,10 @@ export interface TaskRecord {
 }
 
 /** Outcome of AgentRegistry.continueFinishedTask. `taskId` is the new run's
- *  dashboard id; absent when the message was queued behind a busy slot. */
+ *  dashboard id; absent when the message was queued behind a busy slot or
+ *  answered without taking a slot (`answeredBy`), so there is no run to open. */
 export type ContinueFinishedTaskResult =
-  | { ok: true; agentId: string; channel: string; chatId: string; taskId?: string; queued: boolean }
+  | { ok: true; agentId: string; channel: string; chatId: string; taskId?: string; queued: boolean; answeredBy?: "attached" | "other" }
   | { ok: false; status: 404 | 409 | 500; error: string }
 
 const TASK_HISTORY_DIR = ".agentx/task-history"
@@ -2723,7 +2724,7 @@ export class AgentRegistry {
    * the person in that chat, which is worse than refusing.
    *
    * Resolves once the new run starts (with its task id, for the Task page)
-   * or, if the agent is busy and the message was queued, once execute
+   * or, if the message was queued or answered without a slot, once execute
    * returns without one.
    */
   async continueFinishedTask(
@@ -2758,10 +2759,15 @@ export class AgentRegistry {
         onStart: (id) => settle({ ok: true, agentId, channel, chatId, taskId: id, queued: false }),
       })
         .then((resp) => {
-          // Only reached first when the run never started: it was queued
-          // behind a busy slot (the flush dispatches it later) or refused.
+          // Only reached first when the run never took a slot: it was queued
+          // behind a busy slot (the flush dispatches it later), answered
+          // without one (attached session, mesh forward), or refused.
           if (resp.error?.startsWith("__queued__")) {
             settle({ ok: true, agentId, channel, chatId, queued: true })
+          } else if (!resp.error) {
+            // Delivered and answered. Reporting a failure here would invite a
+            // duplicate Send.
+            settle({ ok: true, agentId, channel, chatId, queued: false, answeredBy: resp.viaAttachedSession ? "attached" : "other" })
           } else {
             settle({ ok: false, status: 500, error: resp.error || "run did not start" })
           }

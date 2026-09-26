@@ -176,6 +176,16 @@ describe("continueFinishedTask", () => {
     expect(await call(fake)).toEqual({ ok: true, agentId: "ops-agent", channel: "cron", chatId: "cron:brief", queued: true })
   })
 
+  it("reports an attached-session answer as delivered, not failed", async () => {
+    const fake = fakeRegistry({ channel: "cron", chatId: "cron:brief" }, async () => ({ content: "done", viaAttachedSession: "sess-1" }))
+    expect(await call(fake)).toEqual({ ok: true, agentId: "ops-agent", channel: "cron", chatId: "cron:brief", queued: false, answeredBy: "attached" })
+  })
+
+  it("still reports a refused run as a failure", async () => {
+    const fake = fakeRegistry({ channel: "cron", chatId: "cron:brief" }, async () => ({ content: "", error: "rate limited" }))
+    expect(await call(fake)).toEqual({ ok: false, status: 500, error: "rate limited" })
+  })
+
   it("refuses finished runs from a channel with a person on the other end", async () => {
     const fake = fakeRegistry({ channel: "telegram", chatId: "42" }, async () => ({ content: "" }))
     expect(await call(fake)).toMatchObject({ ok: false, status: 409 })
@@ -214,6 +224,7 @@ describe("dashboard wiring", () => {
     expect(() => new Function(js)).not.toThrow()
     expect(js).toContain("{ message: message, agent: agentId }")
     expect(js).toContain("rec.channel === 'cron'")
+    expect(js).toContain("r.answeredBy === 'attached'")
     // Listeners are attached before the archived branch returns.
     expect(js.indexOf("sendBtn.addEventListener")).toBeLessThan(js.indexOf("if (root.getAttribute('data-archived'))"))
   })
