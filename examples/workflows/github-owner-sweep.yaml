@@ -38,12 +38,14 @@ nodes:
   - id: route
     type: branch
     config:
+      # Only a verdict with steps wakes the agent. Anything else (an error,
+      # or no verdict at all, e.g. the script died) fails the run instead.
       cases:
+        - when: { kind: matches, params: { path: sweep.output, regex: "^RESULT steps=[1-9]" } }
+          to: act
         - when: { kind: matches, params: { path: sweep.output, regex: "^RESULT steps=0" } }
           to: done
-        - when: { kind: matches, params: { path: sweep.output, regex: "^RESULT error" } }
-          to: failed
-      default: act
+      default: failed
 
   - id: act
     type: agent
