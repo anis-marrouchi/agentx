@@ -1,12 +1,11 @@
 import { Command } from 'commander'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { homedir, release, tmpdir } from 'node:os'
-import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
-import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPath, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, selectDesktopAgent } from '@/desktop/install'
+import { DESKTOP_APP, DESKTOP_LABEL, HELPER_APP, desktopPath, desktopPlatformError, desktopPlist, helperBuildArgs, installedHelper, packageRoot, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -30,13 +29,9 @@ function start() {
   if (!loaded) execFileSync('launchctl', ['bootstrap', `gui/${process.getuid!()}`, plistPath()], { stdio: 'pipe' })
   execFileSync('launchctl', ['kickstart', launchTarget()], { stdio: 'pipe' })
 }
-function packageRoot() {
-  const here = dirname(fileURLToPath(import.meta.url))
-  for (const dir of [resolve(here, '..'), resolve(here, '../..'), process.cwd()]) {
-    try {
-      if (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name === 'agentix-cli' && existsSync(join(dir, 'apps/mac-voice/build.sh'))) return dir
-    } catch { /* next candidate */ }
-  }
+function sourceRoot() {
+  const root = packageRoot()
+  if (root && existsSync(join(root, 'apps/mac-voice/build.sh'))) return root
   throw new Error('Desktop sources are missing from this installation. Update AgentX to a release containing apps/mac-voice and apps/mac-helper.')
 }
 export const desktop = new Command('desktop').description('install and control the macOS desktop assistant')
@@ -48,7 +43,7 @@ desktop.command('install').description('build, install, and start voice and comp
     const config = loadDaemonConfig()
     const agent = selectDesktopAgent(config.agents, opts.agent)
     const url = config.dashboard?.daemonUrl || `http://${config.node.bind.replace(/^0\.0\.0\.0:/, '127.0.0.1:')}`
-    const root = packageRoot()
+    const root = sourceRoot()
     const apps = join(homedir(), 'Applications')
     console.log(`Desktop assistant → ${join(apps, DESKTOP_APP)}\nComputer-use helper → ${join(apps, HELPER_APP)}\nAgent → ${agent}\nDaemon → ${url}\nStarts at login → ${plistPath()}`)
     if (opts.dryRun) return
