@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "fs"
 import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
+import { autonomyLevelSchema } from "@/guard/autonomy"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -548,6 +549,11 @@ const cronJobSchema = z.object({
    *  but appending an instruction to the prompt is reliably honored. Use
    *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
+  /** How much this routine may do: `report` (read-only), `propose` (branch,
+   *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
+   *  permissions — the default). Enforced per run by the guard, not by the
+   *  prompt; only the claude-code tier can enforce it, others refuse. */
+  autonomy: autonomyLevelSchema.optional(),
   onError: z.union([
     z.enum(["log", "notify", "disable"]),
     z.array(z.enum(["log", "notify", "disable"])),
@@ -576,6 +582,8 @@ const cronJobSchema = z.object({
   }).optional(),
 }).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
+}).refine((j) => !(j.command?.trim() && j.autonomy && j.autonomy !== "act"), {
+  message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 })
 
 const serviceSchema = z.object({

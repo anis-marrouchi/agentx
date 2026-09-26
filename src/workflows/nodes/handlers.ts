@@ -31,6 +31,12 @@ const agentHandler: NodeHandler = async (ctx) => {
 
   const prompt = render(promptTemplate, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
   const timeoutMinutes = typeof cfg.timeoutMinutes === "number" ? cfg.timeoutMinutes : undefined
+  // Step autonomy. An unrecognised value fails the step rather than
+  // silently running it at full power.
+  const autonomy = cfg.autonomy === undefined || cfg.autonomy === null ? undefined : String(cfg.autonomy)
+  if (autonomy !== undefined && autonomy !== "report" && autonomy !== "propose" && autonomy !== "act") {
+    return { error: `agent node "${ctx.node.id}" has invalid autonomy "${autonomy}" (expected report, propose or act)` }
+  }
 
   // Optional per-node concurrency cap. When N runs of this workflow all
   // arrive at the same hot node, the gate serializes execution past N
@@ -55,6 +61,7 @@ const agentHandler: NodeHandler = async (ctx) => {
       message: prompt,
       workflowRunId: ctx.run.id,
       timeoutMinutes,
+      ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
     })
     const durationMs = Date.now() - start
     if (resp.error) {
@@ -74,6 +81,7 @@ const agentHandler: NodeHandler = async (ctx) => {
         json: parsed.json,
         taskId: resp.taskId,
         durationMs,
+        ...(resp.autonomyBlocks?.length ? { autonomyBlocks: resp.autonomyBlocks } : {}),
       },
     }
   } catch (e: any) {
