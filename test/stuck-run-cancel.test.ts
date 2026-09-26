@@ -10,15 +10,28 @@ import { join } from "path"
 //   - cancel ends a run stuck in a pre-spawn step and frees its slot;
 //   - a task deadline (timeoutMinutes) does the same without an operator;
 //   - the running entry names the step the run is in;
+//   - a cancelled run starts no further step, even behind a swallowed error;
 //   - a scheduled agent run always carries a deadline, recorded in its run file.
 
-const hang = vi.hoisted(() => ({ on: false }))
+const hang = vi.hoisted(() => ({ on: false, skills: false }))
 vi.mock("../src/agents/request-planner", async (importOriginal) => {
   const real: any = await importOriginal()
   return {
     ...real,
     evaluateRequest: (...args: any[]) => hang.on ? new Promise(() => {}) : real.evaluateRequest(...args),
   }
+})
+
+vi.mock("../src/agent/skills/loader", async (importOriginal) => {
+  const real: any = await importOriginal()
+  return {
+    ...real,
+    loadLocalSkills: (...args: any[]) => hang.skills ? new Promise(() => {}) : real.loadLocalSkills(...args),
+  }
+})
+vi.mock("../src/workflows", async (importOriginal) => {
+  const real: any = await importOriginal()
+  return { ...real, matchWorkflow: () => ({ workflow: { id: "wf" }, confidence: 1, reasons: [] }) }
 })
 
 import { AgentRegistry } from "../src/agents/registry"
@@ -36,14 +49,16 @@ beforeEach(() => {
 })
 afterEach(() => {
   hang.on = false
+  hang.skills = false
   process.chdir(prevCwd)
   rmSync(dir, { recursive: true, force: true })
 })
 
-function registry(): AgentRegistry {
+function registry(extra: Record<string, unknown> = {}): AgentRegistry {
   const config = daemonConfigSchema.parse({
     node: { id: "test", name: "test" },
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
+    ...extra,
   })
   return new AgentRegistry(config, () => {})
 }
@@ -82,6 +97,27 @@ describe("a run stuck before spawn", () => {
     const res = await run
     expect(res.error).toMatch(/timed out/)
     expect(agentState(r).runningTasks).toEqual([])
+    expect(agentState(r).active).toBe(0)
+  })
+})
+
+describe("a cancelled run", () => {
+  it("starts no further step, even after a step that swallows the abort", async () => {
+    hang.on = false
+    hang.skills = true
+    const r = registry({ workflows: { enabled: true, matching: { enabled: true, mode: "auto" } } })
+    const autoRun = vi.fn(async () => ({ runId: "r1" }))
+    r.setWorkflowAutoRunner(autoRun as any)
+    const { started, run } = startRun(r)
+    const id = await started
+    // "skills" catches every error and carries on, so the run walks on
+    // toward workflow auto-run after the cancel lands here.
+    await vi.waitFor(() => expect(agentState(r).runningTasks[0].step).toBe("skills"))
+
+    r.cancelRunningTask(id, "operator stop")
+    const res = await run
+    expect(res.error).toMatch(/operator stop/)
+    expect(autoRun).not.toHaveBeenCalled()
     expect(agentState(r).active).toBe(0)
   })
 })

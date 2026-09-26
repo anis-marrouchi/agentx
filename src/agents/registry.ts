@@ -1193,9 +1193,12 @@ export class AgentRegistry {
     // Every await before and around the spawn goes through `step`, so a
     // cancel or deadline ends the run even when the awaited work never
     // settles. The step name is what /agents shows for a run that hangs.
-    const step = <T>(name: string, work: Promise<T>, graceMs = 0): Promise<T> => {
+    // `work` is a thunk so an aborted run never starts the next step: several
+    // steps sit in best-effort try/catch blocks that swallow the rejection.
+    const step = <T>(name: string, work: () => Promise<T>, graceMs = 0): Promise<T> => {
+      if (abortController.signal.aborted) return Promise.reject(abortReason(abortController.signal))
       runningTask.step = name
-      return untilAborted(work, abortController.signal, graceMs)
+      return untilAborted(work(), abortController.signal, graceMs)
     }
 
     // Give back everything the run holds. Idempotent: the `finally` below
@@ -1301,7 +1304,7 @@ export class AgentRegistry {
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
     const { evaluateRequest, selectRequestContext } = await import("./request-planner")
-    const requestGate = await step("request-gate", evaluateRequest(task.message, task.agentId, channel))
+    const requestGate = await step("request-gate", () => evaluateRequest(task.message, task.agentId, channel))
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
@@ -1326,7 +1329,7 @@ export class AgentRegistry {
     // doesn't start blind. No-op for warm sessions, non-channel callers
     // (cron/api/a2a), or channels without a seedHistory implementation.
     if (!task.freshSession) {
-      await step("seed-history", this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory))
+      await step("seed-history", () => this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory))
     }
 
     // Shadow seats read the agent's last reply before this message joins it.
@@ -1358,9 +1361,10 @@ export class AgentRegistry {
     // failure (bad LLM output, schema rejection, network error) must never
     // propagate — the main task still has to run.
     let intent: ClassifyResult | undefined
-    if (this.classifier && channel !== "a2a" && !isCodexCli) {
+    const classifier = this.classifier
+    if (classifier && channel !== "a2a" && !isCodexCli) {
       try {
-        intent = (await step("classify", this.classifier.classify({
+        intent = (await step("classify", () => classifier.classify({
           text: task.message,
           channel,
           sender: task.context?.sender,
@@ -1428,7 +1432,7 @@ export class AgentRegistry {
     if (!isCodexCli) {
       try {
         const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
-        const skills = await step("skills", loadLocalSkills(state.def.workspace))
+        const skills = await step("skills", () => loadLocalSkills(state.def.workspace))
         skillInjection = getAutoInjectSkills(skills, task.message)
       } catch {
         // Skill loading is optional
@@ -1509,8 +1513,9 @@ export class AgentRegistry {
     // rotating too early is amnesia, and optimising only the measurable
     // side is how the original rotation incident happened.
     if (resumeSessionId && state.def.tier === "claude-code") {
-      const rotatedEarly = await step("rotate", this.maybeRotateForContinuity(
-        task, state, channel, chatId, resumeSessionId,
+      const sessionId = resumeSessionId
+      const rotatedEarly = await step("rotate", () => this.maybeRotateForContinuity(
+        task, state, channel, chatId, sessionId,
       ))
       if (rotatedEarly) resumeSessionId = undefined
     }
@@ -1525,7 +1530,7 @@ export class AgentRegistry {
     // stays cache-friendly. See sessions.ts compactIfNeeded for the longer
     // explanation.
     try {
-      const compactResult = await step("compact", this.sessions.compactIfNeeded(
+      const compactResult = await step("compact", () => this.sessions.compactIfNeeded(
         task.agentId, channel, chatId, this.memoryStore,
       ))
       if (compactResult.compacted) {
@@ -1655,12 +1660,12 @@ export class AgentRegistry {
         const cacheKey = state.def.workspace
         let cached = this.referencesCache.get(cacheKey)
         if (!cached) {
-          const [refs, recipes] = await step("references", Promise.all([
+          const [refs, recipes] = await step("references", () => Promise.all([
             loadReferences(state.def.workspace),
             loadRecipes(state.def.workspace),
           ]))
           if (refs.byId.size === 0 && recipes.recipes.length === 0) {
-            const [rootRefs, rootRecipes] = await step("references", Promise.all([
+            const [rootRefs, rootRecipes] = await step("references", () => Promise.all([
               loadReferences(process.cwd()),
               loadRecipes(process.cwd()),
             ]))
@@ -1756,7 +1761,7 @@ export class AgentRegistry {
     if (strategy === "planner" && !requestGate.active && channel !== "voice" && channel !== "desktop") {
       try {
         const { planContext } = await import("./context-planner")
-        const plan = await step("plan-context", planContext({
+        const plan = await step("plan-context", () => planContext({
           agentId: task.agentId,
           channel,
           chatId,
@@ -1973,7 +1978,7 @@ export class AgentRegistry {
     }
 
     const selectedContext = requestGate.active && requestGate.preprocess
-      ? await step("select-context", selectRequestContext(contextInput))
+      ? await step("select-context", () => selectRequestContext(contextInput))
       : { input: contextInput, excluded: [] }
     if (selectedContext.excluded.length) this.log(`[${task.agentId}] request-context excluded: ${selectedContext.excluded.join(", ")}`)
 
@@ -2039,7 +2044,7 @@ export class AgentRegistry {
     if (!task.model && cheapModel && (!requestGate.active || requestGate.preprocess)) {
       try {
         const { routeTaskModel } = await import("./routing")
-        const route = await step("route-model", routeTaskModel({
+        const route = await step("route-model", () => routeTaskModel({
           message: task.message,
           agent: task.agentId,
           channel,
@@ -2082,10 +2087,12 @@ export class AgentRegistry {
       // with a metadata marker so the caller knows not to send a redundant
       // agent reply. On runner failure, we log and fall through to normal
       // agent execution — auto-run is best-effort, never a footgun.
-      if (pendingAutoRun && this.workflowAutoRunner) {
+      const autoRunner = this.workflowAutoRunner
+      if (pendingAutoRun && autoRunner) {
+        const autoRun = pendingAutoRun
         try {
-          const result = await step("workflow-auto-run", this.workflowAutoRunner({
-            workflowId: pendingAutoRun.workflowId,
+          const result = await step("workflow-auto-run", () => autoRunner({
+            workflowId: autoRun.workflowId,
             agentId: task.agentId,
             channel,
             chatId,
@@ -2098,8 +2105,8 @@ export class AgentRegistry {
               senderId: task.context?.senderId,
               senderUsername: task.context?.senderUsername,
               intentPath: intent?.path,
-              matchedWorkflowId: pendingAutoRun.workflowId,
-              matchConfidence: pendingAutoRun.confidence,
+              matchedWorkflowId: autoRun.workflowId,
+              matchConfidence: autoRun.confidence,
             },
           }))
           this.log(
@@ -2222,7 +2229,7 @@ export class AgentRegistry {
           : undefined
       // The runtime reaps its own subprocess on abort; the grace only covers
       // a runtime that never returns.
-      const response = await step("agent", executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking), CANCEL_GRACE_MS)
+      const response = await step("agent", () => executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking), CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
