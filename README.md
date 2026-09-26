@@ -116,7 +116,7 @@ Real agents need a configured model. An API provider needs a key; Claude Code, C
 - **Channels:** Telegram, WhatsApp, GitLab, GitHub, and generic webhooks. [Channel reference](docs/reference/channels.md).
 - **Models:** API providers, plus the Claude Code, Codex CLI, and OpenCode CLIs.
 - **Other programs:** the local daemon accepts tasks over HTTP, and `agentx a2a` serves the A2A protocol. [Agent-to-agent reference](docs/reference/a2a.md).
-- **Raycast (planned):** an extension to talk to your agents from Raycast. Not built yet; follow [#146](https://github.com/anis-marrouchi/agentx/issues/146).
+- **Raycast:** ask your agents and list them from Raycast. [Install from this checkout](integrations/raycast/README.md); not in the Raycast Store yet.
 
 ## Help test and improve AgentX
 
