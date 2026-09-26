@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "fs"
 import { resolve } from "path"
 import { MemoryStore } from "@/agents/memory-store"
 import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSchedule } from "@/crons/schedule-ops"
-import { listProposals, readProposal } from "@/wiki/proposals"
+import { listProposals, readProposal, type PromotionProposal } from "@/wiki/proposals"
 import { approveProposal, rejectProposal } from "@/wiki/promote"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
@@ -162,6 +162,19 @@ function memoryItems(ctx: InboxContext): InboxItem[] {
   return out
 }
 
+/** One line on what backs a wiki proposal. A lesson drawn from a
+ *  recurring failure says so, with the failure, before the article text:
+ *  the reviewer is judging a fix for something that keeps breaking. */
+export function proposalBacking(e: PromotionProposal["evidence"]): string {
+  const failures = e.sources.filter((s) => s.failure)
+  if (failures.length) {
+    return failures.map((s) =>
+      `Recurring failure: ${s.agentId}'s ${s.failure!.tool} fails with "${s.failure!.errorClass}" in ${s.occurrences ?? 1} sessions (${s.failure!.runs} runs).`,
+    ).join(" ")
+  }
+  return `${e.sources.length} source(s)${e.occurrences > 1 ? `, seen in ${e.occurrences} sessions` : ""}.`
+}
+
 function wikiItems(ctx: InboxContext): InboxItem[] {
   return listProposals(wikiDirFor(ctx), "pending").map((p) => {
     const e = p.evidence
@@ -174,7 +187,7 @@ function wikiItems(ctx: InboxContext): InboxItem[] {
       no: "decline it",
       raised_by: e.agents.join(", ") || "wiki promote",
       created_at: p.createdAt,
-      detail: clip(`${e.sources.length} source(s)${e.occurrences > 1 ? `, seen in ${e.occurrences} sessions` : ""}. ${p.article.content}`),
+      detail: clip(`${proposalBacking(e)} ${p.article.content}`),
       more: `agentx wiki proposals show ${p.id}`,
     }
   })

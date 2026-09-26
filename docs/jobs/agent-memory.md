@@ -72,6 +72,25 @@ Every night, `agentx wiki promote --commit` reads what agents have learned and s
 
 To preview what tonight's run would look at, without asking the judge or writing anything, run `agentx wiki promote`.
 
+### Turn failures that keep happening into lessons
+
+Agents don't write down what went wrong, so a tool that fails in session after session never becomes a lesson on its own. With `--failures`, the nightly run also reads failed and timed-out tasks from the last 7 days (or the `--since` window). It groups them by what they have in common: the agent, the tool that failed, and the kind of error. A failure that happened in at least 3 separate sessions (conversations) is offered as a lesson; a failure seen only once is ignored.
+
+1. In a terminal, preview what it would find:
+   ```sh
+   agentx wiki promote --failures
+   ```
+   It prints how many failed tasks it read and how many failures came up in 3 or more sessions.
+2. To ask for more (or fewer) sessions before a failure counts, add `--min-sessions`:
+   ```sh
+   agentx wiki promote --failures --min-sessions 5
+   ```
+   The lowest value is 2: a failure inside one session is never treated as a pattern.
+3. Add `--failures` to the nightly `wiki promote --commit` job (`agentx schedule list` shows it).
+4. Review the lessons like any other, with `agentx wiki proposals show <id>`. For a failure, the evidence shows the failing tool, the kind of error, how many sessions and tasks hit it, and some example task ids. Open one with `agentx trace show <task-id>`. In the **Approvals** tab these lessons start with "Recurring failure".
+
+While a failure lesson waits for your review, the same failure isn't suggested a second time. A failure lesson you rejected isn't offered again until the failure reaches 4 sessions, then 8, then 16, and so on.
+
 ## 4. Undo a change to an agent's memory
 
 Every time a memory is changed or deleted, the previous version is kept (the last 20 of each). Use the daemon's web address, on port 18800 by default:
@@ -125,11 +144,13 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 3. After you approve a lesson, `agentx wiki proposals list --all` shows it as `approved`, and the article is in the shared wiki under `.agentx/wiki/`.
 4. After a restore, the memory's `versions` list includes the version you replaced.
 5. `agentx trace show <task-id>` for a recent task prints a `lessons` line.
+6. `agentx wiki promote --failures` prints a line with the number of failed tasks it read and the number of failures that recur.
 
 ## If something is wrong
 
 - **`approve` says the article changed since this proposal:** someone edited it after the suggestion was made. Read both, then approve with `--force` or reject.
 - **`approve` says the proposal is already approved or rejected:** it was decided earlier. Check `agentx wiki proposals list --all`.
+- **`--failures` finds no recurring failures:** the same failure has to happen in several separate sessions. Retries inside one conversation count once. Lower `--min-sessions` or widen `--since` to look further.
 - **No proposals ever appear:** check that the nightly `wiki promote --commit` job is switched on (`agentx schedule list`) and that agents have saved memories recently.
 - **A fact you expected isn't used:** it may come from a public channel and be waiting in `agentx memory facts held`, or it contained a password or token and was never kept.
 - **`restore` answers `no such version`:** list the versions again and copy the `id` exactly.

@@ -155,6 +155,7 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
 | `agentx trace lessons [--since 30d] [--agent <id>] [--min 2] [--json]` | Compare repeated tasks before and after each fact, procedure or wiki was first used |
 | `agentx wiki promote [--commit]` | Preview (or, with `--commit`, judge and propose) lessons for the shared wiki |
+| `agentx wiki promote --failures [--min-sessions <n>]` | Also propose lessons from failures that happened in at least `n` separate sessions (default 3) |
 | `agentx wiki proposals list` | Proposed lessons waiting for review |
 | `agentx wiki proposals show <id>` | The proposed article and its evidence |
 | `agentx wiki proposals approve <id>` | Write it into the shared wiki; refuses if the article changed since, unless `--force` |
