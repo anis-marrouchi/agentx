@@ -27,7 +27,7 @@ Each bar on the timeline is one run: one task an agent worked on. Small marks on
 
 The **Map** view, next to **Timeline**, draws the whole team as a transit map: projects are lines, agents are stations, and work in progress moves along them.
 
-<!-- Screenshot needed: Activity's Map view. Not defined in docs/.scripts/capture.mjs yet. -->
+![The Map view of Activity: channels on the left, the CX agent in the middle, and finished work on the demo shop line](/screenshots/activity/map.png)
 
 ## Check it worked
 

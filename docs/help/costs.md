@@ -17,7 +17,7 @@ Keep in mind:
 3. Read the totals, then **Top agents by spend**.
 4. To keep a copy or compare with your bill, select **Export CSV**.
 
-<!-- Screenshot needed: the Cost page (/admin/cost). Not defined in docs/.scripts/capture.mjs yet. -->
+![The Cost page with the period picker, the totals and Top agents by spend](/screenshots/costs/page.png)
 
 The Cost page shows Anthropic spend. Compare it with your provider's bill; the provider's figure is the one you pay.
 

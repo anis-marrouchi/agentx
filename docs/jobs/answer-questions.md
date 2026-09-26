@@ -15,7 +15,9 @@ You need an agent (see [Your first agent](../first-agent.md)) and a connected ch
 7. Go back to **Settings** and select the **Channels** tab.
 8. Check that the channel is bound to this agent. For Telegram, open the Telegram card: each account shows `agent:` followed by the agent's ID.
 
-<!-- Screenshot needed: Settings › Agents with the Manage button, and the agent page's Personality tab. Not defined in docs/.scripts/capture.mjs yet. -->
+![Settings › Agents, with a Manage button beside each agent](/screenshots/settings.png)
+
+![The agent page's Personality tab, with the instruction files on the left and the editor with its Save button](/screenshots/agents/personality.png)
 
 ![Settings › Channels, showing the Telegram card](/screenshots/settings-channels.png)
 

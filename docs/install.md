@@ -38,7 +38,7 @@ AgentX runs as two programs: the **daemon** (the background service that runs ag
    docker compose restart daemon dashboard
    ```
 
-<!-- Screenshot needed: the /setup page and the AI engine picker. Not defined in docs/.scripts/capture.mjs yet. -->
+![The setup page with Anthropic API (BYO key) chosen as the AI engine and the Anthropic API key field below](/screenshots/setup/engine.png)
 
 Keep the `agentx-data/` folder. It holds your settings, agent folders, credentials and task history. `docker compose down` stops AgentX without deleting it.
 

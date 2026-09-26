@@ -21,7 +21,7 @@ The address `100.64.0.10` below is an example. Replace it with each machine's ow
 
 These commands are described in the [Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli). Your tailnet access rules and each machine's firewall must let the machines reach AgentX's port, normally `18800`.
 
-<!-- Screenshot needed: the Tailscale app listing both machines. Not defined in docs/.scripts/capture.mjs yet (external app). -->
+<!-- Screenshot needed: the Tailscale app listing both machines (external app). Needs a manual capture outside the docs demo. -->
 
 ## 2. Make the daemon reachable
 

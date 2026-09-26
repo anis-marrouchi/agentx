@@ -92,7 +92,7 @@ In **Routing**, you can send an event type to a workflow instead of the agent. A
 7. On the card, select **Copy** to copy the address.
 8. **Browser:** in the other service's webhook settings, paste the address and the same secret value, then save there.
 
-<!-- Screenshot needed: Settings › Webhooks with one webhook card (receiving) and the Add a webhook form -->
+![Settings › Webhooks with one receiving webhook card and the Add a webhook form](/screenshots/settings/webhooks.png)
 
 To route events to workflows:
 
@@ -100,7 +100,7 @@ To route events to workflows:
 2. Type an event type (suggestions appear for supported sources) and a workflow id, then select **Add**.
 3. Optional: type a **Default workflow** and select **Save**.
 
-<!-- Screenshot needed: the opened Routing section of a webhook card with one trigger row -->
+![The opened Routing section of a webhook card, with one event type sent to a workflow](/screenshots/settings/webhook-routing.png)
 
 The address must be reachable from the other service. A daemon that only listens on `127.0.0.1` can't be called from the internet.
 
@@ -129,14 +129,14 @@ See the [mesh settings reference](../reference/config-operations.md#mesh) for ev
 5. Paste the token into **Auth token**.
 6. Select **Add peer**. Adding a peer also switches the mesh on.
 
-<!-- Screenshot needed: Settings › Mesh with the mesh on, one authenticated peer and the Add a peer form -->
+![Settings › Mesh with the mesh on, two authenticated peers and the Add a peer form](/screenshots/settings/mesh.png)
 
 To change how often peers are checked:
 
 1. **Browser:** open **⏱ Health-check cadence**.
 2. Change **Interval** or **Timeout**, then select **Save**.
 
-<!-- Screenshot needed: the opened Health-check cadence section on the Mesh tab -->
+![The opened Health-check cadence section on the Mesh tab, with Interval and Timeout](/screenshots/settings/mesh-cadence.png)
 
 ## Boards
 
@@ -172,7 +172,7 @@ A new board uses the standard columns: Open, To Do, Doing, On Hold, Review, Clos
 6. Select **Save board**. The board appears in the list.
 7. Optional: under the board, open **+ add column**, fill in **Id**, **Title**, **Kind** and **Scoped/label value**, then select **Add**.
 
-<!-- Screenshot needed: Settings › Boards with one board listed (projects, windows, columns) and the Add or update board form open -->
+![Settings › Boards with one board listed (projects, label, day windows and two columns) and the Add or update board form open](/screenshots/settings/boards.png)
 
 A board reads issues with the GitLab token of the GitLab channel (`channels.gitlab.token`). Set up GitLab on **Channels** first, or the board shows an error.
 
@@ -207,7 +207,7 @@ Output longer than 32 KB is cut.
 7. On the action, open **▶ Run**, fill in any inputs, and select **Run now**.
 8. Read the result: `ok` or `failed`, the status and the time taken, then the output below.
 
-<!-- Screenshot needed: Settings › Actions with one registered action and its Run section showing an ok result -->
+![Settings › Actions with one registered shell action and its Run section showing an ok result and the output](/screenshots/settings/actions.png)
 
 A `shell` action runs with the daemon's permissions on that machine. Only add commands you would run yourself.
 
@@ -233,7 +233,7 @@ The file can contain credentials. Don't share screenshots of this tab.
 4. Select **Save config**. The message names the backup it made, `agentx.json.bak.<number>`, next to the file.
 5. **Terminal:** in the folder with `agentx.json`, run `agentx config check` to confirm the file is still accepted.
 
-<!-- Screenshot needed: Settings › Advanced in Tree view with one section expanded -->
+![Settings › Advanced in Tree view, with the agents section expanded](/screenshots/settings/advanced-tree.png)
 
 Text that is not valid JSON is refused and nothing is saved. A value that is valid JSON but not an accepted setting is saved, and the daemon only reports it when it reloads, so always run step 5.
 

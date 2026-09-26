@@ -21,7 +21,7 @@ You need a copy of the AgentX source code that has been built, and Node.js 22. S
 
 The demo is a tour of routing, not a filled-in copy of a business, so some dashboard views stay empty.
 
-<!-- Screenshot needed: the demo's terminal output. Not defined in docs/.scripts/capture.mjs yet. -->
+<!-- Screenshot needed: the demo's terminal output (terminal only). Needs a manual capture outside the docs demo. -->
 
 ## See a filled-in demo
 

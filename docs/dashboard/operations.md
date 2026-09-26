@@ -40,7 +40,7 @@ A machine that can't be reached shows **Routines unknown while this node is unre
 4. To look at a finished run, select **Open** next to it under **Runs today**.
 5. To continue that run's conversation, type a message on its Task page and select **Send**.
 
-<!-- Screenshot needed: a schedule drawer with Watch live run and Runs today. Not defined in docs/.scripts/capture.mjs yet. -->
+![A schedule drawer with its latest result and one finished run under Runs today, with its Open link](/screenshots/operations/schedule-drawer.png)
 
 Details: while the job is running, the row shows **running** and the drawer has a **Watch live run** link to the run's Task page, on the node that runs it. **Runs today** lists the latest 10 runs, each with an **Open** link to its archived Task page. Command jobs run a shell command, not an agent, so they have no links. Runs recorded before the node was upgraded have no link either.
 
