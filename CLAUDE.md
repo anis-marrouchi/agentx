@@ -24,3 +24,16 @@ Build a mesh-level operations dashboard that makes automation and agent activity
 - Cron attempts do not yet carry a stable task/trace/session join ID.
 - Mesh forwarding lacks a canonical root activity ID.
 - Full cron responses can contain sensitive content; list APIs must return bounded summaries.
+
+## Documentation Rule
+
+Applies to every change under `docs/` and to any code change that adds or renames a feature, setting or command. Full text and screenshot tooling: [CONTRIBUTING.md › Docs conventions](CONTRIBUTING.md#docs-conventions).
+
+- Write for a non-technical reader. Use plain words, and explain a term the first time it appears (or avoid it).
+- Write procedures as numbered steps, one action per step. Label terminal and browser steps explicitly.
+- Show, don't only tell: add a screenshot wherever a step touches a screen (dashboard, System Settings, a phone app). Store them under `docs/public/screenshots/<page>/`.
+- Document everything we ship. Every feature, setting, CLI command and integration has a page or section; no setting exists only in code. A change that adds or renames a setting or command updates the docs in the same PR.
+- End every page with a **Check it worked** section and an **If something is wrong** section.
+- Use neutral examples only: no real company, people, agent names, hosts, IPs or tokens. Take screenshots from a demo instance, never a live fleet.
+- Keep reference pages concise and validate examples against the current code.
+- Run `pnpm docs:check` before submitting a documentation change.
