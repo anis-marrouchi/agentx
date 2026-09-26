@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { decideMeshAuth, collectAcceptedMeshTokens } from "../src/daemon/mesh-auth"
+import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath } from "../src/daemon/mesh-auth"
 
 const TOKENS = new Set(["shared-mesh-token", "peer-b-token"])
 
@@ -114,5 +114,25 @@ describe("collectAcceptedMeshTokens", () => {
   it("ignores peers with no token rather than adding undefined", () => {
     const got = collectAcceptedMeshTokens({ mesh: { peers: [{}, { token: "" }] } }, {})
     expect(got.size).toBe(0)
+  })
+})
+
+describe("isMeshGatedPath — routes gated for every method", () => {
+  it("gates the agent-memory API, reads and item paths included", () => {
+    expect(isMeshGatedPath("/api/memory")).toBe(true)
+    expect(isMeshGatedPath("/api/memory/no-mock-db")).toBe(true)
+  })
+
+  it("does not gate look-alike or unrelated paths", () => {
+    expect(isMeshGatedPath("/api/memoryx")).toBe(false)
+    expect(isMeshGatedPath("/api/mesh")).toBe(false)
+    expect(isMeshGatedPath("/health")).toBe(false)
+  })
+
+  it("an off-box memory read without a token is refused; the local agent's curl is not", () => {
+    const tokens = new Set(["mesh-secret"])
+    expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(false)
+    expect(decideMeshAuth({ remoteAddress: "127.0.0.1", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(true)
+    expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
   })
 })

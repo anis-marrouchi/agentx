@@ -57,7 +57,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
-import { decideMeshAuth, isLoopback, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -2198,6 +2198,9 @@ export class AgentXDaemon {
       if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
       }
+      if (isMeshGatedPath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+      }
       // /ask also answers GET (?q=...) for voice clients that can only issue
       // one. Same arbitrary-prompt execution, same gate.
       if (req.method === "GET" && path === "/ask") {
@@ -2553,7 +2556,7 @@ export class AgentXDaemon {
       //   GET  /api/memory/<id>?agent=<id>       → one record
       //   POST /api/memory  body: {agentId, type, name, description, body, append?}
       //   DELETE /api/memory/<name>?agent=<id>   → remove
-      if (path.startsWith("/api/memory")) {
+      if (isMeshGatedPath(path)) {
         if (await this.handleMemoryApi(req, res, path, url)) return
       }
 
