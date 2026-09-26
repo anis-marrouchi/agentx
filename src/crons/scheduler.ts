@@ -9,6 +9,7 @@ import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordCronDispatch } from "@/intent/sources/cron"
+import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -111,11 +112,29 @@ export function getNextCronDate(expression: string, after: Date, timezone: strin
 const MAX_RETRIES = 5
 const RETRY_DELAYS = [30_000, 60_000, 300_000, 900_000, 3_600_000] // 30s, 1m, 5m, 15m, 60m
 
+/** A run started on demand via `fireNow` rather than by the schedule. */
+interface FireContext {
+  firedAt: Date
+  /** JSON body sent by the caller. Untrusted. */
+  payload: unknown
+}
+
+export type FireNowResult =
+  | { ok: true; runId: string; startedAt: string }
+  | { ok: false; reason: "unknown" | "disabled" | "not-running" }
+
+/** Id of a run record: `<jobId>/<file stem>` under .agentx/cron/runs. */
+export function cronRunId(jobId: string, startedAt: Date): string {
+  return `${jobId}/${startedAt.toISOString().replace(/[:.]/g, "-")}`
+}
+
 /** Notification callback — injected by daemon to send alerts via channels */
 export type CronNotifyCallback = (jobId: string, agent: string, error: string, consecutiveErrors: number) => Promise<void>
 
 export class CronScheduler {
   private jobs: Map<string, CronJobState> = new Map()
+  /** Kept apart from `jobs`, which is served as-is by GET /crons. */
+  private fireTokens: Map<string, string> = new Map()
   private timers: Map<string, ReturnType<typeof setTimeout>> = new Map()
   private registry: AgentRegistry
   private hooks?: HookRegistry
@@ -154,7 +173,37 @@ export class CronScheduler {
         totalRuns: 0,
         totalFailures: 0,
       })
+      if (def.fireToken?.trim()) this.fireTokens.set(id, def.fireToken.trim())
     }
+  }
+
+  /** Whether a job with this id exists. */
+  hasJob(jobId: string): boolean {
+    return this.jobs.has(jobId)
+  }
+
+  /** The job's configured fire token (env-expanded), if any. */
+  getFireToken(jobId: string): string | undefined {
+    return this.fireTokens.get(jobId)
+  }
+
+  /**
+   * Start one run of `jobId` now, outside its schedule, with `payload` as
+   * untrusted event context. Returns as soon as the run is started; the
+   * run itself goes through the same path as a scheduled one (hooks,
+   * ledger, run record, failure counters, notify, auto-disable) but never
+   * schedules retries or touches the next scheduled fire.
+   */
+  fireNow(jobId: string, payload: unknown = {}): FireNowResult {
+    const job = this.jobs.get(jobId)
+    if (!job) return { ok: false, reason: "unknown" }
+    if (!job.enabled) return { ok: false, reason: "disabled" }
+    if (!this.running) return { ok: false, reason: "not-running" }
+    const firedAt = new Date()
+    this.executeJob(jobId, 0, { firedAt, payload }).catch((e: any) => {
+      this.log(`Fired job "${jobId}" threw: ${e?.message ?? e}`)
+    })
+    return { ok: true, runId: cronRunId(jobId, firedAt), startedAt: firedAt.toISOString() }
   }
 
   /**
@@ -343,16 +392,22 @@ export class CronScheduler {
     startedAt: Date,
     isRetry: boolean,
     retryAttempt: number,
+    fire?: FireContext,
   ): Promise<void> {
     const command = job.command!.trim()
-    this.log(`${isRetry ? `[retry ${retryAttempt}] ` : ""}Running command for "${job.id}"`)
+    this.log(`${fire ? "[fired] " : ""}${isRetry ? `[retry ${retryAttempt}] ` : ""}Running command for "${job.id}"`)
 
     let success = false
     let output = ""
     let error: string | undefined
 
     try {
-      const { stdout, stderr, code } = await runShell(command, job.timeout * 1000)
+      // A fired command job gets the caller's payload as an env var, never
+      // interpolated into the command line.
+      const env = fire
+        ? { ...process.env, [ROUTINE_PAYLOAD_ENV]: serializePayload(fire.payload) }
+        : undefined
+      const { stdout, stderr, code } = await runShell(command, job.timeout * 1000, env)
       output = tail(`${stdout}${stderr ? `\n${stderr}` : ""}`, COMMAND_OUTPUT_LINES)
       success = code === 0
       if (!success) error = `exit ${code}${output ? `\n${output}` : ""}`
@@ -370,6 +425,7 @@ export class CronScheduler {
       duration: Date.now() - startedAt.getTime(),
       isRetry,
       retryAttempt,
+      ...(fire ? { fired: true } : {}),
     }
 
     if (!success) {
@@ -392,7 +448,8 @@ export class CronScheduler {
         await this.notifyDisabled(job)
       }
       this.logRun(result)
-      this.scheduleRetry(job.id, retryAttempt)
+      // A fired run is not retried: the caller decides whether to fire again.
+      if (!fire) this.scheduleRetry(job.id, retryAttempt)
       return
     }
 
@@ -405,10 +462,10 @@ export class CronScheduler {
     job.retryPending = false
     this.log(`Command job "${job.id}" completed in ${result.duration}ms`)
     this.logRun(result)
-    this.scheduleNext(job.id)
+    if (!fire) this.scheduleNext(job.id)
   }
 
-  private async executeJob(jobId: string, retryAttempt: number = 0): Promise<void> {
+  private async executeJob(jobId: string, retryAttempt: number = 0, fire?: FireContext): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job || !this.running) return
 
@@ -417,7 +474,7 @@ export class CronScheduler {
     // `startedAt` declaration) so the ledger event has a stable
     // sourceEventId regardless of whether we record at the hook-block
     // path or the dispatch path.
-    const firedAt = new Date()
+    const firedAt = fire?.firedAt ?? new Date()
 
     // Pre-hook
     if (this.hooks?.has("pre:cron-run" as any)) {
@@ -433,7 +490,7 @@ export class CronScheduler {
           agentId: null, outcome: "halted",
           reason: `pre-hook blocked: ${hookResult.message ?? ""}`.trim(),
         })
-        this.scheduleNext(jobId)
+        if (!fire) this.scheduleNext(jobId)
         return
       }
     }
@@ -442,9 +499,9 @@ export class CronScheduler {
     // `-> agent "coo-agent"` sends a reader looking for a dispatch that
     // never occurs.
     this.log(
-      job.command?.trim()
+      (fire ? "[fired] " : "") + (job.command?.trim()
         ? `${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> command`
-        : `${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`,
+        : `${isRetry ? `[retry ${retryAttempt}] ` : ""}Executing job "${jobId}" -> agent "${job.agent}"`),
     )
     const startedAt = firedAt
     job.lastRun = startedAt
@@ -453,7 +510,7 @@ export class CronScheduler {
     // A command job never reaches a model. Branch before the ledger
     // dispatch record, because nothing is being dispatched TO.
     if (job.command?.trim()) {
-      await this.executeCommandJob(job, startedAt, isRetry, retryAttempt)
+      await this.executeCommandJob(job, startedAt, isRetry, retryAttempt, fire)
       return
     }
 
@@ -462,12 +519,16 @@ export class CronScheduler {
     // intentRef threads through to registry.execute so it records a
     // resolution on completion.
     const intentRef = this.recordCronDecisionInLedger(jobId, job.agent, firedAt, {
-      agentId: job.agent, outcome: "dispatched", reason: isRetry ? `retry ${retryAttempt}` : null,
+      agentId: job.agent, outcome: "dispatched",
+      reason: fire ? "fired on demand" : isRetry ? `retry ${retryAttempt}` : null,
     })
 
     try {
       const response = await this.registry.execute({
-        message: withOutputCap(job.prompt, job.maxOutputTokens),
+        message: withOutputCap(
+          fire ? withEventPayload(job.prompt, fire.payload) : job.prompt,
+          job.maxOutputTokens,
+        ),
         agentId: job.agent,
         model: job.model,
         intentRef,
@@ -488,6 +549,7 @@ export class CronScheduler {
         duration: response.duration || Date.now() - startedAt.getTime(),
         isRetry,
         retryAttempt,
+        ...(fire ? { fired: true } : {}),
       }
 
       if (response.error) {
@@ -519,9 +581,9 @@ export class CronScheduler {
           await this.notifyDisabled(job)
         }
 
-        // Retry
+        // Retry — scheduled runs only; the caller of a fired run decides.
         this.logRun(result)
-        this.scheduleRetry(jobId, retryAttempt)
+        if (!fire) this.scheduleRetry(jobId, retryAttempt)
         return
       } else {
         // Success — reset error state
@@ -555,15 +617,15 @@ export class CronScheduler {
       this.log(`Job "${jobId}" threw: ${e.message}`)
 
       await this.notifyFailure(job, e.message)
-      this.scheduleRetry(jobId, retryAttempt)
+      if (!fire) this.scheduleRetry(jobId, retryAttempt)
       return
     }
 
     // Persist last run time
     this.saveLastRuns()
 
-    // Schedule next regular run
-    this.scheduleNext(jobId)
+    // Schedule next regular run. A fired run leaves the schedule alone.
+    if (!fire) this.scheduleNext(jobId)
   }
 
   // --- Missed run detection ---
@@ -772,12 +834,13 @@ function tail(text: string, lines: number): string {
 function runShell(
   command: string,
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve, reject) => {
     execFile(
       "/bin/sh",
       ["-c", command],
-      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, ...(env ? { env } : {}) },
       (err: any, stdout, stderr) => {
         if (err && err.killed) {
           reject(new Error(`command timed out after ${Math.round(timeoutMs / 1000)}s`))

@@ -57,6 +57,7 @@ import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -3050,6 +3051,20 @@ export class AgentXDaemon {
       }
 
       // Dynamic routes (before static switch)
+      // Fire one routine (cron job or workflow) now. Carries its own
+      // per-routine token auth — see routine-fire.ts.
+      const routineFire = req.method === "POST" && path.match(ROUTINE_FIRE_PATH)
+      if (routineFire) {
+        await handleRoutineFire(req, res, routineFire[1], {
+          cron: this.cron,
+          workflows: this.workflowDispatcher && this.workflowStore
+            ? { get: (id) => this.workflowStore!.get(id), dispatchWorkflow: (a) => this.workflowDispatcher!.dispatchWorkflow(a) }
+            : undefined,
+          meshTokens: collectAcceptedMeshTokens(this.config),
+          log: (m) => this.log(m),
+        })
+        return
+      }
       // n8n (or anything that can POST JSON) hands work to agentx here. We do
       // not reimplement n8n's connectors: it keeps the integrations, we keep
       // the agents, and this is the seam. Auth is the same mesh token every
