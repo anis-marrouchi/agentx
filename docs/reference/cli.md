@@ -1,6 +1,6 @@
 # CLI reference
 
-The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <command> --help` for flags and examples. The commands below are registered in the current CLI.
+The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <command> --help` for flags and examples. The commands below are registered in the current CLI. For every command and flag, with defaults, see the [CLI command reference](./cli-commands.md).
 
 | Job | Command |
 |---|---|
@@ -14,7 +14,7 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Schedule work | `agentx schedule "daily at 9am" --agent <id> --do "<task>"` |
 | Attach an editor session | `agentx attach <agent>` |
 | Open terminal UI | `agentx tui` |
-| Inspect usage | `agentx usage` |
+| Inspect usage | `agentx usage today`, `agentx usage report`, `agentx usage surfaces` ([understand costs](../help/costs.md)) |
 | Validate configuration | `agentx config check` |
 | Create a starter `agentx.json` without the browser | `agentx init` |
 | Issue API tokens for peers and integrations | `agentx token create`, `agentx token list`, `agentx token revoke` |
@@ -198,7 +198,7 @@ See [Tailscale pairing](../jobs/tailscale.md), [A2A communication](a2a.md), and 
 
 ## Find every command and flag
 
-`agentx --help` lists the primary commands and names the advanced groups. Hidden groups remain callable. Use `agentx <group> --help`, then `agentx <group> <command> --help` for exact arguments, options, and defaults from your installed version. This matters when your installation differs from the documentation checkout.
+The [CLI command reference](./cli-commands.md) lists every command, argument and flag, with defaults. `agentx --help` lists the primary commands and names the advanced groups. Hidden groups remain callable. Use `agentx <group> --help`, then `agentx <group> <command> --help` for exact arguments, options, and defaults from your installed version. This matters when your installation differs from the documentation checkout.
 
 ## Check it worked
 
