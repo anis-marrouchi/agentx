@@ -26,6 +26,15 @@ export type MeshAuthDecision =
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 
+/** Routes gated for every method, reads included. Agent memory is
+ *  injected into every future session of its agent, so an off-box write
+ *  is a persistent prompt injection and an off-box read can leak what an
+ *  agent noted down. Agents reach it with `curl localhost` from their own
+ *  Bash, which the loopback exemption keeps working. */
+export function isMeshGatedPath(path: string): boolean {
+  return path === "/api/memory" || path.startsWith("/api/memory/")
+}
+
 /** True when the socket peer is on this host. Used by loopback-only
  *  endpoints (e.g. the guard hook) that must never be reachable off-box. */
 export function isLoopback(remoteAddress: string): boolean {
