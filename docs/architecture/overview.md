@@ -67,4 +67,4 @@ You can follow one request through the parts above:
 ## If something is wrong
 
 - **The dashboard loads but nothing runs:** the dashboard and the daemon are separate programs. Run `agentx daemon status`, then follow [It's not answering](../help/its-not-answering.md).
-- **Work meant for another machine never arrives:** check the pairing with `agentx mesh health`. See [Add a second machine](../jobs/second-machine.md).
+- **Work meant for another machine never arrives:** check the pairing with `agentx mesh list` (each peer should show `healthy`). See [Add a second machine](../jobs/second-machine.md).

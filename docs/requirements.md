@@ -221,7 +221,7 @@ A2A (agent-to-agent) is how an agent on one machine hands work to an agent on an
 1. Install AgentX and configure a model on each machine that will run agents.
 2. Install Tailscale using the [official setup guide](https://tailscale.com/docs/install), and join your private network (Tailscale calls it a *tailnet*).
 3. Follow [AgentX's Tailscale guide](jobs/tailscale.md) to configure reachable addresses, pair peers, and load matching tokens.
-4. **Terminal:** run `agentx mesh health`.
+4. **Terminal:** run `agentx mesh list`. Each peer shows `healthy`.
 5. Send a small [task to the other machine](reference/a2a.md).
 
 **Ready when:** the remote agent answers. Tailscale is one private-network option; it is not required for a single-machine setup. The separate standalone A2A server needs its own provider runtime and authentication; it does not automatically use a configured daemon agent.
