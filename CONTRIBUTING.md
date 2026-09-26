@@ -169,7 +169,9 @@ pnpm docs:shots
 ```
 
 The demo uses scripted replies and fictional review fixtures. Its channels and
-schedules stay disabled. The capture script only accepts the isolated dashboard
+schedules stay disabled. The seed switches one schedule on for a single run and
+then off again, so it can take up to two minutes. The last shot, a running task
+on the Live tab, starts a scripted task that takes a minute. The capture script only accepts the isolated dashboard
 at `http://127.0.0.1:18931`. Set `CHROME_PATH` if your browser is elsewhere, or
 `DOCS_SHOTS=live,operations` to capture a subset. Stop the demo with Ctrl-C.
 
