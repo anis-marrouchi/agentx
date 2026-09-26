@@ -916,6 +916,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
   }
 
+  // "Restart when idle" on a node's header (Live page). The daemon holds the
+  // request and exits by itself once no task is running, so its service
+  // manager starts it again; it refuses when none would. Below the token and
+  // X-Requested-With checks on purpose: this stops a node.
+  //   POST /api/node/restart?node=<url>          { timeoutMinutes?, onTimeout? }
+  //   POST /api/node/restart/cancel?node=<url>
+  if (method === "POST" && (path === "/api/node/restart" || path === "/api/node/restart/cancel")) {
+    const nodeUrl = url.searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, path === "/api/node/restart" ? "/daemon/restart" : "/daemon/restart/cancel")
+    return
+  }
+
   // Read-through proxies for runs. The dashboard's local RunStore only
   // sees runs home-noded on THIS machine, but the user typically wants
   // the cross-fleet view: runs fired on peer-server when GitLab events
@@ -1448,6 +1461,10 @@ interface NodeLive {
   reachable: boolean
   error?: string
   uptimeSec?: number
+  /** Tasks a restart would cut off (GET /health; undefined on older nodes). */
+  inflight?: number
+  /** A "restart when idle" request the node is holding (GET /health). */
+  restart?: { state: "none" | "pending" | "restarting"; requestedAt?: string; deadline?: string }
   agents: Array<{
     id: string
     name: string
@@ -1567,6 +1584,8 @@ async function fetchDaemonAgents(
     if (healthRes && healthRes.ok) {
       const h: any = await healthRes.json()
       base.uptimeSec = h.uptime
+      if (typeof h.inflight?.total === "number") base.inflight = h.inflight.total
+      if (h.restart && typeof h.restart.state === "string") base.restart = h.restart
       base.name = h.node?.name || h.node?.id || url
       base.id = h.node?.id || url
       // /health already embeds today's usage rollup — reuse it so the

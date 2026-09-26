@@ -63,7 +63,10 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
-import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest } from "@/daemon/shutdown"
+import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest } from "@/daemon/shutdown"
+import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
+import { detectService, readRespawn } from "@/daemon/restart-host"
+import { handleRestartApi, RESTART_API_PATHS } from "@/daemon/restart-api"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -794,6 +797,7 @@ export class AgentXDaemon {
       }))
       await this.stop()
     }
+    this.requestShutdown = shutdown
     process.on("SIGINT", () => shutdown("SIGINT"))
     process.on("SIGTERM", () => shutdown("SIGTERM"))
   }
@@ -937,7 +941,43 @@ export class AgentXDaemon {
     } catch {}
 
     this.log(`  Shutdown complete (${Date.now() - start}ms)`)
-    process.exit(0)
+    process.exit(this.exitCode)
+  }
+
+  /** In-flight work the drain waits for: local agent tasks + mesh forwards. */
+  private inflightCounts(): { local: number; meshForwards: number; total: number } {
+    const local = this.registry.getActiveTaskCount()
+    const meshForwards = this.router.getActiveMeshForwardCount()
+    return { local, meshForwards, total: local + meshForwards }
+  }
+
+  /** Set by start(): the same graceful path a SIGTERM takes. */
+  private requestShutdown?: (signal: string) => Promise<void>
+  /** Exit code stop() ends with; a self-restart may need a non-zero one. */
+  private exitCode = 0
+  private selfRestartInfo?: { service: ServiceInfo; plan: SelfRestartPlan }
+  /** "Restart when idle" (dashboard button / POST /daemon/restart). */
+  private idleRestart = new IdleRestartScheduler({
+    inflight: () => this.inflightCounts().total,
+    fire: (reason, req) => {
+      const plan = this.restartService().plan
+      if (!plan.ok) { this.log(`  Restart when idle: cancelled — ${plan.reason}`); return }
+      this.exitCode = plan.exitCode
+      this.log(`  Restart when idle: ${reason === "idle" ? "no tasks running" : "waited long enough, restarting anyway"}; ${plan.how}`)
+      try {
+        writeShutdownRequest(resolve(process.cwd(), ".agentx"), { by: `restart-when-idle from ${req.requestedBy}`, pid: process.pid, at: new Date().toISOString() })
+      } catch { /* the log line above already says why */ }
+      void (this.requestShutdown ? this.requestShutdown("restart") : this.stop())
+    },
+  })
+
+  /** What runs this daemon, detected once (it can't change while it runs). */
+  private restartService(): { service: ServiceInfo; plan: SelfRestartPlan } {
+    if (!this.selfRestartInfo) {
+      const service = detectService(process.pid)
+      this.selfRestartInfo = { service, plan: planSelfRestart(service, service.kind === "none" ? null : readRespawn(service)) }
+    }
+    return this.selfRestartInfo
   }
 
   private midnightTimer?: ReturnType<typeof setTimeout>
@@ -3639,6 +3679,25 @@ export class AgentXDaemon {
         if (handled) return
       }
 
+      if (RESTART_API_PATHS.has(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : {}
+        const reply = handleRestartApi(req.method || "GET", path, body, {
+          scheduler: this.idleRestart,
+          inflight: () => this.inflightCounts(),
+          service: () => this.restartService(),
+          pid: process.pid,
+          cwd: process.cwd(),
+          configPath: this.configPath,
+        })
+        if (req.method === "POST" && reply.status < 300) {
+          const st = this.idleRestart.state()
+          this.log(`  Restart when idle: ${path.endsWith("/cancel") ? "cancelled" : `${st.state} (requested by ${st.requestedBy}, until ${st.deadline}, then ${st.onTimeout})`}`)
+        }
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       switch (`${req.method} ${path}`) {
         case "GET /health": {
           const ruleHealth = this.projectRules.health()
@@ -3655,6 +3714,11 @@ export class AgentXDaemon {
             deferredMesh: this.router.getDeferredMeshCounts(),
             projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
             usage: this.resolveTodayUsage(),
+            // What a restart would cut off, and whether one is waiting for
+            // that to reach zero (agentx daemon restart --when-idle, the
+            // dashboard's "Restart when idle").
+            inflight: this.inflightCounts(),
+            restart: (({ state, requestedAt, deadline }) => ({ state, requestedAt, deadline }))(this.idleRestart.state()),
           })
           break
         }
@@ -5170,6 +5234,9 @@ export class AgentXDaemon {
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
+              "GET  /daemon/restart  — in-flight count, service manager, pending restart",
+              "POST /daemon/restart  — restart when idle { timeoutMinutes?, onTimeout? }",
+              "POST /daemon/restart/cancel",
               "GET  /.well-known/agent-card.json",
               "GET  /call  — browser UI for P2P A/V calls (requires channels.webrtc.enabled)",
               "GET  /webrtc/config  — ICE servers + peer directory for the call page",

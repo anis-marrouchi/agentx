@@ -79,8 +79,10 @@ const LIVE_PAGE_CSS = `
 .ax-node > header {
   background: transparent; padding: 12px 16px;
   border-bottom: 1px solid var(--ax-border);
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
+.ax-node__restart { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.ax-node__tag--wait { color: var(--ax-warn, var(--ax-text-2)); border-color: currentColor; }
 .ax-node__name { font-weight: 600; font-size: 14px; }
 .ax-node__url { color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px; }
 .ax-node__tag {
@@ -430,7 +432,7 @@ function renderNode(node) {
   sec.innerHTML = '<header>' +
     '<span class="ax-node__name">' + escapeHtml(node.name) + '</span>' +
     '<span class="ax-node__url">' + escapeHtml(node.url) + '</span>' +
-    tag + '</header><div class="ax-grid--agents"></div>';
+    tag + restartHtml(node) + '</header><div class="ax-grid--agents"></div>';
   const g = sec.querySelector('.ax-grid--agents');
   if (!node.reachable || node.agents.length === 0) {
     const empty = document.createElement('div');
@@ -442,6 +444,43 @@ function renderNode(node) {
     for (const a of node.agents) g.appendChild(renderAgent(a, node));
   }
   return sec;
+}
+
+// "Restart when idle": the node restarts itself once no task is running.
+// Only nodes that report restart state (GET /health) offer it.
+function restartHtml(node) {
+  const r = node.restart;
+  if (!node.reachable || !r) return '';
+  const url = escapeHtml(node.url);
+  if (r.state === 'restarting') {
+    return '<span class="ax-node__restart"><span class="ax-node__tag ax-node__tag--wait" role="status">restarting…</span></span>';
+  }
+  if (r.state === 'pending') {
+    const running = typeof node.inflight === 'number' ? node.inflight + ' running' : 'waiting';
+    const until = r.deadline ? ' · until ' + new Date(r.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    return '<span class="ax-node__restart">' +
+      '<span class="ax-node__tag ax-node__tag--wait" role="status" title="Restarts as soon as no task is running">restart pending · ' + escapeHtml(running + until) + '</span>' +
+      '<button type="button" class="ax-task-action" data-action="node-restart-cancel" data-node-url="' + url + '">Cancel restart</button>' +
+    '</span>';
+  }
+  return '<span class="ax-node__restart"><button type="button" class="ax-task-action" data-action="node-restart" data-node-url="' + url + '" data-node-name="' + escapeHtml(node.name) + '" title="Restart this node as soon as no task is running">Restart when idle</button></span>';
+}
+
+function nodeRestart(el, cancel) {
+  const nodeUrl = el.dataset.nodeUrl || '';
+  if (!cancel && !confirm('Restart ' + (el.dataset.nodeName || nodeUrl) + ' once no task is running? It waits up to 30 minutes, then restarts anyway.')) return;
+  el.disabled = true;
+  fetch('/api/node/restart' + (cancel ? '/cancel' : '') + '?node=' + encodeURIComponent(nodeUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'agentx-board' },
+    body: '{}',
+  })
+    .then(async function (r) {
+      const body = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+      el.textContent = cancel ? 'Cancelled' : 'Restart pending';
+    })
+    .catch(function (err) { el.disabled = false; alert((cancel ? 'Cancel' : 'Restart') + ' failed: ' + (err && err.message || err)); });
 }
 
 // The live lesson on this node's screen, when it is this agent's.
@@ -696,6 +735,10 @@ document.getElementById('grid').addEventListener('click', (e) => {
     const action = actionEl.dataset.action;
     const taskId = actionEl.dataset.taskId;
     const nodeUrl = actionEl.dataset.nodeUrl || '';
+    if (action === 'node-restart' || action === 'node-restart-cancel') {
+      nodeRestart(actionEl, action === 'node-restart-cancel');
+      return;
+    }
     if (action === 'voice-stop') {
       actionEl.disabled = true;
       fetch('/api/voice/stop?node=' + encodeURIComponent(nodeUrl), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
