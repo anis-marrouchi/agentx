@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.45.0](https://github.com/anis-marrouchi/agentx/compare/v0.44.1...v0.45.0) (2026-09-26)
+
+
+### Features
+
+* **memory:** versions, conditional writes and verified authors ([#106](https://github.com/anis-marrouchi/agentx/issues/106)) ([ac0a1e8](https://github.com/anis-marrouchi/agentx/commit/ac0a1e80951c979dfa79baa7c25c7f85a343b021))
+
+
+### Bug Fixes
+
+* **crons:** follow-ups from the [#85](https://github.com/anis-marrouchi/agentx/issues/85) review — attached-session result and docs ([01bc869](https://github.com/anis-marrouchi/agentx/commit/01bc86906bd25db21faed8955ef2218821777073))
+* **mac-helper:** use the current AgentX symbol for the helper icon ([ecf0b80](https://github.com/anis-marrouchi/agentx/commit/ecf0b8042af8b54a6d66f76c11c6f03d2f6d84df))
+* **mac-helper:** use the current AgentX symbol for the helper icon ([d527d9c](https://github.com/anis-marrouchi/agentx/commit/d527d9cbc7b05e33310438f5c5a14154152c12cd))
+
 ## [0.44.1](https://github.com/anis-marrouchi/agentx/compare/v0.44.0...v0.44.1) (2026-09-26)
 
 
