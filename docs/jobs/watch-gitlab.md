@@ -24,7 +24,7 @@ Start with a test project. Give AgentX the smallest access that lets it do the j
 6. Leave **Webhook listen port** at `18810` unless that port is taken.
 7. Select **Connect**.
 
-<!-- Screenshot needed: Settings › Channels › GitLab form. Not defined in docs/.scripts/capture.mjs yet. -->
+![Settings › Channels › GitLab, with Host, Admin token env-var set to GITLAB_TOKEN, and Webhook listen port](/screenshots/channels/gitlab.png)
 
 GitLab sends events to that port on the AgentX machine, not to the dashboard. GitLab must be able to reach it, for example over a private network (see [Tailscale setup](tailscale.md)). Don't open it to the whole internet without a secret (step 3.6 below).
 
@@ -42,7 +42,7 @@ If your team names its GitLab bot accounts with a common prefix, for example `te
 6. Optional: under **Secret token**, enter a long random value. Then, in AgentX, add `"webhookSecret": "<the same value>"` to `channels.gitlab` in **Settings › Advanced**, and select **Save**. AgentX then refuses events without it.
 7. Select **Add webhook**.
 
-<!-- Screenshot needed: GitLab project Settings › Webhooks form. Not defined in docs/.scripts/capture.mjs yet (external app). -->
+<!-- Screenshot needed: GitLab project Settings › Webhooks form (external app). Needs a manual capture outside the docs demo. -->
 
 ## Check it worked
 

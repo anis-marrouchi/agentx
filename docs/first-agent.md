@@ -21,7 +21,7 @@ No model yet? The scripted [demo](./see-it-first.md) lets you look around withou
 10. If you chose **Anthropic API (BYO key)**, paste your key into **API key** under **Anthropic API key**. It's saved in the `.env` file next to `agentx.json`, not in the dashboard.
 11. Select **Save and continue**.
 
-<!-- Screenshot needed: the /setup page filled in. Not defined in docs/.scripts/capture.mjs yet. -->
+![The setup page filled in for a Support agent that uses the Anthropic API engine](/screenshots/setup/filled.png)
 
 ## Start or restart the daemon
 

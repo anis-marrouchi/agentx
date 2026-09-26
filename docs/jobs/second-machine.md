@@ -23,7 +23,7 @@ Joining adds the first machine to the second machine's peer list. For each machi
 
 Don't make the daemon reachable from the public internet just to get pairing working. Use a private network between the machines.
 
-<!-- Screenshot needed: Operations tab showing two paired machines. Not defined in docs/.scripts/capture.mjs yet (the existing operations.png shows the three-node demo). -->
+![The Nodes section of the Operations tab, listing each paired machine as online (three demo machines here)](/screenshots/operations/nodes.png)
 
 ## Check it worked
 

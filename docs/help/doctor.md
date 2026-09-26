@@ -51,7 +51,7 @@ The same checks are on the dashboard.
 1. **Browser:** open `/admin/health` on your dashboard (for example `http://127.0.0.1:4202/admin/health`).
 2. Select the **Doctor** tab.
 
-<!-- Screenshot needed: the Doctor tab of the Health page (/admin/health). Not defined in docs/.scripts/capture.mjs yet. -->
+![The Doctor tab of the Health page, with the Re-run checks button and the first group of checks](/screenshots/doctor/tab.png)
 
 ## Check it worked
 

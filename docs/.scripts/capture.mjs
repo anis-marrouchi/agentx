@@ -48,6 +48,33 @@ const shots = [
   { name: "editor-chat-closed", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill" },
   { name: "editor-chat-reply", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill", steps: askSteps },
   { name: "editor-canvas", path: "/workflows/editor?id=demo-report", wait: ".ax-chat__pill", steps: [...askSteps, { click: ".ax-chat__applybtn" }, { click: 'button[title="Collapse"]' }] },
+  { name: "activity/map", path: "/activity", wait: ".ac-row", steps: [{ clickText: "Map" }, { wait: ".subbar__lbl" }] },
+  { name: "chat/panel", path: "/monitor", wait: "#you .bf-act", steps: [{ click: "#ax-as-handle" }, { type: "#ax-as-bar-input", text: "Summarize what needs my attention on this page." }, { click: "#ax-as-bar-send" }, { wait: ".ax-as__msg--them.ax-as__md" }] },
+  { name: "operations/schedule-drawer", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-runs .mx-item" }, { click: "#mx-runs .mx-item" }, { wait: "#mx-drawer.is-open" }] },
+  { name: "operations/nodes", path: "/mesh", wait: "#mx-tab-ops", steps: [{ click: "#mx-tab-ops" }, { wait: "#mx-nodes .ax-row-card, #mx-nodes > *" }, { scroll: "#mx-nodes-title" }] },
+  { name: "settings/webhooks", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { scroll: "#tab-webhooks" }] },
+  { name: "settings/webhook-routing", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="webhooks"]' }, { click: "#tab-webhooks details summary" }, { scroll: "#tab-webhooks details" }] },
+  { name: "settings/mesh", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="mesh"]' }, { scroll: "#tab-mesh" }] },
+  { name: "settings/mesh-cadence", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="mesh"]' }, { click: "#tab-mesh details.add-form summary" }, { scroll: "#tab-mesh details.add-form" }] },
+  { name: "settings/boards", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="boards-cfg"]' }, { wait: "#tab-boards-cfg details.add-form" }, { click: "#tab-boards-cfg details.add-form summary" }, { scroll: "#tab-boards-cfg" }] },
+  { name: "settings/actions", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="actions"]' }, { wait: "#tab-actions details:not(.add-form)" }, { click: "#tab-actions details:not(.add-form) summary" }, { type: "#tab-actions details:not(.add-form) input", text: "the team" }, { click: "#tab-actions details:not(.add-form) button.primary" }, { wait: "#tab-actions [data-ac-msg].ok" }, { scroll: "#tab-actions" }] },
+  { name: "settings/advanced-tree", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="advanced"]' }, { wait: ".ax-jv-line" }, { click: "#jv-collapse-all" }, { click: ".ax-jv-toggle" }, { click: '.ax-jv-line[data-path="agents"] .ax-jv-toggle' }, { click: '.ax-jv-line[data-path="agents.cx"] .ax-jv-toggle' }, { scroll: "#tab-advanced" }] },
+  { name: "channels/gitlab", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }, { clickText: "GitLab", within: "#ch-devtools .ax-connector" }, { wait: "#gl-env" }, { type: "#gl-env", text: "GITLAB_TOKEN" }, { scroll: "#ch-gitlab" }] },
+  { name: "agents/personality", path: "/admin/agents/cx", wait: "#f-triggers .ax-trig-pill", steps: [{ click: 'a[data-tab="identity"]' }] },
+  { name: "setup/filled", path: "/setup", wait: "#wizard", steps: [
+    { fill: '[name="agentName"]', text: "Support" }, { fill: '[name="agentId"]', text: "support" },
+    { fill: '[name="triggerWords"]', text: "@support, support" }, { select: '[name="tier"]', value: "sdk" },
+    { fill: '[name="personality"]', text: "Answer questions about our opening hours and returns policy. Keep replies short." },
+    { scroll: '[name="agentName"]' },
+  ] },
+  { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
+  { name: "costs/page", path: "/admin/cost", wait: "body" },
+  // Only the first check group: the others describe this machine's desktop
+  // app and home folder, which a screenshot must not publish.
+  { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
+  { name: "health/routing", path: "/admin/health", wait: '[data-tab="routing"]', steps: [{ click: '[data-tab="routing"]' }] },
+  // Last: the scripted reply takes a minute, so later shots would show it running.
+  { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
 ]
 
 function client(ws) {
@@ -103,7 +130,7 @@ try {
   await cdp("Runtime.enable")
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
   await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }, { name: "prefers-reduced-motion", value: "reduce" }] })
-  await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ax-theme', 'light') } catch {}" })
+  await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ax-theme', 'light'); localStorage.removeItem('ax-assistant-open'); localStorage.removeItem('ax-assistant-thread') } catch {}" })
   mkdirSync(out, { recursive: true })
   const requested = process.env.DOCS_SHOTS?.split(",")
   const selected = requested ? shots.filter(s => requested.includes(s.name)) : shots
@@ -116,12 +143,21 @@ try {
     for (const step of shot.steps || []) {
       if (step.wait) await wait(step.wait)
       if (step.click) { await wait(step.click); await evaluate(`document.querySelector(${JSON.stringify(step.click)}).click()`) }
-      if (step.clickText) await evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(step.clickText)}); if (!b) throw Error('Button missing'); b.click() })()`)
+      if (step.clickText) await evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(step.within || "button")})].find(e => e.textContent.trim() === ${JSON.stringify(step.clickText)} || (${JSON.stringify(!!step.within)} && e.textContent.includes(${JSON.stringify(step.clickText)}))); if (!b) throw Error('Button missing'); b.click() })()`)
       if (step.type) {
         await wait(step.type)
         await evaluate(`document.querySelector(${JSON.stringify(step.type)}).focus()`)
         await cdp("Input.insertText", { text: step.text })
       }
+      // Replace a prefilled value the way typing over a selection would.
+      if (step.fill) {
+        await wait(step.fill)
+        await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(step.fill)}); e.focus(); e.select() })()`)
+        await cdp("Input.insertText", { text: step.text })
+      }
+      if (step.select) await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(step.select)}); e.value = ${JSON.stringify(step.value)}; e.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+      // Start a real scripted task on the demo daemon without waiting for it.
+      if (step.task) fetch("http://127.0.0.1:18921/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.task) }).catch(() => {})
       if (step.scroll) await evaluate(`window.scrollTo(0, document.querySelector(${JSON.stringify(step.scroll)}).getBoundingClientRect().top + window.scrollY - 110)`)
       await sleep(300)
     }
@@ -131,6 +167,11 @@ try {
     if (shot.full) {
       const { cssContentSize } = await cdp("Page.getLayoutMetrics")
       params.clip = { x: 0, y: 0, width: 1440, height: Math.min(cssContentSize.height, 3600), scale: 1 }
+    }
+    if (shot.clipBefore) {
+      await evaluate("window.scrollTo(0, 0)")
+      const top = await evaluate(`document.querySelector(${JSON.stringify(shot.clipBefore)}).getBoundingClientRect().top`)
+      params.clip = { x: 0, y: 0, width: 1440, height: Math.min(Math.floor(top) - 8, 900), scale: 1 }
     }
     const screenshot = await cdp("Page.captureScreenshot", params)
     const file = resolve(out, `${shot.name}.png`)

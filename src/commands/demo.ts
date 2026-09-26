@@ -236,6 +236,9 @@ export const demo = new Command()
     delete baseEnv.ANTHROPIC_API_KEY_OLD
     delete baseEnv.OPENAI_API_KEY
     delete baseEnv.DEEPSEEK_API_KEY
+    // The ledger is off by default. The demo promises ledger rows for every
+    // hop, and the Activity map is drawn from them, so record in shadow mode.
+    baseEnv.INTENT_LEDGER_MODE ||= "shadow"
 
     try {
       for (const spec of specs) {

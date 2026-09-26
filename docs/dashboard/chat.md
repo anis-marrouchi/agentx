@@ -16,7 +16,7 @@ Every dashboard page has two ways in: the input bar at the bottom (**Ask an agen
 6. Select **Ask**.
 7. Read the reply in the panel. Type again to continue the conversation.
 
-<!-- Screenshot needed: the open Ask an agent panel with its Agent and Node lists and a reply. Not defined in docs/.scripts/capture.mjs yet. -->
+![The open Ask an agent panel on the Monitor page, with the Agent and Node lists, a question and the agent's reply](/screenshots/chat/panel.png)
 
 The question carries the page you're on and its tab. Some pages also send their current filters, counts or the rows in view. The agent doesn't see a picture of the page and can't browse on its own. It works with its usual tools, so if you ask it to *do* something, it really does it.
 

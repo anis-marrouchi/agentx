@@ -22,7 +22,7 @@ When an agent is idle, its card shows its **last reply**. Select **history →**
 
 If the agent is running an on-screen lesson through the [desktop assistant](./voice.md), the card shows **on screen** with the step number. Select **✕ stop** on that line to end the lesson and give the screen back.
 
-<!-- Screenshot needed: a Live agent card with a running task and its ✎ update / ✕ stop buttons. Not defined in docs/.scripts/capture.mjs yet. -->
+![A Live agent card with a running task and its ✎ update and ✕ stop buttons](/screenshots/live/running-task.png)
 
 ## Check it worked
 

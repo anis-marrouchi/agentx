@@ -25,7 +25,7 @@ You need a Mac with Apple Silicon and macOS 14 or newer, a running daemon (the A
 5. **Mac:** when the helper asks, allow **Accessibility** and **Screen Recording** in System Settings › Privacy & Security.
 6. Hold **Option–Space**, say a question, then release.
 
-<!-- Screenshot needed: the desktop widget with a spoken answer, and the macOS permission prompts. Not capturable from the docs demo (native macOS app). -->
+<!-- Screenshot needed: the desktop widget with a spoken answer, and the macOS permission prompts (native macOS app). Needs a manual capture outside the docs demo. -->
 
 From a source checkout, run `pnpm build` once and replace `agentx` with `node dist/cli.js`. To change the agent later, run the install again with another `--agent`.
 
@@ -79,7 +79,7 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 3. Download a Premium or Enhanced voice (for example Ava, Zoe or Evan).
 4. **Terminal:** run `agentx voice list`. The new voice is listed. (AgentX also notices it on its own within ten minutes.)
 
-<!-- Screenshot needed: System Settings › Accessibility › Spoken Content › Manage Voices. Not capturable from the docs demo. -->
+<!-- Screenshot needed: System Settings › Accessibility › Spoken Content › Manage Voices. Needs a manual capture outside the docs demo. -->
 
 **Siri voices.** `say -v` cannot use the Siri voices, but `say` without a voice follows the Spoken Content System Voice. So an agent set to `siri:<name>` (listed as `siri:aaron`, `siri:marie`… by `agentx voice list`) speaks each line by switching the System Voice to that Siri voice, speaking, and switching your own choice straight back. Every line that uses the OS default voice, from the daemon and from AgentX Voice, goes through one script (`~/.agentx/voice/siri-say.sh`, written by the daemon) that holds a lock, so two agents never switch it at once; lines wait their turn. If a speaker is killed mid-line, the next line restores your choice first. On a Mac every system-voice line goes through that script, Siri or not: it reads the text before taking the lock (a caller that never closes stdin gives up after 5 s without blocking anyone), stops a line that runs past its length's worth of speech (5 s plus 0.6 s a word, at most 5 minutes), and drops a line that waited more than 30 s rather than play it late. Siri voices are never assigned automatically, only when named. A per-language list works as usual (`"system": { "en": "siri:aaron", "fr": "siri:marie" }`). If the Siri voice is not downloaded, the system voice of the same name speaks instead (`siri:daniel` → Daniel), else the next choice. Download Siri voices in Spoken Content → System Voice → Manage Voices.
 
@@ -143,7 +143,7 @@ During a talk, the agents only talk. They can't run tools, change files or send 
 3. Listen. Each line is spoken in that agent's voice and also printed in the terminal.
 4. Wait for the end. The talk ends on its own when the agents agree the topic is settled, or after 10 lines. At the end, the terminal prints how long the pauses between speakers were.
 
-<!-- Screenshot needed: a terminal showing an agentx talk transcript with two agents and the closing pause summary. -->
+<!-- Screenshot needed: a terminal showing an agentx talk transcript with two agents and the closing pause summary (terminal only). Needs a manual capture outside the docs demo. -->
 
 Either agent can live on another AgentX computer in your mesh (the group of AgentX computers that know each other); its voice still plays on this computer. Only one talk or lesson runs at a time.
 
@@ -183,7 +183,7 @@ Or use the menu instead:
 1. **Mac:** right-click the widget.
 2. **Mac:** choose **Stop speaking**.
 
-<!-- Screenshot needed: the desktop widget's right-click menu with Stop speaking. Not capturable from the docs demo (native macOS app). -->
+<!-- Screenshot needed: the desktop widget's right-click menu with Stop speaking (native macOS app). Needs a manual capture outside the docs demo. -->
 
 Holding **Option–Space** also silences everything before the widget starts listening. To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
 
@@ -247,7 +247,7 @@ An agent can appear on your screen as its own pointer: an arrow in its colour, w
 
 The pointer appears during lessons (see [Live lessons](#live-lessons)), and after a spoken answer when [presence mode](#presence-mode) is on.
 
-<!-- Screenshot needed: an agent's on-screen pointer with its initial, name and speech bubble next to a control. Not capturable from the docs demo (native macOS app). -->
+<!-- Screenshot needed: an agent's on-screen pointer with its initial, name and speech bubble next to a control (native macOS app). Needs a manual capture outside the docs demo. -->
 
 To change how an agent's pointer looks:
 
@@ -319,7 +319,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
    ```
 2. **Mac:** follow the spoken steps in the app. The terminal prints each step as it happens.
 
-<!-- Screenshot needed: a live lesson in progress, with the agent's pointer outlining a control and the step printed in the terminal. Not capturable from the docs demo (native macOS app). -->
+<!-- Screenshot needed: a live lesson in progress, with the agent's pointer outlining a control and the step printed in the terminal (native macOS app). Needs a manual capture outside the docs demo. -->
 
 | Option | What it does |
 |---|---|
@@ -345,7 +345,7 @@ Pressing **Command–Option–.** also ends a lesson. In the terminal where it r
 2. Find the agent's card. A running lesson shows **on screen**, the mode, the step number and what the agent is saying.
 3. To end it, select **✕ stop** on that line.
 
-<!-- Screenshot needed: the Live tab with an agent card showing an on-screen lesson and its ✕ stop button. -->
+<!-- Screenshot needed: the Live tab with an agent card showing an on-screen lesson and its ✕ stop button. A lesson only runs through the desktop assistant on a Mac, so the demo can't show one. Needs a manual capture outside the docs demo. -->
 
 ## For automations (Siri, Shortcuts, scripts)
 

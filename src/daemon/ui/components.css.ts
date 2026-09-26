@@ -745,7 +745,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   cursor: pointer; user-select: none; text-align: center;
   font-size: 9px; line-height: 1.75;
 }
-.ax-jv-toggle.empty { cursor: default; }
+/* Settings also styles a bare .empty as an empty-state box; a leaf's
+ * toggle must stay a plain 12px spacer. */
+.ax-jv-toggle.empty {
+  cursor: default; padding: 0; border: 0; border-radius: 0;
+  font-size: 9px; font-style: normal; text-align: center;
+}
 .ax-jv-key { color: var(--ax-info); margin-right: 0; }
 .ax-jv-punc { color: var(--ax-muted); }
 .ax-jv-string { color: var(--ax-accent); }

@@ -24,7 +24,7 @@ Without `--agent`, the first agent the daemon lists is used. From a source check
 
 AgentX passes OpenCode its settings for this one session only (it starts `opencode --standalone`). Your saved OpenCode settings are not changed.
 
-<!-- No screenshot: terminal-only page. Screenshot needed later: OpenCode showing an AgentX agent as its model. Not defined in docs/.scripts/capture.mjs yet. -->
+<!-- No screenshot: terminal-only page. Screenshot needed: OpenCode showing an AgentX agent as its model. Needs a manual capture outside the docs demo. -->
 
 ## If OpenCode is missing: the built-in terminal UI
 
