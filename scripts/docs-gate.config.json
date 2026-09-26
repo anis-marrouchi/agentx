@@ -87,8 +87,8 @@
     "minUnnumberedSteps": 2,
     "forbidden": [
       { "pattern": "noqta\\.(tn|com|io)", "why": "a real company host; use example.com" },
-      { "pattern": "/Users/[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
-      { "pattern": "/home/[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
+      { "pattern": "/Users/(?!you/)[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
+      { "pattern": "/home/(?!you/)[a-z][\\w.-]*/", "why": "personal home path; use ~/" },
       { "pattern": "\\bghp_[A-Za-z0-9]{20,}", "why": "looks like a GitHub token" },
       { "pattern": "\\bglpat-[A-Za-z0-9_-]{20,}", "why": "looks like a GitLab token" },
       { "pattern": "\\bsk-ant-[A-Za-z0-9_-]{10,}", "why": "looks like an Anthropic key" },

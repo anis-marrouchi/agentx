@@ -246,6 +246,10 @@ describe("checkPage", () => {
     const errors = check(`# P\n\n\`\`\`sh\ncd /Users/someone/project\n\`\`\`\n${GOOD_ENDING}`)
     expect(errors).toEqual([expect.objectContaining({ line: 4, kind: "content" })])
   })
+
+  it("allows the /Users/you/ and /home/you/ placeholders", () => {
+    expect(check(`# P\n\nType \`/Users/you/a.png\` or \`/home/you/a.png\`.\n${GOOD_ENDING}`)).toEqual([])
+  })
 })
 
 describe("applyBaseline", () => {
