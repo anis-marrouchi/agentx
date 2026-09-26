@@ -94,6 +94,19 @@ agentx attach as coder-agent
 
 Start with the [visual workflow guide](../tutorials/first-workflow.md) before enabling a live automation.
 
+## Approvals
+
+One list of every decision waiting for you: [Approvals](../dashboard/approvals.md).
+
+| Command | What it does |
+|---|---|
+| `agentx approvals list [--all] [--json]` | What is waiting, most urgent first; `--all` includes items put off |
+| `agentx approvals approve <key> [--note] [--force]` | Say yes; `--force` approves a wiki lesson whose article changed since |
+| `agentx approvals reject <key> [--note]` | Say no |
+| `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
+| `agentx approvals request --agent … --title … --ask … --recommend … --if-silent …` | Raise a decision card yourself, for example to test |
+| `agentx approvals settings [options]` | Show or change expiry, "later" and the daily digest |
+
 ## Agent memory
 
 How to use these, step by step: [Review what your agents learn](../jobs/agent-memory.md).

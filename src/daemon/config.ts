@@ -846,6 +846,35 @@ const screenSchema = z.object({
   }).default({}),
 }).default({})
 
+/** The Approvals inbox (src/approvals). Decision cards agents raise, and
+ *  when the operator hears about what is waiting. */
+export const approvalsConfigSchema = z.object({
+  /** A card without an `expires` gets this many days. */
+  defaultExpiryDays: z.number().positive().max(365).default(3),
+  /** No card waits longer than this, whatever the agent asked for. */
+  maxExpiryDays: z.number().positive().max(365).default(30),
+  /** How long "later" hides an item. */
+  laterHours: z.number().positive().max(24 * 30).default(24),
+  /** Tell the agent that raised a card when it is decided or expires. */
+  notifyAgent: z.boolean().default(true),
+  /** At most one message a day: how many are waiting, and the most urgent. */
+  digest: z.object({
+    enabled: z.boolean().default(true),
+    /** Local time, 24-hour HH:MM. */
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour").default("09:00"),
+    /** IANA timezone for `time`. Unset: this machine's. */
+    timezone: z.string().refine((tz) => {
+      try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
+    }, "unknown timezone").optional(),
+    /** Where it goes. Unset: notifications.destination. */
+    destination: z.object({
+      channel: z.string(),
+      chatId: z.string(),
+      accountId: z.string().optional(),
+    }).optional(),
+  }).default({}),
+}).default({})
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -860,6 +889,7 @@ export const daemonConfigSchema = z.object({
   crons: z.record(z.string(), cronJobSchema).default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
+  approvals: approvalsConfigSchema,
   /** What happens to runs a restart cuts off (agents/resume). Chat messages
    *  are resumed in their chat; scheduled jobs never are (the next run
    *  covers them); everything else is reported unless its channel is in

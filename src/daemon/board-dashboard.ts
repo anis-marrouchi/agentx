@@ -16,6 +16,7 @@ import { SORTABLE_JS } from "./vendor/sortable"
 import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
+import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
@@ -141,6 +142,7 @@ const DASHBOARD_PAGES = new Set([
   "/setup",
   "/admin",
   "/admin/graph",
+  "/approvals",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
@@ -433,6 +435,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     handleAdminGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
     return
   }
+  // /approvals — one inbox for every decision waiting for the operator.
+  if (method === "GET" && path === "/approvals") {
+    handleApprovalsPageGet(res, buildTopbarPeers(ctx.config), ctx.token)
+    return
+  }
   // /admin/graph — Intent Knowledge Graph: pending approvals + taxonomy editor.
   if (method === "GET" && path === "/admin/graph") {
     handleGraphGet(req, res, buildTopbarPeers(ctx.config), ctx.token)
@@ -634,6 +641,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
   }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
+    return
+  }
+  if (path.startsWith("/api/admin/approvals")) {
+    await handleApprovalsPanelApi(req, res, path, url)
     return
   }
   if (path.startsWith("/api/admin/graph/")) {

@@ -529,6 +529,31 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_approval",
+    description:
+      "Ask the operator for a yes/no decision by raising a decision card in their Approvals inbox, instead of asking in chat. " +
+      "Lead with your recommendation. Every card expires: say what should happen if nobody answers (if_silent). " +
+      "You get a message with the result when it is decided or expires. You cannot approve anything with this tool. " +
+      "Actions: create (default), status. " +
+      "Example: {title:'Publish the launch post draft', ask:'Publish the draft on Monday?', recommend:'Yes: it is reviewed and the date is agreed', if_silent:'discard', expires:'2d', source:'https://example.com/drafts/42'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["create", "status"], description: "create (default) or status." },
+        title: { type: "string", description: "create: what it is, in one line (max 120 characters)." },
+        ask: { type: "string", description: "create: the yes/no question (max 300 characters)." },
+        recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters)." },
+        if_silent: { type: "string", enum: ["discard", "keep", "pause", "approve"], description: "create: what applies if nobody answers before it expires." },
+        expires: { type: "string", description: "create: when the default applies. ISO date/time, or relative like '12h' or '3d'. Default: the node's setting (3 days)." },
+        source: { type: "string", description: "create: link to the draft, PR or issue." },
+        id: { type: "string", description: "status: the card id you got from create." },
+        channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
+        chatId: { type: "string", description: "Current chat id, from your task context." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_debug",
     description:
       "Toggle debug mode on the daemon. Enable verbose logging for specific categories (webhook, agent, channel, cron, mesh, context, memory, all) or disable it.",
@@ -1116,6 +1141,12 @@ async function handleToolCall(
           }
         },
       })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_approval": {
+      const { runApprovalTool } = await import("@/approvals/tool")
+      const text = await runApprovalTool(args, { daemonUrl: daemonUrl() })
       return { content: [{ type: "text", text }] }
     }
 

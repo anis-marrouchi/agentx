@@ -41,6 +41,8 @@ You get a message with the job's timing, the next time it would run, the agent, 
 
 The change takes effect straight away; no restart needed.
 
+You can also answer from the **Approvals** tab in the dashboard, or with `agentx approvals list`, where requests from agents, memory and the wiki wait together. See [Approvals](../dashboard/approvals.md).
+
 A request that isn't approved never runs, even if something else switches it on. Only `approve` releases it.
 
 ## What the agent can do

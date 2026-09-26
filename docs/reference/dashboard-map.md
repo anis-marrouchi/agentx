@@ -1,12 +1,13 @@
 # Dashboard map
 
-The six top-level tabs are **Live**, **Operations**, **Monitor**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question; the dashboard also has deeper routes for administration and troubleshooting.
+The seven top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question; the dashboard also has deeper routes for administration and troubleshooting.
 
 | Need | Where to go |
 |---|---|
 | See current agent work | `/live` |
 | See nodes and peer work | `/mesh` |
 | See what needs a person | `/monitor` |
+| Answer what agents ask you | `/approvals` |
 | Investigate past work | `/activity` |
 | Edit an automation | `/workflows` |
 | Configure agents and channels | `/admin` |

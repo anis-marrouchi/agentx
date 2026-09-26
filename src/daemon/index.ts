@@ -42,6 +42,8 @@ import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { handleApprovalsApi } from "@/approvals/daemon-api"
+import { runApprovalsSweep } from "@/approvals/sweep"
 import { recordBoot } from "@/agents/resume/note"
 import {
   listPublishedInboxes, validateRelayRequest, renderRelayMessage,
@@ -647,6 +649,7 @@ export class AgentXDaemon {
     // those rows. (The previous behavior only ever scheduled tomorrow's
     // midnight run; any restart before midnight lost that day's row.)
     this.scheduleMidnightHook()
+    this.startApprovalsSweep()
     try {
       const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
       const appended = this.registry.getTokenTracker().catchUpTokenCosts(yesterday)
@@ -922,6 +925,7 @@ export class AgentXDaemon {
     }
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
+    if (this.approvalsTimer) clearInterval(this.approvalsTimer)
 
     if (this.reloadTimer) clearTimeout(this.reloadTimer)
     if (this.configWatcher) {
@@ -1391,6 +1395,46 @@ export class AgentXDaemon {
     }
 
     return { applied, restartRequired }
+  }
+
+  private approvalsTimer?: ReturnType<typeof setInterval>
+  private approvalsSweeping = false
+
+  /** Every minute: expire decision cards, tell agents their results, and
+   *  send the day's digest when due (src/approvals/sweep.ts). */
+  private startApprovalsSweep(): void {
+    const tick = async () => {
+      if (this.approvalsSweeping || this.shuttingDown) return
+      this.approvalsSweeping = true
+      try {
+        const dest = this.config.notifications?.destination
+        await runApprovalsSweep({
+          ctx: { root: process.cwd() },
+          settings: this.config.approvals,
+          fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          // A short turn on the agent that raised the card, so it can act on
+          // the result. Fire and forget: the sweep never waits on a model.
+          tellAgent: async (agentId, text, card) => {
+            void this.registry.execute({
+              agentId,
+              message: text,
+              context: { channel: "approvals", chatId: card.id, sender: "operator" },
+            }).catch((e: any) => this.log(`[approvals] ${card.id}: turn on ${agentId} failed: ${e?.message ?? e}`))
+          },
+          sendDigest: async (d, text) => {
+            await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text })
+          },
+          log: this.log,
+        })
+      } catch (e: any) {
+        this.log(`[approvals] sweep failed: ${e?.message ?? e}`)
+      } finally {
+        this.approvalsSweeping = false
+      }
+    }
+    this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
+    this.approvalsTimer.unref?.()
   }
 
   private scheduleMidnightHook(): void {
@@ -2435,6 +2479,20 @@ export class AgentXDaemon {
           return
         }
         this.json(res, 405, { error: "Method not allowed" }); return
+      }
+
+      // Approvals inbox, agent side: raise a card, read the inbox. Deciding
+      // is refused here (operator surfaces only). Gated like agent memory
+      // by isMeshGatedPath above.
+      if (path === "/approvals" || path.startsWith("/approvals/")) {
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleApprovalsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
+          ctx: { root: process.cwd() },
+          settings: this.config.approvals,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+        })
+        this.json(res, reply.status, reply.body)
+        return
       }
 
       // Destructive-action guard (PreToolUse hook). Loopback ONLY: the hook
