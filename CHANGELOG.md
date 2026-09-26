@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.43.0](https://github.com/anis-marrouchi/agentx/compare/v0.42.0...v0.43.0) (2026-09-26)
+
+
+### Features
+
+* **teach:** draw mode paints paths, palettes and ambitious pieces ([032dd03](https://github.com/anis-marrouchi/agentx/commit/032dd033aaaa9abaf4ebf6a91bf07555ec296f8a))
+* **teach:** draw mode paints paths, palettes and ambitious pieces ([6f1c7f5](https://github.com/anis-marrouchi/agentx/commit/6f1c7f56c7207d95af680c2d2d108a8eb3cc2e0f))
+
+
+### Bug Fixes
+
+* **workflows:** owner sweep wakes the agent only on a steps verdict ([#71](https://github.com/anis-marrouchi/agentx/issues/71)) ([c6f318a](https://github.com/anis-marrouchi/agentx/commit/c6f318a6b8a98da9883454e0bcfea0b885cb3831))
+
 ## [0.42.0](https://github.com/anis-marrouchi/agentx/compare/v0.41.0...v0.42.0) (2026-09-25)
 
 
