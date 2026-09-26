@@ -33,6 +33,69 @@ A token is a small piece of text, roughly three quarters of a word. Providers ch
 
 The daemon (the AgentX background service) must be running for this command to work.
 
+`agentx usage` is short for `agentx usage today`. Despite the name, both show the last 7 days.
+
+## Get a detailed token report
+
+`agentx usage report` answers "where did the tokens go, session by session?". It goes further than `agentx usage`: it also reads the conversation files Claude Code keeps on this machine (under `~/.claude/projects`), so it counts Claude Code work done outside AgentX too. It does not need the daemon.
+
+It runs a small Python script, `scripts/token-report.py`, from the folder you are in. That script is in the AgentX source code, not in the package installed with npm, so run this command from a copy of the AgentX source code that holds your `.agentx` folder.
+
+1. **Terminal:** go to that folder.
+2. **Terminal:** run:
+   ```sh
+   agentx usage report
+   ```
+   To look further back, add `--days` with a number of days (the default is 7):
+   ```sh
+   agentx usage report --days 30
+   ```
+3. Read the three parts of the output:
+   - **AgentX Agent Usage (from daemon):** one row per agent with tasks, input, output, cache read, cache write and total tokens, then a **Cache hit ratio**.
+   - **Claude Code Sessions (from JSONL):** sessions and tokens per project folder.
+   - **Top 5 Expensive Sessions:** the five largest sessions, with the start of the prompt that began each one.
+4. Open the saved copy: the last line prints `Report: .agentx/reports/token_report.md`. That file holds the per-agent table.
+
+Example output (shortened):
+
+```text
+  AgentX Token Usage Report
+  ...
+  Agent                      Tasks      Input     Output    Cache R    Cache W        Total
+  helper                        12     48,210      9,904  1,203,550     80,112    1,341,776
+  reviewer                       3     11,030      2,417    301,229     20,448      335,124
+
+  Cache hit ratio: 91.2%
+```
+
+## See which commands and pages people use
+
+`agentx usage surfaces` answers "which AgentX commands and dashboard pages does anyone actually open?". AgentX counts each use on this machine: the command name (such as `guard log`) or the page address (such as `/live`), never what you typed after it. The counts stay in the local database and are not sent anywhere. The daemon does not need to be running.
+
+1. **Terminal:** in the folder with `agentx.json`, run:
+   ```sh
+   agentx usage surfaces
+   ```
+   It lists **CLI commands**, then **Dashboard pages**, each with the number of uses and on how many days they were used, for the last 30 days.
+2. Optional: change the period with `--days`, for example `agentx usage surfaces --days 7`.
+3. Optional: show only one kind with `--kind cli` or `--kind page`.
+4. Optional: list the commands nobody has used in the period with `--unused`. It prints `Never used in the last 30 days (x/y)` and the command names. It lists commands only, not pages, so don't combine it with `--kind`.
+5. Optional: add `--json` to get the raw data for a script or a spreadsheet.
+
+Example output (shortened):
+
+```text
+  Surface usage — last 30 days
+
+  CLI commands
+      41  daemon status                 12d
+       9  schedule list                  5d
+  Dashboard pages
+     130  /live                         22d
+```
+
+Counting only happens inside an AgentX folder (one with `agentx.json` or `.agentx`). Setting the environment variable `AGENTX_NO_TELEMETRY` turns it off.
+
 ## Limit how often Claude Code agents start
 
 If your agents use Claude Code with a subscription, AgentX limits how many fresh Claude Code sessions it starts, so a busy day doesn't use up your plan. A conversation that is already open always goes through. Two settings in `agentx.json` control this:
@@ -50,10 +113,15 @@ The values shown are the defaults. Lower them to spend less; raise them if you h
 
 1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
 2. **Terminal:** `agentx usage` prints `Token Usage (last 7 days)` followed by a total.
+3. **Terminal:** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
+4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 
 ## If something is wrong
 
 - **`Daemon not running. Start with: agentx daemon start`:** start the daemon, then run `agentx usage` again.
+- **`Script not found: …/scripts/token-report.py`:** `agentx usage report` was run outside a copy of the AgentX source code. Go to that folder and run it again.
+- **`Analysis failed. Is Python 3 installed?`:** install Python 3 so that `python3` works in the terminal, then run the report again.
+- **`No surface usage recorded in the last 30 days.`:** nothing has been counted yet. Counting starts once this version has been running for a while, and only inside an AgentX folder. Check that `AGENTX_NO_TELEMETRY` is not set.
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
