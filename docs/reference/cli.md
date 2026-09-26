@@ -50,6 +50,7 @@ agentx desktop start
 | `agentx daemon status` | Inspect the daemon |
 | `agentx daemon logs` | Read logs; check `--help` for follow options |
 | `agentx daemon stop` | Stop the daemon after its running tasks finish ([restart without losing work](../jobs/restart-safely.md)) |
+| `agentx daemon restart` | Restart through launchd, systemd, or stop + start, and wait until it answers again; `--when-idle` waits for running tasks first (`--timeout`, `--abort-on-timeout`, `--reload-service`, `--dry-run`). See [restart without losing work](../jobs/restart-safely.md) |
 | `agentx config check` | Validate the configuration |
 | `agentx config get <path>` | Read one configuration field |
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
