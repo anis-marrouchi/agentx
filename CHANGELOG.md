@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.46.0](https://github.com/anis-marrouchi/agentx/compare/v0.45.1...v0.46.0) (2026-09-26)
+
+
+### Features
+
+* **wiki:** promote proposes lessons with evidence for human review ([#116](https://github.com/anis-marrouchi/agentx/issues/116)) ([afec99d](https://github.com/anis-marrouchi/agentx/commit/afec99dc77ee99e8e5b13eb86f0e27f5b72302ac)), closes [#95](https://github.com/anis-marrouchi/agentx/issues/95)
+
 ## [0.45.1](https://github.com/anis-marrouchi/agentx/compare/v0.45.0...v0.45.1) (2026-09-26)
 
 
