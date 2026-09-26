@@ -27,7 +27,16 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `mesh` | Peer URLs and authentication |
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
 
-Field-by-field coverage of every section is not written yet. Until it is, `src/daemon/config.ts` is the list of accepted fields and defaults.
+Every field, with its type, default and what it does, is listed on four pages:
+
+| Page | Sections |
+|---|---|
+| [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `session`, `processPool`, `plugins` |
+| [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, ntfy, browser calls |
+| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `resume` |
+| [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
+
+These pages are checked against the schema in `src/daemon/config.ts`. If your installed version differs, that file is the final word.
 
 For a local installation, `node.bind` normally stays `127.0.0.1:18800` and `dashboard.daemonUrl` points to `http://127.0.0.1:18800`. In the supplied Compose setup they are `0.0.0.0:18800` and `http://daemon:18800`; host port bindings remain local.
 
@@ -77,11 +86,11 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 
 **Stopping a run.** When you cancel a run, or its time limit passes, the run ends and its slot is freed, even if the step it was on never answers. The agents list (`/agents`) shows the step each running task is on, for example `classify` or `agent`, so you can see where a run is waiting.
 
-### Check it worked
+### Try a cancel
 
-1. List the agents: `curl -s http://127.0.0.1:18800/agents`. Under the agent, `runningTasks` shows each run with its `id` and `step`.
-2. Cancel the run: `curl -s -X POST http://127.0.0.1:18800/api/tasks/<id>/cancel`. The answer is `{"ok":true,…}`.
-3. List the agents again. The run is gone and the agent's `active` count went down by one.
+1. **Terminal:** list the agents: `curl -s http://127.0.0.1:18800/agents`. Under the agent, `runningTasks` shows each run with its `id` and `step`.
+2. **Terminal:** cancel the run: `curl -s -X POST http://127.0.0.1:18800/api/tasks/<id>/cancel`. The answer is `{"ok":true,…}`.
+3. **Terminal:** list the agents again. The run is gone and the agent's `active` count went down by one.
 
 ### When a run is cut short
 

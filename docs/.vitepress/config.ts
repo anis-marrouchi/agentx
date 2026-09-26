@@ -44,7 +44,12 @@ const groups = [
     { text: "Author a teach lesson", link: "/guides/teach-authoring" },
   ] },
   { text: "Reference for engineers", items: [
-    { text: "CLI", link: "/reference/cli" }, { text: "Configuration", link: "/reference/config" },
+    { text: "CLI", link: "/reference/cli" }, { text: "Every CLI command and flag", link: "/reference/cli-commands" },
+    { text: "Configuration", link: "/reference/config" },
+    { text: "Settings: agents and runtime", link: "/reference/config-agents" },
+    { text: "Settings: channels", link: "/reference/config-channels" },
+    { text: "Settings: automation", link: "/reference/config-automation" },
+    { text: "Settings: dashboard, mesh and more", link: "/reference/config-operations" },
     { text: "Channels", link: "/reference/channels" }, { text: "Workflow schema", link: "/reference/workflow-schema" },
     { text: "Agent-to-agent (A2A)", link: "/reference/a2a" },
     { text: "Dashboard map", link: "/reference/dashboard-map" }, { text: "Glossary", link: "/reference/glossary" },
