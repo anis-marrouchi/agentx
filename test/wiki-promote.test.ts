@@ -20,7 +20,8 @@ import {
   type PromotionLedger,
 } from "../src/wiki/promote"
 import { PROMOTE_BODY_LIMIT, buildMemoryPromotePrompt } from "../src/wiki/prompts"
-import { PROMOTER_OWNER, runPromotion } from "../src/wiki/promote"
+import { PROMOTER_OWNER, approveProposal, estimateTokens, rejectProposal, runPromotion } from "../src/wiki/promote"
+import { listProposals, readProposal } from "../src/wiki/proposals"
 import { WikiStore } from "../src/wiki/store"
 
 const ROOT = resolve(__dirname, "../.test-wiki-promote")
@@ -332,24 +333,40 @@ describe("runPromotion", () => {
     const report = await runPromotion({ ...baseOpts, commit: false, fetchImpl: fetchReturning({}) })
     expect(report.dryRun).toBe(true)
     expect(report.candidates).toHaveLength(1)
-    expect(report.written).toEqual([])
+    expect(report.proposed).toEqual([])
+    expect(listProposals(WIKI_DIR)).toEqual([])
     expect(readPromotionLedger(WIKI_DIR)).toEqual([])
   })
 
-  it("writes the article with promoter owner, public access, merged sources; re-run is a no-op", async () => {
+  it("proposes instead of writing: nothing reaches the wiki or its index until approved", async () => {
+    const stamp = seedMemory()
+    const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp)) })
+    expect(report.errors).toEqual([])
+    expect(report.proposed).toHaveLength(1)
+    const store = new WikiStore(WIKI_DIR, () => {})
+    expect(store.readArticle("concepts/peer-server-ports.md")).toBeNull()
+    expect(store.rebuildIndex().articles.map((a) => a.path)).not.toContain("concepts/peer-server-ports.md")
+    const [p] = listProposals(WIKI_DIR, "pending")
+    expect(p.article.path).toBe("concepts/peer-server-ports.md")
+    expect(readPromotionLedger(WIKI_DIR)).toMatchObject([{ stamp, decision: "proposed", proposal: p.id }])
+  })
+
+  it("approval writes the article with promoter owner, public access, merged sources; re-run is a no-op", async () => {
     const stamp = seedMemory()
     const fetchImpl = fetchReturning(articlePayload(stamp))
     const report = await runPromotion({ ...baseOpts, fetchImpl })
     expect(report.errors).toEqual([])
-    expect(report.written).toHaveLength(1)
     expect(report.gaps).toHaveLength(1)
+    const approved = approveProposal(WIKI_DIR, report.proposed[0].id, { now: NOW })
+    expect(approved.ok).toBe(true)
 
     const store = new WikiStore(WIKI_DIR, () => {})
     const article = store.readArticle("concepts/peer-server-ports.md")!
     expect(article.meta.owner).toBe(PROMOTER_OWNER)
     expect(article.meta.access).toBe("public")
     expect(article.meta.sources).toEqual([stamp])
-    expect(readPromotionLedger(WIKI_DIR)).toHaveLength(1)
+    expect(readPromotionLedger(WIKI_DIR)).toMatchObject([{ stamp, decision: "promoted" }])
+    expect(readProposal(WIKI_DIR, report.proposed[0].id)!.status).toBe("approved")
 
     // Second run: nothing unpromoted → no LLM call, no rewrite.
     const secondFetch = fetchReturning(articlePayload(stamp))
@@ -361,13 +378,16 @@ describe("runPromotion", () => {
 
   it("an updated memory re-promotes and mergeSources replaces the stale stamp", async () => {
     const stamp1 = seedMemory()
-    await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp1)) })
+    const first = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp1)) })
+    expect(approveProposal(WIKI_DIR, first.proposed[0].id).ok).toBe(true)
     await new Promise((r) => setTimeout(r, 10))
     const stamp2 = seedMemory({ body: "HTTP=19900, GitLab=18810, MacBook=18800" })
     expect(stamp2).not.toBe(stamp1)
 
     const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp2)) })
-    expect(report.written).toHaveLength(1)
+    expect(report.proposed).toHaveLength(1)
+    expect(readProposal(WIKI_DIR, report.proposed[0].id)!.replaces).toBeDefined()
+    expect(approveProposal(WIKI_DIR, report.proposed[0].id).ok).toBe(true)
     const store = new WikiStore(WIKI_DIR, () => {})
     expect(store.readArticle("concepts/peer-server-ports.md")!.meta.sources).toEqual([stamp2])
   })
@@ -381,7 +401,8 @@ describe("runPromotion", () => {
     })) as unknown as typeof fetch
     const report = await runPromotion({ ...baseOpts, fetchImpl: impl })
     expect(report.errors).toHaveLength(1)
-    expect(report.written).toEqual([])
+    expect(report.proposed).toEqual([])
+    expect(listProposals(WIKI_DIR)).toEqual([])
     expect(readPromotionLedger(WIKI_DIR)).toEqual([])
     expect(new WikiStore(WIKI_DIR, () => {}).readArticle("concepts/peer-server-ports.md")).toBeNull()
   })
@@ -397,7 +418,7 @@ describe("runPromotion", () => {
     const report = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(articlePayload(stamp)) })
     expect(report.errors).toHaveLength(1)
     expect(report.errors[0]).toContain("someone-else")
-    expect(report.written).toEqual([])
+    expect(report.proposed).toEqual([])
     expect(readPromotionLedger(WIKI_DIR)).toEqual([]) // retried after a human resolves
     expect(store.readArticle("concepts/peer-server-ports.md")!.content).toBe("pre-existing")
   })
@@ -411,6 +432,127 @@ describe("runPromotion", () => {
 
     const rerun = await runPromotion({ ...baseOpts, fetchImpl: fetchReturning(payload) })
     expect(rerun.candidates).toEqual([])
+  })
+})
+
+describe("promotion proposals", () => {
+  const NOW = Date.parse("2026-07-01T12:00:00.000Z")
+  const baseOpts = { wikiDir: WIKI_DIR, memoryRoot: ROOT, viaAgent: "graph-agent", commit: true, now: NOW }
+  const PATH = "concepts/peer-server-ports.md"
+
+  function seed(body = "HTTP=19900, GitLab=18810"): string {
+    const rec = new AgentMemory({ baseDir: ROOT }).save({
+      agentId: "peer", type: "project", name: "server_ports", description: "daemon ports", body,
+      author: "peer", taskId: "1700000000000-abc123",
+    })
+    return memoryStamp("peer", rec)
+  }
+  function judge(stamps: string[]): typeof fetch {
+    const calls: unknown[] = []
+    const impl = (async (_u: unknown, init: any) => {
+      calls.push(init)
+      return { ok: true, text: async () => "", json: async () => ({ content: JSON.stringify({
+        articles: [{ path: PATH, title: "Peer Server Ports", type: "concept", related: [], tags: [], content: "Ports: HTTP=19900.", promotedFrom: stamps }],
+        skipped: [], gaps: [],
+      }) }) } as Response
+    }) as typeof fetch
+    ;(impl as any).calls = calls
+    return impl
+  }
+
+  it("records evidence: sources, authors and tasks from memory provenance", async () => {
+    const stamp = seed()
+    const r = await runPromotion({ ...baseOpts, fetchImpl: judge([stamp]) })
+    const p = readProposal(WIKI_DIR, r.proposed[0].id)!
+    expect(p.evidence.agents).toEqual(["peer"])
+    expect(p.evidence.occurrences).toBe(1)
+    expect(p.evidence.sources[0]).toMatchObject({
+      stamp, kind: "memory", agentId: "peer", author: "peer", taskId: "1700000000000-abc123",
+      description: "daemon ports",
+    })
+    expect(p.evidence.sources[0].excerpt).toContain("GitLab=18810")
+  })
+
+  it("carries recurrence and example sessions for review findings", async () => {
+    const reviewStamp = "review:ops/feedback_restart_needed@2026-06-30T10:00:00.000Z"
+    const extra = [{
+      agentId: "ops", key: "ops/feedback_restart_needed", stamp: reviewStamp, occurrences: 7, sessions: ["s1", "s2", "s3"],
+      memory: { name: "restart_needed", type: "feedback" as const, description: "config changes need a restart",
+        body: "Observed in 7 separate sessions.", createdAt: "2026-06-30T10:00:00.000Z", updatedAt: "2026-06-30T10:00:00.000Z" },
+    }]
+    const r = await runPromotion({ ...baseOpts, extraCandidates: extra as any, fetchImpl: judge([reviewStamp]) })
+    const p = readProposal(WIKI_DIR, r.proposed[0].id)!
+    expect(p.evidence.occurrences).toBe(7)
+    expect(p.evidence.sources[0]).toMatchObject({ kind: "review", occurrences: 7, sessions: ["s1", "s2", "s3"] })
+  })
+
+  it("refuses to approve over an article that changed since the proposal, unless forced", async () => {
+    const store = new WikiStore(WIKI_DIR, () => {})
+    const meta = { title: "Peer Server Ports", tags: [], owner: PROMOTER_OWNER, access: "public" as const, created: "2026-06-01", lastUpdated: "2026-06-01", sources: [] }
+    store.writeArticle(PATH, meta, "original", PROMOTER_OWNER)
+    const r = await runPromotion({ ...baseOpts, fetchImpl: judge([seed()]) })
+    store.writeArticle(PATH, { ...meta, lastUpdated: "2026-06-15" }, "edited by hand", PROMOTER_OWNER)
+
+    const refused = approveProposal(WIKI_DIR, r.proposed[0].id)
+    expect(refused.ok).toBe(false)
+    expect(store.readArticle(PATH)!.content).toBe("edited by hand")
+    expect(approveProposal(WIKI_DIR, r.proposed[0].id, { force: true }).ok).toBe(true)
+    expect(store.readArticle(PATH)!.content).toBe("Ports: HTTP=19900.")
+  })
+
+  it("refuses to approve a new article when one appeared at that path in the meantime", async () => {
+    const r = await runPromotion({ ...baseOpts, fetchImpl: judge([seed()]) })
+    new WikiStore(WIKI_DIR, () => {}).writeArticle(PATH, {
+      title: "Peer Server Ports", tags: [], owner: PROMOTER_OWNER, access: "public", created: "2026-06-20", lastUpdated: "2026-06-20", sources: [],
+    }, "someone got there first", PROMOTER_OWNER)
+    expect(approveProposal(WIKI_DIR, r.proposed[0].id).ok).toBe(false)
+  })
+
+  it("rejection is final for that version: ledgered, not judged again, can't be approved later", async () => {
+    const stamp = seed()
+    const r = await runPromotion({ ...baseOpts, fetchImpl: judge([stamp]) })
+    const id = r.proposed[0].id
+    expect(rejectProposal(WIKI_DIR, id, { reason: "too specific" }).ok).toBe(true)
+    expect(readPromotionLedger(WIKI_DIR)).toMatchObject([{ stamp, decision: "rejected", proposal: id, reason: "too specific" }])
+    const again = judge([stamp])
+    const rerun = await runPromotion({ ...baseOpts, fetchImpl: again })
+    expect(rerun.candidates).toEqual([])
+    expect((again as any).calls).toHaveLength(0)
+    expect(approveProposal(WIKI_DIR, id).ok).toBe(false)
+    expect(new WikiStore(WIKI_DIR, () => {}).readArticle(PATH)).toBeNull()
+  })
+
+  it("a pending proposal isn't judged again on the next night", async () => {
+    const stamp = seed()
+    await runPromotion({ ...baseOpts, fetchImpl: judge([stamp]) })
+    const again = judge([stamp])
+    const rerun = await runPromotion({ ...baseOpts, fetchImpl: again })
+    expect(rerun.candidates).toEqual([])
+    expect((again as any).calls).toHaveLength(0)
+    expect(listProposals(WIKI_DIR, "pending")).toHaveLength(1)
+  })
+
+  it("trims clusters to fit the token budget; the rest wait, unledgered", async () => {
+    const mem2 = new AgentMemory({ baseDir: ROOT })
+    for (const name of ["alpha", "beta", "gamma"]) {
+      mem2.save({ agentId: "peer", type: "project", name, description: name, body: "x".repeat(1500) })
+    }
+    const dry = await runPromotion({ ...baseOpts, commit: false })
+    const full = buildMemoryPromotePrompt(PROMOTER_OWNER, dry.clusters, [], "")
+    const oneLess = buildMemoryPromotePrompt(PROMOTER_OWNER, dry.clusters.slice(0, -1), [], "")
+    const budget = Math.floor((estimateTokens(full) + estimateTokens(oneLess)) / 2)
+    const judged = judge([])
+    const r = await runPromotion({ ...baseOpts, budgetTokens: budget, fetchImpl: judged })
+    expect(r.warnings.some((w) => w.includes("token budget"))).toBe(true)
+    expect((judged as any).calls).toHaveLength(1)
+  })
+
+  it("errors without calling the judge when even one cluster exceeds the budget", async () => {
+    seed("y".repeat(3000))
+    const judged = judge([])
+    const r = await runPromotion({ ...baseOpts, budgetTokens: 10, fetchImpl: judged })
+    expect(r.errors[0]).toContain("budget")
+    expect((judged as any).calls).toHaveLength(0)
   })
 })
 

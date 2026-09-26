@@ -93,7 +93,12 @@ const slug = (s: string) =>
  * resulting article exactly the kind of unfalsifiable prose the wiki is
  * meant not to accumulate.
  */
+/** Example sessions kept per finding; the count is in `occurrences`. */
+export const MAX_EVIDENCE_SESSIONS = 5
+
 export interface ReviewCandidate extends MemoryCandidate {
+  /** Some of the sessions (ids) that produced this finding. */
+  sessions?: string[]
   /** How many DISTINCT SESSIONS produced substantially this finding.
    *
    *  Distinct sessions, not review rows, and the difference decides
@@ -206,7 +211,10 @@ export function reviewsToCandidates(
   }
 
   for (const [key, candidate] of byExact) {
-    candidate.occurrences = familySessions.get(familyOf.get(key) ?? "")?.size ?? 1
+    const sessions = familySessions.get(familyOf.get(key) ?? "")
+    candidate.occurrences = sessions?.size ?? 1
+    // A few of the sessions it came from, as evidence a reviewer can open.
+    candidate.sessions = [...(sessions ?? [])].slice(0, MAX_EVIDENCE_SESSIONS)
     const p = provenance.get(candidate.stamp)!
     candidate.memory.body = renderBody(p, candidate.occurrences)
   }

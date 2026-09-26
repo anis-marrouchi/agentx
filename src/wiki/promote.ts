@@ -1,17 +1,21 @@
+import { createHash } from "crypto"
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { AgentMemory, type MemoryRecord, type MemoryType } from "../agents/agent-memory"
 import { WikiStore } from "./store"
 import { buildMemoryPromotePrompt } from "./prompts"
 import { isWikiArticleType, type WikiIndex } from "./types"
+import { newProposalId, readProposal, saveProposal, type PromotionProposal, type ProposalSource } from "./proposals"
 
 // --- Memory → wiki promotion ---
 //
 // Finishes the architecture documented in agent-memory.ts: memory is
 // experiential / per-agent; the wiki is authoritative / cross-agent. This
 // module reads per-agent memories, decides (via an LLM judge) which are
-// durable and fleet-relevant, and writes them as [[wikilinked]] articles
-// in the SHARED wiki store.
+// durable and fleet-relevant, and PROPOSES them as [[wikilinked]] articles
+// for the SHARED wiki store. Nothing reaches the wiki until an operator
+// approves the proposal (proposals.ts): a wrong or planted lesson would
+// otherwise reach every agent overnight.
 //
 // Idempotency has two layers, both keyed on the versioned stamp
 // `memory:<agentId>/<type>_<name>@<updatedAt>`:
@@ -43,9 +47,13 @@ export interface MemoryCandidate {
 
 export interface PromotionLedgerEntry {
   stamp: string
-  decision: "promoted" | "skipped"
-  /** Article path when promoted. */
+  /** proposed: waiting for an operator; rejected: an operator said no. Both
+   *  keep the memory from being judged again until it changes. */
+  decision: "promoted" | "skipped" | "proposed" | "rejected"
+  /** Article path when promoted or proposed. */
   article?: string
+  /** Proposal id when proposed or decided through one. */
+  proposal?: string
   /** LLM skip reason. */
   reason?: string
   /** ISO run timestamp. */
@@ -135,6 +143,8 @@ export function listAllAgentMemories(
 
 // --- Skip ledger ----------------------------------------------------------
 
+const LEDGER_DECISIONS = new Set(["promoted", "skipped", "proposed", "rejected"])
+
 export function readPromotionLedger(wikiBaseDir: string): PromotionLedger {
   const path = resolve(wikiBaseDir, PROMOTION_LEDGER_FILE)
   if (!existsSync(path)) return []
@@ -143,7 +153,7 @@ export function readPromotionLedger(wikiBaseDir: string): PromotionLedger {
     if (!Array.isArray(parsed)) return []
     return parsed.filter(
       (e): e is PromotionLedgerEntry =>
-        e && typeof e.stamp === "string" && (e.decision === "promoted" || e.decision === "skipped"),
+        e && typeof e.stamp === "string" && LEDGER_DECISIONS.has(e.decision),
     )
   } catch {
     // Corrupt ledger → treat as empty. Worst case: skipped memories are
@@ -330,6 +340,8 @@ export function getUnpromotedMemories(
     stamp?: string
     /** Optional rank — more occurrences sort first. */
     occurrences?: number
+    /** Example sessions (review findings), kept as proposal evidence. */
+    sessions?: string[]
   }>,
   index: WikiIndex,
   ledger: PromotionLedger,
@@ -352,8 +364,8 @@ export function getUnpromotedMemories(
   }
   for (const e of ledger) record(e.stamp)
 
-  const candidates: Array<MemoryCandidate & { occurrences?: number }> = []
-  for (const { agentId, memory, stamp, occurrences } of all) {
+  const candidates: Array<MemoryCandidate & { occurrences?: number; sessions?: string[] }> = []
+  for (const { agentId, memory, stamp, occurrences, sessions } of all) {
     if (!types.includes(memory.type)) continue
     if (opts.agentFilter && agentId !== opts.agentFilter) continue
     if (opts.sinceMs !== undefined) {
@@ -366,7 +378,10 @@ export function getUnpromotedMemories(
     // A caller-supplied stamp is kept as-is. Re-deriving it would
     // rewrite a `review:` stamp into the `memory:` namespace and lose
     // the provenance the ledger needs to tell the two sources apart.
-    candidates.push({ agentId, memory, key, stamp: stamp ?? memoryStamp(agentId, memory), occurrences })
+    candidates.push({
+      agentId, memory, key, stamp: stamp ?? memoryStamp(agentId, memory), occurrences,
+      ...(sessions?.length ? { sessions } : {}),
+    })
   }
 
   // Recurrence first where a source provides it, then recency. Memory
@@ -487,8 +502,12 @@ export interface RunPromotionOptions extends PromotionLlmOptions {
    *  the ledger, the dedupe and the judge rather than getting a second
    *  pipeline that drifts from this one. */
   extraCandidates?: MemoryCandidate[]
-  /** Write articles + ledger. Default false (dry-run). */
+  /** Write proposals + ledger. Default false (dry-run). */
   commit?: boolean
+  /** Upper bound on the judge prompt, in estimated tokens. Clusters are
+   *  dropped from the end (lowest ranked) until it fits; they stay
+   *  unledgered, so the next run picks them up. Default 60 000. */
+  budgetTokens?: number
   log?: (msg: string) => void
   /** Injectable clock (tests). */
   now?: number
@@ -497,7 +516,8 @@ export interface RunPromotionOptions extends PromotionLlmOptions {
 export interface PromotionReport {
   candidates: MemoryCandidate[]
   clusters: PromotionCluster[]
-  written: Array<{ path: string; title: string; type?: string; related?: string[]; stamps: string[] }>
+  /** Proposals written this run; nothing reaches the wiki until approved. */
+  proposed: Array<{ id: string; path: string; title: string; type?: string; stamps: string[]; agents: string[]; occurrences: number }>
   skipped: Array<{ stamp: string; reason: string }>
   gaps: string[]
   warnings: string[]
@@ -516,7 +536,7 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
   const log = opts.log ?? (() => {})
   const now = opts.now ?? Date.now()
   const report: PromotionReport = {
-    candidates: [], clusters: [], written: [], skipped: [],
+    candidates: [], clusters: [], proposed: [], skipped: [],
     gaps: [], warnings: [], errors: [], dryRun: !opts.commit,
   }
 
@@ -539,13 +559,24 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
   report.clusters = groupCandidates(report.candidates)
   if (report.dryRun) return report
 
-  const prompt = buildMemoryPromotePrompt(
-    PROMOTER_OWNER,
-    report.clusters,
-    index.articles.map((a) => ({ title: a.title, path: a.path, type: a.type })),
-    store.getWorldview() ?? "",
-  )
-  const offered = new Set(report.candidates.map((c) => c.stamp))
+  const articleList = index.articles.map((a) => ({ title: a.title, path: a.path, type: a.type }))
+  const worldview = store.getWorldview() ?? ""
+  const budget = opts.budgetTokens ?? DEFAULT_BUDGET_TOKENS
+  let clusters = report.clusters
+  let prompt = buildMemoryPromotePrompt(PROMOTER_OWNER, clusters, articleList, worldview)
+  while (estimateTokens(prompt) > budget && clusters.length > 1) {
+    clusters = clusters.slice(0, -1)
+    prompt = buildMemoryPromotePrompt(PROMOTER_OWNER, clusters, articleList, worldview)
+  }
+  if (estimateTokens(prompt) > budget) {
+    report.errors.push(`judge prompt (~${estimateTokens(prompt)} tokens) exceeds the ${budget}-token budget even with one cluster`)
+    return report
+  }
+  if (clusters.length < report.clusters.length) {
+    report.warnings.push(`token budget: judged ${clusters.length} of ${report.clusters.length} clusters; the rest wait for the next run`)
+  }
+  const judged = clusters.flatMap((c) => c.candidates)
+  const offered = new Set(judged.map((c) => c.stamp))
   const chatId = opts.chatId ?? `memory-promote-${new Date(now).toISOString().slice(0, 10)}`
 
   let parsed = parsePromotionResponse(await callPromotionLlm(prompt, { ...opts, chatId }), offered)
@@ -560,40 +591,34 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
   report.warnings.push(...parsed.warnings)
   report.gaps = parsed.gaps
 
-  const today = new Date(now).toISOString().slice(0, 10)
   const at = new Date(now).toISOString()
   const ledgerEntries: PromotionLedgerEntry[] = []
 
+  const byStamp = new Map(judged.map((c) => [c.stamp, c]))
   for (const article of parsed.articles) {
     const existing = store.readArticle(article.path)
-    const ok = store.writeArticle(
-      article.path,
-      {
-        title: article.title,
-        type: isWikiArticleType(article.type) ? article.type : undefined,
-        related: article.related,
-        tags: article.tags,
-        owner: PROMOTER_OWNER,
-        access: "public",
-        created: existing?.meta.created ?? today,
-        lastUpdated: today,
-        sources: mergeSources(existing?.meta.sources, article.promotedFrom),
-      },
-      article.content,
-      PROMOTER_OWNER,
-    )
-    if (!ok) {
+    if (existing && !store.canWrite(existing.meta, PROMOTER_OWNER)) {
       // Owned by another agent — a human resolves; stamps stay unledgered
       // so the memory is retried after the standoff clears.
-      report.errors.push(`write denied for "${article.path}" (owned by ${existing?.meta.owner ?? "?"})`)
+      report.errors.push(`write denied for "${article.path}" (owned by ${existing.meta.owner ?? "?"})`)
       continue
     }
-    report.written.push({
-      path: article.path, title: article.title, type: article.type,
-      related: article.related, stamps: article.promotedFrom,
+    const evidence = evidenceFor(article.promotedFrom, byStamp)
+    const proposal: PromotionProposal = {
+      id: newProposalId(now, article.path),
+      createdAt: at,
+      status: "pending",
+      article,
+      evidence,
+      ...(existing ? { replaces: { lastUpdated: existing.meta.lastUpdated, contentHash: contentHash(existing.content) } } : {}),
+    }
+    saveProposal(wikiDir, proposal)
+    report.proposed.push({
+      id: proposal.id, path: article.path, title: article.title, type: article.type,
+      stamps: article.promotedFrom, agents: evidence.agents, occurrences: evidence.occurrences,
     })
     for (const stamp of article.promotedFrom) {
-      ledgerEntries.push({ stamp, decision: "promoted", article: article.path, at })
+      ledgerEntries.push({ stamp, decision: "proposed", article: article.path, proposal: proposal.id, at })
     }
   }
 
@@ -603,6 +628,125 @@ export async function runPromotion(opts: RunPromotionOptions = {}): Promise<Prom
   }
 
   if (ledgerEntries.length) appendPromotionLedger(wikiDir, ledgerEntries)
-  store.rebuildIndex()
   return report
+}
+
+const DEFAULT_BUDGET_TOKENS = 60_000
+
+/** Rough token count (4 characters per token) — enough for a budget. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+function contentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16)
+}
+
+const EXCERPT_CHARS = 600
+
+/** What a reviewer needs to judge a proposal: each source memory or
+ *  review finding, who wrote it and in which task, how often a finding
+ *  recurred, and some of the sessions it came from. */
+export function evidenceFor(stamps: string[], byStamp: Map<string, MemoryCandidate>): PromotionProposal["evidence"] {
+  const sources: ProposalSource[] = []
+  for (const stamp of stamps) {
+    const c = byStamp.get(stamp) as (MemoryCandidate & { occurrences?: number; sessions?: string[] }) | undefined
+    if (!c) continue
+    sources.push({
+      stamp,
+      kind: stamp.startsWith("review:") ? "review" : "memory",
+      agentId: c.agentId,
+      type: c.memory.type,
+      name: c.memory.name,
+      description: c.memory.description,
+      ...(c.occurrences ? { occurrences: c.occurrences } : {}),
+      ...(c.sessions?.length ? { sessions: c.sessions } : {}),
+      ...(c.memory.author ? { author: c.memory.author } : {}),
+      ...(c.memory.taskId ? { taskId: c.memory.taskId } : {}),
+      updatedAt: c.memory.updatedAt,
+      excerpt: c.memory.body.slice(0, EXCERPT_CHARS),
+    })
+  }
+  return {
+    agents: [...new Set(sources.map((s) => s.agentId))].sort(),
+    occurrences: Math.max(1, ...sources.map((s) => s.occurrences ?? 1)),
+    sources,
+  }
+}
+
+// --- Review: approve or reject a proposal ------------------------------------
+
+export type ProposalDecisionResult =
+  | { ok: true; proposal: PromotionProposal }
+  | { ok: false; error: string }
+
+/** Write the proposed article into the shared wiki. Refuses when the
+ *  article changed (or appeared) since the proposal was made, unless
+ *  `force`, so an approval can't silently overwrite someone's edit. */
+export function approveProposal(
+  wikiDir: string, id: string, opts: { by?: string; force?: boolean; now?: number; log?: (m: string) => void } = {},
+): ProposalDecisionResult {
+  const proposal = readProposal(wikiDir, id)
+  if (!proposal) return { ok: false, error: `no proposal "${id}"` }
+  if (proposal.status !== "pending") return { ok: false, error: `proposal "${id}" is already ${proposal.status}` }
+
+  const log = opts.log ?? (() => {})
+  const store = new WikiStore(wikiDir, (...args: unknown[]) => log(args.map(String).join(" ")))
+  const { article } = proposal
+  const existing = store.readArticle(article.path)
+  if (!opts.force) {
+    if (existing && !proposal.replaces) {
+      return { ok: false, error: `"${article.path}" was created after this proposal; review it, then approve with --force` }
+    }
+    if (existing && proposal.replaces && contentHash(existing.content) !== proposal.replaces.contentHash) {
+      return { ok: false, error: `"${article.path}" changed since this proposal; review it, then approve with --force` }
+    }
+  }
+  const now = opts.now ?? Date.now()
+  const today = new Date(now).toISOString().slice(0, 10)
+  const ok = store.writeArticle(
+    article.path,
+    {
+      title: article.title,
+      type: isWikiArticleType(article.type) ? article.type : undefined,
+      related: article.related,
+      tags: article.tags,
+      owner: PROMOTER_OWNER,
+      access: "public",
+      created: existing?.meta.created ?? today,
+      lastUpdated: today,
+      sources: mergeSources(existing?.meta.sources, article.promotedFrom),
+    },
+    article.content,
+    PROMOTER_OWNER,
+  )
+  if (!ok) return { ok: false, error: `write denied for "${article.path}" (owned by ${existing?.meta.owner ?? "?"})` }
+
+  const at = new Date(now).toISOString()
+  appendPromotionLedger(wikiDir, article.promotedFrom.map((stamp) => ({
+    stamp, decision: "promoted" as const, article: article.path, proposal: id, at,
+  })))
+  store.rebuildIndex()
+  const decided: PromotionProposal = { ...proposal, status: "approved", decidedBy: opts.by ?? "operator", decidedAt: at }
+  saveProposal(wikiDir, decided)
+  return { ok: true, proposal: decided }
+}
+
+/** Decline a proposal. Its memories aren't judged again until they change. */
+export function rejectProposal(
+  wikiDir: string, id: string, opts: { by?: string; reason?: string; now?: number } = {},
+): ProposalDecisionResult {
+  const proposal = readProposal(wikiDir, id)
+  if (!proposal) return { ok: false, error: `no proposal "${id}"` }
+  if (proposal.status !== "pending") return { ok: false, error: `proposal "${id}" is already ${proposal.status}` }
+  const at = new Date(opts.now ?? Date.now()).toISOString()
+  appendPromotionLedger(wikiDir, proposal.article.promotedFrom.map((stamp) => ({
+    stamp, decision: "rejected" as const, article: proposal.article.path, proposal: id, reason: opts.reason, at,
+  })))
+  const decided: PromotionProposal = {
+    ...proposal, status: "rejected", decidedBy: opts.by ?? "operator", decidedAt: at,
+    ...(opts.reason ? { reason: opts.reason } : {}),
+  }
+  saveProposal(wikiDir, decided)
+  return { ok: true, proposal: decided }
 }
