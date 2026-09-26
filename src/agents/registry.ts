@@ -46,6 +46,7 @@ import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
+import { abortReason, untilAborted } from "./until-aborted"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -87,6 +88,9 @@ export interface RunningTask {
   sender?: string
   /** Wall-clock start. */
   startedAt: Date
+  /** The step the run is in right now (classify, compact, agent, …). A run
+   *  that hangs shows here where it stopped. */
+  step?: string
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -103,6 +107,9 @@ interface TaskOutput {
 const TASK_OUTPUT_BUFFER_MAX = 64 * 1024
 /** Keep finished outputs around briefly so a late opener still gets the tail. */
 const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
+/** How long a cancelled run's agent call may take to reap its subprocess
+ *  before the run lets go of its slot anyway. */
+const CANCEL_GRACE_MS = 30_000
 
 /** Persisted record of a finished task, written to .agentx/task-history. */
 export interface TaskRecord {
@@ -539,6 +546,9 @@ export class AgentRegistry {
    *  to drop the orphan cancelled turn from history so the Update reads as an
    *  edit, not a bare follow-up. */
   private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
+  /** Idempotent cleanup per running task id, for runs that end before their
+   *  own `finally` can run. */
+  private runReleases: Map<string, (response: AgentResponse | undefined) => void> = new Map()
   /** Last completed task summary per agent — single-line blurb for the dashboard card. */
   private lastSummaries: Map<string, { text: string; at: Date; ok: boolean }> = new Map()
   /** 24-hour sparkline cache per agent — recomputed from disk at most once a minute. */
@@ -914,6 +924,8 @@ export class AgentRegistry {
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
     }
+    // A run that threw or was cancelled before its own cleanup ran.
+    if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
     if (task.intentRef) {
       try {
         const status = response.error
@@ -1167,6 +1179,120 @@ export class AgentRegistry {
       }
     }
 
+    // Hard deadline for callers that set one (cron `timeout`, workflow agent
+    // nodes, `agentx exec --timeout`). It fires the same abort as an operator
+    // stop, so the runtime reaps its subprocess the same way.
+    const deadlineMs = task.timeoutMinutes && task.timeoutMinutes > 0 ? task.timeoutMinutes * 60_000 : 0
+    const deadline = deadlineMs
+      ? setTimeout(() => abortController.abort(new Error(`timed out after ${Math.round(deadlineMs / 1000)}s`)), deadlineMs)
+      : undefined
+    deadline?.unref?.()
+    abortController.signal.addEventListener("abort", () => {
+      this.log(`[${task.agentId}] task ${runningTask.id} aborted in step "${runningTask.step ?? "start"}" — ${abortReason(abortController.signal).message}`)
+    }, { once: true })
+    // Every await before and around the spawn goes through `step`, so a
+    // cancel or deadline ends the run even when the awaited work never
+    // settles. The step name is what /agents shows for a run that hangs.
+    const step = <T>(name: string, work: Promise<T>, graceMs = 0): Promise<T> => {
+      runningTask.step = name
+      return untilAborted(work, abortController.signal, graceMs)
+    }
+
+    // Give back everything the run holds. Idempotent: the `finally` below
+    // calls it, and execute() calls it for a run that threw before reaching
+    // that `try`.
+    let released = false
+    const releaseRun = (finalResponse: AgentResponse | undefined) => {
+      if (released) return
+      released = true
+      this.runReleases.delete(runningTask.id)
+      if (deadline) clearTimeout(deadline)
+      state.activeTasks--
+      // Remove this run from the running-tasks list.
+      const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
+      if (idx !== -1) state.runningTasks.splice(idx, 1)
+      // Drop the abort entry — the controller is unreachable after this point
+      // and a future cancel for the same id should 404, not silently no-op.
+      this.taskAborts.delete(runningTask.id)
+
+      // Notify any open dashboard streams that this task has finished, then
+      // schedule the buffer for cleanup so memory doesn't grow unbounded.
+      output.done = true
+      output.endedAt = new Date()
+      for (const sub of output.subscribers) {
+        try { sub("\n[task finished]\n") } catch { /* ignore */ }
+      }
+      output.subscribers.clear()
+      setTimeout(() => this.taskOutputs.delete(runningTask.id), TASK_OUTPUT_TTL_MS).unref?.()
+
+      // Persist a TaskRecord for the dashboard's "Recent activities" panel.
+      // Best-effort — disk failures must not affect task semantics.
+      try {
+        const endedAt = output.endedAt
+        const record: TaskRecord = {
+          id: runningTask.id,
+          agentId: task.agentId,
+          channel: runningTask.channel,
+          chatId: runningTask.chatId,
+          sender: runningTask.sender,
+          message: task.message || "",
+          startedAt: runningTask.startedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+          durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
+          ok: !finalResponse?.error,
+          error: finalResponse?.error,
+          responseText: finalResponse?.content || "",
+          transcript: output.buffer,
+        }
+        this.persistTaskRecord(record)
+        // Stash a one-line summary so the dashboard card can show "what the
+        // agent did last" without reading from disk on every snapshot.
+        const rawSummary = (record.responseText || record.error || "").trim()
+        if (rawSummary) {
+          const firstLine = rawSummary.split(/\r?\n/)[0].slice(0, 140)
+          this.lastSummaries.set(task.agentId, { text: firstLine, at: endedAt, ok: record.ok })
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] task history persist failed: ${e?.message}`)
+      }
+
+      // Flush queued messages that arrived while this run was in progress
+      this.messageQueue.markDone(task.agentId, qChannel, qChatId)
+        .then((queued) => {
+          if (queued.length === 0) return
+          this.log(`[${task.agentId}] flushing ${queued.length} queued message(s)`)
+          // Re-execute each queued message as a new task. The original
+          // inbound message (the one that triggered this run) was posted
+          // back to its channel by the router after `registry.execute`
+          // returned. Queued messages, however, are re-dispatched here
+          // directly — bypassing the router — so we must explicitly post
+          // the response back to the channel ourselves, or the user never
+          // sees the reply. (Real symptom: operator hits Update on a
+          // running task, the follow-up runs and produces a reply, but
+          // nothing arrives in Telegram.)
+          for (const qm of queued) {
+            const ctx = (qm.originalContext as AgentTask["context"]) || {
+              channel: qm.channel,
+              sender: qm.sender,
+              chatId: qm.chatId,
+            }
+            this.execute({
+              message: qm.text,
+              agentId: task.agentId,
+              context: ctx,
+            })
+              .then((resp) => this.postQueuedResponseToChannel(task.agentId, ctx, resp))
+              .catch((e) => {
+                this.log(`[${task.agentId}] queued message failed: ${e.message}`)
+              })
+          }
+        })
+        .catch((e) => {
+          this.log(`[${task.agentId}] queue flush failed: ${e.message}`)
+        })
+    }
+    this.runReleases.set(runningTask.id, releaseRun)
+
     // Mark session as running in the message queue
     this.messageQueue.markRunning(task.agentId, qChannel, qChatId)
 
@@ -1175,7 +1301,7 @@ export class AgentRegistry {
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
     const { evaluateRequest, selectRequestContext } = await import("./request-planner")
-    const requestGate = await evaluateRequest(task.message, task.agentId, channel)
+    const requestGate = await step("request-gate", evaluateRequest(task.message, task.agentId, channel))
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
@@ -1200,7 +1326,7 @@ export class AgentRegistry {
     // doesn't start blind. No-op for warm sessions, non-channel callers
     // (cron/api/a2a), or channels without a seedHistory implementation.
     if (!task.freshSession) {
-      await this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory)
+      await step("seed-history", this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory))
     }
 
     // Shadow seats read the agent's last reply before this message joins it.
@@ -1234,12 +1360,12 @@ export class AgentRegistry {
     let intent: ClassifyResult | undefined
     if (this.classifier && channel !== "a2a" && !isCodexCli) {
       try {
-        intent = (await this.classifier.classify({
+        intent = (await step("classify", this.classifier.classify({
           text: task.message,
           channel,
           sender: task.context?.sender,
           agentId: task.agentId,
-        })) || undefined
+        }))) || undefined
       } catch (e: any) {
         this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
       }
@@ -1302,7 +1428,7 @@ export class AgentRegistry {
     if (!isCodexCli) {
       try {
         const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
-        const skills = await loadLocalSkills(state.def.workspace)
+        const skills = await step("skills", loadLocalSkills(state.def.workspace))
         skillInjection = getAutoInjectSkills(skills, task.message)
       } catch {
         // Skill loading is optional
@@ -1383,9 +1509,9 @@ export class AgentRegistry {
     // rotating too early is amnesia, and optimising only the measurable
     // side is how the original rotation incident happened.
     if (resumeSessionId && state.def.tier === "claude-code") {
-      const rotatedEarly = await this.maybeRotateForContinuity(
+      const rotatedEarly = await step("rotate", this.maybeRotateForContinuity(
         task, state, channel, chatId, resumeSessionId,
-      )
+      ))
       if (rotatedEarly) resumeSessionId = undefined
     }
 
@@ -1399,9 +1525,9 @@ export class AgentRegistry {
     // stays cache-friendly. See sessions.ts compactIfNeeded for the longer
     // explanation.
     try {
-      const compactResult = await this.sessions.compactIfNeeded(
+      const compactResult = await step("compact", this.sessions.compactIfNeeded(
         task.agentId, channel, chatId, this.memoryStore,
-      )
+      ))
       if (compactResult.compacted) {
         const quality = compactResult.qualityScore ?? "?"
         const lost = compactResult.lostEntities?.length ?? 0
@@ -1529,15 +1655,15 @@ export class AgentRegistry {
         const cacheKey = state.def.workspace
         let cached = this.referencesCache.get(cacheKey)
         if (!cached) {
-          const [refs, recipes] = await Promise.all([
+          const [refs, recipes] = await step("references", Promise.all([
             loadReferences(state.def.workspace),
             loadRecipes(state.def.workspace),
-          ])
+          ]))
           if (refs.byId.size === 0 && recipes.recipes.length === 0) {
-            const [rootRefs, rootRecipes] = await Promise.all([
+            const [rootRefs, rootRecipes] = await step("references", Promise.all([
               loadReferences(process.cwd()),
               loadRecipes(process.cwd()),
-            ])
+            ]))
             cached = { refs: rootRefs, recipes: rootRecipes }
           } else {
             cached = { refs, recipes }
@@ -1630,14 +1756,14 @@ export class AgentRegistry {
     if (strategy === "planner" && !requestGate.active && channel !== "voice" && channel !== "desktop") {
       try {
         const { planContext } = await import("./context-planner")
-        const plan = await planContext({
+        const plan = await step("plan-context", planContext({
           agentId: task.agentId,
           channel,
           chatId,
           message: task.message,
           sessions: this.sessions,
           memoryStore: this.memoryStore,
-        })
+        }))
         if (plan) {
           plannerSucceeded = true
           sessionHistoryOverride = plan.sessionHistory
@@ -1847,7 +1973,7 @@ export class AgentRegistry {
     }
 
     const selectedContext = requestGate.active && requestGate.preprocess
-      ? await selectRequestContext(contextInput)
+      ? await step("select-context", selectRequestContext(contextInput))
       : { input: contextInput, excluded: [] }
     if (selectedContext.excluded.length) this.log(`[${task.agentId}] request-context excluded: ${selectedContext.excluded.join(", ")}`)
 
@@ -1913,7 +2039,7 @@ export class AgentRegistry {
     if (!task.model && cheapModel && (!requestGate.active || requestGate.preprocess)) {
       try {
         const { routeTaskModel } = await import("./routing")
-        const route = await routeTaskModel({
+        const route = await step("route-model", routeTaskModel({
           message: task.message,
           agent: task.agentId,
           channel,
@@ -1922,7 +2048,7 @@ export class AgentRegistry {
           // exists. See routing.ts for the arithmetic.
           sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
           cheapModel,
-        })
+        }))
         if (route.downgraded) {
           routedModel = route.model
           this.log(`[${task.agentId}] ${route.reason}`)
@@ -1958,7 +2084,7 @@ export class AgentRegistry {
       // agent execution — auto-run is best-effort, never a footgun.
       if (pendingAutoRun && this.workflowAutoRunner) {
         try {
-          const result = await this.workflowAutoRunner({
+          const result = await step("workflow-auto-run", this.workflowAutoRunner({
             workflowId: pendingAutoRun.workflowId,
             agentId: task.agentId,
             channel,
@@ -1975,7 +2101,7 @@ export class AgentRegistry {
               matchedWorkflowId: pendingAutoRun.workflowId,
               matchConfidence: pendingAutoRun.confidence,
             },
-          })
+          }))
           this.log(
             `[${task.agentId}] workflow auto-run started ${pendingAutoRun.workflowId} run=${result.runId || "?"}; ` +
             `agent execution skipped — workflow owns the reply`,
@@ -2094,7 +2220,9 @@ export class AgentRegistry {
         : wrappedOnDelta
           ? (text, fullText) => { closeThinkingIfOpen(); wrappedOnDelta(text, fullText) }
           : undefined
-      const response = await executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+      // The runtime reaps its own subprocess on abort; the grace only covers
+      // a runtime that never returns.
+      const response = await step("agent", executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking), CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
@@ -2316,89 +2444,7 @@ export class AgentRegistry {
       return finalResponse
     } finally {
       turnWatch.stop()
-      state.activeTasks--
-      // Remove this run from the running-tasks list.
-      const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
-      if (idx !== -1) state.runningTasks.splice(idx, 1)
-      // Drop the abort entry — the controller is unreachable after this point
-      // and a future cancel for the same id should 404, not silently no-op.
-      this.taskAborts.delete(runningTask.id)
-
-      // Notify any open dashboard streams that this task has finished, then
-      // schedule the buffer for cleanup so memory doesn't grow unbounded.
-      output.done = true
-      output.endedAt = new Date()
-      for (const sub of output.subscribers) {
-        try { sub("\n[task finished]\n") } catch { /* ignore */ }
-      }
-      output.subscribers.clear()
-      setTimeout(() => this.taskOutputs.delete(runningTask.id), TASK_OUTPUT_TTL_MS).unref?.()
-
-      // Persist a TaskRecord for the dashboard's "Recent activities" panel.
-      // Best-effort — disk failures must not affect task semantics.
-      try {
-        const endedAt = output.endedAt
-        const record: TaskRecord = {
-          id: runningTask.id,
-          agentId: task.agentId,
-          channel: runningTask.channel,
-          chatId: runningTask.chatId,
-          sender: runningTask.sender,
-          message: task.message || "",
-          startedAt: runningTask.startedAt.toISOString(),
-          endedAt: endedAt.toISOString(),
-          durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
-          ok: !finalResponse?.error,
-          error: finalResponse?.error,
-          responseText: finalResponse?.content || "",
-          transcript: output.buffer,
-        }
-        this.persistTaskRecord(record)
-        // Stash a one-line summary so the dashboard card can show "what the
-        // agent did last" without reading from disk on every snapshot.
-        const rawSummary = (record.responseText || record.error || "").trim()
-        if (rawSummary) {
-          const firstLine = rawSummary.split(/\r?\n/)[0].slice(0, 140)
-          this.lastSummaries.set(task.agentId, { text: firstLine, at: endedAt, ok: record.ok })
-        }
-      } catch (e: any) {
-        this.log(`[${task.agentId}] task history persist failed: ${e?.message}`)
-      }
-
-      // Flush queued messages that arrived while this run was in progress
-      this.messageQueue.markDone(task.agentId, qChannel, qChatId)
-        .then((queued) => {
-          if (queued.length === 0) return
-          this.log(`[${task.agentId}] flushing ${queued.length} queued message(s)`)
-          // Re-execute each queued message as a new task. The original
-          // inbound message (the one that triggered this run) was posted
-          // back to its channel by the router after `registry.execute`
-          // returned. Queued messages, however, are re-dispatched here
-          // directly — bypassing the router — so we must explicitly post
-          // the response back to the channel ourselves, or the user never
-          // sees the reply. (Real symptom: operator hits Update on a
-          // running task, the follow-up runs and produces a reply, but
-          // nothing arrives in Telegram.)
-          for (const qm of queued) {
-            const ctx = (qm.originalContext as AgentTask["context"]) || {
-              channel: qm.channel,
-              sender: qm.sender,
-              chatId: qm.chatId,
-            }
-            this.execute({
-              message: qm.text,
-              agentId: task.agentId,
-              context: ctx,
-            })
-              .then((resp) => this.postQueuedResponseToChannel(task.agentId, ctx, resp))
-              .catch((e) => {
-                this.log(`[${task.agentId}] queued message failed: ${e.message}`)
-              })
-          }
-        })
-        .catch((e) => {
-          this.log(`[${task.agentId}] queue flush failed: ${e.message}`)
-        })
+      releaseRun(finalResponse)
     }
   }
 
