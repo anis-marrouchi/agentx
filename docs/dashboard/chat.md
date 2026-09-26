@@ -1,22 +1,44 @@
 # Chat from any dashboard page
 
-Requires a running dashboard and daemon plus an agent with a working model connection. See [core setup](../requirements.md#core-setup).
+Use **Ask an agent** to ask about what you are looking at without leaving the dashboard. It needs a running dashboard and daemon, plus an agent with a working model connection. See [core setup](../requirements.md#core-setup).
 
-Use **Ask an agent** to ask about what you are looking at without leaving the dashboard. The floating input at the bottom sends your question and opens a conversation drawer; the right-edge **Ask an agent** handle opens the drawer directly.
+Every dashboard page has two ways in: the input bar at the bottom (**Ask an agent about this page…**), and the **Ask an agent** tab on the right edge, which opens the conversation panel directly.
+
+![The Ask an agent input bar at the bottom of a dashboard page, and the tab on the right edge](/screenshots/monitor-only-you.png)
 
 ## Ask a question
 
-1. Open a dashboard page, such as **Monitor** or **Activity**.
-2. Open **Ask an agent** and choose an **Agent**. Choose a **Node** when you want to send the request to a mesh peer.
-3. Type in the bottom input and send, for example: “Summarize what needs my attention on this page.”
-4. Read the reply in the drawer and continue the conversation.
+1. **Browser:** open a dashboard page, such as **Monitor** or **Activity**.
+2. Select the **Ask an agent** tab on the right edge. The conversation panel opens.
+3. In the panel, pick an agent from the **Agent** list.
+4. To send the question to another connected machine, pick it from the **Node** list. Otherwise leave **This node**.
+5. Type your question in the bottom bar, for example "Summarize what needs my attention on this page."
+6. Select **Ask**.
+7. Read the reply in the panel. Type again to continue the conversation.
 
-The request includes the page path and tab. Pages that provide richer context also attach their current filters, counts, or visible rows. This is structured page context, not a screenshot or unrestricted browser access. The selected agent handles the request with its configured runtime and tools, so action requests can do real work.
+<!-- Screenshot needed: the open Ask an agent panel with its Agent and Node lists and a reply. Not defined in docs/.scripts/capture.mjs yet. -->
+
+The question carries the page you're on and its tab. Some pages also send their current filters, counts or the rows in view. The agent doesn't see a picture of the page and can't browse on its own. It works with its usual tools, so if you ask it to *do* something, it really does it.
 
 ## Continue or start over
 
-Use **History** for stored conversations and **New** for a fresh thread. The browser remembers the selected thread; the conversation itself is stored by the dashboard backend. Close the drawer with its close button or Escape. Drag the panel edge to resize it; use the bottom grip to tuck away the input bar.
+1. To reopen an earlier conversation, select **History** in the panel, then pick one.
+2. To start fresh, select **New**.
+3. To close the panel, select **×** or press Escape.
 
-If the selector says **agents unavailable**, check the daemon connection. If a remote agent fails, check [mesh connectivity](../jobs/tailscale.md). Model calls use the selected agent's normal provider and billing.
+The browser remembers which conversation was open; the conversations themselves are stored by the dashboard. Drag the panel's left edge to resize it (or focus it and use the arrow keys). The small handle above the bottom bar hides and shows the bar.
 
-The workflow editor has a separate **Ask AI to build…** assistant that proposes workflow graphs. See [Describe an automation](../automations/describe-it.md) for that flow.
+The workflow editor has its own assistant, **Ask AI to build…**, which proposes workflows. See [Describe what you want](../automations/describe-it.md).
+
+## Check it worked
+
+1. **Browser:** open the panel. The **Agent** list shows your agents (not **Loading agents…**).
+2. Ask a question about the page. A reply appears in the panel.
+3. Select **History**. Your conversation is listed.
+
+## If something is wrong
+
+- **The Agent list says agents unavailable:** the dashboard can't reach the daemon. **Terminal:** run `agentx daemon status`. See [It's not answering](../help/its-not-answering.md).
+- **A question sent to another machine fails:** check the connection between the machines. See [Tailscale setup](../jobs/tailscale.md).
+- **No reply, or an error about the model:** the agent's model connection isn't working. Try the agent with **Test drive** in [Settings](./settings.md).
+- **Costs:** every question uses the chosen agent's normal model and billing.
