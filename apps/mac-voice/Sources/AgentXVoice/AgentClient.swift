@@ -102,6 +102,19 @@ enum AgentClient {
         return try await URLSession.shared.data(for: req)
     }
 
+    /// The agent that answers: the configured one, or the daemon's
+    /// `node.defaultAgent` from /health. "" when neither is known.
+    static func resolveAgent() async -> String {
+        if let agent = Config.agentID { return agent }
+        guard let url = URL(string: "\(Config.daemonURL)/health"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let node = obj["node"] as? [String: Any],
+              let agent = node["defaultAgent"] as? String
+        else { return "" }
+        return agent
+    }
+
     static func ask(_ message: String) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
@@ -109,11 +122,10 @@ enum AgentClient {
         // off exactly the thoughtful answers worth waiting for.
         req.timeoutInterval = 600
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "message": message,
-            "agent": Config.agentID,
-            "session": Config.voiceSession,
-        ])
+        var payload: [String: Any] = ["message": message, "session": Config.voiceSession]
+        // No agent configured: the daemon answers with its default agent.
+        if let agent = Config.agentID { payload["agent"] = agent }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: req)
         struct UiButton: Decodable { let label: String; let url: String }

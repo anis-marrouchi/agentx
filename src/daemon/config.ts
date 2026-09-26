@@ -418,6 +418,10 @@ const channelsConfigSchema = z.object({
        *  like two agents both claiming @devops-acme. */
       node: z.string().optional(),
     })).default([]),
+    /** Extra GitLab usernames each agent answers to, as prefixes. With
+     *  ["team-"], an agent with no agentMappings row answers to @<id> and
+     *  @team-<id>. Default: only @<id>. */
+    agentUsernamePrefixes: z.array(z.string().min(1)).default([]),
   }).default({}),
   github: z.object({
     enabled: z.boolean().default(false),

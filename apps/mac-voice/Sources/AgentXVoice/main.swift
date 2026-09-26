@@ -134,7 +134,10 @@ final class App: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 if !granted { self.panel.render(.error("Microphone denied")) }
-                else { Log.info("ready — hold ⌥Space to talk (agent: \(Config.agentID))") }
+                else {
+                    Config.effectiveAgentID = await AgentClient.resolveAgent()
+                    Log.info("ready — hold ⌥Space to talk (agent: \(Config.effectiveAgentID.isEmpty ? "the daemon's default" : Config.effectiveAgentID))")
+                }
             }
         }
     }
@@ -408,7 +411,7 @@ final class App: NSObject, NSApplicationDelegate {
 
         // Progress delivers on its own serial queue; hop to main before
         // touching any view.
-        progress = Progress(agentID: Config.agentID) { [weak self] step, voice in
+        progress = Progress(agentID: Config.effectiveAgentID) { [weak self] step, voice in
             Task { @MainActor in
                 guard let self, self.busy else { return }
                 if let voice { self.voice = voice }

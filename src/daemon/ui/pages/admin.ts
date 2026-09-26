@@ -861,7 +861,7 @@ const ADMIN_PAGE_BODY = `
       <button class="ghost" onclick="loadRaw()">Reload from disk</button>
       <div id="r-msg" class="msg"></div>
     </div>
-    <div class="hint-block">The schema is documented at <code>docs/reference/config-schema.md</code>. Invalid JSON is refused; schema-level errors only surface after the daemon tries to use the new config.</div>
+    <div class="hint-block">Every setting is documented in the <code>docs/reference/config.md</code> reference. Invalid JSON is refused; schema-level errors only surface after the daemon tries to use the new config.</div>
   </section>
 </main>
 `
