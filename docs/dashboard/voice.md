@@ -37,7 +37,7 @@ agentx desktop stop
 agentx desktop start
 ```
 
-**Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
+**Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. It runs the `agentx paste` command, so that command must work. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
 
 ## Speech and configuration
 
@@ -124,95 +124,245 @@ The system voice is chosen in this order: the agent's own, the global `voice.sys
 
 An agent introduces itself the first time it speaks in a voice session, or after eight hours of silence, and talks casually after that. Without `intro`, the line is derived from the first sentence of its system prompt.
 
-## Talk mode
+## Talk mode: two agents talk out loud
 
-Two agents talk a topic through out loud on the daemon's host:
+In talk mode, two of your agents discuss a topic out loud, like two colleagues thinking something through. You listen, and you can join in at any time. The voices come out of the speakers of the computer that runs the daemon.
 
-```bash
-agentx talk support reviewer "how to open tomorrow's demo"
-```
+During a talk, the agents only talk. They can't run tools, change files or send messages. If something needs doing, they say which of them will do it afterwards.
 
-Each line comes from a fast model with no tools (Haiku 4.5), spoken sentence by sentence in each agent's voice (ElevenLabs Flash for `elevenlabs` agents). The next speaker writes its reply while the current one is still talking, so hand-overs take milliseconds, not a full agent turn. Agents cannot act during a talk; they say who will do something afterwards.
+### Start a talk
 
-**The door.** Hold **Option–Space** in AgentX Voice while a talk runs: the talk goes quiet as soon as you press, and what you say goes to the talk instead of to your agent. The agent you name answers you first, or else the one you cut off. Say "stop" to end the talk. From the CLI, type a line to do the same.
+1. **Terminal:** list your agents and pick two of them:
+   ```sh
+   agentx agent list
+   ```
+2. **Terminal:** start the talk. Put the two agent ids first, then the topic (here the ids are `support` and `reviewer`):
+   ```sh
+   agentx talk support reviewer "how to prepare tomorrow's demo"
+   ```
+3. Listen. Each line is spoken in that agent's voice and also printed in the terminal.
+4. Wait for the end. The talk ends on its own when the agents agree the topic is settled, or after 10 lines. At the end, the terminal prints how long the pauses between speakers were.
 
-**Stop speaking.** Press **⌘⌥.** in AgentX Voice, or choose *Stop speaking* from its right-click menu, to silence every voice at once: its own answer, the line holding the speaker, a talk, a lesson or narration, and every line queued behind them. The voice setting is restored. Siri or a Shortcut can do the same with `POST /voice/stop`. Option–Space stops everything the same way before it listens.
+<!-- Screenshot needed: a terminal showing an agentx talk transcript with two agents and the closing pause summary. -->
 
-There is no hands-free interrupting (no "barge-in"). The agents' voices come out of the same speakers the microphone would listen to, and the audio plays in a separate process, so echo cancellation has no reference signal to subtract. An open microphone would hear the agents and interrupt them with their own words.
+Either agent can live on another AgentX computer in your mesh (the group of AgentX computers that know each other); its voice still plays on this computer. Only one talk or lesson runs at a time.
 
-The model runs as one warm `claude -p` per speaker on the subscription login. Set `AGENTX_TALK_BACKEND=api` to call the Messages API through the provider layer instead; that is faster, but needs an API key or OAuth token the provider can resolve.
-
-| Endpoint | |
+| Option | What it does |
 |---|---|
-| `POST /talk` | `{agents: [a, b], topic, context?, maxTurns?}` starts a talk; one at a time |
-| `GET /talk` | transcript, state, and measured gaps |
-| `POST /talk/hush` | go quiet now (the app sends this on key-down) |
-| `POST /talk/door` | `{text}`: the listener spoke; `stop` ends the talk |
-| `POST /talk/stop` | end it |
-| `POST /voice/stop` | silence every voice on the host and drop queued lines; nothing waits for the door |
+| `--context "<text>"` | A few lines of background both agents should know |
+| `--turns <n>` | The most lines before they wrap up (default 10; the daemon accepts 2 to 40) |
+| `--local` | Run the talk in this terminal instead of in the daemon |
+| `-c, --config <path>` | With `--local`: the `agentx.json` file to read the agents from |
 
-These use the same mesh-token gate as `/ask`.
+### Join in or stop a talk
+
+1. **Mac:** hold **Option–Space**. The talk goes quiet at once.
+2. **Mac:** say what you want to add, then release the keys.
+3. Listen. The agent you named answers you first. If you named neither, the agent you cut off answers.
+4. To end the talk, hold **Option–Space** again and say "stop".
+
+You can also type instead of speaking:
+
+1. **Terminal:** in the window where the talk runs, type a line and press Return. The agents answer it first.
+2. **Terminal:** type `stop` and press Return to end the talk, or press Control–C.
+
+If you hold **Option–Space** and then say nothing, the talk carries on by itself after about 20 seconds.
+
+**Why the agents can't hear you by themselves.** The microphone is only on while you hold **Option–Space**. The agents' voices come out of the same speakers the microphone would listen to, so an open microphone would hear the agents and interrupt them with their own words.
+
+**Which model writes the lines.** To keep the pauses short, each line comes from a fast model (Claude Haiku 4.5) with no tools, not from a full agent turn. It runs through the `claude` command-line program with your existing sign-in. To call the model's API directly instead, set `AGENTX_TALK_BACKEND=api` in the daemon's environment. This is faster, but needs an API key or sign-in token that AgentX can find.
+
+## Stop every voice at once
+
+One key stops everything that is speaking on your Mac: the widget's own answer, a talk, a lesson, task narration, and every line waiting its turn. Your macOS voice setting is put back as it was.
+
+1. **Mac:** press **Command–Option–.** (the period key).
+
+Or use the menu instead:
+
+1. **Mac:** right-click the widget.
+2. **Mac:** choose **Stop speaking**.
+
+<!-- Screenshot needed: the desktop widget's right-click menu with Stop speaking. Not capturable from the docs demo (native macOS app). -->
+
+Holding **Option–Space** also silences everything before the widget starts listening. To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
 
 ## Task narration
 
-While an agent works on a real task, it can say what it is doing in its own voice: at most one short line every 20 seconds, written only from the tool steps it actually took since the last line. Paths, commands and anything that looks like a key are neither spoken nor sent to the model.
+With narration on, an agent tells you out loud what it is doing while it works on a real task, in its own voice. For example: "I'm reading the latest test results now."
 
-Narration is off unless switched on. `voice.narrate: "on"` narrates the agent's work except cron jobs; `"all"` includes cron. Turns started from the voice app are not narrated this way, because the app narrates those itself. At runtime:
+- It says at most one short sentence every 20 seconds.
+- It only describes the steps the agent really took since its last sentence. If there is nothing worth saying, it stays silent.
+- Before the steps go to the model that writes the sentence, long strings of letters and numbers, and anything written like `password=…` or `token: …`, are blanked out. The model is also told never to read out commands, file paths, code, numbers or anything that looks like a key.
+- It stays silent while something else is speaking, such as a talk.
+- Questions you ask through the widget are not narrated this way; the widget narrates those itself.
 
-```bash
-agentx narrate helper on             # or off, or default
-agentx narrate --task <taskId> on    # one task, including a cron run
-```
+Narration is off until you switch it on.
 
-The same switches are available at `GET/POST /narration`.
+### Switch narration on for an agent
 
-## Presence on screen
-
-An agent can appear on screen as its own cursor: an arrow in its colour, its initial, its name, and a bubble with what it is saying. It is drawn by the Mac helper, is click-through, and never moves your mouse.
+1. **Terminal:** open `agentx.json` in a text editor.
+2. In the agent's `voice` block, add `"narrate": "on"`. Use `"all"` instead to narrate scheduled jobs too (jobs that run on a timer, such as routines).
+3. Save the file. A running daemon reloads it.
 
 ```json
-"helper": {
-  "presence": { "color": "#7C3AED", "initial": "H", "label": "Helper", "allowActions": false }
+"agents": {
+  "helper": {
+    "voice": { "narrate": "on" }
+  }
 }
 ```
 
-All fields are optional; the colour and initial are derived from the agent otherwise. `allowActions` lets the agent click and type for you in `act` mode. It is off by default, and without it `act` becomes `teach`.
+| `voice.narrate` | What the agent narrates |
+|---|---|
+| `off` (default) | Nothing |
+| `on` | Its tasks, except scheduled jobs |
+| `all` | Its tasks, including scheduled jobs |
+
+### Switch it on or off for now
+
+These switches last until the daemon restarts.
+
+1. **Terminal:** switch narration on for one agent (here `helper`):
+   ```sh
+   agentx narrate helper on
+   ```
+   Use `off` to silence it, or `default` to go back to what `agentx.json` says. Scheduled jobs stay quiet unless the file says `"all"`.
+2. **Browser:** to narrate one task only, even a scheduled one, open the task in the dashboard. Its id is the last part of the address, after `/tasks/`.
+3. **Terminal:** switch narration on for that task:
+   ```sh
+   agentx narrate --task <task-id> on
+   ```
+
+Each command prints the switches that are now set, for example `{"agents":{"helper":true},"tasks":{}}`.
+
+To silence a narrating task by voice:
+
+1. **Mac:** hold **Option–Space**. Narration pauses.
+2. **Mac:** say "stop", then release the keys. Narration of that task is switched off.
+
+## Presence on screen
+
+An agent can appear on your screen as its own pointer: an arrow in its colour, with its initial, its name, and a speech bubble showing what it says. The **AgentX Helper** app draws it. You can click straight through it, and it never moves your own mouse.
+
+The pointer appears during lessons (see [Live lessons](#live-lessons)), and after a spoken answer when [presence mode](#presence-mode) is on.
+
+<!-- Screenshot needed: an agent's on-screen pointer with its initial, name and speech bubble next to a control. Not capturable from the docs demo (native macOS app). -->
+
+To change how an agent's pointer looks:
+
+1. **Terminal:** open `agentx.json` in a text editor.
+2. In the agent's block, add a `presence` block:
+   ```json
+   "helper": {
+     "presence": { "color": "#7C3AED", "initial": "H", "label": "Helper", "allowActions": false }
+   }
+   ```
+3. Save the file.
+
+| Field | Meaning |
+|---|---|
+| `color` | The pointer's colour. Default: a colour picked from the agent's id |
+| `initial` | The letter on the pointer. Default: the first letter of the label |
+| `label` | The name shown. Default: the agent's `name`, else its id |
+| `allowActions` | `true` lets the agent click and type for you in `act` mode. Default `false` |
+
+Without `allowActions`, the agent never clicks or types. It shows you where to click and lets you do it.
 
 ### Presence mode
 
-On every voice turn the `presence-mode` seat decides how the agent shows up. A seat is a small, fast decision model that answers one fixed question; see [Jev and typed decisions](../architecture/jev.md).
+Presence mode lets AgentX decide, on each question you ask through the widget, whether the agent should also show something on screen. A small, fast decision model called a seat makes this choice; see [Jev and typed decisions](../architecture/jev.md) for how seats work and how to set up their backend. This seat is named `presence-mode` and is off by default. While it is off, answers are spoken only, and no pointer appears after them.
 
 | Mode | What happens |
 |---|---|
-| `talk` | Voice only; the cursor rests in a corner with the answer in its bubble |
-| `teach` | A live lesson: the agent shows each step with its cursor and says it; you do it |
-| `watch` | You drive; the agent coaches, pointing at what you need |
-| `act` | The agent does the steps itself, if `allowActions` is set; otherwise the turn is `talk` and the agent does the work in its own turn |
-| `quiet` | Nothing on screen |
+| `talk` | The agent answers out loud. Its pointer rests in a corner with the answer in its bubble |
+| `teach` | A live lesson: the agent points at each step and says it; you do it |
+| `watch` | You work; the agent coaches you and points at what you need |
+| `act` | The agent does the steps itself. Only when `allowActions` is `true`; otherwise the answer is `talk` |
+| `quiet` | Nothing appears on screen |
 
-The seat also answers whether the cursor stays after the turn and what the first action is (speak, point, highlight, click, type, wait for you). The chosen mode's probability is logged on every turn; below 0.55, or when the seat is off, slow (2.5 s budget) or down, the turn is plain `talk`. Enable it in `agentx.json`:
+Some safety rules always apply:
 
-```json
-"decisions": { "seats": { "presence-mode": { "mode": "active", "backend": "typesafe" } } }
-```
+- A lesson (`teach` or `watch`) starts only when you ask to be shown something, for example "show me how…", "how do I…", "where is…", "walk me through…" or "montre-moi…". An instruction such as "merge and deploy the release" is always answered as `talk`.
+- If the seat is unsure (below 55% confidence), takes longer than 2.5 seconds, or fails, the answer is `talk`.
+- After a `talk` answer, the pointer disappears once the answer has had time to be heard. If the seat expects the conversation to go on, it stays, quietly, for up to 5 minutes.
 
-`"mode": "shadow"` is a trial mode: it logs the decision without acting on it.
+To switch presence mode on:
 
-A lesson (`teach` or `watch`) starts only when you ask to be shown or coached: "show me how…", "how do I…", "where is…", "walk me through…", "montre-moi…". An instruction such as "merge and deploy 40" is always `talk`, whatever the seat chose.
+1. **Terminal:** open `agentx.json` in a text editor.
+2. Add the seat under `decisions`:
+   ```json
+   "decisions": { "seats": { "presence-mode": { "mode": "active", "backend": "typesafe" } } }
+   ```
+   Use `"mode": "shadow"` to try it first: the daemon log records what the seat would choose, without acting on it.
+3. **Terminal:** restart the daemon so the seat is set up with its backend.
 
-### Live teach
+## Live lessons
 
-`teach`, `watch` and `act` run a lesson with no script: the agent reads the focused window (the list of buttons and fields macOS exposes to assistive tools, or text recognised from a screenshot when that list is thin), a fast model plans one step, the agent points or highlights while saying it, then waits for the screen to change (you did it) or does it itself (`act`). The screen is read again after every step. A lesson stays on the app it started in: while another app is in front it asks you to bring it back, and does nothing else.
+In a live lesson, an agent teaches you how to do something in an app, one step at a time, with no script written in advance:
 
-Hold **Option–Space** to cut in: the lesson ends at once, the screen is yours again, and what you say goes to the agent. **⌘⌥.** ends it too, and so does **✕ stop** on the agent's card in [Live](./live.md), which shows a running lesson with its step and what it is saying.
+1. The agent reads the app's window: the buttons and fields macOS lists for accessibility tools, or the text it can read from a screenshot when that list is short.
+2. A fast model plans the next single step.
+3. The agent's pointer moves to the right control, or outlines it, while the agent says the step.
+4. The agent waits for the screen to change (you did the step). In `act` mode with `allowActions` set, it does the step itself.
+5. The window is read again, and the next step starts from what is really there.
 
-```bash
-agentx teach --live "make a simple table of monthly expenses" --app Numbers --agent helper --mode teach
-```
+A lesson stays in the app it started in. If you switch to another app, the agent asks you to bring it back and waits without doing anything else. After 45 seconds it ends. A lesson stops after 12 steps unless you set another limit.
 
-The daemon runs the same lesson at `POST /teach/live {agent, goal, mode}`, behind the `/ask` gate.
+A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
 
-Smart paste (**Command–Option–V**) runs through `agentx paste`; it needs a working AgentX command and its own permissions. The desktop assistant is a native macOS app, separate from the dashboard's `/call` page (calls in the browser).
+### Start a lesson from the terminal
+
+1. **Terminal:** run the lesson. This example opens Numbers and teaches in your assistant agent's voice:
+   ```sh
+   agentx teach --live "make a simple table of monthly expenses" --app Numbers --agent helper --mode teach
+   ```
+2. **Mac:** follow the spoken steps in the app. The terminal prints each step as it happens.
+
+<!-- Screenshot needed: a live lesson in progress, with the agent's pointer outlining a control and the step printed in the terminal. Not capturable from the docs demo (native macOS app). -->
+
+| Option | What it does |
+|---|---|
+| `--live "<goal>"` | What the lesson should teach |
+| `--mode <mode>` | `teach` (default, you do each step), `watch` (you drive, it coaches), `act` (it does the steps, if `allowActions` is `true`) or `draw` (see below) |
+| `--app <name>` | Open this app first and teach in it. Without it, the lesson uses the app in front when it starts |
+| `--agent <id>` | The agent who teaches. Default: your assistant agent (set with `AGENTX_VOICE_AGENT` in the terminal's environment), else the node's default agent (`node.defaultAgent`) |
+| `--steps <n>` | The most steps before it stops (default 12) |
+| `-c, --config <path>` | The `agentx.json` file to read the agent from |
+
+**Drawing mode.** With `--mode draw`, the agent draws an illustration of the goal in the tldraw offline app instead, with its pointer moving over each shape as it appears. It saves a `.tldraw` file and a `.png` picture in your Documents folder. `--out <folder>` picks another folder, and `--model <id>` another planning model (default `claude-sonnet-5`). The tldraw offline app must be installed.
+
+### Interrupt or end a lesson
+
+1. **Mac:** hold **Option–Space**. The lesson ends at once and the screen is yours again.
+2. **Mac:** say your question, then release the keys. It goes to the agent as a normal question.
+
+Pressing **Command–Option–.** also ends a lesson. In the terminal where it runs, type `stop` and press Return, or press Control–C.
+
+### Check a running lesson in the browser
+
+1. **Browser:** open the dashboard's [Live](./live.md) tab.
+2. Find the agent's card. A running lesson shows **on screen**, the mode, the step number and what the agent is saying.
+3. To end it, select **✕ stop** on that line.
+
+<!-- Screenshot needed: the Live tab with an agent card showing an on-screen lesson and its ✕ stop button. -->
+
+## For automations (Siri, Shortcuts, scripts)
+
+The daemon offers these addresses for talks, lessons and narration. Requests from the same Mac need nothing more. Requests from another computer need the mesh token, the same as `/ask`.
+
+| Address | What it does |
+|---|---|
+| `POST /talk` | Start a talk: `{"agents": ["<id>", "<id>"], "topic": "…", "context": "…", "maxTurns": 10}` |
+| `GET /talk` | The running talk or lesson: what was said, its state and the pauses |
+| `POST /talk/stop` | End the talk |
+| `POST /teach/live` | Start a lesson: `{"agent": "<id>", "goal": "…", "mode": "teach", "app": "Numbers"}` (`draw` is terminal only) |
+| `POST /voice/hush` | Silence whatever is speaking and wait for your words (what **Option–Space** sends when pressed) |
+| `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; `stop` ends it |
+| `POST /voice/stop` | Silence every voice and drop waiting lines (what **Command–Option–.** sends) |
+| `GET /narration`, `POST /narration` | Read or set narration switches: `{"agentId": "<id>", "on": true}` or `{"taskId": "<id>", "on": null}` |
+
+`/talk/hush` and `/talk/door` still work as older names for `/voice/hush` and `/voice/door`.
 
 ## Check it worked
 
@@ -220,6 +370,7 @@ Smart paste (**Command–Option–V**) runs through `agentx paste`; it needs a w
 2. Hold **Option–Space**, ask "What can you do?", then release.
 3. The answer appears in the widget and is spoken aloud.
 4. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
+5. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
 
 ## If something is wrong
 
@@ -228,4 +379,11 @@ Smart paste (**Command–Option–V**) runs through `agentx paste`; it needs a w
 - **Local Whisper fails:** **Terminal:** run `agentx doctor`. If it reports `ffmpeg not reachable by the desktop app`, install FFmpeg (for example `brew install ffmpeg`) and run `agentx desktop install` again.
 - **Agent unavailable:** check the daemon address and the exact agent id, then run the install again with the right `--agent`.
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
-- **Voices talk over something else, or won't stop:** press **⌘⌥.**, or choose **Stop speaking** from the widget's right-click menu.
+- **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the widget's right-click menu.
+- **`A talk or lesson is already running`:** only one runs at a time. Wait for it to end, or press **Command–Option–.** to stop it.
+- **`Unknown agent: …` from `agentx talk` or `agentx teach --live`:** check the id with `agentx agent list`. For `agentx talk`, an agent on another computer must be reachable: check that its computer shows in `agentx mesh list`.
+- **A talk never starts speaking:** the lines come from the `claude` program. **Terminal:** run `claude --version` on the daemon's computer and sign in if needed, or set `AGENTX_TALK_BACKEND=api`.
+- **No pointer appears after an answer:** presence mode is off, or the seat chose `talk` with low confidence. Look for `[presence]` lines in the daemon log.
+- **A lesson says "Bring … to the front":** click the app the lesson started in; it carries on.
+- **The agent never clicks in `act` mode:** set `"allowActions": true` in the agent's `presence` block.
+- **Narration stays silent:** check `voice.narrate` for the agent, or run `agentx narrate <agent-id> on`. Scheduled jobs need `"all"`, and questions from the widget are never narrated this way.
