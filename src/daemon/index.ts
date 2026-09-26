@@ -110,6 +110,9 @@ import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
 import { listAgentFiles } from "./file-ops"
+import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
+import { screenSettings } from "@/computer-use/capture-settings"
+import { findHelper } from "@/notify/local"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -188,6 +191,7 @@ export class AgentXDaemon {
   private voiceIntros = new VoiceIntroTracker()
   /** Talk mode and task narration: see src/daemon/voice-talk-api.ts. */
   private voiceTalk!: VoiceTalkService
+  private screenBuffer?: ScreenBuffer
   /** Voice for agents on mesh peers: see src/daemon/voice-mesh-proxy.ts. */
   private voiceMesh!: VoiceMeshProxy
   /** Persistent-claude process registry. Null when no agent has
@@ -543,6 +547,12 @@ export class AgentXDaemon {
       { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
 
+    // The opt-in in-memory screen buffer (screen.buffer), for agents that
+    // arrive after the moment they needed to see.
+    sweepStaleDumps()
+    this.screenBuffer = new ScreenBuffer(findHelper, (m) => this.log(m))
+    this.screenBuffer.configure(screenSettings(this.config.screen))
+
     // 0. Phase 1 — clean up orphaned in-flight ledger dispatches from
     //    the previous process. Their agents died with the previous
     //    daemon; without writing a "canceled" resolution they'd block
@@ -792,6 +802,7 @@ export class AgentXDaemon {
     const start = Date.now()
     this.shuttingDown = true
     this.voiceTalk.close()
+    this.screenBuffer?.stop()
 
     try {
       this.log("  Stopping channels...")
@@ -1323,8 +1334,13 @@ export class AgentXDaemon {
 
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
     //    reflect it, and router send-side paths see fresh channel config.
+    const screenChanged = JSON.stringify(this.config.screen) !== JSON.stringify(next.screen)
     this.config = next
     this.router.updateConfig(next)
+    if (screenChanged) {
+      this.screenBuffer?.configure(screenSettings(next.screen))
+      applied.push("screen")
+    }
 
     if (applied.length) this.log(`[reload] applied: ${applied.join(", ")}`)
     if (restartRequired.length) {
@@ -2305,6 +2321,25 @@ export class AgentXDaemon {
         const body = req.method === "POST" ? await readBody(req) : {}
         const reply = this.voiceTalk.handle(req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Recent frames from the screen buffer: pixels of this host's screen.
+      // Loopback-only: the answer is file paths on this machine, useless to
+      // a peer, and a request writes frames to disk. checkMeshAuth still
+      // runs to turn away pages from other origins.
+      if (req.method === "GET" && path === "/screen/recent") {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: "Forbidden: /screen/recent is loopback-only" })
+          return
+        }
+        if (!this.checkMeshAuth(req, res, path)) return
+        if (!this.screenBuffer?.active) {
+          this.json(res, 409, { error: "screen buffer is off — enable screen.buffer in agentx.json" }); return
+        }
+        const seconds = Math.min(120, Math.max(0.1, Number(url.searchParams.get("seconds")) || this.config.screen.buffer.seconds))
+        try { this.json(res, 200, await this.screenBuffer.recent(seconds)) }
+        catch (e: any) { this.json(res, 503, { error: e?.message ?? String(e) }) }
         return
       }
 

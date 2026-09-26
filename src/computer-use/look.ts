@@ -1,11 +1,8 @@
-import { execFile } from "child_process"
-import { promisify } from "util"
-import { existsSync, readFileSync } from "fs"
-import { homedir, tmpdir } from "os"
+import { readFileSync } from "fs"
+import { homedir } from "os"
 import { join } from "path"
-import { HELPER } from "./screen"
-
-const run = promisify(execFile)
+import { captureShot, HelperOutdatedError } from "./capture"
+import type { ScreenSettings } from "./capture-settings"
 
 // --- Looking at the screen, as opposed to reading it ---
 //
@@ -40,17 +37,8 @@ const run = promisify(execFile)
 // observation into a calibrated probability is a separate step, in
 // seats/screen-state.ts, because those are separate skills.
 
-export type Region =
-  | { kind: "window" }
-  | { kind: "screen"; index?: number }
-  | { kind: "menubar"; index?: number }
-  | { kind: "rect"; x: number; y: number; width: number; height: number }
-
-export interface Shot {
-  path: string
-  region: { x: number; y: number; width: number; height: number }
-  bytes: number
-}
+export type { Region, Shot } from "./capture"
+import type { Region, Shot } from "./capture"
 
 export interface Sighting {
   question: string
@@ -90,40 +78,25 @@ const OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 export const DEFAULT_VISION_MODEL =
   process.env.AGENTX_VISION_MODEL ?? "anthropic/claude-sonnet-5"
 
-/** Capture a region to a downscaled PNG. */
-export async function capture(region: Region = { kind: "window" }, maxPixels = MAX_PIXELS): Promise<Shot> {
-  if (!existsSync(HELPER)) throw new Error("helper not built — run apps/mac-helper/build.sh")
-
-  const out = join(tmpdir(), `agentx-look-${Date.now()}.png`)
-  const args = ["capture", "--out", out, "--max-pixels", String(maxPixels)]
-  if (region.kind === "menubar") args.push("--menubar")
-  if (region.kind === "screen") args.push("--screen-full")
-  if (region.kind === "screen" || region.kind === "menubar") {
-    if (region.index !== undefined) args.push("--screen", String(region.index))
-  }
-  if (region.kind === "rect") {
-    args.push("--x", String(region.x), "--y", String(region.y),
-              "--w", String(region.width), "--h", String(region.height))
-  }
-
-  // The helper exits non-zero on failure with its reason as JSON on stdout.
-  const stdout = await run(HELPER, args).then(r => r.stdout, (e: any) => {
-    if (typeof e?.stdout === "string" && e.stdout.trim().startsWith("{")) return e.stdout
+/**
+ * Capture a region to a downscaled PNG. With `settle`, wait for the region
+ * to stop moving first, so a page that is still loading is not judged
+ * half-drawn. A helper too old to wait still gets a frame, taken at once:
+ * a late look is better than no look for a check that was already
+ * working without waiting.
+ */
+export async function capture(
+  region: Region = { kind: "window" },
+  maxPixels = MAX_PIXELS,
+  opts: { settle?: boolean; screen?: ScreenSettings; deps?: Parameters<typeof captureShot>[2] } = {},
+): Promise<Shot> {
+  const deps = { ...opts.deps, maxPixels, settings: opts.screen ?? opts.deps?.settings }
+  if (!opts.settle) return captureShot(region, {}, deps)
+  try {
+    return await captureShot(region, { untilStable: true }, deps)
+  } catch (e) {
+    if (e instanceof HelperOutdatedError) return captureShot(region, {}, deps)
     throw e
-  })
-  const res = JSON.parse(stdout) as {
-    ok: boolean
-    error?: string
-    path: string
-    region: { x: number; y: number; w: number; h: number }
-  }
-  if (!res.ok) throw new Error(res.error ?? "capture failed")
-
-  const bytes = readFileSync(res.path).length
-  return {
-    path: res.path,
-    region: { x: res.region.x, y: res.region.y, width: res.region.w, height: res.region.h },
-    bytes,
   }
 }
 
@@ -242,12 +215,17 @@ export interface LookOptions {
   model?: string
   maxPixels?: number
   timeoutMs?: number
+  /** Wait for the region to stop moving before capturing it. */
+  settle?: boolean
+  /** Wait settings (agentx.json `screen`); defaults when omitted. */
+  screen?: ScreenSettings
 }
 
 /** Capture a region and report what is visible, against one question. */
 export async function look(question: string, opts: LookOptions = {}): Promise<Sighting> {
   const started = Date.now()
-  const shot = await capture(opts.region ?? { kind: "window" }, opts.maxPixels ?? MAX_PIXELS)
+  const shot = await capture(opts.region ?? { kind: "window" }, opts.maxPixels ?? MAX_PIXELS,
+                             { settle: opts.settle, screen: opts.screen })
   const seen = await describe(question, shot, opts.model ?? DEFAULT_VISION_MODEL, opts.timeoutMs ?? 45_000)
   return {
     question,
