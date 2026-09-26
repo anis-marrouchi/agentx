@@ -60,6 +60,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
+import { handleMemoryApi } from "@/daemon/memory-api"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -82,7 +83,7 @@ import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
 import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
-import { REMEMBER_SKILL_FILENAME, rememberSkillBody, retargetRememberSkill } from "@/agents/skills/remember-skill"
+import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
@@ -2560,10 +2561,7 @@ export class AgentXDaemon {
 
       // Agent-memory API — lets running Claude Code sessions save their
       // own experiential memory from inside a Bash tool call.
-      //   GET  /api/memory?agent=<id>            → list records + MEMORY.md
-      //   GET  /api/memory/<id>?agent=<id>       → one record
-      //   POST /api/memory  body: {agentId, type, name, description, body, append?}
-      //   DELETE /api/memory/<name>?agent=<id>   → remove
+      // Routes, versions and conditional writes: memory-api.ts.
       if (isMeshGatedPath(path)) {
         if (await this.handleMemoryApi(req, res, path, url)) return
       }
@@ -5156,12 +5154,12 @@ export class AgentXDaemon {
           writeFileSync(skillPath, rememberSkillBody(port))
           this.log(`  memory-skill: installed remember.md → ${agent.id}`)
         } else {
-          // Installs from before the port was rendered call the default
-          // port, which is nothing on a node that listens elsewhere.
-          const fixed = retargetRememberSkill(readFileSync(skillPath, "utf-8"), port)
+          // An unedited older release is replaced by the current one; an
+          // edited copy only gets its port fixed (remember-skill.ts).
+          const fixed = upgradeRememberSkill(readFileSync(skillPath, "utf-8"), port)
           if (fixed) {
             writeFileSync(skillPath, fixed)
-            this.log(`  memory-skill: pointed remember.md at port ${port} → ${agent.id}`)
+            this.log(`  memory-skill: updated remember.md → ${agent.id}`)
           }
         }
         // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
@@ -5220,76 +5218,15 @@ export class AgentXDaemon {
     return null
   }
 
-  /** Agent-memory HTTP surface. Agents call this from inside a Claude
-   *  Code session via `Bash` + `curl` — see the `remember` skill. The
-   *  heavy lifting is in `AgentRegistry.agentMemory` (AgentMemory); this
-   *  is a thin JSON wrapper that validates + delegates. */
-  private async handleMemoryApi(
+  /** Agent-memory HTTP surface — see memory-api.ts. */
+  private handleMemoryApi(
     req: IncomingMessage, res: ServerResponse, path: string, url: URL,
   ): Promise<boolean> {
-    const mem = this.agentMemory
-
-    // GET /api/memory?agent=<id>
-    if (req.method === "GET" && path === "/api/memory") {
-      const agent = url.searchParams.get("agent") || ""
-      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
-      this.json(res, 200, { agent, memories: mem.list(agent), index: mem.indexMarkdown(agent) })
-      return true
-    }
-    // GET /api/memory/:name?agent=<id>
-    const oneMatch = req.method === "GET" && path.match(/^\/api\/memory\/([^\/?]+)$/)
-    if (oneMatch) {
-      const agent = url.searchParams.get("agent") || ""
-      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
-      const rec = mem.get(agent, decodeURIComponent(oneMatch[1]))
-      if (!rec) { this.json(res, 404, { error: "no such memory" }); return true }
-      this.json(res, 200, { memory: rec })
-      return true
-    }
-    // POST /api/memory — write a memory
-    if (req.method === "POST" && path === "/api/memory") {
-      let body: any
-      try { body = await readJsonBody(req) } catch (e: any) {
-        this.json(res, 400, { error: "invalid JSON body", message: e.message }); return true
-      }
-      const agentId = typeof body?.agentId === "string" ? body.agentId : ""
-      const type    = typeof body?.type === "string" ? body.type : ""
-      const name    = typeof body?.name === "string" ? body.name : ""
-      const description = typeof body?.description === "string" ? body.description : ""
-      const newBody = typeof body?.body === "string" ? body.body : ""
-      const append  = body?.append === true
-      if (!agentId || !type || !name || !description || !newBody) {
-        this.json(res, 400, { error: "required fields: agentId, type, name, description, body" })
-        return true
-      }
-      try {
-        let finalBody = newBody
-        if (append) {
-          const existing = mem.get(agentId, name)
-          if (existing) finalBody = `${existing.body.trimEnd()}\n\n${newBody.trim()}`
-        }
-        const rec = mem.save({ agentId, type: type as any, name, description, body: finalBody })
-        const ws = this.workspaceFor(agentId)
-        if (ws) { try { mem.syncToWorkspace(agentId, ws) } catch { /* best effort */ } }
-        this.json(res, 200, { ok: true, memory: rec, syncedToWorkspace: !!ws })
-      } catch (e: any) {
-        this.json(res, 400, { error: e?.message || "save failed" })
-      }
-      return true
-    }
-    // DELETE /api/memory/:name?agent=<id>
-    const delMatch = req.method === "DELETE" && path.match(/^\/api\/memory\/([^\/?]+)$/)
-    if (delMatch) {
-      const agent = url.searchParams.get("agent") || ""
-      if (!agent) { this.json(res, 400, { error: "missing agent query param" }); return true }
-      const ok = mem.remove(agent, decodeURIComponent(delMatch[1]))
-      if (!ok) { this.json(res, 404, { error: "no such memory" }); return true }
-      const ws = this.workspaceFor(agent)
-      if (ws) { try { mem.syncToWorkspace(agent, ws) } catch { /* best effort */ } }
-      this.json(res, 200, { ok: true })
-      return true
-    }
-    return false
+    return handleMemoryApi(req, res, path, url, {
+      mem: this.agentMemory,
+      workspaceFor: (id) => this.workspaceFor(id),
+      runningTaskOwner: (id) => this.registry.runningTaskOwner(id),
+    })
   }
 
   private async handleWorkflowEvent(req: IncomingMessage, res: ServerResponse): Promise<void> {

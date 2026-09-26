@@ -42,7 +42,6 @@ The daemon exposes `POST /api/memory`. Call it from a Bash tool invocation.
 ```bash
 curl -sS -X POST http://localhost:18800/api/memory \
   -H 'Content-Type: application/json' \
-  -H "X-AgentX-Task: $AGENTX_TASK_ID" \
   -d '{
     "agentId": "<your-agent-id>",
     "type": "feedback",
@@ -52,9 +51,7 @@ curl -sS -X POST http://localhost:18800/api/memory \
   }'
 ```
 
-Your agent id is in `$AGENTX_AGENT_ID`. If that is empty, it's the name of the workspace directory you're in (e.g. `atlas`, `globex-v2`); run `basename "$(pwd)"`.
-
-Always send `X-AgentX-Task: $AGENTX_TASK_ID`. It proves the change comes from you, and it's recorded as the memory's author. You can only change your own memory.
+Your agent id is the name of the workspace directory you're in (e.g. `atlas`, `globex-v2`). When in doubt, run `basename "$(pwd)"`.
 
 ### Update an existing memory
 
@@ -63,24 +60,9 @@ Same endpoint, same `name`. The daemon keeps `createdAt` stable and bumps `updat
 ```bash
 curl -sS -X POST http://localhost:18800/api/memory \
   -H 'Content-Type: application/json' \
-  -H "X-AgentX-Task: $AGENTX_TASK_ID" \
   -d '{ "agentId":"atlas","type":"feedback","name":"no-mock-db",
         "description":"…", "body":"Also: 2026-04-15 hit the same class of bug on the grant-application webhook. Same rule.","append":true }'
 ```
-
-### Don't overwrite a newer version
-
-Every read returns an `etag`. To change a memory only if nobody has changed it since you read it, send that etag back as `If-Match`:
-
-```bash
-curl -sS -X POST http://localhost:18800/api/memory \
-  -H 'Content-Type: application/json' \
-  -H "X-AgentX-Task: $AGENTX_TASK_ID" \
-  -H 'If-Match: "<etag from your read>"' \
-  -d '{ "agentId":"atlas","type":"feedback","name":"no-mock-db","description":"…","body":"…" }'
-```
-
-A `409` means it changed in the meantime: read it again, merge your change in, and retry. Send `If-None-Match: *` to create a memory only if it doesn't exist yet.
 
 ### Read what you already remember
 
@@ -95,20 +77,7 @@ curl -sS 'http://localhost:18800/api/memory?agent=atlas'
 ### Remove
 
 ```bash
-curl -sS -X DELETE 'http://localhost:18800/api/memory/no-mock-db?agent=atlas' \
-  -H "X-AgentX-Task: $AGENTX_TASK_ID"
-```
-
-### History
-
-Every change and removal is kept, so nothing is lost for good. List the versions, then restore one:
-
-```bash
-curl -sS 'http://localhost:18800/api/memory/no-mock-db/versions?agent=atlas'
-curl -sS -X POST 'http://localhost:18800/api/memory/no-mock-db/restore?agent=atlas' \
-  -H 'Content-Type: application/json' \
-  -H "X-AgentX-Task: $AGENTX_TASK_ID" \
-  -d '{"version":"<id from the list>"}'
+curl -sS -X DELETE 'http://localhost:18800/api/memory/no-mock-db?agent=atlas'
 ```
 
 ## Structuring the body

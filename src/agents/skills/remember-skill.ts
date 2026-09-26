@@ -1,3 +1,5 @@
+import { createHash } from "crypto"
+
 // Source-of-truth for the `remember` skill body. Exported as a string
 // constant so tsup bundles it into dist/ without needing an asset-copy
 // step. The standalone `.md` file in this directory is a human-readable
@@ -49,6 +51,7 @@ The daemon exposes \`POST /api/memory\`. Call it from a Bash tool invocation.
 \`\`\`bash
 curl -sS -X POST http://localhost:18800/api/memory \\
   -H 'Content-Type: application/json' \\
+  -H "X-AgentX-Task: $AGENTX_TASK_ID" \\
   -d '{
     "agentId": "<your-agent-id>",
     "type": "feedback",
@@ -58,7 +61,9 @@ curl -sS -X POST http://localhost:18800/api/memory \\
   }'
 \`\`\`
 
-Your agent id is the name of the workspace directory you're in (e.g. \`atlas\`, \`globex-v2\`). When in doubt, run \`basename "$(pwd)"\`.
+Your agent id is in \`$AGENTX_AGENT_ID\`. If that is empty, it's the name of the workspace directory you're in (e.g. \`atlas\`, \`globex-v2\`); run \`basename "$(pwd)"\`.
+
+Always send \`X-AgentX-Task: $AGENTX_TASK_ID\`. It proves the change comes from you, and it's recorded as the memory's author. You can only change your own memory.
 
 ### Update an existing memory
 
@@ -67,9 +72,24 @@ Same endpoint, same \`name\`. The daemon keeps \`createdAt\` stable and bumps \`
 \`\`\`bash
 curl -sS -X POST http://localhost:18800/api/memory \\
   -H 'Content-Type: application/json' \\
+  -H "X-AgentX-Task: $AGENTX_TASK_ID" \\
   -d '{ "agentId":"atlas","type":"feedback","name":"no-mock-db",
         "description":"…", "body":"Also: 2026-04-15 hit the same class of bug on the grant-application webhook. Same rule.","append":true }'
 \`\`\`
+
+### Don't overwrite a newer version
+
+Every read returns an \`etag\`. To change a memory only if nobody has changed it since you read it, send that etag back as \`If-Match\`:
+
+\`\`\`bash
+curl -sS -X POST http://localhost:18800/api/memory \\
+  -H 'Content-Type: application/json' \\
+  -H "X-AgentX-Task: $AGENTX_TASK_ID" \\
+  -H 'If-Match: "<etag from your read>"' \\
+  -d '{ "agentId":"atlas","type":"feedback","name":"no-mock-db","description":"…","body":"…" }'
+\`\`\`
+
+A \`409\` means it changed in the meantime: read it again, merge your change in, and retry. Send \`If-None-Match: *\` to create a memory only if it doesn't exist yet.
 
 ### Read what you already remember
 
@@ -84,7 +104,20 @@ curl -sS 'http://localhost:18800/api/memory?agent=atlas'
 ### Remove
 
 \`\`\`bash
-curl -sS -X DELETE 'http://localhost:18800/api/memory/no-mock-db?agent=atlas'
+curl -sS -X DELETE 'http://localhost:18800/api/memory/no-mock-db?agent=atlas' \\
+  -H "X-AgentX-Task: $AGENTX_TASK_ID"
+\`\`\`
+
+### History
+
+Every change and removal is kept, so nothing is lost for good. List the versions, then restore one:
+
+\`\`\`bash
+curl -sS 'http://localhost:18800/api/memory/no-mock-db/versions?agent=atlas'
+curl -sS -X POST 'http://localhost:18800/api/memory/no-mock-db/restore?agent=atlas' \\
+  -H 'Content-Type: application/json' \\
+  -H "X-AgentX-Task: $AGENTX_TASK_ID" \\
+  -d '{"version":"<id from the list>"}'
 \`\`\`
 
 ## Structuring the body
@@ -120,4 +153,31 @@ export function rememberSkillBody(port: number): string {
 export function retargetRememberSkill(installed: string, port: number): string | null {
   if (port === DEFAULT_PORT || !installed.includes(DEFAULT_URL)) return null
   return installed.split(DEFAULT_URL).join(`http://localhost:${port}/api/memory`)
+}
+
+/** Fingerprint of a skill body with its port normalised away, so copies
+ *  rendered for different daemons compare equal. */
+export function skillFingerprint(body: string): string {
+  const normalised = body.replace(/http:\/\/localhost:\d+\/api\/memory/g, "http://localhost:PORT/api/memory")
+  return createHash("sha256").update(normalised).digest("hex").slice(0, 16)
+}
+
+/** Every body agentx has shipped, including this one. An installed copy
+ *  matching one of these was never edited, so replacing it with the
+ *  current body loses nothing. Add the new fingerprint whenever the body
+ *  changes (a test fails until you do). */
+export const SHIPPED_SKILL_FINGERPRINTS: ReadonlySet<string> = new Set([
+  "0d03ef39633b1b62", // first release: no port rendering
+  "174abd4234f2b077", // generic example names
+  "2a6ea8202d1fa0a0", // task header, conditional writes, history
+])
+
+/** What an installed skill should become: the current body when the copy
+ *  is an unedited older release, else only the port retargeted, else
+ *  null (leave it alone). */
+export function upgradeRememberSkill(installed: string, port: number): string | null {
+  const current = rememberSkillBody(port)
+  if (installed === current) return null
+  if (SHIPPED_SKILL_FINGERPRINTS.has(skillFingerprint(installed))) return current
+  return retargetRememberSkill(installed, port)
 }

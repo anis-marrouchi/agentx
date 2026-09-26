@@ -472,6 +472,9 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
  *  would be stale. */
 export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
+  // The running task, so a daemon endpoint the agent calls (agent memory)
+  // can check the caller really is this agent, mid-run.
+  if (task.runningTaskId) env.AGENTX_TASK_ID = task.runningTaskId
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
   return env
