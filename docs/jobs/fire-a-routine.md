@@ -67,7 +67,7 @@ The body counts as **untrusted**. Whoever holds the token decides what it contai
 
 - **Scheduled prompt:** the JSON is added after the prompt in a fenced block labelled `Event payload — UNTRUSTED`. The agent is told to treat it as data, not instructions. Anything past 16 KB is cut off.
 - **Scheduled command:** the JSON is passed in the `AGENTX_ROUTINE_PAYLOAD` environment variable. It is never inserted into the command line. Quote it if you use it: `"$AGENTX_ROUTINE_PAYLOAD"`.
-- **Workflow:** the trigger node's output is `{ workflowId, now, firedVia: "routine-fire", payload, payloadUntrusted: true }`. Refer to the fields as `{{<triggerId>.payload.commit}}`.
+- **Workflow:** the trigger node's output is `{ workflowId, now, firedVia: "routine-fire", payload, payloadUntrusted: true }`. Refer to the fields as <code v-pre>{{&lt;triggerId&gt;.payload.commit}}</code>.
 
 A fired run is recorded and counted like a scheduled one. Failure alerts and auto-disable work the same way. It is never retried, though, and it doesn't move the next scheduled run. If you want another attempt, fire the routine again.
 
