@@ -18,7 +18,7 @@ Treat the bot token like a password. Never put it in an issue, a screenshot or a
 4. Send a username for the bot. It must end in `bot`, for example `example_support_bot`.
 5. Copy the token that BotFather sends back. It looks like `123456:ABC…`.
 
-<!-- Screenshot needed: BotFather chat in the Telegram app. Needs a manual capture outside the docs demo. -->
+![The BotFather chat in Telegram after sending /newbot, asking for a name for the bot](/screenshots/telegram/botfather-newbot.png)
 
 ## 2. Store the token
 

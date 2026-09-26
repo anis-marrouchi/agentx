@@ -42,7 +42,7 @@ If your team names its GitLab bot accounts with a common prefix, for example `te
 6. Optional: under **Secret token**, enter a long random value. Then, in AgentX, add `"webhookSecret": "<the same value>"` to `channels.gitlab` in **Settings › Advanced**, and select **Save**. AgentX then refuses events without it.
 7. Select **Add webhook**.
 
-<!-- Screenshot needed: GitLab project Settings › Webhooks form (external app). Needs a manual capture outside the docs demo. -->
+![The Webhooks form in a GitLab project: URL, Secret token and the Trigger checkboxes](/screenshots/gitlab/webhooks-form.png)
 
 ## Check it worked
 
