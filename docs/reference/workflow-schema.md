@@ -59,10 +59,11 @@ A `trigger.hook` node subscribes to an `on:*` event, such as `on:gitlab-mr` or `
 | `mentions` | `on:gitlab-note` | The comment @-mentions a listed username |
 | `noteableType` | `on:gitlab-note` | The comment is on a listed type: `merge_request` or `issue` |
 | `assigneesAdded`, `reviewersAdded`, `labelsAdded` | GitLab issue and MR events | The update added a listed assignee, reviewer, or label |
+| `skipSelfAuthored` | Events with an author | The author is not one of this workflow's own agents (off by default) |
 | `ignoreAuthors` | Events with an author | The author is not in the list. Leading `@` and letter case are ignored |
 | `maxFiresPerTarget` | Issue, MR, PR, and note events | This workflow has fired fewer than `count` times for the same issue, MR, or PR within `windowMinutes` (default 60) |
 
-**Loop guard.** A workflow skips events written by the bot identity of any agent it runs, so a routine's own comment or label change cannot restart it. To find that identity, AgentX checks the GitLab adapter's username-to-agent map, the signature on AgentX comments, and each agent's `gitlabUsernames` or `githubUsernames` in `agentMappings`. If the identity can't be resolved, the daemon logs this once and only `ignoreAuthors` applies. A workflow that should react to its own events, such as a label-driven lifecycle loop, can set `allowSelfAuthored: true`.
+**Loop guard.** With `skipSelfAuthored: true`, a workflow skips events written by the bot identity of any agent it runs, so a routine's own comment or label change cannot restart it. It is off by default, because label-driven lifecycle workflows react to their own agent's transitions on purpose. To find that identity, AgentX checks the GitLab adapter's username-to-agent map, the signature on AgentX comments, and each agent's `gitlabUsernames` or `githubUsernames` in `agentMappings`. If the identity can't be resolved, the daemon logs this once and only `ignoreAuthors` applies.
 
 This check can't catch two routines that trigger each other, such as a generator and a critic. Neither one sees its own identity. Use `maxFiresPerTarget` for that case:
 

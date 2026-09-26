@@ -5,12 +5,13 @@
 // (or its partner) wakes up again. Three gates, evaluated after the
 // regular trigger filters in triggers.ts:
 //
-//   1. Self-authored skip (default on). The event author is the forge
+//   1. Self-authored skip (opt-in via `filter.skipSelfAuthored: true`).
+//      Off by default because label-driven lifecycle workflows react to
+//      their own agent's transitions on purpose. The event author is the forge
 //      identity of an agent the workflow itself runs. Identity comes from
 //      `ctx.authorAgent` (stamped by the GitLab adapter from its
 //      token-resolved username map or the agentx comment signature) or from
-//      the configured forge usernames of the workflow's agents. Opt out with
-//      `filter.allowSelfAuthored: true`.
+//      the configured forge usernames of the workflow's agents.
 //   2. `filter.ignoreAuthors` — explicit usernames to skip.
 //   3. `filter.maxFiresPerTarget: { count, windowMinutes }` — at most
 //      `count` fires of this workflow for the same issue/MR/PR inside a
@@ -21,7 +22,7 @@ import type { Workflow } from "./types"
 
 export interface LoopGuardFilter {
   ignoreAuthors?: string[]
-  allowSelfAuthored?: boolean
+  skipSelfAuthored?: boolean
   maxFiresPerTarget?: { count?: number; windowMinutes?: number }
 }
 
@@ -149,7 +150,7 @@ export function checkLoopGuard(
     }
   }
 
-  if (filter?.allowSelfAuthored !== true) {
+  if (filter?.skipSelfAuthored === true) {
     const agents = workflowAgentIds(wf)
     const authorAgent = typeof ctx.authorAgent === "string" ? ctx.authorAgent : undefined
     if (authorAgent && agents.includes(authorAgent)) {

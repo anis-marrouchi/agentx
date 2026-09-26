@@ -110,7 +110,7 @@ export function startWorkflowTriggers(args: {
         } & LoopGuardFilter
         // LoopGuardFilter adds (see loop-guard.ts):
         //   ignoreAuthors      — skip events authored by these usernames
-        //   allowSelfAuthored  — opt out of the default self-authored skip
+        //   skipSelfAuthored   — skip events authored by this workflow's own agents
         //   maxFiresPerTarget  — { count, windowMinutes } per issue/MR/PR
       }
       if (!cfg.event || !cfg.event.startsWith("on:")) {

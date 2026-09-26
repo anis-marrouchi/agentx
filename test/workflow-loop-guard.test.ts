@@ -53,7 +53,7 @@ function boot(workflows: any[], forgeUsernames?: (a: string) => string[]) {
 
 describe("workflow loop guard — self-authored events", () => {
   it("skips an MR event authored by the workflow's own agent (adapter-stamped authorAgent)", async () => {
-    const { fire, dispatched, logs } = boot([wf("mr-review", "review-agent", "on:gitlab-mr")])
+    const { fire, dispatched, logs } = boot([wf("mr-review", "review-agent", "on:gitlab-mr", { skipSelfAuthored: true })])
     await fire("on:gitlab-mr", { project: "acme/app", iid: 5, author: "review-bot", authorAgent: "review-agent" })
     expect(dispatched).toEqual([])
     expect(logs.some((l) => l.includes("mr-review skipping on:gitlab-mr (self-authored)"))).toBe(true)
@@ -64,7 +64,7 @@ describe("workflow loop guard — self-authored events", () => {
 
   it("resolves own identity from configured forge usernames (GitHub)", async () => {
     const { fire, dispatched } = boot(
-      [wf("pr-review", "review-agent", "on:github-pr")],
+      [wf("pr-review", "review-agent", "on:github-pr", { skipSelfAuthored: true })],
       (a) => (a === "review-agent" ? ["Review-Bot"] : []),
     )
     await fire("on:github-pr", { payload: { sender: { login: "review-bot" }, repository: { full_name: "acme/app" }, pull_request: { number: 9 } } })
@@ -73,14 +73,14 @@ describe("workflow loop guard — self-authored events", () => {
     expect(dispatched).toEqual(["pr-review"])
   })
 
-  it("allowSelfAuthored opts out of the default skip", async () => {
-    const { fire, dispatched } = boot([wf("sdlc", "coder", "on:gitlab-issue", { allowSelfAuthored: true })])
+  it("is off by default, so lifecycle loops still see their own transitions", async () => {
+    const { fire, dispatched } = boot([wf("sdlc", "coder", "on:gitlab-issue")])
     await fire("on:gitlab-issue", { project: "acme/app", iid: 1, author: "coder-bot", authorAgent: "coder" })
     expect(dispatched).toEqual(["sdlc"])
   })
 
   it("logs once when no identity is known, and still fires", async () => {
-    const { fire, dispatched, logs } = boot([wf("gh", "coder", "on:github-issue")])
+    const { fire, dispatched, logs } = boot([wf("gh", "coder", "on:github-issue", { skipSelfAuthored: true })])
     await fire("on:github-issue", { author: "someone", repo: "acme/app", number: 1 })
     await fire("on:github-issue", { author: "someone", repo: "acme/app", number: 2 })
     expect(dispatched).toEqual(["gh", "gh"])
@@ -162,7 +162,7 @@ describe("loop-guard helpers", () => {
     const fireWindow = new FireWindow()
     const deps = { fireWindow, log: () => {} }
     const w = { id: "x", nodes: [{ id: "a", type: "agent", config: { agentId: "coder" } }] } as any
-    const filter = { maxFiresPerTarget: { count: 1, windowMinutes: 5 } }
+    const filter = { skipSelfAuthored: true, maxFiresPerTarget: { count: 1, windowMinutes: 5 } }
     const ctx = { project: "a/b", iid: 1, author: "coder-bot", authorAgent: "coder" }
     expect(checkLoopGuard(w, "on:gitlab-mr", ctx, filter, deps)).toMatchObject({ skip: true, reason: "self-authored" })
     expect(fireWindow.size).toBe(0)
