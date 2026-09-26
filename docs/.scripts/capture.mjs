@@ -29,6 +29,7 @@ const askSteps = [
 const shots = [
   { name: "live", path: "/live", wait: ".ax-agent__name" },
   { name: "operations", path: "/mesh", wait: "body" },
+  { name: "operations/routines", path: "/mesh", wait: "body", steps: [{ clickText: "Operations" }, { wait: "#mx-routines .mx-flags" }, { scroll: "#mx-routines-title" }] },
   { name: "activity", path: "/activity", wait: ".ac-row" },
   { name: "activity-by-client", path: "/activity", wait: ".ac-row", steps: [{ clickText: "Client" }] },
   { name: "activity-by-channel", path: "/activity", wait: ".ac-row", steps: [{ clickText: "Channel" }] },
@@ -128,7 +129,9 @@ try {
       params.clip = { x: 0, y: 0, width: 1440, height: Math.min(cssContentSize.height, 3600), scale: 1 }
     }
     const screenshot = await cdp("Page.captureScreenshot", params)
-    writeFileSync(resolve(out, `${shot.name}.png`), Buffer.from(screenshot.data, "base64"))
+    const file = resolve(out, `${shot.name}.png`)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, Buffer.from(screenshot.data, "base64"))
     console.log(`Captured ${shot.name}`)
   }
 } finally {

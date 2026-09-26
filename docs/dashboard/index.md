@@ -17,6 +17,4 @@ Start in Monitor for a work overview, then open Activity when you need to invest
 
 Use [in-page chat](chat.md) to ask about the current view. You can also work through the [macOS desktop assistant](voice.md) or the [OpenCode terminal UI](tui.md).
 
-## Behind a reverse proxy
-
-The dashboard and the daemon accept browser requests only from pages they serve themselves. This stops a web page open on the same machine from using them. If a reverse proxy serves the dashboard under another host name and doesn't forward `X-Forwarded-Host`, list that address in `AGENTX_ALLOWED_ORIGINS`, for example `AGENTX_ALLOWED_ORIGINS=https://ops.example.com`. Separate several addresses with commas.
+To open the dashboard through your own web address, see [Open the dashboard through your own web address](../jobs/reverse-proxy.md).

@@ -95,7 +95,7 @@ Start with the [visual workflow guide](../tutorials/first-workflow.md) before en
 
 ## Agent memory
 
-After each reply, agentx pulls facts out of the conversation and gives them to the agent in later tasks. Credentials are never kept. Facts from channels anyone can write to, such as a public web chat, wait for your approval before agents see them.
+How to use these, step by step: [Review what your agents learn](../jobs/agent-memory.md).
 
 | Command | What it does |
 |---|---|
@@ -104,11 +104,7 @@ After each reply, agentx pulls facts out of the conversation and gives them to t
 | `agentx memory facts approve <id> --agent <id>` | Let a held fact be used |
 | `agentx memory facts reject <id> --agent <id>` | Keep a held fact out for good |
 | `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
-
-Every night, `agentx wiki promote --commit` asks a judge which agent memories and repeated session findings deserve a place in the shared wiki. Nothing is written until you approve it: each suggestion becomes a proposal, with the memories, agents and sessions behind it.
-
-| Command | What it does |
-|---|---|
+| `agentx wiki promote [--commit]` | Preview (or, with `--commit`, judge and propose) lessons for the shared wiki |
 | `agentx wiki proposals list` | Proposed lessons waiting for review |
 | `agentx wiki proposals show <id>` | The proposed article and its evidence |
 | `agentx wiki proposals approve <id>` | Write it into the shared wiki; refuses if the article changed since, unless `--force` |
