@@ -29,6 +29,19 @@ function withOutputCap(prompt: string, maxOutputTokens?: number): string {
 }
 
 /**
+ * Floor for an agent run's hard deadline, in seconds. A job's `timeout` was
+ * only enforced for command jobs, and live agent jobs routinely run past it
+ * (30–55 min against 600–900 s), so it only raises the deadline, never
+ * lowers it below this. The deadline exists to end a run that hangs.
+ */
+export const AGENT_RUN_TIMEOUT_FLOOR = 2 * 60 * 60
+
+/** Hard deadline for an agent run started by a job, in seconds. */
+export function agentRunTimeout(jobTimeout: number | undefined): number {
+  return Math.max(jobTimeout ?? 0, AGENT_RUN_TIMEOUT_FLOOR)
+}
+
+/**
  * The ids that make a finished cron run openable: the dashboard task id
  * (Task page, follow-up), the trace id, and the provider session when the
  * runtime reported one. registry.execute writes the first two onto the task
@@ -546,6 +559,7 @@ export class CronScheduler {
       reason: fire ? "fired on demand" : isRetry ? `retry ${retryAttempt}` : null,
     })
 
+    const timeout = agentRunTimeout(job.timeout)
     try {
       const task: AgentTask = {
         message: withOutputCap(
@@ -555,6 +569,7 @@ export class CronScheduler {
         agentId: job.agent,
         model: job.model,
         autonomy: job.autonomy,
+        timeoutMinutes: timeout / 60,
         intentRef,
         // chatId per-job so different cron jobs for the same agent don't
         // collide in one "default" session. Without this, the marketing
@@ -574,6 +589,7 @@ export class CronScheduler {
         duration: response.duration || Date.now() - startedAt.getTime(),
         isRetry,
         retryAttempt,
+        timeout,
         ...(fire ? { fired: true } : {}),
         ...runLinkIds(task, response),
         ...(response.autonomy ? { autonomy: response.autonomy } : {}),
@@ -702,6 +718,7 @@ export class CronScheduler {
 
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
+      const timeout = agentRunTimeout(job.timeout)
       try {
         const task: AgentTask = {
           message: withOutputCap(
@@ -712,6 +729,7 @@ export class CronScheduler {
           // Catch-up runs keep the job's autonomy — a missed report job
           // must not come back at full power.
           autonomy: job.autonomy,
+          timeoutMinutes: timeout / 60,
           context: { channel: "cron", chatId: `cron:${jobId}` },
         }
         const response = await this.registry.execute(task)
@@ -725,6 +743,7 @@ export class CronScheduler {
           error: response.error,
           duration: response.duration || 0,
           isRetry: false,
+          timeout,
           ...runLinkIds(task, response),
           ...(response.autonomy ? { autonomy: response.autonomy } : {}),
           ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
