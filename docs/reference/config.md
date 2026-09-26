@@ -83,7 +83,7 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 2. Cancel the run: `curl -s -X POST http://127.0.0.1:18800/api/tasks/<id>/cancel`. The answer is `{"ok":true,…}`.
 3. List the agents again. The run is gone and the agent's `active` count went down by one.
 
-### If something is wrong
+### When a run is cut short
 
 - **A run ended with "timed out after …s".** Its limit was too short for the work. Raise `timeoutMinutes` (or the job's `timeout`) and run it again.
 - **A cancelled run is still listed.** Check the daemon log for a line ending in `aborted in step "<name>"`. If it is missing, the cancel did not reach this daemon: check that you cancelled on the machine running the agent.
