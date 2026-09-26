@@ -159,6 +159,16 @@ This is an optional local transcription setup for Apple Silicon. It needs Python
 
    Replace the audio path. The first run downloads the model and needs internet access and free disk space. Let it finish before testing the desktop hotkey.
 
+5. In the terminal, run the desktop install again so the assistant can find FFmpeg when it starts at login:
+
+   ```sh
+   agentx desktop install --agent coder-agent
+   ```
+
+   A login app does not see your terminal's settings. The installer records the folder where it found FFmpeg. If it prints `ffmpeg was not found`, finish step 1 and run it again.
+
+6. In the terminal, run `agentx doctor`. Under **Desktop**, it should report `ffmpeg reachable by the desktop app`.
+
 **Ready when:** the test creates a text transcript. Restart the desktop assistant and test Option–Space. Without ElevenLabs, spoken replies use macOS `say`. Local transcription does not make a remotely hosted agent model work offline.
 
 ## macOS permissions

@@ -37,6 +37,7 @@ Grant microphone access for voice, and Accessibility / Screen Recording permissi
 | `AGENTX_VOICE_PROVIDER` | `system`; which engine speaks before the daemon has named one (e.g. an error line) |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper`, the local transcription executable |
 | `AGENTX_MLX_MODEL` | `mlx-community/whisper-large-v3-turbo` |
+| `AGENTX_VOICE_PATH` | Read by the installer, not the app: the full `PATH` to give the login service. By default, this is the folder of the `ffmpeg` found at install time plus macOS's standard folders |
 
 Without an ElevenLabs key, transcription needs a working local `mlx_whisper` installation. Speech uses the free macOS voices unless you choose ElevenLabs (see [Agent voices](#agent-voices)). ElevenLabs usage and the agent's model usage are separate costs. The app checks the key environment variable first, then `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt`.
 
@@ -194,7 +195,7 @@ The daemon runs the same lesson at `POST /teach/live {agent, goal, mode}`, behin
 ## If it does not answer
 
 - **No recording:** check macOS microphone permission and hold the shortcut while speaking.
-- **Transcription fails:** check your ElevenLabs key or the local Whisper executable and model.
+- **Transcription fails:** check your ElevenLabs key or the local Whisper executable and model. The app says "Sorry, I didn't hear that" and sends nothing. For local Whisper, run `agentx doctor`. If it reports `ffmpeg not reachable by the desktop app`, install FFmpeg and run `agentx desktop install` again.
 - **Agent unavailable:** check the daemon URL and the exact agent ID.
 - **Remote daemon rejects it:** the current widget client has no configurable mesh bearer token; use the local daemon path for this setup.
 
