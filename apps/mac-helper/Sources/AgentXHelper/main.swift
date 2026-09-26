@@ -280,10 +280,14 @@ case "notify":
     }
     FileHandle.standardOutput.write(#"{"ok":true,"notified":true}"#.data(using: .utf8)!)
 
+case "notify-status":
+    // Whether macOS lets the helper post banners. Never prompts or posts.
+    FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: Notify.status()))
+
 case "trusted":
     let payload = ["ok": true, "trusted": AXTree.trusted()] as [String: Any]
     FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: payload))
 
 default:
-    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence, notify or trusted")
+    fail("unknown verb \"\(verb)\" — expected read, screens, point, click, type, key, scroll, drag, ocr, capture, hittest, focused, hud, presence, notify, notify-status or trusted")
 }
