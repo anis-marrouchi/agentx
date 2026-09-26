@@ -3,7 +3,35 @@
 // step. The standalone `.md` file in this directory is a human-readable
 // mirror kept in sync by hand; runtime installers read from here.
 
+import { existsSync, readFileSync, writeFileSync } from "fs"
+import { resolve } from "path"
+
 export const REMEMBER_SKILL_FILENAME = "remember.md"
+
+// The body is written against the default port; installs render it with
+// the daemon's real one.
+const DEFAULT_MEMORY_URL = "http://localhost:18800/api/memory"
+
+/** Point every memory-API URL in `text` at `port`. Touches nothing else,
+ *  so operator edits to an installed skill survive a rewrite. */
+export function withMemoryPort(text: string, port: number | string): string {
+  return text.replaceAll(DEFAULT_MEMORY_URL, `http://localhost:${port}/api/memory`)
+}
+
+/** Write the skill into `skillsDir` if absent; otherwise repoint an
+ *  existing copy still aimed at the default port. Returns what changed. */
+export function installRememberSkill(skillsDir: string, port: number | string): "installed" | "repointed" | null {
+  const path = resolve(skillsDir, REMEMBER_SKILL_FILENAME)
+  if (!existsSync(path)) {
+    writeFileSync(path, withMemoryPort(REMEMBER_SKILL_BODY, port))
+    return "installed"
+  }
+  const current = readFileSync(path, "utf-8")
+  const repointed = withMemoryPort(current, port)
+  if (repointed === current) return null
+  writeFileSync(path, repointed)
+  return "repointed"
+}
 
 export const REMEMBER_SKILL_BODY = `---
 name: remember
