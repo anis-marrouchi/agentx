@@ -424,6 +424,7 @@ function runMigrations(db: Database.Database): void {
   // number from another branch would silently skip ours. Checking the
   // table itself makes these columns appear on every database.
   ensureColumns(db, "task_traces", RESUME_COLUMNS)
+  ensureColumns(db, "task_traces", LESSON_IMPACT_COLUMNS)
 }
 
 /** Schema version check for tests. */
@@ -622,6 +623,15 @@ const RESUME_COLUMNS: Array<[string, string]> = [
   ["resumed_from", "TEXT"],
   ["resume_decision", "TEXT"],
   ["resume_reason", "TEXT"],
+]
+
+/** Lesson impact (#98): the memory facts and procedures injected into a turn,
+ *  as JSON {memory: ids, procedures: ids, wiki: bool}, plus the runtime's turn
+ *  count. `agentx trace lessons` compares a repeated task before and after
+ *  each lesson on these columns. */
+const LESSON_IMPACT_COLUMNS: Array<[string, string]> = [
+  ["num_turns", "INTEGER"],
+  ["injected_context", "TEXT"],
 ]
 
 /** Add any of `columns` the table lacks. Idempotent. */

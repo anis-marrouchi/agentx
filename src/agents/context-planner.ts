@@ -23,7 +23,7 @@
 
 import type { SessionStore, SessionMessage } from "./sessions"
 import { extractJson } from "@/utils/extract-json"
-import type { MemoryStore } from "./memory-store"
+import type { MemoryFact, MemoryStore } from "./memory-store"
 
 /** Planner output. When `null`, the caller falls back to the layered
  *  strategy. Otherwise each field overrides the corresponding context
@@ -35,6 +35,8 @@ export interface ContextPlan {
   /** Rendered memory context, or "" when the planner decided memory
    *  isn't relevant to this message. */
   memoryContext: string
+  /** The memory facts rendered into memoryContext. */
+  memoryFacts: MemoryFact[]
   /** Rendered cross-chat summary, or "" when not needed. */
   crossChatContext: string
   /** Debug metadata — surfaced in logs + bench output so operators can
@@ -144,10 +146,12 @@ export async function planContext(input: PlanContextInput): Promise<ContextPlan 
   )
 
   let memoryContext = ""
+  let memoryFacts: MemoryFact[] = []
   if (memoryInclude && memoryQuery) {
     try {
       const relevant = input.memoryStore.findRelevant(memoryQuery, input.agentId, 5)
       memoryContext = input.memoryStore.buildContext(relevant)
+      memoryFacts = input.memoryStore.contextFacts(relevant)
     } catch {
       // Memory retrieval is best-effort; planner proceeds with empty memory.
     }
@@ -164,6 +168,7 @@ export async function planContext(input: PlanContextInput): Promise<ContextPlan 
   return {
     sessionHistory,
     memoryContext,
+    memoryFacts,
     crossChatContext,
     debug: {
       recentTurns,

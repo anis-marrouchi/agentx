@@ -107,6 +107,34 @@ describe("agentx trace CLI", () => {
     expect(r.stdout).toContain("No trace at")
   })
 
+  it("lessons compares a repeated task before and after a lesson (#98)", () => {
+    const db = openDb({ path: path.join(tmp, ".agentx", "db.sqlite") })!
+    const now = Date.now()
+    for (let i = 0; i < 4; i++) {
+      const id = recordTraceStart(db, { agentId: "atlas", channel: "telegram", chatId: "c1", originalMessage: "Send the weekly report" })
+      recordTraceEnd(db, id, {
+        status: "ok",
+        inputTokens: i < 2 ? 2000 : 1000,
+        numTurns: i < 2 ? 8 : 4,
+        injectedContext: { memory: i < 2 ? [] : ["m1"], procedures: [], wiki: false },
+      })
+      db.prepare("UPDATE task_traces SET started_at = ? WHERE task_id = ?").run(now - (4 - i) * 3_600_000, id)
+    }
+    closeDb()
+
+    const json = runCli(["trace", "lessons", "--json"])
+    expect(json.status).toBe(0)
+    const rows = JSON.parse(json.stdout)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ agentId: "atlas", lesson: "memory:m1" })
+    expect(rows[0].before).toMatchObject({ n: 2, medianTokens: 2000, medianTurns: 8 })
+    expect(rows[0].after).toMatchObject({ n: 2, medianTokens: 1000, medianTurns: 4 })
+
+    const text = runCli(["trace", "lessons", "--min", "3"])
+    expect(text.status).toBe(0)
+    expect(text.stdout).toContain("at least 3")
+  })
+
   it("list against a missing db exits non-zero with a friendly message", () => {
     // do NOT seed — empty cwd
     const r = runCli(["trace", "list"])

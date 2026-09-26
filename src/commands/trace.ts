@@ -4,6 +4,8 @@ import { resolve } from "path"
 import { existsSync } from "fs"
 import Database from "better-sqlite3"
 import { getTrace, listTraces, type TraceRecord, type TraceStepRecord } from "@/storage/traces"
+import { lessonImpact, loadTaskSamples } from "@/storage/lesson-impact"
+import { renderLessonImpact } from "./trace-lessons"
 
 // --- agentx trace ---
 //
@@ -181,6 +183,16 @@ function printTrace(t: TraceRecord, steps: TraceStepRecord[]): void {
     console.log(`  ${chalk.dim("tokens")}   in=${t.inputTokens ?? 0} out=${t.outputTokens ?? 0} ` +
       `cache_read=${t.cacheReadTokens ?? 0} cache_create=${t.cacheCreateTokens ?? 0}`)
   }
+  if (t.numTurns != null) console.log(`  ${chalk.dim("turns")}    ${t.numTurns}`)
+  if (t.injectedContext) {
+    const { memory, procedures, wiki } = t.injectedContext
+    const parts = [
+      ...memory.map((id) => `memory:${id}`),
+      ...procedures.map((id) => `procedure:${id}`),
+      ...(wiki ? ["wiki"] : []),
+    ]
+    console.log(`  ${chalk.dim("lessons")}  ${parts.length ? parts.join(" ") : chalk.dim("none")}`)
+  }
   if (t.error) console.log(`  ${chalk.red("error")}    ${t.error}`)
   if (t.messagePreview) console.log(`  ${chalk.dim("message")}  ${t.messagePreview}`)
   console.log()
@@ -208,6 +220,33 @@ function printTrace(t: TraceRecord, steps: TraceStepRecord[]): void {
     if (s.error) console.log(`      ${chalk.red("error:")} ${s.error}`)
   }
 }
+
+// --- agentx trace lessons ---------------------------------------------------
+//
+// Issue #98: for each repeated task (per agent, grouped by the procedure
+// miner's clusterKey), compare tasks before a memory fact, procedure or the
+// wiki catalog was first injected against tasks that received it.
+
+trace
+  .command("lessons")
+  .description("compare repeated tasks before and after each lesson (memory, procedure, wiki) was used")
+  .option("--cwd <cwd>", "working directory", process.cwd())
+  .option("--path <path>", "db path relative to cwd", ".agentx/db.sqlite")
+  .option("--agent <id>", "only this agent")
+  .option("--since <duration>", "only tasks newer than (e.g. 7d, 30d)", "30d")
+  .option("--min <n>", "minimum tasks on each side of a lesson", "2")
+  .option("--json", "emit JSON")
+  .action((opts) => {
+    const db = openReadOnly(opts)
+    const minSamples = Math.max(1, parseInt(opts.min, 10) || 2)
+    const samples = loadTaskSamples(db, { since: parseSince(opts.since), agentId: opts.agent })
+    const rows = lessonImpact(samples, { minSamples })
+    if (opts.json) {
+      console.log(JSON.stringify(rows, null, 2))
+      return
+    }
+    for (const line of renderLessonImpact(rows, { minSamples })) console.log(line)
+  })
 
 // --- agentx trace replay <taskId> [--diff] ----------------------------------
 //

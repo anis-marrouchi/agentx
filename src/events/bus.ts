@@ -147,6 +147,10 @@ export interface AgentXEvents {
     resumeSessionId?: string
     /** Request-gate experiment arm when the gate was active. */
     jevArm?: "treatment" | "holdout"
+    /** Runtime-reported turn count, when the runtime reports one. */
+    numTurns?: number
+    /** Lessons injected into this turn's prompt (memory, procedures, wiki). */
+    injectedContext?: { memory: string[]; procedures: string[]; wiki: boolean }
     /** Agent's final reply text — recorded into task_traces.final_response
      *  so `replay --diff` can show original vs current output side-by-side.
      *  Optional for back-compat. */
