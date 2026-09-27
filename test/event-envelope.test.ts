@@ -6,6 +6,7 @@ import { getEventBus, TypedEventBus } from "../src/events/bus"
 import { EventRing, SUMMARY_MAX, withNewRoot, withRoot, type EventEnvelope } from "../src/events/envelope"
 import { EventBus, type DaemonEvent } from "../src/daemon/event-bus"
 import { A2AMesh, rootFromTaskBody } from "../src/a2a/mesh"
+import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { WorkflowDispatcher } from "../src/workflows/dispatcher"
 import { WorkflowStore } from "../src/workflows/store"
 import { RunStore } from "../src/workflows/run-store"
@@ -60,6 +61,11 @@ describe("ring buffer", () => {
     expect(bus.recent({ since: "2026-09-27T10:01:30.000Z" }).map((e) => e.summary)).toEqual(["c", "d"])
     expect(bus.recent({ kind: "agent", agent: "coder" }).map((e) => e.summary)).toEqual(["b", "d"])
     expect(bus.recent({ limit: 1 }).map((e) => e.summary)).toEqual(["d"])
+  })
+
+  it("is served off-box only with the mesh token", () => {
+    expect(isMeshGatedPath("/events/recent")).toBe(true)
+    expect(isMeshGatedPath("/events")).toBe(false)
   })
 
   it("resizes from config", () => {
