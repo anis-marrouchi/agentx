@@ -165,6 +165,18 @@ export function _resolveDaemonUrlForTesting(): string {
 const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]/g
 function stripAnsi(s: string): string { return s.replace(ANSI_RE, "") }
 
+/** Plain-text answer for agentx_events. Exported for tests. */
+export function renderEventsAnswer(
+  agentId: string,
+  data: { subscriptions?: number; events?: any[]; next?: string },
+  format: (e: any) => string,
+): string {
+  if (!data.subscriptions) return `${agentId} has no event subscriptions. Add agents.${agentId}.subscriptions to agentx.json to receive events.`
+  const events = data.events ?? []
+  if (events.length === 0) return `No new events match ${agentId}'s subscriptions.${data.next ? ` next: ${data.next}` : ""}`
+  return [...events.map((e) => `- ${format(e)} [id ${e.id}, root ${e.rootId}]`), `next: ${data.next}`].join("\n")
+}
+
 // Tool definitions
 const TOOLS = [
   {
@@ -380,6 +392,21 @@ const TOOLS = [
         },
       },
       required: ["channel", "chatId"],
+    },
+  },
+  {
+    name: "agentx_events",
+    description:
+      "Read what happened on this node that matches your event subscriptions (agents.<id>.subscriptions in agentx.json): tasks other agents finished or failed, workflow runs, mesh hand-offs. " +
+      "Use it to catch up after being idle instead of asking. Returns short summaries only (no prompts or answers), oldest first, at most 50. " +
+      "Pass the `next` value from the previous answer as `since` to read only newer events.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        since: { type: "string", description: "An event id (events after it) or an ISO time. Default: the newest events in memory." },
+        limit: { type: "number", description: "Most events to return. Default 20, max 50." },
+        agentId: { type: "string", description: "Whose subscriptions to read. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
     },
   },
   {
@@ -1130,6 +1157,23 @@ async function handleToolCall(
       }
       const more = data.pending > 0 ? ` ${data.pending} still queued.` : ""
       return { content: [{ type: "text", text: `Sent to ${data.item?.channel}.${more}` }] }
+    }
+
+    case "agentx_events": {
+      const agentId = process.env.AGENTX_AGENT_ID || (args.agentId as string | undefined)
+      if (!agentId) {
+        return { content: [{ type: "text", text: "Error: agentId is required (no AGENTX_AGENT_ID in this session)." }] }
+      }
+      const qs = new URLSearchParams()
+      if (typeof args.since === "string" && args.since) qs.set("since", args.since)
+      if (typeof args.limit === "number") qs.set("limit", String(args.limit))
+      const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agentId)}/events?${qs}`, { signal: AbortSignal.timeout(10_000) })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+      }
+      const { formatEventLine } = await import("@/events/subscriptions")
+      return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
     }
 
     case "agentx_crons": {

@@ -32,6 +32,7 @@ import { getDefaultLedger } from "@/intent/instance"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
+import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
@@ -221,6 +222,15 @@ export function buildEntryMeta(
   // already holds it.
   if (context?.group && context?.sender) meta.group = context.group
   return Object.keys(meta).length > 0 ? meta : undefined
+}
+
+/** The `digest` block for a fresh session: events matched by the agent's
+ *  digest subscriptions since its last finished turn. Undefined when it has
+ *  none or nothing matched. Callers gate on !resumeSessionId. */
+export function buildEventDigest(agentId: string, subs: SubscriptionInput[] | undefined): string | undefined {
+  if (!subs?.some((s) => s.delivery === "digest")) return undefined
+  const { shown, more } = digestEvents(agentId, subs, getEventBus().recent())
+  return renderDigest(shown, more)
 }
 
 export function buildWikiContext(
@@ -1040,7 +1050,10 @@ export class AgentRegistry {
       // as plain channel text, which would drop its autonomy level. So does
       // the reminders poller: "reminder" has no adapter to re-route to, and
       // it would read __queued__ as a refusal and dispatch the reminder again.
-      if (qChannel === "api" || qChannel === "reminder" || restricted) {
+      // Event wakes ("events") wait so the turn runs inside the dispatch's
+      // withRoot: a queued one would be flushed from the earlier run and
+      // publish under that run's rootId, or merge with it in collect mode.
+      if (qChannel === "api" || qChannel === "reminder" || qChannel === "events" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
@@ -2013,6 +2026,8 @@ export class AgentRegistry {
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       rotationMemo,
+      // Checked here, after the planner may have dropped the session.
+      eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
       intent: intent
         ? {
             path: intent.path,

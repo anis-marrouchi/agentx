@@ -153,6 +153,11 @@ export interface ContextInput {
     capturedAt: string               // ISO timestamp of the rotation
   }
 
+  // Events matched by the agent's `digest` subscriptions since its last
+  // turn. FRESH sessions only (registry gates on !resumeSessionId): a
+  // resumed session reads newer events with agentx_events instead.
+  eventDigest?: string
+
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
   intent?: {
@@ -439,6 +444,18 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
         input.rotationMemo.memo,
       ].join("\n"),
       tags: ["continuity", "rotation-memo"],
+    })
+  }
+
+  // 7e. Event digest — subscribed events since the agent's last turn.
+  //      Fresh sessions only (registry-gated).
+  if (input.eventDigest) {
+    layers.push({
+      name: "events",
+      priority: 7.7,
+      maxTokens: budget("events", 500),
+      content: input.eventDigest,
+      tags: ["events", "subscriptions"],
     })
   }
 

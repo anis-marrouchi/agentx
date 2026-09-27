@@ -48,6 +48,10 @@ curl 'http://127.0.0.1:18800/events/recent?since=2026-09-27T09:00:00Z&kind=agent
 
 The answer is `{ "events": [ … ] }`, oldest first. The buffer holds the last `events.ringSize` events (default 1,000) and is empty after a restart. Traces and run records remain the durable history. Off this machine the endpoint needs `Authorization: Bearer <mesh-token>`.
 
+## Events for one agent
+
+An agent can follow events through its `subscriptions` setting: it reads them with the `agentx_events` tool, gets a short list when it starts a fresh conversation, or is started by them. See [Let agents follow events](/automations/event-subscriptions). The same list is served at `GET /agents/<id>/events?since=&limit=`. It returns `{ "agentId", "subscriptions", "events": [ … ], "next" }`, at most 50 events, oldest first. Without `since` you get the newest events; with `since` you get the oldest ones after it, so passing `next` back as `since` reads every event once. Off this machine it needs the mesh token too.
+
 ## Live stream
 
 `GET /events` is a server-sent event stream. Its wire format is unchanged: `event: <kind>` with the kind's own fields as `data`, for the `run`, `task`, `signal`, `mesh`, `channel` and `status` kinds. Each frame now also includes `rootId` and `node`. Filter with `?type=run,task`, `?workflow=`, `?run=`, `?actor=` and `?channel=`. Agent task steps still arrive as `event: task` with `kind: "task:step"`. The envelope-only kinds (`message`, `agent`, and the mesh `forward` event) are read through `/events/recent`.

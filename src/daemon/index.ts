@@ -115,6 +115,8 @@ import {
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { withNewRoot, withRoot } from "@/events/envelope"
+import { EventWaker, wakeMessage } from "@/events/wake"
+import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -146,6 +148,7 @@ export class AgentXDaemon {
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
+  private stopEventWaker?: () => void
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
@@ -315,6 +318,19 @@ export class AgentXDaemon {
         this.heartbeat.register(id, agent.heartbeat)
       }
     }
+
+    // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
+    // every event so a reload applies; the woken turn runs under the
+    // event's root so what it causes cannot wake it again.
+    this.stopEventWaker = new EventWaker({
+      agents: () => this.config.agents,
+      dispatch: (agentId, e) => withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
+        message: wakeMessage(e),
+        agentId,
+        context: { channel: "events", chatId: `events:${agentId}` },
+      })),
+      log: (msg) => this.log(msg),
+    }).attach(getAgentEventBus())
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
@@ -840,6 +856,7 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping heartbeats...")
       this.heartbeat.stopAll()
+      this.stopEventWaker?.()
     } catch {}
 
     try {
@@ -2832,6 +2849,28 @@ export class AgentXDaemon {
             agent: q.get("agent") || undefined,
             limit: Number.isFinite(limit) ? limit : undefined,
           }),
+        })
+        return
+      }
+
+      // One agent's subscriptions, read back as a bounded digest: the pull
+      // delivery behind the agentx_events MCP tool and `agentx events`.
+      const agentEventsMatch = req.method === "GET" ? path.match(/^\/agents\/([^/]+)\/events$/) : null
+      if (agentEventsMatch) {
+        const agentId = decodeURIComponent(agentEventsMatch[1])
+        const def = this.config.agents[agentId]
+        if (!def) { this.json(res, 404, { error: `unknown agent: ${agentId}` }); return }
+        const q = url.searchParams
+        const limit = clampLimit(parseInt(q.get("limit") || "", 10))
+        const since = q.get("since") || undefined
+        // With a cursor, return the oldest page after it so `next` pages
+        // through every match; without one, the newest.
+        const events = eventsForAgent(agentId, def.subscriptions, getAgentEventBus().recent({ since }), { limit, fromCursor: Boolean(since) })
+        this.json(res, 200, {
+          agentId,
+          subscriptions: def.subscriptions.length,
+          events,
+          next: events.length ? events[events.length - 1].id : since,
         })
         return
       }
