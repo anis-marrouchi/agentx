@@ -115,6 +115,7 @@ import {
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { withNewRoot, withRoot } from "@/events/envelope"
+import { EventWaker, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
@@ -147,6 +148,7 @@ export class AgentXDaemon {
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
+  private stopEventWaker?: () => void
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
@@ -316,6 +318,19 @@ export class AgentXDaemon {
         this.heartbeat.register(id, agent.heartbeat)
       }
     }
+
+    // Wake-on-event subscriptions (src/events/wake.ts). Reads the agents on
+    // every event so a reload applies; the woken turn runs under the
+    // event's root so what it causes cannot wake it again.
+    this.stopEventWaker = new EventWaker({
+      agents: () => this.config.agents,
+      dispatch: (agentId, e) => withRoot({ rootId: e.rootId, parentId: e.id }, () => this.registry.execute({
+        message: wakeMessage(e),
+        agentId,
+        context: { channel: "events", chatId: `events:${agentId}` },
+      })),
+      log: (msg) => this.log(msg),
+    }).attach(getAgentEventBus())
 
     // Initialize message router
     this.router = new MessageRouter(this.registry, this.config, this.hooks, this.log)
@@ -841,6 +856,7 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping heartbeats...")
       this.heartbeat.stopAll()
+      this.stopEventWaker?.()
     } catch {}
 
     try {
