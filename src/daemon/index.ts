@@ -2767,6 +2767,8 @@ export class AgentXDaemon {
             ...s,
             pending: reg.pendingCount(s.sessionId),
           })),
+          // #193 — bindings waiting for their session to report again.
+          saved: reg.savedBindings(),
         })
         return
       }

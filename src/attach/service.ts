@@ -158,7 +158,7 @@ export function onStop(p: HookPayload): string {
 export function onSessionEnd(p: HookPayload): string {
   return safe(() => {
     if (!p.session_id) return ""
-    getAttachRegistry().deregister(p.session_id)
+    getAttachRegistry().deregister(p.session_id, Date.now(), { forget: true })
     return ""
   })
 }

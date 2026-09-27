@@ -43,6 +43,24 @@ interface Waiter {
   resolve: (o: OfferOutcome) => void
 }
 
+/** What a session answered for, remembered across daemon restarts and idle
+ *  spells (#193). Only `detach` or the session actually ending forgets it. */
+export interface SavedBinding {
+  agentIds: string[]
+  mode: DeliveryMode
+  cwd?: string
+  savedAt: number
+}
+
+/** Where bindings persist. The daemon uses a JSON file; tests pass memory. */
+export interface BindingStore {
+  load(): Record<string, SavedBinding>
+  save(all: Record<string, SavedBinding>): void
+}
+
+/** A binding nobody has come back for in a week is not coming back. */
+const SAVED_BINDING_TTL_MS = 7 * 24 * 60 * 60_000
+
 export interface OfferInput {
   agentId: string
   text: string
@@ -55,10 +73,17 @@ export class AttachRegistry {
   private sessions = new Map<string, AttachSession>()
   private items = new Map<string, InboxItem>()
   private waiters = new Map<string, Waiter>()
+  private saved = new Map<string, SavedBinding>()
   private opts: AttachOptions
 
-  constructor(opts: Partial<AttachOptions> = {}) {
+  constructor(opts: Partial<AttachOptions> = {}, private store?: BindingStore) {
     this.opts = { ...DEFAULT_ATTACH_OPTIONS, ...opts }
+    let loaded: Record<string, SavedBinding> = {}
+    try { loaded = store?.load() ?? {} } catch { loaded = {} }
+    const cutoff = Date.now() - SAVED_BINDING_TTL_MS
+    for (const [sessionId, b] of Object.entries(loaded)) {
+      if (b && Array.isArray(b.agentIds) && b.agentIds.length > 0 && b.savedAt >= cutoff) this.saved.set(sessionId, b)
+    }
   }
 
   options(): AttachOptions {
@@ -84,17 +109,21 @@ export class AttachRegistry {
       if (info.model) existing.model = info.model
       return existing
     }
+    // A session coming back after a daemon restart or an idle drop gets its
+    // saved identities back, minus any another live session has taken since.
+    const saved = this.saved.get(sessionId)
     const session: AttachSession = {
       sessionId,
-      cwd: info.cwd ?? "",
-      agentIds: [],
-      mode: "notify",
+      cwd: info.cwd ?? saved?.cwd ?? "",
+      agentIds: saved ? saved.agentIds.filter((a) => !this.sessionFor(a)) : [],
+      mode: saved?.mode ?? "notify",
       lastSeenAt: now,
       registeredAt: now,
       model: info.model,
       drainedThisTurn: 0,
     }
     this.sessions.set(sessionId, session)
+    if (saved) this.remember(session, now)
     return session
   }
 
@@ -103,8 +132,13 @@ export class AttachRegistry {
    *  on this machine never attach, and their hook events must stay cheap. */
   touch(sessionId: string, now: number = Date.now()): AttachSession | undefined {
     const s = this.sessions.get(sessionId)
-    if (s) s.lastSeenAt = now
-    return s
+    if (s) {
+      s.lastSeenAt = now
+      return s
+    }
+    // Prompt and Stop hooks only touch. Without this, a bound session that was
+    // already open when the daemon restarted would never be seen again.
+    return this.saved.has(sessionId) ? this.register(sessionId, { now }) : undefined
   }
 
   get(sessionId: string): AttachSession | undefined {
@@ -125,8 +159,12 @@ export class AttachRegistry {
       if (other.sessionId === sessionId) continue
       other.agentIds = other.agentIds.filter((a) => a !== agentId)
     }
+    for (const [otherId, b] of this.saved) {
+      if (otherId !== sessionId) b.agentIds = b.agentIds.filter((a) => a !== agentId)
+    }
     if (!session.agentIds.includes(agentId)) session.agentIds.push(agentId)
     if (mode) session.mode = mode
+    this.remember(session)
     return session
   }
 
@@ -134,6 +172,7 @@ export class AttachRegistry {
     const session = this.sessions.get(sessionId)
     if (!session) return undefined
     session.agentIds = agentId ? session.agentIds.filter((a) => a !== agentId) : []
+    this.remember(session)
     return session
   }
 
@@ -141,6 +180,7 @@ export class AttachRegistry {
     const session = this.sessions.get(sessionId)
     if (!session) return undefined
     session.mode = mode
+    this.remember(session)
     return session
   }
 
@@ -154,8 +194,11 @@ export class AttachRegistry {
 
   /** Drop a session and release everything it was holding. Queued work is
    *  expired, not dropped, so the dispatcher falls back to spawning. */
-  deregister(sessionId: string, now: number = Date.now()): void {
+  deregister(sessionId: string, now: number = Date.now(), opts: { forget?: boolean } = {}): void {
     this.sessions.delete(sessionId)
+    // Idle drops keep the saved binding so the session gets it back when it
+    // returns; only a real end (SessionEnd) forgets it.
+    if (opts.forget && this.saved.delete(sessionId)) this.persist()
     for (const item of this.items.values()) {
       if (item.sessionId !== sessionId) continue
       if (item.state === "pending" || item.state === "claimed") {
@@ -312,6 +355,22 @@ export class AttachRegistry {
   endTurn(sessionId: string): void {
     const s = this.sessions.get(sessionId)
     if (s) s.drainedThisTurn = 0
+  }
+
+  /** Identities a session will get back when it next reports (inspection). */
+  savedBindings(): Record<string, SavedBinding> {
+    return Object.fromEntries(this.saved)
+  }
+
+  private remember(session: AttachSession, now: number = Date.now()): void {
+    if (session.agentIds.length === 0) this.saved.delete(session.sessionId)
+    else this.saved.set(session.sessionId, { agentIds: [...session.agentIds], mode: session.mode, cwd: session.cwd || undefined, savedAt: now })
+    for (const [id, b] of this.saved) if (b.agentIds.length === 0) this.saved.delete(id)
+    this.persist()
+  }
+
+  private persist(): void {
+    try { this.store?.save(Object.fromEntries(this.saved)) } catch { /* bindings stay in memory */ }
   }
 
   /** Test/inspection helper. */
