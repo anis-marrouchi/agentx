@@ -109,7 +109,7 @@ export function startBoardDashboard(config: DaemonConfig): void {
 
   const server = createServer(async (req, res) => {
     try {
-      await handleRequest(req, res, { boards, sources, token, config, workflowStore, workflowRuns, workflowLayouts })
+      await handleBoardRequest(req, res, { boards, sources, token, config, workflowStore, workflowRuns, workflowLayouts })
     } catch (e: any) {
       sendJson(res, 500, { error: e.message || "internal error" })
     }
@@ -160,7 +160,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin/wiki",
 ])
 
-interface Ctx {
+export interface Ctx {
   boards: BoardConfig[]
   sources: Map<string, WorkSource>
   token?: string
@@ -170,7 +170,8 @@ interface Ctx {
   workflowLayouts: LayoutStore
 }
 
-async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
+/** Exported for tests only; production requests come through startBoardDashboard. */
+export async function handleBoardRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost")
   const path = url.pathname
   const method = (req.method || "GET").toUpperCase()
@@ -727,27 +728,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
 
-  // Mesh feed (#166) — the newest events on the primary daemon's bus. That
-  // bus already holds each mesh peer's own events (src/events/peer-feed.ts),
-  // so one read covers the fleet; fanning out like /events would show every
-  // peer event twice. Per-step agent activity is left out.
-  //   GET /api/mesh/feed?limit=50
-  if (method === "GET" && path === "/api/mesh/feed") {
-    const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 50))
-    const primary = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-    const token = dashboardTokenForNode(ctx.config.dashboard, primary)
-    try {
-      const r = await fetch(`${primary}/events/recent?skip=task:step&limit=${limit}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!r.ok) { sendJson(res, 502, { error: `daemon answered ${r.status}` }); return }
-      const body = await r.json() as { events?: unknown[] }
-      sendJson(res, 200, { node: ctx.config.node.name || ctx.config.node.id, events: body.events ?? [] })
-    } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon unreachable" }) }
-    return
-  }
-
   // Mesh analytics — fleet-wide activity, failure causes, zombie jobs and
   // thread lifetimes. Fans out to every node's /analytics/mesh and merges.
   //   GET /api/mesh/analytics?days=30&tzOffset=<minutes>&limit=60
@@ -953,6 +933,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         return
       }
     }
+  }
+
+  // Mesh feed (#166) — the newest events on the primary daemon's bus. That
+  // bus already holds each mesh peer's own events (src/events/peer-feed.ts),
+  // so one read covers the fleet; fanning out like /events would show every
+  // peer event twice. Per-step agent activity is left out.
+  //
+  // Below the /api/* token gate on purpose: the daemon's /events/recent is
+  // mesh-gated, and this proxy reads it with the dashboard's credential, so
+  // an ungated route here would hand the whole mesh's events to anyone who
+  // can reach the dashboard. The daemon accepts MESH_TOKEN (not
+  // dashboard.token) off-box, so that is tried first.
+  //   GET /api/mesh/feed?limit=50
+  if (method === "GET" && path === "/api/mesh/feed") {
+    await serveMeshFeed(res, ctx.config, url.searchParams)
+    return
   }
 
   const isWrite = method === "POST" || method === "PATCH" || method === "DELETE" || method === "PUT"
@@ -1746,6 +1742,22 @@ async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: Abort
       .filter((p) => p && p.peerUrl)
       .map((p) => ({ url: String(p.peerUrl).replace(/\/+$/, ""), name: p.peer || p.peerUrl }))
   } catch { return [] }
+}
+
+/** GET /api/mesh/feed: the primary daemon's recent events, task steps left out. */
+async function serveMeshFeed(res: ServerResponse, config: DaemonConfig, q: URLSearchParams): Promise<void> {
+  const limit = Math.max(1, Math.min(200, Number(q.get("limit")) || 50))
+  const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const token = process.env.MESH_TOKEN || dashboardTokenForNode(config.dashboard, primary)
+  try {
+    const r = await fetch(`${primary}/events/recent?skip=task:step&limit=${limit}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!r.ok) { sendJson(res, 502, { error: `daemon answered ${r.status}` }); return }
+    const body = await r.json() as { events?: unknown[] }
+    sendJson(res, 200, { node: config.node.name || config.node.id, events: body.events ?? [] })
+  } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon unreachable" }) }
 }
 
 /** Every daemon this dashboard is allowed to read: the primary, the
