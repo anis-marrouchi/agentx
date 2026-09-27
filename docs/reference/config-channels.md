@@ -1,6 +1,6 @@
 # Configuration: channels
 
-The `channels` section of `agentx.json` turns on the apps your agents talk through: Telegram, WhatsApp, GitLab, GitHub, ntfy and browser calls (WebRTC). This page lists every field. For the other sections, see the [Configuration reference](./config.md); for what each channel does, see [Channels](./channels.md).
+The `channels` section of `agentx.json` turns on the apps your agents talk through: Telegram, WhatsApp, GitLab, GitHub, phone app notifications (push), ntfy and browser calls (WebRTC). This page lists every field. For the other sections, see the [Configuration reference](./config.md); for what each channel does, see [Channels](./channels.md).
 
 Every channel is off until you set its `enabled` to `true`. Put secrets in `.env` and point to them with `${VARIABLE}` references.
 
@@ -117,6 +117,21 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `token` | string | — | This agent's own token. |
 | `tokenFile` | string | — | File holding this agent's token. |
 | `node` | string | — | Mesh node the agent lives on. |
+
+## push
+
+Sends notifications to the AgentX [phone app](../dashboard/mobile-alerts.md). It only sends; it does not receive messages. One computer hosts the phone app and sends; every other computer sets `relayTo` and passes its notifications to that one over the mesh.
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `channels.push.enabled` | boolean | `false` | Turns phone app notifications on. |
+| `channels.push.subject` | string | — | Contact the push services can reach you at: `mailto:you@example.com` or an `https://` address. Required on the computer that hosts the phone app. |
+| `channels.push.keysFile` | string | `".agentx/push-keys.json"` | Where `agentx app push-keys` saves the key pair, relative to the folder that holds `agentx.json`. |
+| `channels.push.relayTo` | string | — | Mesh peer that hosts the phone app. Set it on every other computer; leave it out on the host. |
+| `channels.push.ttlSeconds` | number | `86400` | How long the push service keeps trying a phone that is offline. |
+| `channels.push.keepRecent` | number | `50` | How many recent notifications the app's **Alerts** tab keeps. |
+
+A message's chat ID picks the phones: `default` sends to every phone that turned notifications on, and a device id from `agentx app devices` (it starts with `tok_`) sends to that phone only.
 
 ## ntfy
 

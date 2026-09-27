@@ -90,10 +90,12 @@ agentx desktop start
 | `agentx config get <path>` | Read one configuration field |
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
 | `agentx doctor` | Check local installation and prerequisites |
-| `agentx notify "<message>"` | Push to your phone and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
-| `agentx notifications show` | Notification routing, the local banner and sound, ntfy status, and on a Mac whether AgentX Helper may post banners |
+| `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
+| `agentx notifications show` | Notification routing, the local banner and sound, phone app and ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
-| `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for phone push |
+| `agentx notifications push` | `--subject`, `--relay-to`, `--enable`/`--disable` for notifications on the [phone app](../dashboard/mobile-alerts.md) |
+| `agentx notifications channel <name>` | Where `agentx notify` sends by default (`push`) |
+| `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for push through ntfy |
 
 Do not share `config show` output without checking it for credentials. Starting a daemon does not start the separate browser dashboard.
 

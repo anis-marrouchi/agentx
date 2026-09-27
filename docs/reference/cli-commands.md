@@ -129,9 +129,17 @@ No flags.
 
 ### `agentx app revoke <id>`
 
-Unpair a phone immediately.
+Unpair a phone immediately. The phone also stops getting notifications.
 
 No flags.
+
+### `agentx app push-keys`
+
+Create the key pair that lets this computer send notifications to paired phones. It is saved in `channels.push.keysFile` (default `.agentx/push-keys.json`), readable only by you, and never in `agentx.json`. See [Notifications on your phone](../dashboard/mobile-alerts.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--force` | — | Replace existing keys (every phone must turn notifications on again). |
 
 ## daemon
 
@@ -696,9 +704,9 @@ Show or change screen capture settings (agentx.json `screen`).
 |---|---|---|
 | `--from <who>` | `agentx` | Who is speaking. |
 | `--title <text>` | `AgentX` | Notification title. |
-| `--priority <n>` | `4` | 1 (min) to 5 (max). |
+| `--priority <n>` | `4` | 1 (min) to 5 (max). Used by ntfy only. |
 | `--urgent` | — | Deliver even during Focus. |
-| `--channel <name>` | `ntfy` | Delivery channel. |
+| `--channel <name>` | `notifications.channel` (`push`) | Delivery channel. |
 | `--chat-id <id>` | `default` | Channel address. |
 | `--no-sound` | — | Do not play a sound on this machine. |
 | `--no-banner` | — | Do not show a banner on this machine. |
@@ -2749,6 +2757,23 @@ Set what `agentx notify` does on this Mac: banner, sound, sound name, volume, ba
 | `--sound-name <name>` | — | A macOS system sound, e.g. Glass, Ping, Tink. |
 | `--volume <n>` | — | 0 to 1. |
 | `--icon <path>` | — | Image for the banner icon (.png, .jpg, .icns); "" for the AgentX logo. |
+
+### `agentx notifications channel <name>`
+
+Set the channel `agentx notify` uses when `--channel` is not given: `push` (default), `ntfy`, `telegram`…
+
+No flags.
+
+### `agentx notifications push`
+
+Set up notifications on the phone app: on/off, contact, or relay to the node that hosts the app.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--subject <contact>` | — | Contact for the push services: `mailto:you@example.com` or an `https://` URL. |
+| `--relay-to <peer>` | — | Mesh peer that hosts the phone app (on every other node); "" makes this node the host. |
+| `--enable` | — | Turn the channel on. |
+| `--disable` | — | Turn the channel off. |
 
 ### `agentx notifications ntfy`
 
