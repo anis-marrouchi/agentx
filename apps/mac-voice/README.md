@@ -84,6 +84,17 @@ Unset, a remote agent's intro comes from its agent card and it gets a
 system voice (and an ElevenLabs voice, for the `elevenlabs` provider) that no
 local agent and no other remote uses.
 
+## The orb
+
+While listening, thinking and speaking, `Orb.swift` shows a SwiftUI orb
+(MeshGradient on macOS 15, a two-gradient fallback on 14) in the answering
+agent's colour: `/agents` `color`, else the same id hash as the daemon's
+`presenceLook` (`OrbMath.swift`, tested in `Tests/Orb`). It follows the
+microphone level; the answer is played by the daemon, so speaking uses a
+synthetic rhythm. Hidden, its timeline is paused and the level timer is
+stopped; Reduce Motion makes it still. The window is click-through and never
+key. "Show orb" in the menu turns it off (UserDefaults `showOrb`).
+
 ## Permissions
 
 Microphone only. The hotkey uses Carbon's `RegisterEventHotKey`, which

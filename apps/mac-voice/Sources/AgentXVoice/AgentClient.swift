@@ -167,6 +167,9 @@ enum AgentClient {
         let name: String?
         /// Tasks running now.
         let active: Int?
+        /// "#RRGGBB": presence.color, else derived from the id. Older
+        /// daemons send none, and the app derives it the same way.
+        let color: String?
         var label: String { name ?? id }
     }
 

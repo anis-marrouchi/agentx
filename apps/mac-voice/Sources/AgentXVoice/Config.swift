@@ -28,6 +28,13 @@ enum Config {
         set { UserDefaults.standard.set(newValue, forKey: "showPill") }
     }
 
+    /// The orb overlay while listening, thinking and speaking. On by
+    /// default; off brings back the pill for those states.
+    static var showOrb: Bool {
+        get { UserDefaults.standard.object(forKey: "showOrb") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "showOrb") }
+    }
+
     /// The agent actually answering: `agentID`, else `chosenAgentID`, else
     /// the daemon's default (AgentClient.resolveAgent). Progress follows it.
     @MainActor static var effectiveAgentID: String = ""

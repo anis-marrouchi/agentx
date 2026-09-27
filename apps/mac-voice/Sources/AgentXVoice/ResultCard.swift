@@ -22,6 +22,10 @@ final class ResultCard: NSPanel {
     private let links = NSStackView()
     private let thumb = NSImageView()
 
+    /// The orb's frame on screen while it shows, for the card to slide in
+    /// under it. Nil: the card sits above the pill. Set by the app.
+    var anchor: (() -> NSRect?)?
+
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 380, height: 260),
                    styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
@@ -125,8 +129,35 @@ final class ResultCard: NSPanel {
         }
 
         if let c = contentView { layout(c) }
-        positionAboveWidget()
+        if let orb = anchor?() {
+            slideIn(under: orb)
+        } else {
+            positionAboveWidget()
+            orderFrontRegardless()
+        }
+    }
+
+    /// Under the orb, right edges aligned, sliding down into place. With
+    /// Reduce Motion it simply appears there.
+    @MainActor
+    private func slideIn(under orb: NSRect) {
+        let target = NSPoint(x: orb.maxX - frame.width, y: orb.minY - frame.height - 8)
+        let wasVisible = isVisible
+        guard !wasVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            setFrameOrigin(target)
+            alphaValue = 1
+            orderFrontRegardless()
+            return
+        }
+        setFrameOrigin(NSPoint(x: target.x, y: target.y + 18))
+        alphaValue = 0
         orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.28
+            ctx.timingFunction = Brand.ease
+            animator().setFrameOrigin(target)
+            animator().alphaValue = 1
+        }
     }
 
     @objc private func openLink(_ sender: NSButton) {
@@ -139,6 +170,7 @@ final class ResultCard: NSPanel {
         guard let screen = NSScreen.main else { return }
         let v = screen.visibleFrame
         setFrameOrigin(NSPoint(x: v.maxX - frame.width - 24, y: v.minY + 24 + 54 + 10))
+        alphaValue = 1
     }
 
     override var canBecomeKey: Bool { true }

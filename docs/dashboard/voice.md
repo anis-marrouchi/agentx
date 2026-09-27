@@ -81,10 +81,40 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Stop speaking** | Silences every voice (see [Stop every voice at once](#stop-every-voice-at-once)) |
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the small panel on screen when idle. Off by default: the panel appears only while listening or answering |
+| **Show orb** | Shows the [orb](#the-orb-while-you-talk) while the assistant listens, thinks and speaks. On by default. Turn it off to use the small panel for those moments instead |
 | **Settings…** | Opens the dashboard's [Settings](./settings.md) page |
 | **History…** | Opens the dashboard's [Activity](./activity.md) page |
 
 If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the panel opens the same menu.
+
+## The orb while you talk
+
+While the assistant listens, thinks or speaks, a round, glowing orb appears in the top-right corner of the screen, under the menu bar. It is tinted in the colour of the agent that is answering.
+
+![The orb in its three states, light mode: Writer listening in teal, Researcher thinking with a ring going round, and Researcher speaking its answer](/screenshots/voice/orb-states-light.png)
+
+| What you see | What it means |
+|---|---|
+| The orb swells and shrinks with your voice, and "Listening…" shows under it | The microphone is on and hears you |
+| A white ring goes round the orb, and your words show under it with the step the agent is on | The agent is thinking on your question |
+| The orb pulses in a speaking rhythm, and the answer shows under it | The answer is being spoken |
+
+When an answer has a link, a picture, or more text than was read aloud, the answer card slides in under the orb. The orb goes away as soon as the assistant is idle again.
+
+![The same three states in dark mode](/screenshots/voice/orb-states-dark.png)
+
+Good to know:
+
+- **Colour:** each agent's orb uses its `presence.color` from `agentx.json` (see [Presence on screen](#presence-on-screen)). Without one, the agent gets a colour from its id, the same colour as its on-screen pointer.
+- **Your typing is safe:** the orb never takes the keyboard from the app you are using, and clicks pass straight through it.
+- **Reduce Motion:** with **System Settings › Accessibility › Display › Reduce motion** on, the orb stands still. It still changes between listening, thinking and speaking, but nothing moves on its own.
+- **Speaking rhythm:** the answer is played by the AgentX daemon, not by the app, so the orb pulses in a speaking rhythm rather than measuring the sound.
+- **No live words while you speak:** your words show under the orb once they have been turned into text, after you let go of **Option–Space**.
+
+To turn the orb off:
+
+1. **Mac:** click the AgentX icon in the menu bar.
+2. **Mac:** choose **Show orb** to remove its tick. The small panel shows listening, thinking and speaking instead.
 
 **Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. It runs the `agentx paste` command, so that command must work. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
 
@@ -329,7 +359,7 @@ To change how an agent's pointer looks:
 
 | Field | Meaning |
 |---|---|
-| `color` | The pointer's colour. Default: a colour picked from the agent's id |
+| `color` | The pointer's colour, also used for the [orb](#the-orb-while-you-talk). Default: a colour picked from the agent's id |
 | `initial` | The letter on the pointer. Default: the first letter of the label |
 | `label` | The name shown. Default: the agent's `name`, else its id |
 | `allowActions` | `true` lets the agent click and type for you in `act` mode. Default `false` |
@@ -452,7 +482,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 8. **Mac:** ask the ticked agent something that takes a while.
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
 10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
-11. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+11. **Mac:** hold **Option–Space**. The orb appears in the top-right corner in the ticked agent's colour and swells as you speak. Let go: a ring goes round it while the agent thinks, and it pulses while the answer is spoken.
+12. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
@@ -465,6 +496,9 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked).
 - **A second question to the same agent waits a long time:** it waits until that agent has finished answering the question before it. The assistant gives up after 10 minutes and says "Sorry, that didn't work" (or "Sorry, Researcher couldn't answer that" for a question asked by name).
 - **An answer by name was never spoken:** you said "stop", pressed **Command–Option–.** or chose **Stop speaking** before it arrived. Stopping drops every answer still to come. Ask again.
+- **No orb appears:** open the AgentX menu and check that **Show orb** is ticked. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
+- **The orb is the wrong colour:** set `presence.color` for that agent in `agentx.json`, as `#RRGGBB`, then restart the daemon or reload its settings. The app reads colours when you open its menu.
+- **The orb doesn't move:** Reduce Motion is on (see above), or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
 - **`Unknown agent: …` from `POST /voice/queue`:** the `agentId` must be an agent on this computer or on a connected mesh computer. Check the id with `agentx agent list`.
