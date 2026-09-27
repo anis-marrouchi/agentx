@@ -139,13 +139,13 @@ describe("isMeshGatedPath — routes gated for every method", () => {
 
 describe("isControlPost — daemon control routes need a mesh token off-box", () => {
   it("gates reload, task cancel/followup, process kill and channel sends", () => {
-    for (const p of ["/reload", "/api/tasks/t-1/cancel", "/api/tasks/t-1/followup", "/api/processes/kill", "/send", "/send/agent", "/send/contact"]) {
+    for (const p of ["/reload", "/api/tasks/t-1/cancel", "/api/tasks/t-1/followup", "/api/processes/kill", "/send", "/send/agent", "/send/contact", "/crons/nightly-digest/enabled"]) {
       expect(isControlPost(p)).toBe(true)
     }
   })
 
   it("does not gate look-alike or read paths", () => {
-    for (const p of ["/api/tasks", "/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health"]) {
+    for (const p of ["/api/tasks", "/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health", "/crons", "/crons/a/enabled/x", "/crons//enabled"]) {
       expect(isControlPost(p)).toBe(false)
     }
   })
