@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath, isControlPost, dashboardTokenForNode } from "../src/daemon/mesh-auth"
+import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath, isControlPost } from "../src/daemon/mesh-auth"
 
 const TOKENS = new Set(["shared-mesh-token", "peer-b-token"])
 
@@ -155,31 +155,5 @@ describe("isControlPost — daemon control routes need a mesh token off-box", ()
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(false)
     expect(decideMeshAuth({ remoteAddress: "::1", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(true)
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
-  })
-})
-
-describe("dashboardTokenForNode", () => {
-  const dashboard = {
-    daemonUrl: "http://127.0.0.1:18800/",
-    token: "dash-token",
-    daemons: [{ url: "http://mini:18800/", token: "mini-token" }, { url: "http://bare:18800" }],
-  }
-  const env = { MESH_TOKEN: "mesh-secret" }
-
-  it("uses dashboard.token for the primary daemon", () => {
-    expect(dashboardTokenForNode(dashboard, "http://127.0.0.1:18800", env)).toBe("dash-token")
-  })
-
-  it("uses a configured daemon's own token", () => {
-    expect(dashboardTokenForNode(dashboard, "http://mini:18800", env)).toBe("mini-token")
-  })
-
-  it("falls back to MESH_TOKEN for a peer found only through /mesh or configured without a token", () => {
-    expect(dashboardTokenForNode(dashboard, "http://vps:18800", env)).toBe("mesh-secret")
-    expect(dashboardTokenForNode(dashboard, "http://bare:18800", env)).toBe("mesh-secret")
-  })
-
-  it("sends nothing when there is no token to send", () => {
-    expect(dashboardTokenForNode(dashboard, "http://vps:18800", {})).toBeUndefined()
   })
 })

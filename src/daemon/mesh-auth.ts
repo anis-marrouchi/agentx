@@ -108,9 +108,10 @@ export function collectAcceptedMeshTokens(
  * Bearer token the dashboard sends to `target` (a normalized node URL).
  *
  * The primary daemon gets dashboard.token and a configured
- * dashboard.daemons[] entry gets its own token. A peer the dashboard only
- * learned about through /mesh has no entry, so it falls back to MESH_TOKEN,
- * the credential every node in the mesh accepts.
+ * dashboard.daemons[] entry gets its own token. Without one (a peer the
+ * dashboard only learned about through /mesh, or a primary with no
+ * dashboard.token) it falls back to MESH_TOKEN, the credential every node
+ * in the mesh accepts.
  */
 export function dashboardTokenForNode(
   dashboard: { daemonUrl: string; token?: string; daemons: Array<{ url: string; token?: string }> },
@@ -118,6 +119,8 @@ export function dashboardTokenForNode(
   env: Record<string, string | undefined> = process.env,
 ): string | undefined {
   const norm = (u: string) => u.replace(/\/+$/, "")
-  if (target === norm(dashboard.daemonUrl)) return dashboard.token
-  return dashboard.daemons.find((d) => norm(d.url) === target)?.token || env.MESH_TOKEN || undefined
+  const configured = target === norm(dashboard.daemonUrl)
+    ? dashboard.token
+    : dashboard.daemons.find((d) => norm(d.url) === target)?.token
+  return configured || env.MESH_TOKEN || undefined
 }
