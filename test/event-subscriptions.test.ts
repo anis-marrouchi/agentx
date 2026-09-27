@@ -190,6 +190,26 @@ describe("wake", () => {
     expect(logs.some((l) => l.includes("own-root"))).toBe(true)
   })
 
+  it("keeps one rate bucket per subscription", async () => {
+    const { w, woke, logs } = waker({
+      a: [
+        { kinds: ["run"], delivery: "wake", maxPerHour: 1 },
+        { kinds: ["task:completed"], delivery: "wake", maxPerHour: 2 },
+      ],
+    })
+    const ev = (id: string, kind: string, type: string): EventEnvelope =>
+      ({ id, rootId: `R${id}`, node: "n", agentId: "b", kind, type, at: at(), summary: "" })
+    expect(w.handle(ev("1", "run", "failed"))[0].woke).toBe(true)
+    expect(w.handle(ev("2", "run", "failed"))[0]).toMatchObject({ woke: false, reason: "rate-limit" })
+    // The run bucket is full; task:completed still has its own two wakes.
+    expect(w.handle(ev("3", "agent", "task:completed"))[0].woke).toBe(true)
+    expect(w.handle(ev("4", "agent", "task:completed"))[0].woke).toBe(true)
+    expect(w.handle(ev("5", "agent", "task:completed"))[0]).toMatchObject({ woke: false, reason: "rate-limit" })
+    await new Promise((r) => setImmediate(r))
+    expect(woke.map((x) => x.e.id)).toEqual(["1", "3", "4"])
+    expect(logs.filter((l) => l.includes("rate-limit"))).toHaveLength(2)
+  })
+
   it("ignores agents whose subscriptions are not wake", () => {
     const { w } = waker({ a: [{ kinds: ["*"], delivery: "pull" }, { kinds: ["*"], delivery: "digest" }] })
     expect(w.handle({ id: "1", rootId: "r", node: "n", agentId: "b", kind: "agent", type: "task:completed", at: at(), summary: "" })).toEqual([])

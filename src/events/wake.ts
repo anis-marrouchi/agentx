@@ -10,7 +10,8 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 //      under the event's root, so anything it causes shares that root and
 //      cannot wake it again.
 //   2. Dedup: one wake per rootId, however many matching events it has.
-//   3. Rate limit: at most `maxPerHour` wakes per agent in a sliding hour.
+//   3. Rate limit: each wake subscription wakes the agent at most its
+//      `maxPerHour` times in a sliding hour.
 // Every skipped wake is logged with its reason.
 
 export type WakeOutcome =
@@ -62,9 +63,13 @@ export class EventWaker {
         }
         continue
       }
-      const hit = subs.find((s) => matchesSubscription(s, e, agentId))
-      if (!hit) continue
-      const outcome = this.decide(agentId, e, hit, t)
+      // Wake subscriptions that match, by their index in the agent's list:
+      // each has its own rate bucket.
+      const hits = (def.subscriptions ?? [])
+        .map((s, index) => ({ s, index }))
+        .filter(({ s }) => s.delivery === "wake" && matchesSubscription(s, e, agentId))
+      if (hits.length === 0) continue
+      const outcome = this.decide(agentId, e, hits, t)
       out.push(outcome)
       if (!outcome.woke) {
         this.deps.log(`[events] wake skipped for ${agentId}: ${outcome.reason} — ${formatEventLine(e)} root=${e.rootId.slice(0, 8)}`)
@@ -83,20 +88,22 @@ export class EventWaker {
     return out
   }
 
-  private decide(agentId: string, e: EventEnvelope, sub: SubscriptionInput, t: number): WakeOutcome {
+  private decide(agentId: string, e: EventEnvelope, hits: Array<{ s: SubscriptionInput; index: number }>, t: number): WakeOutcome {
     const base = { agentId, eventId: e.id }
     if (seen(this.own, agentId, e.rootId, t)) return { ...base, woke: false, reason: "own-root" }
     if (seen(this.woken, agentId, e.rootId, t)) return { ...base, woke: false, reason: "duplicate-root" }
-    const recent = (this.wakes.get(agentId) ?? []).filter((w) => t - w < HOUR_MS)
-    const limit = sub.maxPerHour ?? 4
-    if (recent.length >= limit) {
-      this.wakes.set(agentId, recent)
-      return { ...base, woke: false, reason: "rate-limit" }
+    // The first matching subscription with room in its own hourly bucket
+    // takes the wake; when every bucket is full the wake is skipped.
+    for (const { s, index } of hits) {
+      const key = `${agentId}#${index}`
+      const recent = (this.wakes.get(key) ?? []).filter((w) => t - w < HOUR_MS)
+      if (recent.length >= (s.maxPerHour ?? 4)) { this.wakes.set(key, recent); continue }
+      recent.push(t)
+      this.wakes.set(key, recent)
+      remember(this.woken, agentId, e.rootId, t)
+      return { ...base, woke: true }
     }
-    recent.push(t)
-    this.wakes.set(agentId, recent)
-    remember(this.woken, agentId, e.rootId, t)
-    return { ...base, woke: true }
+    return { ...base, woke: false, reason: "rate-limit" }
   }
 
   /** Subscribe to a bus; returns the unsubscribe function. */
