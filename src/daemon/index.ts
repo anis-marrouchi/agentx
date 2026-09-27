@@ -21,7 +21,7 @@ import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter } from "@/channels/gitlab"
-import { GitHubAdapter } from "@/channels/github"
+import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
 import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
@@ -3355,16 +3355,8 @@ export class AgentXDaemon {
             req.on("end", () => resolve(data))
             req.on("error", () => resolve(""))
           })
-          let parsed: Record<string, unknown>
-          try {
-            // GitHub may send as application/json or application/x-www-form-urlencoded
-            const contentType = req.headers["content-type"] || ""
-            if (contentType.includes("form-urlencoded") && body.startsWith("payload=")) {
-              parsed = JSON.parse(decodeURIComponent(body.slice(8)))
-            } else {
-              parsed = body ? JSON.parse(body) : {}
-            }
-          } catch { parsed = {} }
+          // GitHub may send as application/json or application/x-www-form-urlencoded
+          const parsed = parseWebhookBody(body, String(req.headers["content-type"] || ""))
           this.log(`[github] webhook body keys: ${Object.keys(parsed).slice(0, 5).join(", ")} | repo: ${(parsed.repository as any)?.full_name || "MISSING"}`)
           // Respond immediately (GitHub has a 10s timeout)
           res.writeHead(202, { "Content-Type": "application/json" })
