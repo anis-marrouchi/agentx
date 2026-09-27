@@ -18,15 +18,15 @@ The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent 
 
 ![Choosing an agent: every computer, whether it is online, and whether each agent is busy](/screenshots/mobile-app/chat-picker.png)
 
-If the agent is busy with other work, your message waits until the agent is free, then runs.
+If the agent is busy with other work, your message waits until the agent is free, then runs. For an agent on another computer, this needs the same AgentX version on that computer; an older one answers that the agent is busy instead.
 
 ## While the agent answers
 
 - **See the tools it used:** tap the grey line above the answer, for example **2 tools · Bash (npm test)**. A tool that failed is marked in red.
-- **Stop it:** tap **Stop**. The agent stops, and what it wrote so far is kept.
+- **Stop it:** tap **Stop**. The agent stops, and what it wrote so far is kept. **Stop** is the only thing that stops an answer. It can't cancel a message that is still waiting for a busy agent; that message runs once the agent is free.
 - **Add to your request:** type another message and tap **Send**. It shows as *Sent when the agent finishes* and goes to the agent as soon as the current answer ends.
 
-Leaving the app or losing the connection while the agent answers also stops it.
+You can leave the app, lock the phone or lose the connection while the agent answers. The agent keeps going and the computer saves its answer. When you open the conversation again, the answer is there, or, if the agent is still writing, it carries on from where it is. An answer that nobody comes back to for 30 minutes is stopped, and what was written so far is kept.
 
 ![An answer being written, with the Stop button](/screenshots/mobile-app/chat-streaming.png)
 
@@ -60,5 +60,8 @@ Conversations are saved on the computer (in `.agentx/db.sqlite`, next to `agentx
 - **A computer is listed as offline** — it is turned off, or its connection dropped. On this computer, check it with `agentx mesh list`.
 - **"The agent is still answering in this conversation"** — a message is already running there, maybe from another screen. Wait for it to finish, or tap **Stop**.
 - **"The agent is busy with other work"** — the other computer runs an older AgentX. Send the message again when the agent is free, or update AgentX there.
-- **"Could not reach AgentX"** — the phone lost its connection. Reconnect and send the message again.
+- **"Could not reach AgentX"** — the message never reached the computer. Reconnect and send it again.
+- **"Connection lost. The agent keeps answering"** — nothing to do. The answer appears in the conversation once the phone is back online.
+- **"Stopped: the phone was away for more than 30 minutes"** — nobody opened the conversation while the agent answered, so it was stopped. Send the message again, and keep the conversation open or come back to it within 30 minutes.
+- **An answer keeps going after you close the app** — that is expected. To end it, open the conversation and tap **Stop**.
 - **"The database on this computer is unavailable"** — AgentX can't open `.agentx/db.sqlite`. On the computer, run `agentx doctor`.
