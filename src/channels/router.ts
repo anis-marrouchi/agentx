@@ -456,6 +456,9 @@ export class MessageRouter {
     ) {
       const { cleanText, ui } = extractUiDirective(msg.text)
       if (ui) {
+        if (ui.skippedActions?.length) {
+          this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: agentx:ui dropped ${ui.skippedActions.length} action button(s) (callback support is Phase 2): ${ui.skippedActions.join(", ")}`)
+        }
         const rich = msg.agentId === undefined || this.richMessagesAllowed(msg.agentId, msg.channel)
         const extras = rich ? uiToOutgoing(ui) : {}
         // Buttons need a text message to hang on; a lone poll/media needs none.
@@ -1430,7 +1433,7 @@ export class MessageRouter {
       if (ui.poll) {
         await this.adapterSend(adapter, {
           channel, chatId, text: "", accountId, agentId,
-          poll: { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 },
+          poll: uiToOutgoing(ui).poll,
         })
       }
       if (ui.media) {
