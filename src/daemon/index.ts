@@ -105,6 +105,7 @@ import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INST
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { addressedAgent } from "@/voice/address"
+import { presenceLook } from "@/voice/presence"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
@@ -3993,6 +3994,9 @@ export class AgentXDaemon {
           this.json(res, 200, this.registry.list().map(agent => ({
             ...agent,
             skillCount: listAgentFiles(agent.workspace).skills.length,
+            // The agent's colour on screen: presence.color, else the one
+            // derived from its id. The cursor and the voice orb share it.
+            color: presenceLook(agent.id, this.config.agents[agent.id]).color,
           })))
           break
 
