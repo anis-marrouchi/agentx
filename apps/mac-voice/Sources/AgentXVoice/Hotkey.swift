@@ -28,7 +28,13 @@ final class Hotkey {
         self.onRelease = onRelease
     }
 
-    func register(keyCode: UInt32 = UInt32(kVK_Space), modifiers: UInt32 = UInt32(optionKey)) {
+    /// Register one shortcut; false when macOS refused it (another app
+    /// already holds it).
+    @discardableResult
+    func register(_ spec: HotkeySpec) -> Bool { register(keyCode: spec.keyCode, modifiers: spec.modifiers) }
+
+    @discardableResult
+    func register(keyCode: UInt32 = UInt32(kVK_Space), modifiers: UInt32 = UInt32(optionKey)) -> Bool {
         var spec = [
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
@@ -66,7 +72,7 @@ final class Hotkey {
         }, spec.count, &spec, context, &handler)
 
         let hotKeyID = EventHotKeyID(signature: OSType(0x41475856), id: id) // 'AGXV'
-        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        return RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref) == noErr
     }
 
     deinit {

@@ -109,5 +109,19 @@ needs no Accessibility permission — an `NSEvent` global monitor would have.
   answers take turns in the daemon's speaking queue. Words for the agent
   already thinking replace its question; a second question for an agent
   answering a by-name question waits for that answer.
-- ⌥Space is fixed. `⌃Space` was avoided because it's commonly bound to
-  input-source switching.
+- ⌥Space is the default talk key (`⌃Space` is commonly bound to
+  input-source switching). Talk, stop, paste and per-agent shortcuts are
+  set in Settings… and stored in agentx.json (`voice.hotkeys`,
+  `agents[].voice.hotkey`); ⌘⌥A, which opens the menu, is fixed.
+
+## Settings window
+
+`SettingsWindow.swift` edits per-agent voices (provider, voice, preview,
+speed, narration, queue priority, shortcut, orb colour) and the general
+shortcuts, speech-to-text engine, default provider and launch at login.
+Everything but launch at login (SMAppService, and read-only when the
+installer's LaunchAgent starts the app) is read from `GET /voice/settings`
+and saved with `POST /voice/settings`, which validates and writes
+agentx.json in place. The app keeps no copy. `VoiceSettings.swift` computes
+the patch and `HotkeySpec.swift` maps shortcuts to Carbon key codes; both
+are tested in `Tests/Settings`.

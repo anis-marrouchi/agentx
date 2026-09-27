@@ -82,7 +82,8 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the small panel on screen when idle. Off by default: the panel appears only while listening or answering |
 | **Show orb** | Shows the [orb](#the-orb-while-you-talk) while the assistant listens, thinks and speaks. On by default. Turn it off to use the small panel for those moments instead |
-| **Settings…** | Opens the dashboard's [Settings](./settings.md) page |
+| **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
+| **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
 | **History…** | Opens the dashboard's [Activity](./activity.md) page |
 
 If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the panel opens the same menu.
@@ -116,6 +117,62 @@ To turn the orb off:
 1. **Mac:** click the AgentX icon in the menu bar.
 2. **Mac:** choose **Show orb** to remove its tick. The small panel shows listening, thinking and speaking instead.
 
+## Settings window
+
+The settings window changes each agent's voice and the app's own shortcuts without editing `agentx.json` by hand. It saves through the AgentX daemon, which checks every value first and then writes `agentx.json`. The app keeps no copy of its own, so the file stays the one place your settings live.
+
+1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
+2. **Mac:** choose **Settings…** (or press **Command–,** while the menu is open).
+3. Change what you need on the **Agents** or **General** tab.
+4. Choose **Save** (or press **Command–S**). A red message at the bottom says what to fix if a value is refused; nothing is saved then.
+
+Nothing in the window needs a restart. Voice changes apply to the next line the agent speaks, shortcuts change as soon as you save, and the speech-to-text engine applies to your next question. **Revert** puts back what is saved.
+
+### Agents tab
+
+Pick an agent on the left; its settings show on the right.
+
+![The Agents tab: an agent with its voice provider, Mac voice, speaking speed 1.25×, narration, queue priority High, a ⌃⌥1 shortcut and a blue orb colour](/screenshots/voice/settings-agents.png)
+
+| Setting | What it does | Saved in `agentx.json` as |
+|---|---|---|
+| **Voice provider** | **Mac voices** (free) or **ElevenLabs**. **Default** follows the General tab | agent `voice.provider` |
+| **Mac voice** | One of the voices installed on this Mac, **The Mac's default voice**, or **Assigned automatically** (each agent gets a different one). An agent with one voice per language shows that and leaves it alone | agent `voice.system` |
+| **ElevenLabs voice ID** | The ElevenLabs voice, used when the provider is ElevenLabs. Empty: the default voice | agent `voice.elevenlabsVoiceId` |
+| **Preview** | Says a sample line in the voice as it is set in the window, before you save | nothing |
+| **Speaking speed** | From 0.75× to 1.5×; **Normal** is 1×. ElevenLabs speaks at most 1.2× and at least 0.7× | agent `voice.rate` |
+| **Narration** | Short spoken updates while the agent works: **Off**, **On, except scheduled jobs**, or **On, scheduled jobs too** (see [Task narration](#task-narration)) | agent `voice.narrate` |
+| **Queue priority** | **High**: this agent's lines go ahead of lines already waiting in the [speaking queue](#one-queue-for-everything-spoken). **Low**: they go after them. **Normal**: in order of arrival | agent `voice.priority` |
+| **Ask with shortcut** | Hold this shortcut and speak to ask this agent, without changing the agent ticked in the menu. Click the field, then press the keys; **Escape** cancels, **Delete** or the clear button removes it | agent `voice.hotkey` |
+| **Orb colour** | The colour of this agent's [orb](#the-orb-while-you-talk) and on-screen pointer. **Use default** goes back to the colour picked from the agent's id | agent `presence.color` |
+
+To hear a voice before you keep it:
+
+1. **Mac:** on the **Agents** tab, pick the agent.
+2. **Mac:** choose a different **Mac voice** or **Speaking speed**.
+3. **Mac:** choose **Preview**. The agent says "Hello, this is …" in the new voice.
+4. **Mac:** choose **Save** to keep it, or **Revert** to go back.
+
+### General tab
+
+![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text, Default voice provider and Launch at login](/screenshots/voice/settings-general.png)
+
+| Setting | What it does | Saved as |
+|---|---|---|
+| **Talk (hold)** | Hold to speak, let go to send. Default **Option–Space** | `voice.hotkeys.talk` |
+| **Stop every voice** | Silences everything spoken. Default **Command–Option–.** | `voice.hotkeys.stop` |
+| **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
+| **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
+| **Speech to text** | **Automatic**: ElevenLabs when a key is set, Whisper on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac (Whisper)**: your voice never leaves the Mac | `voice.stt` |
+| **Default voice provider** | The voice provider for agents set to **Default** | `voice.provider` |
+| **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
+
+A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can stand alone), so it never takes a key away from your typing. Two actions can't share one shortcut: the window says which ones clash.
+
+![A refused save: the message at the bottom says the smart paste shortcut is already used to ask an agent](/screenshots/voice/settings-error.png)
+
+In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for example `"opt+space"`, `"cmd+opt+period"` or `"ctrl+opt+1"`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`; keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `return` or `tab`.
+
 **Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. It runs the `agentx paste` command, so that command must work. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
 
 ## Speech and configuration
@@ -124,7 +181,7 @@ To turn the orb off:
 |---|---|
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` |
 | `AGENTX_VOICE_AGENT` | Pins the agent the app talks to; the menu can't switch while it is set. `agentx desktop install --agent <id>` sets it. Without it: the agent picked in the menu, else the daemon's `node.defaultAgent`, else the first agent |
-| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202`, opened by the menu's **Settings…** and **History…** |
+| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202`, opened by the menu's **Dashboard…** and **History…** |
 | `ELEVENLABS_API_KEY` | Optional hosted transcription, and speech for agents whose provider is `elevenlabs` |
 | `AGENTX_VOICE_ID` | ElevenLabs voice ID for `elevenlabs` agents without `voice.elevenlabsVoiceId` |
 | `AGENTX_VOICE_PROVIDER` | `system`; which engine speaks before the daemon has named one (e.g. an error line) |
@@ -197,6 +254,11 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 | agent `voice.provider` | Overrides the global provider for this agent |
 | agent `voice.system` | This agent's system voice: a name (`Daniel`, `Ava (Premium)`), an identifier from `agentx voice list`, `system` for the OS default voice, or one per language: `{ "en": "Samantha", "fr": "Thomas", "ar": "system" }` |
 | agent `voice.gender` | `female`, `male` or `neutral`. An assigned voice, and the global `voice.system`, are used only if they match |
+| agent `voice.rate` | Speaking speed from `0.75` to `1.5` (default `1`). System voices speak 175 words a minute times this; ElevenLabs is held to 0.7–1.2 |
+| agent `voice.priority` | `high`, `normal` (default) or `low`: where this agent's lines go in the speaking queue |
+| agent `voice.hotkey` | A shortcut that asks this agent from AgentX Voice, e.g. `"ctrl+opt+1"` (see [Settings window](#settings-window)) |
+| `voice.stt` | AgentX Voice speech to text: `auto` (default), `elevenlabs` or `local` |
+| `voice.hotkeys` | AgentX Voice shortcuts: `talk` (default `opt+space`), `stop` (`cmd+opt+period`), `paste` (`cmd+opt+v`) |
 
 The system voice is chosen in this order: the agent's own, the global `voice.system` if it matches the agent's gender, then one assigned to it. A name that is not installed is skipped, and the daemon log says so once. With `provider: "system"`, no request goes to ElevenLabs, even when a key is set. `meshVoices` entries accept the same `provider`, `system` and `gender` fields.
 
@@ -454,6 +516,9 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `GET /talk` | The running talk or lesson: what was said, its state and the pauses |
 | `POST /talk/stop` | End the talk |
 | `POST /teach/live` | Start a lesson: `{"agent": "<id>", "goal": "…", "mode": "teach", "app": "Numbers"}` (`draw` is terminal only) |
+| `GET /voice/settings` | What the settings window shows: `general`, each agent's voice and colour, and the installed system voices |
+| `POST /voice/settings` | Save settings: `{"general": {…}, "agents": {"<id>": {…}}}`. `null` or `""` puts a field back to its default. `400` with `errors` when a value is refused; nothing is written then |
+| `POST /voice/preview` | `{"agentId": "<id>", "voice": {…}}`: say a sample line with unsaved voice changes, next in the queue |
 | `POST /voice/address` | `{"text": "…", "target": "<id>"}`: which agent the words are addressed to. Returns `{"agentId"}`, which is `target` when no leading name matches |
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
@@ -483,7 +548,9 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
 10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
 11. **Mac:** hold **Option–Space**. The orb appears in the top-right corner in the ticked agent's colour and swells as you speak. Let go: a ring goes round it while the agent thinks, and it pulses while the answer is spoken.
-12. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+12. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
+13. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
+14. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
@@ -496,6 +563,11 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked).
 - **A second question to the same agent waits a long time:** it waits until that agent has finished answering the question before it. The assistant gives up after 10 minutes and says "Sorry, that didn't work" (or "Sorry, Researcher couldn't answer that" for a question asked by name).
 - **An answer by name was never spoken:** you said "stop", pressed **Command–Option–.** or chose **Stop speaking** before it arrived. Stopping drops every answer still to come. Ask again.
+- **The settings window says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then open **Settings…** again.
+- **Save shows a red message:** the value was refused and `agentx.json` was not changed. Fix what the message names (a shortcut used twice, a shortcut without **Control**, **Option** or **Command**, a speed outside 0.75–1.5) and save again. A message that starts `agentx.json would not be valid` means another part of the file is wrong; the lines after it name the setting to fix.
+- **A shortcut does nothing:** another app already uses it. The app log (`~/Library/Logs/agentx-desktop.err.log`) says `is taken by another app`. Pick another one in **Settings…**.
+- **A preview is silent:** another line is playing first, or the voice is ElevenLabs without a key. Check `curl -s http://127.0.0.1:18800/voice/queue`.
+- **Launch at login is greyed out:** `agentx desktop install` starts the app at login. **Terminal:** run `agentx desktop stop` to stop it.
 - **No orb appears:** open the AgentX menu and check that **Show orb** is ticked. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The orb is the wrong colour:** set `presence.color` for that agent in `agentx.json`, as `#RRGGBB`, then restart the daemon or reload its settings. The app reads colours when you open its menu.
 - **The orb doesn't move:** Reduce Motion is on (see above), or the microphone permission is missing, so there is no voice level to follow.
