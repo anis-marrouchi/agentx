@@ -62,7 +62,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
-import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
 import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest } from "@/daemon/shutdown"
@@ -2388,7 +2388,7 @@ export class AgentXDaemon {
     const path = url.pathname
 
     try {
-      if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
+      if (req.method === "POST" && (AgentXDaemon.MESH_PROTECTED_PATHS.has(path) || isControlPost(path))) {
         if (!this.checkMeshAuth(req, res, path)) return
       }
       if (isMeshGatedPath(path)) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath } from "../src/daemon/mesh-auth"
+import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath, isControlPost } from "../src/daemon/mesh-auth"
 
 const TOKENS = new Set(["shared-mesh-token", "peer-b-token"])
 
@@ -133,6 +133,27 @@ describe("isMeshGatedPath — routes gated for every method", () => {
     const tokens = new Set(["mesh-secret"])
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(false)
     expect(decideMeshAuth({ remoteAddress: "127.0.0.1", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(true)
+    expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
+  })
+})
+
+describe("isControlPost — daemon control routes need a mesh token off-box", () => {
+  it("gates reload, task cancel/followup, process kill and channel sends", () => {
+    for (const p of ["/reload", "/api/tasks/t-1/cancel", "/api/tasks/t-1/followup", "/api/processes/kill", "/send", "/send/agent", "/send/contact"]) {
+      expect(isControlPost(p)).toBe(true)
+    }
+  })
+
+  it("does not gate look-alike or read paths", () => {
+    for (const p of ["/api/tasks", "/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health"]) {
+      expect(isControlPost(p)).toBe(false)
+    }
+  })
+
+  it("an off-box call without a token is refused; loopback stays exempt", () => {
+    const tokens = new Set(["mesh-secret"])
+    expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(false)
+    expect(decideMeshAuth({ remoteAddress: "::1", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(true)
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
   })
 })

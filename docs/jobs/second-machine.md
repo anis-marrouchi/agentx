@@ -37,4 +37,5 @@ Don't make the daemon reachable from the public internet just to get pairing wor
 - **`agentx mesh list` shows the peer as `unreachable`:** check that its daemon is running (`agentx daemon status`) and listens on an address the other machine can reach. See [Tailscale setup](tailscale.md).
 - **`agentx mesh list` says `Mesh: disabled`:** this machine hasn't joined a mesh yet, or its daemon settings weren't saved. Run the join step again.
 - **An authentication error:** the machines hold different mesh tokens, or a daemon wasn't restarted after joining. Restart both daemons.
+- **`401` when you reload, send a message, stop a task or kill a process on the other machine:** these control calls need the mesh token when they come from another machine. On the same machine they need no token. From another machine, pass `--token` with the mesh token. The dashboard token is not accepted.
 - **Only one machine sees the other:** pairing was done in one direction. Repeat it the other way.

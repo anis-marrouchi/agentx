@@ -8,6 +8,7 @@ import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
+import { dashboardTokenForNode } from "./mesh-auth"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
@@ -1696,17 +1697,18 @@ async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: Abort
  *  Shared by the live snapshot and the analytics fan-out so both agree on
  *  what "the fleet" means, and so the analytics drill-down proxy has the
  *  same allowlist as the task proxies. */
-async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSignal): Promise<NodeTarget[]> {
+export async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSignal): Promise<NodeTarget[]> {
   const dash = daemon.dashboard
   const primaryUrl = dash.daemonUrl.replace(/\/+$/, "")
+  const primaryToken = dashboardTokenForNode(dash, primaryUrl)
   const seen = new Map<string, NodeTarget>()
-  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: dash.token })
+  seen.set(primaryUrl, { name: "primary", url: primaryUrl, token: primaryToken })
   for (const d of dash.daemons) {
     const key = d.url.replace(/\/+$/, "")
-    if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: d.token })
+    if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: dashboardTokenForNode(dash, key) })
   }
-  const meshPeers = await fetchMeshPeers(primaryUrl, dash.token, signal)
-  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
+  const meshPeers = await fetchMeshPeers(primaryUrl, primaryToken, signal)
+  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, { ...p, token: dashboardTokenForNode(dash, p.url) })
   return [...seen.values()]
 }
 
@@ -1775,10 +1777,7 @@ async function proxyTaskStream(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "text/event-stream" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamCtl = new AbortController()
@@ -1920,10 +1919,7 @@ async function proxyTaskHistory(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamPath = taskId
@@ -1979,10 +1975,7 @@ async function proxyNodePost(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   let body = "{}"
