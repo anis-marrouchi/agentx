@@ -8,6 +8,7 @@ import { readFile } from "fs/promises"
 import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
+import { dashboardTokenForNode } from "./mesh-auth"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
@@ -1775,10 +1776,7 @@ async function proxyTaskStream(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "text/event-stream" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamCtl = new AbortController()
@@ -1920,10 +1918,7 @@ async function proxyTaskHistory(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamPath = taskId
@@ -1979,10 +1974,7 @@ async function proxyNodePost(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   let body = "{}"

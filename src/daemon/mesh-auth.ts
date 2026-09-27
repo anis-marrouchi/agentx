@@ -42,6 +42,16 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/approvals" || path.startsWith("/approvals/")
 }
 
+/** Control POSTs that act as this daemon: reload its config, stop or
+ *  steer a running task, kill an agent process, or send a message on one
+ *  of its channels. The CLI, TUI and same-host dashboard reach them over
+ *  loopback; an off-box caller needs a mesh token. */
+export function isControlPost(path: string): boolean {
+  return path === "/reload" || path === "/api/processes/kill" ||
+    path === "/send" || path === "/send/agent" || path === "/send/contact" ||
+    /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path)
+}
+
 /** True when the socket peer is on this host. Used by loopback-only
  *  endpoints (e.g. the guard hook) that must never be reachable off-box. */
 export function isLoopback(remoteAddress: string): boolean {
@@ -92,4 +102,22 @@ export function collectAcceptedMeshTokens(
   if (env.MESH_TOKEN) accepted.add(env.MESH_TOKEN)
   for (const p of config.mesh?.peers || []) if (p.token) accepted.add(p.token)
   return accepted
+}
+
+/**
+ * Bearer token the dashboard sends to `target` (a normalized node URL).
+ *
+ * The primary daemon gets dashboard.token and a configured
+ * dashboard.daemons[] entry gets its own token. A peer the dashboard only
+ * learned about through /mesh has no entry, so it falls back to MESH_TOKEN,
+ * the credential every node in the mesh accepts.
+ */
+export function dashboardTokenForNode(
+  dashboard: { daemonUrl: string; token?: string; daemons: Array<{ url: string; token?: string }> },
+  target: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const norm = (u: string) => u.replace(/\/+$/, "")
+  if (target === norm(dashboard.daemonUrl)) return dashboard.token
+  return dashboard.daemons.find((d) => norm(d.url) === target)?.token || env.MESH_TOKEN || undefined
 }
