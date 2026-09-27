@@ -85,7 +85,7 @@ const LIVE_PAGE_CSS = `
 .ax-node__tag--wait { color: var(--ax-warn, var(--ax-text-2)); border-color: currentColor; }
 .ax-node__name { font-weight: 600; font-size: 14px; }
 .ax-node__url { color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px; }
-.ax-node__sessions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 12px; color: var(--ax-muted); }
+.ax-node__sessions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px 0; font-size: 12px; color: var(--ax-muted); }
 .ax-node__session { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border: 1px solid var(--ax-line, currentColor); border-radius: 999px; color: var(--ax-text-2, inherit); }
 .ax-node__session.is-bound { color: var(--ax-text, inherit); border-color: var(--ax-accent, currentColor); }
 .ax-node__session.is-waiting { border-style: dashed; }
@@ -583,7 +583,7 @@ function renderAgent(a, node) {
     : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
 
   const lastActiveText = (a.attached && !a.attached.waiting)
-    ? 'Claude Code session active ' + fmtAgo(new Date(a.attached.lastSeenAt).toISOString())
+    ? 'Claude Code · ' + a.attached.project + ' · active ' + fmtAgo(new Date(a.attached.lastSeenAt).toISOString())
     : a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
   const lastActiveAttr = a.lastActive ? ' data-last-active="' + escapeHtml(a.lastActive) + '"' : '';
   const recentLink = nodeUrl
@@ -600,7 +600,7 @@ function renderAgent(a, node) {
   const at = a.attached;
   const attachBadge = at
     ? '<span class="ax-badge ax-badge--mono ' + (at.waiting ? 'ax-badge--ghost' : 'ax-badge--live') + '" title="Claude Code session ' + escapeHtml(at.session) + ' in ' + escapeHtml(at.project) + ' · ' + escapeHtml(at.mode) + '">' +
-        (at.waiting ? 'attached · waiting' : 'attached · ' + escapeHtml(at.project)) + '</span>'
+        (at.waiting ? 'waiting' : 'attached') + '</span>'
     : '';
 
   const head =

@@ -29,8 +29,8 @@ If the agent is running an on-screen lesson through the [desktop assistant](./vo
 When you run `agentx attach as <agent>` in a Claude Code session, messages for that agent go to your session instead of starting a new run. Live shows this:
 
 - Under the machine's name, **Claude Code sessions** lists every session on that machine, by project folder, with the agent it answers for (or **not attached**) and when it was last active.
-- The agent's card shows **attached · `project`**, so you can tell a person is answering, not a spawned run.
-- **attached · waiting** means the binding is saved but the session hasn't reported since the daemon restarted or the session sat idle. It gets its binding back as soon as you type in that session again.
+- The agent's card shows **attached**, and its footer names the project, so you can tell a person is answering, not a spawned run.
+- **waiting** means the binding is saved but the session hasn't reported since the daemon restarted or the session sat idle. It gets its binding back as soon as you type in that session again.
 
 Bindings survive daemon restarts. They end only when you run `agentx attach detach` or close the session. Live shows sessions for the machine the dashboard runs on; other machines keep this list private.
 
