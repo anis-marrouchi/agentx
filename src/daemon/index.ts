@@ -3722,6 +3722,21 @@ export class AgentXDaemon {
         return
       }
 
+      // Operator switch: turn one schedule on or off, then hot-reload crons.
+      //   POST /crons/:id/enabled   body: { enabled: boolean }
+      // 200 → { ok, id, enabled, changed }   404 unknown id   409 awaiting approval
+      const cronEnabledMatch = req.method === "POST" && path.match(/^\/crons\/([^/]+)\/enabled$/)
+      if (cronEnabledMatch) {
+        const body = await readJsonBody(req).catch(() => ({})) as { enabled?: unknown }
+        if (typeof body.enabled !== "boolean") { this.json(res, 400, { error: "send { enabled: true | false }" }); return }
+        const { setCronEnabled } = await import("@/crons/set-enabled")
+        const r = await setCronEnabled(decodeURIComponent(cronEnabledMatch[1]), body.enabled, { configPath: this.configPath })
+        if (!r.ok) { this.json(res, r.status, { error: r.error }); return }
+        if (r.changed) await this.reload()
+        this.json(res, 200, r)
+        return
+      }
+
       // Operator stop: abort the in-flight execution for a specific runningTask.id.
       //   POST /api/tasks/:taskId/cancel    body: { reason? }
       // 200 → { ok, agentId, channel, chatId }

@@ -44,14 +44,15 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/events/recent"
 }
 
-/** Control POSTs that act as this daemon: reload its config, stop or
- *  steer a running task, kill an agent process, or send a message on one
- *  of its channels. The CLI, TUI and same-host dashboard reach them over
+/** Control POSTs that act as this daemon: reload its config, switch a
+ *  schedule on or off, stop or steer a running task, kill an agent process,
+ *  or send a message on one of its channels. The CLI, TUI and same-host dashboard reach them over
  *  loopback; an off-box caller needs a mesh token. */
 export function isControlPost(path: string): boolean {
   return path === "/reload" || path === "/api/processes/kill" ||
     path === "/send" || path === "/send/agent" || path === "/send/contact" ||
-    /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path)
+    /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path) ||
+    /^\/crons\/[^/]+\/enabled$/.test(path)
 }
 
 /** True when the socket peer is on this host. Used by loopback-only
