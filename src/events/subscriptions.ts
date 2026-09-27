@@ -48,19 +48,22 @@ export function subscriptionsFor(subs: SubscriptionInput[] | undefined, delivery
   return delivery === "pull" ? subs : subs.filter((s) => (s.delivery ?? "pull") === delivery)
 }
 
-/** Events from `events` (oldest first) that match any of `subs`, newest
- *  `limit` kept. */
+/** Events from `events` (oldest first) that match any of `subs`. With no
+ *  cursor the newest `limit` are kept. When `events` was already read after
+ *  a cursor (`fromCursor`), the OLDEST `limit` are kept instead, so a reader
+ *  that passes the last returned id back as `since` pages through every
+ *  match without gaps. */
 export function eventsForAgent(
   agentId: string,
   subs: SubscriptionInput[] | undefined,
   events: EventEnvelope[],
-  opts: { delivery?: Delivery; limit?: number } = {},
+  opts: { delivery?: Delivery; limit?: number; fromCursor?: boolean } = {},
 ): EventEnvelope[] {
   const active = subscriptionsFor(subs, opts.delivery ?? "pull")
   if (active.length === 0) return []
   const limit = clampLimit(opts.limit)
   const hits = events.filter((e) => active.some((s) => matchesSubscription(s, e, agentId)))
-  return hits.slice(-limit)
+  return opts.fromCursor ? hits.slice(0, limit) : hits.slice(-limit)
 }
 
 export function clampLimit(limit: number | undefined, fallback = PULL_DEFAULT): number {

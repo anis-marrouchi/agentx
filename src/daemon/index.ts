@@ -2862,12 +2862,15 @@ export class AgentXDaemon {
         if (!def) { this.json(res, 404, { error: `unknown agent: ${agentId}` }); return }
         const q = url.searchParams
         const limit = clampLimit(parseInt(q.get("limit") || "", 10))
-        const events = eventsForAgent(agentId, def.subscriptions, getAgentEventBus().recent({ since: q.get("since") || undefined }), { limit })
+        const since = q.get("since") || undefined
+        // With a cursor, return the oldest page after it so `next` pages
+        // through every match; without one, the newest.
+        const events = eventsForAgent(agentId, def.subscriptions, getAgentEventBus().recent({ since }), { limit, fromCursor: Boolean(since) })
         this.json(res, 200, {
           agentId,
           subscriptions: def.subscriptions.length,
           events,
-          next: events.length ? events[events.length - 1].id : q.get("since") || undefined,
+          next: events.length ? events[events.length - 1].id : since,
         })
         return
       }

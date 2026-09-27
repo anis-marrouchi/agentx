@@ -88,6 +88,23 @@ describe("pull", () => {
     expect(eventsForAgent("a", [], all)).toEqual([])
   })
 
+  it("pages through more than a page of matches after a cursor with no gaps", () => {
+    const bus = new TypedEventBus()
+    const subs = [{ kinds: ["run"] }]
+    const ids: string[] = []
+    for (let i = 0; i < 130; i++) ids.push(bus.publish({ kind: "run", type: "failed", summary: `run ${i}` }).id)
+    // A reader has seen up to run 9; 120 newer matches remain.
+    let since = ids[9]
+    const read: string[] = []
+    for (let page = 0; page < 10; page++) {
+      const events = eventsForAgent("a", subs, bus.recent({ since }), { limit: 50, fromCursor: true })
+      if (events.length === 0) break
+      read.push(...events.map((e) => e.id))
+      since = events[events.length - 1].id
+    }
+    expect(read).toEqual(ids.slice(10))
+  })
+
   it("says so when the agent has no subscriptions", () => {
     expect(renderEventsAnswer("a", { subscriptions: 0, events: [] }, formatEventLine)).toContain("no event subscriptions")
   })
