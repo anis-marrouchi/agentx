@@ -1050,7 +1050,10 @@ export class AgentRegistry {
       // as plain channel text, which would drop its autonomy level. So does
       // the reminders poller: "reminder" has no adapter to re-route to, and
       // it would read __queued__ as a refusal and dispatch the reminder again.
-      if (qChannel === "api" || qChannel === "reminder" || restricted) {
+      // Event wakes ("events") wait so the turn runs inside the dispatch's
+      // withRoot: a queued one would be flushed from the earlier run and
+      // publish under that run's rootId, or merge with it in collect mode.
+      if (qChannel === "api" || qChannel === "reminder" || qChannel === "events" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
