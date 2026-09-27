@@ -21,7 +21,9 @@ You need a copy of the AgentX source code that has been built, and Node.js 22. S
 
 The demo is a tour of routing, not a filled-in copy of a business, so some dashboard views stay empty.
 
-<!-- Screenshot needed: the demo's terminal output (terminal only). Needs a manual capture outside the docs demo. -->
+![The demo's terminal output: three local daemons start, the dashboard address is printed, and the scripted task passes from the cx agent to the builder agent on another machine and back](/screenshots/see-it-first/demo-terminal.png)
+
+*The terminal after one run of the scenario.*
 
 ## See a filled-in demo
 

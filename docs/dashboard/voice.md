@@ -25,7 +25,7 @@ You need a Mac with Apple Silicon and macOS 14 or newer, a running daemon (the A
 5. **Mac:** when the helper asks, allow **Accessibility** and **Screen Recording** in System Settings › Privacy & Security.
 6. Hold **Option–Space**, say a question, then release.
 
-<!-- Screenshot needed: the desktop widget with a spoken answer, and the macOS permission prompts (native macOS app). Needs a manual capture outside the docs demo. -->
+<!-- Screenshot needed: the desktop widget with a spoken answer, and the macOS permission prompts (native macOS app). Not captured: the widget only takes spoken questions and answers through the agent it was installed for, so a capture needs a person speaking to a demo-only install; the permission prompts appear once per Mac and only come back after resetting privacy settings in System Settings. -->
 
 From a source checkout, run `pnpm build` once and replace `agentx` with `node dist/cli.js`. To change the agent later, run the install again with another `--agent`.
 
@@ -143,7 +143,7 @@ During a talk, the agents only talk. They can't run tools, change files or send 
 3. Listen. Each line is spoken in that agent's voice and also printed in the terminal.
 4. Wait for the end. The talk ends on its own when the agents agree the topic is settled, or after 10 lines. At the end, the terminal prints how long the pauses between speakers were.
 
-<!-- Screenshot needed: a terminal showing an agentx talk transcript with two agents and the closing pause summary (terminal only). Needs a manual capture outside the docs demo. -->
+![A terminal showing an agentx talk between two demo agents, CX and Builder: four spoken lines, the pause after each hand-over, and the closing summary of the gaps between speakers](/screenshots/voice/talk-transcript.png)
 
 Either agent can live on another AgentX computer in your mesh (the group of AgentX computers that know each other); its voice still plays on this computer. Only one talk or lesson runs at a time.
 
@@ -247,7 +247,7 @@ An agent can appear on your screen as its own pointer: an arrow in its colour, w
 
 The pointer appears during lessons (see [Live lessons](#live-lessons)), and after a spoken answer when [presence mode](#presence-mode) is on.
 
-<!-- Screenshot needed: an agent's on-screen pointer with its initial, name and speech bubble next to a control (native macOS app). Needs a manual capture outside the docs demo. -->
+![An agent's on-screen pointer beside the Numbers sidebar: an arrow in the agent's colour, a circle with its initial C, its name CX, and a speech bubble with what it is saying](/screenshots/voice/presence-pointer.png)
 
 To change how an agent's pointer looks:
 
@@ -319,7 +319,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
    ```
 2. **Mac:** follow the spoken steps in the app. The terminal prints each step as it happens.
 
-<!-- Screenshot needed: a live lesson in progress, with the agent's pointer outlining a control and the step printed in the terminal (native macOS app). Needs a manual capture outside the docs demo. -->
+![A live lesson in progress: a Numbers table on the left, the agent's pointer labelled C and CX between the windows, and the terminal on the right printing each step as it happens](/screenshots/voice/live-lesson.png)
 
 | Option | What it does |
 |---|---|
@@ -345,7 +345,7 @@ Pressing **Command–Option–.** also ends a lesson. In the terminal where it r
 2. Find the agent's card. A running lesson shows **on screen**, the mode, the step number and what the agent is saying.
 3. To end it, select **✕ stop** on that line.
 
-<!-- Screenshot needed: the Live tab with an agent card showing an on-screen lesson and its ✕ stop button. A lesson only runs through the desktop assistant on a Mac, so the demo can't show one. Needs a manual capture outside the docs demo. -->
+![The Live tab with the cx agent's card showing a running lesson: "on screen · teach · step 0", the lesson's goal, and its ✕ stop button](/screenshots/voice/live-tab-lesson.png)
 
 ## For automations (Siri, Shortcuts, scripts)
 
