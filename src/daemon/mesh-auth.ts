@@ -41,7 +41,7 @@ export function isMeshGatedPath(path: string): boolean {
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
     // Recent events name agents, chats and errors across the node.
-    path === "/events/recent"
+    path === "/events/recent" || /^\/agents\/[^/]+\/events$/.test(path)
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

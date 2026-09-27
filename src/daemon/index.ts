@@ -115,6 +115,7 @@ import {
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
 import { withNewRoot, withRoot } from "@/events/envelope"
+import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -2832,6 +2833,25 @@ export class AgentXDaemon {
             agent: q.get("agent") || undefined,
             limit: Number.isFinite(limit) ? limit : undefined,
           }),
+        })
+        return
+      }
+
+      // One agent's subscriptions, read back as a bounded digest: the pull
+      // delivery behind the agentx_events MCP tool and `agentx events`.
+      const agentEventsMatch = req.method === "GET" ? path.match(/^\/agents\/([^/]+)\/events$/) : null
+      if (agentEventsMatch) {
+        const agentId = decodeURIComponent(agentEventsMatch[1])
+        const def = this.config.agents[agentId]
+        if (!def) { this.json(res, 404, { error: `unknown agent: ${agentId}` }); return }
+        const q = url.searchParams
+        const limit = clampLimit(parseInt(q.get("limit") || "", 10))
+        const events = eventsForAgent(agentId, def.subscriptions, getAgentEventBus().recent({ since: q.get("since") || undefined }), { limit })
+        this.json(res, 200, {
+          agentId,
+          subscriptions: def.subscriptions.length,
+          events,
+          next: events.length ? events[events.length - 1].id : q.get("since") || undefined,
         })
         return
       }

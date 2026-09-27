@@ -168,6 +168,25 @@ const voiceSchema = z.object({
   narrate: z.enum(["off", "on", "all"]).optional(),
 })
 
+/** One event subscription (src/events/subscriptions.ts). An envelope
+ *  matches when its kind or type is in `kinds` and every other set filter
+ *  agrees. Every subscription is readable with `agentx_events`; `digest`
+ *  also briefs a fresh session and `wake` also starts a turn. */
+export const eventSubscriptionSchema = z.object({
+  /** Envelope `kind` ("agent", "run") or `type` ("task:completed"); "*" matches all. */
+  kinds: z.array(z.string().min(1)).min(1),
+  /** Only events published for these agent ids. */
+  agents: z.array(z.string().min(1)).optional(),
+  /** Only events published by these nodes (`node.name`). */
+  nodes: z.array(z.string().min(1)).optional(),
+  /** Only events whose summary contains this text (case-insensitive). */
+  match: z.string().min(1).optional(),
+  delivery: z.enum(["pull", "digest", "wake"]).default("pull"),
+  /** wake only: no wake when the agent was already woken this many times
+   *  in the past hour. */
+  maxPerHour: z.number().int().min(1).max(60).default(4),
+})
+
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
@@ -293,6 +312,8 @@ const agentConfigSchema = z.object({
    *  agents or by the operator. It never approves anything: approval of a
    *  create/delete request stays operator-only (`agentx schedule approve`). */
   admin: z.boolean().optional(),
+  /** Events on the bus this agent wants to hear about (issue #165). */
+  subscriptions: z.array(eventSubscriptionSchema).default([]),
   /** Per-agent third-party integrations registry. Declares which services
    *  this agent has credentials for (telegram-bot, hubspot, gitlab-user,
    *  gmail, etc.). Secrets stay in env vars / keyring; this block holds
@@ -1165,6 +1186,7 @@ export const daemonConfigSchema = z.object({
 
 export type DaemonConfig = z.infer<typeof daemonConfigSchema>
 export type AgentDef = z.infer<typeof agentConfigSchema>
+export type EventSubscription = z.infer<typeof eventSubscriptionSchema>
 export type CronJobDef = z.infer<typeof cronJobSchema>
 export type MeshPeer = z.infer<typeof meshPeerSchema>
 
