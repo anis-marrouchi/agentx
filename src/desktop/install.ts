@@ -37,11 +37,13 @@ export function findOnPath(bin: string, path: string, isExecutable: (file: strin
   for (const dir of path.split(':')) if (dir && isExecutable(join(dir, bin))) return join(dir, bin)
   return null
 }
-export function desktopPlist(opts: { executable: string; cwd: string; agent: string; url: string; helper: string; cli: string; node: string; log: string; path: string }): string {
+/** Without `agent` the app talks to the agent picked in its menu-bar
+ *  icon; with it, that agent is pinned and the menu cannot switch. */
+export function desktopPlist(opts: { executable: string; cwd: string; agent?: string; url: string; helper: string; cli: string; node: string; log: string; path: string }): string {
   const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
   const env = {
     PATH: opts.path,
-    AGENTX_VOICE_AGENT: opts.agent,
+    ...(opts.agent ? { AGENTX_VOICE_AGENT: opts.agent } : {}),
     AGENTX_DAEMON_URL: opts.url,
     AGENTX_MAC_HELPER: opts.helper,
     AGENTX_PASTE_COMMAND: `cd ${shellQuote(opts.cwd)} && ${shellQuote(opts.node)} ${shellQuote(opts.cli)} paste`,

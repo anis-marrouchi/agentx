@@ -2,32 +2,31 @@
 
 First complete the [desktop prerequisites](../requirements.md#desktop-assistant), choose a [speech backend](../requirements.md#voice-input-and-spoken-replies), and review [macOS permissions](../requirements.md#macos-permissions). Each section includes setup steps and official help.
 
-AgentX Desktop is a floating assistant with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in the widget and is spoken aloud. The daemon and the selected agent do the work.
+AgentX Desktop is a menu-bar assistant with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small panel and is spoken aloud. The daemon and the selected agent do the work.
 
 ## Install and activate
 
 You need a Mac with Apple Silicon and macOS 14 or newer, a running daemon (the AgentX background service), and at least one agent.
 
-1. **Terminal:** list your agents and note the id of the one you want to talk to:
+1. **Terminal:** preview what the installer will do, without changing anything:
    ```sh
-   agentx agent list
+   agentx desktop install --dry-run
    ```
-2. **Terminal:** preview what the installer will do, without changing anything (here the agent id is `helper`):
+2. **Terminal:** install it:
    ```sh
-   agentx desktop install --agent helper --dry-run
+   agentx desktop install
    ```
-3. **Terminal:** install it:
-   ```sh
-   agentx desktop install --agent helper
-   ```
-   This builds and installs the app into `~/Applications/AgentX Desktop.app` and its helper into `~/Applications/AgentX Helper.app`, remembers the agent and daemon address, and starts the app at login. If Apple's command-line tools are missing, it tells you how to install them.
-4. **Mac:** when macOS asks, allow the microphone.
-5. **Mac:** when the helper asks, allow **Accessibility** and **Screen Recording** in System Settings › Privacy & Security.
+   This builds and installs the app into `~/Applications/AgentX Desktop.app` and its helper into `~/Applications/AgentX Helper.app`, remembers the daemon address, and starts the app at login. If Apple's command-line tools are missing, it tells you how to install them.
+3. **Mac:** when macOS asks, allow the microphone.
+4. **Mac:** when the helper asks, allow **Accessibility** and **Screen Recording** in System Settings › Privacy & Security.
+5. **Mac:** click the AgentX icon in the menu bar and pick the agent to talk to (see [Choose who answers](#choose-who-answers)).
 6. Hold **Option–Space**, say a question, then release.
 
 <!-- Screenshot needed: the desktop widget with a spoken answer, and the macOS permission prompts (native macOS app). Not captured: the widget only takes spoken questions and answers through the agent it was installed for, so a capture needs a person speaking to a demo-only install; the permission prompts appear once per Mac and only come back after resetting privacy settings in System Settings. -->
 
-From a source checkout, run `pnpm build` once and replace `agentx` with `node dist/cli.js`. To change the agent later, run the install again with another `--agent`.
+From a source checkout, run `pnpm build` once and replace `agentx` with `node dist/cli.js`.
+
+To tie the app to one agent for good, install with `--agent <id>` (for example `agentx desktop install --agent helper`). The menu then shows that agent and can't switch; run the install again without `--agent` to switch from the menu again.
 
 To manage the app afterwards:
 
@@ -37,6 +36,28 @@ agentx desktop stop
 agentx desktop start
 ```
 
+## Choose who answers
+
+The AgentX icon in the menu bar shows what the assistant is doing: a waveform when idle, a microphone while listening, dots while the agent thinks, and a speaker while it answers. Its menu lists your agents and whether each one is working right now.
+
+![The AgentX menu: three agents with Writer ticked, then Stop speaking, Hold notifications, Show floating pill, Settings…, History… and Quit](/screenshots/voice/menu-bar.png)
+
+1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
+2. **Mac:** choose an agent, or press its number (**1** to **9**).
+3. Hold **Option–Space** and speak. The panel names the agent while it listens and answers.
+
+The app remembers your choice after a restart. The rest of the menu works from the keyboard too: use the arrow keys and **Return**, or **Escape** to close it.
+
+| Menu item | What it does |
+|---|---|
+| **Stop speaking** | Silences every voice (see [Stop every voice at once](#stop-every-voice-at-once)) |
+| **Hold notifications** | Holds agent notifications until you turn it off |
+| **Show floating pill** | Keeps the small panel on screen when idle. Off by default: the panel appears only while listening or answering |
+| **Settings…** | Opens the dashboard's [Settings](./settings.md) page |
+| **History…** | Opens the dashboard's [Activity](./activity.md) page |
+
+If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the panel opens the same menu.
+
 **Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. It runs the `agentx paste` command, so that command must work. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
 
 ## Speech and configuration
@@ -44,7 +65,8 @@ agentx desktop start
 | Setting | Default / purpose |
 |---|---|
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` |
-| `AGENTX_VOICE_AGENT` | The agent the app talks to. `agentx desktop install` sets it; without it the app falls back to a built-in id that probably isn't one of your agents |
+| `AGENTX_VOICE_AGENT` | Pins the agent the app talks to; the menu can't switch while it is set. `agentx desktop install --agent <id>` sets it. Without it: the agent picked in the menu, else the daemon's `node.defaultAgent`, else the first agent |
+| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202`, opened by the menu's **Settings…** and **History…** |
 | `ELEVENLABS_API_KEY` | Optional hosted transcription, and speech for agents whose provider is `elevenlabs` |
 | `AGENTX_VOICE_ID` | ElevenLabs voice ID for `elevenlabs` agents without `voice.elevenlabsVoiceId` |
 | `AGENTX_VOICE_PROVIDER` | `system`; which engine speaks before the daemon has named one (e.g. an error line) |
@@ -54,7 +76,7 @@ agentx desktop start
 
 Without an ElevenLabs key, transcription needs a working local `mlx_whisper` installation. Speech uses the free macOS voices unless you choose ElevenLabs (see [Agent voices](#agent-voices)). ElevenLabs usage and the agent's model usage are separate costs. The app checks the key environment variable first, then `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt`.
 
-The installer persists the chosen agent, daemon URL, helper path, and CLI command in the login service. Finder does not inherit terminal environment variables. Use a key file for speech credentials or configure the login service environment for advanced speech settings.
+The installer persists the pinned agent (if any), daemon URL, helper path, and CLI command in the login service. Finder does not inherit terminal environment variables. Use a key file for speech credentials or configure the login service environment for advanced speech settings.
 
 ## Agent voices
 
@@ -180,10 +202,8 @@ One key stops everything that is speaking on your Mac: the widget's own answer, 
 
 Or use the menu instead:
 
-1. **Mac:** right-click the widget.
+1. **Mac:** click the AgentX icon in the menu bar.
 2. **Mac:** choose **Stop speaking**.
-
-![The desktop widget right-click menu: Hold notifications, Stop speaking and Quit AgentX Voice](/screenshots/voice/widget-menu.png)
 
 Holding **Option–Space** also silences everything before the widget starts listening, but it only pauses the lines waiting their turn (see the next section). To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
 
@@ -394,20 +414,22 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 ## Check it worked
 
 1. **Terminal:** run `agentx desktop status`. It prints the login service's details. `Installed, but not running` or `Not installed` means it isn't running.
-2. Hold **Option–Space**, ask "What can you do?", then release.
-3. The answer appears in the widget and is spoken aloud.
-4. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
-5. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
-6. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+2. **Mac:** click the AgentX icon in the menu bar. Your agents are listed and one is ticked.
+3. Hold **Option–Space**, ask "What can you do?", then release.
+4. The answer appears in the panel, under the ticked agent's name, and is spoken aloud.
+5. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
+6. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
+7. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
 - **No recording:** check the microphone permission in System Settings › Privacy & Security › Microphone, and hold the shortcut while speaking.
 - **"Sorry, I didn't hear that":** transcription failed and nothing was sent. Check your ElevenLabs key, or the local Whisper program and model.
 - **Local Whisper fails:** **Terminal:** run `agentx doctor`. If it reports `ffmpeg not reachable by the desktop app`, install FFmpeg (for example `brew install ffmpeg`) and run `agentx desktop install` again.
-- **Agent unavailable:** check the daemon address and the exact agent id, then run the install again with the right `--agent`.
+- **Agent unavailable:** check the daemon address, then pick another agent from the menu. If the menu can't switch, the app is pinned to one agent: it was installed with `--agent`, or installed before the menu existed (older installs always pinned an agent). Run `agentx desktop install` again without `--agent`.
+- **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status`, start the daemon, then choose **Retry**.
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
-- **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the widget's right-click menu.
+- **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
 - **`Unknown agent: …` from `POST /voice/queue`:** the `agentId` must be an agent on this computer or on a connected mesh computer. Check the id with `agentx agent list`.
 - **`A talk or lesson is already running`:** only one runs at a time. Wait for it to end, or press **Command–Option–.** to stop it.

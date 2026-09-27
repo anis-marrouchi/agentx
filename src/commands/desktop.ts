@@ -36,16 +36,17 @@ function sourceRoot() {
 }
 export const desktop = new Command('desktop').description('install and control the macOS desktop assistant')
 desktop.command('install').description('build, install, and start voice and computer-use helpers at login')
-  .option('--agent <id>', 'agent to use (defaults to the first configured agent)')
+  .option('--agent <id>', 'pin this agent; without it, pick the agent from the menu-bar icon')
   .option('--dry-run', 'show the installation plan without building or changing login items')
   .action(async opts => {
     checkPlatform()
     const config = loadDaemonConfig()
     const agent = selectDesktopAgent(config.agents, opts.agent)
+    const pinned: string | undefined = opts.agent
     const url = config.dashboard?.daemonUrl || `http://${config.node.bind.replace(/^0\.0\.0\.0:/, '127.0.0.1:')}`
     const root = sourceRoot()
     const apps = join(homedir(), 'Applications')
-    console.log(`Desktop assistant → ${join(apps, DESKTOP_APP)}\nComputer-use helper → ${join(apps, HELPER_APP)}\nAgent → ${agent}\nDaemon → ${url}\nStarts at login → ${plistPath()}`)
+    console.log(`Desktop assistant → ${join(apps, DESKTOP_APP)}\nComputer-use helper → ${join(apps, HELPER_APP)}\nAgent → ${pinned ? `${agent} (pinned)` : 'picked from the menu-bar icon'}\nDaemon → ${url}\nStarts at login → ${plistPath()}`)
     if (opts.dryRun) return
     try { execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'pipe' }) }
     catch { throw new Error('Apple command-line tools are required. Run xcode-select --install, finish installation, then retry.') }
@@ -62,7 +63,7 @@ desktop.command('install').description('build, install, and start voice and comp
         execFileSync('/bin/bash', [join(stage, name, 'build.sh'), ...args], { stdio: 'inherit' })
       }
       const log = join(homedir(), 'Library/Logs/agentx-desktop.err.log')
-      const plist = desktopPlist({ executable: join(apps, DESKTOP_APP, 'Contents/MacOS/AgentXVoice'), cwd: process.cwd(), agent, url,
+      const plist = desktopPlist({ executable: join(apps, DESKTOP_APP, 'Contents/MacOS/AgentXVoice'), cwd: process.cwd(), agent: pinned, url,
         helper: installedHelper(homedir()), cli: join(root, 'dist/cli.js'), node: process.execPath, log,
         path: desktopPath(ffmpeg, process.env.AGENTX_VOICE_PATH) })
       const stagedPlist = join(stage, 'desktop.plist')

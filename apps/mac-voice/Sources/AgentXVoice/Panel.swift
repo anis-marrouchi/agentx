@@ -36,43 +36,23 @@ final class Panel: NSPanel {
         super.mouseDown(with: event)
     }
 
-    /// Right-click opens the only menu the widget has.
-    ///
-    /// A hold has to be reversible in one gesture from wherever you are,
-    /// and it has to SHOW — a switch that silences your notifications
-    /// without saying so is how people miss things for a day and blame the
-    /// software.
+    /// Right-click opens the same menu as the menu-bar icon.
     override func rightMouseDown(with event: NSEvent) {
-        let menu = NSMenu()
-        let holding = Hold.isOn
-        let item = NSMenuItem(
-            title: holding ? "Delivering notifications" : "Hold notifications",
-            action: #selector(toggleHold), keyEquivalent: "")
-        item.target = self
-        item.state = holding ? .on : .off
-        menu.addItem(item)
-        let stop = NSMenuItem(title: "Stop speaking  ⌘⌥.", action: #selector(stopSpeaking), keyEquivalent: "")
-        stop.target = self
-        menu.addItem(stop)
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit AgentX Voice",
-                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        guard let menu = contextMenu?() else { return }
         NSMenu.popUpContextMenu(menu, with: event, for: contentView ?? NSView())
     }
 
-    @objc private func toggleHold() {
-        let nowOn = Hold.toggle()
-        onHoldChanged?(nowOn)
-    }
+    /// The menu to show on right-click. Set by the app.
+    var contextMenu: (() -> NSMenu)?
 
-    /// Told when the hold flips, so the app can redraw and flush.
-    var onHoldChanged: ((Bool) -> Void)?
+    /// The target agent's name, shown while listening or answering.
+    var agentName: () -> String = { "" }
 
-    @objc private func stopSpeaking() { onStop?() }
+    /// Stay on screen when idle. Off: the pill shows only while active.
+    var alwaysVisible = false
 
-    /// "Stop speaking" was chosen. Set by the app.
-    var onStop: (() -> Void)?
+    /// Told of every state rendered, so the menu-bar icon can follow.
+    var onRender: ((State) -> Void)?
 
     override func mouseUp(with event: NSEvent) {
         defer { pressedAt = nil }
@@ -225,8 +205,21 @@ final class Panel: NSPanel {
             label.frame.origin.x = 0
         } else {
             label.textColor = state.color
-            setText(state.text)
+            setText(named(state))
         }
+
+        if state.isMeta && !alwaysVisible { orderOut(nil) } else { orderFrontRegardless() }
+        onRender?(state)
+    }
+
+    /// "Nadia · Listening": who is listening or answering. Errors are the
+    /// widget's own, so they carry no name.
+    @MainActor
+    private func named(_ state: State) -> String {
+        let name = agentName()
+        if name.isEmpty { return state.text }
+        if case .error = state { return state.text }
+        return "\(name) · \(state.text)"
     }
 
     /// Fits, or scrolls. Identical text is left alone so a per-second tick

@@ -25,6 +25,8 @@ describe('desktop installation', () => {
   it('persists the agent, daemon and paths in a valid plist', () => {
     const plist = desktopPlist({ executable: '/tmp/AgentX Desktop.app/bin', cwd: "/tmp/a&b'c", agent: 'coder', url: 'http://127.0.0.1:18800', helper: '/tmp/helper', cli: '/tmp/cli.js', node: '/tmp/node', log: '/tmp/log', path: '/opt/x:/usr/bin' })
     expect(plist).toContain('<key>AGENTX_VOICE_AGENT</key><string>coder</string>')
+    const unpinned = desktopPlist({ executable: '/a', cwd: '/b', url: 'http://x', helper: '/h', cli: '/c', node: '/n', log: '/l', path: '/usr/bin' })
+    expect(unpinned).not.toContain('AGENTX_VOICE_AGENT')
     expect(plist).toContain('a&amp;b&apos;c')
     expect(plist).toContain('<key>AGENTX_MAC_HELPER</key>')
     if (process.platform === 'darwin') expect(execFileSync('plutil', ['-lint', '-'], { input: plist, encoding: 'utf8' })).toContain('OK')

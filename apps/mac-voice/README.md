@@ -56,7 +56,8 @@ All optional; every one has a working default.
 | variable | default | meaning |
 |---|---|---|
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` | daemon to ask |
-| `AGENTX_VOICE_AGENT` | `secretary-agent` | which agent answers |
+| `AGENTX_VOICE_AGENT` | — | pins the agent that answers; unset: the one picked in the menu bar, else the daemon's default, else its first agent |
+| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202` | opened by the menu's Settings… and History… |
 | `ELEVENLABS_API_KEY` | `~/.elevenlabs/key` | STT, and TTS for `elevenlabs` agents; absent → local fallbacks |
 | `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice for an `elevenlabs` agent with no `voice.elevenlabsVoiceId` |
 | `AGENTX_VOICE_PROVIDER` | `system` | engine for lines spoken before the daemon names one |
