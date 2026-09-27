@@ -922,6 +922,19 @@ export const daemonConfigSchema = z.object({
       windowMinutes: z.number().positive().default(10),
     }).default({}),
   }).default({}),
+  /** Hand due Apple Reminders back to the agent that created them
+   *  (src/reminders). macOS only; reads reminders whose notes end with the
+   *  mac-pim skill's `agentx: agent=<id>` trailer. */
+  reminders: z.object({
+    enabled: z.boolean().default(false),
+    /** Reminders lists to watch. */
+    lists: z.array(z.string().min(1)).default(["AgentX"]),
+    pollSeconds: z.number().int().min(15).default(60),
+    /** Overdue by more than this (the daemon was down): reported, not run. */
+    lookbackHours: z.number().positive().default(24),
+    /** The remindctl binary, when it isn't on the daemon's PATH. */
+    command: z.string().min(1).default("remindctl"),
+  }).default({}),
   /** The in-process event bus (src/events). `ringSize` bounds how many
    *  recent events GET /events/recent can return. */
   events: z.object({

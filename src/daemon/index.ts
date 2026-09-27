@@ -44,6 +44,7 @@ import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type 
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
 import {
   listPublishedInboxes, validateRelayRequest, renderRelayMessage,
@@ -656,6 +657,7 @@ export class AgentXDaemon {
     // midnight run; any restart before midnight lost that day's row.)
     this.scheduleMidnightHook()
     this.startApprovalsSweep()
+    this.startReminders()
     try {
       const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
       const appended = this.registry.getTokenTracker().catchUpTokenCosts(yesterday)
@@ -932,6 +934,7 @@ export class AgentXDaemon {
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
+    this.stopReminders?.()
 
     if (this.reloadTimer) clearTimeout(this.reloadTimer)
     if (this.configWatcher) {
@@ -1385,12 +1388,18 @@ export class AgentXDaemon {
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
     //    reflect it, and router send-side paths see fresh channel config.
     const screenChanged = JSON.stringify(this.config.screen) !== JSON.stringify(next.screen)
+    const remindersChanged = JSON.stringify(this.config.reminders) !== JSON.stringify(next.reminders)
     this.config = next
     getAgentEventBus().configure({ node: next.node.name || next.node.id, ringSize: next.events.ringSize })
     this.router.updateConfig(next)
     if (screenChanged) {
       this.screenBuffer?.configure(screenSettings(next.screen))
       applied.push("screen")
+    }
+    if (remindersChanged) {
+      this.stopReminders?.()
+      this.startReminders()
+      applied.push("reminders")
     }
 
     if (applied.length) this.log(`[reload] applied: ${applied.join(", ")}`)
@@ -1442,6 +1451,23 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  private stopReminders?: (() => void) | null
+
+  /** Hand due Apple Reminders back to the agent that created them (src/reminders). */
+  private startReminders(): void {
+    const dest = this.config.notifications?.destination
+    this.stopReminders = startRemindersPoller({
+      settings: this.config.reminders,
+      root: process.cwd(),
+      execute: (task, onDelta, onThinking, onEvent) => this.registry.execute(task, onDelta, onThinking, onEvent),
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      send: (msg) => this.router.sendOutbound(msg),
+      fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
+      isStopping: () => this.shuttingDown,
+      log: this.log,
+    })
   }
 
   private scheduleMidnightHook(): void {

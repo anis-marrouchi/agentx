@@ -50,6 +50,7 @@ export async function runDoctorChecks(
   if (cfg) runRoutingChecks(checks, cfg)
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
+  if (cfg) runReminderChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -85,6 +86,38 @@ export async function runNotificationChecks(checks: Check[], cfg: any, status = 
     detail: helper.path,
     fix: helper.fix,
   })
+}
+
+/** reminders.enabled: macOS only, and the daemon needs remindctl. */
+export function runReminderChecks(
+  checks: Check[],
+  cfg: any,
+  platform: NodeJS.Platform = process.platform,
+  isExecutable: (file: string) => boolean = (file) => { try { accessSync(file, constants.X_OK); return true } catch { return false } },
+): void {
+  const r = cfg.reminders
+  if (!r?.enabled) return
+  if (platform !== "darwin") {
+    checks.push({
+      severity: "warn",
+      group: "Reminders",
+      title: "Reminders hand-back unavailable on this machine",
+      detail: "reminders.enabled is set, but Apple Reminders exists only on macOS. The daemon starts without it.",
+      fix: "Set reminders.enabled to false here, or enable it on the Mac node instead.",
+    })
+    return
+  }
+  const command = r.command || "remindctl"
+  const found = command.includes("/") ? (isExecutable(command) ? command : null) : findOnPath(command, process.env.PATH || "", isExecutable)
+  checks.push(found
+    ? { severity: "ok", group: "Reminders", title: `Watching ${(r.lists || []).join(", ")} for due reminders`, detail: found }
+    : {
+        severity: "fail",
+        group: "Reminders",
+        title: `${command} not found`,
+        detail: "The daemon reads Apple Reminders through remindctl.",
+        fix: "brew install steipete/tap/remindctl, or set reminders.command to its full path.",
+      })
 }
 
 async function runEnvChecks(checks: Check[]): Promise<void> {
