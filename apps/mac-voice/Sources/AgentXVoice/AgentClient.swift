@@ -63,7 +63,7 @@ enum AgentClient {
 
     /// What was speaking when the door opened.
     struct Hushed {
-        /// "talk", "lesson" or "narration"; nil when nothing was.
+        /// "talk", "lesson", "narration" or "queue"; nil when nothing was.
         let kind: String?
         let agentID: String?
         static let nothing = Hushed(kind: nil, agentID: nil)
@@ -82,6 +82,39 @@ enum AgentClient {
     /// door. Never throws: no daemon means nothing of its was speaking.
     static func stopVoice() async {
         _ = try? await post("/voice/stop", [:], timeout: 2)
+    }
+
+    /// The listener said nothing after the hush, so no door follows: the
+    /// daemon's speaking queue plays on.
+    static func resume() async {
+        _ = try? await post("/voice/queue/resume", [:], timeout: 2)
+    }
+
+    // MARK: The speaking queue
+    //
+    // Everything spoken on this Mac waits in one queue on the daemon, so
+    // an answer never plays over another agent, a talk or narration. See
+    // src/daemon/voice-queue-api.ts.
+
+    /// Queue a line in the agent's voice and wait until it has been
+    /// spoken, skipped or stopped. False only when the daemon could not
+    /// take it, so the caller speaks it here instead. A cancelled wait
+    /// (the door opened) is true: the line stays queued and plays after
+    /// the listener's turn.
+    static func queue(_ text: String, agentID: String, kind: String) async -> Bool {
+        do {
+            // A line may wait behind others, and a held queue for a minute.
+            let (_, response) = try await post("/voice/queue",
+                ["text": text, "agentId": agentID, "kind": kind, "wait": true], timeout: 900)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return (200..<300).contains(http.statusCode)
+        } catch let e as URLError where [.cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .networkConnectionLost].contains(e.code) {
+            return false
+        } catch {
+            // Cancelled or timed out after the daemon took the line:
+            // playing it here too would talk over it.
+            return true
+        }
     }
 
     /// Hand the listener's words through the door. True when an activity

@@ -37,6 +37,9 @@ final class App: NSObject, NSApplicationDelegate {
     /// Set when the door opens: what was speaking (and is now hushed), so
     /// the words spoken go to that activity rather than to /ask.
     private var talkCheck: Task<AgentClient.Hushed, Never>?
+    /// Waiting for our answer to be spoken by the daemon's queue. The door
+    /// lets go of it: the answer stays queued and plays after the turn.
+    private var speaking: Task<Void, Never>?
     /// Words said while our own turn was still running: they go next, and
     /// the stale answer is not spoken.
     private var followUp: String?
@@ -264,6 +267,8 @@ final class App: NSObject, NSApplicationDelegate {
         // ignoring the key while busy is how Anis spoke to a lesson and
         // nothing listened.
         Speech.stop()
+        speaking?.cancel()
+        speaking = nil
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
@@ -282,6 +287,8 @@ final class App: NSObject, NSApplicationDelegate {
         let door = talkCheck ?? Task { await AgentClient.hush() }
         talkCheck = nil
         guard let wav = recorder.stop() else {
+            // Nothing said, so no door follows the hush: let the queue play on.
+            Task { _ = await door.value; await AgentClient.resume() }
             panel.render(.error("Too short — hold while speaking"))
             resetSoon()
             return
@@ -295,19 +302,23 @@ final class App: NSObject, NSApplicationDelegate {
             do { heard = try await Speech.transcribe(wav: wav) }
             catch { Log.warn("transcription failed: \(error.localizedDescription)") }
             guard !heard.isEmpty else {
+                _ = await door.value
+                await AgentClient.resume()
                 if !midTurn {
                     panel.render(.error("Didn't catch that"))
                     // Say it aloud: someone not looking would think it was sent.
-                    await Speech.speak("Sorry, I didn't hear that. Please say it again.", voice: voice)
+                    await Speech.say("Sorry, I didn't hear that. Please say it again.", agentID: nil, kind: "line", voice: voice)
                     busy = false; resetSoon()
                 }
                 return
             }
             Log.info("heard: \(heard)")
             let hushed = await door.value
-            if hushed.kind != nil, await AgentClient.door(heard) {
+            // Always through the door, even with nothing hushed: the
+            // listener's turn is over, so the daemon's queue plays on.
+            if await AgentClient.door(heard) {
                 // The talk or lesson answers out loud through the daemon.
-                Log.info("door: \"\(heard)\" → \(hushed.kind!)\(hushed.agentID.map { " (\($0))" } ?? "")")
+                Log.info("door: \"\(heard)\" → \(hushed.kind ?? "?")\(hushed.agentID.map { " (\($0))" } ?? "")")
                 if !midTurn { panel.render(.idle); busy = false }
                 return
             }
@@ -367,7 +378,11 @@ final class App: NSObject, NSApplicationDelegate {
             // Scroll the sentence being spoken, so it can be read as
             // well as heard — and re-read after, which speech cannot do.
             panel.render(.saying(answer.text))
-            await Speech.speak(answer.text, voice: voice)
+            // Queued on the daemon behind whatever is already speaking.
+            let line = Task { await Speech.say(answer.text, agentID: answer.agentID, kind: "answer", voice: voice) }
+            speaking = line
+            await line.value
+            if speaking == line { speaking = nil }
             // Cut off by the door: the new words are being recorded.
             if recorder.isRecording { busy = false; return }
             // Stopped: no follow-up window, the listener asked for quiet.
@@ -390,7 +405,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.render(.error(short(error.localizedDescription)))
             // Say it aloud too — a voice assistant that fails only in
             // a 230px label has failed silently for anyone not looking.
-            await Speech.speak("Sorry, that didn't work.", voice: voice)
+            await Speech.say("Sorry, that didn't work.", agentID: nil, kind: "line", voice: voice)
             resetSoon()
         }
         busy = false
@@ -465,7 +480,7 @@ final class App: NSObject, NSApplicationDelegate {
                 tool: tool, detail: detail, elapsed: Int(elapsed)) else { return }
             guard !self.spokenSteps.contains(phrase) else { return }
             self.spokenSteps.insert(phrase)
-            await Speech.speak(phrase.prefix(1).capitalized + phrase.dropFirst() + ".", voice: self.voice)
+            await Speech.say(phrase.prefix(1).capitalized + phrase.dropFirst() + ".", agentID: nil, kind: "narration", voice: self.voice)
         }
     }
 

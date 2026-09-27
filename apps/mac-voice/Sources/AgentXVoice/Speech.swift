@@ -112,8 +112,22 @@ enum Speech {
         await AgentClient.stopVoice()
     }
 
-    /// `voice` is the answering agent's, as the daemon resolved it; nil
-    /// (no answer yet) means the provider this app is configured with.
+    /// Say a line through the daemon's speaking queue, in the agent's
+    /// voice, after whatever is already speaking. Played here only when
+    /// the daemon cannot be reached. `kind` is "answer", "narration" or
+    /// "line".
+    @MainActor
+    static func say(_ text: String, agentID: String?, kind: String, voice: VoiceChoice?) async {
+        guard !text.isEmpty else { return }
+        let agent = agentID ?? Config.effectiveAgentID
+        if !agent.isEmpty, await AgentClient.queue(text, agentID: agent, kind: kind) { return }
+        if Task.isCancelled { return }
+        await speak(text, voice: voice)
+    }
+
+    /// Speak here, now. `voice` is the answering agent's, as the daemon
+    /// resolved it; nil (no answer yet) means the provider this app is
+    /// configured with.
     static func speak(_ text: String, voice: VoiceChoice? = nil) async {
         guard !text.isEmpty else { return }
         if (voice?.provider ?? Config.voiceProvider) == "elevenlabs" {
