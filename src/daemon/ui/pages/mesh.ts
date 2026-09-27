@@ -11,6 +11,7 @@ import { MESH_DRILL_SCRIPT } from "./mesh-drill.client"
 import { MESH_ANALYTICS_SCRIPT } from "./mesh-analytics.client"
 import { MESH_OPS_SCRIPT } from "./mesh-ops.client"
 import { MESH_ROUTINES_CSS, MESH_ROUTINES_SCRIPT } from "./mesh-routines.client"
+import { MESH_FEED_FILTERS, MESH_FEED_SCRIPT } from "./mesh-feed.client"
 
 // --- /mesh — three views over one fleet -------------------------------
 //
@@ -35,6 +36,7 @@ const ICONS = {
   schedules: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   routines: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h7M4 17h9"/><path d="M17 5l3 3-3 3M16 14l4 4M20 14l-4 4"/></svg>`,
   nodes: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 6h8M7 8l4 8M17 8l-4 8"/></svg>`,
+  feed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5"/></svg>`,
   agents: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>`,
 }
 
@@ -147,6 +149,14 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
       <div class="mx-rt-wrap" id="mx-routines"><div class="mx-empty">Loading routines...</div></div>
     </section>
 
+    <section class="mx-section" aria-labelledby="mx-feed-title">
+      ${head(ICONS.feed, "Mesh feed", "The newest events from this machine and every machine it follows. Unreachable machines and announcements show here too. Select an event for its details.", "mx-feed-title", `<div class="mx-section-actions"><span class="ax-tab-count" id="mx-feed-count">0 events</span><button class="ax-btn ax-btn--ghost" id="mx-feed-more" type="button" hidden>Show all</button></div>`)}
+      <div class="mx-rt-bar" role="group" aria-label="Filter the mesh feed">
+        ${MESH_FEED_FILTERS.map((f) => `<button class="mx-chip" type="button" data-feed-filter="${f.id}" aria-pressed="${f.id === "all"}">${f.label}</button>`).join("")}
+      </div>
+      <div class="ax-stack" id="mx-feed" aria-live="polite"><div class="mx-empty">Loading the mesh feed...</div></div>
+    </section>
+
     <div class="mx-columns">
       <section class="mx-section" aria-labelledby="mx-active-title">
         ${head(ICONS.activity, "Activity provenance", "Who initiated current work and where it is running.", "mx-active-title", `<span class="ax-tab-count" id="mx-active-count">0 active</span>`)}
@@ -189,7 +199,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[] }): string {
     css: MESH_CSS + MESH_ROUTINES_CSS,
     // Routines listens for the snapshot the Operations script fetches, so it
     // must be registered before that script's first load() fires.
-    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_ROUTINES_SCRIPT + MESH_OPS_SCRIPT,
+    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_ROUTINES_SCRIPT + MESH_OPS_SCRIPT + MESH_FEED_SCRIPT,
   })
 }
 
