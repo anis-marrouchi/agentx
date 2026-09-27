@@ -24,7 +24,7 @@ Without `--agent`, the first agent the daemon lists is used. From a source check
 
 AgentX passes OpenCode its settings for this one session only (it starts `opencode --standalone`). Your saved OpenCode settings are not changed.
 
-<!-- No screenshot: terminal-only page. Screenshot needed: OpenCode showing an AgentX agent as its model. Needs a manual capture outside the docs demo. -->
+![OpenCode started by agentx tui --agent cx: a question and the agent's reply, with "Build · AgentX CX" under the reply showing the AgentX agent is the model](/screenshots/tui/opencode-agent.png)
 
 ## If OpenCode is missing: the built-in terminal UI
 

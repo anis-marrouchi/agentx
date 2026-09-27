@@ -20,7 +20,7 @@ This procedure comes from a real attempt: the Screen Studio recording picker ope
 3. Start recording.
 4. Check in Screen Studio itself that it is recording before you begin the demonstration. An open picker, or a shortcut that was sent, doesn't prove recording started. Small menu-bar icons proved unreliable as evidence, too.
 
-<!-- Screenshot needed: the Screen Studio recording picker over VS Code (external apps). Needs a manual capture outside the docs demo. -->
+![The Screen Studio recording picker, with Display, Window, Area and Device choices, open over a demo project in VS Code](/screenshots/record-vscode/screen-studio-picker.png)
 
 ## 3. Point, then explain
 
@@ -42,7 +42,7 @@ This procedure comes from a real attempt: the Screen Studio recording picker ope
 
 `point` needs the `ui-element` *seat*: a small, fixed-choice question AgentX hands to its fast decision model. See [Jev and typed decisions](../architecture/jev.md). `look` sends a picture of the window to the vision provider you configured, so use a demo workspace.
 
-<!-- Screenshot needed: VS Code with an `agentx point` highlight (external app). Needs a manual capture outside the docs demo. -->
+![VS Code with the search field outlined by a dashed highlight and the label "Search: Type Search Term and press Enter to search", after running agentx point "the search field"](/screenshots/record-vscode/point-highlight.png)
 
 ## 4. Stop, inspect, then annotate
 
