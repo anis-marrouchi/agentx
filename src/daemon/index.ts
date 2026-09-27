@@ -335,6 +335,8 @@ export class AgentXDaemon {
         context: { channel: "events", chatId: `events:${agentId}` },
       })),
       log: (msg) => this.log(msg),
+      // Peer events (mesh feed) wake only subscriptions naming their node.
+      isLocal: (e) => getAgentEventBus().isLocal(e),
     }).attach(getAgentEventBus())
 
     // Initialize message router

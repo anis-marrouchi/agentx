@@ -23,6 +23,7 @@ A woken agent is protected against loops and floods:
 - One `rootId` wakes an agent at most once.
 - Each `wake` subscription wakes the agent at most its own `maxPerHour` times in any hour. When every matching subscription has used up its hour, the event is skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
 - A second wake that arrives while the agent is still busy with the first waits for it to finish, then runs as its own task. Wakes are never merged into one task.
+- Events from other machines (the [mesh feed](/reference/events#events-from-other-machines)) wake an agent only when the subscription lists that machine in `nodes`. Pull and digest subscriptions see them either way.
 
 ## The settings
 
@@ -93,8 +94,9 @@ Anyone on the daemon's own machine can read any agent's list, just as they can r
 ## If something is wrong
 
 - **`agentx events --agent helper` says the agent has no subscriptions:** the daemon hasn't read the change yet, or the list is under the wrong agent. Check the spelling of the agent id, then run `agentx daemon restart`.
-- **No events show up:** the event list is in memory only and starts empty after a restart. Events from other machines are not included. Check `kinds`: use a `type` such as `task:completed` or a `kind` such as `agent`, as listed in the [events reference](/reference/events#kinds-and-types).
+- **No events show up:** the event list is in memory only and starts empty after a restart. Events from other machines are only included when the mesh feed is on. Check `kinds`: use a `type` such as `task:completed` or a `kind` such as `agent`, as listed in the [events reference](/reference/events#kinds-and-types).
 - **`config check` names a field under `subscriptions`:** a value is wrong, for example an unknown `delivery` or an empty `kinds` list. Compare it with the settings table above.
+- **The agent isn't woken by another machine's events:** add that machine's `node.name` to the subscription's `nodes`.
 - **The agent isn't woken:** look in `agentx daemon logs` for `wake skipped for <agent>`. The reason follows: `rate-limit` (raise `maxPerHour` or wait), `own-root` (the event came from the agent's own work) or `duplicate-root` (it was already woken for that `rootId`).
 - **A fresh conversation shows no digest:** only events since the agent's last finished task are listed, and only for `digest` subscriptions. A continued conversation never gets one. The agent can call `agentx_events` instead.
 - **The same events show up in the digest again:** the digest counts from the agent's last task that returned an answer or an error. A task that was cancelled, timed out or was cut off by a restart does not count, so the events after it are listed again in the next fresh conversation.
