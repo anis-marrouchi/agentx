@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.52.1](https://github.com/anis-marrouchi/agentx/compare/v0.52.0...v0.52.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **agents:** give every run a pre-spawn deadline and trace its steps ([#185](https://github.com/anis-marrouchi/agentx/issues/185)) ([86ce8dd](https://github.com/anis-marrouchi/agentx/commit/86ce8ddf0d32e4e042a20e4f309232184ef85c08))
+
 ## [0.52.0](https://github.com/anis-marrouchi/agentx/compare/v0.51.0...v0.52.0) (2026-09-27)
 
 
