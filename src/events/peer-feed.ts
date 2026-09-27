@@ -1,6 +1,6 @@
 import type { TypedEventBus } from "./bus"
 import { newEventId, type EventEnvelope } from "./envelope"
-import { httpFeedTransport, type FeedTransport } from "./feed-transport"
+import { FeedIdleError, FeedUnsupportedError, httpFeedTransport, type FeedTransport } from "./feed-transport"
 
 // --- Mesh peer event feed (#166) ---
 //
@@ -22,6 +22,12 @@ import { httpFeedTransport, type FeedTransport } from "./feed-transport"
 // A peer that can't be reached is published as a `mesh` event on each
 // change (`feed:down`, `feed:up`), so "quiet" and "down" look different.
 // First contact that succeeds is not news and publishes nothing.
+//
+// Only real failures count as down: a refused or failed connect, an error
+// answer, a broken stream. A stream that went quiet past the idle limit
+// is reconnected without a word, and a peer running an AgentX without
+// the feed (mid rolling upgrade) is left alone quietly and retried every
+// `unsupportedRetryMs`; neither publishes anything.
 
 export interface FeedPeerInfo {
   name: string
@@ -44,6 +50,12 @@ export interface PeerFeedOptions {
   reconcileMs?: number
   /** Events read from a peer's buffer on first contact. */
   backfill?: number
+  /** How often to look again at a peer that has no feed. */
+  unsupportedRetryMs?: number
+  /** A session shorter than this that ends cleanly still grows the
+   *  backoff, so a proxy that drops every stream at once can't make the
+   *  follower reconnect every second. */
+  shortSessionMs?: number
 }
 
 /** Most events one catch-up read takes. More missed than this is a gap. */
@@ -58,6 +70,12 @@ interface PeerCursor {
   lastId?: string
   /** undefined until the first attempt settles. */
   up?: boolean
+  /** The peer answered without a feed (older AgentX). */
+  unsupported?: boolean
+  /** The node name the peer's events carry, pinned at first sight. */
+  node?: string
+  /** Set once a mismatch has been logged, so the log isn't flooded. */
+  warned?: boolean
 }
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
@@ -95,9 +113,10 @@ export class MeshFeedFollower {
     this.links.clear()
   }
 
-  /** Peers currently followed and whether each is reachable. */
-  status(): Array<{ peer: string; up?: boolean; lastId?: string }> {
-    return [...this.cursors].map(([peer, c]) => ({ peer, up: c.up, lastId: c.lastId }))
+  /** Peers currently followed, whether each is reachable, and whether it
+   *  has a feed at all. */
+  status(): Array<{ peer: string; up?: boolean; unsupported?: boolean; lastId?: string }> {
+    return [...this.cursors].map(([peer, c]) => ({ peer, up: c.up, unsupported: c.unsupported, lastId: c.lastId }))
   }
 
   /** Start a loop for each new peer and stop the loops of peers that left. */
@@ -105,7 +124,7 @@ export class MeshFeedFollower {
     const on = this.opts.enabled ? this.opts.enabled() : true
     const names = new Set(on ? this.opts.peers().map((p) => p.name) : [])
     for (const [name, link] of this.links) {
-      if (!names.has(name)) { link.abort.abort(); this.links.delete(name) }
+      if (!names.has(name)) { link.abort.abort(); this.links.delete(name); this.cursors.delete(name) }
     }
     for (const name of names) {
       if (this.links.has(name)) continue
@@ -128,17 +147,33 @@ export class MeshFeedFollower {
     while (!signal.aborted) {
       const peer = this.opts.peers().find((p) => p.name === name)
       if (!peer) return
+      const c = this.cursor(name)
+      if (c.unsupported && !peer.healthy) {
+        // Nothing to follow and nothing to report: the mesh's own health
+        // events already say this peer is down.
+        await sleep(this.opts.unsupportedRetryMs ?? 600_000, signal)
+        continue
+      }
       if (!peer.healthy) {
         this.mark(name, false, "its health check is failing")
       } else {
+        const began = Date.now()
         try {
           await this.session(peer, link, signal)
-          // A clean end (the peer restarting, a proxy timeout): come back
-          // after the shortest wait; only a failed connect counts as down.
-          await sleep(this.minMs, signal)
+          await this.afterCleanEnd(link, began, signal)
           continue
         } catch (err: any) {
           if (signal.aborted) return
+          if (err instanceof FeedUnsupportedError) {
+            this.unsupported(name, err.message)
+            await sleep(this.opts.unsupportedRetryMs ?? 600_000, signal)
+            continue
+          }
+          if (err instanceof FeedIdleError) {
+            // The peer answered correctly and then went quiet: reconnect.
+            await this.afterCleanEnd(link, began, signal)
+            continue
+          }
           this.mark(name, false, err?.message || String(err))
         }
       }
@@ -147,34 +182,70 @@ export class MeshFeedFollower {
     }
   }
 
+  /** Wait before reconnecting after a stream ended without an error. A
+   *  long session resets the backoff; a short one keeps growing it. */
+  private async afterCleanEnd(link: PeerLink, began: number, signal: AbortSignal): Promise<void> {
+    if (Date.now() - began >= (this.opts.shortSessionMs ?? 10_000)) link.delay = this.minMs
+    await sleep(link.delay, signal)
+    link.delay = Math.min(link.delay * 2, this.maxMs)
+  }
+
+  /** Note once that a peer has no feed. Its reachability state is dropped,
+   *  so a later upgrade is a quiet first contact, not "reachable again". */
+  private unsupported(peer: string, reason: string): void {
+    const c = this.cursor(peer)
+    if (c.unsupported) return
+    c.unsupported = true
+    c.up = undefined
+    this.opts.log?.(`[feed] peer ${peer} not followed: ${reason}; looking again later`)
+  }
+
   private async session(peer: FeedPeerInfo, link: PeerLink, signal: AbortSignal): Promise<void> {
     const skip = this.opts.skipTypes?.() ?? []
     const base = new URLSearchParams({ origin: "local" })
     if (skip.length) base.set("skip", skip.join(","))
     const stream = await this.transport.open(peer, base.toString(), signal)
+    const c = this.cursor(peer.name)
+    c.unsupported = false
 
     // Catch up before reading the live stream, so events arrive in order;
     // the stream buffers meanwhile, and ingest() drops any overlap.
-    const c = this.cursor(peer.name)
     const since = c.lastId
+    const limit = since ? CATCHUP_LIMIT : (this.opts.backfill ?? 100)
     const q = new URLSearchParams(base)
     if (since) q.set("since", since)
-    q.set("limit", String(since ? CATCHUP_LIMIT : (this.opts.backfill ?? 100)))
+    q.set("limit", String(limit))
     const recent = await this.transport.recent(peer, q.toString(), signal)
     this.mark(peer.name, true)
     link.delay = this.minMs
-    if (since && (recent.gap || recent.events.length >= CATCHUP_LIMIT)) {
+    const events = recent.events.slice(-limit)
+    if (since && (recent.gap || events.length >= CATCHUP_LIMIT)) {
       this.publish("feed:gap", `events from peer ${peer.name} may have been missed while it was out of reach`)
     }
-    for (const e of recent.events) this.take(peer.name, e)
+    for (const e of events) this.take(peer.name, e)
     for await (const e of stream) {
       if (signal.aborted) return
       this.take(peer.name, e)
     }
   }
 
+  /** Take one envelope from a peer. A link is pinned to the node name its
+   *  first event carries, so a peer can't speak for a third node; an event
+   *  under this node's own name means two nodes share a name. */
   private take(peer: string, e: EventEnvelope): void {
-    this.cursor(peer).lastId = e.id
+    const c = this.cursor(peer)
+    c.lastId = e.id
+    const own = e.node === this.opts.bus.nodeName
+    if (!own) c.node ??= e.node
+    if (own || e.node !== c.node) {
+      if (!c.warned) {
+        c.warned = true
+        this.opts.log?.(own
+          ? `[feed] peer ${peer} sends events named "${e.node}", this node's own name; give each node its own node.name`
+          : `[feed] peer ${peer} sent an event as "${e.node}" after "${c.node}"; ignoring events under other names`)
+      }
+      return
+    }
     this.opts.bus.ingest(e)
   }
 

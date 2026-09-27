@@ -67,17 +67,27 @@ export function recentFeed(bus: TypedEventBus, q: URLSearchParams): RecentFeed {
   return lost ? { events, gap: true } : { events }
 }
 
+/** Response header that marks a real envelope stream. A peer without the
+ *  feed ignores `format=envelope` and answers with its legacy /events
+ *  stream, which lacks it; followers use its absence to tell "this peer
+ *  has no feed" from "this peer is down". */
+export const FEED_HEADER = "x-agentx-feed"
+
 /** How often an idle envelope stream sends a comment line. Followers treat
  *  a stream silent for three of these as dead. */
 export const FEED_HEARTBEAT_MS = 15_000
 
 /** Serve GET /events?format=envelope. The caller has already checked auth. */
-export function streamEnvelopes(bus: TypedEventBus, req: IncomingMessage, res: ServerResponse, q: URLSearchParams): void {
+export function streamEnvelopes(
+  bus: TypedEventBus, req: IncomingMessage, res: ServerResponse, q: URLSearchParams,
+  opts: { heartbeatMs?: number } = {},
+): void {
   const filter = parseFeedQuery(q)
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
+    [FEED_HEADER]: "1",
   })
   // An opening comment flushes the headers, so the follower knows the
   // stream is up before the first event arrives.
@@ -86,7 +96,7 @@ export function streamEnvelopes(bus: TypedEventBus, req: IncomingMessage, res: S
     if (!feedMatches(filter, e, bus.nodeName)) return
     try { res.write(`event: envelope\ndata: ${JSON.stringify(e)}\n\n`) } catch { /* closed below */ }
   })
-  const beat = setInterval(() => { try { res.write(": ping\n\n") } catch { /* closed below */ } }, FEED_HEARTBEAT_MS)
+  const beat = setInterval(() => { try { res.write(": ping\n\n") } catch { /* closed below */ } }, opts.heartbeatMs ?? FEED_HEARTBEAT_MS)
   beat.unref?.()
   const close = () => { stop(); clearInterval(beat) }
   req.on("close", close)

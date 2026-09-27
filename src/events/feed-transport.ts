@@ -1,5 +1,5 @@
 import type { EventEnvelope } from "./envelope"
-import { FEED_HEARTBEAT_MS, type RecentFeed } from "./feed-http"
+import { FEED_HEADER, FEED_HEARTBEAT_MS, type RecentFeed } from "./feed-http"
 
 // --- Mesh feed transport ---
 //
@@ -22,6 +22,21 @@ export interface FeedTransport {
 }
 
 const MAX_ID = 200
+/** Largest SSE frame accepted. A peer that never ends a frame is cut off
+ *  instead of growing the buffer without bound. */
+export const MAX_FRAME_BYTES = 64 * 1024
+
+/** The peer answered, but has no envelope feed (it runs an AgentX older
+ *  than the mesh feed). Not a failure: the follower leaves it alone. */
+export class FeedUnsupportedError extends Error {
+  constructor(message: string) { super(message); this.name = "FeedUnsupportedError" }
+}
+
+/** A stream that had answered correctly went silent past the idle limit.
+ *  The follower reconnects; only a failed reconnect counts as down. */
+export class FeedIdleError extends Error {
+  constructor(message: string) { super(message); this.name = "FeedIdleError" }
+}
 
 /** A peer's frame as an envelope, or null when it isn't one. The peer is
  *  trusted for mesh work, but a malformed frame must not reach the bus. */
@@ -31,6 +46,7 @@ export function toEnvelope(raw: unknown): EventEnvelope | null {
   const str = (k: string) => typeof r[k] === "string" && (r[k] as string).length > 0
   if (!str("id") || !str("node") || !str("kind") || !str("type") || !str("at")) return null
   if ((r.id as string).length > MAX_ID || (r.node as string).length > MAX_ID) return null
+  if ((r.at as string).length > 40 || Number.isNaN(Date.parse(r.at as string))) return null
   const e: EventEnvelope = {
     id: r.id as string,
     rootId: str("rootId") ? String(r.rootId).slice(0, MAX_ID) : (r.id as string),
@@ -70,6 +86,8 @@ export async function* envelopeFrames(chunks: AsyncIterable<Uint8Array>): AsyncG
         if (e) yield e
       } catch { /* skip a malformed frame */ }
     }
+    // What is left is one unfinished frame.
+    if (buf.length > MAX_FRAME_BYTES) throw new Error(`feed frame over ${MAX_FRAME_BYTES} bytes`)
   }
 }
 
@@ -82,7 +100,7 @@ async function* withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number
     while (true) {
       let timer: ReturnType<typeof setTimeout> | undefined
       const idle = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`no data for ${idleMs}ms`)), idleMs)
+        timer = setTimeout(() => reject(new FeedIdleError(`no data for ${idleMs}ms`)), idleMs)
       })
       try {
         const { done, value } = await Promise.race([reader.read(), idle])
@@ -110,6 +128,10 @@ export function httpFeedTransport(opts: { idleMs?: number; fetchImpl?: typeof fe
       if (!r.ok || !r.body) {
         await r.body?.cancel().catch(() => {})
         throw new Error(`feed stream answered ${r.status}`)
+      }
+      if (!r.headers.get(FEED_HEADER)) {
+        await r.body.cancel().catch(() => {})
+        throw new FeedUnsupportedError("peer has no event feed (older AgentX)")
       }
       return envelopeFrames(withIdleTimeout(r.body, idleMs))
     },
