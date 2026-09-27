@@ -286,6 +286,15 @@ describe("startRemindersPoller", () => {
     expect(sent).toEqual([])
   })
 
+  it("counts a queued task as accepted: dispatched once, ticked off, not retried", async () => {
+    let calls = 0
+    const source = start({ execute: async () => { calls++; return { content: "", error: "__queued__:collect:1" } } })
+    await vi.waitFor(() => expect(source.completed).toEqual(["AAAA-1"]))
+    expect(calls).toBe(1)
+    expect(sent).toEqual([])
+    expect(logs.some((l) => l.includes("refused"))).toBe(false)
+  })
+
   it("accepts at the first stream event and ticks off before the run ends", async () => {
     let finish!: (r: { content: string }) => void
     const source = start({

@@ -9,7 +9,7 @@ import { splitContext } from "./trailer"
 //
 // A task counts as accepted at its first stream event (it started), or when
 // it has neither started nor been refused after ACCEPT_AFTER_MS (it's
-// queued). A run that ends in an error before either is a refusal (budget
+// waiting for a slot). A run that ends in an error before either is a refusal (budget
 // cap, overage gate, unknown agent) and the reminder stays open.
 //
 // The agent's answer goes to the trailer's context when that names a
@@ -95,6 +95,10 @@ export function startRemindersPoller(deps: RemindersDaemonDeps): (() => void) | 
         { agentId, message, context: { channel: "reminder", chatId: `reminder:${ref}`, sender: "reminders" } },
         undefined, undefined, () => settle({ accepted: true }),
       ).then((res) => {
+        // __queued__ means the registry took the task; its answer comes back
+        // through the queue, not here. The registry makes "reminder" wait for
+        // a slot instead, so this is only a guard against dispatching twice.
+        if (res.error?.startsWith("__queued__")) return settle({ accepted: true })
         if (!settled) {
           settle(res.error ? { accepted: false, error: res.error } : { accepted: true })
           if (res.error) return

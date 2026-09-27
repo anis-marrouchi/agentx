@@ -1032,8 +1032,10 @@ export class AgentRegistry {
       // For these callers, BLOCK and wait for a slot (up to 25 min — slightly
       // under mesh.sendTask's 30 min default cap) instead of queueing.
       // Restricted routines wait too: a queued message is later re-routed
-      // as plain channel text, which would drop its autonomy level.
-      if (qChannel === "api" || restricted) {
+      // as plain channel text, which would drop its autonomy level. So does
+      // the reminders poller: "reminder" has no adapter to re-route to, and
+      // it would read __queued__ as a refusal and dispatch the reminder again.
+      if (qChannel === "api" || qChannel === "reminder" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
