@@ -37,6 +37,15 @@ function previewText(full: string): string {
   return stripUiDirectiveForPreview(full)
 }
 
+/** Map a parsed `agentx:ui` directive onto an OutgoingMessage's rich fields. */
+function uiToOutgoing(ui: UiDirective): Pick<OutgoingMessage, "buttons" | "poll" | "media"> {
+  const out: Pick<OutgoingMessage, "buttons" | "poll" | "media"> = {}
+  if (ui.buttons) out.buttons = ui.buttons
+  if (ui.poll) out.poll = { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 }
+  if (ui.media) out.media = ui.media
+  return out
+}
+
 /**
  * Crash-safe inflight task log. Every message we commit to handling is
  * appended as a `start` entry to .agentx/router/inflight.jsonl. When the
@@ -435,6 +444,31 @@ export class MessageRouter {
     let accountId = msg.accountId
     if (adapter.name === "telegram" && !accountId && msg.agentId) {
       accountId = this.getAccountForAgent(msg.agentId)
+    }
+
+    // Relayed agent text (async mesh results, /send, cross-channel) can carry
+    // an `agentx:ui` block. Lift it like the reply path does; when rich
+    // messages are off, still strip it so raw markup never reaches the chat.
+    // Explicit rich fields from the caller win — the text is left alone.
+    if (
+      (msg.channel === "telegram" || msg.channel === "whatsapp") &&
+      msg.text?.includes("agentx:ui") && !msg.buttons && !msg.poll && !msg.media
+    ) {
+      const { cleanText, ui } = extractUiDirective(msg.text)
+      if (ui) {
+        if (ui.skippedActions?.length) {
+          this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: agentx:ui dropped ${ui.skippedActions.length} action button(s) (callback support is Phase 2): ${ui.skippedActions.join(", ")}`)
+        }
+        const rich = msg.agentId === undefined || this.richMessagesAllowed(msg.agentId, msg.channel)
+        const extras = rich ? uiToOutgoing(ui) : {}
+        // Buttons need a text message to hang on; a lone poll/media needs none.
+        const text = cleanText || (extras.buttons ? "⌄" : "")
+        if (!text && !extras.poll && !extras.media) {
+          this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: only an agentx:ui block and rich messages are off — nothing to send`)
+          return
+        }
+        msg = { ...msg, text, ...extras }
+      }
     }
 
     this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
@@ -1131,9 +1165,7 @@ export class MessageRouter {
           replyTo: msg.id,
           accountId: replyAccountId,
           agentId,
-          buttons: ui?.buttons,
-          poll: ui?.poll ? { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 } : undefined,
-          media: ui?.media,
+          ...(ui ? uiToOutgoing(ui) : {}),
         })
       }
     } else if (ui && streaming?.started) {
@@ -1401,7 +1433,7 @@ export class MessageRouter {
       if (ui.poll) {
         await this.adapterSend(adapter, {
           channel, chatId, text: "", accountId, agentId,
-          poll: { name: ui.poll.question, values: ui.poll.options, selectableCount: ui.poll.multiple ? ui.poll.options.length : 1 },
+          poll: uiToOutgoing(ui).poll,
         })
       }
       if (ui.media) {
