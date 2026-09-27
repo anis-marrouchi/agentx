@@ -222,7 +222,7 @@ describe("routing pipeline — invariants", () => {
       makeIncoming({
         channel: "github",
         accountId: "default",
-        group: { id: "anis-marrouchi/agentx:pull:1" },
+        sender: { id: "anis-marrouchi/agentx:pull:1", name: "anis", isBot: false },
         text: "Deployed.\n\n<!-- agentx:devops-agent -->",
         resolvedAgent: "coder-agent",
       }),
