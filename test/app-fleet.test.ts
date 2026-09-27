@@ -103,7 +103,7 @@ describe("handleAppFleet", () => {
     await call(d, "POST", "/api/app/crons/toggle", { node: "n", cronId: "digest", enabled: false })
     expect(d.nodePost).toHaveBeenLastCalledWith("n", "/crons/digest/enabled", { enabled: false })
     await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "card:c1", action: "yes" })
-    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes")
+    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)")
   })
 
   it("passes the node's status and body through", async () => {

@@ -63,7 +63,8 @@ export interface AppFleetDeps {
   /** POST to a node daemon on the dashboard's allowlist, with its token. */
   nodePost(nodeUrl: string, path: string, body: unknown): Promise<NodeReply>
   approvals(): Promise<NodeApprovals[]>
-  decide(nodeUrl: string, key: string, action: "yes" | "no" | "later"): Promise<NodeReply>
+  /** `by` names the phone, e.g. "operator (phone: My phone)". */
+  decide(nodeUrl: string, key: string, action: "yes" | "no" | "later", by: string): Promise<NodeReply>
 }
 
 export function clip(text: string | undefined, max = PREVIEW_CHARS): string | undefined {
@@ -207,7 +208,7 @@ export async function handleAppFleet(
     if (!key || (action !== "yes" && action !== "no" && action !== "later")) {
       return json(res, 400, { error: "key and action (yes, no or later) are required" })
     }
-    reply = await deps.decide(node, key, action)
+    reply = await deps.decide(node, key, action, by)
   }
   return json(res, reply.status, reply.body)
 }

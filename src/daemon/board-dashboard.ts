@@ -2041,11 +2041,11 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
       }))
       return [local, ...remote]
     },
-    async decide(nodeUrl, key, action) {
+    async decide(nodeUrl, key, action, by) {
       const target = nodeUrl.replace(/\/+$/, "")
       if (target === primary) {
         const settings = readApprovalSettings()
-        const r = await decide({ root: process.cwd() }, key, action, { laterHours: settings.laterHours, by: "operator (phone app)" })
+        const r = await decide({ root: process.cwd() }, key, action, { laterHours: settings.laterHours, by })
         return r.ok ? { status: 200, body: { ok: true, message: r.message } } : { status: 409, body: { error: r.error } }
       }
       const peer = findPeer(target, config)
