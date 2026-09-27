@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: scheduled jobs, services, incoming webhooks, workflows, learned procedures, notifications, approvals and resuming after a restart. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: scheduled jobs, services, incoming webhooks, workflows, learned procedures, notifications, approvals, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -178,6 +178,18 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop` | object | `{}` | Stops picking up work when the daemon keeps restarting. |
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
+
+## `reminders`
+
+Hands due Apple Reminders back to the agent that created them. macOS only, off by default. See [Hand due reminders back to agents](/automations/reminders).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `reminders.enabled` | boolean | `false` | Turns the hand-back on. Ignored, with a log line, on machines other than a Mac. |
+| `reminders.lists` | list of strings | `["AgentX"]` | Reminders lists to watch. |
+| `reminders.pollSeconds` | number (15 or more) | `60` | How often the lists are read. |
+| `reminders.lookbackHours` | number | `24` | A reminder overdue by more than this (the daemon was off) is reported to its agent, not run. |
+| `reminders.command` | string | `"remindctl"` | The `remindctl` program, or its full path when the daemon can't find it. |
 
 ## Check it worked
 

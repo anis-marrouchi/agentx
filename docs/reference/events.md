@@ -27,6 +27,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `task` | `created`, `submitted`, `canceled` (workflow user tasks) | user task ID |
 | `signal` | `emitted` | — |
 | `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed` | — |
+| `reminder` | `reminder:due`, `reminder:dispatched`, `reminder:skipped` ([due reminders](/automations/reminders)) | Apple Reminders ID |
 | `channel` | `in`, `out` | channel message ID |
 | `status` | `status` | — |
 
