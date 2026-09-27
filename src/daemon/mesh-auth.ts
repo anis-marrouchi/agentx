@@ -42,6 +42,18 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/approvals" || path.startsWith("/approvals/")
 }
 
+/** Operator control writes: they reload config, send as any channel, or
+ *  stop and steer running work. The same-host dashboard and CLI reach them
+ *  over loopback; anything off-box (a peer dashboard, the phone app via a
+ *  peer) must carry a mesh token. */
+const MESH_CONTROL_POSTS = new Set(["/reload", "/send", "/api/processes/kill"])
+const TASK_CONTROL = /^\/api\/tasks\/[^/]+\/(cancel|followup)$/
+
+export function isMeshControlPath(method: string, path: string): boolean {
+  if (method !== "POST") return false
+  return MESH_CONTROL_POSTS.has(path) || TASK_CONTROL.test(path)
+}
+
 /** True when the socket peer is on this host. Used by loopback-only
  *  endpoints (e.g. the guard hook) that must never be reachable off-box. */
 export function isLoopback(remoteAddress: string): boolean {

@@ -62,7 +62,7 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
-import { decideMeshAuth, isLoopback, isMeshGatedPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, isMeshGatedPath, isMeshControlPath, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
 import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest } from "@/daemon/shutdown"
@@ -2391,7 +2391,7 @@ export class AgentXDaemon {
       if (req.method === "POST" && AgentXDaemon.MESH_PROTECTED_PATHS.has(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
       }
-      if (isMeshGatedPath(path)) {
+      if (isMeshGatedPath(path) || isMeshControlPath(req.method || "GET", path)) {
         if (!this.checkMeshAuth(req, res, path)) return
       }
       // /ask also answers GET (?q=...) for voice clients that can only issue

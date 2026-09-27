@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath } from "../src/daemon/mesh-auth"
+import { decideMeshAuth, collectAcceptedMeshTokens, isMeshGatedPath, isMeshControlPath } from "../src/daemon/mesh-auth"
 
 const TOKENS = new Set(["shared-mesh-token", "peer-b-token"])
 
@@ -134,5 +134,21 @@ describe("isMeshGatedPath — routes gated for every method", () => {
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(false)
     expect(decideMeshAuth({ remoteAddress: "127.0.0.1", authorizationHeader: "", acceptedTokens: tokens }).allowed).toBe(true)
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
+  })
+})
+
+describe("isMeshControlPath", () => {
+  it("gates operator control writes", () => {
+    for (const p of ["/reload", "/send", "/api/processes/kill", "/api/tasks/t-1/cancel", "/api/tasks/t-1/followup"]) {
+      expect(isMeshControlPath("POST", p)).toBe(true)
+    }
+  })
+
+  it("leaves reads and unrelated routes alone", () => {
+    expect(isMeshControlPath("GET", "/reload")).toBe(false)
+    expect(isMeshControlPath("GET", "/api/processes")).toBe(false)
+    expect(isMeshControlPath("POST", "/api/tasks/t-1")).toBe(false)
+    expect(isMeshControlPath("POST", "/api/tasks/a/b/cancel")).toBe(false)
+    expect(isMeshControlPath("POST", "/send/agent")).toBe(false)
   })
 })

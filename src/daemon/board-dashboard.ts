@@ -1706,8 +1706,24 @@ async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSignal): P
     if (!seen.has(key)) seen.set(key, { name: d.name, url: key, token: d.token })
   }
   const meshPeers = await fetchMeshPeers(primaryUrl, dash.token, signal)
-  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, p)
+  for (const p of meshPeers) if (!seen.has(p.url)) seen.set(p.url, { ...p, token: p.token || nodeToken(dash, p.url) })
   return [...seen.values()]
+}
+
+/** Bearer to send when the dashboard calls a daemon directly. An explicit
+ *  per-node token wins; otherwise MESH_TOKEN, because the daemon's gated
+ *  routes accept only mesh credentials (collectAcceptedMeshTokens) and a
+ *  node found only through /mesh has no configured token of its own. */
+export function nodeToken(
+  dash: Pick<DaemonConfig["dashboard"], "daemonUrl" | "token" | "daemons">,
+  target: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const url = target.replace(/\/+$/, "")
+  const configured = url === dash.daemonUrl.replace(/\/+$/, "")
+    ? dash.token
+    : dash.daemons.find((d) => d.url.replace(/\/+$/, "") === url)?.token
+  return configured || env.MESH_TOKEN || undefined
 }
 
 async function buildLiveSnapshot(
@@ -1775,10 +1791,7 @@ async function proxyTaskStream(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = nodeToken(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "text/event-stream" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamCtl = new AbortController()
@@ -1920,10 +1933,7 @@ async function proxyTaskHistory(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = nodeToken(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamPath = taskId
@@ -1979,10 +1989,7 @@ async function proxyNodePost(
     sendJson(res, 403, { error: "node not in dashboard allowlist", target })
     return
   }
-  const tokenForNode =
-    target === ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
-      ? ctx.config.dashboard.token
-      : ctx.config.dashboard.daemons.find((d) => d.url.replace(/\/+$/, "") === target)?.token
+  const tokenForNode = nodeToken(ctx.config.dashboard, target)
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   let body = "{}"

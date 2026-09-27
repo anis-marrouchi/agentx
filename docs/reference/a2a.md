@@ -20,7 +20,7 @@ curl http://127.0.0.1:18800/mesh/task \
   -d '{"peer":"work-machine","agent":"helper","message":"Reply with a short hello"}'
 ```
 
-Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. The daemon's `/mesh/task` endpoint also supports `stream: true`. Asynchronous delivery requires an originating `context.channel` and `context.chatId` so the result has a return destination.
+Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. Control actions count as protected too: reloading the config (`/reload`), sending a channel message (`/send`), stopping or steering a task (`/api/tasks/<id>/cancel`, `/api/tasks/<id>/followup`) and stopping an agent process (`/api/processes/kill`). On the same machine they need no token. The daemon's `/mesh/task` endpoint also supports `stream: true`. Asynchronous delivery requires an originating `context.channel` and `context.chatId` so the result has a return destination.
 
 ## Serve the standalone A2A protocol
 
@@ -59,5 +59,6 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 
 - **`Mesh not enabled`:** this daemon has no mesh set up. [Pair your machines](../jobs/tailscale.md) first.
 - **`401` from the peer:** the two machines don't share the same mesh token. See [Add a second machine](../jobs/second-machine.md).
+- **`401` when you cancel, reload or stop a process on another machine from the dashboard or the CLI:** the token sent is not a mesh token. Set that machine's entry in `dashboard.daemons` to the mesh token, or pass `--token <mesh-token>` to the command.
 - **The peer can't find the agent:** the agent ID must be one configured on that peer, not on this machine.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.
