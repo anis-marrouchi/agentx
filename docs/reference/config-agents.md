@@ -63,6 +63,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `queueMode` | `"collect"` \| `"followup"` \| `"drop"` | `"collect"` | What happens to messages that arrive while the agent is busy: batch them into one turn, run each as its own turn afterwards, or discard them. |
 | `access` | `"private"` \| `"public"` | `"private"` | `public` lets outside apps message the agent through the public API with a scoped token. |
 | `admin` | boolean | — | Lets the agent pause, resume and request deletion of schedules created by others. Approval stays with the operator. |
+| `subscriptions` | list of object | `[]` | Events this agent follows, and whether it reads them itself (`pull`), gets a short list when it starts fresh (`digest`) or is started by them (`wake`). Each entry has `kinds`, `agents`, `nodes`, `match`, `delivery` and `maxPerHour`. See [Let agents follow events](/automations/event-subscriptions). |
 | `heartbeat.enabled` | boolean | `false` | Runs a periodic check-in inside the agent's ongoing session. |
 | `heartbeat.intervalMinutes` | number | `30` | Minutes between check-ins. |
 | `heartbeat.prompt` | string | `"Check inbox, pending tasks, and system health. Report anything that needs attention."` | What the agent is asked at each check-in. |

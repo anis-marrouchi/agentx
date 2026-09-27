@@ -20,6 +20,7 @@ const groups = [
     { text: "Check that it worked", link: "/automations/check-it-worked" },
     { text: "Schedules from chat", link: "/automations/schedules-from-chat" },
     { text: "Due reminders", link: "/automations/reminders" },
+    { text: "Follow events", link: "/automations/event-subscriptions" },
   ] },
   { text: "Common jobs", items: [
     { text: "Answer questions", link: "/jobs/answer-questions" }, { text: "Send a daily report", link: "/jobs/daily-report" },

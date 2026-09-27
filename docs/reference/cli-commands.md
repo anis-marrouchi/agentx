@@ -2370,6 +2370,21 @@ Force-kill one persistent process (the next dispatch will spawn fresh).
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl from config). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token from config). |
 
+## events (advanced)
+
+`agentx events`: Recent events on this node, or those matching one agent's subscriptions. **Advanced.** See [Let agents follow events](/automations/event-subscriptions).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `-a, --agent <id>` | — | Only events matching this agent's subscriptions. |
+| `-s, --since <id\|iso>` | — | Only events after this event id or ISO time. |
+| `-k, --kind <kind>` | — | Only this event kind (without --agent). |
+| `-n, --limit <n>` | `50` (with --agent: `20`, max `50`) | Most events to show. |
+| `--json` | — | Emit JSON. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl from config). |
+| `--token <token>` | — | Bearer token (defaults to dashboard.token from config). |
+
 ## db (advanced)
 
 `agentx db`: Explore the operational SQLite store at .agentx/db.sqlite. **Advanced.**
