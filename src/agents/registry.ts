@@ -2790,6 +2790,16 @@ export class AgentRegistry {
     return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
   }
 
+  /** Stop every in-flight run of `agentId` in one chat. Used when a streaming
+   *  caller disconnects (the phone app's Stop). Returns how many it aborted. */
+  cancelChatTasks(agentId: string, channel: string, chatId: string, reason = "operator"): number {
+    let n = 0
+    for (const [taskId, e] of this.taskAborts) {
+      if (e.agentId === agentId && e.channel === channel && e.chatId === chatId && this.cancelRunningTask(taskId, reason)) n++
+    }
+    return n
+  }
+
   /**
    * Queue a follow-up correction/update for an in-flight task. The message
    * lands in the per-session MessageQueue and is dispatched after the

@@ -105,6 +105,17 @@ describe("a run stuck before spawn", () => {
     expect(r.cancelRunningTask(id)).toBeNull()
   })
 
+  it("is ended by cancelling its chat, which leaves other chats alone", async () => {
+    const r = registry()
+    const { started, run } = startRun(r, { context: { channel: "app", chatId: "app:c1" } })
+    await started
+    expect(r.cancelChatTasks("ops", "app", "app:c2", "client-interrupt")).toBe(0)
+    expect(r.cancelChatTasks("other", "app", "app:c1", "client-interrupt")).toBe(0)
+    expect(r.cancelChatTasks("ops", "app", "app:c1", "client-interrupt")).toBe(1)
+    expect((await run).error).toMatch(/client-interrupt/)
+    expect(agentState(r).runningTasks).toEqual([])
+  })
+
   it("is ended by its deadline without an operator", async () => {
     const r = registry()
     const { started, run } = startRun(r, { timeoutMinutes: 0.001 })
