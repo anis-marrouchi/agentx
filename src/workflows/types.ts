@@ -492,6 +492,9 @@ export const workflowRunSchema = z.object({
   rootRunId: z.string().nullable().default(null),
   /** Depth from root. 0 on root runs, N on Nth-level descendants. */
   depth: z.number().int().min(0).default(0),
+  /** Event-bus root the run was started under (src/events/envelope.ts).
+   *  Resumes after a pause or restart publish under it again. */
+  eventRootId: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

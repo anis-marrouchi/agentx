@@ -21,6 +21,7 @@ import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
 import { pickAccountForAgent } from "./account-resolution"
 import { getEventBus } from "@/events/bus"
+import { withNewRoot } from "@/events/envelope"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
@@ -636,10 +637,20 @@ export class MessageRouter {
     }
   }
 
-  private async handleMessage(
+  /** Each inbound message is an entry point: every event it causes
+   *  (routing, agent task, workflow run, mesh forward) shares one root id. */
+  private handleMessage(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
     opts: { replay?: boolean } = {},
+  ): Promise<void> {
+    return withNewRoot(() => this.routeMessage(adapter, msg, opts))
+  }
+
+  private async routeMessage(
+    adapter: ChannelAdapter,
+    msg: IncomingMessage,
+    opts: { replay?: boolean },
   ): Promise<void> {
     // Dedup: drop redeliveries of the same incoming message id within a TTL.
     // Guards against GitLab webhook retries, Baileys double-emit, and Telegram

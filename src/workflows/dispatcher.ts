@@ -12,6 +12,7 @@ import { getDefaultLedger } from "@/intent/instance"
 import { recordWorkflowDispatch } from "@/intent/sources/workflow"
 import { openDb } from "@/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "@/storage/traces"
+import { withRoot } from "@/events/envelope"
 
 // --- Dispatcher (V2) ---
 //
@@ -158,6 +159,8 @@ export class WorkflowDispatcher {
    *  Monitor runs live. */
   private emitRunEvent(args: {
     runId: string; workflowId: string; nodeId?: string; phase: string; status?: string; note?: string; homeNode?: string
+    /** The run's event root; defaults to the current root context. */
+    rootId?: string
   }): void {
     if (!this.events) return
     try {
@@ -166,6 +169,7 @@ export class WorkflowDispatcher {
         runId: args.runId, workflowId: args.workflowId,
         nodeId: args.nodeId, phase: args.phase,
         status: args.status, note: args.note, homeNode: args.homeNode,
+        rootId: args.rootId,
       })
     } catch { /* defensive — a bus failure never breaks the engine */ }
   }
@@ -252,7 +256,7 @@ export class WorkflowDispatcher {
           context: { ...fresh.context, [fresh.pausedAt.nodeId]: output },
         })
         this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from signal "${emission.name}"`)
-        this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: fresh.pausedAt.nodeId, phase: "resumed", status: "running", note: `signal:${emission.name}` })
+        this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: fresh.pausedAt.nodeId, phase: "resumed", status: "running", note: `signal:${emission.name}`, rootId: fresh.eventRootId })
       })
       void this.walk(wf, run.id, `signal:${emission.name}`)
         .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-signal failed: ${e.message}`))
@@ -286,7 +290,7 @@ export class WorkflowDispatcher {
         context: { ...fresh.context, [t.nodeId]: output },
       })
       this.log(`[workflow:${wf.id}] run ${fresh.id} resumed from timer "${t.nodeId}" (fired ${firedAt})`)
-      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: t.nodeId, phase: "resumed", status: "running", note: `timer:${t.id}` })
+      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId: t.nodeId, phase: "resumed", status: "running", note: `timer:${t.id}`, rootId: fresh.eventRootId })
     })
     void this.walk(wf, t.runId, `timer:${t.id}`)
       .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer failed: ${e.message}`))
@@ -538,7 +542,7 @@ export class WorkflowDispatcher {
         initialContext: { [init.triggerId]: event.payload },
       })
       this.log(`[workflow:${workflow.id}] run ${run.id} created from trigger "${init.triggerId}" for ${entityRef.id}`)
-      this.emitRunEvent({ runId: run.id, workflowId: workflow.id, phase: "created", status: run.status, homeNode: run.homeNode })
+      this.emitRunEvent({ runId: run.id, workflowId: workflow.id, phase: "created", status: run.status, homeNode: run.homeNode, rootId: run.eventRootId })
       // Channel-triggered: kick off the react+typing lifecycle so users see
       // the same "I'm on it" affordances they get from the router's path.
       if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
@@ -609,7 +613,11 @@ export class WorkflowDispatcher {
    *  drained) returned. Without this wrapper, an early return inside the
    *  loop would leave the typing indicator running forever. */
   private async walk(workflow: Workflow, runId: string, triggeringEventId: string): Promise<void> {
-    try { await this.walkInner(workflow, runId, triggeringEventId) }
+    // Everything the walk does (agent tasks, mesh forwards, run events)
+    // belongs to the run's root, whatever resumed it.
+    const rootId = this.runs.get(runId)?.eventRootId
+    const inner = () => this.walkInner(workflow, runId, triggeringEventId)
+    try { await (rootId ? withRoot({ rootId }, inner) : inner()) }
     finally { this.stopChannelAck(runId) }
   }
 
@@ -1004,7 +1012,7 @@ export class WorkflowDispatcher {
         context: { ...parent.context, [args.parentNodeId]: childOutput },
       })
       this.log(`[workflow:${parentWf.id}] parent run ${parent.id} resumed from subProcess child ${args.childRun.id}`)
-      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: args.parentNodeId, phase: "resumed", status: "running", note: `child:${args.childRun.id}` })
+      this.emitRunEvent({ runId: parent.id, workflowId: parentWf.id, nodeId: args.parentNodeId, phase: "resumed", status: "running", note: `child:${args.childRun.id}`, rootId: parent.eventRootId })
     })
     void this.walk(parentWf, args.parentRunId, `child:${args.childRun.id}`)
   }

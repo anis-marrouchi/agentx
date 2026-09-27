@@ -2,6 +2,8 @@ import type { MeshPeer, DaemonConfig } from "@/daemon/config"
 import type { AgentCard, AgentSkill } from "./types"
 import { A2AClient } from "./client"
 import { Agent as UndiciAgent, fetch as undiciFetch } from "undici"
+import { getEventBus } from "@/events/bus"
+import { newEventId, type RootContext } from "@/events/envelope"
 
 // --- A2A Mesh: peer discovery, health checks, agent directory ---
 
@@ -319,6 +321,7 @@ export class A2AMesh {
     const agent = agentId || state.agents[0]?.id
     if (!agent) throw new Error(`Peer "${peerName}" has no agents`)
 
+    const root = publishForward(peerName, agent)
     const url = `${state.peer.url}/task`
     const headers: Record<string, string> = { "Content-Type": "application/json" }
     if (state.peer.token) {
@@ -362,6 +365,7 @@ export class A2AMesh {
           // Optional for back-compat — older callers continue to work, with
           // the receiver defaulting channel/chatId as before.
           ...(opts.context ? { context: opts.context } : {}),
+          ...root,
         }),
         signal: controller.signal,
         dispatcher: longTaskDispatcher,
@@ -425,6 +429,7 @@ export class A2AMesh {
     const agent = agentId || state.agents[0]?.id
     if (!agent) throw new Error(`Peer "${peerName}" has no agents`)
 
+    const root = publishForward(peerName, agent)
     const url = `${state.peer.url}/task`
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -448,6 +453,7 @@ export class A2AMesh {
           ...(opts.senderAgentId ? { senderAgentId: opts.senderAgentId } : {}),
           ...(typeof opts.freshSession === "boolean" ? { freshSession: opts.freshSession } : {}),
           ...(opts.context ? { context: opts.context } : {}),
+          ...root,
         }),
         signal: controller.signal,
         dispatcher: longTaskDispatcher,
@@ -623,4 +629,21 @@ export class A2AMesh {
       lastCheck: state.lastCheck,
     }))
   }
+}
+
+/** Record a mesh forward on the bus and return the fields that carry its
+ *  root to the peer's /task: the peer's events share `rootId`, and name
+ *  this forward as their parent. */
+function publishForward(peer: string, agent: string): { rootId: string; parentEventId: string } {
+  const e = getEventBus().publish({ kind: "mesh", type: "forward", agentId: agent, summary: `forwarded to ${agent} on ${peer}` })
+  return { rootId: e.rootId, parentEventId: e.id }
+}
+
+/** Root context for an inbound /task: the sender's root when a mesh peer
+ *  supplied one, otherwise a new entry point. */
+export function rootFromTaskBody(body: Record<string, unknown>): RootContext {
+  const rootId = typeof body.rootId === "string" && body.rootId.length <= 100 ? body.rootId : undefined
+  if (!rootId) return { rootId: newEventId() }
+  const parentId = typeof body.parentEventId === "string" && body.parentEventId.length <= 100 ? body.parentEventId : undefined
+  return parentId ? { rootId, parentId } : { rootId }
 }

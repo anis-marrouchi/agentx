@@ -10,6 +10,7 @@ import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordCronDispatch } from "@/intent/sources/cron"
+import { withNewRoot } from "@/events/envelope"
 import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
@@ -236,7 +237,7 @@ export class CronScheduler {
     if (!job.enabled) return { ok: false, reason: "disabled" }
     if (!this.running) return { ok: false, reason: "not-running" }
     const firedAt = new Date()
-    this.executeJob(jobId, 0, { firedAt, payload }).catch((e: any) => {
+    withNewRoot(() => this.executeJob(jobId, 0, { firedAt, payload })).catch((e: any) => {
       this.log(`Fired job "${jobId}" threw: ${e?.message ?? e}`)
     })
     return { ok: true, runId: cronRunId(jobId, firedAt), startedAt: firedAt.toISOString() }
@@ -356,7 +357,8 @@ export class CronScheduler {
 
       this.log(`Job "${jobId}" next run: ${nextRun.toISOString()} (in ${Math.round(delay / 1000)}s)`)
 
-      this.armTimer(jobId, nextRun.getTime(), () => this.executeJob(jobId))
+      // A fire is an entry point. Retries keep the failed fire's root.
+      this.armTimer(jobId, nextRun.getTime(), () => withNewRoot(() => this.executeJob(jobId)))
     } catch (e: any) {
       this.log(`Failed to schedule "${jobId}": ${e.message}`)
     }
