@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.53.0](https://github.com/anis-marrouchi/agentx/compare/v0.52.1...v0.53.0) (2026-09-27)
+
+
+### Features
+
+* **app:** Fleet and Activity tabs — monitor and control the fleet from the phone ([#190](https://github.com/anis-marrouchi/agentx/issues/190)) ([990ff05](https://github.com/anis-marrouchi/agentx/commit/990ff05ca98f5ee3d5ef13dd5bd5d5f8ad50ae2d))
+* **reminders:** hand due Apple Reminders back to the agent that created them ([#187](https://github.com/anis-marrouchi/agentx/issues/187)) ([e5a764c](https://github.com/anis-marrouchi/agentx/commit/e5a764c4b94f077830a2e76a3d97768280e1d922))
+
+
+### Bug Fixes
+
+* **channels:** render agentx:ui blocks on outbound relays ([#192](https://github.com/anis-marrouchi/agentx/issues/192)) ([34e7902](https://github.com/anis-marrouchi/agentx/commit/34e790223d958b0c1230d02039e46011f89e9a00))
+
 ## [0.52.1](https://github.com/anis-marrouchi/agentx/compare/v0.52.0...v0.52.1) (2026-09-27)
 
 
