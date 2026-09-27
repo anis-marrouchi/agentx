@@ -4760,19 +4760,23 @@ export class AgentXDaemon {
             }, 15_000)
             ;(heartbeat as any).unref?.()
             // Client-disconnect → interrupt (the chat REPL's "esc to
-            // interrupt"). Best-effort: kills a persistent claude process for
-            // this (agent, channel, chatId) so it stops mid-turn; a no-op for
-            // spawn-per-task agents (whose output is simply discarded once the
-            // stream closes). Guarded so it never fires after normal
-            // completion.
+            // interrupt", the phone app's Stop). Kills a persistent claude
+            // process for this (agent, channel, chatId) so it stops mid-turn,
+            // and aborts the run itself so spawn-per-task agents stop too.
+            // Guarded so it never fires after normal completion.
+            //
+            // Listens on `res`, not `req`: a request emits "close" as soon as
+            // its body has been read, which readBody already did, so a
+            // listener on it never fired.
             let streamDone = false
-            req.on("close", () => {
+            res.on("close", () => {
               if (streamDone) return
               streamDone = true
               clearInterval(heartbeat)
               const ctx = (body.context ?? {}) as { channel?: string; chatId?: string }
               if (ctx.channel && ctx.chatId) {
                 void this.processRegistry?.kill({ agentId, channel: ctx.channel, chatId: ctx.chatId }, "client-interrupt").catch(() => {})
+                this.registry.cancelChatTasks(agentId, ctx.channel, ctx.chatId, "client-interrupt")
               }
             })
             const onDelta = (text: string) => { if (text) writeSse("text", { text }) }
@@ -5109,12 +5113,16 @@ export class AgentXDaemon {
               try { res.write(": ping\n\n") } catch { /* */ }
             }, 15_000)
             ;(heartbeat as any).unref?.()
+            // Caller gone → drop the peer call, which interrupts the run on
+            // the peer the same way (its /task sees the disconnect).
+            const callerGone = new AbortController()
+            res.on("close", () => { if (!res.writableEnded) callerGone.abort() })
             try {
               for await (const ev of this.mesh.sendTaskStream(
                 body.peer as string,
                 body.message as string,
                 body.agent as string | undefined,
-                { context: body.context as any },
+                { context: body.context as any, signal: callerGone.signal },
               )) {
                 writeSse(ev.event, ev.data)
               }

@@ -420,6 +420,9 @@ export class A2AMesh {
       senderAgentId?: string
       freshSession?: boolean
       context?: Record<string, unknown>
+      /** Aborts the peer call; the peer's /task treats it as a disconnect
+       *  and interrupts the run. */
+      signal?: AbortSignal
     } = {},
   ): AsyncGenerator<{ event: string; data: any }> {
     const state = this.peers.get(peerName)
@@ -440,6 +443,9 @@ export class A2AMesh {
     const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const onCallerAbort = () => controller.abort()
+    if (opts.signal?.aborted) onCallerAbort()
+    opts.signal?.addEventListener("abort", onCallerAbort, { once: true })
 
     let res: Awaited<ReturnType<typeof undiciFetch>>
     try {
@@ -460,12 +466,15 @@ export class A2AMesh {
       })
     } catch (e: any) {
       clearTimeout(timer)
+      opts.signal?.removeEventListener("abort", onCallerAbort)
+      if (opts.signal?.aborted) throw new Error(`Peer "${peerName}" /task stream cancelled by the caller`)
       if (controller.signal.aborted) throw new Error(`Peer "${peerName}" /task stream timed out after ${Math.round(timeoutMs / 1000)}s`)
       throw e
     }
 
     if (!res.ok) {
       clearTimeout(timer)
+      opts.signal?.removeEventListener("abort", onCallerAbort)
       let detail = ""
       try {
         const errBody = await res.text()
@@ -475,6 +484,7 @@ export class A2AMesh {
     }
     if (!res.body) {
       clearTimeout(timer)
+      opts.signal?.removeEventListener("abort", onCallerAbort)
       throw new Error(`Peer "${peerName}" /task stream has no body`)
     }
 
@@ -512,6 +522,7 @@ export class A2AMesh {
       }
     } finally {
       clearTimeout(timer)
+      opts.signal?.removeEventListener("abort", onCallerAbort)
       try { await reader.cancel() } catch { /* */ }
     }
     void pendingEvent

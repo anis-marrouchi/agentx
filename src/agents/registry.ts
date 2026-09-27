@@ -1053,7 +1053,9 @@ export class AgentRegistry {
       // Event wakes ("events") wait so the turn runs inside the dispatch's
       // withRoot: a queued one would be flushed from the earlier run and
       // publish under that run's rootId, or merge with it in collect mode.
-      if (qChannel === "api" || qChannel === "reminder" || qChannel === "events" || restricted) {
+      // The phone app ("app") streams its answer back over the open request
+      // and has no adapter either, so it waits the same way.
+      if (qChannel === "api" || qChannel === "app" || qChannel === "reminder" || qChannel === "events" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
@@ -1908,7 +1910,7 @@ export class AgentRegistry {
     // costs nothing per turn. Kept short and conditional ("when it genuinely
     // helps") so agents don't spray buttons on every reply.
     const richReplyInstruction =
-      (state.def.richMessages !== false && (channel === "telegram" || channel === "whatsapp"))
+      (state.def.richMessages !== false && (channel === "telegram" || channel === "whatsapp" || channel === "app"))
         ? [
             "[Rich replies]",
             "On this chat channel you may add buttons, a poll, or media to a reply by appending ONE fenced block at the very end:",
@@ -2788,6 +2790,16 @@ export class AgentRegistry {
     } catch { /* AbortController.abort never throws on modern Node, but defend */ }
     this.log(`[${entry.agentId}] task ${taskId} cancelled — ${reason}`)
     return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
+  }
+
+  /** Stop every in-flight run of `agentId` in one chat. Used when a streaming
+   *  caller disconnects (the phone app's Stop). Returns how many it aborted. */
+  cancelChatTasks(agentId: string, channel: string, chatId: string, reason = "operator"): number {
+    let n = 0
+    for (const [taskId, e] of this.taskAborts) {
+      if (e.agentId === agentId && e.channel === channel && e.chatId === chatId && this.cancelRunningTask(taskId, reason)) n++
+    }
+    return n
   }
 
   /**
