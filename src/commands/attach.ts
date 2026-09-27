@@ -79,6 +79,23 @@ function printSession(s: AttachSession & { pending?: number }, mark = false): vo
   if (s.cwd) console.log(`    ${chalk.gray(s.cwd)}`)
 }
 
+/** Split sessions for `attach list`: those answering for an identity,
+ *  watchers (#167), and the count of registered sessions doing neither.
+ *  Exported for tests. */
+export function groupSessions<T extends AttachSession>(sessions: T[]): { bound: T[]; watching: T[]; idle: number } {
+  const bound = sessions.filter((s) => s.agentIds.length > 0)
+  const watching = sessions.filter((s) => s.watch && s.agentIds.length === 0)
+  return { bound, watching, idle: sessions.length - bound.length - watching.length }
+}
+
+/** One watcher row: its filter instead of an identity and a backlog. */
+function printWatcher(s: AttachSession, mark = false): void {
+  const filter = s.watch?.subscriptions.map((sub) => sub.kinds.join("|")).join(", ") || "default"
+  const here = mark ? chalk.cyan(" ← this session") : ""
+  console.log(`  ${chalk.bold("watching")}  ${chalk.gray(filter)}  ${chalk.gray(s.sessionId)}${here}`)
+  if (s.cwd) console.log(`    ${chalk.gray(s.cwd)}`)
+}
+
 // ---------------------------------------------------------------------------
 // agentx attach <agent>   — bind this session
 // ---------------------------------------------------------------------------
@@ -140,11 +157,69 @@ attach
   })
 
 // ---------------------------------------------------------------------------
+// agentx attach watch   — stay aware of the mesh without answering for it
+// ---------------------------------------------------------------------------
+
+/** Split "a,b , c" into ["a", "b", "c"]. */
+function csv(v: string | undefined): string[] | undefined {
+  const parts = (v ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+  return parts.length ? parts : undefined
+}
+
+/** The filter `agentx attach watch` sends, or undefined for the daemon's
+ *  default (failures, completions, approvals waiting, peers down).
+ *  Exported for tests. */
+export function watchFilterFromOptions(opts: { kinds?: string; agents?: string; match?: string }): Array<Record<string, unknown>> | undefined {
+  const kinds = csv(opts.kinds)
+  const agents = csv(opts.agents)
+  if (!kinds && !agents && !opts.match) return undefined
+  const sub: Record<string, unknown> = { kinds: kinds ?? ["*"] }
+  if (agents) sub.agents = agents
+  if (opts.match) sub.match = opts.match
+  return [sub]
+}
+
+attach
+  .command("watch")
+  .description("watch this session: no identity, no messages, a short event digest on each prompt")
+  .option("--kinds <list>", "event kinds or types to include, comma separated (default: failures, completions, approvals waiting, peers down)")
+  .option("--agents <list>", "only events for these agents, comma separated")
+  .option("--match <text>", "only events whose summary contains this text")
+  .option("--session <id>", "Claude Code session id (defaults to $CLAUDE_CODE_SESSION_ID)")
+  .option("--url <url>", "daemon base url", DEFAULT_URL)
+  .action(async (opts) => {
+    const sessionId = currentSessionId(opts.session)
+    if (!sessionId) {
+      console.error(chalk.red("Could not determine the Claude Code session id."))
+      console.error(`Run this inside a Claude Code session, or pass ${chalk.cyan("--session <id>")}.`)
+      process.exit(1)
+    }
+    if (!attachHooksInstalled()) {
+      console.error(chalk.yellow("Attach hooks are not installed yet."))
+      console.error(`Run ${chalk.cyan("agentx attach install")} once, then try again.`)
+      process.exit(1)
+    }
+    try {
+      await api(opts.url, "/attach/watch", {
+        sessionId,
+        cwd: process.cwd(),
+        subscriptions: watchFilterFromOptions(opts),
+      })
+      console.log(`${chalk.green("✓")} This session is now ${chalk.bold("watching")}. It answers for no agent.`)
+      console.log(chalk.gray("  Each time you send a prompt, it gets a short list of new events."))
+      console.log(chalk.gray(`  Stop with ${chalk.cyan("agentx attach detach")}.`))
+    } catch (e) {
+      console.error(chalk.red(`Watch failed: ${daemonHint(e)}`))
+      process.exit(1)
+    }
+  })
+
+// ---------------------------------------------------------------------------
 // agentx attach detach
 // ---------------------------------------------------------------------------
 attach
   .command("detach")
-  .description("stop wearing an identity in this session (queued work falls back to spawned agents)")
+  .description("stop wearing an identity or watching in this session (queued work falls back to spawned agents)")
   .option("--agent <id>", "release only this identity (default: all)")
   .option("--session <id>", "Claude Code session id (defaults to $CLAUDE_CODE_SESSION_ID)")
   .option("--url <url>", "daemon base url", DEFAULT_URL)
@@ -190,13 +265,18 @@ attach
       )
       console.log()
 
-      const bound = sessions.filter((s) => s.agentIds.length > 0)
+      const { bound, watching, idle } = groupSessions(sessions)
+      console.log(chalk.bold("  Identities"))
       if (bound.length === 0) {
         console.log(chalk.gray("  No session is wearing an identity right now."))
       } else {
         for (const s of bound) printSession(s, s.sessionId === here)
       }
-      const idle = sessions.length - bound.length
+      if (watching.length > 0) {
+        console.log()
+        console.log(chalk.bold("  Watchers"))
+        for (const s of watching) printWatcher(s, s.sessionId === here)
+      }
       if (idle > 0) console.log(chalk.gray(`\n  ${idle} registered session(s) with no binding.`))
       console.log()
     } catch (e) {

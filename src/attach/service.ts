@@ -1,5 +1,7 @@
 import { getAttachRegistry } from "./index"
 import type { AttachSession, InboxItem, StopDecision } from "./types"
+import { watchDigest } from "./watch"
+import { getEventBus } from "@/events/bus"
 
 // --- In-daemon attach service ---
 //
@@ -59,6 +61,7 @@ export function onPrompt(p: HookPayload): string {
     if (!sessionId) return ""
     const reg = getAttachRegistry()
     const session = reg.touch(sessionId)
+    if (session?.watch) return watchPrompt(reg, session)
     if (!session || session.agentIds.length === 0) return ""
     if (session.mode === "manual") return ""
 
@@ -93,7 +96,9 @@ export function onStop(p: HookPayload): string {
     if (!sessionId) return ""
     const reg = getAttachRegistry()
     const session = reg.touch(sessionId)
-    if (!session || session.agentIds.length === 0) return ""
+    // A watcher holds no identity, so it has nothing to harvest and nothing
+    // to drain: its Stop never takes the turn (#167).
+    if (!session || session.watch || session.agentIds.length === 0) return ""
 
     // 1. Harvest.
     let releasedEmpty = false
@@ -175,6 +180,20 @@ export function prompt(item: InboxItem): string {
     `Answer as "${item.agentId}". Your reply is sent back to ${item.channel} verbatim, ` +
       `so write it for ${item.sender}, not for the terminal.`,
   ].join("\n")
+}
+
+/** UserPromptSubmit for a watcher: the events since its last turn that match
+ *  its filter, capped, and the cursor moved past them so the next prompt
+ *  only hears about newer ones. Nothing new, no output. */
+function watchPrompt(reg: ReturnType<typeof getAttachRegistry>, session: AttachSession): string {
+  const state = session.watch
+  if (!state) return ""
+  const digest = watchDigest(state, getEventBus().recent())
+  reg.advanceWatch(session.sessionId, digest.cursor)
+  if (!digest.text) return ""
+  return json({
+    hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: digest.text },
+  })
 }
 
 function briefing(session: AttachSession, pending: number): string {
