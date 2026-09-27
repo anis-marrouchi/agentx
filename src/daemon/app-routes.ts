@@ -3,6 +3,7 @@ import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppPush, type AppPushDeps } from "./app-push"
+import { handleAppChat, type AppChatDeps } from "./app-chat"
 import {
   APP_SERVICE_WORKER,
   renderAppLockedPage,
@@ -37,6 +38,7 @@ export interface AppRouteCtx {
   tokens?: TokenStore
   fleet?: AppFleetDeps
   push?: AppPushDeps
+  chat?: AppChatDeps
 }
 
 /** Handles the request and returns true if `path` belongs to the phone app. */
@@ -85,6 +87,7 @@ export async function handleAppRequest(
   }
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
+  if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

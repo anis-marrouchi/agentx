@@ -43,6 +43,8 @@ import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./to
 import { handleAppRequest } from "./app-routes"
 import type { AppPushDeps } from "./app-push"
 import { PushStore } from "@/channels/push-store"
+import { AppChatStore } from "./app-chat-store"
+import type { AppChatDeps, AppMeshPeer } from "./app-chat"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
@@ -189,7 +191,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), chat: appChatDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -2216,6 +2218,28 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
         return { status: 502, body: { error: e.message || "peer dashboard unreachable" } }
       }
     },
+  }
+}
+
+/** What the phone app's Chat tab talks through (app-chat.ts): turns go to
+ *  the primary daemon with its token, the picker reads the live snapshot,
+ *  and conversations live in the same SQLite file as the push tables. */
+function appChatDeps(config: DaemonConfig): AppChatDeps {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const token = dashboardTokenForNode(config.dashboard, url)
+  const fleet = appFleetDeps(config)
+  return {
+    store: () => {
+      const db = openDb()
+      return db ? new AppChatStore(db) : null
+    },
+    daemon: { url, token, name: config.node?.name },
+    snapshot: () => buildLiveSnapshot(config),
+    meshPeers: async () => {
+      const r = await fetch(url + "/mesh", { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(3000) })
+      return r.ok ? (await r.json()) as AppMeshPeer[] : []
+    },
+    nodePost: (nodeUrl, path, body) => fleet.nodePost(nodeUrl, path, body),
   }
 }
 

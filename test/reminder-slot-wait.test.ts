@@ -6,6 +6,8 @@ import { join } from "path"
 // A reminder dispatched to a busy agent must wait for a slot, not be queued:
 // the poller would read `__queued__` as a refusal and dispatch it again, and
 // the queued answer would be re-routed to "reminder", which has no adapter.
+// The phone app ("app") is in the same place: it streams the answer back over
+// the open request, and a queued answer would have nowhere to go.
 
 const hang = vi.hoisted(() => ({ on: false }))
 vi.mock("../src/agents/request-planner", async (importOriginal) => {
@@ -40,8 +42,8 @@ function start(r: AgentRegistry, channel: string) {
   return { started, run }
 }
 
-describe("a reminder dispatched to a busy agent", () => {
-  it("waits for the slot instead of being queued", async () => {
+describe("a reminder or phone-app message dispatched to a busy agent", () => {
+  it.each(["reminder", "app"])("%s waits for the slot instead of being queued", async (channel) => {
     const config = daemonConfigSchema.parse({
       node: { id: "test", name: "test" },
       agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
@@ -50,7 +52,7 @@ describe("a reminder dispatched to a busy agent", () => {
     const busy = start(r, "cron")
     const busyId = await busy.started
 
-    const reminder = start(r, "reminder")
+    const reminder = start(r, channel)
     const early = await Promise.race([reminder.run, new Promise((res) => setTimeout(() => res("pending"), 700))])
     expect(early).toBe("pending")
 
