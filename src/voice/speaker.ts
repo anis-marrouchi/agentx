@@ -27,7 +27,19 @@ export interface VoiceRef {
   languages?: Record<string, string | null>
   /** When ElevenLabs cannot speak, fall back to the system voice. */
   fallback: boolean
+  /** Speaking speed, 1 (normal) when unset. */
+  rate?: number
+  /** Place in the speaking queue; normal when unset. */
+  priority?: "high" | "normal" | "low"
 }
+
+/** Words a minute for `say` at this rate; its own default is about 175. */
+export const sayRate = (rate?: number): number | null =>
+  rate && rate !== 1 ? Math.round(175 * rate) : null
+
+/** ElevenLabs' speed setting, which only accepts 0.7 to 1.2. */
+export const elevenLabsSpeed = (rate?: number): number | null =>
+  rate && rate !== 1 ? Math.min(1.2, Math.max(0.7, rate)) : null
 
 export interface Utterance {
   voice: VoiceRef
@@ -73,7 +85,10 @@ export function elevenLabsSynth(key: string | null = elevenLabsKey()): Synth {
       const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${u.voice.elevenlabs}/stream?output_format=mp3_44100_128`, {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json" },
-        body: JSON.stringify({ text: u.text, model_id: "eleven_flash_v2_5" }),
+        body: JSON.stringify({
+          text: u.text, model_id: "eleven_flash_v2_5",
+          ...(elevenLabsSpeed(u.voice.rate) ? { voice_settings: { speed: elevenLabsSpeed(u.voice.rate) } } : {}),
+        }),
         signal,
       })
       if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 160)}`)
@@ -99,7 +114,8 @@ export function systemVoiceFor(v: VoiceRef, text: string): string | null {
  *  cannot be named to `say`; it speaks as the OS default. */
 export const sayArgs = (v: VoiceRef, text = ""): string[] => {
   const id = systemVoiceFor(v, text)
-  return id && !isSiriVoice(id) ? ["-v", id] : []
+  const wpm = sayRate(v.rate)
+  return [...(id && !isSiriVoice(id) ? ["-v", id] : []), ...(wpm ? ["-r", String(wpm)] : [])]
 }
 
 /** The command that speaks a line. On macOS every line goes through the
@@ -147,7 +163,10 @@ export function siriSayScript(host: SiriHost = {}, home?: string): string | null
 export const systemPlay: Play = (file, u) => {
   if (!file) {
     const [cmd, args] = sayCommand(u.voice, u.text, siriSayScript())
-    const p = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] })
+    // The shared script takes the rate from its environment.
+    const wpm = sayRate(u.voice.rate)
+    const env = wpm ? { ...process.env, AGENTX_SAY_RATE: String(wpm) } : process.env
+    const p = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"], env })
     p.stdin?.on("error", () => {})
     p.stdin?.end(u.text)
     return p

@@ -4,6 +4,7 @@ import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
+import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -151,6 +152,13 @@ const voiceProviderSchema = z.enum(["system", "elevenlabs"])
  *  { "en": "Samantha", "fr": "Thomas", "ar": "Majed" }. */
 const systemVoiceSchema = z.union([z.string(), z.record(z.string(), z.string())])
 
+/** A keyboard shortcut for AgentX Voice, e.g. "opt+space" or
+ *  "ctrl+opt+1". See src/voice/hotkey.ts. */
+const hotkeySchema = z.string().superRefine((s, ctx) => {
+  const error = hotkeyError(s)
+  if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `shortcut ${error}` })
+})
+
 const voiceSchema = z.object({
   /** Overrides the global voice.provider for this agent. */
   provider: voiceProviderSchema.optional(),
@@ -166,6 +174,15 @@ const voiceSchema = z.object({
   /** Speak short updates from this agent's real tool steps while it
    *  works: "on" for everything but cron, "all" to include cron. */
   narrate: z.enum(["off", "on", "all"]).optional(),
+  /** Speaking speed, 1 = normal. System voices: 175 words a minute times
+   *  this. ElevenLabs accepts 0.7 to 1.2 and is held to that range. */
+  rate: z.number().min(0.75).max(1.5).optional(),
+  /** Place in the speaking queue: "high" lines go ahead of waiting
+   *  "normal" ones, "low" lines after them. Unset: normal. */
+  priority: z.enum(["high", "normal", "low"]).optional(),
+  /** AgentX Voice: hold this shortcut and speak to ask this agent, without
+   *  changing the agent picked in the menu. */
+  hotkey: hotkeySchema.optional(),
 })
 
 /** One event subscription (src/events/subscriptions.ts). An envelope
@@ -1004,7 +1021,7 @@ export const daemonConfigSchema = z.object({
   /** Voices for agents on mesh peers, keyed by remote agent id. The Mac
    *  speaks for them, so their nodes need no ElevenLabs key. Unset fields
    *  are derived from the agent card; see src/voice/mesh-voice.ts. */
-  meshVoices: z.record(z.string(), voiceSchema.extend({
+  meshVoices: z.record(z.string(), voiceSchema.omit({ rate: true, priority: true, hotkey: true }).extend({
     /** What to call the agent aloud, e.g. "Atlas" for "Main Agent". */
     name: z.string().optional(),
   })).default({}),
@@ -1024,6 +1041,17 @@ export const daemonConfigSchema = z.object({
     /** What agents call the person they talk with, e.g. a first name.
      *  Unset: "the user". */
     listener: z.string().optional(),
+    /** AgentX Voice speech to text: "auto" uses ElevenLabs when a key is
+     *  set and the local Whisper otherwise; "elevenlabs" or "local" pick
+     *  one (ElevenLabs still falls back to local when it fails). */
+    stt: z.enum(["auto", "elevenlabs", "local"]).default("auto"),
+    /** AgentX Voice shortcuts: hold `talk` to speak, `stop` silences every
+     *  voice, `paste` is smart paste. */
+    hotkeys: z.object({
+      talk: hotkeySchema.default(DEFAULT_HOTKEYS.talk),
+      stop: hotkeySchema.default(DEFAULT_HOTKEYS.stop),
+      paste: hotkeySchema.default(DEFAULT_HOTKEYS.paste),
+    }).default({}),
   }).default({}),
   business: businessConfigSchema.optional(),
   boards: boardsConfigSchema,
