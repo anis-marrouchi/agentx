@@ -119,6 +119,7 @@ import { EventWaker, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
+import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -2909,6 +2910,17 @@ export class AgentXDaemon {
           events,
           next: events.length ? events[events.length - 1].id : since,
         })
+        return
+      }
+
+      // A note to the whole mesh (`agentx mesh announce`). Control POST:
+      // gated by isControlPost above.
+      if (req.method === "POST" && path === "/mesh/announce") {
+        const body = await readBody(req)
+        const result = publishAnnouncement(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})))
+        if (!result.ok) { this.json(res, 400, { error: result.error }); return }
+        this.log(`[mesh] announcement: ${result.event.summary}`)
+        this.json(res, 200, { ok: true, event: result.event })
         return
       }
 

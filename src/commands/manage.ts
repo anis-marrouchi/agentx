@@ -861,6 +861,40 @@ mesh
     console.log(chalk.dim("  Restart the daemon for the new cadence to take effect."))
   })
 
+// agentx mesh announce — a rare note to the whole mesh. The local daemon
+// publishes it once as an `announce` event; every peer picks it up through
+// its event feed. It is shown in feeds and wakes no agent by itself.
+mesh
+  .command("announce <text...>")
+  .description("send a short note to every machine in the mesh (shown in event feeds)")
+  .option("--by <name>", "who the note is from (an agent id or a person's name)")
+  .option("--node <url>", "daemon to publish on (default: dashboard.daemonUrl, else this machine on port 18800)")
+  .option("--token <token>", "mesh token, needed only when --node is another machine (default: MESH_TOKEN)")
+  .action(async (words: string[], opts: { by?: string; node?: string; token?: string }) => {
+    let base = opts.node || ""
+    if (!base) {
+      try { base = loadDaemonConfig().dashboard?.daemonUrl || "" } catch { /* default below */ }
+    }
+    base = (base || "http://localhost:18800").replace(/\/+$/, "")
+    const token = opts.token || process.env.MESH_TOKEN || ""
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    try {
+      const res = await fetch(`${base}/mesh/announce`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ text: words.join(" "), ...(opts.by ? { by: opts.by } : {}) }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string; event?: { id: string; node: string } }
+      if (!res.ok) { console.log(chalk.red(`  Announcement refused (${res.status}): ${data.error || "unknown error"}`)); process.exit(1) }
+      console.log(chalk.green(`  ✓ Announced from ${data.event?.node ?? "this machine"}`) + chalk.dim(` (event ${data.event?.id ?? "?"})`))
+    } catch (e: any) {
+      console.log(chalk.red(`  Could not reach the daemon at ${base}: ${e?.message || e}`))
+      process.exit(1)
+    }
+  })
+
 // ==================== agentx skill ====================
 
 export const skillCmd = new Command()
