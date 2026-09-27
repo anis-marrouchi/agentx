@@ -94,7 +94,7 @@ class Planner implements LineModel {
 describe("POST /teach/live", () => {
   it("runs a lesson as the voice session: GET /talk shows it, the door reaches it, stop ends it", async () => {
     const log: string[] = []
-    const speech = { busy: false, say: async () => { await new Promise((r) => setTimeout(r, 30)); return true }, stop: () => log.push("speech stop") } as any
+    const speech = { busy: false, say: async () => { await new Promise((r) => setTimeout(r, 30)); return true }, view: () => ({ paused: false, playing: null, waiting: [], recent: [] }), pause: () => {}, resume: () => {}, cancel: (k: string) => log.push(`speech cancel ${k}`), events: {}, stop: () => log.push("speech stop") } as any
     const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
       speech, model: () => new Planner(), stopSpeakers: () => {},
       presence: {
@@ -112,7 +112,7 @@ describe("POST /teach/live", () => {
     expect(svc.handle("GET", "/talk", {}).body).toMatchObject({ active: true, kind: "lesson" })
     await new Promise((r) => setTimeout(r, 20))
     expect(svc.handle("POST", "/talk/door", { text: "where is it?" }).status).toBe(200)
-    expect(log).toContain("speech stop")
+    expect(log).toContain("speech cancel lesson")
     svc.handle("POST", "/talk/door", { text: "stop" })
     expect(svc.handle("GET", "/talk", {}).body).toEqual({ active: false })
     expect(log).toContain("Coder close")
@@ -130,7 +130,7 @@ describe("POST /teach/live", () => {
       close() {},
     }
     const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
-      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, stop: () => {} } as any, stopSpeakers: () => {},
+      speech: { busy: false, say: async (u: { text: string }) => { said.push(u.text); return true }, view: () => ({ paused: false, playing: null, waiting: [], recent: [] }), pause: () => {}, resume: () => {}, cancel: () => {}, events: {}, stop: () => {} } as any, stopSpeakers: () => {},
       model: () => planner,
       presence: {
         overlay: overlayLog([]), frontmostApp: async () => front,

@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { PERSIST_MS, PresenceHost } from "../src/daemon/voice-presence"
 import { PresenceOverlay, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
-import { SpeechOut } from "../src/voice/speaker"
+import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 
 const agents: any = { "secretary-agent": { name: "Secretary", systemPrompt: "You are the secretary." } }

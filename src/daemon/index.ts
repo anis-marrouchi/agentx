@@ -98,7 +98,8 @@ import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
 import { siriSayScript } from "@/voice/speaker"
-import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText } from "@/voice/agent-voice"
+import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
+import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
@@ -244,6 +245,8 @@ export class AgentXDaemon {
     this.voiceTalk = new VoiceTalkService(() => this.config?.agents ?? {}, this.voiceIntros, (m) => this.log(m), {
       remote: (id, introduce) => this.voiceMesh.voices.speaker(id, introduce),
       voiceSettings: () => this.config?.voice ?? {},
+      // Who is speaking and who waits, live for the menu and any client.
+      onQueue: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:queue", ...view })),
     })
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
@@ -2406,6 +2409,19 @@ export class AgentXDaemon {
         const body = req.method === "POST" ? await readBody(req) : {}
         const reply = this.voiceTalk.handle(req.method || "GET", path, body)
         this.json(res, reply.status, reply.body)
+        return
+      }
+      // The speaking queue: queuing a line makes this host speak.
+      if (isQueuePath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const agents = this.config?.agents ?? {}
+        const voiceOf = (id: string) => agents[id]
+          ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
+          : this.voiceMesh.voices.speaker(id, false)?.voice ?? null
+        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
+        // With wait, the client may have given up; the line still plays.
+        if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
 

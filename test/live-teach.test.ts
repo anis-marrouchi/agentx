@@ -47,7 +47,8 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
   const speech = {
     busy: false,
     say: async (u: { text: string }) => { said.push(u.text); await sleep(opts.speakMs ?? 5); return true },
-    stop: () => { stopped++ },
+    // A lesson silences only its own lines in the shared queue.
+    cancel: (kind: string) => { if (kind === "lesson") stopped++ },
   } as any
   const acted: string[] = []
   const model = new PlanModel(replies)

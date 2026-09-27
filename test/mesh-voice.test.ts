@@ -8,7 +8,7 @@ import {
 import { DEFAULT_VOICE_ID, VoiceIntroTracker, remoteVoiceAppend } from "../src/voice/agent-voice"
 import { VoiceMeshProxy } from "../src/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "../src/daemon/voice-talk-api"
-import { SpeechOut } from "../src/voice/speaker"
+import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import { daemonConfigSchema } from "../src/daemon/config"
 

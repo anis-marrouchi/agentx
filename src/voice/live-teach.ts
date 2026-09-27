@@ -16,7 +16,8 @@
 // Option-Space calls, and "stop" ends it.
 
 import type { LineModel } from "./talk-model"
-import type { SpeechOut, VoiceRef } from "./speaker"
+import type { VoiceRef } from "./speaker"
+import type { SpeechOut } from "./speaking-queue"
 import type { Presence, Rect } from "./presence"
 import { DEFAULT_LISTENER } from "./talk"
 import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
@@ -180,7 +181,7 @@ export class LiveTeach {
         const line = `Bring ${this.opts.app} to the front and I'll carry on.`
         this.deps.presence.say(line)
         this.emit({ type: "step", n: this.step, action: "wait_for_user", target: null, say: line })
-        await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
+        await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" })
       }
       if (Date.now() > deadline) { this.stop(`${this.opts.app} never came to the front`); return null }
       await Promise.race([this.sleep(this.opts.pollMs ?? POLL_MS), this.poked()])
@@ -264,7 +265,7 @@ export class LiveTeach {
     presence.say(bubbleText(rect ? label : null))
     this.lastSay = plan.say
     await this.speaking
-    const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say }) : Promise.resolve(true)
+    const spoken = plan.say ? speech.say({ voice: this.opts.speaker.voice, text: plan.say, agentId: this.opts.speaker.agentId, kind: "lesson" }) : Promise.resolve(true)
     // Act mode does the step while saying it, and plans the next one while
     // the line plays out, instead of speaking, then pressing, then thinking.
     const acts = mayAct && (action === "key" ? !!plan.text : (action === "click" || action === "type") && !!rect)
@@ -321,7 +322,7 @@ export class LiveTeach {
     this.emit({ type: "acted", n, error: `refused ${keys}: it leaves ${app}` })
     await this.speaking
     this.deps.presence.say(line)
-    await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line })
+    await this.deps.speech.say({ voice: this.opts.speaker.voice, text: line, agentId: this.opts.speaker.agentId, kind: "lesson" })
     this.stop(`${keys} would leave ${app}`)
     return "stopped"
   }
@@ -371,7 +372,8 @@ export class LiveTeach {
   }
 
   private silence(): void {
-    this.deps.speech.stop()
+    // Only the lesson's own lines: other agents' answers keep their place.
+    this.deps.speech.cancel("lesson")
     this.ac.abort()
     this.ac = new AbortController()
   }
