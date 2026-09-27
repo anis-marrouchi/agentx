@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.50.0](https://github.com/anis-marrouchi/agentx/compare/v0.49.0...v0.50.0) (2026-09-26)
+
+
+### Features
+
+* **integrations:** Raycast extension to ask and list agents ([#148](https://github.com/anis-marrouchi/agentx/issues/148)) ([3daf749](https://github.com/anis-marrouchi/agentx/commit/3daf74933e1c967c68aa896baa37c2550f42889d))
+
 ## [0.49.0](https://github.com/anis-marrouchi/agentx/compare/v0.48.0...v0.49.0) (2026-09-26)
 
 
