@@ -112,6 +112,8 @@ const TASK_OUTPUT_TTL_MS = 5 * 60 * 1000
 /** How long a cancelled run's agent call may take to reap its subprocess
  *  before the run lets go of its slot anyway. */
 const CANCEL_GRACE_MS = 30_000
+/** Default for agents.<id>.preSpawnTimeoutSec when a definition skipped the schema. */
+const PRE_SPAWN_TIMEOUT_SEC = 300
 
 /** Persisted record of a finished task, written to .agentx/task-history. */
 export interface TaskRecord {
@@ -126,6 +128,9 @@ export interface TaskRecord {
   durationMs: number
   ok: boolean
   error?: string
+  /** Set when a deadline ended the run: `timeout`, with the step it was in. */
+  status?: "timeout"
+  step?: string
   /** Final agent text (one-shot, may be empty if streaming captured it). */
   responseText: string
   /** Terminal-style transcript captured from stream-json events. */
@@ -1065,7 +1070,7 @@ export class AgentRegistry {
 
         if (queued) {
           const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
-          this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending})`)
+          this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           return {
             content: "",
             error: `__queued__:${queued}:${pending}`,
@@ -1189,17 +1194,41 @@ export class AgentRegistry {
       ? setTimeout(() => abortController.abort(new Error(`timed out after ${Math.round(deadlineMs / 1000)}s`)), deadlineMs)
       : undefined
     deadline?.unref?.()
+    // Every run, whatever started it, must reach its agent process (or hand
+    // off to a workflow) within preSpawnTimeoutSec of taking the slot. A
+    // pre-spawn step that never settles otherwise holds the slot forever.
+    const preSpawnMs = (state.def.preSpawnTimeoutSec ?? PRE_SPAWN_TIMEOUT_SEC) * 1000
+    let preSpawnDeadline: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+      abortController.abort(new Error(`timed out before spawn after ${Math.round(preSpawnMs / 1000)}s in step "${runningTask.step ?? "start"}"`))
+    }, preSpawnMs)
+    preSpawnDeadline.unref?.()
+    const clearPreSpawnDeadline = () => {
+      if (preSpawnDeadline) clearTimeout(preSpawnDeadline)
+      preSpawnDeadline = undefined
+    }
+    // Suffix for run log lines: which run, which chat, when.
+    const runTag = () => `task=${runningTask.id} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`
+    // The step a deadline (pre-spawn or timeoutMinutes) ended the run in.
+    let timedOutStep: string | undefined
     abortController.signal.addEventListener("abort", () => {
-      this.log(`[${task.agentId}] task ${runningTask.id} aborted in step "${runningTask.step ?? "start"}" — ${abortReason(abortController.signal).message}`)
+      const reason = abortReason(abortController.signal).message
+      if (/^timed out/.test(reason)) timedOutStep = runningTask.step ?? "start"
+      this.log(`[${task.agentId}] task ${runningTask.id} aborted in step "${runningTask.step ?? "start"}" — ${reason} ${runTag()}`)
     }, { once: true })
     // Every await before and around the spawn goes through `step`, so a
     // cancel or deadline ends the run even when the awaited work never
     // settles. The step name is what /agents shows for a run that hangs.
     // `work` is a thunk so an aborted run never starts the next step: several
     // steps sit in best-effort try/catch blocks that swallow the rejection.
+    const traceStep = (name: string) => {
+      runningTask.step = name
+      this.log(`[${task.agentId}] step ${name} ${runTag()}`)
+    }
     const step = <T>(name: string, work: () => Promise<T>, graceMs = 0): Promise<T> => {
       if (abortController.signal.aborted) return Promise.reject(abortReason(abortController.signal))
-      runningTask.step = name
+      traceStep(name)
+      // Spawning the agent (or handing off to a workflow) ends the pre-spawn phase.
+      if (name === "agent" || name === "workflow-auto-run") clearPreSpawnDeadline()
       return untilAborted(work(), abortController.signal, graceMs)
     }
 
@@ -1212,6 +1241,7 @@ export class AgentRegistry {
       released = true
       this.runReleases.delete(runningTask.id)
       if (deadline) clearTimeout(deadline)
+      clearPreSpawnDeadline()
       state.activeTasks--
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
@@ -1246,6 +1276,7 @@ export class AgentRegistry {
           durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
           ok: !finalResponse?.error,
           error: finalResponse?.error,
+          ...(timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
         }
@@ -1265,7 +1296,7 @@ export class AgentRegistry {
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
         .then((queued) => {
           if (queued.length === 0) return
-          this.log(`[${task.agentId}] flushing ${queued.length} queued message(s)`)
+          this.log(`[${task.agentId}] flushing ${queued.length} queued message(s) after task=${runningTask.id} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           // Re-execute each queued message as a new task. The original
           // inbound message (the one that triggered this run) was posted
           // back to its channel by the router after `registry.execute`
@@ -1301,7 +1332,7 @@ export class AgentRegistry {
     // Mark session as running in the message queue
     this.messageQueue.markRunning(task.agentId, qChannel, qChatId)
 
-    this.log(`[${task.agentId}] executing task (${state.activeTasks}/${state.def.maxConcurrent})`)
+    this.log(`[${task.agentId}] executing task (${state.activeTasks}/${state.def.maxConcurrent}) ${runTag()}`)
 
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
@@ -2167,6 +2198,7 @@ export class AgentRegistry {
       // Kept inside the try so the `finally` below still runs — otherwise a
       // short-circuit return leaks runningTask bookkeeping.
       if (state.def.tier === "claude-code") {
+        traceStep("dispatch-gate")
         // A persistent-process handle counts as "warm" — its subprocess already
         // has the system prompt cached, so no fresh cache-create is needed even
         // when there's no --resume session ID stored for this chatId yet.
@@ -2460,7 +2492,7 @@ export class AgentRegistry {
 
         this.log(
           `[${task.agentId}] completed in ${response.duration}ms` +
-            (response.tokensUsed ? ` (${response.tokensUsed} tokens)` : ""),
+            (response.tokensUsed ? ` (${response.tokensUsed} tokens)` : "") + ` ${runTag()}`,
         )
       }
 

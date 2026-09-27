@@ -229,6 +229,12 @@ const agentConfigSchema = z.object({
    *  cap sends SIGTERM (exit 143). Default 20 min — bump for devops/coder
    *  agents that do long investigations or multi-file refactors. */
   maxExecutionMinutes: z.number().int().min(1).max(240).default(20),
+  /** Time a run may spend between taking a slot and starting its agent
+   *  process (request gate, classifier, compaction, context planning, model
+   *  routing, dispatch gates). Past it the run is aborted, its slot freed and
+   *  its record marked `timeout` with the step it was stuck in. Applies to
+   *  every run, whatever started it. */
+  preSpawnTimeoutSec: z.number().int().min(10).max(3600).default(300),
   permissionMode: z.string().default("default"),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
    *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
