@@ -85,6 +85,10 @@ const LIVE_PAGE_CSS = `
 .ax-node__tag--wait { color: var(--ax-warn, var(--ax-text-2)); border-color: currentColor; }
 .ax-node__name { font-weight: 600; font-size: 14px; }
 .ax-node__url { color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px; }
+.ax-node__sessions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 12px; color: var(--ax-muted); }
+.ax-node__session { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border: 1px solid var(--ax-line, currentColor); border-radius: 999px; color: var(--ax-text-2, inherit); }
+.ax-node__session.is-bound { color: var(--ax-text, inherit); border-color: var(--ax-accent, currentColor); }
+.ax-node__session.is-waiting { border-style: dashed; }
 .ax-node__tag {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
   padding: 2px 7px; border-radius: 3px; border: 1px solid var(--ax-border-2);
@@ -426,13 +430,16 @@ function runningBodyHtml(rows) {
 function renderNode(node) {
   const sec = document.createElement('section');
   sec.className = 'ax-node';
-  const tag = node.reachable
+  // #193 — a briefly slow node keeps its last good data, marked stale.
+  const tag = node.stale
+    ? '<span class="ax-node__tag ax-node__tag--wait" role="status" title="' + escapeHtml(node.error || '') + '">not responding · data from ' + escapeHtml(fmtAgo(node.staleSince)) + '</span>'
+    : node.reachable
     ? '<span class="ax-node__tag ax-node__tag--up">online · ' + (node.uptimeSec ? Math.round(node.uptimeSec / 60) + 'm' : '—') + '</span>'
     : '<span class="ax-node__tag ax-node__tag--down">offline — ' + escapeHtml(node.error || 'unreachable') + '</span>';
   sec.innerHTML = '<header>' +
     '<span class="ax-node__name">' + escapeHtml(node.name) + '</span>' +
     '<span class="ax-node__url">' + escapeHtml(node.url) + '</span>' +
-    tag + restartHtml(node) + '</header><div class="ax-grid--agents"></div>';
+    tag + (node.stale ? '' : restartHtml(node)) + '</header>' + sessionsHtml(node) + '<div class="ax-grid--agents"></div>';
   const g = sec.querySelector('.ax-grid--agents');
   if (!node.reachable || node.agents.length === 0) {
     const empty = document.createElement('div');
@@ -444,6 +451,22 @@ function renderNode(node) {
     for (const a of node.agents) g.appendChild(renderAgent(a, node));
   }
   return sec;
+}
+
+// #193 — Claude Code sessions registered with this node's attach hooks. A
+// bound one says which agent it answers for; "waiting" means the binding is
+// saved but the session has not reported since a restart or an idle spell.
+function sessionsHtml(node) {
+  const rows = node.attachSessions || [];
+  if (!rows.length) return '';
+  const chips = rows.map(r => {
+    const who = r.agentIds.length ? 'as ' + r.agentIds.join(', ') : 'not attached';
+    const when = r.waiting ? 'waiting for session' : 'seen ' + fmtAgo(new Date(r.lastSeenAt).toISOString());
+    const cls = 'ax-node__session' + (r.agentIds.length ? ' is-bound' : '') + (r.waiting ? ' is-waiting' : '');
+    return '<span class="' + cls + '" title="session ' + escapeHtml(r.session) + ' · ' + escapeHtml(r.mode) + (r.pending ? ' · ' + r.pending + ' queued' : '') + '">' +
+      '<b>' + escapeHtml(r.project || r.session) + '</b> ' + escapeHtml(who) + ' · ' + escapeHtml(when) + '</span>';
+  }).join('');
+  return '<div class="ax-node__sessions" aria-label="Claude Code sessions"><span>Claude Code sessions</span>' + chips + '</div>';
 }
 
 // "Restart when idle": the node restarts itself once no task is running.
@@ -559,7 +582,9 @@ function renderAgent(a, node) {
       '</div>'
     : (busy ? '' : '<div class="ax-agent__summary"><div class="ax-agent__summary-caption">' + escapeHtml(L.idle || 'idle') + '</div><div class="ax-agent__summary-text" style="font-style:italic;color:var(--ax-muted)">' + escapeHtml(L.neverRan || 'awaiting first task') + '</div></div>');
 
-  const lastActiveText = a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
+  const lastActiveText = (a.attached && !a.attached.waiting)
+    ? 'Claude Code session active ' + fmtAgo(new Date(a.attached.lastSeenAt).toISOString())
+    : a.lastActive ? 'last active ' + fmtAgo(a.lastActive) : (L.neverRan || 'not used yet');
   const lastActiveAttr = a.lastActive ? ' data-last-active="' + escapeHtml(a.lastActive) + '"' : '';
   const recentLink = nodeUrl
     ? '<button class="ax-linkbtn" data-agent-id="' + escapeHtml(a.id) + '" data-agent-name="' + escapeHtml(a.name || a.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" data-recent="1">history →</button>'
@@ -571,6 +596,12 @@ function renderAgent(a, node) {
     ? '<span class="ax-badge ax-badge--mono ax-badge--live"><span class="ax-dot ax-dot--live ax-dot--pulse"></span> live</span>'
     : (errored ? '<span class="ax-badge ax-badge--mono ax-badge--warn">errored</span>' : '<span class="ax-badge ax-badge--mono ax-badge--ghost">idle</span>');
   const tierBadge = tierDisplay ? '<span class="ax-badge ax-badge--mono ax-badge--ghost" title="AI engine">' + escapeHtml(tierDisplay) + '</span>' : '';
+  // #193 — the Claude Code session answering for this agent.
+  const at = a.attached;
+  const attachBadge = at
+    ? '<span class="ax-badge ax-badge--mono ' + (at.waiting ? 'ax-badge--ghost' : 'ax-badge--live') + '" title="Claude Code session ' + escapeHtml(at.session) + ' in ' + escapeHtml(at.project) + ' · ' + escapeHtml(at.mode) + '">' +
+        (at.waiting ? 'attached · waiting' : 'attached · ' + escapeHtml(at.project)) + '</span>'
+    : '';
 
   const head =
     '<div class="ax-agent__head">' +
@@ -578,7 +609,7 @@ function renderAgent(a, node) {
         '<span class="ax-mention">' + escapeHtml(mention) + '</span>' +
         '<span class="ax-agent__name">' + escapeHtml(a.name || a.id) + '</span>' +
       '</div>' +
-      '<div class="ax-agent__tier">' + tierBadge + liveBadge + '</div>' +
+      '<div class="ax-agent__tier">' + attachBadge + tierBadge + liveBadge + '</div>' +
     '</div>';
 
   // An idle agent collapses to one line.

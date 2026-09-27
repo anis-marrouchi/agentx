@@ -1480,6 +1480,21 @@ interface NodeLive {
   url: string
   reachable: boolean
   error?: string
+  /** #193 — last good data kept while the node is briefly unreachable. */
+  stale?: boolean
+  staleSince?: string
+  /** #193 — Claude Code sessions registered with this node's attach hooks.
+   *  Loopback-only on the daemon, so only the dashboard's own host reports. */
+  attachSessions?: Array<{
+    session: string
+    project: string
+    agentIds: string[]
+    mode: string
+    lastSeenAt: number
+    pending: number
+    /** Bound, but the session has not reported since a restart or idle drop. */
+    waiting?: boolean
+  }>
   uptimeSec?: number
   /** Tasks a restart would cut off (GET /health; undefined on older nodes). */
   inflight?: number
@@ -1496,6 +1511,8 @@ interface NodeLive {
     errors: number
     lastActive?: string
     lastSummary?: { text: string; at: string; ok: boolean }
+    /** #193 — the Claude Code session answering for this agent, if any. */
+    attached?: { session: string; project: string; mode: string; lastSeenAt: number; waiting?: boolean }
     hourlyTasks?: number[]
     runningTasks?: Array<{
       id: string
@@ -1578,7 +1595,7 @@ async function fetchDaemonAgents(
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
     const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes] = await Promise.all([
       fetch(url + "/health", { headers, signal }).catch(() => null),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       fetch(url + "/mesh", { headers, signal }).catch(() => null),
@@ -1586,6 +1603,7 @@ async function fetchDaemonAgents(
       fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
       fetch(url + "/talk", { headers, signal }).catch(() => null),
       fetch(url + "/routines", { headers, signal }).catch(() => null),
+      fetch(url + "/attach/sessions", { headers, signal }).catch(() => null),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1645,6 +1663,11 @@ async function fetchDaemonAgents(
           step: Number(t.step) || 0, saying: String(t.saying || ""), startedAt: String(t.startedAt || ""),
         }
       }
+    }
+    // Remote nodes answer 403 (loopback-only), which just means no attach data.
+    if (attachRes && attachRes.ok) {
+      const body: any = await attachRes.json().catch(() => null)
+      if (body && Array.isArray(body.sessions)) applyAttachSessions(base, body.sessions, body.saved ?? {})
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
@@ -1720,17 +1743,79 @@ export async function resolveNodeTargets(daemon: DaemonConfig, signal?: AbortSig
   return [...seen.values()]
 }
 
-async function buildLiveSnapshot(
+// #193 — each node gets its own budget: one slow daemon used to exhaust a
+// shared 3 s and vanish from Live entirely.
+const TARGETS_TIMEOUT_MS = 3_000
+const NODE_TIMEOUT_MS = 6_000
+/** How long a node's last good data is shown (marked stale) after it fails. */
+const STALE_NODE_TTL_MS = 5 * 60_000
+const lastGoodNode = new Map<string, { node: NodeLive; at: number }>()
+const inflightSnapshots = new Map<string, Promise<LiveSnapshot>>()
+
+/** One build at a time per view: every open Live tab and the SSE ticks share
+ *  it, so a slow daemon is not hit by piled-up overlapping snapshots. */
+function buildLiveSnapshot(
   daemon: DaemonConfig,
   day?: { date: string; timezone: string },
 ): Promise<LiveSnapshot> {
-  const ac = new AbortController()
-  const timeout = setTimeout(() => ac.abort(), 3000)
-  try {
-    const targets = await resolveNodeTargets(daemon, ac.signal)
-    const nodes = await Promise.all(targets.map((d) => fetchDaemonAgents(d.url, d.token, ac.signal, day)))
+  const key = day ? `${day.date}|${day.timezone}` : "live"
+  const running = inflightSnapshots.get(key)
+  if (running) return running
+  const build = (async () => {
+    const targets = await resolveNodeTargets(daemon, AbortSignal.timeout(TARGETS_TIMEOUT_MS))
+    const nodes = await Promise.all(targets.map(async (d) => {
+      const node = await fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
+      return day ? node : withLastGood(d.url, node)
+    }))
     return { ts: new Date().toISOString(), nodes }
-  } finally { clearTimeout(timeout) }
+  })().finally(() => inflightSnapshots.delete(key))
+  inflightSnapshots.set(key, build)
+  return build
+}
+
+export function withLastGood(url: string, node: NodeLive, now: number = Date.now()): NodeLive {
+  if (node.reachable && !node.error) {
+    lastGoodNode.set(url, { node, at: now })
+    return node
+  }
+  const good = lastGoodNode.get(url)
+  if (!good || now - good.at > STALE_NODE_TTL_MS) return node
+  return { ...good.node, stale: true, staleSince: new Date(good.at).toISOString(), error: node.error }
+}
+
+/** Test-only. */
+export function resetLiveCaches(): void {
+  lastGoodNode.clear()
+  inflightSnapshots.clear()
+}
+
+export function applyAttachSessions(
+  node: NodeLive,
+  sessions: Array<{ sessionId: string; cwd?: string; agentIds?: string[]; mode?: string; lastSeenAt?: number; pending?: number }>,
+  saved: Record<string, { agentIds?: string[]; mode?: string; cwd?: string; savedAt?: number }>,
+): void {
+  const project = (cwd?: string) => (cwd ? cwd.replace(/\/+$/, "").split("/").pop() || cwd : "")
+  const rows: NonNullable<NodeLive["attachSessions"]> = sessions.map((s) => ({
+    session: String(s.sessionId).slice(0, 8),
+    project: project(s.cwd),
+    agentIds: Array.isArray(s.agentIds) ? s.agentIds : [],
+    mode: String(s.mode || "notify"),
+    lastSeenAt: Number(s.lastSeenAt) || 0,
+    pending: Number(s.pending) || 0,
+  }))
+  const live = new Set(sessions.map((s) => s.sessionId))
+  for (const [id, b] of Object.entries(saved)) {
+    if (live.has(id) || !Array.isArray(b.agentIds) || b.agentIds.length === 0) continue
+    rows.push({
+      session: id.slice(0, 8), project: project(b.cwd), agentIds: b.agentIds,
+      mode: String(b.mode || "notify"), lastSeenAt: Number(b.savedAt) || 0, pending: 0, waiting: true,
+    })
+  }
+  node.attachSessions = rows
+  for (const agent of node.agents) {
+    const row = rows.find((r) => r.agentIds.includes(agent.id) && !r.waiting) ?? rows.find((r) => r.agentIds.includes(agent.id))
+    if (row) agent.attached = { session: row.session, project: row.project, mode: row.mode, lastSeenAt: row.lastSeenAt, waiting: row.waiting }
+  }
 }
 
 function startLiveStream(req: IncomingMessage, res: ServerResponse, daemon: DaemonConfig): void {
@@ -1745,12 +1830,18 @@ function startLiveStream(req: IncomingMessage, res: ServerResponse, daemon: Daem
     if (closed) return
     res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)
   }
+  let busy = false
   const tick = async () => {
+    // Never stack ticks: a slow build is waited out, not multiplied.
+    if (busy) return
+    busy = true
     try {
       const snap = await buildLiveSnapshot(daemon)
       send("snapshot", snap)
     } catch (e: any) {
       send("error", { message: e.message })
+    } finally {
+      busy = false
     }
   }
   // Initial tick immediately, then every 2s.
