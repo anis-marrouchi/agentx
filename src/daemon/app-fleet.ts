@@ -227,7 +227,7 @@ export function dateIn(timezone: string, now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
 }
 
-async function readJson(req: IncomingMessage, limit = 16 * 1024): Promise<Record<string, unknown>> {
+export async function readJson(req: IncomingMessage, limit = 16 * 1024): Promise<Record<string, unknown>> {
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of req) {

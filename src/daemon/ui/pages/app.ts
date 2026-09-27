@@ -10,12 +10,15 @@
 // comes from /api/app/*, which is never cached.
 //
 // Phase 1 of the mobile epic shipped the shell and pairing; Fleet and
-// Activity are filled by app-fleet.client.ts. A tab without content yet says
+// Activity are filled by app-fleet.client.ts, Alerts by app-alerts.client.ts. A tab without content yet says
 // so plainly — no simulated data.
 
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
+import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
+
+export { APP_SERVICE_WORKER } from "./app-sw"
 
 const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})();</script>`
 
@@ -39,7 +42,7 @@ const TABS = [
   { id: "chat", label: "Chat", soon: "Talking to your agents from this phone arrives in the next update." },
   { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
   { id: "activity", label: "Activity", soon: "Loading what your agents are doing…" },
-  { id: "alerts", label: "Alerts", soon: "Notifications on this phone arrive in a later update." },
+  { id: "alerts", label: "Alerts", soon: "Loading notifications…" },
 ] as const
 
 export function renderAppPage(): string {
@@ -69,6 +72,7 @@ export function renderAppPage(): string {
 <nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
 <script>${APP_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
+<script>${APP_ALERTS_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -124,41 +128,6 @@ export function renderAppManifest(): string {
   })
 }
 
-/** Network-first for the shell (so a revoked phone sees the locked page as
- *  soon as it is online), cache-first for icons and the manifest, and never
- *  anything under /api/. Bump CACHE when the precached list changes. */
-export const APP_SERVICE_WORKER = `
-var CACHE = 'agentx-app-v1';
-var STATIC = ['/app/manifest.webmanifest', '/app/icon-192.png', '/app/icon-512.png'];
-self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(STATIC); }).then(function () { return self.skipWaiting(); }));
-});
-self.addEventListener('activate', function (e) {
-  e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
-  }).then(function () { return self.clients.claim(); }));
-});
-self.addEventListener('fetch', function (e) {
-  var req = e.request;
-  var url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.indexOf('/api/') === 0) return;
-  if (req.mode === 'navigate' && url.pathname === '/app') {
-    e.respondWith(fetch(req).then(function (res) {
-      var copy = res.clone();
-      caches.open(CACHE).then(function (c) { return res.ok ? c.put('/app', copy) : res.status === 401 ? c.delete('/app') : null; });
-      return res;
-    }).catch(function () {
-      return caches.match('/app').then(function (hit) { return hit || Response.error(); });
-    }));
-    return;
-  }
-  if (STATIC.indexOf(url.pathname) >= 0) {
-    e.respondWith(caches.match(url.pathname).then(function (hit) { return hit || fetch(req); }));
-  }
-});
-`
-
 const APP_SCRIPT = `
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
@@ -183,8 +152,12 @@ const APP_SCRIPT = `
       if (next) { ev.preventDefault(); select(next, true); }
     });
   });
-  var start = tabs.filter(function (t) { return '#' + t.dataset.tab === location.hash; })[0];
-  if (start) select(start, false);
+  function fromHash() {
+    var t = tabs.filter(function (t) { return '#' + t.dataset.tab === location.hash; })[0];
+    if (t) select(t, false);
+  }
+  fromHash();
+  window.addEventListener('hashchange', fromHash);
 
   var root = document.documentElement;
   var themeBtn = document.getElementById('theme');

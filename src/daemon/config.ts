@@ -477,6 +477,26 @@ const channelsConfigSchema = z.object({
     defaultPriority: z.number().int().min(1).max(5).default(3),
     defaultTitle: z.string().optional(),
   }).default({}),
+  /** Web Push to the phone app (/app) — outbound only. The node that hosts
+   *  the app holds the subscriptions and sends; any other node sets
+   *  `relayTo` and forwards over the mesh. `chatId` "default" means every
+   *  subscribed phone, or a device id (tok_…) for one. */
+  push: z.object({
+    enabled: z.boolean().default(false),
+    /** VAPID key pair written by `agentx app push-keys`. Relative paths
+     *  resolve from the folder holding agentx.json. */
+    keysFile: z.string().default(".agentx/push-keys.json"),
+    /** Contact for the push services: `mailto:you@example.com` or an
+     *  https:// URL. Required on the hosting node. */
+    subject: z.string().regex(/^(mailto:|https:\/\/)/, "must start with mailto: or https://").optional(),
+    /** Mesh peer (id or name) that hosts the phone app. Set it on every
+     *  other node; leave it unset on the host. */
+    relayTo: z.string().optional(),
+    /** How long a push service keeps trying an offline phone. */
+    ttlSeconds: z.number().int().min(0).max(2419200).default(86400),
+    /** Recent pushes kept for the app's Alerts tab. */
+    keepRecent: z.number().int().min(0).max(1000).default(50),
+  }).default({}),
   webrtc: z.object({
     enabled: z.boolean().default(false),
     /** ICE STUN servers for NAT discovery. Default is Google's public STUN. */
@@ -804,6 +824,9 @@ const notificationsSchema = z.object({
     chatId: z.string(),
     accountId: z.string().optional(),
   }).optional(),
+  /** Channel `agentx notify` and Focus digests use when none is given:
+   *  `push` (the phone app) by default, or e.g. `ntfy`. */
+  channel: z.string().default("push"),
   /** Notify on these events */
   on: z.object({
     taskComplete: z.boolean().default(true),

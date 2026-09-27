@@ -21,7 +21,7 @@ import { readScreenSettings } from "@/computer-use/capture-settings"
 // A shoulder tap for the person running the fleet, routed so that it never
 // arrives during a Focus they explicitly turned on.
 //
-// It goes through the daemon rather than talking to ntfy directly, because
+// It goes through the daemon rather than talking to a push service directly, because
 // the daemon already owns the channel router — the same path that POST
 // /send, cron failure pings and channel.reply all use. A second delivery
 // path would mean a second place for the topic, the token and the retry
@@ -31,7 +31,7 @@ const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
 
 /** Push through the daemon's channel router.
  *
- *  The ntfy adapter takes its TITLE FROM THE FIRST LINE of the text — a
+ *  The push and ntfy adapters take the TITLE FROM THE FIRST LINE of the text — a
  *  separate `title` field is ignored — so the title is prepended rather
  *  than passed alongside. Sending it as its own field looked like it
  *  worked: the push arrived, with the default title, and the real one
@@ -60,17 +60,19 @@ function daemonSender(defaultChannel: string, defaultChatId: string): Sender {
  *  sets them, minus whatever the flags switch off. A missing or invalid
  *  config means the defaults: a notification should never fail over a
  *  settings file. */
-function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean }): { alert: LocalAlert; banner: boolean } {
-  let local
+function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean; channel?: string }): { alert: LocalAlert; banner: boolean; channel: string } {
+  let notifications
   try {
-    local = loadDaemonConfig(opts.config).notifications.local
+    notifications = loadDaemonConfig(opts.config).notifications
   } catch {
-    local = undefined
+    notifications = undefined
   }
-  const settings = localSettings(local)
+  const settings = localSettings(notifications?.local)
   if (!opts.sound) settings.sound = false
   if (!opts.banner) settings.banner = false
-  return { alert: localAlert(settings), banner: settings.banner }
+  // --channel wins; otherwise notifications.channel, which defaults to push.
+  const channel = opts.channel ?? notifications?.channel ?? "push"
+  return { alert: localAlert(settings), banner: settings.banner, channel }
 }
 
 export const notify = new Command()
@@ -81,7 +83,7 @@ export const notify = new Command()
   .option("--title <text>", "notification title", "AgentX")
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus")
-  .option("--channel <name>", "delivery channel", "ntfy")
+  .option("--channel <name>", "delivery channel (default: notifications.channel, which is push)")
   .option("--chat-id <id>", "channel address", "default")
   .option("--no-sound", "do not play a sound on this machine")
   .option("--no-banner", "do not show a banner on this machine")
@@ -93,7 +95,7 @@ export const notify = new Command()
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
     const state = readFocus()
-    const { alert, banner } = configuredAlert(opts)
+    const { alert, banner, channel } = configuredAlert(opts)
     // --proof applies to this call's own banner only: not to --flush, and
     // not to the fallback alert after a failed push.
     let sendAlert = alert
@@ -124,7 +126,7 @@ export const notify = new Command()
       return
     }
 
-    const send = daemonSender(opts.channel, opts.chatId)
+    const send = daemonSender(channel, opts.chatId)
 
     if (opts.flush) {
       const n = await flushHeld(send, { queue, alert })
@@ -145,7 +147,7 @@ export const notify = new Command()
           title: opts.title,
           priority: Number(opts.priority) || 4,
           urgent: Boolean(opts.urgent),
-          channel: opts.channel,
+          channel,
           chatId: opts.chatId,
         },
         send,

@@ -41,6 +41,10 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import type { AppPushDeps } from "./app-push"
+import { PushStore } from "@/channels/push-store"
+import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
+import { openDb } from "@/storage/sqlite"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
 import { decide, listInbox, type InboxItem } from "@/approvals/inbox"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -184,7 +188,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -2095,6 +2099,26 @@ async function postToNode(
     return { status: r.status, text: await r.text(), contentType: r.headers.get("content-type") || "application/json; charset=utf-8" }
   } catch (e: any) {
     return asJson(502, { error: e.message || "upstream fetch failed" })
+  }
+}
+
+/** What the phone app's Alerts tab needs. The dashboard shares the daemon's
+ *  folder (as it does for tokens.json), so it opens the same SQLite file
+ *  the daemon's PushAdapter sends from. */
+function appPushDeps(config: DaemonConfig): AppPushDeps {
+  const push = config.channels.push
+  const off = (reason: string): AppPushDeps => ({ store: () => null, publicKey: () => null, keepRecent: 0, reason })
+  if (!push.enabled) return off("Notifications are off. On the computer, run: agentx notifications push --enable")
+  if (push.relayTo) return off(`Notifications are set up on ${push.relayTo}. Pair this phone with that computer instead.`)
+  const keysPath = pushKeysPath(push.keysFile)
+  return {
+    store: () => {
+      const db = openDb()
+      return db ? new PushStore(db) : null
+    },
+    publicKey: () => readPushKeys(keysPath)?.publicKey ?? null,
+    keepRecent: push.keepRecent,
+    reason: "The database on this computer is unavailable, so notifications can't be saved.",
   }
 }
 

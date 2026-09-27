@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { execFileSync } from "child_process"
 import { TokenStore } from "@/daemon/token-store"
 import { loadDaemonConfig } from "@/daemon/config"
+import { DEFAULT_PUSH_KEYS_FILE, pushKeysPath, readPushKeys, writePushKeys } from "@/channels/push-keys"
 
 // --- agentx app: pair phones with the /app PWA ---
 //
@@ -82,6 +83,28 @@ appCmd
     }
     store.revoke(id)
     console.log(chalk.green(`\n  ✓ Unpaired ${id} (${device.name})\n`))
+  })
+
+appCmd
+  .command("push-keys")
+  .description("create the key pair that lets this computer send notifications to paired phones")
+  .option("--force", "replace existing keys (every phone must turn notifications on again)")
+  .action(async (opts) => {
+    let file = DEFAULT_PUSH_KEYS_FILE
+    try { file = loadDaemonConfig().channels.push.keysFile } catch { /* defaults */ }
+    const path = pushKeysPath(file)
+    const existing = readPushKeys(path)
+    if (existing && !opts.force) {
+      console.log(chalk.green(`\n  ✓ Keys already exist in ${path} (created ${existing.createdAt}).`))
+      console.log(chalk.dim(`  Replacing them cuts off every phone; pass --force if you really mean to.\n`))
+      return
+    }
+    const { default: webpush } = await import("web-push")
+    writePushKeys(path, webpush.generateVAPIDKeys())
+    console.log(chalk.green(`\n  ✓ Saved new push keys to ${path}`))
+    console.log(chalk.dim(`  Keep this file private. It is readable only by you, and agentx.json never contains it.`))
+    if (existing) console.log(chalk.yellow(`  ⚠ Old keys replaced: open Alerts on each phone and turn notifications on again.`))
+    console.log(chalk.dim(`  Restart the daemon so it picks up the keys.\n`))
   })
 
 /** https://<this machine's MagicDNS name>, the address `tailscale serve` uses. */
