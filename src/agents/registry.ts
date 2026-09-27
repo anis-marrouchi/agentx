@@ -545,6 +545,13 @@ export class AgentRegistry {
     payload: Record<string, unknown>
   }) => Promise<{ runId?: string }>
   private messageQueue: MessageQueue
+  /**
+   * Voice chats a waiting question has claimed between its wait ending and
+   * the chat being marked running (the rate limiter awaits in between).
+   * Without the claim, two questions waiting on one chat could both see it
+   * free and run at once.
+   */
+  private voiceClaims = new Set<string>()
   /** Intent Knowledge Graph classifier. Null when graph.enabled=false. */
   private classifier?: Classifier
   private graphStore?: GraphStore
@@ -1037,6 +1044,8 @@ export class AgentRegistry {
     // Build session key for queue management
     const qChannel = task.context?.channel || "api"
     const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+    // Held from a voice wait ending until the chat is marked running.
+    let voiceClaim: string | undefined
 
     if (state.activeTasks >= state.def.maxConcurrent) {
       // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
@@ -1066,6 +1075,22 @@ export class AgentRegistry {
           await new Promise((r) => setTimeout(r, pollIntervalMs))
         }
         // Slot freed — fall through to normal execution path below.
+      } else if (qChannel === "voice") {
+        // /ask waits on the answer to speak it, and "voice" has no adapter
+        // to re-route a queued reply to: queued, it was answered into
+        // nothing. Wait for the same voice chat instead, as the queue
+        // would — other work on the agent still runs alongside.
+        const start = Date.now()
+        const maxWaitMs = 25 * 60_000
+        const claim = `${task.agentId}\u0000${qChatId}`
+        while (this.messageQueue.isBusy(task.agentId, qChannel, qChatId) || this.voiceClaims.has(claim)) {
+          if (Date.now() - start > maxWaitMs) {
+            return { content: "", error: `Agent "${task.agentId}" busy — voice wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
+          }
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        voiceClaim = claim
+        this.voiceClaims.add(claim)
       } else {
         // Channel callers (telegram/gitlab/whatsapp/...) already ack'd the
         // user's message, so queueing is the right behavior — the flush
@@ -1105,6 +1130,9 @@ export class AgentRegistry {
         this.log(`[${task.agentId}] ${reason} — queued, resumes in ~${Math.max(1, Math.round(waitMs / 1000))}s`)
       },
     })
+    // From here to markRunning below nothing awaits, so the chat is
+    // marked busy before another waiter can look at it.
+    if (voiceClaim) this.voiceClaims.delete(voiceClaim)
     if (!rateResult.ok) {
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
