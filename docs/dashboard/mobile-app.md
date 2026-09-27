@@ -14,11 +14,12 @@ The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/i
 
 ## Install
 
-1. **Terminal (computer):** give the dashboard a private HTTPS address on your tailnet. `4202` is the dashboard's port (`dashboard.port` in `agentx.json`):
+1. **Terminal (computer):** give the phone app, and only the phone app, a private HTTPS address on your tailnet. `4202` is the dashboard's port (`dashboard.port` in `agentx.json`):
    ```sh
-   tailscale serve --bg 4202
+   tailscale serve --bg --set-path /app http://127.0.0.1:4202/app
+   tailscale serve --bg --set-path /api/app http://127.0.0.1:4202/api/app
    ```
-   See [Tailscale Serve](https://tailscale.com/kb/1312/serve) for details.
+   Don't run `tailscale serve --bg 4202`. That shares the whole dashboard with every device on your tailnet, and most of the dashboard trusts anything that arrives through the computer. If you ran it before, run `tailscale serve reset` first. `agentx app pair` refuses to run while the whole dashboard is shared. See [Tailscale Serve](https://tailscale.com/kb/1312/serve) for details.
 2. **Terminal (computer):** from the folder that holds `agentx.json`, pair the phone and give it a name you'll recognise:
    ```sh
    agentx app pair --name "My phone"
@@ -61,7 +62,7 @@ The phone is locked out as soon as it next connects.
 
 ## How access works
 
-The app and its data (`/app` and `/api/app/…`) always need the phone's key, even from the computer itself. That matters because `tailscale serve` passes every phone request through the computer, so the dashboard can't tell a phone from a local browser by address alone. The key only opens the phone app. It can't change settings or reach the rest of the dashboard.
+The app and its data (`/app` and `/api/app/…`) always need the phone's key, even from the computer itself. That matters because `tailscale serve` passes every phone request through the computer, so the dashboard can't tell a phone from a local browser by address alone. The key only opens the phone app. The rest of the dashboard isn't shared on the tailnet at all: step 1 passes on only `/app` and `/api/app/…`, and every other address answers "404 page not found".
 
 The QR code carries the key after a `#` in the link, which browsers never send to the server, so it doesn't end up in logs. The phone then keeps it in a cookie that page scripts can't read.
 
@@ -69,6 +70,7 @@ The QR code carries the key after a `#` in the link, which browsers never send t
 
 1. **Terminal (computer):** run `agentx app devices`. Your phone is listed as `active`.
 2. **Phone:** open the app from the home screen. Your phone's name and the computer's name show under **AgentX**.
+3. **Phone:** open `https://<computer's Tailscale name>/` (the same address without `/app`). The page says `404 page not found`, so the rest of the dashboard isn't shared.
 
 ## If something is wrong
 
@@ -76,6 +78,8 @@ The QR code carries the key after a `#` in the link, which browsers never send t
 - **The link doesn't open on the phone** — the phone isn't connected to your tailnet. Open the Tailscale app on the phone and turn it on.
 - **"This phone isn't paired"** — the phone was removed, or the pairing code was used on another folder's AgentX. Run `agentx app pair` again from the folder that holds `agentx.json`.
 - **"This pairing code is not valid any more"** — the code was revoked. Run `agentx app pair` again and scan the new code.
+- **"tailscale serve publishes the whole dashboard"** — `agentx app pair` found an earlier `tailscale serve --bg 4202`. Run `tailscale serve reset`, then repeat step 1 of [Install](#install).
+- **The address without `/app` opens the dashboard** — the whole dashboard is shared on your tailnet. On the computer, run `tailscale serve reset`, then repeat step 1 of [Install](#install).
 - **No "Install app" or "Add to Home Screen" option** — the address isn't `https://`. Use the address from `tailscale serve`, not `http://127.0.0.1:4202`.
 
 ![The page a phone sees when it isn't paired](/screenshots/mobile-app/not-paired.png)
