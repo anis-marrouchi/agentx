@@ -14,6 +14,21 @@ import { join } from "path"
 //   - a scheduled agent run always carries a deadline, recorded in its run file.
 
 const hang = vi.hoisted(() => ({ on: false, skills: false }))
+// When set, stands in for the agent process: settles after `agentMs`.
+// `until` (epoch ms), when set, overrides it with an absolute end time.
+const spawn = vi.hoisted(() => ({ agentMs: 0, until: 0, calls: 0 }))
+vi.mock("../src/agents/runtime", async (importOriginal) => {
+  const real: any = await importOriginal()
+  return {
+    ...real,
+    executeTask: (...args: any[]) => {
+      if (!spawn.agentMs) return real.executeTask(...args)
+      spawn.calls++
+      const ms = spawn.until ? Math.max(0, spawn.until - Date.now()) : spawn.agentMs
+      return new Promise((res) => setTimeout(() => res({ content: "done", duration: 1 }), ms))
+    },
+  }
+})
 vi.mock("../src/agents/request-planner", async (importOriginal) => {
   const real: any = await importOriginal()
   return {
@@ -99,6 +114,77 @@ describe("a run stuck before spawn", () => {
     expect(agentState(r).runningTasks).toEqual([])
     expect(agentState(r).active).toBe(0)
   })
+})
+
+describe("the pre-spawn deadline (#183)", () => {
+  /** A registry whose agent allows `sec` seconds before spawn. The schema
+   *  floor is 10 s; tests set the definition directly to stay fast. */
+  function withPreSpawn(sec: number, logs: string[] = []): AgentRegistry {
+    const config = daemonConfigSchema.parse({
+      node: { id: "test", name: "test" },
+      agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
+    })
+    const r = new AgentRegistry(config, (...a: unknown[]) => logs.push(a.join(" ")))
+    ;(r as any).agents.get("ops").def.preSpawnTimeoutSec = sec
+    return r
+  }
+
+  it("defaults to 300 s for every agent", () => {
+    const config = daemonConfigSchema.parse({ node: { id: "t", name: "t" }, agents: { ops: { name: "Ops", workspace: dir } } })
+    expect(config.agents.ops.preSpawnTimeoutSec).toBe(300)
+  })
+
+  it("ends an event-driven run stuck before spawn, frees its slot and records timeout with the step", async () => {
+    const logs: string[] = []
+    const r = withPreSpawn(0.05, logs)
+    let onStart!: (taskId: string) => void
+    const started = new Promise<string>((resolve) => { onStart = resolve })
+    // A GitHub webhook run: no timeoutMinutes, nothing else would end it.
+    const run = r.execute({ message: "[GitHub PR #1 assigned]", agentId: "ops", context: { channel: "github", chatId: "o/r:pull:1" }, onStart })
+    const id = await started
+    const res = await run
+
+    expect(res.error).toMatch(/timed out before spawn after 0s in step "request-gate"/)
+    expect(agentState(r).runningTasks).toEqual([])
+    expect(agentState(r).active).toBe(0)
+    expect(r.cancelRunningTask(id)).toBeNull()
+    const record = r.getTaskRecord("ops", id)!
+    expect(record.status).toBe("timeout")
+    expect(record.step).toBe("request-gate")
+
+    // Trace lines carry the run id, chat and an ISO timestamp.
+    const iso = /at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/
+    const exec = logs.find((l) => l.includes("executing task"))!
+    expect(exec).toContain(`task=${id}`)
+    expect(exec).toContain("chat=github:o/r:pull:1")
+    expect(exec).toMatch(iso)
+    const stepLine = logs.find((l) => l.includes("step request-gate"))!
+    expect(stepLine).toContain(`task=${id}`)
+    expect(stepLine).toMatch(iso)
+  })
+
+  it("is cleared once the agent is spawned", async () => {
+    hang.on = false
+    spawn.agentMs = 1
+    spawn.calls = 0
+    // Generous deadline so a loaded machine still spawns in time; the agent
+    // then runs on past the point where the deadline would have fired.
+    const r = withPreSpawn(2)
+    try {
+      const { started, run } = startRun(r)
+      const id = await started
+      spawn.until = Date.now() + 2_500
+      const res = await run
+      expect(spawn.calls).toBe(1)
+      expect(res.error).toBeUndefined()
+      expect(res.content).toBe("done")
+      expect(r.getTaskRecord("ops", id)!.status).toBeUndefined()
+      expect(agentState(r).active).toBe(0)
+    } finally {
+      spawn.agentMs = 0
+      spawn.until = 0
+    }
+  }, 10_000)
 })
 
 describe("a cancelled run", () => {
