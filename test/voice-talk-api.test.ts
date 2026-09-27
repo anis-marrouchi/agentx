@@ -3,7 +3,7 @@ import { EventEmitter } from "events"
 import type { ChildProcess } from "child_process"
 import { VoiceTalkService, talkSpeaker } from "../src/daemon/voice-talk-api"
 import { VoiceIntroTracker } from "../src/voice/agent-voice"
-import { SpeechOut } from "../src/voice/speaker"
+import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 
 const agents: any = {

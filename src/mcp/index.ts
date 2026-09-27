@@ -6,6 +6,8 @@ import { resolveOutputType } from "@/agent/outputs/types"
 import { generate } from "@/agent"
 import type { OutputType } from "@/agent/providers/types"
 import { existsSync, readFileSync } from "fs"
+import { describeQueue } from "@/daemon/voice-queue-api"
+import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
@@ -446,6 +448,15 @@ const TOOLS = [
     name: "agentx_agents",
     description:
       "List all agents registered on the daemon with their status (active tasks, total tasks, errors, tier).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "agentx_voice_queue",
+    description:
+      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. Use it before speaking at length, or when asked who is talking.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -1060,6 +1071,12 @@ async function handleToolCall(
         `${a.id} (${a.name}) — ${a.tier}, active: ${a.active}/${a.total}, errors: ${a.errors}`
       )
       return { content: [{ type: "text", text: lines.join("\n") || "No agents." }] }
+    }
+
+    case "agentx_voice_queue": {
+      const res = await fetch(`${daemonUrl()}/voice/queue`)
+      if (!res.ok) return { content: [{ type: "text", text: `Could not read the speaking queue: HTTP ${res.status}` }] }
+      return { content: [{ type: "text", text: describeQueue(await res.json() as QueueView) }] }
     }
 
     case "agentx_health": {

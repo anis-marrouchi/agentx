@@ -11,7 +11,8 @@
 
 import type { TypedEventBus, AgentXEvents } from "@/events/bus"
 import type { LineModel } from "./talk-model"
-import type { SpeechOut, VoiceRef } from "./speaker"
+import type { VoiceRef } from "./speaker"
+import type { SpeechOut } from "./speaking-queue"
 import { speakable } from "./sentences"
 
 export type NarrateMode = "off" | "on" | "all"
@@ -173,7 +174,7 @@ export class Narrator {
     if (!line || /^SKIP\b/i.test(line)) return null
     if (Date.now() < this.heldUntil) return null
     this.lastLine = { taskId, agentId: s.agentId, at: Date.now() }
-    void this.opts.speech.say({ voice: voice.voice, text: line })
+    void this.opts.speech.say({ voice: voice.voice, text: line, agentId: s.agentId, kind: "narration" })
     return line
   }
 

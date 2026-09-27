@@ -7,14 +7,16 @@
 //                     either agent may live on a mesh peer
 //   GET  /talk        the active talk (or {active: false})
 //   POST /voice/hush  the door (Option-Space): whatever is speaking stops —
-//                     a talk, a lesson, narration, a spoken-answer bubble,
-//                     AgentX Voice's own line — and queued lines are dropped.
-//                     Returns what was speaking: {active, kind, agentId}.
+//                     a talk, a lesson, narration, a spoken answer — and the
+//                     speaking queue holds: its cut line plays again after
+//                     the listener's turn. Returns what was speaking:
+//                     {active, kind, agentId}; kind "queue" for a queued line.
 //   POST /voice/stop  the same silence, for a hotkey, menu, Siri or a
-//                     Shortcut; nothing is kept waiting for the door.
-//   POST /voice/door  {text}  the listener spoke: a talk or lesson answers
-//                     it first; "stop" ends it, or silences the narrated
-//                     task. 409 when nothing takes the words (ask instead).
+//                     Shortcut; the queue is emptied, nothing waits.
+//   POST /voice/door  {text}  the listener spoke and the queue resumes: a
+//                     talk or lesson answers it first; "stop" ends it,
+//                     silences the narrated task, and empties the queue.
+//                     409 when nothing takes the words (ask instead).
 //   /talk/hush and /talk/door are the same routes, kept for older clients.
 //   POST /talk/stop
 //   POST /teach/live  {agent, goal, mode?: teach | watch | act, app?}  a live
@@ -27,7 +29,8 @@
 import type { DaemonConfig } from "@/daemon/config"
 import { Talk, isStop, type TalkSpeaker } from "@/voice/talk"
 import { Narrator } from "@/voice/narrator"
-import { SpeechOut, stopAllSpeakers } from "@/voice/speaker"
+import { stopAllSpeakers } from "@/voice/speaker"
+import { SpeechOut, type QueueView } from "@/voice/speaking-queue"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
 import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
@@ -51,6 +54,8 @@ export interface VoiceTalkDeps {
   voiceSettings?: () => VoiceSettings
   /** Silence every speaker on the host, not only this daemon's. */
   stopSpeakers?: () => void
+  /** Told of every change to the speaking queue. */
+  onQueue?: (view: QueueView) => void
 }
 
 type VoiceSession = Talk | LiveTeach
@@ -65,6 +70,8 @@ export class VoiceTalkService {
   /** The lesson the last hush ended, until the listener speaks: a bare
    *  "stop" is then already done, anything else goes to the agent. */
   private ended: LiveTeach | null = null
+  /** The last hush held queued lines: a bare "stop" then drops them. */
+  private heldQueue = false
   private model: (system: string) => LineModel
   private remote: NonNullable<VoiceTalkDeps["remote"]>
   private settings: () => VoiceSettings
@@ -77,6 +84,7 @@ export class VoiceTalkService {
     deps: VoiceTalkDeps = {},
   ) {
     this.speech = deps.speech ?? new SpeechOut()
+    if (deps.onQueue) this.speech.events.onChange = deps.onQueue
     this.model = deps.model ?? ((system) => createLineModel({ system }))
     this.remote = deps.remote ?? (() => undefined)
     this.stopSpeakers = deps.stopSpeakers ?? (() => stopAllSpeakers())
@@ -118,8 +126,10 @@ export class VoiceTalkService {
         const talk = this.live
         const reply = this.hush()
         talk?.stop("stopped")
+        this.speech.stop()
         this.hushed = null
         this.ended = null
+        this.heldQueue = false
         return reply
       }
       case "POST /talk/door":
@@ -150,7 +160,8 @@ export class VoiceTalkService {
   /** The door opens: everything this daemon is saying stops at once. A
    *  lesson ends here, so the words that follow reach the agent: it holds
    *  the screen, and a listener who interrupts it wants it gone, not a
-   *  lesson that answers back. A talk between agents only pauses. */
+   *  lesson that answers back. A talk between agents only pauses, and so
+   *  does the speaking queue. */
   hush(): Reply {
     const live = this.live
     this.ended = null
@@ -158,13 +169,16 @@ export class VoiceTalkService {
       live.stop("stopped by the listener")
       this.ended = live
     } else live?.hush()
-    this.speech.stop()
+    const queued = this.speech.view()
+    const line = queued.playing ?? queued.waiting[0] ?? null
+    this.speech.pause()
+    this.heldQueue = !!line
     this.stopSpeakers()
     this.presence.quiet()
     const narrated = this.narrator.hush()
     this.hushed = live ? null : narrated
-    const kind = live ? this.kind(live) : narrated ? "narration" : null
-    const agentId = live ? this.agentOf(live) : narrated?.agentId ?? null
+    const kind = live ? this.kind(live) : narrated ? "narration" : line ? "queue" : null
+    const agentId = live ? this.agentOf(live) : narrated?.agentId ?? line?.agentId ?? null
     this.log(`[door] hush → ${kind ? `${kind}${agentId ? ` (${agentId})` : ""}` : "nothing was speaking"}`)
     return { status: 200, body: { active: !!live && live.state !== "ended", kind, agentId } }
   }
@@ -174,11 +188,16 @@ export class VoiceTalkService {
     const live = this.live
     const narrated = this.hushed
     const ended = this.ended
+    const heldQueue = this.heldQueue
     this.hushed = null
     this.ended = null
+    this.heldQueue = false
     this.narrator.release()
+    const stop = isStop(text)
+    if (stop) this.speech.stop()
+    else this.speech.resume()
     const quote = `"${text.slice(0, 80)}"`
-    if (ended && isStop(text)) {
+    if (ended && stop) {
       this.log(`[door] ${quote} → lesson (${ended.agentId}) already ended`)
       return { status: 200, body: { active: false, kind: "lesson", handled: true } }
     }
@@ -187,10 +206,14 @@ export class VoiceTalkService {
       this.log(`[door] ${quote} → ${this.kind(live)}${live.state === "ended" ? " (ended)" : ""}`)
       return { status: 200, body: { active: live.state !== "ended", kind: this.kind(live), handled: true } }
     }
-    if (narrated && isStop(text)) {
+    if (narrated && stop) {
       this.narrator.set({ taskId: narrated.taskId }, false)
       this.log(`[door] ${quote} → narration of ${narrated.taskId} off`)
       return { status: 200, body: { active: false, kind: "narration", handled: true } }
+    }
+    if (heldQueue && stop) {
+      this.log(`[door] ${quote} → speaking queue emptied`)
+      return { status: 200, body: { active: false, kind: "queue", handled: true } }
     }
     this.log(`[door] ${quote} → nothing to take it; the client asks the agent`)
     return { status: 409, body: { active: false, handled: false, error: "No talk or lesson is running" } }

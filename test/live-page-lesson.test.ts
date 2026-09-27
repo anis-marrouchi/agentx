@@ -21,7 +21,7 @@ class Lines implements LineModel {
 describe("the Live page and lessons", () => {
   it("GET /talk names the lesson's agent, mode and goal", async () => {
     const svc = new VoiceTalkService(() => agents, new VoiceIntroTracker(), () => {}, {
-      speech: { get busy() { return false }, say: async () => true, stop: () => {} } as any,
+      speech: { get busy() { return false }, say: async () => true, view: () => ({ paused: false, playing: null, waiting: [], recent: [] }), pause: () => {}, resume: () => {}, cancel: () => {}, events: {}, stop: () => {} } as any,
       model: () => new Lines(), stopSpeakers: () => {},
       presence: {
         overlay: () => ({ moveTo: () => {}, clear: () => {}, park: () => {}, ping: () => {}, say: () => {}, close: () => {} }),

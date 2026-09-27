@@ -31,7 +31,12 @@ function setup(model: () => LineModel = () => new Lines("Hi there.")) {
   const speech = {
     get busy() { return false },
     say: async (u: { text: string }) => { said.push(u.text); await new Promise((r) => setTimeout(r, 20)); return true },
+    view: () => ({ paused: false, playing: null, waiting: [], recent: [] }),
+    pause: () => log.push("speech pause"),
+    resume: () => log.push("speech resume"),
+    cancel: (kind: string) => log.push(`speech cancel ${kind}`),
     stop: () => log.push("speech stop"),
+    events: {},
   } as any
   const overlay = (look: any): Presence => ({
     moveTo: () => {}, clear: () => {}, park: () => {}, ping: () => {},
@@ -68,7 +73,8 @@ describe("the door", () => {
     svc.startLesson("secretary-agent", "open the merge request", "teach")
     await new Promise((r) => setTimeout(r, 30))
     expect(hush(svc).body).toEqual({ active: false, kind: "lesson", agentId: "secretary-agent" })
-    expect(log).toContain("speech stop")
+    expect(log).toContain("speech cancel lesson")
+    expect(log).toContain("speech pause")
     expect(log).toContain("[door] hush → lesson (secretary-agent)")
     expect(log).toContain("Secretary close")
     expect(svc.live).toBeNull()
@@ -161,7 +167,7 @@ describe("the door and narration", () => {
   it("hush silences every speaker on the host, AgentX Voice's lines included", () => {
     const { svc, log } = setup()
     hush(svc)
-    expect(log).toContain("speech stop")
+    expect(log).toContain("speech pause")
     expect(log).toContain("stop speakers")
   })
 

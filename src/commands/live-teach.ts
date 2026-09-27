@@ -8,7 +8,7 @@ import { HELPER } from "@/computer-use/screen"
 import { LiveTeach, teachSystemPrompt, type TeachEvent, type TeachMode } from "@/voice/live-teach"
 import { helperAct, readScreenView } from "@/voice/live-teach-screen"
 import { PresenceOverlay, presenceLook } from "@/voice/presence"
-import { SpeechOut } from "@/voice/speaker"
+import { SpeechOut } from "@/voice/speaking-queue"
 import { createLineModel } from "@/voice/talk-model"
 import { DEFAULT_LISTENER } from "@/voice/talk"
 

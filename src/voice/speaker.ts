@@ -3,18 +3,18 @@
 // With the system provider (the default) a line is spoken by `say` in the
 // agent's macOS voice and nothing leaves the machine. With ElevenLabs, each
 // line is sent the moment it is known, so its audio is usually ready
-// before the line ahead of it finishes playing; lines still play strictly
-// in order. `stop()` silences everything at once: the line
-// playing is killed and queued ones are dropped. Talk mode and task
-// narration share one SpeechOut, so two voices never talk over each other.
+// before the line ahead of it finishes playing. The queue that orders the
+// lines is SpeechOut (speaking-queue.ts): every voice on the daemon shares
+// one, so two voices never talk over each other.
 
 import { spawn, type ChildProcess } from "child_process"
-import { readFileSync, writeFileSync, unlinkSync } from "fs"
+import { readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { warnOnce } from "./system-voices"
 import { ensureSiriSay, isSiriVoice, siriSupported, type SiriHost } from "./siri"
 import { detectLanguage } from "./language"
+import type { SpeechKind } from "./speaking-queue"
 
 /** Which engine speaks a line, and in which voice. */
 export interface VoiceRef {
@@ -34,6 +34,9 @@ export interface Utterance {
   text: string
   /** Called when this line starts playing. */
   onStart?: () => void
+  /** Who says it and why; shown in the speaking queue. */
+  agentId?: string
+  kind?: SpeechKind
 }
 
 /** Audio for a line: an mp3 file, or null to speak it with the system voice. */
@@ -149,86 +152,8 @@ export const systemPlay: Play = (file, u) => {
     p.stdin?.end(u.text)
     return p
   }
-  const p = process.platform === "darwin"
+  // The file is the queue's to delete: a paused line plays it again.
+  return process.platform === "darwin"
     ? spawn("afplay", [file], { stdio: "ignore" })
     : spawn("mpg123", ["-q", file], { stdio: "ignore" })
-  p.on("exit", () => { try { unlinkSync(file) } catch { /* already gone */ } })
-  return p
-}
-
-export class SpeechOut {
-  private tail: Promise<unknown> = Promise.resolve()
-  /** Bumped by stop(): lines queued under an older generation are dropped. */
-  private gen = 0
-  private aborter = new AbortController()
-  private playing: ChildProcess | null = null
-  private pending = 0
-
-  constructor(
-    private synth: Synth = elevenLabsSynth(),
-    private play: Play = systemPlay,
-    public events: SpeechEvents = {},
-    private limitMs: (text: string) => number = speakLimitMs,
-  ) {}
-
-  /** True while anything is playing or waiting to play. */
-  get busy(): boolean { return this.pending > 0 }
-
-  /** Queue a line. Resolves true once it has played in full, false if it
-   *  was stopped or failed. */
-  say(u: Utterance): Promise<boolean> {
-    const gen = this.gen
-    const signal = this.aborter.signal
-    // Start synthesis now; the catch keeps an early failure from being
-    // reported as unhandled before this line's turn comes.
-    const audio = this.synth(u, signal).then((f) => ({ f }), (e) => ({ e }))
-    this.pending++
-    const done = this.tail.then(async () => {
-      try {
-        const got = await audio
-        if (gen !== this.gen) return false
-        if ("e" in got) throw got.e
-        return await this.playOne(got.f, u, gen)
-      } catch {
-        return false
-      } finally {
-        this.pending--
-      }
-    })
-    this.tail = done
-    return done
-  }
-
-  /** Silence now: kill what is playing and drop everything queued. */
-  stop(): void {
-    this.gen++
-    this.aborter.abort()
-    this.aborter = new AbortController()
-    this.playing?.kill()
-  }
-
-  private playOne(file: string | null, u: Utterance, gen: number): Promise<boolean> {
-    if (gen !== this.gen) return Promise.resolve(false)
-    return new Promise((resolve) => {
-      const p = this.play(file, u)
-      this.playing = p
-      this.events.onStart?.(u, Date.now())
-      u.onStart?.()
-      let ended = false
-      // A player that never exits (a hung `say`) must not hold every
-      // later line: past its bound it is killed and the line fails.
-      const watchdog = setTimeout(() => { if (!ended) p.kill() }, this.limitMs(u.text))
-      const finish = (completed: boolean) => {
-        if (ended) return
-        ended = true
-        clearTimeout(watchdog)
-        if (this.playing === p) this.playing = null
-        this.events.onEnd?.(u, Date.now(), completed)
-        resolve(completed)
-      }
-      // A player that cannot start (not installed) may never emit close.
-      p.on("error", () => finish(false))
-      p.on("close", (code) => finish(code === 0 && gen === this.gen))
-    })
-  }
 }

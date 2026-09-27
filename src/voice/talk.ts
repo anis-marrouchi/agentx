@@ -13,7 +13,8 @@
 
 import { SentenceCutter, speakable } from "./sentences"
 import type { LineModel } from "./talk-model"
-import type { SpeechOut, VoiceRef } from "./speaker"
+import type { VoiceRef } from "./speaker"
+import type { SpeechOut } from "./speaking-queue"
 
 export interface TalkSpeaker {
   agentId: string
@@ -198,7 +199,7 @@ export class Talk {
       const text = speakable(raw.replace(DONE, ""))
       if (!text || signal.aborted) return
       const firstLine = !t.plays.length
-      const p = this.opts.speech.say({ voice: sp.voice, text, onStart: firstLine ? () => this.turnStarted(t, startedResolve) : undefined })
+      const p = this.opts.speech.say({ voice: sp.voice, text, agentId: sp.agentId, kind: "talk", onStart: firstLine ? () => this.turnStarted(t, startedResolve) : undefined })
       // Lines play strictly in order, so the last one to finish marks where
       // the next speaker's gap starts.
       t.plays.push(p.then((ok) => { if (ok) { t.heard.push(text); this.lastEndAt = Date.now() } return ok }))
@@ -272,7 +273,8 @@ export class Talk {
 
   /** Stop speech and cancel the reply being written. */
   private silence(): void {
-    this.opts.speech.stop()
+    // Only the talk's own lines: other agents' answers keep their place.
+    this.opts.speech.cancel("talk")
     this.ac.abort()
     this.ac = new AbortController()
   }
