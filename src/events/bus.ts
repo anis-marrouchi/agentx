@@ -184,6 +184,11 @@ export interface AgentXEvents {
 }
 
 type EventName = keyof AgentXEvents
+
+/** How many peer event keys ingest() remembers for dedup. Far above the
+ *  catch-up read size (see peer-feed.ts), so a repeat read of a peer's
+ *  buffer after a reconnect is still recognised. */
+const SEEN_MAX = 20_000
 type Listener<E extends EventName> = (payload: AgentXEvents[E]) => void
 
 /** Input to publish(). id, at, node and rootId are filled in when absent;
@@ -214,6 +219,10 @@ export class TypedEventBus {
   private envelopeListeners = new Set<EnvelopeListener>()
   private ring = new EventRing()
   private node = "local"
+  /** Envelopes taken in from mesh peers, keyed `${node}:${id}`, so the
+   *  live stream and a catch-up read never deliver one event twice. Map
+   *  insertion order makes the oldest key the first to drop. */
+  private seen = new Map<string, true>()
 
   constructor() {
     // Default listener cap is 10 — easy to hit when several subsystems
@@ -269,6 +278,52 @@ export class TypedEventBus {
     return envelope
   }
 
+  /** Name this bus publishes under. An envelope whose `node` differs came
+   *  from a mesh peer (see ingest). */
+  get nodeName(): string {
+    return this.node
+  }
+
+  /** True for envelopes this node published itself. */
+  isLocal(e: EventEnvelope): boolean {
+    return e.node === this.node
+  }
+
+  /** Take in an envelope published on a mesh peer. It keeps its id, node
+   *  and root, lands in the ring and reaches `subscribe` listeners, but
+   *  never the typed `on` listeners: the peer records its own traces.
+   *  Returns false for an event already taken in, or one that claims to
+   *  come from this node (an echo). */
+  ingest(input: EventEnvelope): boolean {
+    if (!input.node || input.node === this.node) return false
+    const key = `${input.node}:${input.id}`
+    if (this.seen.has(key)) return false
+    this.seen.set(key, true)
+    if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.keys().next().value as string)
+    const envelope: EventEnvelope = {
+      id: input.id,
+      rootId: input.rootId || input.id,
+      node: input.node,
+      kind: input.kind,
+      type: input.type,
+      at: input.at,
+      summary: capSummary(input.summary ?? ""),
+    }
+    if (input.parentId) envelope.parentId = input.parentId
+    if (input.agentId) envelope.agentId = input.agentId
+    if (input.ref) envelope.ref = input.ref
+    this.ring.push(envelope)
+    for (const fn of this.envelopeListeners) {
+      try { fn(envelope) } catch { /* a bad listener must not break peers */ }
+    }
+    return true
+  }
+
+  /** Whether an event id is still in this node's ring buffer. */
+  hasRecent(id: string): boolean {
+    return this.ring.has(id)
+  }
+
   /** Receive every envelope. Returns an unsubscribe function. */
   subscribe(fn: EnvelopeListener): () => void {
     this.envelopeListeners.add(fn)
@@ -288,6 +343,7 @@ export class TypedEventBus {
     this.inner.removeAllListeners()
     this.envelopeListeners.clear()
     this.ring.clear()
+    this.seen.clear()
     return this
   }
 }
