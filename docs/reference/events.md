@@ -50,7 +50,7 @@ The answer is `{ "events": [ … ] }`, oldest first. The buffer holds the last `
 
 ## Events for one agent
 
-An agent can follow events through its `subscriptions` setting: it reads them with the `agentx_events` tool, gets a short list when it starts a fresh conversation, or is started by them. See [Let agents follow events](/automations/event-subscriptions). The same list is served at `GET /agents/<id>/events?since=&limit=`. It returns `{ "agentId", "subscriptions", "events": [ … ], "next" }`, at most 50 events, and off this machine it needs the mesh token too.
+An agent can follow events through its `subscriptions` setting: it reads them with the `agentx_events` tool, gets a short list when it starts a fresh conversation, or is started by them. See [Let agents follow events](/automations/event-subscriptions). The same list is served at `GET /agents/<id>/events?since=&limit=`. It returns `{ "agentId", "subscriptions", "events": [ … ], "next" }`, at most 50 events, oldest first. Without `since` you get the newest events; with `since` you get the oldest ones after it, so passing `next` back as `since` reads every event once. Off this machine it needs the mesh token too.
 
 ## Live stream
 

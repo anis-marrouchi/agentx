@@ -21,7 +21,8 @@ A woken agent is protected against loops and floods:
 - An agent is never woken by its own events.
 - An agent is never woken by an event that came out of its own work. Events share a `rootId` with the message, schedule or webhook that started them. When an agent has worked on a `rootId`, later events with that `rootId` don't wake it.
 - One `rootId` wakes an agent at most once.
-- An agent is woken at most `maxPerHour` times in any hour. Further events are skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
+- Each `wake` subscription wakes the agent at most its own `maxPerHour` times in any hour. When every matching subscription has used up its hour, the event is skipped, and the daemon log says `wake skipped for <agent>: rate-limit`.
+- A second wake that arrives while the agent is still busy with the first waits for it to finish, then runs as its own task. Wakes are never merged into one task.
 
 ## The settings
 
@@ -34,7 +35,7 @@ Subscriptions go in `agentx.json`, under `agents.<id>.subscriptions`. It is a li
 | `nodes` | list of text | — | Only events from these machines (their `node.name`). |
 | `match` | text | — | Only events whose summary contains this text. Upper and lower case count as the same. |
 | `delivery` | `"pull"` \| `"digest"` \| `"wake"` | `"pull"` | How the agent hears about a match (see the table above). |
-| `maxPerHour` | number (1–60) | `4` | For `wake` only: the most times the agent is woken in an hour. |
+| `maxPerHour` | number (1–60) | `4` | For `wake` only: the most times this subscription wakes the agent in an hour. Each subscription counts its own wakes. |
 
 An agent does not see its own events unless it lists its own id in `agents`.
 
@@ -67,14 +68,21 @@ To wake the agent instead, set `"delivery": "wake"` and, if you like, a lower `m
 
 A woken task runs on the `events` channel, in a conversation of its own (`events:<agent-id>`). Its answer stays in that conversation and is not sent anywhere. Ask the agent in its instructions to message someone when an event needs attention.
 
+The loop protection has limits. The daemon remembers which `rootId` values an agent worked on for 24 hours, and at most 2,000 per agent. It only remembers them for agents that had a `wake` subscription when the event happened, and it forgets them when the daemon restarts. Outside those limits, `maxPerHour` is the only thing that stops a loop, so keep it low.
+
 ## Read events yourself
 
 1. **Terminal:** run `agentx events --agent helper`. You see the events that match `helper`'s subscriptions, oldest first, with each event's ID.
 2. **Terminal:** to see only newer ones, copy the command printed on the last line, for example `agentx events --agent helper --since <event-id>`, and run it.
+3. **Terminal:** run the command printed on the last line again until it says `no events`. With `--since`, each run shows the oldest events after that ID, so you see every event once, in order.
 
 Without `--agent`, `agentx events` lists the recent events of the whole machine. All flags are in the [CLI reference](/reference/cli-commands#events-advanced).
 
-The agent reads the same list with the `agentx_events` tool. Each answer ends with `next: <event-id>`, which the agent passes back as `since` to read only newer events.
+Without `--since`, you get the newest events only.
+
+The agent reads the same list with the `agentx_events` tool. Each answer ends with `next: <event-id>`, which the agent passes back as `since` to read the next events.
+
+Anyone on the daemon's own machine can read any agent's list, just as they can read `/events/recent`. The lists hold short summaries only, never messages or answers. From another machine, a mesh token is needed.
 
 ## Check it worked
 
@@ -89,4 +97,6 @@ The agent reads the same list with the `agentx_events` tool. Each answer ends wi
 - **`config check` names a field under `subscriptions`:** a value is wrong, for example an unknown `delivery` or an empty `kinds` list. Compare it with the settings table above.
 - **The agent isn't woken:** look in `agentx daemon logs` for `wake skipped for <agent>`. The reason follows: `rate-limit` (raise `maxPerHour` or wait), `own-root` (the event came from the agent's own work) or `duplicate-root` (it was already woken for that `rootId`).
 - **A fresh conversation shows no digest:** only events since the agent's last finished task are listed, and only for `digest` subscriptions. A continued conversation never gets one. The agent can call `agentx_events` instead.
+- **The same events show up in the digest again:** the digest counts from the agent's last task that returned an answer or an error. A task that was cancelled, timed out or was cut off by a restart does not count, so the events after it are listed again in the next fresh conversation.
+- **`agentx_events` answers `Unauthorized: mesh token required`:** the tool reached the daemon through an address other than this machine's own. It uses `AGENTX_DAEMON_URL` when set, and otherwise the address in `node.bind`. The tool does not send the mesh token, so it only works on the same machine. Set `AGENTX_DAEMON_URL` to `http://127.0.0.1:<port>` for the agent, or use a `node.bind` of the form `0.0.0.0:<port>`.
 - **`agentx events` returns `401`:** the command reached a daemon on another machine. Pass `--token <mesh-token>`.
