@@ -85,7 +85,7 @@ Build, install, and start voice and computer-use helpers at login.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--agent <id>` | — | Agent to use (defaults to the first configured agent). |
+| `--agent <id>` | — | Pin this agent; without it, pick the agent from the menu-bar icon. |
 | `--dry-run` | — | Show the installation plan without building or changing login items. |
 
 ### `agentx desktop start`
