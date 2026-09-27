@@ -53,6 +53,8 @@ export function isControlPost(path: string): boolean {
     path === "/send" || path === "/send/agent" || path === "/send/contact" ||
     // A note to the whole mesh, published in this node's name.
     path === "/mesh/announce" ||
+    // AgentX Voice's settings window: rewrites agentx.json, and speaks.
+    path === "/voice/settings" || path === "/voice/preview" ||
     /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path)
 }

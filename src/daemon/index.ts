@@ -106,6 +106,8 @@ import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { addressedAgent } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
+import { previewLine, saveVoiceSettings, voiceSettingsView } from "@/daemon/voice-settings-api"
+import { listSystemVoices } from "@/voice/system-voices"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
@@ -4924,6 +4926,44 @@ export class AgentXDaemon {
           const target = String(body.target ?? "")
           const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name, mentions: a.mentions }))
           this.json(res, 200, { agentId: addressedAgent(String(body.text ?? ""), agents, target) })
+          break
+        }
+
+        // The AgentX Voice settings window. agentx.json is the only copy:
+        // a save is checked, written in place, then reloaded here so the
+        // next spoken line already uses it.
+        case "GET /voice/settings": {
+          this.json(res, 200, voiceSettingsView(this.config, listSystemVoices()))
+          break
+        }
+
+        case "POST /voice/settings": {
+          const body = await readBody(req)
+          const saved = await saveVoiceSettings(body as never, this.config, this.configPath)
+          if (!saved.ok) {
+            this.json(res, saved.status, { error: saved.error, errors: saved.errors })
+            break
+          }
+          const reloaded = await this.reload()
+          this.json(res, 200, {
+            ok: true,
+            applied: reloaded.applied,
+            restartRequired: reloaded.restartRequired,
+            settings: voiceSettingsView(this.config, listSystemVoices()),
+          })
+          break
+        }
+
+        // Say a sample line with unsaved voice changes, next in the queue.
+        case "POST /voice/preview": {
+          const body = await readBody(req)
+          const line = previewLine(body as never, this.config, listSystemVoices())
+          if ("error" in line) {
+            this.json(res, 400, { error: line.error })
+            break
+          }
+          const { item } = this.voiceTalk.speech.enqueue({ ...line, kind: "line" }, true)
+          this.json(res, 202, { item })
           break
         }
 
