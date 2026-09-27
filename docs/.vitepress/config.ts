@@ -12,7 +12,7 @@ const groups = [
     { text: "Live", link: "/dashboard/live" }, { text: "Operations", link: "/dashboard/operations" },
     { text: "Activity", link: "/dashboard/activity" }, { text: "Workflows", link: "/dashboard/workflows" },
     { text: "Settings", link: "/dashboard/settings" },
-    { text: "In-page chat", link: "/dashboard/chat" }, { text: "Desktop assistant", link: "/dashboard/voice" }, { text: "Phone app", link: "/dashboard/mobile-app" },
+    { text: "In-page chat", link: "/dashboard/chat" }, { text: "Desktop assistant", link: "/dashboard/voice" }, { text: "Phone app", link: "/dashboard/mobile-app" }, { text: "Phone app: Fleet and Activity", link: "/dashboard/mobile-fleet" },
     { text: "Terminal UI (OpenCode)", link: "/dashboard/tui" },
   ] },
   { text: "Automations", items: [
