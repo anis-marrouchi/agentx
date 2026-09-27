@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.51.0](https://github.com/anis-marrouchi/agentx/compare/v0.50.1...v0.51.0) (2026-09-27)
+
+
+### Features
+
+* **events:** one bus with a bounded envelope and root ids ([#175](https://github.com/anis-marrouchi/agentx/issues/175)) ([fa2242b](https://github.com/anis-marrouchi/agentx/commit/fa2242bb59255428736b5dec56efc683ef95c550))
+* **voice:** menu-bar icon with agent switcher ([#162](https://github.com/anis-marrouchi/agentx/issues/162)) ([6babcd6](https://github.com/anis-marrouchi/agentx/commit/6babcd6062abe8641d6062ae017dcfda29d104aa))
+* **voice:** one speaking queue for everything the daemon says ([#168](https://github.com/anis-marrouchi/agentx/issues/168)) ([9c63e0a](https://github.com/anis-marrouchi/agentx/commit/9c63e0aa621eac0b4100df0d25c6035eba13da83))
+
+
+### Bug Fixes
+
+* **daemon:** require a mesh token for off-box control routes ([#176](https://github.com/anis-marrouchi/agentx/issues/176)) ([d641060](https://github.com/anis-marrouchi/agentx/commit/d641060a20a70f3428d9a68e2661a38ce725e077))
+* **github:** decode form-encoded webhook bodies with URLSearchParams ([#177](https://github.com/anis-marrouchi/agentx/issues/177)) ([6e6f516](https://github.com/anis-marrouchi/agentx/commit/6e6f5163e97a7ac4d26c4d00f3aae55fd1bc2db7))
+* **github:** skip only an agent's own signed comments ([#180](https://github.com/anis-marrouchi/agentx/issues/180)) ([7aabf21](https://github.com/anis-marrouchi/agentx/commit/7aabf2140423cb7189d14d9dc69a748fc8013359))
+
 ## [0.50.1](https://github.com/anis-marrouchi/agentx/compare/v0.50.0...v0.50.1) (2026-09-27)
 
 
