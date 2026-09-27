@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ownEchoOf } from "../src/channels/github"
-import { markBody } from "../src/channels/outbound-marker"
+import { markBody, ownEchoOf } from "../src/channels/outbound-marker"
 
 describe("ownEchoOf", () => {
   it("treats an agent's own signed comment as an echo", () => {

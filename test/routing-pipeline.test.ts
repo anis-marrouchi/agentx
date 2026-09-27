@@ -168,6 +168,46 @@ describe("routing pipeline — invariants", () => {
     expect(r.reason).toContain("agentx-marker")
   })
 
+  it("github: another agent's signed review reaches the resolved handler", () => {
+    const r = run(
+      makeIncoming({
+        channel: "github",
+        accountId: "default",
+        text: "Verdict: two changes needed.\n\n<!-- agentx:devops-agent -->",
+        resolvedAgent: "coder-agent",
+      }),
+    )
+    expect(r.kind).toBe("match")
+    expect(r.agentId).toBe("coder-agent")
+    expect(r.decidingStage).toBe("adapter-resolved")
+  })
+
+  it("github: the resolved handler's own signed comment drops", () => {
+    const r = run(
+      makeIncoming({
+        channel: "github",
+        accountId: "default",
+        text: "Done with the fix.\n\n<!-- agentx:coder-agent -->",
+        resolvedAgent: "coder-agent",
+      }),
+    )
+    expect(r.kind).toBe("drop")
+    expect(r.decidingStage).toBe("self-reply-guard")
+    expect(r.reason).toContain("agentx-marker (agent=coder-agent)")
+  })
+
+  it("github: a signed comment with no resolved handler drops", () => {
+    const r = run(
+      makeIncoming({
+        channel: "github",
+        accountId: "default",
+        text: "Hi\n\n<!-- agentx:devops-agent -->",
+      }),
+    )
+    expect(r.kind).toBe("drop")
+    expect(r.decidingStage).toBe("self-reply-guard")
+  })
+
   it("handover override beats every other rule", () => {
     const handover = new HandoverStore({ baseDir: "/tmp/handover-test-" + Date.now() })
     handover.set({

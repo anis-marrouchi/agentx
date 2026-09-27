@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { markBody, detectAgentxMarker } from "./outbound-marker"
+import { markBody, ownEchoOf } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -175,15 +175,6 @@ export function parseWebhookBody(body: string, contentType: string): Record<stri
   } catch {
     return {}
   }
-}
-
-/** The signing agent when a comment is `handler`'s own reply echoed back
- *  by the webhook, else null. Without a resolved handler every signed
- *  comment counts as an echo, as before. */
-export function ownEchoOf(body: string, handler: string | undefined): string | null {
-  const source = detectAgentxMarker(body)
-  if (!source) return null
-  return !handler || source === handler ? source : null
 }
 
 export class GitHubAdapter implements ChannelAdapter {
