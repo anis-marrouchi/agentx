@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.50.1](https://github.com/anis-marrouchi/agentx/compare/v0.50.0...v0.50.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **board:** list columns without crashing, show tab leads as plain text ([#150](https://github.com/anis-marrouchi/agentx/issues/150)) ([9b66125](https://github.com/anis-marrouchi/agentx/commit/9b661251d2171e2759c962e1e3b195523cd36289))
+
 ## [0.50.0](https://github.com/anis-marrouchi/agentx/compare/v0.49.0...v0.50.0) (2026-09-26)
 
 
