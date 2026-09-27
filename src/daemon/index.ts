@@ -39,6 +39,7 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
+import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
@@ -545,10 +546,10 @@ export class AgentXDaemon {
     // ever takes a message back out of it.
     attachFocusWatcher(
       async ({ title, message, priority, channel, chatId }) => {
-        // Each held digest goes back where it was addressed; older entries
-        // carry no address and use the configured notify channel.
+        // Each held digest goes back where it was addressed (byDestination
+        // gives entries from before addresses were stored ntfy).
         await this.router.sendOutbound({
-          channel: channel ?? this.config.notifications.channel,
+          channel: channel ?? defaultNotifyChannel(this.config),
           chatId: chatId ?? "default",
           text: message,
           title,
@@ -5647,12 +5648,6 @@ export class AgentXDaemon {
     }
   }
 
-  /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
-   *  this when the channel lives on this node (e.g. peer-server hosts
-   *  whatsapp; macbook's workflow forwards here). Just unwraps to the local
-   *  router's outbound path so all the same per-account/per-bot resolution
-   *  applies. Authentication is currently the mesh token at the network
-   *  edge — the endpoint trusts callers that reach it. */
   /** Forwards a push to the mesh peer hosting the phone app (its
    *  /channel/send), for PushRelayAdapter. */
   private async relayPush(peerName: string, payload: unknown): Promise<string | void> {
@@ -5670,6 +5665,12 @@ export class AgentXDaemon {
     return body.messageId ?? undefined
   }
 
+  /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
+   *  this when the channel lives on this node (e.g. peer-server hosts
+   *  whatsapp; macbook's workflow forwards here). Just unwraps to the local
+   *  router's outbound path so all the same per-account/per-bot resolution
+   *  applies. Authentication is currently the mesh token at the network
+   *  edge — the endpoint trusts callers that reach it. */
   private async handleChannelSend(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let body: any
     try { body = await readJsonBody(req) } catch (e: any) {

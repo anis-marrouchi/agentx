@@ -484,7 +484,7 @@ const channelsConfigSchema = z.object({
   push: z.object({
     enabled: z.boolean().default(false),
     /** VAPID key pair written by `agentx app push-keys`. Relative paths
-     *  resolve from the folder holding agentx.json. */
+     *  resolve from the folder AgentX runs in (the one holding agentx.json). */
     keysFile: z.string().default(".agentx/push-keys.json"),
     /** Contact for the push services: `mailto:you@example.com` or an
      *  https:// URL. Required on the hosting node. */
@@ -496,6 +496,13 @@ const channelsConfigSchema = z.object({
     ttlSeconds: z.number().int().min(0).max(2419200).default(86400),
     /** Recent pushes kept for the app's Alerts tab. */
     keepRecent: z.number().int().min(0).max(1000).default(50),
+    /** Push-service hosts a phone may subscribe with (a host or any
+     *  subdomain of it). The daemon POSTs to the stored address, so anything
+     *  else is refused. Defaults cover Chrome/Android, Firefox, Safari/iOS
+     *  and Edge. */
+    allowedHosts: z.array(z.string().min(1)).default([
+      "fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com",
+    ]),
   }).default({}),
   webrtc: z.object({
     enabled: z.boolean().default(false),
@@ -824,9 +831,10 @@ const notificationsSchema = z.object({
     chatId: z.string(),
     accountId: z.string().optional(),
   }).optional(),
-  /** Channel `agentx notify` and Focus digests use when none is given:
-   *  `push` (the phone app) by default, or e.g. `ntfy`. */
-  channel: z.string().default("push"),
+  /** Channel `agentx notify` and Focus digests use when none is given.
+   *  Unset: `push` (the phone app) when channels.push is enabled, else
+   *  `ntfy`, so upgrading never points notify at a channel that is off. */
+  channel: z.string().optional(),
   /** Notify on these events */
   on: z.object({
     taskComplete: z.boolean().default(true),

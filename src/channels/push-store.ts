@@ -20,6 +20,9 @@ export interface PushSubscriptionRow {
   /** Token id of the paired phone (TokenRecord.id). */
   deviceId: string
   deviceName: string
+  /** VAPID public key the browser subscribed with. After
+   *  `agentx app push-keys --force` older rows can never be delivered. */
+  publicKey: string
   createdAt: number
 }
 
@@ -31,25 +34,28 @@ export interface PushLogRow {
   url: string | null
   /** Phones the push service accepted it for. */
   delivered: number
+  /** Set when the push was addressed to one phone; null for every phone. */
+  deviceId: string | null
 }
 
 export class PushStore {
   constructor(private db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (
       endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL,
-      device_id TEXT NOT NULL, device_name TEXT NOT NULL, created_at INTEGER NOT NULL);
+      device_id TEXT NOT NULL, device_name TEXT NOT NULL, public_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS push_subscriptions_device ON push_subscriptions(device_id);
       CREATE TABLE IF NOT EXISTS push_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, title TEXT NOT NULL,
-      body TEXT NOT NULL, url TEXT, delivered INTEGER NOT NULL);`)
+      body TEXT NOT NULL, url TEXT, delivered INTEGER NOT NULL, device_id TEXT);`)
   }
 
   /** Adds or refreshes a subscription. A browser that re-subscribes keeps
    *  its endpoint, so the row is replaced, not duplicated. */
   subscribe(row: Omit<PushSubscriptionRow, "createdAt">, now = Date.now()): void {
     this.db.prepare(`INSERT OR REPLACE INTO push_subscriptions
-      (endpoint, p256dh, auth, device_id, device_name, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(row.endpoint, row.p256dh, row.auth, row.deviceId, row.deviceName, now)
+      (endpoint, p256dh, auth, device_id, device_name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.endpoint, row.p256dh, row.auth, row.deviceId, row.deviceName, row.publicKey, now)
   }
 
   /** Removes one subscription, only if it belongs to `deviceId` when given. */
@@ -66,19 +72,24 @@ export class PushStore {
       : this.db.prepare("SELECT * FROM push_subscriptions WHERE device_id = ? ORDER BY created_at").all(deviceId)) as any[]
     return rows.map((r) => ({
       endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth,
-      deviceId: r.device_id, deviceName: r.device_name, createdAt: r.created_at,
+      deviceId: r.device_id, deviceName: r.device_name, publicKey: r.public_key, createdAt: r.created_at,
     }))
   }
 
   /** Records a sent push and keeps only the newest `keep` rows. */
   log(entry: Omit<PushLogRow, "id" | "at">, keep: number, now = Date.now()): void {
-    this.db.prepare("INSERT INTO push_log (at, title, body, url, delivered) VALUES (?, ?, ?, ?, ?)")
-      .run(now, entry.title, entry.body, entry.url, entry.delivered)
+    this.db.prepare("INSERT INTO push_log (at, title, body, url, delivered, device_id) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(now, entry.title, entry.body, entry.url, entry.delivered, entry.deviceId)
     this.db.prepare("DELETE FROM push_log WHERE id NOT IN (SELECT id FROM push_log ORDER BY id DESC LIMIT ?)").run(Math.max(0, keep))
   }
 
-  recent(limit: number): PushLogRow[] {
-    return this.db.prepare("SELECT id, at, title, body, url, delivered FROM push_log ORDER BY id DESC LIMIT ?")
-      .all(Math.max(0, limit)) as PushLogRow[]
+  /** Newest first. With `deviceId`, only pushes sent to every phone or to
+   *  that one, so one phone never sees another's messages. */
+  recent(limit: number, deviceId?: string): PushLogRow[] {
+    const cols = "id, at, title, body, url, delivered, device_id AS deviceId"
+    return (deviceId === undefined
+      ? this.db.prepare(`SELECT ${cols} FROM push_log ORDER BY id DESC LIMIT ?`).all(Math.max(0, limit))
+      : this.db.prepare(`SELECT ${cols} FROM push_log WHERE device_id IS NULL OR device_id = ? ORDER BY id DESC LIMIT ?`)
+        .all(deviceId, Math.max(0, limit))) as PushLogRow[]
   }
 }

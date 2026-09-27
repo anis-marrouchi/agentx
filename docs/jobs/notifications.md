@@ -24,11 +24,11 @@ You can change every setting in two places. Both save to the same settings file,
 1. Install and pair the [phone app](../dashboard/mobile-app.md).
 2. Follow [Notifications on your phone](../dashboard/mobile-alerts.md): run `agentx app push-keys` and `agentx notifications push --subject mailto:you@example.com --enable` on the computer, restart AgentX, then tap **Turn on** in the app's **Alerts** tab.
 
-`agentx notify` sends to the phone app unless you choose another channel.
+Once phone app notifications are on, `agentx notify` sends to the phone app.
 
 ### With ntfy instead
 
-Use ntfy if you don't use the phone app. After setting it up, make it the default for `agentx notify` (step 11).
+Use ntfy if you don't use the phone app. `agentx notify` sends to ntfy when phone app notifications are off. If you turned both on, step 11 makes ntfy the default.
 
 A **topic** is the name of your private message box on ntfy. On the public `ntfy.sh` server, anyone who knows the topic name can read it, so treat the name like a password.
 
@@ -52,7 +52,7 @@ A **topic** is the name of your private message box on ntfy. On the public `ntfy
     agentx daemon stop && agentx daemon start --detach
     ```
 
-11. Make ntfy the default for `agentx notify`. In the terminal, run:
+11. Only if phone app notifications are also on: make ntfy the default for `agentx notify`. In the terminal, run:
 
     ```sh
     agentx notifications channel ntfy
@@ -68,7 +68,7 @@ Put its address in **Server** (for example `https://ntfy.example.com`). If your 
 ```sh
 agentx notifications ntfy --topic '${NTFY_TOPIC}' --enable
 agentx notifications ntfy --server https://ntfy.example.com --token '${NTFY_TOKEN}'   # own server only
-agentx notifications channel ntfy
+agentx notifications channel ntfy   # only if phone app notifications are also on
 agentx daemon stop && agentx daemon start --detach
 ```
 Keep the single quotes, so your shell does not replace `${…}` itself. `--token ""` removes a token, and `--disable` turns phone push off.
@@ -250,7 +250,7 @@ agentx notify --flush         # deliver what is held now
 ## Check it worked
 
 1. In the terminal, run `agentx notifications show`.
-2. Check that the `push` line says `on`, `subject set` and `keys set`. If you use ntfy instead, check that the `channel` line says `ntfy` and the `ntfy` line says `on` and `topic set`.
+2. Check the `channel` line: it names where `agentx notify` sends. For the phone app it says `push`, and the `push` line says `on`, `subject set` and `keys set`. For ntfy it says `ntfy`, and the `ntfy` line says `on` and `topic set`.
 3. Check that the `local.helper` line says **AgentX Helper posts banners with the AgentX icon.** If it says anything else, follow the `Fix:` line under it.
 4. Run `agentx notify "Hello" --title "Test"`.
 5. Check that your phone buzzes, and that a banner with the AgentX logo appears on the Mac with a sound.

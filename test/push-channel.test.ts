@@ -4,9 +4,9 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { PushStore } from "../src/channels/push-store"
-import { PushAdapter, PushRelayAdapter, buildPushPayload, DEFAULT_OPEN_URL, type PushSender } from "../src/channels/push"
+import { PushAdapter, PushRelayAdapter, buildPushPayload, DEFAULT_OPEN_URL, MAX_PAYLOAD_BYTES, type PushSender } from "../src/channels/push"
 import { readPushKeys, writePushKeys } from "../src/channels/push-keys"
-import { patchPush } from "../src/notify/push-settings"
+import { patchPush, defaultNotifyChannel } from "../src/notify/push-settings"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 let dir: string
@@ -20,7 +20,7 @@ afterEach(() => { closeDb(); rmSync(dir, { recursive: true, force: true }) })
 
 const MINIMAL = { node: { id: "n1", name: "Node" } }
 const KEYS = { publicKey: "pub", privateKey: "priv", createdAt: "2026-01-01T00:00:00Z" }
-const sub = (n: number, deviceId = "tok_a") => ({ endpoint: `https://push.example.com/${n}`, p256dh: "p256dh-key", auth: "auth-key", deviceId, deviceName: `Phone ${deviceId}` })
+const sub = (n: number, deviceId = "tok_a") => ({ endpoint: `https://push.example.com/${n}`, p256dh: "p256dh-key", auth: "auth-key", deviceId, deviceName: `Phone ${deviceId}`, publicKey: "pub" })
 
 function adapter(sender: PushSender, over: Partial<ConstructorParameters<typeof PushAdapter>[0]> = {}) {
   return new PushAdapter({
@@ -45,7 +45,18 @@ describe("buildPushPayload", () => {
     const p = buildPushPayload({ channel: "push", chatId: "default", text: "x".repeat(5000) })
     expect(p.title).toBe("AgentX")
     expect(p.url).toBe(DEFAULT_OPEN_URL)
-    expect(p.body.length).toBeLessThanOrEqual(1200)
+    expect(Buffer.byteLength(JSON.stringify(p))).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES)
+  })
+
+  it("stays under the byte limit with multi-byte text, long labels and long links", () => {
+    const p = buildPushPayload({
+      channel: "push", chatId: "default", text: "تنبيه\n" + "🚀漢字مرحبا".repeat(800),
+      buttons: [{ label: "L".repeat(300), url: "https://x.example.com/" + "a".repeat(2000) }, { label: "Ok", url: "https://ok.example.com" }],
+    })
+    expect(Buffer.byteLength(JSON.stringify(p))).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES)
+    expect(p.title).toBe("تنبيه")
+    expect(p.actions).toEqual([{ action: "b0", title: "Ok", url: "https://ok.example.com" }])
+    expect(p.body.endsWith("…")).toBe(true)
   })
 })
 
@@ -60,7 +71,7 @@ describe("PushAdapter", () => {
     expect(calls[0].opts).toEqual({ vapidDetails: { subject: "mailto:ops@example.com", publicKey: "pub", privateKey: "priv" }, TTL: 60 })
     expect(calls[0].s.keys).toEqual({ p256dh: "p256dh-key", auth: "auth-key" })
     expect(calls[0].payload.title).toBe("Hello")
-    expect(store.recent(10)).toMatchObject([{ title: "Hello", body: "World", delivered: 2 }])
+    expect(store.recent(10)).toMatchObject([{ title: "Hello", body: "World", delivered: 2, deviceId: null }])
   })
 
   it("addresses one phone by its device id", async () => {
@@ -68,6 +79,17 @@ describe("PushAdapter", () => {
     const hit: string[] = []
     await adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "tok_b", text: "hi" })
     expect(hit).toEqual(["https://push.example.com/2"])
+    // Logged for that phone only.
+    expect(store.recent(10, "tok_b")).toHaveLength(1)
+    expect(store.recent(10, "tok_a")).toHaveLength(0)
+  })
+
+  it("drops subscriptions made with replaced keys", async () => {
+    store.subscribe({ ...sub(1), publicKey: "old" }); store.subscribe(sub(2))
+    const hit: string[] = []
+    await adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "default", text: "x" })
+    expect(hit).toEqual(["https://push.example.com/2"])
+    expect(store.list().map((s) => s.endpoint)).toEqual(["https://push.example.com/2"])
   })
 
   it("drops subscriptions the push service reports gone (404/410), keeps others", async () => {
@@ -147,10 +169,15 @@ describe("push keys and settings", () => {
     expect(patchPush({ relayTo: "host", subject: "mailto:a@b.c" }, { relayTo: "" })).toEqual({ subject: "mailto:a@b.c" })
   })
 
-  it("config defaults: push off, notify goes to push", () => {
+  it("notify uses push only when it is on, unless a channel is set", () => {
     const cfg = daemonConfigSchema.parse(MINIMAL)
     expect(cfg.channels.push).toMatchObject({ enabled: false, keysFile: ".agentx/push-keys.json", ttlSeconds: 86400, keepRecent: 50 })
-    expect(cfg.notifications.channel).toBe("push")
+    expect(cfg.channels.push.allowedHosts).toContain("fcm.googleapis.com")
+    expect(cfg.notifications.channel).toBeUndefined()
+    expect(defaultNotifyChannel(cfg)).toBe("ntfy")
+    expect(defaultNotifyChannel(daemonConfigSchema.parse({ ...MINIMAL, channels: { push: { enabled: true, subject: "mailto:a@b.c" } } }))).toBe("push")
+    expect(defaultNotifyChannel(daemonConfigSchema.parse({ ...MINIMAL, notifications: { channel: "telegram" }, channels: { push: { enabled: true } } }))).toBe("telegram")
+    expect(defaultNotifyChannel(undefined)).toBe("ntfy")
     expect(() => daemonConfigSchema.parse({ ...MINIMAL, channels: { push: { subject: "ops@example.com" } } })).toThrow()
   })
 })

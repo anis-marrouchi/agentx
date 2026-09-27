@@ -15,6 +15,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { proofAlert, type Proof } from "@/notify/proof"
 import { resolveRegion } from "@/computer-use/capture"
 import { readScreenSettings } from "@/computer-use/capture-settings"
+import { defaultNotifyChannel } from "@/notify/push-settings"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -61,17 +62,17 @@ function daemonSender(defaultChannel: string, defaultChatId: string): Sender {
  *  config means the defaults: a notification should never fail over a
  *  settings file. */
 function configuredAlert(opts: { config?: string; sound: boolean; banner: boolean; channel?: string }): { alert: LocalAlert; banner: boolean; channel: string } {
-  let notifications
+  let cfg
   try {
-    notifications = loadDaemonConfig(opts.config).notifications
+    cfg = loadDaemonConfig(opts.config)
   } catch {
-    notifications = undefined
+    cfg = undefined
   }
-  const settings = localSettings(notifications?.local)
+  const settings = localSettings(cfg?.notifications.local)
   if (!opts.sound) settings.sound = false
   if (!opts.banner) settings.banner = false
-  // --channel wins; otherwise notifications.channel, which defaults to push.
-  const channel = opts.channel ?? notifications?.channel ?? "push"
+  // --channel wins; then notifications.channel; then push if it is on, else ntfy.
+  const channel = opts.channel ?? defaultNotifyChannel(cfg)
   return { alert: localAlert(settings), banner: settings.banner, channel }
 }
 
@@ -83,7 +84,7 @@ export const notify = new Command()
   .option("--title <text>", "notification title", "AgentX")
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus")
-  .option("--channel <name>", "delivery channel (default: notifications.channel, which is push)")
+  .option("--channel <name>", "delivery channel (default: notifications.channel, else push when it is on, else ntfy)")
   .option("--chat-id <id>", "channel address", "default")
   .option("--no-sound", "do not play a sound on this machine")
   .option("--no-banner", "do not show a banner on this machine")

@@ -2107,7 +2107,7 @@ async function postToNode(
  *  the daemon's PushAdapter sends from. */
 function appPushDeps(config: DaemonConfig): AppPushDeps {
   const push = config.channels.push
-  const off = (reason: string): AppPushDeps => ({ store: () => null, publicKey: () => null, keepRecent: 0, reason })
+  const off = (reason: string): AppPushDeps => ({ store: () => null, publicKey: () => null, keepRecent: 0, allowedHosts: [], reason })
   if (!push.enabled) return off("Notifications are off. On the computer, run: agentx notifications push --enable")
   if (push.relayTo) return off(`Notifications are set up on ${push.relayTo}. Pair this phone with that computer instead.`)
   const keysPath = pushKeysPath(push.keysFile)
@@ -2118,6 +2118,7 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
     },
     publicKey: () => readPushKeys(keysPath)?.publicKey ?? null,
     keepRecent: push.keepRecent,
+    allowedHosts: push.allowedHosts,
     reason: "The database on this computer is unavailable, so notifications can't be saved.",
   }
 }

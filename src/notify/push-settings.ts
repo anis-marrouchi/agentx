@@ -4,6 +4,15 @@
 
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 
+/** Where `agentx notify` and Focus digests go when no channel is given:
+ *  notifications.channel if set, else push when it is enabled, else ntfy. */
+export function defaultNotifyChannel(cfg: {
+  notifications?: { channel?: string }
+  channels?: { push?: { enabled?: boolean } }
+} | undefined): string {
+  return cfg?.notifications?.channel || (cfg?.channels?.push?.enabled ? "push" : "ntfy")
+}
+
 export interface PushBlock {
   enabled?: boolean
   subject?: string

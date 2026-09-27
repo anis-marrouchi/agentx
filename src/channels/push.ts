@@ -20,10 +20,15 @@ import { splitTitle } from "./ntfy"
 
 /** Where a tap lands when the message has no button of its own. */
 export const DEFAULT_OPEN_URL = "/app#alerts"
-/** Push services cap the encrypted payload near 4 KB; leave room for JSON. */
-const MAX_BODY = 1200
+/** Push services refuse payloads over 4096 bytes after encryption (413,
+ *  which is not retried). The JSON is kept well under that, in bytes. */
+export const MAX_PAYLOAD_BYTES = 3000
 /** Chrome shows at most two action buttons. */
 const MAX_ACTIONS = 2
+const MAX_LABEL = 40
+const MAX_TITLE = 120
+/** Longer links are dropped rather than cut, since a cut link is broken. */
+const MAX_URL = 1000
 
 export interface PushPayload {
   title: string
@@ -55,13 +60,35 @@ export interface PushAdapterDeps {
 
 export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"): PushPayload {
   const split = splitTitle(msg.text || "")
-  const actions = (msg.buttons ?? []).slice(0, MAX_ACTIONS).map((b, i) => ({ action: `b${i}`, title: b.label, url: b.url }))
-  return {
-    title: split.title || defaultTitle,
-    body: split.body.length > MAX_BODY ? split.body.slice(0, MAX_BODY - 1) + "…" : split.body,
+  const actions = (msg.buttons ?? [])
+    .filter((b) => b.url && b.url.length <= MAX_URL)
+    .slice(0, MAX_ACTIONS)
+    .map((b, i) => ({ action: `b${i}`, title: clip(b.label, MAX_LABEL), url: b.url }))
+  const payload: PushPayload = {
+    title: clip(split.title || defaultTitle, MAX_TITLE),
+    body: split.body,
     url: actions[0]?.url ?? DEFAULT_OPEN_URL,
     actions,
   }
+  // Trim the body by bytes, not characters: Arabic, CJK and emoji take
+  // several bytes each.
+  const size = () => Buffer.byteLength(JSON.stringify(payload), "utf8")
+  if (size() > MAX_PAYLOAD_BYTES) {
+    let chars = [...payload.body]
+    const over = size() - MAX_PAYLOAD_BYTES
+    chars = chars.slice(0, Math.max(0, chars.length - over - 1))
+    payload.body = chars.join("") + "…"
+    while (size() > MAX_PAYLOAD_BYTES && chars.length > 0) {
+      chars = chars.slice(0, Math.max(0, chars.length - 32))
+      payload.body = chars.join("") + "…"
+    }
+  }
+  return payload
+}
+
+function clip(s: string, max: number): string {
+  const chars = [...s]
+  return chars.length > max ? chars.slice(0, max - 1).join("") + "…" : s
 }
 
 export class PushAdapter implements ChannelAdapter {
@@ -90,8 +117,10 @@ export class PushAdapter implements ChannelAdapter {
     const subs: PushSubscriptionRow[] = []
     for (const s of this.deps.store.list(device)) {
       // A revoked phone stops getting pushes even if its browser never
-      // unsubscribed; the row goes so it isn't retried every time.
-      if (this.deps.deviceActive(s.deviceId)) subs.push(s)
+      // unsubscribed, and a row made with replaced keys can never be
+      // delivered; either goes, so it isn't retried every time. The phone
+      // re-subscribes with the new key when the app next opens.
+      if (this.deps.deviceActive(s.deviceId) && s.publicKey === keys.publicKey) subs.push(s)
       else this.deps.store.unsubscribe(s.endpoint)
     }
     if (subs.length === 0) {
@@ -126,7 +155,7 @@ export class PushAdapter implements ChannelAdapter {
 
     if (delivered === 0) throw new Error(`push: not delivered — ${errors.join("; ") || "every subscription had expired"}`)
     if (errors.length) this.log(`push: ${errors.length} phone(s) failed: ${errors.join("; ")}`)
-    this.deps.store.log({ title: payload.title, body: payload.body, url: payload.url, delivered }, this.deps.keepRecent)
+    this.deps.store.log({ title: payload.title, body: payload.body, url: payload.url, delivered, deviceId: device ?? null }, this.deps.keepRecent)
     return String(delivered)
   }
 }

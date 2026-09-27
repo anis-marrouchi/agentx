@@ -67,7 +67,7 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 - Some notifications have buttons. Each button opens its own link.
 - To stop notifications on one phone, open **Alerts** and tap **Turn off**.
 - Removing a phone with `agentx app revoke` also stops its notifications.
-- `agentx notify` sends to the phone app unless you choose another channel. To make ntfy or a chat app the default again, run `agentx notifications channel ntfy` (or the channel's name). For ntfy, see [Get notified](../jobs/notifications.md).
+- Once notifications are on, `agentx notify` sends to the phone app. To send somewhere else by default, run `agentx notifications channel ntfy` (or another channel's name). For ntfy, see [Get notified](../jobs/notifications.md).
 
 ## Check it worked
 
@@ -90,4 +90,5 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 - **`agentx notify` says "no phone has turned on notifications"** — turn notifications on in the **Alerts** tab on at least one phone.
 - **`agentx notify` says `Unknown channel: "push"`** — notifications aren't turned on on this computer. Follow the setup above, or restart AgentX if you just turned them on.
 - **A second computer says "is not a mesh peer of this node"** — the name after `--relay-to` doesn't match. Check it with `agentx mesh list`.
-- **Notifications stopped after `agentx app push-keys --force`** — new keys cut off every phone. Open **Alerts** on each phone and tap **Turn on** again.
+- **Notifications stopped after `agentx app push-keys --force`** — new keys cut off every phone. Open **Alerts** on each phone; the card shows **Off**. Tap **Turn on** again.
+- **Tapping Turn on shows "known push service"** — the phone's browser uses a push service that isn't in `channels.push.allowedHosts`. Add the host name the error shows to that list in `agentx.json`, restart AgentX, and try again.

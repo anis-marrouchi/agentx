@@ -706,7 +706,7 @@ Show or change screen capture settings (agentx.json `screen`).
 | `--title <text>` | `AgentX` | Notification title. |
 | `--priority <n>` | `4` | 1 (min) to 5 (max). Used by ntfy only. |
 | `--urgent` | — | Deliver even during Focus. |
-| `--channel <name>` | `notifications.channel` (`push`) | Delivery channel. |
+| `--channel <name>` | `notifications.channel`, else `push` when it is on, else `ntfy` | Delivery channel. |
 | `--chat-id <id>` | `default` | Channel address. |
 | `--no-sound` | — | Do not play a sound on this machine. |
 | `--no-banner` | — | Do not show a banner on this machine. |
@@ -2760,7 +2760,7 @@ Set what `agentx notify` does on this Mac: banner, sound, sound name, volume, ba
 
 ### `agentx notifications channel <name>`
 
-Set the channel `agentx notify` uses when `--channel` is not given: `push` (default), `ntfy`, `telegram`…
+Set the channel `agentx notify` uses when `--channel` is not given: `push`, `ntfy`, `telegram`… Unset: `push` when phone app notifications are on, otherwise `ntfy`.
 
 No flags.
 

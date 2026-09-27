@@ -64,6 +64,16 @@ export const APP_ALERTS_SCRIPT = `
   function supported() {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   }
+  // The key this phone subscribed with. When the computer's keys are
+  // replaced, the old subscription can never be delivered to, so it is
+  // dropped and the card offers Turn on again.
+  function savedKey() { try { return localStorage.getItem('ax-push-key'); } catch (e) { return null; } }
+  function saveKey(k) { try { if (k) localStorage.setItem('ax-push-key', k); else localStorage.removeItem('ax-push-key'); } catch (e) {} }
+  function register(sub) {
+    var body = sub.toJSON();
+    body.publicKey = server.publicKey;
+    return api('POST', '/api/app/push/subscribe', body).then(function () { saveKey(server.publicKey); });
+  }
   function currentSub() {
     return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); });
   }
@@ -89,9 +99,15 @@ export const APP_ALERTS_SCRIPT = `
         return;
       }
       return currentSub().then(function (sub) {
-        if (!sub) { show('off', 'Turn on to get a notification when an agent needs you.', 'Turn on'); return; }
-        // The computer may have lost it (new keys, or the phone was re-paired): send it again.
-        var sync = s.subscriptions > 0 ? Promise.resolve() : api('POST', '/api/app/push/subscribe', sub.toJSON());
+        var offer = function () { show('off', 'Turn on to get a notification when an agent needs you.', 'Turn on'); };
+        if (!sub) { offer(); return; }
+        if (savedKey() !== s.publicKey) {
+          // Made with keys this computer no longer has: it can't be used.
+          saveKey(null);
+          return sub.unsubscribe().then(offer, offer);
+        }
+        // The computer may have lost it (the phone was re-paired): send it again.
+        var sync = s.subscriptions > 0 ? Promise.resolve() : register(sub);
         return sync.then(function () { show('on', 'This phone gets a notification when an agent needs you.', 'Turn off'); });
       });
     }).catch(function (e) { show('na', 'Could not check notifications: ' + e.message); });
@@ -108,14 +124,13 @@ export const APP_ALERTS_SCRIPT = `
       }).then(function () {
         return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(server.publicKey) });
       });
-    }).then(function (sub) {
-      return api('POST', '/api/app/push/subscribe', sub.toJSON());
-    });
+    }).then(register);
   }
   function turnOff() {
     return currentSub().then(function (sub) {
       if (!sub) return null;
       var endpoint = sub.endpoint;
+      saveKey(null);
       return sub.unsubscribe().then(function () { return api('POST', '/api/app/push/unsubscribe', { endpoint: endpoint }); });
     });
   }

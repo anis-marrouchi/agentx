@@ -5,7 +5,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
-import { pushStatus, patchPush } from "@/notify/push-settings"
+import { pushStatus, patchPush, defaultNotifyChannel } from "@/notify/push-settings"
 
 // --- agentx notifications — manage where + when AgentX pings the operator ---
 //
@@ -74,7 +74,9 @@ notifications
         if (helper.fix) console.log(`                    ${chalk.dim("Fix: " + helper.fix)}`)
       }
     }
-    console.log(`  channel           ${n.channel ?? "push"} ${chalk.dim("(where agentx notify sends)")}`)
+    let cfg: any
+    try { cfg = loadDaemonConfig() } catch { cfg = undefined }
+    console.log(`  channel           ${defaultNotifyChannel(cfg)} ${chalk.dim(n.channel ? "(where agentx notify sends)" : "(where agentx notify sends; not set, so push when it is on, else ntfy)")}`)
     const push = pushStatus(readPush())
     const pushDetail = push.role === "relay"
       ? `relays to ${push.relayTo}`
@@ -184,7 +186,7 @@ notifications
 
 notifications
   .command("channel <name>")
-  .description("channel agentx notify uses when --channel is not given: push (default), ntfy, telegram…")
+  .description("channel agentx notify uses when --channel is not given: push, ntfy, telegram… (unset: push when it is on, else ntfy)")
   .action((name: string) => {
     const channel = name.trim()
     if (!/^[\w-]+$/.test(channel)) {
