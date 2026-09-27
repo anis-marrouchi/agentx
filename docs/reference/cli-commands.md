@@ -106,6 +106,31 @@ Show the desktop login service status.
 
 No flags.
 
+## app
+
+`agentx app`: Pair phones with the AgentX [phone app](../dashboard/mobile-app.md) and manage paired devices. Run these from the folder that holds `agentx.json`.
+
+### `agentx app pair`
+
+Pair a phone — prints a QR code to scan with the phone's camera.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--name <name>` | `Phone` | Name for this phone (shown in `agentx app devices`). |
+| `--url <origin>` | this machine's Tailscale name | Address the phone opens, e.g. `https://my-mac.tailnet-name.ts.net`. |
+
+### `agentx app devices`
+
+List paired phones.
+
+No flags.
+
+### `agentx app revoke <id>`
+
+Unpair a phone immediately.
+
+No flags.
+
 ## daemon
 
 `agentx daemon`: Manage the agentx daemon — start, stop, status, logs.
