@@ -84,6 +84,16 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 
 **Other runs.** A workflow `agent` step, `agentx exec --timeout <minutes>` and a workflow API request can set `timeoutMinutes`. When set, the run is stopped once that many minutes have passed, including runs on this machine. Leave room for slow work: an agent that edits code or reviews a pull request can take 20 minutes or more.
 
+**Every run: getting ready.** Before an agent process starts, a run goes through a few preparation steps, such as reading the conversation history and choosing a model. Each agent's `preSpawnTimeoutSec` (default 300 seconds) limits that preparation. If the agent process has not started by then, the run is stopped and its slot is freed. This covers every run, including runs started by a chat message or a webhook, which have no other time limit. The run's record in the task history is marked `"status": "timeout"`, with `step` naming where it was stuck.
+
+```json
+"agents": {
+  "helper": { "name": "Helper", "workspace": "./helper", "preSpawnTimeoutSec": 600 }
+}
+```
+
+The daemon log has one line per preparation step, for example `[helper] step classify task=<id> chat=<channel>:<chat> at=<time>`. The `executing task`, `busy, message queued`, `flushing` and `completed` lines carry the same run id and time, so you can follow one run through the log.
+
 **Stopping a run.** When you cancel a run, or its time limit passes, the run ends and its slot is freed, even if the step it was on never answers. The agents list (`/agents`) shows the step each running task is on, for example `classify` or `agent`, so you can see where a run is waiting.
 
 ### Try a cancel
@@ -95,6 +105,7 @@ Here the limit is 3 hours, because 10800 seconds is longer than the 2-hour minim
 ### When a run is cut short
 
 - **A run ended with "timed out after …s".** Its limit was too short for the work. Raise `timeoutMinutes` (or the job's `timeout`) and run it again.
+- **A run ended with `timed out before spawn after …s in step "<name>"`.** A preparation step never finished. The step name tells you which one; search the daemon log for the run's `task=<id>` to see the steps it went through. If the step is slow but working, raise the agent's `preSpawnTimeoutSec`.
 - **A cancelled run is still listed.** Check the daemon log for a line ending in `aborted in step "<name>"`. If it is missing, the cancel did not reach this daemon: check that you cancelled on the machine running the agent.
 
 <!-- No screenshot needed: field reference, with the web flow shown in Settings. -->

@@ -54,6 +54,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `richMessages` | boolean | `true` | Lets the agent send buttons, polls and media on chat channels. `false` sends plain text only. |
 | `maxConcurrent` | number | `1` | How many runs of this agent can happen at the same time. |
 | `maxExecutionMinutes` | number (1–240) | `20` | Time limit for one run; the process is stopped when it passes. |
+| `preSpawnTimeoutSec` | number (10–3600) | `300` | Time a run may spend getting ready before its agent process starts. When it passes, the run is stopped, its slot is freed and its record is marked `timeout` with the step it was stuck on. Applies to every run, whatever started it. See [Time limits and cancel](./config.md#time-limits-and-cancel). |
 | `permissionMode` | string | `"default"` | Permission mode for the agent's CLI. `bypassPermissions` lets it act without asking. |
 | `billing` | `"subscription"` \| `"api"` | `"subscription"` | For `claude-code` agents: use the shared sign-in (`subscription`) or bill `ANTHROPIC_API_KEY` (`api`). An `api` agent with no key fails its run. |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
