@@ -114,6 +114,8 @@ No flags.
 
 Pair a phone — prints a QR code to scan with the phone's camera.
 
+Refuses to run while `tailscale serve` shares the whole dashboard (for example after `tailscale serve --bg 4202`) rather than only `/app` and `/api/app`.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--name <name>` | `Phone` | Name for this phone (shown in `agentx app devices`). |

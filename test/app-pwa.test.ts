@@ -7,6 +7,7 @@ import { inflateSync } from "zlib"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest, APP_COOKIE } from "../src/daemon/app-routes"
 import { appIconPng } from "../src/daemon/app-icon"
+import { exposedDashboardMounts } from "../src/commands/app"
 import { renderAppPage, renderAppPairPage, renderAppManifest, APP_SERVICE_WORKER } from "../src/daemon/ui/pages/app"
 
 // A real server on 127.0.0.1: every request below is a loopback request,
@@ -147,5 +148,30 @@ describe("page scripts parse", () => {
 describe("token store", () => {
   it("accepts the app scope", () => {
     expect(() => store.create({ name: "p", scopes: ["app"] })).not.toThrow()
+  })
+})
+
+describe("agentx app pair: tailscale serve guard", () => {
+  const web = (handlers: Record<string, string>) => ({
+    Web: { "mac.tail1.ts.net:443": { Handlers: Object.fromEntries(Object.entries(handlers).map(([m, p]) => [m, { Proxy: p }])) } },
+  })
+
+  it("flags `tailscale serve 4202`, which mounts the whole dashboard at /", () => {
+    expect(exposedDashboardMounts(web({ "/": "http://127.0.0.1:4202" }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
+  })
+
+  it("accepts the path-scoped setup from the guide", () => {
+    const status = web({ "/app": "http://127.0.0.1:4202/app", "/api/app": "http://127.0.0.1:4202/api/app" })
+    expect(exposedDashboardMounts(status, 4202)).toEqual([])
+  })
+
+  it("ignores other local services and a missing tailscale", () => {
+    expect(exposedDashboardMounts(web({ "/": "http://localhost:3000" }), 4202)).toEqual([])
+    expect(exposedDashboardMounts(null, 4202)).toEqual([])
+  })
+
+  it("also checks foreground serve sessions", () => {
+    const status = { Foreground: { abc: web({ "/admin": "localhost:4202/admin" }) } }
+    expect(exposedDashboardMounts(status, 4202)).toEqual(["mac.tail1.ts.net:443/admin"])
   })
 })

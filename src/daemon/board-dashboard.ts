@@ -150,7 +150,6 @@ const DASHBOARD_PAGES = new Set([
   "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
-  "/app",
 ])
 
 interface Ctx {

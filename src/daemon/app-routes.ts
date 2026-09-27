@@ -62,6 +62,9 @@ export async function handleAppRequest(
   if (method === "POST" && path === "/api/app/session") {
     const rec = verifyAppToken(bearer(req), tokens)
     if (!rec) return sendJson(res, 401, { error: "invalid or revoked device token" })
+    // Path=/ because one cookie must cover both /app and /api/app. Over the
+    // path-scoped `tailscale serve` setup in the guide, no other dashboard
+    // route is reachable from the phone anyway.
     res.setHeader("Set-Cookie", `${APP_COOKIE}=${bearer(req)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`)
     return sendJson(res, 200, { device: rec.name })
   }

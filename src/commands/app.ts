@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
 import { TokenStore } from "@/daemon/token-store"
+import { loadDaemonConfig } from "@/daemon/config"
 
 // --- agentx app: pair phones with the /app PWA ---
 //
@@ -20,6 +21,16 @@ appCmd
   .option("--url <origin>", "address the phone opens, e.g. https://my-mac.tailnet-name.ts.net (default: this machine's Tailscale name)")
   .action(async (opts) => {
     try {
+      const exposed = exposedDashboardMounts(tailscaleServeStatus(), dashboardPort())
+      if (exposed.length > 0) {
+        throw new Error([
+          `tailscale serve publishes the whole dashboard, not only the phone app: ${exposed.join(", ")}`,
+          `  Anyone on your tailnet can open it without a key. Serve only the app paths instead:`,
+          `    tailscale serve reset`,
+          `    tailscale serve --bg --set-path /app http://127.0.0.1:${dashboardPort()}/app`,
+          `    tailscale serve --bg --set-path /api/app http://127.0.0.1:${dashboardPort()}/api/app`,
+        ].join("\n"))
+      }
       const origin = (opts.url ? String(opts.url) : tailscaleOrigin()).replace(/\/+$/, "")
       if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error(`--url must be an origin like https://host.example.ts.net, got: ${origin}`)
       const { token: secret, record } = new TokenStore().create({ name: String(opts.name), scopes: ["app"] })
@@ -84,4 +95,45 @@ function tailscaleOrigin(): string {
   const name = String(status?.Self?.DNSName || "").replace(/\.$/, "")
   if (!name) throw new Error("Tailscale has no MagicDNS name for this machine. Pass --url https://<address>.")
   return `https://${name}`
+}
+
+/** Mount paths the phone needs; everything else stays off the tailnet. */
+const APP_MOUNTS = new Set(["/app", "/api/app"])
+
+/**
+ * Lists `tailscale serve` mounts (host + path) that proxy to the dashboard
+ * port outside the app paths. `tailscale serve 4202` mounts "/", which
+ * publishes every dashboard page and API to the tailnet, and serve proxies
+ * from 127.0.0.1, so the dashboard's loopback trust lets those requests in.
+ */
+export function exposedDashboardMounts(status: any, port: number): string[] {
+  const configs = [status, ...Object.values(status?.Foreground ?? {})]
+  const found: string[] = []
+  for (const cfg of configs) {
+    for (const [host, web] of Object.entries<any>(cfg?.Web ?? {})) {
+      for (const [mount, h] of Object.entries<any>(web?.Handlers ?? {})) {
+        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/)
+        const clean = mount.replace(/\/+$/, "") || "/"
+        if (target && Number(target[1]) === port && !APP_MOUNTS.has(clean)) found.push(`${host}${mount}`)
+      }
+    }
+  }
+  return found
+}
+
+/** `tailscale serve status --json`, or null when Tailscale isn't available. */
+function tailscaleServeStatus(): any {
+  try {
+    return JSON.parse(execFileSync("tailscale", ["serve", "status", "--json"], { encoding: "utf-8", timeout: 5000 }) || "{}")
+  } catch {
+    return null
+  }
+}
+
+function dashboardPort(): number {
+  try {
+    return loadDaemonConfig().dashboard.port || 4202
+  } catch {
+    return 4202
+  }
 }
