@@ -47,6 +47,41 @@ final class App: NSObject, NSApplicationDelegate {
     private var followUp: String?
     /// "stop" while our own turn was running: drop its answer.
     private var abandoned = false
+    /// The agent our own turn is asking. Usually the target; "Writer, …"
+    /// sends one question to Writer and leaves the target alone.
+    private var turnAgent = ""
+    /// Questions in flight per agent: our turn plus any asides.
+    private var inFlight: [String: Int] = [:]
+    /// Bumped by every stop, so an aside answered after it stays quiet.
+    private var stopGeneration = 0
+    /// Questions for an agent that already has one in flight, oldest
+    /// first. One /ask per agent at a time: a second question waits here
+    /// for the first answer instead of racing it into the same session.
+    private var waitingAsides: [String: [String]] = [:]
+    /// Asides not yet finished: asked, answering, or waiting to be spoken.
+    /// While any are open the microphone does not reopen by itself, or it
+    /// would hear the next answer as the listener's words.
+    private var openAsides = 0
+
+    /// /ask, counted in flight for the menu while it thinks.
+    private func ask(_ heard: String, agent: String) async throws -> AgentClient.Answer {
+        track(agent, 1)
+        defer { track(agent, -1) }
+        return try await AgentClient.ask(heard, agent: agent)
+    }
+
+    private func track(_ agent: String, _ delta: Int) {
+        let n = inFlight[agent, default: 0] + delta
+        inFlight[agent] = n > 0 ? n : nil
+        publishThinking()
+    }
+
+    /// The menu's per-agent count: questions asked plus questions waiting.
+    private func publishThinking() {
+        var counts = inFlight
+        for (agent, words) in waitingAsides { counts[agent, default: 0] += words.count }
+        statusMenu.thinking = counts
+    }
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
     private func smartPaste() {
@@ -97,7 +132,10 @@ final class App: NSObject, NSApplicationDelegate {
         panel.onRender = { [weak self] state in self?.statusMenu.show(state) }
         panel.contextMenu = { [weak self] in self?.statusMenu.menu ?? NSMenu() }
         panel.agentName = { [weak self] in
-            Config.effectiveAgentID.isEmpty ? "" : self?.statusMenu.name(of: Config.effectiveAgentID) ?? ""
+            guard let self else { return "" }
+            // A question sent by name shows who is answering it, not the target.
+            let who = self.busy && !self.turnAgent.isEmpty ? self.turnAgent : Config.effectiveAgentID
+            return who.isEmpty ? "" : self.statusMenu.name(of: who)
         }
         panel.alwaysVisible = Config.showPill
         panel.render(.idle)
@@ -283,6 +321,9 @@ final class App: NSObject, NSApplicationDelegate {
     private func stopSpeaking() {
         Log.info("stop: silencing every voice")
         if busy { silenced = true }
+        stopGeneration += 1
+        waitingAsides.removeAll()
+        publishThinking()
         lastSpokeAt = Date()
         Task { await Speech.stopAll() }
         if !recorder.isRecording { panel.render(.idle) }
@@ -354,17 +395,95 @@ final class App: NSObject, NSApplicationDelegate {
                 if !midTurn { panel.render(.idle); busy = false }
                 return
             }
+            // "Writer, …" sends this one question to Writer; the target stays.
+            let agent = await AgentClient.address(heard, target: Config.effectiveAgentID)
             if midTurn {
+                // Another agent: ask it alongside ours rather than waiting.
+                if agent != turnAgent && !Self.isStop(heard) {
+                    askAside(heard, agent: agent)
+                    panel.render(.working("Asked \(statusMenu.name(of: agent))", 0))
+                    return
+                }
                 // Our own turn is still thinking. The agent cannot change
                 // course mid-turn, so his words go next and the stale
-                // answer is not spoken; "stop" just drops it.
-                if Self.isStop(heard) { abandoned = true; followUp = nil; Log.info("door: stop → dropping the turn in flight") }
-                else { followUp = heard; Log.info("door: \"\(heard)\" → next, instead of the answer in flight") }
+                // answer is not spoken; "stop" just drops it, and every
+                // aside with it.
+                if Self.isStop(heard) {
+                    abandoned = true; followUp = nil
+                    stopGeneration += 1; waitingAsides.removeAll(); publishThinking()
+                    Log.info("door: stop → dropping the turn in flight")
+                } else {
+                    followUp = heard
+                    Log.info("door: \"\(heard)\" → next, instead of the answer in flight")
+                }
                 panel.render(.working("Got it — one moment", 0))
                 return
             }
-            await runTurn(heard)
+            // That agent is still answering an aside: this question waits
+            // behind it rather than running beside it.
+            if inFlight[agent] != nil && !Self.isStop(heard) {
+                askAside(heard, agent: agent)
+                panel.render(.working("Queued for \(statusMenu.name(of: agent))", 0))
+                busy = false; resetSoon()
+                return
+            }
+            await runTurn(heard, agent: agent)
         }
+    }
+
+    /// A question for another agent while our own turn thinks. It runs
+    /// alongside; the answer waits its turn in the daemon's speaking queue,
+    /// so it never talks over ours. An agent already answering an aside
+    /// gets this one next, not at the same time.
+    private func askAside(_ heard: String, agent: String) {
+        if inFlight[agent] != nil || waitingAsides[agent] != nil {
+            waitingAsides[agent, default: []].append(heard)
+            publishThinking()
+            Log.info("aside → \(agent) (waits for its answer in flight): \(heard)")
+            return
+        }
+        runAside(heard, agent: agent)
+    }
+
+    private func runAside(_ heard: String, agent: String) {
+        let generation = stopGeneration
+        openAsides += 1
+        Log.info("aside → \(agent): \(heard)")
+        Task { @MainActor in
+            defer { openAsides -= 1 }
+            let result: Result<AgentClient.Answer, Error>
+            do { result = .success(try await ask(heard, agent: agent)) }
+            catch { result = .failure(error) }
+            // The next question for this agent goes now, while this
+            // answer waits to be spoken.
+            startNextAside(for: agent)
+            guard generation == stopGeneration else { return }
+            switch result {
+            case .success(let answer):
+                Log.info("aside answer (\(answer.agentID ?? agent)): \(answer.text)")
+                if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
+                                             buttons: answer.buttons, imageURL: answer.imageURL) {
+                    card.show(spoken: answer.text, written: answer.written,
+                              buttons: answer.buttons, imageURL: answer.imageURL)
+                }
+                await Speech.say(answer.text, agentID: answer.agentID ?? agent, kind: "answer", voice: answer.voice)
+            case .failure(let error):
+                Log.warn("aside failed (\(agent)): \(error.localizedDescription)")
+                await Speech.say("Sorry, \(statusMenu.name(of: agent)) couldn't answer that.", agentID: nil, kind: "line", voice: nil)
+            }
+        }
+    }
+
+    /// Send the oldest question waiting for `agent`, if any.
+    private func startNextAside(for agent: String) {
+        guard var waiting = waitingAsides[agent], !waiting.isEmpty else {
+            waitingAsides[agent] = nil
+            return
+        }
+        let next = waiting.removeFirst()
+        waitingAsides[agent] = waiting.isEmpty ? nil : waiting
+        runAside(next, agent: agent)
+        publishThinking()
     }
 
     static func isStop(_ s: String) -> Bool {
@@ -374,12 +493,13 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// One question and its spoken answer. Words said through the door
     /// while it thinks replace the answer with the next turn.
-    private func runTurn(_ heard: String) async {
+    private func runTurn(_ heard: String, agent: String) async {
         silenced = false
+        turnAgent = agent
         do {
-            beginNarration()
+            beginNarration(agent)
 
-            let answer = try await AgentClient.ask(heard, agent: Config.effectiveAgentID)
+            let answer = try await ask(heard, agent: agent)
             endNarration()
             if abandoned {
                 abandoned = false
@@ -390,7 +510,7 @@ final class App: NSObject, NSApplicationDelegate {
                 followUp = nil
                 Log.info("superseded answer (\(answer.agentID ?? "?")): \(answer.text)")
                 panel.render(.thinking)
-                return await runTurn(next)
+                return await runTurn(next, agent: agent)
             }
             if let v = answer.voice { voice = v }
             Log.info("answer (\(answer.agentID ?? "?")): \(answer.text)")
@@ -419,7 +539,7 @@ final class App: NSObject, NSApplicationDelegate {
             if recorder.isRecording { busy = false; return }
             // Stopped: no follow-up window, the listener asked for quiet.
             if silenced { silenced = false; panel.render(.idle); busy = false; return }
-            if let next = followUp { followUp = nil; return await runTurn(next) }
+            if let next = followUp { followUp = nil; return await runTurn(next, agent: agent) }
             panel.render(.idle)
             // Leave the microphone open for a moment. Say nothing and
             // it closes itself; start talking and the conversation
@@ -428,12 +548,15 @@ final class App: NSObject, NSApplicationDelegate {
             // A live lesson now runs on screen and speaks for itself; an
             // open mic would hear the agent. Option-Space is the door.
             if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
+            // Another agent's answer is still to come; an open mic would
+            // take it for the listener's words.
+            if openAsides > 0 { return }
             listenHandsFree(followUp: true)
         } catch {
             endNarration()
             Log.warn("turn failed: \(error.localizedDescription)")
             if abandoned { abandoned = false; panel.render(.idle); busy = false; return }
-            if let next = followUp { followUp = nil; return await runTurn(next) }
+            if let next = followUp { followUp = nil; return await runTurn(next, agent: agent) }
             panel.render(.error(short(error.localizedDescription)))
             // Say it aloud too — a voice assistant that fails only in
             // a 230px label has failed silently for anyone not looking.
@@ -449,7 +572,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// say what the agent is doing but arrive irregularly, and a 1-second
     /// ticker proves the thing is still alive between them. Together they
     /// answer both "what is it doing" and "is it stuck".
-    private func beginNarration() {
+    private func beginNarration(_ agent: String) {
         startedAt = Date()
         lastStep = "Thinking…"
         spokenSteps.removeAll()
@@ -458,7 +581,7 @@ final class App: NSObject, NSApplicationDelegate {
 
         // Progress delivers on its own serial queue; hop to main before
         // touching any view.
-        progress = Progress(agentID: Config.effectiveAgentID) { [weak self] step, voice in
+        progress = Progress(agentID: agent) { [weak self] step, voice in
             Task { @MainActor in
                 guard let self, self.busy else { return }
                 if let voice { self.voice = voice }

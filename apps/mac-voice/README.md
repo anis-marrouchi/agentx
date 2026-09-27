@@ -93,6 +93,10 @@ needs no Accessibility permission — an `NSEvent` global monitor would have.
 
 - Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and
   talk) or ⌘⌥. (just stop), or use *Stop speaking* in the right-click menu.
-- One turn at a time — a keypress during a running turn is ignored, not queued.
+- One question per agent at a time. Several agents can think at once: start
+  with another agent's name ("Writer, …") while one thinks and both run; the
+  answers take turns in the daemon's speaking queue. Words for the agent
+  already thinking replace its question; a second question for an agent
+  answering a by-name question waits for that answer.
 - ⌥Space is fixed. `⌃Space` was avoided because it's commonly bound to
   input-source switching.

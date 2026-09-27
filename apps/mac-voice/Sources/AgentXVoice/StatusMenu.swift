@@ -7,7 +7,8 @@ import AppKit
 @MainActor
 final class StatusMenu: NSObject, NSMenuDelegate {
     let menu = NSMenu()
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    /// Variable width: the badge with the number of queued lines sits beside the icon.
+    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     private enum Roster {
         case loading
@@ -19,6 +20,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var roster = Roster.loading
     /// Reopen the menu once the retry's answer is in.
     private var reopenAfterRefresh = false
+    /// The daemon's speaking queue, polled while anything is in flight.
+    private var queue: AgentClient.QueueState?
+    private var queuePoll: Timer?
+
+    /// Questions this widget has in flight, per agent. Set by the app.
+    var thinking: [String: Int] = [:] {
+        didSet { rebuild(); watchQueue(force: true) }
+    }
 
     /// Set by the app.
     var onStop: (() -> Void)?
@@ -48,7 +57,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         Task {
             let agents = await AgentClient.agents()
             roster = agents.map { .loaded($0) } ?? .down
+            queue = await AgentClient.queueState()
             rebuild()
+            showBadge()
             if reopenAfterRefresh { reopenAfterRefresh = false; open() }
         }
     }
@@ -67,6 +78,48 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         image?.isTemplate = true
         item.button?.image = image
         item.button?.toolTip = "AgentX Voice — \(label)"
+    }
+
+    /// The number of lines waiting to be spoken, beside the icon.
+    private func showBadge() {
+        let n = queue?.waiting.count ?? 0
+        item.button?.imagePosition = .imageLeading
+        item.button?.title = n > 0 ? "\(n)" : ""
+    }
+
+    /// Poll the queue only while there is something to show: a question in
+    /// flight, or lines playing or waiting. `force` starts it whatever the
+    /// last poll saw: an answer that just came back is about to be queued,
+    /// so the poll carries on until it has been seen through.
+    private func watchQueue(force: Bool = false) {
+        let active = force || !thinking.isEmpty || queue?.playing != nil || !(queue?.waiting.isEmpty ?? true)
+        if !active { queuePoll?.invalidate(); queuePoll = nil; return }
+        guard queuePoll == nil else { return }
+        queuePoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.queue = await AgentClient.queueState()
+                self.rebuild()
+                self.showBadge()
+                self.watchQueue()
+            }
+        }
+    }
+
+    /// "thinking", "speaking", "queued 2", or both, for one agent's row.
+    private func state(of agent: AgentClient.AgentInfo) -> String {
+        var parts: [String] = []
+        // Speaking one answer and thinking on the next are both true at once.
+        if queue?.playing?.agentId == agent.id { parts.append("speaking") }
+        let asked = thinking[agent.id, default: 0]
+        if asked > 0 {
+            // More than one: the rest wait for the answer in flight.
+            parts.append(asked > 1 ? "thinking (+\(asked - 1) asked)" : "thinking")
+        }
+        if parts.isEmpty && (agent.active ?? 0) > 0 { parts.append("working") }
+        let queued = queue?.waiting.filter { $0.agentId == agent.id }.count ?? 0
+        if queued > 0 { parts.append("queued \(queued)") }
+        return parts.isEmpty ? "idle" : parts.joined(separator: " · ")
     }
 
     // MARK: NSMenuDelegate
@@ -95,9 +148,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(NSMenuItem.sectionHeader(title: pinned ? "Agent (set by AGENTX_VOICE_AGENT)" : "Talk to"))
             if agents.isEmpty { menu.addItem(disabled("No agents configured")) }
             for (i, agent) in agents.enumerated() {
-                let busy = (agent.active ?? 0) > 0
                 // Digits pick an agent while the menu is open.
-                let row = action(agent.label + (busy ? "  · working" : "  · idle"), #selector(pick(_:)),
+                let row = action(agent.label + "  · " + state(of: agent), #selector(pick(_:)),
                                  key: i < 9 ? "\(i + 1)" : "", modifiers: [])
                 row.representedObject = agent.id
                 row.state = agent.id == target ? .on : .off
