@@ -40,6 +40,15 @@ export function detectAgentxMarker(body: string | undefined | null): string | nu
   return m ? m[1] : null
 }
 
+/** The signing agent when a comment is `handler`'s own reply echoed back
+ *  by the webhook, else null. Without a resolved handler every signed
+ *  comment counts as an echo, as before. */
+export function ownEchoOf(body: string, handler: string | undefined): string | null {
+  const source = detectAgentxMarker(body)
+  if (!source) return null
+  return !handler || source === handler ? source : null
+}
+
 /** Strip every marker from a body — used when surfacing the body to the
  *  agent so it doesn't see its own bookkeeping. */
 export function stripAgentxMarkers(body: string): string {
