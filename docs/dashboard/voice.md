@@ -185,7 +185,26 @@ Or use the menu instead:
 
 ![The desktop widget right-click menu: Hold notifications, Stop speaking and Quit AgentX Voice](/screenshots/voice/widget-menu.png)
 
-Holding **Option–Space** also silences everything before the widget starts listening. To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
+Holding **Option–Space** also silences everything before the widget starts listening, but it only pauses the lines waiting their turn (see the next section). To end a lesson from the dashboard, see [Check a running lesson in the browser](#check-a-running-lesson-in-the-browser).
+
+## One queue for everything spoken
+
+Everything spoken aloud on your Mac waits in one line, called the **speaking queue**: the widget's answers, task narration, talks and lessons. Each item plays only when the one before it has finished, so two agents never talk at the same time. If you ask two agents questions back to back, the second answer plays right after the first.
+
+**You come first.** When you hold **Option–Space**, the line being spoken stops and the queue waits. Once you release the keys and the widget has your words, the line that was cut off plays again from the start, followed by everything that was waiting. If you say "stop" instead, everything waiting is dropped. If you say nothing, the queue plays on by itself after a minute at most.
+
+**Command–Option–.** still stops everything and empties the queue.
+
+To see what is speaking and what is waiting:
+
+1. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue`.
+2. Read the answer. `playing` is the line being spoken now, `waiting` lists the lines still to come, in order, and `recent` lists the last lines that finished. `paused` is `true` while you are speaking.
+
+Each line shows its `id`, the agent (`agentId`), what kind of line it is (`answer`, `narration`, `talk`, `lesson` or `line`), its text and when it joined the queue (`enqueuedAt`).
+
+Agents can check the queue themselves when they need to, using the `agentx_voice_queue` tool of `agentx serve`. It is never added to every message an agent receives.
+
+If the daemon can't be reached, the widget speaks its answer itself, as before.
 
 ## Task narration
 
@@ -357,12 +376,20 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `GET /talk` | The running talk or lesson: what was said, its state and the pauses |
 | `POST /talk/stop` | End the talk |
 | `POST /teach/live` | Start a lesson: `{"agent": "<id>", "goal": "…", "mode": "teach", "app": "Numbers"}` (`draw` is terminal only) |
-| `POST /voice/hush` | Silence whatever is speaking and wait for your words (what **Option–Space** sends when pressed) |
-| `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; `stop` ends it |
-| `POST /voice/stop` | Silence every voice and drop waiting lines (what **Command–Option–.** sends) |
+| `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
+| `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
+| `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
+| `GET /voice/queue` | The speaking queue: `{"paused", "playing", "waiting", "recent"}` |
+| `POST /voice/queue` | Add a line in an agent's voice: `{"text": "…", "agentId": "<id>", "kind": "answer"}`. `kind` is `answer`, `narration` or `line`. Add `"wait": true` to get the reply only once the line has been spoken (`{"item", "played"}`) |
+| `POST /voice/queue/<id>/skip` | Drop that line, whether it is playing or waiting. The others keep their order |
+| `POST /voice/queue/<id>/front` | Play that waiting line next |
+| `POST /voice/queue/<id>/replay` | Say a waiting or recently finished line again, next |
+| `POST /voice/queue/pause`, `POST /voice/queue/resume` | Hold the queue, or let it play on. A held queue plays on by itself after a minute |
 | `GET /narration`, `POST /narration` | Read or set narration switches: `{"agentId": "<id>", "on": true}` or `{"taskId": "<id>", "on": null}` |
 
 `/talk/hush` and `/talk/door` still work as older names for `/voice/hush` and `/voice/door`.
+
+Every change to the speaking queue is also sent on the live event stream (`GET /events`) as a `voice` event whose message has `"kind": "voice:queue"` and the same fields as `GET /voice/queue`.
 
 ## Check it worked
 
@@ -371,6 +398,7 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 3. The answer appears in the widget and is spoken aloud.
 4. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
 5. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
+6. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
@@ -380,6 +408,8 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 - **Agent unavailable:** check the daemon address and the exact agent id, then run the install again with the right `--agent`.
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the widget's right-click menu.
+- **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
+- **`Unknown agent: …` from `POST /voice/queue`:** the `agentId` must be an agent on this computer or on a connected mesh computer. Check the id with `agentx agent list`.
 - **`A talk or lesson is already running`:** only one runs at a time. Wait for it to end, or press **Command–Option–.** to stop it.
 - **`Unknown agent: …` from `agentx talk` or `agentx teach --live`:** check the id with `agentx agent list`. For `agentx talk`, an agent on another computer must be reachable: check that its computer shows in `agentx mesh list`.
 - **A talk never starts speaking:** the lines come from the `claude` program. **Terminal:** run `claude --version` on the daemon's computer and sign in if needed, or set `AGENTX_TALK_BACKEND=api`.
