@@ -208,6 +208,31 @@ describe("routing pipeline — invariants", () => {
     expect(r.decidingStage).toBe("self-reply-guard")
   })
 
+  it("github: the handover target's own signed comment drops", () => {
+    const handover = new HandoverStore({ baseDir: "/tmp/handover-test-" + Date.now() })
+    handover.set({
+      channel: "github",
+      chatId: "anis-marrouchi/agentx:pull:1",
+      accountId: "default",
+      fromAgent: "coder-agent",
+      toAgent: "devops-agent",
+      createdAt: new Date().toISOString(),
+    })
+    const r = run(
+      makeIncoming({
+        channel: "github",
+        accountId: "default",
+        group: { id: "anis-marrouchi/agentx:pull:1" },
+        text: "Deployed.\n\n<!-- agentx:devops-agent -->",
+        resolvedAgent: "coder-agent",
+      }),
+      { handover },
+    )
+    expect(r.kind).toBe("drop")
+    expect(r.decidingStage).toBe("self-reply-guard")
+    expect(r.reason).toContain("agentx-marker (agent=devops-agent)")
+  })
+
   it("handover override beats every other rule", () => {
     const handover = new HandoverStore({ baseDir: "/tmp/handover-test-" + Date.now() })
     handover.set({
