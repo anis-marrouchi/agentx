@@ -32,6 +32,30 @@ A flag tells you what's wrong:
 
 A machine that can't be reached shows **Routines unknown while this node is unreachable**. A machine running an older AgentX shows **This node does not report routines yet**.
 
+## Mesh feed
+
+**Mesh feed** lists the newest events from this machine and from every machine it follows: finished tasks, workflow runs, announcements, and machines that can't be reached. Use it to see what the rest of the fleet is doing without opening each machine.
+
+![The Mesh feed section of the Operations view](/screenshots/operations/mesh-feed.png)
+
+1. **Browser:** open the dashboard and select the **Operations** tab.
+2. Switch the view from **Activity** to **Operations**.
+3. Scroll to **Mesh feed**. The newest event is at the top, and the list refreshes every 5 seconds.
+4. To narrow it, select **Other machines**, **Announcements** or **Problems**. The dashboard remembers your choice.
+5. Select an event to open its details: the machine, the agent, the time, and the record ID to look up on that machine.
+
+A badge marks what needs attention:
+
+| Badge | What it means |
+|---|---|
+| **Unreachable** | This machine can't reach that peer's event feed. The summary says why. |
+| **Back** | The peer is reachable again. |
+| **Gap** | The peer was away longer than its event buffer covers; some events may be missing. |
+| **Failed** | A task or run failed. |
+| **Announcement** | A note to the whole mesh, sent with `agentx mesh announce`. |
+
+To send an announcement, see [Announcements](../reference/events.md#announcements).
+
 ## Open, watch and continue a scheduled run
 
 1. **Browser:** in the **Operations** view, find the schedule under **Today's automations**.
@@ -70,6 +94,7 @@ Without `agent`, it only reaches a running task. With `agent`, a finished schedu
 1. **Browser:** in the Operations tab's **Operations** view, each reachable machine lists its routines under **Routines**.
 2. Select **Flagged**. Only routines with a flag stay in the list.
 3. Select a schedule's row under **Today's automations**. Its drawer lists **Runs today**, each with an **Open** link.
+4. **Terminal:** run `agentx mesh announce "Hello from the terminal"`. Within 5 seconds it appears under **Mesh feed** with an **Announcement** badge.
 
 ## If something is wrong
 
@@ -77,4 +102,6 @@ Without `agent`, it only reaches a running task. With `agent`, a finished schedu
 - **This node does not report routines yet:** that machine runs an older AgentX. Update it, then restart its daemon.
 - **Routines unknown while this node is unreachable:** the dashboard can't reach that machine's daemon. Check its status and its mesh connection.
 - **A run has no Open link:** command jobs never have one, and runs from before the machine was updated don't either.
+- **Mesh feed unavailable:** the dashboard can't read its own machine's daemon. Check that the daemon is running.
+- **Mesh feed shows only this machine:** the mesh is off, `mesh.feed.enabled` is `false`, or the other machines run an older AgentX. Look for **Unreachable** rows, which say why a peer is missing.
 - **The page looks out of date after an update:** the dashboard is a separate service. Restart it on each machine.
