@@ -26,7 +26,8 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `run` | `created`, `ok`, `failed`, `paused`, `resumed`, `skipped`, `completed`, `timeout` | workflow run ID |
 | `task` | `created`, `submitted`, `canceled` (workflow user tasks) | user task ID |
 | `signal` | `emitted` | — |
-| `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed` | — |
+| `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed`, and from the [mesh feed](#events-from-other-machines): `feed:down`, `feed:up`, `feed:gap` | — |
+| `announce` | `announce` (a note to the whole mesh, see [Announcements](#announcements)) | — |
 | `reminder` | `reminder:due`, `reminder:dispatched`, `reminder:skipped` ([due reminders](/automations/reminders)) | Apple Reminders ID |
 | `channel` | `in`, `out` | channel message ID |
 | `status` | `status` | — |
@@ -42,11 +43,13 @@ curl 'http://127.0.0.1:18800/events/recent?since=2026-09-27T09:00:00Z&kind=agent
 | Parameter | What it does |
 |---|---|
 | `since` | An event `id` (returns the events after it) or an ISO time. |
-| `kind` | Only this `kind`. |
+| `kind` | Only these kinds, separated by commas. |
+| `skip` | Leave out these types, separated by commas, for example `task:step`. |
+| `origin` | `local` keeps only events this machine published itself. |
 | `agent` | Only events with this `agentId`. |
 | `limit` | At most this many events, keeping the newest. |
 
-The answer is `{ "events": [ … ] }`, oldest first. The buffer holds the last `events.ringSize` events (default 1,000) and is empty after a restart. Traces and run records remain the durable history. Off this machine the endpoint needs `Authorization: Bearer <mesh-token>`.
+The answer is `{ "events": [ … ] }`, oldest first. When `since` is an event ID that has already left the buffer, the answer also has `"gap": true`: older events may be missing, and the list starts at the oldest one still held. The buffer holds the last `events.ringSize` events (default 1,000) and is empty after a restart. Traces and run records remain the durable history. Off this machine the endpoint needs `Authorization: Bearer <mesh-token>`.
 
 ## Events for one agent
 
@@ -54,7 +57,30 @@ An agent can follow events through its `subscriptions` setting: it reads them wi
 
 ## Live stream
 
-`GET /events` is a server-sent event stream. Its wire format is unchanged: `event: <kind>` with the kind's own fields as `data`, for the `run`, `task`, `signal`, `mesh`, `channel` and `status` kinds. Each frame now also includes `rootId` and `node`. Filter with `?type=run,task`, `?workflow=`, `?run=`, `?actor=` and `?channel=`. Agent task steps still arrive as `event: task` with `kind: "task:step"`. The envelope-only kinds (`message`, `agent`, and the mesh `forward` event) are read through `/events/recent`.
+`GET /events` is a server-sent event stream. Its wire format is unchanged: `event: <kind>` with the kind's own fields as `data`, for the `run`, `task`, `signal`, `mesh`, `channel` and `status` kinds. Each frame now also includes `rootId` and `node`. Filter with `?type=run,task`, `?workflow=`, `?run=`, `?actor=` and `?channel=`. Agent task steps still arrive as `event: task` with `kind: "task:step"`. The envelope-only kinds (`message`, `agent`, `announce`, and the mesh `forward` and `feed:*` events) are read through `/events/recent` or the envelope stream.
+
+`GET /events?format=envelope` streams every envelope, whatever its kind, as `event: envelope` frames. It takes the same `kind`, `skip`, `origin` and `agent` filters as `/events/recent`, and sends a comment line every 15 seconds while it is idle. Off this machine it needs `Authorization: Bearer <mesh-token>`.
+
+## Events from other machines
+
+When the mesh is on, each machine follows the events of every other machine it can reach. Events from another machine appear here with that machine's name in `node`. They reach this machine once, and are never passed on to a third machine: each machine asks its peers only for the events they published themselves (`origin=local`).
+
+- **Catch-up:** after a peer was out of reach, this machine reads what it missed from the peer's buffer. When the peer's buffer no longer goes back that far (it restarted, or more than `events.ringSize` events happened), this machine publishes `mesh` / `feed:gap` instead.
+- **Unreachable peers:** when a peer stops answering, this machine publishes `mesh` / `feed:down` once, and `feed:up` when the peer is back. A quiet peer publishes nothing; a peer that is down always says so.
+- **Peers on an older AgentX:** a peer without the mesh feed is skipped quietly. This machine publishes nothing about it, writes one line to its log, and looks again every 10 minutes. After the peer is upgraded, its events start to arrive.
+- **Stays on its machine:** per-step agent activity (`task:step`) is left out by default (see `mesh.feed.skipTypes` in [Operations settings](./config-operations.md#mesh)). State that belongs to one machine, such as its voice speaking queue, is never copied; only events describe it.
+- **Traces:** another machine's tasks are not recorded in this machine's traces. Use the event's `ref` on the machine named in `node`.
+
+Turn it off with `mesh.feed.enabled: false`. A change to `mesh.feed.skipTypes` applies the next time this machine reconnects to each peer.
+
+## Announcements
+
+An announcement is a short note to every machine in the mesh, for example planned maintenance. It is stored and shown in feeds like any other event. It does not wake an agent by itself; an agent is only woken by it if that agent subscribes to `announce` events.
+
+1. **Terminal:** run `agentx mesh announce "Maintenance tonight at 22:00"`.
+2. To sign it, add `--by <name>`. When the name is an agent ID on the receiving daemon, the event's `agentId` is that agent; otherwise the name starts the summary. Anyone allowed to announce (this machine, or a caller with the mesh token) can sign as any agent.
+
+The daemon publishes one `announce` event, and every other machine picks it up through its feed. Programs can do the same with `POST /mesh/announce` and a body of `{ "text": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. Text longer than 2,000 characters is refused, and the summary keeps the first 280.
 
 ## In code
 
@@ -74,9 +100,14 @@ Typed lifecycle events (`bus.emit("task:started", …)`) still reach `bus.on` su
 1. **Terminal:** send an agent a message, for example `agentx daemon send <agent> "Reply with a short hello"`.
 2. **Terminal:** run `curl 'http://127.0.0.1:18800/events/recent?kind=agent&limit=50'`. You see `task:started` and `task:completed` for that agent. Both have the same `rootId`, and their `ref` is the trace ID.
 3. **Terminal:** run `curl -N http://127.0.0.1:18800/events`. The first frame is `event: status`, and later frames include `rootId` and `node`.
+4. **Terminal:** with the mesh on, run `agentx mesh announce "Feed check"` on another machine.
+5. **Terminal:** on this machine, run `curl 'http://127.0.0.1:18800/events/recent?kind=announce'`. You see the note once, with the other machine's name in `node`.
 
 ## If something is wrong
 
 - **`/events/recent` returns `401`:** the request didn't come from this machine. Send `Authorization: Bearer <mesh-token>`.
 - **The list is empty:** the buffer is in memory only and starts empty after a restart. Check `since`: an unknown ID that isn't a valid time is ignored, and a time in the future matches nothing.
 - **Events on a peer have a different `rootId`:** the peer runs an older AgentX that ignores the root it is sent. Upgrade the peer.
+- **No events from another machine:** check that `mesh.feed.enabled` is not `false`, and that the peer is healthy in `agentx mesh list`. Look for `feed:down` events: their summary says why the peer can't be reached. A `401` there means the peer's mesh token doesn't match.
+- **Events from a peer running an older AgentX never arrive:** only machines with the mesh feed serve it. The log says `peer <name> not followed`. Upgrade the peer; it is picked up within 10 minutes.
+- **A `feed:gap` event:** the peer was away longer than its buffer covers. The missed events are still in the peer's traces and run records.

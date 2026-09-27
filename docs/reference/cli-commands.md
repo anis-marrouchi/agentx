@@ -2512,6 +2512,16 @@ Tune mesh peer health checks (interval + timeout, in seconds).
 | `--timeout <s>` | — | Per-probe timeout in seconds (default 10). |
 | `--show` | — | Just print the current values. |
 
+### `agentx mesh announce <text...>`
+
+Send a short note to every machine in the mesh (shown in event feeds). See [Announcements](./events.md#announcements).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--by <name>` | — | Who the note is from (an agent id or a person's name). |
+| `--node <url>` | — | Daemon to publish on (default: dashboard.daemonUrl, else this machine on port 18800). |
+| `--token <token>` | — | Mesh token, needed only when --node is another machine (default: MESH_TOKEN). |
+
 ## a2a (advanced)
 
 `agentx a2a`: Start an A2A (Agent-to-Agent) protocol server for external agent integration. **Advanced.**

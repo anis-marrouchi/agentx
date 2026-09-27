@@ -117,6 +117,9 @@ import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus
 import { withNewRoot, withRoot } from "@/events/envelope"
 import { EventWaker, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
+import { recentFeed, streamEnvelopes } from "@/events/feed-http"
+import { MeshFeedFollower } from "@/events/peer-feed"
+import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -217,6 +220,8 @@ export class AgentXDaemon {
    *  dashboard) filter by kind / workflow / actor. Created eagerly so
    *  early boot events don't fall through. */
   readonly events: EventBus = new EventBus(getAgentEventBus())
+  /** Follows each healthy peer's event feed into the local bus (#166). */
+  private peerFeed?: MeshFeedFollower
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -330,6 +335,8 @@ export class AgentXDaemon {
         context: { channel: "events", chatId: `events:${agentId}` },
       })),
       log: (msg) => this.log(msg),
+      // Peer events (mesh feed) wake only subscriptions naming their node.
+      isLocal: (e) => getAgentEventBus().isLocal(e),
     }).attach(getAgentEventBus())
 
     // Initialize message router
@@ -659,6 +666,17 @@ export class AgentXDaemon {
     // 3. Start mesh
     if (this.mesh) {
       await this.mesh.start()
+      // After discovery, so peers not yet probed are not reported down.
+      const mesh = this.mesh
+      this.peerFeed = new MeshFeedFollower({
+        bus: getAgentEventBus(),
+        peers: () => mesh.directory().map((p) => ({
+          name: p.peer, url: p.peerUrl, healthy: p.healthy, headers: mesh.authHeaders(p.peer),
+        })),
+        skipTypes: () => this.config.mesh.feed.skipTypes,
+        enabled: () => this.config.mesh.feed.enabled,
+        log: (m) => this.log(m),
+      }).start()
     }
 
     // 4. Build agent landscape (after mesh so remote peers are discovered)
@@ -925,6 +943,7 @@ export class AgentXDaemon {
     try {
       if (this.mesh) {
         this.log("  Stopping mesh...")
+        this.peerFeed?.stop()
         await this.mesh.stop()
       }
     } catch {}
@@ -2852,24 +2871,25 @@ export class AgentXDaemon {
         return
       }
 
+      // Envelope stream: every kind, peers' events included, filterable to
+      // this node's own (?origin=local, what mesh followers ask for). Gated
+      // like /events/recent, since it carries the same envelopes.
+      if (req.method === "GET" && path === "/events" && url.searchParams.get("format") === "envelope") {
+        if (!this.checkMeshAuth(req, res, path)) return
+        streamEnvelopes(getAgentEventBus(), req, res, url.searchParams)
+        return
+      }
+
       // SSE live event stream
       if (req.method === "GET" && path === "/events") {
         this.handleSSE(req, res)
         return
       }
 
-      // Recent envelopes from the bus's ring buffer, for late readers.
+      // Recent envelopes from the bus's ring buffer, for late readers and
+      // for a mesh follower catching up after a reconnect.
       if (req.method === "GET" && path === "/events/recent") {
-        const q = url.searchParams
-        const limit = parseInt(q.get("limit") || "", 10)
-        this.json(res, 200, {
-          events: getAgentEventBus().recent({
-            since: q.get("since") || undefined,
-            kind: q.get("kind") || undefined,
-            agent: q.get("agent") || undefined,
-            limit: Number.isFinite(limit) ? limit : undefined,
-          }),
-        })
+        this.json(res, 200, recentFeed(getAgentEventBus(), url.searchParams))
         return
       }
 
@@ -2892,6 +2912,17 @@ export class AgentXDaemon {
           events,
           next: events.length ? events[events.length - 1].id : since,
         })
+        return
+      }
+
+      // A note to the whole mesh (`agentx mesh announce`). Control POST:
+      // gated by isControlPost above.
+      if (req.method === "POST" && path === "/mesh/announce") {
+        const body = await readBody(req)
+        const result = publishAnnouncement(getAgentEventBus(), body, new Set(Object.keys(this.config.agents || {})))
+        if (!result.ok) { this.json(res, 400, { error: result.error }); return }
+        this.log(`[mesh] announcement: ${result.event.summary}`)
+        this.json(res, 200, { ok: true, event: result.event })
         return
       }
 

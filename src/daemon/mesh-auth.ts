@@ -46,11 +46,13 @@ export function isMeshGatedPath(path: string): boolean {
 
 /** Control POSTs that act as this daemon: reload its config, switch a
  *  schedule on or off, stop or steer a running task, kill an agent process,
- *  or send a message on one of its channels. The CLI, TUI and same-host dashboard reach them over
+ *  send a message on one of its channels, or announce to the mesh. The CLI, TUI and same-host dashboard reach them over
  *  loopback; an off-box caller needs a mesh token. */
 export function isControlPost(path: string): boolean {
   return path === "/reload" || path === "/api/processes/kill" ||
     path === "/send" || path === "/send/agent" || path === "/send/contact" ||
+    // A note to the whole mesh, published in this node's name.
+    path === "/mesh/announce" ||
     /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path)
 }

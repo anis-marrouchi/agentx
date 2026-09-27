@@ -12,6 +12,10 @@ import { formatEventLine, matchesFilters, matchesSubscription, subscriptionsFor,
 //   2. Dedup: one wake per rootId, however many matching events it has.
 //   3. Rate limit: each wake subscription wakes the agent at most its
 //      `maxPerHour` times in a sliding hour.
+// Events that arrived from other machines through the mesh feed
+// (peer-feed.ts) wake only a subscription whose `nodes` names that
+// machine: a broad subscription must not turn every peer's activity into
+// turns here. Pull and digest still see them.
 // Every skipped wake is logged with its reason.
 
 export type WakeOutcome =
@@ -24,6 +28,9 @@ export interface WakeDeps {
   /** Start the turn. Called asynchronously, off the publish path. */
   dispatch: (agentId: string, e: EventEnvelope) => Promise<unknown> | void
   log: (msg: string) => void
+  /** True for events this node published itself (bus.isLocal). Without
+   *  it every event counts as local. */
+  isLocal?: (e: EventEnvelope) => boolean
   now?: () => number
 }
 
@@ -50,6 +57,7 @@ export class EventWaker {
     const out: WakeOutcome[] = []
     const agents = this.deps.agents()
     const t = this.now()
+    const local = this.deps.isLocal ? this.deps.isLocal(e) : true
     for (const [agentId, def] of Object.entries(agents)) {
       const subs = subscriptionsFor(def.subscriptions, "wake")
       if (subs.length === 0) continue
@@ -67,7 +75,8 @@ export class EventWaker {
       // each has its own rate bucket.
       const hits = (def.subscriptions ?? [])
         .map((s, index) => ({ s, index }))
-        .filter(({ s }) => s.delivery === "wake" && matchesSubscription(s, e, agentId))
+        .filter(({ s }) => s.delivery === "wake" && matchesSubscription(s, e, agentId) &&
+          (local || (s.nodes?.includes(e.node) ?? false)))
       if (hits.length === 0) continue
       const outcome = this.decide(agentId, e, hits, t)
       out.push(outcome)

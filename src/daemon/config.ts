@@ -689,6 +689,13 @@ const meshConfigSchema = z.object({
     interval: z.number().default(60),
     timeout: z.number().default(10),
   }).default({}),
+  /** Peer event feed (#166): follow each healthy peer's /events and merge
+   *  its own events into this node's bus. `skipTypes` are left out on the
+   *  peer's side; per-step agent activity is too chatty to cross the mesh. */
+  feed: z.object({
+    enabled: z.boolean().default(true),
+    skipTypes: z.array(z.string().min(1)).default(["task:step"]),
+  }).default({}),
 })
 
 /** Intent Knowledge Graph — fixed-axis, LLM-proposed taxonomy used by the

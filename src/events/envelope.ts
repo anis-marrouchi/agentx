@@ -104,6 +104,11 @@ export class EventRing {
     this.items = []
   }
 
+  /** Whether an event with this id is still in the buffer. */
+  has(id: string): boolean {
+    return this.items.some((e) => e.id === id)
+  }
+
   recent(q: RecentQuery = {}): EventEnvelope[] {
     let out = this.items
     if (q.since) {
