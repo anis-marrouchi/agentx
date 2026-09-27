@@ -135,20 +135,40 @@ enum AgentClient {
         return try await URLSession.shared.data(for: req)
     }
 
-    /// The agent that answers: the configured one, or the daemon's
-    /// `node.defaultAgent` from /health. "" when neither is known.
-    static func resolveAgent() async -> String {
-        if let agent = Config.agentID { return agent }
-        guard let url = URL(string: "\(Config.daemonURL)/health"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let node = obj["node"] as? [String: Any],
-              let agent = node["defaultAgent"] as? String
-        else { return "" }
-        return agent
+    /// One row of GET /agents: who can answer, and whether they are busy.
+    struct AgentInfo: Decodable {
+        let id: String
+        let name: String?
+        /// Tasks running now.
+        let active: Int?
+        var label: String { name ?? id }
     }
 
-    static func ask(_ message: String) async throws -> Answer {
+    /// The daemon's agents, or nil when the daemon cannot be reached.
+    static func agents() async -> [AgentInfo]? {
+        guard let url = URL(string: "\(Config.daemonURL)/agents") else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode([AgentInfo].self, from: data)
+    }
+
+    /// The agent that answers: the pinned one, the one picked in the menu,
+    /// the daemon's `node.defaultAgent` from /health, or its first agent —
+    /// /ask refuses a request with no agent when there is no default.
+    /// "" when none is known.
+    static func resolveAgent() async -> String {
+        if let agent = Config.agentID ?? Config.chosenAgentID { return agent }
+        if let url = URL(string: "\(Config.daemonURL)/health"),
+           let (data, _) = try? await URLSession.shared.data(from: url),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let node = obj["node"] as? [String: Any],
+           let agent = node["defaultAgent"] as? String, !agent.isEmpty { return agent }
+        return await agents()?.first?.id ?? ""
+    }
+
+    static func ask(_ message: String, agent: String) async throws -> Answer {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)/ask")!)
         req.httpMethod = "POST"
         // An agent turn routinely takes minutes. The default 60s would cut
@@ -156,8 +176,8 @@ enum AgentClient {
         req.timeoutInterval = 600
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any] = ["message": message, "session": Config.voiceSession]
-        // No agent configured: the daemon answers with its default agent.
-        if let agent = Config.agentID { payload["agent"] = agent }
+        // No agent known: the daemon answers with its default agent.
+        if !agent.isEmpty { payload["agent"] = agent }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: req)

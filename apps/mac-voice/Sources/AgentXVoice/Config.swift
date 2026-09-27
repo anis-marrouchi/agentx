@@ -8,11 +8,28 @@ import Foundation
 /// from a terminal and mysteriously fails when you double-click it.
 enum Config {
     static let daemonURL = env("AGENTX_DAEMON_URL") ?? "http://127.0.0.1:18800"
-    /// The agent that answers. Unset: the daemon's `node.defaultAgent`.
+    /// The dashboard, for the menu's Settings… and History….
+    static let dashboardURL = env("AGENTX_DASHBOARD_URL") ?? "http://127.0.0.1:4202"
+    /// An agent pinned by the environment. Wins over the menu's choice.
     static let agentID = env("AGENTX_VOICE_AGENT")
 
-    /// The agent actually answering: `agentID`, or the daemon's default,
-    /// read once at launch (AgentClient.resolveAgent). Progress follows it.
+    /// The agent picked in the menu, remembered across launches. A UI
+    /// choice, so UserDefaults rather than agentx.json.
+    static var chosenAgentID: String? {
+        get { UserDefaults.standard.string(forKey: "targetAgent") }
+        set { UserDefaults.standard.set(newValue, forKey: "targetAgent") }
+    }
+
+    /// The floating pill stays on screen when idle. Off by default: the
+    /// menu-bar icon shows the state, and the pill appears only while
+    /// listening or answering.
+    static var showPill: Bool {
+        get { UserDefaults.standard.bool(forKey: "showPill") }
+        set { UserDefaults.standard.set(newValue, forKey: "showPill") }
+    }
+
+    /// The agent actually answering: `agentID`, else `chosenAgentID`, else
+    /// the daemon's default (AgentClient.resolveAgent). Progress follows it.
     @MainActor static var effectiveAgentID: String = ""
 
     /// Who speaks before the daemon has said which voice an agent uses:

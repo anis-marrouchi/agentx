@@ -17,11 +17,13 @@ import Carbon.HIToolbox
 @MainActor
 final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
+    private let statusMenu = StatusMenu()
     private let card = ResultCard()
     private let recorder = Recorder()
     private var hotkey: Hotkey?
     private var pasteHotkey: Hotkey?
     private var stopHotkey: Hotkey?
+    private var menuHotkey: Hotkey?
     /// Set by a stop: the answer being spoken ends without reopening the mic.
     private var silenced = false
     private var busy = false
@@ -92,7 +94,25 @@ final class App: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
         retireOlderInstances()
-        panel.orderFrontRegardless()
+        panel.onRender = { [weak self] state in self?.statusMenu.show(state) }
+        panel.contextMenu = { [weak self] in self?.statusMenu.menu ?? NSMenu() }
+        panel.agentName = { [weak self] in
+            Config.effectiveAgentID.isEmpty ? "" : self?.statusMenu.name(of: Config.effectiveAgentID) ?? ""
+        }
+        panel.alwaysVisible = Config.showPill
+        panel.render(.idle)
+        statusMenu.onPillChanged = { [weak self] on in
+            guard let self else { return }
+            self.panel.alwaysVisible = on
+            if !self.busy && !self.recorder.isRecording { self.panel.render(.idle) }
+        }
+        statusMenu.onTargetChanged = { [weak self] id in
+            Config.effectiveAgentID = id
+            // The last answer's voice belongs to the previous agent.
+            self?.voice = nil
+            Log.info("target agent: \(id)")
+        }
+        statusMenu.refresh()
 
         hotkey = Hotkey(
             id: 1,
@@ -105,7 +125,7 @@ final class App: NSObject, NSApplicationDelegate {
         // becomes welcome. Without this the queue is a hole rather than a
         // delay — the daemon's watcher only notices SYSTEM Focus ending,
         // and this switch is not that.
-        panel.onHoldChanged = { [weak self] nowOn in
+        statusMenu.onHoldChanged = { [weak self] nowOn in
             guard let self else { return }
             self.panel.render(.idle)
             if !nowOn { Hold.flushHeld() }
@@ -123,7 +143,7 @@ final class App: NSObject, NSApplicationDelegate {
         pasteHotkey?.register(keyCode: UInt32(kVK_ANSI_V),
                               modifiers: UInt32(cmdKey | optionKey))
 
-        // ⌘⌥. (and the pill's menu): stop every voice now. ⌘. is the Mac's
+        // ⌘⌥. (and the menu): stop every voice now. ⌘. is the Mac's
         // own "cancel"; Option keeps it from reaching the app in front.
         stopHotkey = Hotkey(
             id: 3,
@@ -131,16 +151,28 @@ final class App: NSObject, NSApplicationDelegate {
             onRelease: { [weak self] in self?.stopSpeaking() })
         stopHotkey?.register(keyCode: UInt32(kVK_ANSI_Period),
                              modifiers: UInt32(cmdKey | optionKey))
-        panel.onStop = { [weak self] in self?.stopSpeaking() }
+        statusMenu.onStop = { [weak self] in self?.stopSpeaking() }
 
+        // ⌘⌥A: open the menu-bar menu without the mouse; arrows, digits
+        // and Return work from there.
+        menuHotkey = Hotkey(
+            id: 4,
+            onPress: {},
+            onRelease: { [weak self] in self?.statusMenu.open() })
+        menuHotkey?.register(keyCode: UInt32(kVK_ANSI_A),
+                             modifiers: UInt32(cmdKey | optionKey))
+
+        // The target does not wait for the microphone: the menu shows it
+        // either way.
+        Task { @MainActor in
+            Config.effectiveAgentID = await AgentClient.resolveAgent()
+            Log.info("agent: \(Config.effectiveAgentID.isEmpty ? "the daemon's default" : Config.effectiveAgentID)")
+        }
         recorder.requestPermission { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
                 if !granted { self.panel.render(.error("Microphone denied")) }
-                else {
-                    Config.effectiveAgentID = await AgentClient.resolveAgent()
-                    Log.info("ready — hold ⌥Space to talk (agent: \(Config.effectiveAgentID.isEmpty ? "the daemon's default" : Config.effectiveAgentID))")
-                }
+                else { Log.info("ready — hold ⌥Space to talk") }
             }
         }
     }
@@ -347,7 +379,7 @@ final class App: NSObject, NSApplicationDelegate {
         do {
             beginNarration()
 
-            let answer = try await AgentClient.ask(heard)
+            let answer = try await AgentClient.ask(heard, agent: Config.effectiveAgentID)
             endNarration()
             if abandoned {
                 abandoned = false
