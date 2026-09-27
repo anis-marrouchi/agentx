@@ -106,7 +106,7 @@ agentx tui --legacy
 agentx attach as helper
 ```
 
-`daemon send` runs a task. `tui` opens the interactive terminal interface. `attach as` binds an external editor/CLI session to an AgentX identity; it does not open a chat. Use `agentx attach list` to inspect bindings and `agentx attach detach` to release them.
+`daemon send` runs a task. `tui` opens the interactive terminal interface. `attach as` binds an external editor/CLI session to an AgentX identity; it does not open a chat. Use `agentx attach list` to inspect bindings and `agentx attach detach` to release them. Bindings are saved in `~/.agentx/attach-bindings.json` and survive daemon restarts; they end on `detach` or when the session closes.
 
 ## Workflows and schedules
 
