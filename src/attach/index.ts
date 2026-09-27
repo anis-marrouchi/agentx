@@ -10,6 +10,13 @@ export {
   type ItemState,
   type StopDecision,
 } from "./types"
+export {
+  DEFAULT_WATCH_SUBSCRIPTIONS,
+  cursorAtEnd,
+  parseWatchSubscriptions,
+  type WatchCursor,
+  type WatchState,
+} from "./watch"
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"

@@ -118,7 +118,7 @@ import { withNewRoot, withRoot } from "@/events/envelope"
 import { EventWaker, wakeMessage } from "@/events/wake"
 import { clampLimit, eventsForAgent } from "@/events/subscriptions"
 import { rootFromTaskBody } from "@/a2a/mesh"
-import { getAttachRegistry, isDeliveryMode } from "@/attach"
+import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
 import { BusinessLayer } from "@/business"
@@ -2685,6 +2685,26 @@ export class AgentXDaemon {
             reg.register(sessionId, { cwd: (payload as any).cwd })
             const session = reg.bind(sessionId, agentId, mode)
             this.json(res, 200, { ok: true, session, pending: reg.pendingCount(sessionId) })
+            return
+          }
+          case "/attach/watch": {
+            // Control-plane: `agentx attach watch` posts here (#167). The
+            // session drops any identity and gets an event digest per prompt.
+            const sessionId = String((payload as any).sessionId || "")
+            if (!sessionId) {
+              this.json(res, 400, { error: "sessionId is required" })
+              return
+            }
+            const subs = parseWatchSubscriptions((payload as any).subscriptions)
+            if (!subs.ok) {
+              this.json(res, 400, { error: subs.error })
+              return
+            }
+            const subscriptions = subs.subscriptions
+            const reg = getAttachRegistry()
+            reg.register(sessionId, { cwd: (payload as any).cwd })
+            const session = reg.watch(sessionId, { subscriptions, cursor: cursorAtEnd(getAgentEventBus().recent()) })
+            this.json(res, 200, { ok: true, session })
             return
           }
           case "/attach/next": {

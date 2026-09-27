@@ -1,3 +1,5 @@
+import type { WatchState } from "./watch"
+
 // --- Attach mode: wear agentx inside a live Claude Code session ---
 //
 // Normally the daemon OWNS the loop: a message arrives, agentx spawns a
@@ -93,6 +95,10 @@ export interface AttachSession {
   /** Items drained in the current Stop-hook chain, reset when the session
    *  actually stops. Bounds the auto-drain loop. */
   drainedThisTurn: number
+  /** Set when the session watches instead of answering (#167). A watcher
+   *  holds no identity, so it is never offered a message; it only gets an
+   *  event digest on each prompt. See watch.ts. */
+  watch?: WatchState
 }
 
 /** Tunables. Deliberately not config-file-backed yet — these are runtime

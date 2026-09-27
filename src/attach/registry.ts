@@ -6,6 +6,7 @@ import {
   type DeliveryMode,
   type InboxItem,
 } from "./types"
+import type { WatchCursor, WatchState } from "./watch"
 
 // --- The attach registry ---
 //
@@ -48,6 +49,8 @@ interface Waiter {
 export interface SavedBinding {
   agentIds: string[]
   mode: DeliveryMode
+  /** A watching session's filter and cursor (#167); agentIds is then empty. */
+  watch?: WatchState
   cwd?: string
   savedAt: number
 }
@@ -82,7 +85,7 @@ export class AttachRegistry {
     try { loaded = store?.load() ?? {} } catch { loaded = {} }
     const cutoff = Date.now() - SAVED_BINDING_TTL_MS
     for (const [sessionId, b] of Object.entries(loaded)) {
-      if (b && Array.isArray(b.agentIds) && b.agentIds.length > 0 && b.savedAt >= cutoff) this.saved.set(sessionId, b)
+      if (b && Array.isArray(b.agentIds) && (b.agentIds.length > 0 || b.watch) && b.savedAt >= cutoff) this.saved.set(sessionId, b)
     }
   }
 
@@ -122,6 +125,7 @@ export class AttachRegistry {
       model: info.model,
       drainedThisTurn: 0,
     }
+    if (saved?.watch) session.watch = { ...saved.watch }
     this.sessions.set(sessionId, session)
     if (saved) this.remember(session, now)
     return session
@@ -164,6 +168,9 @@ export class AttachRegistry {
     }
     if (!session.agentIds.includes(agentId)) session.agentIds.push(agentId)
     if (mode) session.mode = mode
+    // Answering and watching are exclusive: a session that takes an identity
+    // stops watching (#167).
+    session.watch = undefined
     this.remember(session)
     return session
   }
@@ -172,8 +179,38 @@ export class AttachRegistry {
     const session = this.sessions.get(sessionId)
     if (!session) return undefined
     session.agentIds = agentId ? session.agentIds.filter((a) => a !== agentId) : []
+    // A full detach also ends watching; releasing one identity does not.
+    if (!agentId) session.watch = undefined
     this.remember(session)
     return session
+  }
+
+  /** Make a session a watcher (#167): it drops every identity it held, so
+   *  nothing is ever offered to it, and from now on it only gets an event
+   *  digest on each prompt. Work already queued for it falls back to
+   *  spawning straight away instead of waiting out the claim deadline. */
+  watch(
+    sessionId: string,
+    state: Omit<WatchState, "startedAt">,
+    now: number = Date.now(),
+  ): AttachSession | undefined {
+    const session = this.sessions.get(sessionId)
+    if (!session) return undefined
+    session.agentIds = []
+    session.awaitingAnswer = undefined
+    this.expireItemsOf(sessionId, now, "session switched to watch mode")
+    session.watch = { subscriptions: state.subscriptions, cursor: state.cursor, startedAt: now }
+    this.remember(session, now)
+    return session
+  }
+
+  /** Move a watcher's cursor past the events it was just shown. */
+  advanceWatch(sessionId: string, cursor: WatchCursor): void {
+    const session = this.sessions.get(sessionId)
+    if (!session?.watch) return
+    if (session.watch.cursor.id === cursor.id && session.watch.cursor.at === cursor.at) return
+    session.watch.cursor = cursor
+    this.remember(session)
   }
 
   setMode(sessionId: string, mode: DeliveryMode): AttachSession | undefined {
@@ -199,10 +236,14 @@ export class AttachRegistry {
     // Idle drops keep the saved binding so the session gets it back when it
     // returns; only a real end (SessionEnd) forgets it.
     if (opts.forget && this.saved.delete(sessionId)) this.persist()
+    this.expireItemsOf(sessionId, now, "session ended")
+  }
+
+  private expireItemsOf(sessionId: string, now: number, reason: string): void {
     for (const item of this.items.values()) {
       if (item.sessionId !== sessionId) continue
       if (item.state === "pending" || item.state === "claimed") {
-        this.settle(item, "expired", now, "session ended")
+        this.settle(item, "expired", now, reason)
       }
     }
   }
@@ -363,9 +404,13 @@ export class AttachRegistry {
   }
 
   private remember(session: AttachSession, now: number = Date.now()): void {
-    if (session.agentIds.length === 0) this.saved.delete(session.sessionId)
-    else this.saved.set(session.sessionId, { agentIds: [...session.agentIds], mode: session.mode, cwd: session.cwd || undefined, savedAt: now })
-    for (const [id, b] of this.saved) if (b.agentIds.length === 0) this.saved.delete(id)
+    if (session.agentIds.length === 0 && !session.watch) this.saved.delete(session.sessionId)
+    else {
+      const b: SavedBinding = { agentIds: [...session.agentIds], mode: session.mode, cwd: session.cwd || undefined, savedAt: now }
+      if (session.watch) b.watch = { ...session.watch }
+      this.saved.set(session.sessionId, b)
+    }
+    for (const [id, b] of this.saved) if (b.agentIds.length === 0 && !b.watch) this.saved.delete(id)
     this.persist()
   }
 

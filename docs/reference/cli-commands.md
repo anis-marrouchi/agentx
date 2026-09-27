@@ -467,9 +467,21 @@ Bind this Claude Code session to an agent identity.
 | `--session <id>` | — | Claude Code session id (defaults to $CLAUDE_CODE_SESSION_ID). |
 | `--url <url>` | `http://127.0.0.1:19900` | Daemon base url. |
 
+### `agentx attach watch`
+
+Watch this session: no identity, no messages, a short event digest on each prompt. See [Work from your Claude Code session](/jobs/claude-code-session#watch-without-answering).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--kinds <list>` | — | Event kinds or types to include, comma separated (default: failures, completions, approvals waiting, peers down). |
+| `--agents <list>` | — | Only events for these agents, comma separated. |
+| `--match <text>` | — | Only events whose summary contains this text. |
+| `--session <id>` | — | Claude Code session id (defaults to $CLAUDE_CODE_SESSION_ID). |
+| `--url <url>` | `http://127.0.0.1:19900` | Daemon base url. |
+
 ### `agentx attach detach`
 
-Stop wearing an identity in this session (queued work falls back to spawned agents).
+Stop wearing an identity or watching in this session (queued work falls back to spawned agents).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -479,7 +491,7 @@ Stop wearing an identity in this session (queued work falls back to spawned agen
 
 ### `agentx attach list`
 
-Show every attached session on this machine.
+Show every attached session on this machine. Sessions that answer for an agent are listed under **Identities**, watching sessions under **Watchers**.
 
 | Flag | Default | What it does |
 |---|---|---|
