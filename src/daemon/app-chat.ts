@@ -3,6 +3,7 @@ import type { TokenRecord } from "./token-store"
 import type { AppChatStore, AppConversation } from "./app-chat-store"
 import { readJson, type NodeReply, type SnapshotNode } from "./app-fleet"
 import { relayTurn, type DaemonTarget } from "./app-chat-relay"
+import { ChatTurn, ORPHAN_LIMIT_MS } from "./app-chat-turns"
 
 // --- Phone app: Chat (/api/app/agents, /api/app/chat, /api/app/conversations) ---
 //
@@ -32,6 +33,8 @@ export interface AppChatDeps {
   meshPeers: () => Promise<AppMeshPeer[]>
   /** The dashboard's allowlisted, token-carrying POST (as in app-fleet.ts). */
   nodePost: (nodeUrl: string, path: string, body: unknown) => Promise<NodeReply>
+  /** How long a turn may run with no phone attached (default 30 min). */
+  orphanLimitMs?: number
 }
 
 export interface PickerNode {
@@ -45,7 +48,7 @@ export interface PickerNode {
 const MAX_MESSAGE = 8_000
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 /** conversation id → its running turn. One turn at a time per conversation. */
-const inflight = new Map<string, AbortController>()
+const inflight = new Map<string, ChatTurn>()
 
 export async function handleAppChat(
   req: IncomingMessage,
@@ -55,7 +58,7 @@ export async function handleAppChat(
   device: TokenRecord,
   deps: AppChatDeps,
 ): Promise<boolean> {
-  if (path !== "/api/app/agents" && path !== "/api/app/chat" && path !== "/api/app/chat/stop" &&
+  if (path !== "/api/app/agents" && path !== "/api/app/chat" && path !== "/api/app/chat/stop" && path !== "/api/app/chat/attach" &&
     path !== "/api/app/conversations" && !path.startsWith("/api/app/conversations/")) return false
 
   if (method === "GET" && path === "/api/app/agents") {
@@ -70,7 +73,23 @@ export async function handleAppChat(
   const one = method === "GET" ? /^\/api\/app\/conversations\/([^/]+)$/.exec(path) : null
   if (one) {
     const conv = store.get(device.id, decodeURIComponent(one[1]))
-    return conv ? json(res, 200, { ...conv, running: inflight.has(conv.id) }) : json(res, 404, { error: "no such conversation" })
+    if (!conv) return json(res, 404, { error: "no such conversation" })
+    const turn = inflight.get(conv.id)
+    // A running turn comes with what the agent has written so far.
+    return json(res, 200, { ...conv, running: !!turn, ...(turn ? { partial: { text: turn.text, tools: turn.tools } } : {}) })
+  }
+  if (method === "GET" && path === "/api/app/chat/attach") {
+    // A phone coming back to a turn still running: what was written so far,
+    // then the live stream to the end.
+    const conv = store.get(device.id, new URL(req.url || path, "http://x").searchParams.get("conversationId") || "")
+    const turn = conv && inflight.get(conv.id)
+    if (!conv || !turn) return json(res, 404, { error: "nothing is running in this conversation" })
+    openSse(res)
+    const { id, title, node, nodeName, agent, agentName } = conv
+    res.write(sse("conversation", { id, title, node, nodeName, agent, agentName }))
+    res.write(sse("resume", { text: turn.text, tools: turn.tools }))
+    turn.attach(res)
+    return true
   }
   if (method !== "POST" || (path !== "/api/app/chat" && path !== "/api/app/chat/stop")) return json(res, 404, { error: "not found" })
 
@@ -85,7 +104,7 @@ export async function handleAppChat(
     // (it restarted) and a peer on an older version.
     const running = inflight.get(conv.id)
     if (running) {
-      running.abort()
+      running.ac.abort()
       void cancelRuns(conv, deps, device.name)
       return json(res, 200, { stopped: true })
     }
@@ -161,36 +180,44 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
   }
   if (inflight.has(conv.id)) { json(res, 409, { error: "The agent is still answering in this conversation." }); return }
 
-  const ac = new AbortController()
-  inflight.set(conv.id, ac)
+  const turn = new ChatTurn(deps.orphanLimitMs ?? ORPHAN_LIMIT_MS)
+  inflight.set(conv.id, turn)
   store.append(device.id, conv.id, { role: "user", content: message, at: Date.now() })
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-store",
-    "X-Accel-Buffering": "no",
-  })
-  const open = () => !res.writableEnded && !res.destroyed
-  const send = (event: string, data: unknown) => { if (open()) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
-  // The phone going away (closed app, lost signal) stops the turn upstream.
-  res.on("close", () => { if (!res.writableEnded) ac.abort() })
-  const heartbeat = setInterval(() => { if (open()) res.write(": ping\n\n") }, 15_000)
-  heartbeat.unref?.()
-
   const { id, title, node, nodeName, agent, agentName } = conv
-  send("conversation", { id, title, node, nodeName, agent, agentName })
+  openSse(res)
+  res.write(sse("conversation", { id, title, node, nodeName, agent, agentName }))
+  // The phone leaving (locked screen, lost signal) does NOT stop the turn:
+  // the relay reads on and saves the answer. Only Stop, or the orphan limit,
+  // aborts it (app-chat-turns.ts).
+  turn.attach(res)
   try {
-    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}` }, ac.signal, send)
+    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}` }, turn.ac.signal, (e, d) => turn.broadcast(e, d))
+    if (turn.orphaned) {
+      out.error = `Stopped: the phone was away for more than ${Math.round((deps.orphanLimitMs ?? ORPHAN_LIMIT_MS) / 60_000)} minutes.`
+      void cancelRuns(conv, deps, device.name)
+    }
     store.append(device.id, id, {
       role: "assistant", content: out.text, status: out.status, at: Date.now(),
       ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}), ...(out.tools.length ? { tools: out.tools } : {}),
     })
     // The reply as saved: text without its agentx:ui block, plus the block parsed.
-    send("final", { status: out.status, content: out.text, ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}) })
+    turn.broadcast("final", { status: out.status, content: out.text, ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}) })
   } finally {
-    clearInterval(heartbeat)
     inflight.delete(id)
-    if (open()) res.end()
+    turn.finish()
   }
+}
+
+function openSse(res: ServerResponse): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-store",
+    "X-Accel-Buffering": "no",
+  })
+}
+
+function sse(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
 /** Cancels this conversation's runs through /api/tasks/:id/cancel on the

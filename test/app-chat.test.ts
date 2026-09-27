@@ -24,6 +24,8 @@ interface Seen { path: string; auth?: string; body: any; closedEarly: boolean }
 let seen: Seen[] = []
 /** When set, /task streams one chunk and then waits to be disconnected. */
 let hold = false
+/** Finishes held turns: the rest of TURN, then the end of the stream. */
+let release: Array<() => void> = []
 /** Upstream events of a normal turn, in order. */
 const TURN = [
   ["start", { agentId: "alpha" }],
@@ -39,6 +41,7 @@ const TURN = [
 ] as const
 
 let dir: string
+let deps: AppChatDeps
 let tokens: TokenStore
 let store: AppChatStore
 let daemon: Server
@@ -62,7 +65,11 @@ async function fakeDaemon(req: IncomingMessage, res: ServerResponse) {
   seen.push(rec)
   res.writeHead(200, { "Content-Type": "text/event-stream" })
   res.on("close", () => { if (!res.writableEnded) rec.closedEarly = true })
-  if (hold) { sse(res, "start", {}); sse(res, "text", { text: "Partial " }); return }
+  if (hold) {
+    sse(res, "start", {}); sse(res, "text", { text: "Partial " })
+    release.push(() => { if (res.writableEnded || res.destroyed) return; for (const [event, data] of TURN.slice(3)) sse(res, event, data); res.end() })
+    return
+  }
   for (const [event, data] of TURN) sse(res, event, data)
   res.end()
 }
@@ -83,7 +90,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => daemon.listen(0, "127.0.0.1", r))
   daemonUrl = `http://127.0.0.1:${(daemon.address() as any).port}`
 
-  const deps: AppChatDeps = {
+  deps = {
     store: () => store,
     daemon: { url: daemonUrl, token: DAEMON_TOKEN, name: "node-a" },
     snapshot: async () => ({ nodes: [
@@ -111,7 +118,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-beforeEach(() => { seen = []; hold = false; posts.length = 0; running = [] })
+beforeEach(() => { seen = []; hold = false; release = []; posts.length = 0; running = []; deps.orphanLimitMs = undefined })
 
 const auth = (t = appToken) => ({ Authorization: `Bearer ${t}`, "Content-Type": "application/json" })
 const getJson = async (path: string, t = appToken) => {
@@ -276,10 +283,11 @@ describe("stopping a turn", () => {
     expect((await fetch(`${base}/api/app/chat/stop`, { method: "POST", headers: auth(), body: JSON.stringify({ conversationId: id }) })).status).toBe(404)
   })
 
-  it("the phone disconnecting aborts the upstream turn", async () => {
+  /** Starts a held turn and drops the phone's connection after the first text. */
+  async function leaveMidTurn(message: string): Promise<string> {
     hold = true
     const ac = new AbortController()
-    const r = await fetch(`${base}/api/app/chat`, { method: "POST", headers: auth(), body: JSON.stringify({ node: "local", agent: "alpha", message: "Leave" }), signal: ac.signal })
+    const r = await fetch(`${base}/api/app/chat`, { method: "POST", headers: auth(), body: JSON.stringify({ node: "local", agent: "alpha", message }), signal: ac.signal })
     let id = ""
     try {
       for await (const ev of readSse(r.body as any)) {
@@ -288,8 +296,56 @@ describe("stopping a turn", () => {
       }
     } catch { /* aborted */ }
     await settle()
+    return id
+  }
+  const device = () => tokens.verify(appToken)!.id
+
+  it("the phone leaving does not stop the turn: the answer is still saved", async () => {
+    const id = await leaveMidTurn("Leave")
+    expect(seen[0].closedEarly).toBe(false)
+    expect(posts).toEqual([])
+    // Reopened while running: what was written so far.
+    const mid = await getJson(`/api/app/conversations/${id}`)
+    expect(mid.body).toMatchObject({ running: true, partial: { text: "Partial ", tools: [] } })
+    release.forEach((f) => f())
+    await settle()
+    expect(store.get(device(), id)?.messages.at(-1)).toMatchObject({
+      role: "assistant", status: "done", content: "Here you go.", tools: [{ name: "Read", arg: "notes.md", error: true }],
+    })
+    expect((await getJson(`/api/app/conversations/${id}`)).body.running).toBe(false)
+  })
+
+  it("a phone coming back attaches to the live stream from where it is", async () => {
+    const id = await leaveMidTurn("Come back")
+    expect((await chat({ conversationId: id, message: "again" })).status).toBe(409) // one relay per conversation
+    const r = await fetch(`${base}/api/app/chat/attach?conversationId=${id}`, { headers: auth() })
+    expect(r.status).toBe(200)
+    const events: Array<{ event: string; data: any }> = []
+    for await (const ev of readSse(r.body as any)) {
+      events.push(ev)
+      if (ev.event === "resume") release.forEach((f) => f())
+    }
+    expect(events.slice(0, 2)).toMatchObject([
+      { event: "conversation", data: { id, agent: "alpha" } },
+      { event: "resume", data: { text: "Partial ", tools: [] } },
+    ])
+    expect(events.map((e) => e.event).slice(2)).toEqual(["tool", "tool", "text", "done", "final"])
+    expect(events.at(-1)!.data).toMatchObject({ status: "done", content: "Here you go." })
+    // Nothing left to attach to, and another phone never could.
+    expect((await fetch(`${base}/api/app/chat/attach?conversationId=${id}`, { headers: auth() })).status).toBe(404)
+    expect((await fetch(`${base}/api/app/chat/attach?conversationId=${id}`, { headers: auth(otherPhone) })).status).toBe(404)
+  })
+
+  it("a turn left without a phone for too long is stopped", async () => {
+    deps.orphanLimitMs = 150
+    const id = await leaveMidTurn("Forgotten")
+    running = [{ id: "t-7", chatId: `app:${id}` }]
+    expect(seen[0].closedEarly).toBe(false)
+    await new Promise((r) => setTimeout(r, 300))
     expect(seen[0].closedEarly).toBe(true)
-    expect(store.get(tokens.verify(appToken)!.id, id)?.messages.at(-1)).toMatchObject({ status: "stopped" })
+    expect(store.get(device(), id)?.messages.at(-1)).toMatchObject({ status: "stopped", content: "Partial ", error: expect.stringMatching(/phone was away/) })
+    await settle()
+    expect(posts.map((p) => p.path)).toEqual(["/api/tasks/t-7/cancel"])
   })
 })
 

@@ -34,8 +34,10 @@ export const APP_CHAT_SCRIPT = `
   function $(id) { return document.getElementById(id); }
   var log = $('cx-log'), empty = $('cx-empty'), form = $('cx-form'), input = $('cx-input'), stopBtn = $('cx-stop');
   var pickBtn = $('cx-pick'), picker = $('cx-picker'), hist = $('cx-history'), histBtn = $('cx-history-btn'), newBtn = $('cx-new');
-  var state = { conv: null, target: null, busy: false, ac: null, queue: [], remote: false, view: 0 };
-  var NOTES = { stopped: 'Stopped. What the agent wrote so far is kept.', error: 'The agent could not answer.' };
+  var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0 };
+  var NOTES = { stopped: 'Stopped. What the agent wrote so far is kept.', error: 'The agent could not answer.',
+    running: 'Still answering. The answer appears here when it is ready.',
+    lost: 'Connection lost. The agent keeps answering; the answer appears here when the phone is back online.' };
 
   function remember(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function recall(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
@@ -81,8 +83,18 @@ export const APP_CHAT_SCRIPT = `
       renderUi(el, m.ui);
       if (m.status && m.status !== 'done') setNote(el, m.error || NOTES[m.status] || '', m.status === 'error');
     });
-    if (conv.running) setNote(agentMsg(), 'Still answering. This refreshes when it is done.');
+    var live = null;
+    if (conv.running) {
+      // What the agent has written so far; the live stream carries on from it.
+      live = agentMsg();
+      if (conv.partial && conv.partial.text) setBody(live, V.preview(conv.partial.text));
+      V.setTools(live, conv.partial && conv.partial.tools);
+      setNote(live, NOTES.running);
+    }
+    // Follow-ups typed while it answers stay below, waiting to be sent.
+    state.queue.forEach(function (x) { log.appendChild(x.el); });
     scrollDown();
+    return live;
   }
 
   // --- Agent, conversation and the sheets ---
@@ -134,7 +146,7 @@ export const APP_CHAT_SCRIPT = `
     if (state.busy) return;
     state.view++;
     clearTimeout(pollTimer);
-    state.conv = null; state.remote = false;
+    state.conv = null;
     remember('ax-chat-conv', null);
     showTarget(state.target);
     clearLog();
@@ -176,18 +188,18 @@ export const APP_CHAT_SCRIPT = `
     }).then(function (c) {
       if (!c || mine !== state.view) return;
       fromServer = true;
-      useConversation(c); renderConversation(c);
-      state.remote = !!c.running;
-      setBusy(false);
-      if (c.running) pollTimer = setTimeout(function () { if (state.conv && state.conv.id === id) openConversation(id); }, 4000);
-      else { delete c.running; V.cachePut(c); }
+      useConversation(c);
+      var live = renderConversation(c);
+      if (!c.running) { V.cachePut(c); return; }
+      // Still running: pick the live stream up where it is.
+      follow(api('/api/app/chat/attach?conversationId=' + encodeURIComponent(id)), live, c.partial || {});
     }).catch(function () {});
   }
 
   // --- Sending, streaming, stopping ---
   function setBusy(on) {
     state.busy = on;
-    stopBtn.hidden = !(on || state.remote);
+    stopBtn.hidden = !on;
     newBtn.disabled = on;
     log.setAttribute('aria-busy', on ? 'true' : 'false');
   }
@@ -209,11 +221,18 @@ export const APP_CHAT_SCRIPT = `
     var body = state.conv
       ? { conversationId: state.conv.id, message: text }
       : { node: state.target.node, agent: state.target.agent, message: text };
+    state.stopWanted = false;
+    userMsg(text);
+    input.value = ''; input.style.height = '';
+    follow(post('/api/app/chat', body), agentMsg(), null);
+  }
+  // Streams one turn into the bubble el, from a send or from attaching
+  // to a turn that is still running. The phone losing its connection does
+  // not stop the agent: the answer is saved and shown when the phone is back.
+  function follow(request, el, partial) {
     clearTimeout(pollTimer);
     state.view++;
-    state.remote = false;
-    userMsg(text);
-    var el = agentMsg(), raw = '', tools = [], ended = false, frame = 0;
+    var raw = (partial && partial.text) || '', tools = ((partial && partial.tools) || []).slice(), ended = false, frame = 0;
     function paint() { frame = 0; if (!ended && raw) { setBody(el, V.preview(raw)); scrollDown(); } }
     function finish(content, note, bad, ui) {
       ended = true;
@@ -222,25 +241,28 @@ export const APP_CHAT_SCRIPT = `
       setNote(el, note, bad);
       scrollDown();
     }
-    var ac = new AbortController();
-    state.ac = ac;
     setBusy(true);
-    input.value = ''; input.style.height = '';
     scrollDown();
-    post('/api/app/chat', body, ac.signal).then(function (r) {
+    return request.then(function (r) {
+      // Attaching just after the turn ended: reload the saved answer.
+      if (r.status === 404 && partial) { ended = true; return; }
       if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { finish(raw, j.error || ('Failed (HTTP ' + r.status + ')'), true); });
       return V.readStream(r.body, function (ev, d) {
-        if (ev === 'conversation') useConversation(d);
+        if (ev === 'conversation') { useConversation(d); if (state.stopWanted) { state.stopWanted = false; stop(); } }
+        else if (ev === 'resume') { raw = d.text || ''; tools = (d.tools || []).slice(); V.setTools(el, tools); setNote(el, ''); paint(); }
         else if (ev === 'text' && typeof d.text === 'string') { raw += d.text; if (!frame) frame = requestAnimationFrame(paint); }
         else if (ev === 'tool' && d.status === 'start') { tools.push({ id: d.id, name: d.name, arg: d.arg }); V.setTools(el, tools); }
         else if (ev === 'tool' && d.error) { tools.forEach(function (t) { if (t.id === d.id) t.error = true; }); V.setTools(el, tools); }
         else if (ev === 'final') finish(d.content, d.status === 'done' ? '' : (d.error || NOTES[d.status]), d.status === 'error', d.ui);
-      }).then(function () { if (!ended) finish(raw, 'The connection closed before the answer finished.', true); });
-    }).catch(function () {
-      if (!ended) finish(raw, ac.signal.aborted ? NOTES.stopped : 'Could not reach AgentX. Check the connection and try again.', !ac.signal.aborted);
-    }).then(function () {
-      state.ac = null;
+      });
+    }).catch(function () {}).then(function () {
       setBusy(false);
+      if (!ended) {
+        // The stream broke before the answer: the agent carries on.
+        setNote(el, state.conv ? NOTES.lost : 'Could not reach AgentX. Check the connection and try again.', !state.conv);
+        if (state.conv) { var id = state.conv.id; pollTimer = setTimeout(function () { if (state.conv && state.conv.id === id) openConversation(id); }, 5000); }
+        return;
+      }
       if (state.queue.length) {
         var next = state.queue.splice(0);
         next.forEach(function (x) { x.el.remove(); });
@@ -249,13 +271,9 @@ export const APP_CHAT_SCRIPT = `
     });
   }
   function stop() {
-    var ac = state.ac;
-    if (state.conv) post('/api/app/chat/stop', { conversationId: state.conv.id }).then(function () {
-      if (state.remote) openConversation(state.conv.id);
-    }).catch(function () {});
-    // The server keeps what was written so far; drop the stream ourselves
-    // if that doesn't land quickly (or before the conversation exists).
-    if (ac) setTimeout(function () { if (state.ac === ac) ac.abort(); }, state.conv ? 4000 : 0);
+    // Only Stop cancels. Before the conversation exists, wait for its id.
+    if (!state.conv) { state.stopWanted = true; return; }
+    post('/api/app/chat/stop', { conversationId: state.conv.id }).catch(function () {});
   }
   function flash(text) {
     var el = bubble('cx-agent');
@@ -274,6 +292,7 @@ export const APP_CHAT_SCRIPT = `
   histBtn.addEventListener('click', function () { var open = hist.hidden; toggle(hist, open); if (open) loadHistory(); });
   newBtn.addEventListener('click', function () { startNew(); input.focus(); });
 
+  window.addEventListener('online', function () { if (state.conv && !state.busy) openConversation(state.conv.id); });
   state.target = recall('ax-chat-target');
   showTarget(state.target);
   var last = recall('ax-chat-conv');
