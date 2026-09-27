@@ -27,7 +27,7 @@ export type FactReview = "held" | "approved" | "rejected"
 
 const OPERATOR_CHANNELS = new Set([
   "cli", "chat-cli", "exec", "tui", "dashboard", "admin", "test-drive",
-  "workflow-editor", "voice", "opencode", "mcp", "ntfy", "raycast",
+  "workflow-editor", "voice", "opencode", "mcp", "ntfy", "push", "raycast",
 ])
 
 /** People behind an allow-list or project membership, mesh peers, and

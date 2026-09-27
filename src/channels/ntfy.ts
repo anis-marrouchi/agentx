@@ -46,7 +46,7 @@ function encodeHeader(value: string): string {
 /** First line of the body, when it reads like a title (short, no trailing
  *  punctuation that implies a sentence continues). Lets an agent write a
  *  single blob and still get a well-formed notification. */
-function splitTitle(text: string): { title?: string; body: string } {
+export function splitTitle(text: string): { title?: string; body: string } {
   const lines = text.split("\n")
   const first = (lines[0] ?? "").trim()
   const rest = lines.slice(1).join("\n").trim()

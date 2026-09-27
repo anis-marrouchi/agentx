@@ -5,6 +5,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
+import { pushStatus, patchPush, defaultNotifyChannel } from "@/notify/push-settings"
 
 // --- agentx notifications — manage where + when AgentX pings the operator ---
 //
@@ -23,6 +24,10 @@ function readNotifications(): any {
 
 function readNtfy(): any {
   try { return (loadDaemonConfig() as any).channels?.ntfy } catch { return undefined }
+}
+
+function readPush(): any {
+  try { return (loadDaemonConfig() as any).channels?.push } catch { return undefined }
 }
 
 function mutate(mutator: (n: any) => string): void {
@@ -69,6 +74,14 @@ notifications
         if (helper.fix) console.log(`                    ${chalk.dim("Fix: " + helper.fix)}`)
       }
     }
+    let cfg: any
+    try { cfg = loadDaemonConfig() } catch { cfg = undefined }
+    console.log(`  channel           ${defaultNotifyChannel(cfg)} ${chalk.dim(n.channel ? "(where agentx notify sends)" : "(where agentx notify sends; not set, so push when it is on, else ntfy)")}`)
+    const push = pushStatus(readPush())
+    const pushDetail = push.role === "relay"
+      ? `relays to ${push.relayTo}`
+      : `this node sends · subject ${push.subjectSet ? "set" : "unset"} · keys ${push.keysSet ? "set" : "missing (agentx app push-keys)"}`
+    console.log(`  push              ${push.enabled ? "on" : chalk.dim("off")} ${chalk.dim(pushDetail)}`)
     const ntfy = ntfyStatus(readNtfy())
     console.log(`  ntfy              ${ntfy.enabled ? "on" : chalk.dim("off")} ${chalk.dim(`${ntfy.server} · topic ${ntfy.topicSet ? "set" : "unset"} · token ${ntfy.tokenSet ? "set" : "unset"}`)}`)
     console.log()
@@ -165,6 +178,51 @@ notifications
         return `notifications.local = ${JSON.stringify(n.local)}`
       })
       if (opts.icon !== undefined) console.log(chalk.dim(`  Run agentx desktop install to put the new icon on the helper.\n`))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e?.message ?? e}`))
+      process.exit(1)
+    }
+  })
+
+notifications
+  .command("channel <name>")
+  .description("channel agentx notify uses when --channel is not given: push, ntfy, telegram… (unset: push when it is on, else ntfy)")
+  .action((name: string) => {
+    const channel = name.trim()
+    if (!/^[\w-]+$/.test(channel)) {
+      console.log(chalk.red(`  not a channel name: ${name}`))
+      process.exit(1)
+    }
+    mutate((n) => { n.channel = channel; return `notifications.channel = ${channel}` })
+  })
+
+notifications
+  .command("push")
+  .description("set up notifications on the phone app: on/off, contact, or relay to the node that hosts the app")
+  .option("--subject <contact>", "contact for the push services: mailto:you@example.com or an https:// URL")
+  .option("--relay-to <peer>", 'mesh peer that hosts the phone app (on every other node); "" makes this node the host')
+  .option("--enable", "turn the channel on")
+  .option("--disable", "turn the channel off")
+  .action((opts) => {
+    const patch: Record<string, unknown> = {}
+    if (opts.subject !== undefined) patch.subject = opts.subject
+    if (opts.relayTo !== undefined) patch.relayTo = opts.relayTo
+    if (opts.enable) patch.enabled = true
+    if (opts.disable) patch.enabled = false
+    if (Object.keys(patch).length === 0) {
+      console.log(chalk.red("  nothing to change — pass --subject, --relay-to, --enable or --disable"))
+      process.exit(1)
+    }
+    try {
+      const { summary, backupPath } = mutateAgentxConfig((cfg) => {
+        cfg.channels = cfg.channels || {}
+        cfg.channels.push = patchPush(cfg.channels.push, patch)
+        const s = pushStatus(cfg.channels.push)
+        return `channels.push ${s.enabled ? "on" : "off"} · ${s.role === "relay" ? `relays to ${s.relayTo}` : `host · subject ${s.subjectSet ? "set" : "unset"} · keys ${s.keysSet ? "set" : "missing"}`}`
+      })
+      console.log(chalk.green(`\n  ✓ ${summary}`))
+      if (backupPath) console.log(chalk.dim(`  Backup: ${backupPath}`))
+      console.log(chalk.dim(`  Restart the daemon for a channel change to take effect.\n`))
     } catch (e: any) {
       console.log(chalk.red(`  ${e?.message ?? e}`))
       process.exit(1)

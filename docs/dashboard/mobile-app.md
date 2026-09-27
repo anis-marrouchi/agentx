@@ -1,6 +1,6 @@
 # Phone app
 
-The phone app is a small version of the dashboard that you install on an Android phone or an iPhone straight from the browser. There is no app store. It has four tabs: **Chat**, **Fleet**, **Activity** and **Alerts**. This page installs the app and pairs your phone. To watch and manage your computers from it, see [Fleet and Activity on your phone](./mobile-fleet.md).
+The phone app is a small version of the dashboard that you install on an Android phone or an iPhone straight from the browser. There is no app store. It has four tabs: **Chat**, **Fleet**, **Activity** and **Alerts**. This page installs the app and pairs your phone. To watch and manage your computers from it, see [Fleet and Activity on your phone](./mobile-fleet.md). To get notifications on it, see [Notifications on your phone](./mobile-alerts.md).
 
 The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/install), a free private network (a *tailnet*) that links your own devices. Nothing is opened to the public internet.
 

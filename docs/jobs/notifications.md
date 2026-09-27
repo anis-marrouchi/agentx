@@ -4,7 +4,7 @@ AgentX can tap you on the shoulder when something happens: a task finishes, a jo
 
 A notification can reach you in three ways. You can use any of them on its own:
 
-- **On your phone**, through the free [ntfy](https://ntfy.sh) app. ntfy ("notify") is a small service that sends a push message to a phone.
+- **On your phone**, through the AgentX [phone app](../dashboard/mobile-app.md). This is the default. If you prefer, the free [ntfy](https://ntfy.sh) app works too. ntfy ("notify") is a small service that sends a push message to a phone.
 - **On your Mac**, as a banner in the top-right corner of the screen, with a short sound.
 - **In a chat app** (Telegram or WhatsApp), for messages about tasks the agents run.
 
@@ -17,7 +17,18 @@ You can change every setting in two places. Both save to the same settings file,
 
 ![The Notifications routing section in the dashboard](/screenshots/notifications/dashboard-routing.png)
 
-## 1. Get messages on your phone (ntfy)
+## 1. Get messages on your phone
+
+### With the AgentX phone app
+
+1. Install and pair the [phone app](../dashboard/mobile-app.md).
+2. Follow [Notifications on your phone](../dashboard/mobile-alerts.md): run `agentx app push-keys` and `agentx notifications push --subject mailto:you@example.com --enable` on the computer, restart AgentX, then tap **Turn on** in the app's **Alerts** tab.
+
+Once phone app notifications are on, `agentx notify` sends to the phone app.
+
+### With ntfy instead
+
+Use ntfy if you don't use the phone app. `agentx notify` sends to ntfy when phone app notifications are off. If you turned both on, step 11 makes ntfy the default.
 
 A **topic** is the name of your private message box on ntfy. On the public `ntfy.sh` server, anyone who knows the topic name can read it, so treat the name like a password.
 
@@ -41,6 +52,12 @@ A **topic** is the name of your private message box on ntfy. On the public `ntfy
     agentx daemon stop && agentx daemon start --detach
     ```
 
+11. Only if phone app notifications are also on: make ntfy the default for `agentx notify`. In the terminal, run:
+
+    ```sh
+    agentx notifications channel ntfy
+    ```
+
 The form never shows a saved topic or token again. It only says whether one is set.
 
 ::: tip Running your own ntfy server?
@@ -51,6 +68,7 @@ Put its address in **Server** (for example `https://ntfy.example.com`). If your 
 ```sh
 agentx notifications ntfy --topic '${NTFY_TOPIC}' --enable
 agentx notifications ntfy --server https://ntfy.example.com --token '${NTFY_TOKEN}'   # own server only
+agentx notifications channel ntfy   # only if phone app notifications are also on
 agentx daemon stop && agentx daemon start --detach
 ```
 Keep the single quotes, so your shell does not replace `${…}` itself. `--token ""` removes a token, and `--disable` turns phone push off.
@@ -216,10 +234,10 @@ agentx notify --flush         # deliver what is held now
 | Option | What it does |
 |---|---|
 | `--title <text>` | Notification title (default `AgentX`) |
-| `--priority <1-5>` | ntfy priority (default 4) |
+| `--priority <1-5>` | ntfy priority (default 4); the phone app ignores it |
 | `--urgent` | Deliver even during Focus |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
-| `--channel`, `--chat-id` | Deliver somewhere other than ntfy |
+| `--channel`, `--chat-id` | Deliver somewhere other than the default channel (`notifications.channel`, which is `push`) |
 | `--no-banner`, `--no-sound` | Skip the banner or the sound for this message |
 | `-c <path>` | Read the settings from this `agentx.json` |
 | `--proof` | Capture the banner as it shows and print the picture's location; see [Capture the screen at the right moment](./screen-capture.md) |
@@ -232,7 +250,7 @@ agentx notify --flush         # deliver what is held now
 ## Check it worked
 
 1. In the terminal, run `agentx notifications show`.
-2. Check that the `ntfy` line says `on` and `topic set`.
+2. Check the `channel` line: it names where `agentx notify` sends. For the phone app it says `push`, and the `push` line says `on`, `subject set` and `keys set`. For ntfy it says `ntfy`, and the `ntfy` line says `on` and `topic set`.
 3. Check that the `local.helper` line says **AgentX Helper posts banners with the AgentX icon.** If it says anything else, follow the `Fix:` line under it.
 4. Run `agentx notify "Hello" --title "Test"`.
 5. Check that your phone buzzes, and that a banner with the AgentX logo appears on the Mac with a sound.
@@ -259,7 +277,7 @@ Other problems:
 | Problem | What to do |
 |---|---|
 | No banner at all | Turn off Do Not Disturb. If the helper is not installed, also allow **System Settings → Notifications → Script Editor**. |
-| The phone does not buzz | Check that the topic in the ntfy app matches `NTFY_TOPIC` exactly, and that you restarted AgentX after saving. |
+| The phone does not buzz | With the phone app, see [Notifications on your phone](../dashboard/mobile-alerts.md#if-something-is-wrong). With ntfy, check that the topic in the ntfy app matches `NTFY_TOPIC` exactly, that `agentx notifications show` lists `channel ntfy`, and that you restarted AgentX after saving. |
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
 | The new icon does not show | Run `agentx desktop install` after changing **Banner icon**, then allow notifications again if asked. |

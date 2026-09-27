@@ -38,6 +38,8 @@ import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
+import { TokenStore } from "./token-store"
+import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
@@ -543,10 +545,12 @@ export class AgentXDaemon {
     // watcher the hold queue is a hole rather than a delay — nothing else
     // ever takes a message back out of it.
     attachFocusWatcher(
-      async ({ title, message, priority }) => {
+      async ({ title, message, priority, channel, chatId }) => {
+        // Each held digest goes back where it was addressed (byDestination
+        // gives entries from before addresses were stored ntfy).
         await this.router.sendOutbound({
-          channel: "ntfy",
-          chatId: "default",
+          channel: channel ?? defaultNotifyChannel(this.config),
+          chatId: chatId ?? "default",
           text: message,
           title,
           priority,
@@ -1733,6 +1737,44 @@ export class AgentXDaemon {
         this.router.addChannel(ntfy)
         await ntfy.start()
         this.log(`  ntfy: enabled (${ntfyCfg.server})`)
+      }
+    }
+
+    // push — Web Push to the phone app. The node hosting /app sends; the
+    // others relay to it over the mesh (channels.push.relayTo).
+    if (this.config.channels.push?.enabled) {
+      const pushCfg = this.config.channels.push
+      if (pushCfg.relayTo) {
+        const { PushRelayAdapter } = await import("@/channels/push")
+        const relay = new PushRelayAdapter(pushCfg.relayTo, (peer, payload) => this.relayPush(peer, payload), this.log)
+        this.router.addChannel(relay)
+        await relay.start()
+      } else if (!pushCfg.subject) {
+        this.log(`  push: enabled but channels.push.subject is unset — skipping`)
+      } else {
+        const db = openDb()
+        if (!db) {
+          this.log(`  push: enabled but the SQLite database is unavailable — skipping`)
+        } else {
+          const { PushAdapter } = await import("@/channels/push")
+          const { PushStore } = await import("@/channels/push-store")
+          const { pushKeysPath, readPushKeys } = await import("@/channels/push-keys")
+          const { default: webpush } = await import("web-push")
+          const tokens = new TokenStore()
+          const keysPath = pushKeysPath(pushCfg.keysFile)
+          const push = new PushAdapter({
+            store: new PushStore(db),
+            keys: () => readPushKeys(keysPath),
+            subject: pushCfg.subject,
+            ttlSeconds: pushCfg.ttlSeconds,
+            keepRecent: pushCfg.keepRecent,
+            deviceActive: (id) => tokens.isActive(id),
+            sender: (sub, payload, opts) => webpush.sendNotification(sub, payload, opts),
+            log: this.log,
+          })
+          this.router.addChannel(push)
+          await push.start()
+        }
       }
     }
 
@@ -5606,6 +5648,23 @@ export class AgentXDaemon {
     }
   }
 
+  /** Forwards a push to the mesh peer hosting the phone app (its
+   *  /channel/send), for PushRelayAdapter. */
+  private async relayPush(peerName: string, payload: unknown): Promise<string | void> {
+    const want = peerName.toLowerCase()
+    const target = this.mesh?.directory().find((p) => p.peer.toLowerCase() === want)
+    if (!target) throw new Error(`push: channels.push.relayTo "${peerName}" is not a mesh peer of this node`)
+    const r = await fetch(`${target.peerUrl}/channel/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(target.peer) },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!r.ok) throw new Error(`push: ${target.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
+    const body = await r.json().catch(() => ({})) as { messageId?: string | null }
+    return body.messageId ?? undefined
+  }
+
   /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
    *  this when the channel lives on this node (e.g. peer-server hosts
    *  whatsapp; macbook's workflow forwards here). Just unwraps to the local
@@ -5635,6 +5694,9 @@ export class AgentXDaemon {
         accountId: typeof body.accountId === "string" ? body.accountId : undefined,
         parseMode: typeof body.parseMode === "string" ? body.parseMode : undefined,
         replyTo: typeof body.replyTo === "string" ? body.replyTo : undefined,
+        buttons: Array.isArray(body.buttons) ? body.buttons : undefined,
+        // Set by a push relay, so a relay never forwards a relayed message.
+        relayed: body.relayed === true ? true : undefined,
       } as any)
       this.json(res, 200, { ok: true, messageId: messageId ?? null })
     } catch (e: any) {

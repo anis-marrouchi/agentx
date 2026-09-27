@@ -103,6 +103,12 @@ export class TokenStore {
     return rec
   }
 
+  /** True when the token with this id exists and is neither revoked nor expired. */
+  isActive(id: string): boolean {
+    const rec = this.load().find((r) => r.id === id)
+    return !!rec && !rec.revokedAt && !(rec.expiresAt && Date.parse(rec.expiresAt) < Date.now())
+  }
+
   /**
    * Look up a token string. Returns the record on success, null on unknown /
    * revoked / expired. Updates lastUsedAt opportunistically (write-on-success).

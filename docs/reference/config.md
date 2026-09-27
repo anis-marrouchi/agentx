@@ -32,7 +32,7 @@ Every field, with its type, default and what it does, is listed on four pages:
 | Page | Sections |
 |---|---|
 | [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `session`, `processPool`, `plugins` |
-| [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, ntfy, browser calls |
+| [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, phone app notifications, ntfy, browser calls |
 | [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `resume` |
 | [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
 

@@ -131,9 +131,10 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 |---|---|---|---|
 | `notifications.longTaskThreshold` | number | `30` | Seconds a task must run before you are told about it. `0` turns this off. |
 | `notifications.destination` | object | — | Where task messages go. Unset: no task messages. |
-| `notifications.destination.channel` | string | required | Channel, for example `telegram` or `ntfy`. |
+| `notifications.destination.channel` | string | required | Channel, for example `telegram` or `push`. |
 | `notifications.destination.chatId` | string | required | The chat on that channel. |
 | `notifications.destination.accountId` | string | — | Which account on that channel. |
+| `notifications.channel` | string | — | Where `agentx notify` and messages held during Focus go when no channel is given, for example `push` or `ntfy`. Unset: `push` when `channels.push.enabled` is on, otherwise `ntfy`. |
 | `notifications.on` | object | `{}` | Which events send a message. |
 | `notifications.on.taskComplete` | boolean | `true` | A long task finished. |
 | `notifications.on.taskError` | boolean | `true` | A task failed. |
