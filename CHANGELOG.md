@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.55.0](https://github.com/anis-marrouchi/agentx/compare/v0.54.0...v0.55.0) (2026-09-27)
+
+
+### Features
+
+* **app:** Chat tab — talk to any agent on the mesh from the phone ([#201](https://github.com/anis-marrouchi/agentx/issues/201)) ([0869723](https://github.com/anis-marrouchi/agentx/commit/08697232485595d0acf2000a7aba75d1fc8d634c))
+* **attach:** watch-only sessions with a capped event digest ([#199](https://github.com/anis-marrouchi/agentx/issues/199)) ([d2a12c1](https://github.com/anis-marrouchi/agentx/commit/d2a12c1304852b044d747d268da2347811ecfed9))
+* **events:** per-agent event subscriptions — pull, fresh-session digest, and wake ([#197](https://github.com/anis-marrouchi/agentx/issues/197)) ([329f98e](https://github.com/anis-marrouchi/agentx/commit/329f98e213cfd3dbdeb20777fb5ff40c92488f00))
+* **mesh:** peer event feed, mesh announcements and the Mesh feed on Operations ([#198](https://github.com/anis-marrouchi/agentx/issues/198)) ([38b8fad](https://github.com/anis-marrouchi/agentx/commit/38b8fadb69811496ced9adc960ad51482cf6c689))
+* **voice:** parallel asks per agent and address by name ([#202](https://github.com/anis-marrouchi/agentx/issues/202)) ([88c9ac5](https://github.com/anis-marrouchi/agentx/commit/88c9ac5c75978f99a054325b54d9b1dbe406c11c))
+
 ## [0.54.0](https://github.com/anis-marrouchi/agentx/compare/v0.53.0...v0.54.0) (2026-09-27)
 
 
