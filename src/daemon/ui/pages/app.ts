@@ -9,10 +9,13 @@
 // the HTML, because the service worker caches it for offline use; live data
 // comes from /api/app/*, which is never cached.
 //
-// Phase 1 of the mobile epic ships the shell and pairing. The tab bodies say
-// plainly that their content arrives later — no simulated data.
+// Phase 1 of the mobile epic shipped the shell and pairing; Fleet and
+// Activity are filled by app-fleet.client.ts. A tab without content yet says
+// so plainly — no simulated data.
 
 import { AX_TOKENS_CSS } from "../tokens"
+import { APP_FLEET_SCRIPT } from "./app-fleet.client"
+import { APP_FLEET_CSS } from "./app-fleet.css"
 
 const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})();</script>`
 
@@ -34,8 +37,8 @@ ${THEME_BOOT}
 
 const TABS = [
   { id: "chat", label: "Chat", soon: "Talking to your agents from this phone arrives in the next update." },
-  { id: "fleet", label: "Fleet", soon: "Watching and managing your machines and agents arrives in a later update." },
-  { id: "activity", label: "Activity", soon: "What your agents are doing right now arrives in a later update." },
+  { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
+  { id: "activity", label: "Activity", soon: "Loading what your agents are doing…" },
   { id: "alerts", label: "Alerts", soon: "Notifications on this phone arrive in a later update." },
 ] as const
 
@@ -52,7 +55,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -65,6 +68,7 @@ export function renderAppPage(): string {
 <main>${panels}</main>
 <nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
 <script>${APP_SCRIPT}</script>
+<script>${APP_FLEET_SCRIPT}</script>
 </body>
 </html>`
 }
