@@ -41,7 +41,7 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.healthCheck.interval` | number | `60` | Seconds between checks that each peer is up. |
 | `mesh.healthCheck.timeout` | number | `10` | Seconds to wait for a peer before counting it as down. |
 | `mesh.feed.enabled` | boolean | `true` | Follow the events of every reachable peer and show them in this machine's event feed. See [Events from other machines](./events.md#events-from-other-machines). |
-| `mesh.feed.skipTypes` | list of strings | `["task:step"]` | Event types peers leave out of the feed they send this machine. The default skips per-step agent activity. |
+| `mesh.feed.skipTypes` | list of strings | `["task:step"]` | Event types peers leave out of the feed they send this machine. The default skips per-step agent activity. A change applies when this machine next reconnects to each peer. |
 
 Each entry in `mesh.peers`:
 

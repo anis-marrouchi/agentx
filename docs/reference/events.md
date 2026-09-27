@@ -67,17 +67,18 @@ When the mesh is on, each machine follows the events of every other machine it c
 
 - **Catch-up:** after a peer was out of reach, this machine reads what it missed from the peer's buffer. When the peer's buffer no longer goes back that far (it restarted, or more than `events.ringSize` events happened), this machine publishes `mesh` / `feed:gap` instead.
 - **Unreachable peers:** when a peer stops answering, this machine publishes `mesh` / `feed:down` once, and `feed:up` when the peer is back. A quiet peer publishes nothing; a peer that is down always says so.
+- **Peers on an older AgentX:** a peer without the mesh feed is skipped quietly. This machine publishes nothing about it, writes one line to its log, and looks again every 10 minutes. After the peer is upgraded, its events start to arrive.
 - **Stays on its machine:** per-step agent activity (`task:step`) is left out by default (see `mesh.feed.skipTypes` in [Operations settings](./config-operations.md#mesh)). State that belongs to one machine, such as its voice speaking queue, is never copied; only events describe it.
 - **Traces:** another machine's tasks are not recorded in this machine's traces. Use the event's `ref` on the machine named in `node`.
 
-Turn it off with `mesh.feed.enabled: false`.
+Turn it off with `mesh.feed.enabled: false`. A change to `mesh.feed.skipTypes` applies the next time this machine reconnects to each peer.
 
 ## Announcements
 
-An announcement is a short note to every machine in the mesh, for example planned maintenance. It is stored and shown in feeds like any other event. It does not wake an agent by itself.
+An announcement is a short note to every machine in the mesh, for example planned maintenance. It is stored and shown in feeds like any other event. It does not wake an agent by itself; an agent is only woken by it if that agent subscribes to `announce` events.
 
 1. **Terminal:** run `agentx mesh announce "Maintenance tonight at 22:00"`.
-2. To sign it, add `--by <name>`. When the name is an agent ID, the event's `agentId` is that agent; otherwise the name starts the summary.
+2. To sign it, add `--by <name>`. When the name is an agent ID on the receiving daemon, the event's `agentId` is that agent; otherwise the name starts the summary. Anyone allowed to announce (this machine, or a caller with the mesh token) can sign as any agent.
 
 The daemon publishes one `announce` event, and every other machine picks it up through its feed. Programs can do the same with `POST /mesh/announce` and a body of `{ "text": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. Text longer than 2,000 characters is refused, and the summary keeps the first 280.
 
@@ -108,5 +109,5 @@ Typed lifecycle events (`bus.emit("task:started", …)`) still reach `bus.on` su
 - **The list is empty:** the buffer is in memory only and starts empty after a restart. Check `since`: an unknown ID that isn't a valid time is ignored, and a time in the future matches nothing.
 - **Events on a peer have a different `rootId`:** the peer runs an older AgentX that ignores the root it is sent. Upgrade the peer.
 - **No events from another machine:** check that `mesh.feed.enabled` is not `false`, and that the peer is healthy in `agentx mesh list`. Look for `feed:down` events: their summary says why the peer can't be reached. A `401` there means the peer's mesh token doesn't match.
-- **Events from a peer running an older AgentX never arrive:** only machines with the mesh feed serve it. Upgrade the peer.
+- **Events from a peer running an older AgentX never arrive:** only machines with the mesh feed serve it. The log says `peer <name> not followed`. Upgrade the peer; it is picked up within 10 minutes.
 - **A `feed:gap` event:** the peer was away longer than its buffer covers. The missed events are still in the peer's traces and run records.

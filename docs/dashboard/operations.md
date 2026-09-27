@@ -104,4 +104,5 @@ Without `agent`, it only reaches a running task. With `agent`, a finished schedu
 - **A run has no Open link:** command jobs never have one, and runs from before the machine was updated don't either.
 - **Mesh feed unavailable:** the dashboard can't read its own machine's daemon. Check that the daemon is running.
 - **Mesh feed shows only this machine:** the mesh is off, `mesh.feed.enabled` is `false`, or the other machines run an older AgentX. Look for **Unreachable** rows, which say why a peer is missing.
+- **Mesh feed says `daemon answered 401`:** the dashboard reads a daemon on another machine. Set `MESH_TOKEN` in the dashboard's environment to the mesh token, then restart the dashboard.
 - **The page looks out of date after an update:** the dashboard is a separate service. Restart it on each machine.
