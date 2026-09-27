@@ -616,7 +616,7 @@ const ADMIN_PAGE_BODY = `
     ${sectionHead({
       icon: ICONS.tokens,
       title: "Business layer",
-      lead: "Org chart, projects, and contact map — the data that drives PM gating and activity-graph attribution. Mirrors <code>agentx business</code>.",
+      lead: "Org chart, projects, and contact map — the data that drives PM gating and activity-graph attribution. Same as agentx business in the terminal.",
     })}
     ${witBanner({
       persistKey: "business",
@@ -711,7 +711,7 @@ const ADMIN_PAGE_BODY = `
     ${sectionHead({
       icon: ICONS.tokens,
       title: "Kanban boards",
-      lead: "Configure the boards rendered on the home page. Mirrors <code>agentx board add/edit/remove</code> + <code>agentx board column</code>. Source is GitLab today; backlog/wiki sources land when the schema unlocks them.",
+      lead: "Configure the boards rendered on the home page. Same as agentx board add, edit, remove and column in the terminal. Source is GitLab today; backlog/wiki sources land when the schema unlocks them.",
     })}
     ${witBanner({
       persistKey: "boards-cfg",
@@ -743,7 +743,7 @@ const ADMIN_PAGE_BODY = `
     ${sectionHead({
       icon: ICONS.actions,
       title: "Action registry",
-      lead: "Reusable shell commands and HTTP calls. Workflows invoke them by id; the dashboard runs them on demand for smoke-tests. Mirrors <code>agentx actions</code>.",
+      lead: "Reusable shell commands and HTTP calls. Workflows invoke them by id; the dashboard runs them on demand for smoke-tests. Same as agentx actions in the terminal.",
     })}
     ${witBanner({
       persistKey: "actions",

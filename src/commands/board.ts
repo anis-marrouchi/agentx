@@ -1,5 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
+import { readFileSync } from "fs"
 import { resolve } from "path"
 import { loadEnvFileIntoProcess } from "@/utils/workspace-env"
 import { loadDaemonConfig } from "@/daemon/config"
@@ -176,7 +177,7 @@ column
   .description("list columns on a board, in order")
   .action((boardId: string) => {
     try {
-      const cfg = JSON.parse(require("fs").readFileSync("agentx.json", "utf-8"))
+      const cfg = JSON.parse(readFileSync("agentx.json", "utf-8"))
       const b = (cfg.boards || []).find((x: any) => x.id === boardId)
       if (!b) throw new Error(`board "${boardId}" not found`)
       const cols = b.columns || []
