@@ -38,7 +38,7 @@ agentx desktop start
 
 ## Choose who answers
 
-The AgentX icon in the menu bar shows what the assistant is doing: a waveform when idle, a microphone while listening, dots while the agent thinks, and a speaker while it answers. Its menu lists your agents and whether each one is working right now.
+The AgentX icon in the menu bar shows what the assistant is doing: a waveform when idle, a microphone while listening, dots while the agent thinks, and a speaker while it answers. Its menu lists your agents and what each one is doing: **thinking** on your question, **speaking**, **working** on something else, **queued 2** when it has two answers waiting to be spoken, or **idle**. A number next to the icon counts every line waiting in the [speaking queue](#one-queue-for-everything-spoken).
 
 ![The AgentX menu: three agents with Writer ticked, then Stop speaking, Hold notifications, Show floating pill, Settings…, History… and Quit](/screenshots/voice/menu-bar.png)
 
@@ -46,7 +46,35 @@ The AgentX icon in the menu bar shows what the assistant is doing: a waveform wh
 2. **Mac:** choose an agent, or press its number (**1** to **9**).
 3. Hold **Option–Space** and speak. The panel names the agent while it listens and answers.
 
-The app remembers your choice after a restart. The rest of the menu works from the keyboard too: use the arrow keys and **Return**, or **Escape** to close it.
+The app remembers your choice after a restart.
+
+### Ask another agent without switching
+
+Start with an agent's name to send just that question to it. With Writer ticked, "Researcher, what's the status?" goes to Researcher, and Writer stays ticked for your next question.
+
+1. **Mac:** hold **Option–Space**.
+2. Say the agent's name first, then your question: "Researcher, what's the status?"
+3. Let go. The panel shows the named agent while it answers.
+
+The name can be the agent's id, its `name`, or any of its `mentions` from `agentx.json` without the `@`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" still goes to the ticked agent. If no agent matches, or more than one does, the ticked agent answers.
+
+### Ask several agents at once
+
+You don't have to wait for one answer before asking another agent.
+
+1. **Mac:** ask the ticked agent something that takes a while.
+2. While it thinks, hold **Option–Space** and ask another agent by name.
+3. Both agents work at the same time. Each answer is spoken as soon as it arrives, one after the other, through the [speaking queue](#one-queue-for-everything-spoken), so they never talk over each other.
+
+Each agent gets one question at a time from the assistant. Rules for asking the same agent again:
+
+- **Another agent's question is still being answered:** your new question waits for that answer, then goes. The menu shows it as **thinking (+1 asked)**.
+- **The agent is still thinking on your main question:** your new words replace that question. The first answer is not spoken, and the agent answers the new words instead. Say "stop" to drop the question without asking anything else.
+- **The agent is busy with a question from somewhere else** (Siri or a phone shortcut): your question waits its turn. You no longer hear "I'm still working on your last request".
+
+While another agent's answer is still to come, the microphone does not reopen by itself after an answer. Hold **Option–Space** to talk.
+
+The rest of the menu works from the keyboard too: use the arrow keys and **Return**, or **Escape** to close it.
 
 | Menu item | What it does |
 |---|---|
@@ -396,6 +424,7 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `GET /talk` | The running talk or lesson: what was said, its state and the pauses |
 | `POST /talk/stop` | End the talk |
 | `POST /teach/live` | Start a lesson: `{"agent": "<id>", "goal": "…", "mode": "teach", "app": "Numbers"}` (`draw` is terminal only) |
+| `POST /voice/address` | `{"text": "…", "target": "<id>"}`: which agent the words are addressed to. Returns `{"agentId"}`, which is `target` when no leading name matches |
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
 | `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
@@ -419,7 +448,11 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 4. The answer appears in the panel, under the ticked agent's name, and is spoken aloud.
 5. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
 6. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
-7. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+7. **Terminal:** to check address by name, run `curl -s -X POST http://127.0.0.1:18800/voice/address -H 'Content-Type: application/json' -d '{"text": "<agent-name>, hello", "target": "<ticked-agent-id>"}'`. It prints the named agent's id.
+8. **Mac:** ask the ticked agent something that takes a while.
+9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
+10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
+11. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
@@ -429,6 +462,9 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **Agent unavailable:** check the daemon address, then pick another agent from the menu. If the menu can't switch, the app is pinned to one agent: it was installed with `--agent`, or installed before the menu existed (older installs always pinned an agent). Run `agentx desktop install` again without `--agent`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status`, start the daemon, then choose **Retry**.
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
+- **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked).
+- **A second question to the same agent waits a long time:** it waits until that agent has finished answering the question before it. The assistant gives up after 10 minutes and says "Sorry, that didn't work" (or "Sorry, Researcher couldn't answer that" for a question asked by name).
+- **An answer by name was never spoken:** you said "stop", pressed **Command–Option–.** or chose **Stop speaking** before it arrived. Stopping drops every answer still to come. Ask again.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
 - **`Unknown agent: …` from `POST /voice/queue`:** the `agentId` must be an agent on this computer or on a connected mesh computer. Check the id with `agentx agent list`.

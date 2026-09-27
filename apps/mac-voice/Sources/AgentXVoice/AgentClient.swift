@@ -126,6 +126,32 @@ enum AgentClient {
         return (200..<300).contains(http.statusCode)
     }
 
+    /// Who is speaking and who waits, from the daemon's speaking queue.
+    struct QueueState: Decodable {
+        struct Item: Decodable { let agentId: String? }
+        let playing: Item?
+        let waiting: [Item]
+    }
+
+    /// The speaking queue now, or nil when the daemon cannot be reached.
+    static func queueState() async -> QueueState? {
+        guard let url = URL(string: "\(Config.daemonURL)/voice/queue") else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 2
+        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
+        return try? JSONDecoder().decode(QueueState.self, from: data)
+    }
+
+    /// The agent the words are addressed to ("Writer, …"), or `target`.
+    /// The daemon matches names, so the widget and config never disagree.
+    /// Never throws: no daemon means nobody else to address.
+    static func address(_ text: String, target: String) async -> String {
+        guard let (data, _) = try? await post("/voice/address", ["text": text, "target": target], timeout: 2) else { return target }
+        struct Reply: Decodable { let agentId: String? }
+        let id = (try? JSONDecoder().decode(Reply.self, from: data))?.agentId ?? ""
+        return id.isEmpty ? target : id
+    }
+
     private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {
         var req = URLRequest(url: URL(string: "\(Config.daemonURL)\(path)")!)
         req.httpMethod = "POST"

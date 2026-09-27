@@ -104,6 +104,7 @@ import { siriSayScript } from "@/voice/speaker"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { clipSpeech } from "@/voice/mesh-voice"
+import { addressedAgent } from "@/voice/address"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
 import { VoiceTalkService } from "@/daemon/voice-talk-api"
 import { askSeat } from "@/decisions/seat"
@@ -4908,6 +4909,17 @@ export class AgentXDaemon {
           } catch {
             this.json(res, 200, { say: null })
           }
+          break
+        }
+
+        // "Writer, what's the status": which agent an utterance is for.
+        // The widget asks before sending, so the target it shows stays
+        // the same and only this one question goes elsewhere.
+        case "POST /voice/address": {
+          const body = await readBody(req)
+          const target = String(body.target ?? "")
+          const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name, mentions: a.mentions }))
+          this.json(res, 200, { agentId: addressedAgent(String(body.text ?? ""), agents, target) })
           break
         }
 
