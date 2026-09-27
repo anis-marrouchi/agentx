@@ -160,6 +160,23 @@ interface GitHubIssueEvent {
 type GitHubEvent = GitHubIssueCommentEvent | GitHubPREvent | GitHubPRReviewEvent
   | GitHubPRReviewCommentEvent | GitHubPushEvent | GitHubIssueEvent | Record<string, unknown>
 
+/** A webhook body as GitHub sends it: JSON, or `payload=<json>` form-encoded.
+ *  Form encoding turns spaces into "+", which decodeURIComponent keeps, so
+ *  every comment arrived with "+" for spaces and the `<!-- agentx:… -->`
+ *  marker never matched: the agent answered its own comments in a loop.
+ *  URLSearchParams decodes it properly. {} when the body is unreadable. */
+export function parseWebhookBody(body: string, contentType: string): Record<string, unknown> {
+  try {
+    if (contentType.includes("form-urlencoded")) {
+      const payload = new URLSearchParams(body).get("payload")
+      return payload ? JSON.parse(payload) : {}
+    }
+    return body ? JSON.parse(body) : {}
+  } catch {
+    return {}
+  }
+}
+
 export class GitHubAdapter implements ChannelAdapter {
   readonly name = "github"
   private config: GitHubChannelConfig
