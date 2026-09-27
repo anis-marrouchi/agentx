@@ -916,6 +916,11 @@ export const daemonConfigSchema = z.object({
       windowMinutes: z.number().positive().default(10),
     }).default({}),
   }).default({}),
+  /** The in-process event bus (src/events). `ringSize` bounds how many
+   *  recent events GET /events/recent can return. */
+  events: z.object({
+    ringSize: z.number().int().min(1).max(100_000).default(1000),
+  }).default({}),
   screen: screenSchema,
   mesh: meshConfigSchema.default({}),
   /** Voices for agents on mesh peers, keyed by remote agent id. The Mac

@@ -57,6 +57,14 @@ Each entry in `mesh.inboxes`:
 | `agent` | string | required | Local agent that handles it. Not shown to other machines. |
 | `enabled` | boolean | `true` | Whether the inbox accepts work. |
 
+## events
+
+The daemon keeps its most recent events in memory so a late reader can catch up. See [Events](/reference/events).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `events.ringSize` | number | `1000` | How many recent events `GET /events/recent` can return. Older ones are dropped. Nothing is written to disk. |
+
 ## voice and meshVoices
 
 How agents speak aloud. See [Desktop assistant](/dashboard/voice).

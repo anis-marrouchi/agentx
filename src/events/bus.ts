@@ -1,4 +1,8 @@
 import { EventEmitter } from "events"
+import {
+  capSummary, currentRoot, EventRing, newEventId,
+  type EventEnvelope, type RecentQuery,
+} from "./envelope"
 
 // --- Internal event bus ---
 //
@@ -182,14 +186,47 @@ export interface AgentXEvents {
 type EventName = keyof AgentXEvents
 type Listener<E extends EventName> = (payload: AgentXEvents[E]) => void
 
-class TypedEventBus {
+/** Input to publish(). id, at, node and rootId are filled in when absent;
+ *  rootId comes from the current root context (see envelope.ts). `data`
+ *  is delivered to subscribers alongside the envelope but is never kept in
+ *  the ring buffer; the daemon's /events adapter uses it to keep its wire
+ *  shape. */
+export interface PublishInput {
+  kind: string
+  type: string
+  summary: string
+  agentId?: string
+  ref?: string
+  id?: string
+  at?: string
+  rootId?: string
+  parentId?: string
+  data?: Record<string, unknown>
+}
+
+export type EnvelopeListener = (e: EventEnvelope, data?: Record<string, unknown>) => void
+
+/** The one in-process bus. Typed lifecycle events keep their names and
+ *  payloads for `on` subscribers; every event, typed or not, is also
+ *  published as an EventEnvelope to `subscribe` listeners and the ring. */
+export class TypedEventBus {
   private inner = new EventEmitter()
+  private envelopeListeners = new Set<EnvelopeListener>()
+  private ring = new EventRing()
+  private node = "local"
 
   constructor() {
     // Default listener cap is 10 — easy to hit when several subsystems
     // subscribe (dashboard SSE, sqlite writer, audit log, drift detector).
     // 50 is generous without masking real leaks.
     this.inner.setMaxListeners(50)
+  }
+
+  /** Set the publishing node name and ring size (daemon boot / reload). */
+  configure(opts: { node?: string; ringSize?: number }): this {
+    if (opts.node) this.node = opts.node
+    if (opts.ringSize) this.ring.resize(opts.ringSize)
+    return this
   }
 
   on<E extends EventName>(event: E, listener: Listener<E>): this {
@@ -203,17 +240,78 @@ class TypedEventBus {
   }
 
   emit<E extends EventName>(event: E, payload: AgentXEvents[E]): boolean {
-    return this.inner.emit(event, payload)
+    const delivered = this.inner.emit(event, payload)
+    try { this.publish(lifecycleEnvelope(event, payload)) } catch { /* observability never breaks the emitter */ }
+    return delivered
+  }
+
+  /** The single publish API. Returns the envelope as delivered. */
+  publish(input: PublishInput): EventEnvelope {
+    const root = currentRoot()
+    const id = input.id ?? newEventId()
+    const envelope: EventEnvelope = {
+      id,
+      rootId: input.rootId ?? root?.rootId ?? id,
+      node: this.node,
+      kind: input.kind,
+      type: input.type,
+      at: input.at ?? new Date().toISOString(),
+      summary: capSummary(input.summary),
+    }
+    const parentId = input.parentId ?? root?.parentId
+    if (parentId) envelope.parentId = parentId
+    if (input.agentId) envelope.agentId = input.agentId
+    if (input.ref) envelope.ref = input.ref
+    this.ring.push(envelope)
+    for (const fn of this.envelopeListeners) {
+      try { fn(envelope, input.data) } catch { /* a bad listener must not break peers */ }
+    }
+    return envelope
+  }
+
+  /** Receive every envelope. Returns an unsubscribe function. */
+  subscribe(fn: EnvelopeListener): () => void {
+    this.envelopeListeners.add(fn)
+    return () => { this.envelopeListeners.delete(fn) }
+  }
+
+  recent(q?: RecentQuery): EventEnvelope[] {
+    return this.ring.recent(q)
   }
 
   listenerCount<E extends EventName>(event: E): number {
     return this.inner.listenerCount(event)
   }
 
-  /** Test/dev helper — drop every subscriber. */
+  /** Test/dev helper — drop every subscriber and the ring. */
   removeAllListeners(): this {
     this.inner.removeAllListeners()
+    this.envelopeListeners.clear()
+    this.ring.clear()
     return this
+  }
+}
+
+/** Map a typed lifecycle event to envelope fields. Summaries name what
+ *  happened, never the prompt or the answer; `ref` is the trace id. */
+function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[E]): PublishInput {
+  const p = payload as AgentXEvents[EventName] & Record<string, any>
+  const base = { type: event, at: p.at, agentId: p.agentId, ref: p.taskId }
+  switch (event) {
+    case "message:matched":
+      return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} → ${p.agentId} (${p.decidingStage})` }
+    case "message:dropped":
+      return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} dropped at ${p.decidingStage}: ${p.reason}` }
+    case "task:started":
+      return { ...base, kind: "agent", summary: `started on ${p.channel} ${p.chatId}` }
+    case "task:step":
+      return { ...base, kind: "agent", summary: [p.name, p.action, p.status].filter(Boolean).join(" ") }
+    case "task:completed":
+      return { ...base, kind: "agent", summary: p.error ? `failed after ${p.durationMs}ms: ${p.error}` : `completed in ${p.durationMs}ms` }
+    case "session:rotated":
+      return { ...base, kind: "agent", summary: `session rotated (${p.reason})` }
+    default:
+      return { ...base, kind: "agent", summary: String(event) }
   }
 }
 
@@ -222,5 +320,3 @@ export function getEventBus(): TypedEventBus {
   if (!_instance) _instance = new TypedEventBus()
   return _instance
 }
-
-export type { TypedEventBus }

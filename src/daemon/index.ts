@@ -110,6 +110,8 @@ import {
   toNarration,
 } from "@/decisions/seats/voice-narration"
 import { getEventBus as getAgentEventBus, type AgentXEvents } from "@/events/bus"
+import { withNewRoot, withRoot } from "@/events/envelope"
+import { rootFromTaskBody } from "@/a2a/mesh"
 import { getAttachRegistry, isDeliveryMode } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -207,7 +209,7 @@ export class AgentXDaemon {
    *  channels, signals) emit here; subscribers (SSE, CLI, board
    *  dashboard) filter by kind / workflow / actor. Created eagerly so
    *  early boot events don't fall through. */
-  readonly events: EventBus = new EventBus()
+  readonly events: EventBus = new EventBus(getAgentEventBus())
   private log: (...args: unknown[]) => void
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
@@ -263,6 +265,7 @@ export class AgentXDaemon {
     this.log("Loading configuration...")
     this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
+    getAgentEventBus().configure({ node: this.config.node.name || this.config.node.id, ringSize: this.config.events.ringSize })
 
     // Initialize the contact directory now that `this.log` is available.
     // Empty file (or missing file) is fine — operators populate it later.
@@ -1380,6 +1383,7 @@ export class AgentXDaemon {
     //    reflect it, and router send-side paths see fresh channel config.
     const screenChanged = JSON.stringify(this.config.screen) !== JSON.stringify(next.screen)
     this.config = next
+    getAgentEventBus().configure({ node: next.node.name || next.node.id, ringSize: next.events.ringSize })
     this.router.updateConfig(next)
     if (screenChanged) {
       this.screenBuffer?.configure(screenSettings(next.screen))
@@ -2731,6 +2735,21 @@ export class AgentXDaemon {
         return
       }
 
+      // Recent envelopes from the bus's ring buffer, for late readers.
+      if (req.method === "GET" && path === "/events/recent") {
+        const q = url.searchParams
+        const limit = parseInt(q.get("limit") || "", 10)
+        this.json(res, 200, {
+          events: getAgentEventBus().recent({
+            since: q.get("since") || undefined,
+            kind: q.get("kind") || undefined,
+            agent: q.get("agent") || undefined,
+            limit: Number.isFinite(limit) ? limit : undefined,
+          }),
+        })
+        return
+      }
+
       // WebRTC signaling SSE stream (browser subscribes here to receive
       // offers/answers/ICE forwarded by the daemon).
       if (req.method === "GET" && path === "/webrtc/events") {
@@ -3369,7 +3388,7 @@ export class AgentXDaemon {
           ).catch(e => this.log(`[github] webhook handler error: ${(e as Error).message}`))
           return
         }
-        await this.webhooks.handle(req, res, path)
+        await withNewRoot(() => this.webhooks.handle(req, res, path))
         return
       }
 
@@ -4499,6 +4518,9 @@ export class AgentXDaemon {
           // Wrapped in try/catch so a ledger failure cannot break /task —
           // legacy stays authoritative until 1c per-source promotion lands.
           const intentRef = this.recordInboundDispatch(agentId, body.context as any, body.message, senderAgentId)
+          // A mesh peer sends the root its task belongs to; any other caller
+          // starts a new one.
+          const taskRoot = rootFromTaskBody(body)
 
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
@@ -4609,7 +4631,7 @@ export class AgentXDaemon {
               }
             }
             try {
-              const resp = await this.registry.execute(
+              const resp = await withRoot(taskRoot, () => this.registry.execute(
                 {
                   agentId,
                   message: body.message as string,
@@ -4621,7 +4643,7 @@ export class AgentXDaemon {
                 onDelta,
                 onThinking,
                 onEvent,
-              )
+              ))
               streamDone = true
               clearInterval(heartbeat)
               if (resp.error) {
@@ -4642,7 +4664,7 @@ export class AgentXDaemon {
             break
           }
 
-          const response = await this.registry.execute(
+          const response = await withRoot(taskRoot, () => this.registry.execute(
             {
               agentId,
               message: body.message as string,
@@ -4655,7 +4677,7 @@ export class AgentXDaemon {
               systemPromptAppend: remoteVoiceAppend(body.context),
             },
             () => {},
-          )
+          ))
           this.json(res, response.error ? 500 : 200, response)
           break
         }

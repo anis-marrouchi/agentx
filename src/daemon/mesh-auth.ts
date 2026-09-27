@@ -39,7 +39,9 @@ export function isMeshGatedPath(path: string): boolean {
   return path === "/api/memory" || path.startsWith("/api/memory/") ||
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
-    path === "/approvals" || path.startsWith("/approvals/")
+    path === "/approvals" || path.startsWith("/approvals/") ||
+    // Recent events name agents, chats and errors across the node.
+    path === "/events/recent"
 }
 
 /** Control POSTs that act as this daemon: reload its config, stop or

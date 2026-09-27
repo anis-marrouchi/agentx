@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "crypto"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { currentRoot } from "@/events/envelope"
 import {
   type EntityRef,
   type NodeExecutionEntry,
@@ -95,6 +96,8 @@ export class RunStore {
     parentNodeId?: string | null
     rootRunId?: string | null
     depth?: number
+    /** Defaults to the current event root, if any. */
+    eventRootId?: string
   }): WorkflowRun {
     const now = new Date().toISOString()
     const id = randomUUID()
@@ -113,6 +116,7 @@ export class RunStore {
       parentNodeId: args.parentNodeId ?? null,
       rootRunId: args.rootRunId ?? id,
       depth: args.depth ?? 0,
+      eventRootId: args.eventRootId ?? currentRoot()?.rootId,
       joinCounters: {},
       createdAt: now,
       updatedAt: now,
