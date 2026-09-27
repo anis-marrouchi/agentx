@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.52.0](https://github.com/anis-marrouchi/agentx/compare/v0.51.0...v0.52.0) (2026-09-27)
+
+
+### Features
+
+* **app:** installable phone app shell and device pairing ([#178](https://github.com/anis-marrouchi/agentx/issues/178)) ([cfd3bfb](https://github.com/anis-marrouchi/agentx/commit/cfd3bfbb2cabbc38a021caadaa072cba33939e97))
+
+
+### Bug Fixes
+
+* **routing:** let another agent's signed GitHub comment reach the handler ([#182](https://github.com/anis-marrouchi/agentx/issues/182)) ([59441b8](https://github.com/anis-marrouchi/agentx/commit/59441b8452b96c582b75fc494351d75c9c5892ea))
+
 ## [0.51.0](https://github.com/anis-marrouchi/agentx/compare/v0.50.1...v0.51.0) (2026-09-27)
 
 
