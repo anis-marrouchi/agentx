@@ -6,6 +6,7 @@ import { daemon } from "@/commands/daemon"
 import { init } from "@/commands/init"
 import { setup } from "@/commands/setup"
 import { token } from "@/commands/token"
+import { appCmd } from "@/commands/app"
 import { doctor } from "@/commands/doctor"
 import { agent, channel, cron, mesh, skillCmd, references, hook, migrate, configCmd } from "@/commands/manage"
 import { db as dbCmd } from "@/commands/db"
@@ -87,6 +88,7 @@ export async function buildProgram(): Promise<Command> {
   // reaches for while the fleet is live.
   for (const cmd of [
     setup, init, connect, desktop,        // get running
+    appCmd,                      // the phone app
     daemon, doctor,              // operate
     agent, channel, schedule,    // configure the things that carry work
     approvals,                   // decisions waiting for you

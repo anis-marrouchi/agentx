@@ -18,6 +18,8 @@ import { resolve, dirname } from "path"
 //   agent:<id>       — /api/public/agents/<id>/messages
 //   agent:*          — any agent
 //   mesh:peer        — cross-node mesh (forward-compatible — not enforced yet)
+//   app              — the phone app (/app, /api/app/*) and nothing else;
+//                      minted per device by `agentx app pair`
 
 export const TOKEN_PREFIX = "agx_live_"
 const DEFAULT_FILE = ".agentx/tokens.json"
@@ -142,7 +144,8 @@ function isValidScope(s: string): boolean {
     s === "dashboard:write" ||
     s === "agent:*" ||
     /^agent:[a-z0-9][a-z0-9_-]*$/.test(s) ||
-    s === "mesh:peer"
+    s === "mesh:peer" ||
+    s === "app"
   )
 }
 
