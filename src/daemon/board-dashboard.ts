@@ -39,6 +39,7 @@ import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
+import { handleAppRequest } from "./app-routes"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { setTopbarFeatures, type TopbarPeer } from "./topbar"
 
@@ -149,6 +150,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin/cost",
   "/admin/projects",
   "/admin/wiki",
+  "/app",
 ])
 
 interface Ctx {
@@ -176,6 +178,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     return
   }
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return }
+
+  // Phone app. First, above every proxy and the loopback-trusting gates
+  // below: /app and /api/app/* always need a device token (app-routes.ts).
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a

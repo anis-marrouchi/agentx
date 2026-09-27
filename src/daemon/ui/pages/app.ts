@@ -1,0 +1,292 @@
+// --- Phone app (/app) ---
+//
+// An installable PWA shell for phones, reached over a private tailnet via
+// `tailscale serve`. Deliberately NOT built on renderShell: the desktop
+// topbar, mesh selector and assistant drawer don't fit a phone, and the
+// shell must render offline, so it loads no web fonts or other pages' JS.
+//
+// Everything here is static. Nothing device- or fleet-specific is baked into
+// the HTML, because the service worker caches it for offline use; live data
+// comes from /api/app/*, which is never cached.
+//
+// Phase 1 of the mobile epic ships the shell and pairing. The tab bodies say
+// plainly that their content arrives later — no simulated data.
+
+import { AX_TOKENS_CSS } from "../tokens"
+
+const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})();</script>`
+
+function head(title: string): string {
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2979FF">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AgentX">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/app/icon-192.png">
+<link rel="apple-touch-icon" href="/app/icon-192.png">
+<title>${title}</title>
+${THEME_BOOT}
+<style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
+}
+
+const TABS = [
+  { id: "chat", label: "Chat", soon: "Talking to your agents from this phone arrives in the next update." },
+  { id: "fleet", label: "Fleet", soon: "Watching and managing your machines and agents arrives in a later update." },
+  { id: "activity", label: "Activity", soon: "What your agents are doing right now arrives in a later update." },
+  { id: "alerts", label: "Alerts", soon: "Notifications on this phone arrive in a later update." },
+] as const
+
+export function renderAppPage(): string {
+  const tabs = TABS.map((t, i) =>
+    `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}">${t.label}</button>`,
+  ).join("")
+  const panels = TABS.map((t, i) =>
+    `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
+      <h2>${t.label}</h2>
+      <p class="soon">${t.soon}</p>
+    </section>`,
+  ).join("")
+
+  return `<!doctype html>
+<html lang="en">
+<head>${head("AgentX")}<style>${APP_CSS}</style></head>
+<body>
+<header class="bar">
+  <div>
+    <h1>AgentX</h1>
+    <p id="who" class="who">Connecting…</p>
+  </div>
+  <button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme">◐</button>
+</header>
+<p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
+<main>${panels}</main>
+<nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
+<script>${APP_SCRIPT}</script>
+</body>
+</html>`
+}
+
+/** Where the QR code lands. The token rides in the URL fragment, which the
+ *  browser never sends to the server or to `tailscale serve`, so it can't end
+ *  up in an access log; the page trades it for an HttpOnly cookie. */
+export function renderAppPairPage(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Pair · AgentX")}</head>
+<body>
+<main class="card">
+  <h1>Pairing this phone…</h1>
+  <p id="msg" role="status">One moment.</p>
+</main>
+<script>${PAIR_SCRIPT}</script>
+</body>
+</html>`
+}
+
+/** Served with 401 when /app is opened without a valid device token. */
+export function renderAppLockedPage(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>${head("Not paired · AgentX")}</head>
+<body>
+<main class="card">
+  <h1>This phone isn't paired</h1>
+  <p>On the computer running AgentX, run <code>agentx app pair</code> and scan the QR code it shows with this phone's camera.</p>
+  <p class="muted">If this phone was paired before, it may have been removed with <code>agentx app revoke</code>.</p>
+</main>
+</body>
+</html>`
+}
+
+export function renderAppManifest(): string {
+  return JSON.stringify({
+    id: "/app",
+    name: "AgentX",
+    short_name: "AgentX",
+    description: "Talk to your agents and watch your fleet.",
+    start_url: "/app",
+    scope: "/app",
+    display: "standalone",
+    background_color: "#2979FF",
+    theme_color: "#2979FF",
+    icons: [
+      { src: "/app/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  })
+}
+
+/** Network-first for the shell (so a revoked phone sees the locked page as
+ *  soon as it is online), cache-first for icons and the manifest, and never
+ *  anything under /api/. Bump CACHE when the precached list changes. */
+export const APP_SERVICE_WORKER = `
+var CACHE = 'agentx-app-v1';
+var STATIC = ['/app/manifest.webmanifest', '/app/icon-192.png', '/app/icon-512.png'];
+self.addEventListener('install', function (e) {
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(STATIC); }).then(function () { return self.skipWaiting(); }));
+});
+self.addEventListener('activate', function (e) {
+  e.waitUntil(caches.keys().then(function (keys) {
+    return Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+self.addEventListener('fetch', function (e) {
+  var req = e.request;
+  var url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (url.pathname.indexOf('/api/') === 0) return;
+  if (req.mode === 'navigate' && url.pathname === '/app') {
+    e.respondWith(fetch(req).then(function (res) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (c) { return res.ok ? c.put('/app', copy) : res.status === 401 ? c.delete('/app') : null; });
+      return res;
+    }).catch(function () {
+      return caches.match('/app').then(function (hit) { return hit || Response.error(); });
+    }));
+    return;
+  }
+  if (STATIC.indexOf(url.pathname) >= 0) {
+    e.respondWith(caches.match(url.pathname).then(function (hit) { return hit || fetch(req); }));
+  }
+});
+`
+
+const APP_SCRIPT = `
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
+  function select(tab, focus) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    if (focus) tab.focus();
+    try { history.replaceState(null, '', '#' + tab.dataset.tab); } catch (e) {}
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t, false); });
+    t.addEventListener('keydown', function (ev) {
+      var next = null;
+      if (ev.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+      else if (ev.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+      else if (ev.key === 'Home') next = tabs[0];
+      else if (ev.key === 'End') next = tabs[tabs.length - 1];
+      if (next) { ev.preventDefault(); select(next, true); }
+    });
+  });
+  var start = tabs.filter(function (t) { return '#' + t.dataset.tab === location.hash; })[0];
+  if (start) select(start, false);
+
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('theme');
+  function paintTheme() {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    themeBtn.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+  }
+  themeBtn.addEventListener('click', function () {
+    var t = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', t);
+    try { localStorage.setItem('ax-theme', t); } catch (e) {}
+    paintTheme();
+  });
+  paintTheme();
+
+  var offline = document.getElementById('offline');
+  var who = document.getElementById('who');
+  function setOnline(on) { offline.hidden = on; }
+  window.addEventListener('online', function () { setOnline(true); loadMe(); });
+  window.addEventListener('offline', function () { setOnline(false); });
+  function loadMe() {
+    fetch('/api/app/me', { credentials: 'same-origin' }).then(function (r) {
+      if (r.status === 401) { location.reload(); return null; }
+      return r.ok ? r.json() : null;
+    }).then(function (me) {
+      if (!me) return;
+      setOnline(true);
+      who.textContent = me.device + (me.node ? ' · ' + me.node : '');
+    }).catch(function () { setOnline(false); who.textContent = 'Offline'; });
+  }
+  loadMe();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/app/sw.js', { scope: '/app' }).catch(function () {});
+  }
+})();
+`
+
+const PAIR_SCRIPT = `
+(function () {
+  var msg = document.getElementById('msg');
+  var m = /(?:^#|&)token=([^&]+)/.exec(location.hash);
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (!m) { msg.textContent = 'This link has no pairing code. Run agentx app pair again and scan the new QR code.'; return; }
+  fetch('/api/app/session', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Authorization': 'Bearer ' + decodeURIComponent(m[1]) },
+  }).then(function (r) {
+    if (r.ok) { location.replace('/app'); return; }
+    msg.textContent = r.status === 401
+      ? 'This pairing code is not valid any more. Run agentx app pair again and scan the new QR code.'
+      : 'Pairing failed (HTTP ' + r.status + '). Try again.';
+  }).catch(function () { msg.textContent = 'Could not reach AgentX. Check this phone is on your tailnet, then try again.'; });
+})();
+`
+
+const BASE_CSS = `
+html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); }
+body { min-height: 100dvh; -webkit-text-size-adjust: 100%; }
+code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; }
+.card {
+  max-width: 460px; margin: 0 auto;
+  padding: calc(40px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+  line-height: 1.55;
+}
+.card h1 { font-size: 22px; margin: 0 0 12px; }
+.muted { color: var(--ax-text-2); }
+:focus-visible { outline: 3px solid var(--ax-accent); outline-offset: 2px; }
+`
+
+const APP_CSS = `
+body { display: flex; flex-direction: column; }
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left));
+  background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border);
+}
+.bar h1 { font-size: 18px; margin: 0; font-weight: 700; }
+.who { margin: 2px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.icon-btn {
+  min-width: 44px; min-height: 44px; font-size: 20px; line-height: 1;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-pill);
+  background: var(--ax-surface-2); color: var(--ax-text); cursor: pointer;
+}
+.offline {
+  margin: 0; padding: 8px 16px; font-size: var(--ax-fs-sm);
+  background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: 1px solid var(--ax-amber-e);
+}
+main {
+  flex: 1; overflow-y: auto;
+  padding: 16px calc(16px + env(safe-area-inset-right)) 16px calc(16px + env(safe-area-inset-left));
+}
+main h2 { font-size: 20px; margin: 4px 0 8px; }
+.soon { color: var(--ax-text-2); line-height: 1.55; margin: 0; }
+.tabs {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  position: sticky; bottom: 0;
+  padding: 6px calc(6px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));
+  background: var(--ax-surface); border-top: var(--ax-border-w) solid var(--ax-border);
+}
+.tabs [role=tab] {
+  min-height: 48px; border: 0; border-radius: var(--ax-radius-sm);
+  background: transparent; color: var(--ax-text-2);
+  font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; cursor: pointer;
+}
+.tabs [role=tab][aria-selected=true] { background: var(--ax-accent-t); color: var(--ax-accent-2); }
+[data-theme="dark"] .tabs [role=tab][aria-selected=true] { color: var(--ax-text); }
+`
