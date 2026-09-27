@@ -9,14 +9,20 @@
 // the HTML, because the service worker caches it for offline use; live data
 // comes from /api/app/*, which is never cached.
 //
-// Phase 1 of the mobile epic shipped the shell and pairing; Fleet and
-// Activity are filled by app-fleet.client.ts, Alerts by app-alerts.client.ts. A tab without content yet says
-// so plainly — no simulated data.
+// Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
+// by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Alerts
+// by app-alerts.client.ts. A tab without content yet says so plainly — no
+// simulated data.
 
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
+import { APP_CHAT_SCRIPT } from "./app-chat.client"
+import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
+import { APP_CHAT_CSS } from "./app-chat.css"
+import { injectFns } from "../inject"
+import { markdownToHtml } from "@/utils/markdown-html"
 
 export { APP_SERVICE_WORKER } from "./app-sw"
 
@@ -39,7 +45,7 @@ ${THEME_BOOT}
 }
 
 const TABS = [
-  { id: "chat", label: "Chat", soon: "Talking to your agents from this phone arrives in the next update." },
+  { id: "chat", label: "Chat", soon: "Loading your conversations…" },
   { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
   { id: "activity", label: "Activity", soon: "Loading what your agents are doing…" },
   { id: "alerts", label: "Alerts", soon: "Loading notifications…" },
@@ -58,7 +64,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -73,6 +79,7 @@ export function renderAppPage(): string {
 <script>${APP_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
+<script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_SCRIPT}</script>
 </body>
 </html>`
 }
