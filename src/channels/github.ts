@@ -177,6 +177,15 @@ export function parseWebhookBody(body: string, contentType: string): Record<stri
   }
 }
 
+/** The signing agent when a comment is `handler`'s own reply echoed back
+ *  by the webhook, else null. Without a resolved handler every signed
+ *  comment counts as an echo, as before. */
+export function ownEchoOf(body: string, handler: string | undefined): string | null {
+  const source = detectAgentxMarker(body)
+  if (!source) return null
+  return !handler || source === handler ? source : null
+}
+
 export class GitHubAdapter implements ChannelAdapter {
   readonly name = "github"
   private config: GitHubChannelConfig
@@ -466,10 +475,12 @@ export class GitHubAdapter implements ChannelAdapter {
     const repo = event.repository.full_name
     const user = comment.user
 
-    // Cascade prevention: check for AgentX signature
-    const sourceAgent = detectAgentxMarker(comment.body)
+    // Cascade prevention: skip an agent's own signed comment. A comment
+    // signed by another agent (a review verdict) still reaches this repo's
+    // agent, which is how review-then-fix handoffs work.
+    const sourceAgent = ownEchoOf(comment.body, this.resolveAgent(repo))
     if (sourceAgent) {
-      this.log(`AgentX comment from ${sourceAgent}, skipping (comment ${comment.id})`)
+      this.log(`AgentX comment from ${sourceAgent}, skipping its own echo (comment ${comment.id})`)
       return
     }
 
@@ -621,8 +632,8 @@ export class GitHubAdapter implements ChannelAdapter {
 
     if (this.isBotUser(comment.user.login)) return
 
-    // Skip AgentX-signed comments
-    if (detectAgentxMarker(comment.body)) return
+    // Skip the agent's own signed comments; other agents' reviews pass
+    if (ownEchoOf(comment.body, this.resolveAgent(repo))) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
