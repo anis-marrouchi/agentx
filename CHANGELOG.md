@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.54.0](https://github.com/anis-marrouchi/agentx/compare/v0.53.0...v0.54.0) (2026-09-27)
+
+
+### Features
+
+* **push:** Web Push notifications to the phone app ([#195](https://github.com/anis-marrouchi/agentx/issues/195)) ([1fc038e](https://github.com/anis-marrouchi/agentx/commit/1fc038ec7282e86e23ef35bfb41c296a3c912d65))
+
+
+### Bug Fixes
+
+* **attach:** keep attach bindings across daemon restarts and idle spells ([a02149d](https://github.com/anis-marrouchi/agentx/commit/a02149d5a106abfe5a675f547095eb8f5494d407)), closes [#193](https://github.com/anis-marrouchi/agentx/issues/193)
+* **live:** keep slow nodes on the Live page and show attached sessions ([08309bb](https://github.com/anis-marrouchi/agentx/commit/08309bb6cce052d3b1dc4211d5ebb62744450e25)), closes [#193](https://github.com/anis-marrouchi/agentx/issues/193)
+* **live:** short attached badge and aligned sessions row ([#193](https://github.com/anis-marrouchi/agentx/issues/193)) ([#196](https://github.com/anis-marrouchi/agentx/issues/196)) ([63a753d](https://github.com/anis-marrouchi/agentx/commit/63a753d77269a76414b023793f19daf61df77013))
+
 ## [0.53.0](https://github.com/anis-marrouchi/agentx/compare/v0.52.1...v0.53.0) (2026-09-27)
 
 
