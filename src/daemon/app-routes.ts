@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
+import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import {
   APP_SERVICE_WORKER,
   renderAppLockedPage,
@@ -33,6 +34,7 @@ const COOKIE_MAX_AGE = 400 * 86400 // the longest browsers honour
 export interface AppRouteCtx {
   nodeName?: string
   tokens?: TokenStore
+  fleet?: AppFleetDeps
 }
 
 /** Handles the request and returns true if `path` belongs to the phone app. */
@@ -79,6 +81,7 @@ export async function handleAppRequest(
   if (method === "GET" && path === "/api/app/me") {
     return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
   }
+  if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

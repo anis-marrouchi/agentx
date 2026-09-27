@@ -41,6 +41,9 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
+import { decide, listInbox, type InboxItem } from "@/approvals/inbox"
+import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { setTopbarFeatures, type TopbarPeer } from "./topbar"
 
@@ -181,7 +184,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -1968,39 +1971,115 @@ async function proxyNodePost(
   nodeUrl: string,
   upstreamPath: string,
 ): Promise<void> {
+  let body: unknown = {}
+  try { body = (await readJson(req)) ?? {} } catch { /* leave default */ }
+  const r = await postToNode(ctx.config, nodeUrl, upstreamPath, body)
+  res.writeHead(r.status, { "Content-Type": r.contentType })
+  res.end(r.text)
+}
+
+/** POST to a daemon the dashboard may read, with that node's token. The
+ *  node must be in the allowlist, so this is never an open proxy. */
+async function postToNode(
+  config: DaemonConfig,
+  nodeUrl: string,
+  upstreamPath: string,
+  body: unknown,
+): Promise<{ status: number; text: string; contentType: string }> {
+  const asJson = (status: number, b: unknown) => ({ status, text: JSON.stringify(b), contentType: "application/json" })
   const target = nodeUrl.replace(/\/+$/, "")
   const allowed = new Set<string>()
-  allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
-  for (const d of ctx.config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
+  allowed.add(config.dashboard.daemonUrl.replace(/\/+$/, ""))
+  for (const d of config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
   try {
-    const peers = await fetchMeshPeers(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), ctx.config.dashboard.token)
+    const peers = await fetchMeshPeers(config.dashboard.daemonUrl.replace(/\/+$/, ""), config.dashboard.token)
     for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
   } catch { /* */ }
-  if (!allowed.has(target)) {
-    sendJson(res, 403, { error: "node not in dashboard allowlist", target })
-    return
-  }
-  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
+  if (!allowed.has(target)) return asJson(403, { error: "node not in dashboard allowlist", target })
+  const tokenForNode = dashboardTokenForNode(config.dashboard, target)
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
-  let body = "{}"
   try {
-    const parsed = await readJson(req)
-    body = parsed ? JSON.stringify(parsed) : "{}"
-  } catch { /* leave default */ }
-  try {
-    const r = await fetch(`${target}${upstreamPath}`, {
-      method: "POST",
-      headers,
-      body,
-    })
-    const text = await r.text()
-    res.writeHead(r.status, {
-      "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
-    })
-    res.end(text)
+    const r = await fetch(`${target}${upstreamPath}`, { method: "POST", headers, body: JSON.stringify(body ?? {}) })
+    return { status: r.status, text: await r.text(), contentType: r.headers.get("content-type") || "application/json; charset=utf-8" }
   } catch (e: any) {
-    sendJson(res, 502, { error: e.message || "upstream fetch failed" })
+    return asJson(502, { error: e.message || "upstream fetch failed" })
+  }
+}
+
+/** What the phone app's Fleet and Activity tabs read and act through
+ *  (app-fleet.ts). Built per request, like every other handler here, so a
+ *  config reload is picked up without restarting the dashboard. */
+function appFleetDeps(config: DaemonConfig): AppFleetDeps {
+  const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const parse = (text: string) => { try { return JSON.parse(text) } catch { return { error: text.slice(0, 200) } } }
+  return {
+    snapshot: (day) => buildLiveSnapshot(config, day),
+    async nodePost(nodeUrl, path, body) {
+      const r = await postToNode(config, nodeUrl, path, body)
+      return { status: r.status, body: parse(r.text) }
+    },
+    async approvals() {
+      const local: NodeApprovals = { node: primary, nodeName: config.node?.name || "this computer", items: [] }
+      try {
+        local.items = listInbox({ root: process.cwd() }).items.map(toApprovalItem)
+      } catch (e: any) { local.error = e.message }
+      const remote = await Promise.all(config.dashboard.daemons.map(async (d): Promise<NodeApprovals> => {
+        const out: NodeApprovals = { node: d.url.replace(/\/+$/, ""), nodeName: d.name, items: [] }
+        const peer = findPeer(d.url, config)
+        if (!peer) return out
+        try {
+          const r = await fetch(`${peer.url}/api/admin/approvals`, {
+            headers: { "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+            signal: AbortSignal.timeout(4000),
+          })
+          if (!r.ok) { out.error = `HTTP ${r.status}`; return out }
+          const body = await r.json() as { items?: InboxItem[] }
+          out.items = (body.items ?? []).map(toApprovalItem)
+        } catch (e: any) { out.error = e.message || "unreachable" }
+        return out
+      }))
+      return [local, ...remote]
+    },
+    async decide(nodeUrl, key, action) {
+      const target = nodeUrl.replace(/\/+$/, "")
+      if (target === primary) {
+        const settings = readApprovalSettings()
+        const r = await decide({ root: process.cwd() }, key, action, { laterHours: settings.laterHours, by: "operator (phone app)" })
+        return r.ok ? { status: 200, body: { ok: true, message: r.message } } : { status: 409, body: { error: r.error } }
+      }
+      const peer = findPeer(target, config)
+      if (!peer) return { status: 403, body: { error: "node not in dashboard allowlist", target } }
+      try {
+        const r = await fetch(`${peer.url}/api/admin/approvals/decide`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "agentx-board",
+            "X-Agentx-Peer": "primary",
+            ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
+          },
+          body: JSON.stringify({ key, action }),
+          signal: AbortSignal.timeout(10000),
+        })
+        return { status: r.status, body: parse(await r.text()) }
+      } catch (e: any) {
+        return { status: 502, body: { error: e.message || "peer dashboard unreachable" } }
+      }
+    },
+  }
+}
+
+function toApprovalItem(i: InboxItem): ApprovalItem {
+  return {
+    key: i.key,
+    title: i.title,
+    ask: i.ask,
+    recommend: i.recommend,
+    yes: i.yes,
+    no: i.no,
+    raisedBy: i.raised_by,
+    expires: i.expires,
   }
 }
 
