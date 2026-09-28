@@ -135,7 +135,7 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -167,6 +167,8 @@ export class AgentXDaemon {
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
   private syncWaits = new SyncWaits()
+  /** Phone-app callback replies waiting for the dashboard to file them. */
+  private callbackReplies = new CallbackReplies()
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
@@ -453,6 +455,7 @@ export class AgentXDaemon {
       router: this.router,
       mesh: () => this.mesh,
       log: this.log,
+      replies: this.callbackReplies,
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -3067,6 +3070,16 @@ export class AgentXDaemon {
 
       // One agent's subscriptions, read back as a bounded digest: the pull
       // delivery behind the agentx_events MCP tool and `agentx events`.
+      // #277 — a phone-app reply after a delegation, for the dashboard to
+      // file in the conversation thread. Mesh-gated: it carries the text.
+      const callbackReplyMatch = req.method === "GET" ? path.match(/^\/a2a\/delegations\/([^/]+)\/reply$/) : null
+      if (callbackReplyMatch) {
+        const reply = this.callbackReplies.get(decodeURIComponent(callbackReplyMatch[1]))
+        if (!reply) { this.json(res, 404, { error: "no reply waiting for this delegation" }); return }
+        this.json(res, 200, reply)
+        return
+      }
+
       const agentEventsMatch = req.method === "GET" ? path.match(/^\/agents\/([^/]+)\/events$/) : null
       if (agentEventsMatch) {
         const agentId = decodeURIComponent(agentEventsMatch[1])

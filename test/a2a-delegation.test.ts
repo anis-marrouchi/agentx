@@ -163,7 +163,7 @@ describe("human-initiated delegation to a local agent", () => {
 
     // The caller's own reply goes to the person; the registry already put
     // it in the session.
-    expect(h.delivered).toEqual([{ channel: "telegram", chatId: "chat-1", text: "summary for front", agentId: "front", accountId: undefined, record: false }])
+    expect(h.delivered).toEqual([{ channel: "telegram", chatId: "chat-1", text: "summary for front", agentId: "front", accountId: undefined, record: false, taskId, outcome: "done" }])
     expect(h.mgr.isPending(taskId)).toBe(false)
   })
 
@@ -259,6 +259,16 @@ describe("errors, timeouts and duplicates", () => {
     expect(h.delivered[0].text).toContain("Build is green.")
     // Not produced by a turn, so it is added to the session.
     expect(h.delivered[0].record).toBe(true)
+    expect(h.delivered[0].outcome).toBe("done")
+  })
+
+  it("marks the plain report of a failed delegation as an error", async () => {
+    const h = harness({ injectTurn: async () => ({ content: "", error: "caller overloaded" }) })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    h.local.resolve({ content: "", error: "worker is not signed in" })
+    await flush()
+    expect(h.delivered[0]).toMatchObject({ outcome: "error", record: true })
+    expect(h.delivered[0].text).toContain("did not complete")
   })
 
   it("leaves delivery to the registry queue when the callback was queued", async () => {

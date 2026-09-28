@@ -45,7 +45,8 @@ import type { AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
 import { AppChatStore } from "./app-chat-store"
-import type { AppChatDeps, AppMeshPeer } from "./app-chat"
+import { appPresence, type AppChatDeps, type AppMeshPeer } from "./app-chat"
+import { AppCallbackPuller, type CallbackEvent, type CallbackReplyBody } from "./app-chat-callbacks"
 import type { AppVoiceDeps } from "./app-voice"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
@@ -118,6 +119,10 @@ export function startBoardDashboard(config: DaemonConfig): void {
       sendJson(res, 500, { error: e.message || "internal error" })
     }
   })
+
+  // #277 — replies an agent writes after a delegation, filed in the phone
+  // conversation they belong to (app-chat-callbacks.ts).
+  appCallbackPuller(config).start()
 
   server.listen(port, bind, () => {
     const displayHost = bind === "0.0.0.0" ? "localhost" : bind
@@ -2296,6 +2301,50 @@ function finishAlertDeps(config: DaemonConfig, url: string, token: string | unde
       }
     },
   }
+}
+
+/** Follows the primary daemon's delegation events and files each phone
+ *  reply in its conversation. Reads replies from the node that published
+ *  them, with the token the dashboard holds for it. */
+function appCallbackPuller(config: DaemonConfig): AppCallbackPuller {
+  const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const tokenFor = (url: string) => dashboardTokenForNode(config.dashboard, url.replace(/\/+$/, ""))
+  const auth = (url: string): Record<string, string> => {
+    const t = tokenFor(url)
+    return t ? { Authorization: `Bearer ${t}` } : {}
+  }
+  const chat = appChatDeps(config)
+  return new AppCallbackPuller({
+    recent: async (since, limit) => {
+      const q = new URLSearchParams({ kind: "delegation", limit: String(limit) })
+      if (since) q.set("since", since)
+      const r = await fetch(`${primary}/events/recent?${q}`, { headers: auth(primary), signal: AbortSignal.timeout(5000) })
+      if (!r.ok) throw new Error(`the daemon answered ${r.status}`)
+      const body = await r.json() as { events?: CallbackEvent[] }
+      return Array.isArray(body.events) ? body.events : []
+    },
+    nodeUrl: async (node) => {
+      const snap = await buildLiveSnapshot(config)
+      const n = snap.nodes.find((x) => x.name === node || x.id === node)
+      return n?.url ? n.url.replace(/\/+$/, "") : null
+    },
+    conversationUrl: async (conv) => {
+      if (conv.node === "local") return primary
+      const peer = (await chat.meshPeers().catch(() => [] as AppMeshPeer[])).find((p) => p.peer === conv.node)
+      return peer ? peer.peerUrl.replace(/\/+$/, "") : null
+    },
+    fetchReply: async (url, taskId) => {
+      const r = await fetch(`${url}/a2a/delegations/${encodeURIComponent(taskId)}/reply`, { headers: auth(url), signal: AbortSignal.timeout(5000) })
+      if (r.status === 404) return null
+      if (!r.ok) throw new Error(`the node answered ${r.status}`)
+      return await r.json() as CallbackReplyBody
+    },
+    store: chat.store,
+    presence: appPresence(),
+    finishAlerts: chat.finishAlerts,
+    notifyFinish: chat.notifyFinish,
+    log: (m) => console.log(m),
+  })
 }
 
 /** What the phone app's voice routes forward to (app-voice.ts): the same

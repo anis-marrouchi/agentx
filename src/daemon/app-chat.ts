@@ -64,6 +64,13 @@ const inflight = new Map<string, ChatTurn>()
 const owners = new Map<string, Omit<RunningTurn, "text" | "startedAt">>()
 const defaultPresence = new AppPresence()
 
+/** Which phones have the app open, as the strip's polls show it. Shared
+ *  with answers that arrive outside a turn (app-chat-callbacks.ts), so they
+ *  get a banner or a notification by the same rule. */
+export function appPresence(): AppPresence {
+  return defaultPresence
+}
+
 export async function handleAppChat(
   req: IncomingMessage,
   res: ServerResponse,

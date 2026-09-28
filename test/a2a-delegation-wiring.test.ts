@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -125,6 +126,20 @@ describe("meshTaskMode", () => {
   })
 })
 
+describe("CallbackReplies", () => {
+  it("is bounded, caps the text and expires", () => {
+    let now = 0
+    const r = new CallbackReplies(2, 1000, () => now)
+    r.put({ taskId: "a", channel: "app", chatId: "app:c1", agent: "x", text: "y".repeat(40_000), status: "done", plain: false })
+    expect(r.get("a")!.text.length).toBe(32_000)
+    r.put({ taskId: "b", channel: "app", chatId: "app:c1", agent: "x", text: "b", status: "done", plain: false })
+    r.put({ taskId: "c", channel: "app", chatId: "app:c1", agent: "x", text: "c", status: "done", plain: false })
+    expect(r.get("a")).toBeNull()
+    now = 2000
+    expect(r.get("c")).toBeNull()
+  })
+})
+
 describe("acceptedBody", () => {
   it("tells the agent to report and end its turn", () => {
     const b = acceptedBody("dlg-1", "builder", "vps")
@@ -138,6 +153,8 @@ describe("createDelegations wiring", () => {
     const dir = mkdtempSync(join(tmpdir(), "agentx-dlgw-"))
     const config = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { front: { name: "Front", workspace: dir } } })
     const executed: any[] = []
+    const recorded: any[] = []
+    const replies = new CallbackReplies()
     const sent: Array<{ msg: any; opts: any }> = []
     const peerCalls: any[] = []
     const registry = {
@@ -148,6 +165,7 @@ describe("createDelegations wiring", () => {
       },
       cancelRunningTask: () => null,
       isChatBusy: () => false,
+      getSessionStore: () => ({ addAgentMessage: (...a: any[]) => recorded.push(a) }),
     }
     const router = {
       getChannel: (n: string) => (channels.includes(n) ? { name: n } : undefined),
@@ -159,8 +177,8 @@ describe("createDelegations wiring", () => {
         return peerAnswer ? peerAnswer(opts.context) : "peer answer"
       },
     }
-    const mgr = createDelegations({ config, registry: registry as any, router: router as any, mesh: () => mesh as any, log: () => {}, baseDir: dir })
-    return { mgr, executed, sent, peerCalls, cleanup: () => { mgr.stop(); rmSync(dir, { recursive: true, force: true }) } }
+    const mgr = createDelegations({ config, registry: registry as any, router: router as any, mesh: () => mesh as any, log: () => {}, replies, baseDir: dir })
+    return { mgr, executed, sent, peerCalls, replies, recorded, cleanup: () => { mgr.stop(); rmSync(dir, { recursive: true, force: true }) } }
   }
   const human = { agentId: "front", taskId: "run-1", context: { channel: "telegram", chatId: "chat-1", sender: "Sam" } }
 
@@ -190,21 +208,45 @@ describe("createDelegations wiring", () => {
     } finally { w.cleanup() }
   })
 
-  it("routes phone and voice chats to a push notification", async () => {
+  it("holds a phone-app reply for the dashboard and announces it on the bus", async () => {
+    // No push, no adapter: the phone thread is the route.
+    const w = wire([])
+    const seen: any[] = []
+    const off = getEventBus().subscribe?.((e: any) => { if (e.kind === "delegation") seen.push(e) })
+    try {
+      const phone = { agentId: "front", taskId: "run-9", context: { channel: "app", chatId: "app:cabc12345", sender: "operator" } }
+      expect(w.mgr.shouldCallback(phone)).toBe(true)
+      const { taskId } = w.mgr.start({ caller: phone, callee: "worker", message: "x" })
+      await new Promise((r) => setTimeout(r, 10))
+      // Nothing sent through a channel; no generic push.
+      expect(w.sent).toEqual([])
+      expect(w.replies.get(taskId)).toMatchObject({ taskId, channel: "app", chatId: "app:cabc12345", agent: "front", text: "Here is what came back.", status: "done", plain: false })
+      const recent = getEventBus().recent({ kind: "delegation" }).filter((e) => e.ref === taskId)
+      expect(recent).toHaveLength(1)
+      expect(recent[0]).toMatchObject({ type: "reply", agentId: "front" })
+      // The envelope carries a summary, never the whole reply.
+      expect(recent[0].summary.length).toBeLessThanOrEqual(280)
+      // The turn's own reply is already in the session.
+      expect(w.recorded).toEqual([])
+    } finally { if (typeof off === "function") off(); w.cleanup() }
+  })
+
+  it("sends voice and dashboard-chat replies as a push, when push is set up", async () => {
     const w = wire(["push"])
     try {
-      const phone = { agentId: "front", taskId: "run-9", context: { channel: "app", chatId: "p1" } }
-      expect(w.mgr.shouldCallback(phone)).toBe(true)
-      w.mgr.start({ caller: phone, callee: "worker", message: "x" })
+      const voice = { agentId: "front", taskId: "run-9", context: { channel: "voice", chatId: "voice:front" } }
+      expect(w.mgr.shouldCallback(voice)).toBe(true)
+      w.mgr.start({ caller: voice, callee: "worker", message: "x" })
       await new Promise((r) => setTimeout(r, 10))
       expect(w.sent[0]).toEqual({ msg: { channel: "push", chatId: "default", text: "Front: Here is what came back." }, opts: { recordInSession: false } })
+      expect(w.mgr.shouldCallback({ agentId: "front", context: { channel: "dashboard", chatId: "assistant" } })).toBe(true)
     } finally { w.cleanup() }
   })
 
-  it("stays synchronous for a phone chat when push is not set up", () => {
+  it("stays synchronous for voice when push is not set up", () => {
     const w = wire(["telegram"])
     try {
-      expect(w.mgr.shouldCallback({ agentId: "front", context: { channel: "app", chatId: "p1" } })).toBe(false)
+      expect(w.mgr.shouldCallback({ agentId: "front", context: { channel: "voice", chatId: "voice:front" } })).toBe(false)
     } finally { w.cleanup() }
   })
 

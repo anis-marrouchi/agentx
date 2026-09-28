@@ -9,6 +9,13 @@
 //                      (it carries parentEventId) never names a local turn.
 //   createDelegations  The DelegationManager with the registry, the mesh
 //                      and the router plugged in.
+//
+// A reply for the phone app does not go through a channel adapter: the
+// phone's conversations live in the dashboard's chat store, a separate
+// process. The reply waits in CallbackReplies and a small bus event
+// announces it; the dashboard follows those events (a peer's arrive
+// through the mesh feed) and files the reply in the thread
+// (app-chat-callbacks.ts).
 
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
@@ -18,10 +25,67 @@ import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
 import { isLoopback } from "./mesh-auth"
+import { getEventBus } from "@/events/bus"
 
-/** Channels with no adapter of their own whose person has the phone app:
- *  a callback reply reaches them as a push notification. */
-const PUSH_FALLBACK_CHANNELS = new Set(["app", "voice", "dashboard"])
+/** Channels with no adapter or thread of their own: a callback reply
+ *  reaches the person as a push notification. The phone app ("app") is not
+ *  here: its replies go into the conversation thread (CallbackReplies). */
+const PUSH_FALLBACK_CHANNELS = new Set(["voice", "dashboard"])
+
+/** Bus event that says "a callback reply for a phone conversation is
+ *  waiting on this node". The envelope carries only a summary and the
+ *  delegation id; the text is read from GET /a2a/delegations/<id>/reply. */
+export const CALLBACK_REPLY_KIND = "delegation"
+export const CALLBACK_REPLY_TYPE = "reply"
+
+/** A caller's reply after a delegation, held for the dashboard. */
+export interface CallbackReply {
+  taskId: string
+  channel: string
+  chatId: string
+  agent: string
+  text: string
+  status: "done" | "error"
+  /** The agent has rich messages off: no files, no agentx:ui extras. */
+  plain: boolean
+  at: number
+}
+
+/** Longest reply kept, the same as one message in the phone's chat store. */
+export const CALLBACK_REPLY_MAX = 32_000
+
+/**
+ * Replies waiting for the dashboard to file them in the phone thread. A
+ * small bounded buffer, not a store: the dashboard polls every few
+ * seconds, and the reply is in the agent's session either way. Lost on a
+ * daemon restart, like the event that points at it.
+ */
+export class CallbackReplies {
+  private byId = new Map<string, CallbackReply>()
+  constructor(private max = 200, private ttlMs = 24 * 60 * 60_000, private now: () => number = Date.now) {}
+
+  put(r: Omit<CallbackReply, "at">): CallbackReply {
+    const reply: CallbackReply = { ...r, text: r.text.slice(0, CALLBACK_REPLY_MAX), at: this.now() }
+    this.byId.delete(reply.taskId)
+    this.byId.set(reply.taskId, reply)
+    while (this.byId.size > this.max) {
+      const oldest = this.byId.keys().next().value
+      if (oldest === undefined) break
+      this.byId.delete(oldest)
+    }
+    return reply
+  }
+
+  get(taskId: string): CallbackReply | null {
+    const r = this.byId.get(taskId)
+    if (!r) return null
+    if (this.now() - r.at > this.ttlMs) {
+      this.byId.delete(taskId)
+      return null
+    }
+    return r
+  }
+}
 
 export interface CallerHint {
   senderAgentId?: string
@@ -168,6 +232,8 @@ export interface DelegationWiring {
   router: MessageRouter
   mesh: () => A2AMesh | undefined
   log: (msg: string) => void
+  /** Phone-app replies waiting for the dashboard (GET /a2a/delegations/<id>/reply). */
+  replies: CallbackReplies
   baseDir?: string
 }
 
@@ -200,8 +266,34 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     cancelLocal: (runId, reason) => { w.registry.cancelRunningTask(runId, reason) },
     injectTurn: (turn) => w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any }),
     isChatBusy: (agentId, channel, chatId) => w.registry.isChatBusy(agentId, channel, chatId),
-    canDeliver: (channel) => route(channel) !== null,
+    canDeliver: (channel) => channel === "app" || route(channel) !== null,
     deliver: async (msg) => {
+      if (msg.channel === "app") {
+        // The phone app keeps its own thread in the dashboard's chat store.
+        // Hold the reply here and say so on the bus; the dashboard (which
+        // sees peers' events through the feed) fetches it and files it in
+        // the conversation, unread, with its finish notification.
+        if (msg.record) {
+          try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the thread still gets it */ }
+        }
+        const reply = w.replies.put({
+          taskId: msg.taskId,
+          channel: msg.channel,
+          chatId: msg.chatId,
+          agent: msg.agentId,
+          text: msg.text,
+          status: msg.outcome,
+          plain: w.config.agents[msg.agentId]?.richMessages === false,
+        })
+        getEventBus().publish({
+          kind: CALLBACK_REPLY_KIND,
+          type: CALLBACK_REPLY_TYPE,
+          agentId: msg.agentId,
+          summary: `${msg.agentId} replied after a delegation: ${msg.text}`,
+          ref: reply.taskId,
+        })
+        return
+      }
       const r = route(msg.channel)
       if (!r) throw new Error(`no channel "${msg.channel}" on this machine`)
       if (r.channel === msg.channel) {

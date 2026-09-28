@@ -43,7 +43,7 @@ export function isMeshGatedPath(path: string): boolean {
     // Recent events name agents, chats and errors across the node.
     path === "/events/recent" || /^\/agents\/[^/]+\/events$/.test(path) ||
     // Delegations name which agents are working for which others.
-    path === "/a2a/delegations" ||
+    path === "/a2a/delegations" || path.startsWith("/a2a/delegations/") ||
     // Traces carry each task's full prompt and final answer.
     path === "/traces" || path.startsWith("/traces/") ||
     // Past voice exchanges: what was asked and answered out loud. A

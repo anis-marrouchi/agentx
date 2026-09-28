@@ -95,8 +95,19 @@ export interface DelegationDeps {
   canDeliver(channel: string): boolean
   /** Send the caller's reply to the person. `record` asks for it to be
    *  added to the session too (only for text the turn itself did not
-   *  produce). */
-  deliver(msg: { channel: string; chatId: string; text: string; agentId: string; accountId?: string; record: boolean }): Promise<void>
+   *  produce). `taskId` and `outcome` let a channel that keeps its own
+   *  thread (the phone app) file the reply under the right delegation. */
+  deliver(msg: {
+    channel: string
+    chatId: string
+    text: string
+    agentId: string
+    accountId?: string
+    record: boolean
+    taskId: string
+    /** "error" when the reply is the plain report of a failed delegation. */
+    outcome: "done" | "error"
+  }): Promise<void>
   log(msg: string): void
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
@@ -380,7 +391,11 @@ export class DelegationManager {
       return
     }
     try {
-      await this.deps.deliver({ channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId, record: !own })
+      await this.deps.deliver({
+        channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId, record: !own,
+        taskId: rec.id,
+        outcome: own || result.status === "done" ? "done" : "error",
+      })
       this.deps.log(`[delegation ${rec.id}] ${rec.caller} updated ${channel}:${chatId}`)
     } catch (e: any) {
       this.deps.log(`[delegation ${rec.id}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
