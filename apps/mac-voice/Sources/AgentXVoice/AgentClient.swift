@@ -213,7 +213,11 @@ enum AgentClient {
         /// "#RRGGBB": presence.color, else derived from the id. Older
         /// daemons send none, and the app derives it the same way.
         let color: String?
+        /// The orb's nature palette. Older daemons send none, and the orb
+        /// uses shades of `color`.
+        let palette: Palette?
         var label: String { name ?? id }
+        struct Palette: Decodable { let id: String; let colors: [String] }
     }
 
     /// The daemon's agents, or nil when the daemon cannot be reached.

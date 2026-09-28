@@ -1,13 +1,11 @@
 import CoreGraphics
 
-/// Where the pill and its answer card go on screen, kept free of AppKit so
+/// Where the pill goes on screen, and how it grows into its answer, kept free of AppKit so
 /// the tests can check it without a window. Frames are in screen
 /// coordinates, origin bottom-left, as AppKit uses them.
 enum PillPlacement {
     /// Distance from the screen's edges for the default corner.
     static let inset: CGFloat = 24
-    /// Space between the pill and the answer card.
-    static let cardGap: CGFloat = 8
 
     /// Bottom-right of `visible` (a screen's frame minus the menu bar and
     /// Dock), clear of both.
@@ -38,23 +36,36 @@ enum PillPlacement {
         return inside(frame, screen).origin
     }
 
-    /// Which side of the pill the answer card opens on, and where.
-    struct Card: Equatable {
-        let origin: CGPoint
-        /// True: above the pill. False: below it.
+    /// The pill grown into its answer: where the whole widget goes, and
+    /// which way it grew.
+    struct Expanded: Equatable {
+        let frame: CGRect
+        /// True: the answer opens above the pill's row. False: below it.
         let above: Bool
+        /// True: right edges line up with the pill's. False: left edges.
+        let alignRight: Bool
     }
 
-    /// Above the pill when there is at least as much room above it as
-    /// below, else below. Right edges line up with the pill's, and the
-    /// card is kept on the screen.
-    static func card(size: CGSize, pill: CGRect, visible: CGRect) -> Card {
-        let roomAbove = visible.maxY - pill.maxY
-        let roomBelow = pill.minY - visible.minY
-        let above = roomAbove >= roomBelow
-        let y = above ? pill.maxY + cardGap : pill.minY - cardGap - size.height
-        let frame = CGRect(x: pill.maxX - size.width, y: y, width: size.width, height: size.height)
-        return Card(origin: inside(frame, visible).origin, above: above)
+    /// The pill at `pill` grown to `size`. It grows up when there is at
+    /// least as much room above the pill as below, else down, so its row
+    /// stays where it was. It grows leftwards, keeping the right edge,
+    /// unless that would leave the screen. Too tall for the screen: kept
+    /// on it, top-left in view.
+    static func expanded(size: CGSize, pill: CGRect, visible: CGRect) -> Expanded {
+        let above = visible.maxY - pill.maxY >= pill.minY - visible.minY
+        let alignRight = pill.maxX - size.width >= visible.minX
+        let frame = CGRect(x: alignRight ? pill.maxX - size.width : pill.minX,
+                           y: above ? pill.minY : pill.maxY - size.height,
+                           width: size.width, height: size.height)
+        return Expanded(frame: inside(frame, visible), above: above, alignRight: alignRight)
+    }
+
+    /// Where the pill goes back to when the widget at `frame` collapses:
+    /// its row's end on the side it grew from.
+    static func collapsed(from frame: CGRect, size: CGSize, above: Bool, alignRight: Bool) -> CGRect {
+        CGRect(x: alignRight ? frame.maxX - size.width : frame.minX,
+               y: above ? frame.minY : frame.maxY - size.height,
+               width: size.width, height: size.height)
     }
 
     /// `frame` moved the least distance that puts it inside `bounds`. A

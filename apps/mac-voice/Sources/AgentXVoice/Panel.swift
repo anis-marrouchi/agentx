@@ -8,8 +8,10 @@ import AppKit
 /// normal windows, joins every Space, and is deliberately small.
 ///
 /// It is the one floating widget: a small live orb at its head (Orb.swift)
-/// in the answering agent's colour, the state or the words beside it, and
-/// a close button that shows on hover. Drag it anywhere; the place is
+/// in the answering agent's palette, the state or the words beside it, and
+/// a close button that shows on hover. When an answer has more to read
+/// than was spoken, the pill grows into it (PanelAnswer.swift) and
+/// collapses again after a while. Drag it anywhere; the place is
 /// remembered across launches.
 final class Panel: NSPanel {
     static let size = NSSize(width: 284, height: 54)
@@ -20,10 +22,35 @@ final class Panel: NSPanel {
     private let label = NSTextField(labelWithString: "")
     let orb = PillOrb(diameter: Panel.orbDiameter, frameSize: Panel.orbFrame)
     private let closeButton = NSButton()
+    /// The orb, the words and the close button: the pill itself, which
+    /// stays where it is while the widget grows into an answer.
+    let row = RowView(frame: NSRect(origin: .zero, size: Panel.size))
+    /// The answer, below or above the row once the pill has grown.
+    let answer = AnswerView(frame: .zero)
+    let separator = NSBox()
     /// Hidden by close, Esc or the menu until the next talk key.
-    private(set) var dismissed = false
-    /// Set while the app moves the pill, so only a drag is remembered.
-    private var placing = false
+    var dismissed = false
+    /// Above zero while the app moves or resizes the pill, so only a drag
+    /// is remembered.
+    var placing = 0
+
+    // MARK: The answer (PanelAnswer.swift)
+
+    /// Width of the pill grown into an answer.
+    static let expandedWidth: CGFloat = 360
+    /// Tallest the answer grows, in points, before it scrolls. From
+    /// voice.card.maxHeight.
+    var cardMaxHeight: CGFloat = 320
+    /// Seconds the answer stays open once spoken; 0 until closed. From
+    /// voice.card.timeout.
+    var cardTimeout: TimeInterval = 30
+    /// Grown into an answer.
+    var expanded = false
+    /// Which way it grew, so it collapses back to the same place.
+    var growth = (above: true, alignRight: true)
+    var collapseTimer: Timer?
+    /// The pointer is over the widget: the answer stays open.
+    var hovering = false
 
     /// Scrolls text too long for the pill instead of truncating it.
     ///
@@ -66,6 +93,9 @@ final class Panel: NSPanel {
     /// The colour of the agent shown, for the orb.
     var agentTint: () -> NSColor = { Brand.accent }
 
+    /// The palette of the agent shown, for the orb; nil for shades of its tint.
+    var agentPalette: () -> [NSColor]? = { nil }
+
     /// Stay on screen when idle. Off: the pill shows only while active.
     var alwaysVisible = false
 
@@ -75,18 +105,18 @@ final class Panel: NSPanel {
     /// Close button or Esc. The app stops speech and calls `dismiss()`.
     var onDismiss: (() -> Void)?
 
-    /// The pill moved, by a drag or a reset. The answer card follows.
-    var onMove: (() -> Void)?
-
     /// The last state rendered, to draw again after a dismiss or a move.
-    private var current = State.idle
+    var current = State.idle
 
+    /// A click on the pill's row talks. A click in the answer does not:
+    /// that is for reading and selecting.
     override func mouseUp(with event: NSEvent) {
         defer { pressedAt = nil }
         if let start = pressedAt {
             let now = NSEvent.mouseLocation
             let moved = hypot(now.x - start.x, now.y - start.y)
-            if moved < 4 { onClick?() }
+            let onRow = convertToScreen(row.convert(row.bounds, to: nil)).contains(start)
+            if moved < 4 && onRow { onClick?() }
         }
         super.mouseUp(with: event)
     }
@@ -168,40 +198,21 @@ final class Panel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
 
-        let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: Self.size))
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = Brand.Radius.lg
-        blur.layer?.masksToBounds = true
-        blur.autoresizingMask = [.width, .height]
-        contentView = blur
-
-        // An opaque tint over the blur, and it is not a style preference.
-        //
-        // `blendingMode = .behindWindow` composites whatever is behind the
-        // pill, so the editor's own panel dividers were coming through it
-        // as a faint rectangle around the widget — it read as a border the
-        // widget was drawing, when it was the window behind. Translucency
-        // is pleasant over wallpaper and actively confusing over ruled UI.
-        //
-        // This keeps enough blur to feel native while making the pill read
-        // as one solid object wherever it is parked.
-        let tint = NSView(frame: blur.bounds)
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor.windowBackgroundColor
-            .withAlphaComponent(0.72).cgColor
-        tint.layer?.cornerRadius = Brand.Radius.lg
-        tint.autoresizingMask = [.width, .height]
-        blur.addSubview(tint)
+        let surface = Surface(frame: NSRect(origin: .zero, size: Self.size))
+        contentView = surface
+        surface.addSubview(row)
+        separator.boxType = .separator
+        separator.isHidden = true
+        surface.addSubview(separator)
+        surface.addSubview(answer)
+        answer.onHeight = { [weak self] height in self?.grow(answerHeight: height) }
 
         // The orb, centred 28 points from the left edge; its square is
         // larger than the orb so the glow is not cut off.
         let h = Self.size.height
         orb.frame = NSRect(x: 28 - Self.orbFrame / 2, y: (h - Self.orbFrame) / 2,
                            width: Self.orbFrame, height: Self.orbFrame)
-        blur.addSubview(orb)
+        row.addSubview(orb)
 
         // A clipping window the label slides behind. Clicks pass through
         // it, so pressing on the words drags the pill too.
@@ -213,7 +224,7 @@ final class Panel: NSPanel {
         label.lineBreakMode = .byClipping
         label.wantsLayer = true
         clipView.addSubview(label)
-        blur.addSubview(clipView)
+        row.addSubview(clipView)
         clip = clipView
 
         // Close, shown while the pointer is over the pill. Its space is
@@ -229,8 +240,10 @@ final class Panel: NSPanel {
         closeButton.target = self
         closeButton.action = #selector(closeClicked)
         closeButton.isHidden = true
-        blur.addSubview(closeButton)
-        blur.addTrackingArea(NSTrackingArea(rect: .zero,
+        row.addSubview(closeButton)
+        surface.layoutContent = { [weak self] bounds in self?.layoutContent(bounds) }
+        MainActor.assumeIsolated { layoutContent(surface.bounds) }
+        surface.addTrackingArea(NSTrackingArea(rect: .zero,
                                             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                                             owner: self, userInfo: nil))
 
@@ -246,10 +259,32 @@ final class Panel: NSPanel {
 
     // MARK: Place
 
+    /// The row on the edge it grew from, full width; the answer in the
+    /// rest. The answer is always laid out at its full width, so its text
+    /// does not reflow while the pill grows around it.
+    @MainActor
+    func layoutContent(_ bounds: NSRect) {
+        let h = Self.size.height
+        let answerHeight = max(0, bounds.height - h)
+        let above = growth.above
+        row.frame = NSRect(x: 0, y: above ? 0 : answerHeight, width: bounds.width, height: h)
+        closeButton.frame.origin.x = bounds.width - 28
+        let clipWidth = bounds.width - 88
+        if let clip, clip.frame.width != clipWidth {
+            clip.frame.size.width = clipWidth
+            // Text that scrolled may fit now, and the other way round.
+            marqueeText = ""
+            if !current.isMeta { setText(label.stringValue) }
+        }
+        answer.frame = NSRect(x: 0, y: above ? h : 0, width: Self.expandedWidth, height: answerHeight)
+        separator.frame = NSRect(x: 0, y: above ? h - 1 : answerHeight, width: bounds.width, height: 1)
+    }
+
     /// Where it was left, kept on a screen that still exists; the
     /// bottom-right corner the first time.
     @MainActor
     func restorePosition() {
+        collapse(animated: false)
         let screens = NSScreen.screens.map(\.visibleFrame)
         let fallback = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
         place(PillPlacement.clamp(saved: Config.pillOrigin, size: frame.size, screens: screens, fallback: fallback))
@@ -264,19 +299,18 @@ final class Panel: NSPanel {
 
     @MainActor
     private func place(_ origin: NSPoint) {
-        placing = true
+        placing += 1
         setFrameOrigin(origin)
-        placing = false
-        onMove?()
+        placing -= 1
     }
 
     /// Remember a drag. Moves the app makes itself are not saved, so a
-    /// reset or a clamp never overwrites where the user put it.
+    /// reset or a clamp never overwrites where the user put it. Dragged
+    /// while grown, the pill is remembered where it will collapse to.
     @objc private func moved() {
         MainActor.assumeIsolated {
-            guard !placing else { return }
-            Config.pillOrigin = frame.origin
-            onMove?()
+            guard placing == 0 else { return }
+            Config.pillOrigin = expanded ? collapsedFrame().origin : frame.origin
         }
     }
 
@@ -291,6 +325,7 @@ final class Panel: NSPanel {
     @MainActor
     func dismiss() {
         dismissed = true
+        collapse(animated: false)
         hide()
     }
 
@@ -303,7 +338,7 @@ final class Panel: NSPanel {
     }
 
     @MainActor
-    private func show() {
+    func show() {
         orb.setOnScreen(true)
         if !isVisible { orderFrontRegardless() }
     }
@@ -317,14 +352,33 @@ final class Panel: NSPanel {
 
     @objc private func closeClicked() { onDismiss?() }
 
-    override func mouseEntered(with event: NSEvent) { closeButton.isHidden = false }
-    override func mouseExited(with event: NSEvent) { closeButton.isHidden = true }
+    override func mouseEntered(with event: NSEvent) {
+        closeButton.isHidden = false
+        hovering = true
+        MainActor.assumeIsolated { armCollapse() }
+    }
+    override func mouseExited(with event: NSEvent) {
+        closeButton.isHidden = true
+        hovering = false
+        MainActor.assumeIsolated { armCollapse() }
+    }
 
     /// Esc, once the pill has been clicked and so holds the keyboard.
     override func cancelOperation(_ sender: Any?) { onDismiss?() }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { onDismiss?() } else { super.keyDown(with: event) }
+    }
+
+    /// ⌘C copies what is selected in the answer. The app has no Edit menu
+    /// to route the shortcut there.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if expanded, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers == "c" {
+            answer.copySelection()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     /// AppKit is not thread-safe. Marking this explicitly means a stray
@@ -341,7 +395,13 @@ final class Panel: NSPanel {
         case .idle where Hold.isOn: tint = Brand.warn
         default: tint = agentTint()
         }
-        orb.show(state.orbPhase, tint: tint)
+        let colors: [NSColor]?
+        switch state {
+        case .error: colors = nil
+        case .idle where Hold.isOn: colors = nil
+        default: colors = agentPalette()
+        }
+        orb.show(state.orbPhase, tint: tint, colors: colors)
 
         if state.isMeta {
             stopMarquee()
@@ -354,7 +414,9 @@ final class Panel: NSPanel {
             setText(named(state))
         }
 
-        if dismissed || (state.isMeta && !alwaysVisible) { hide() } else { show() }
+        // Grown into an answer, it stays until it collapses, idle or not.
+        if dismissed || (state.isMeta && !alwaysVisible && !expanded) { hide() } else { show() }
+        armCollapse()
         onRender?(state)
     }
 
@@ -371,7 +433,7 @@ final class Panel: NSPanel {
     /// Fits, or scrolls. Identical text is left alone so a per-second tick
     /// cannot restart the animation and make it stutter in place.
     @MainActor
-    private func setText(_ text: String) {
+    func setText(_ text: String) {
         guard let clipView = clip else { label.stringValue = text; return }
         let font = label.font ?? NSFont.systemFont(ofSize: 12)
         let width = (text as NSString).size(withAttributes: [.font: font]).width
@@ -411,7 +473,7 @@ final class Panel: NSPanel {
     }
 
     @MainActor
-    private func stopMarquee() {
+    func stopMarquee() {
         label.layer?.removeAnimation(forKey: "marquee")
         marqueeText = ""
     }
@@ -425,4 +487,13 @@ final class Panel: NSPanel {
 /// A view clicks go through, to the pill behind it.
 private final class PassThroughView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// The pill's row: its background passes clicks through, so pressing
+/// anywhere on it drags the pill, while its close button still clicks.
+final class RowView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
 }

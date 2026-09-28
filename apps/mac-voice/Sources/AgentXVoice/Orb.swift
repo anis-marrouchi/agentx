@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The Siri-style orb at the head of the pill: the agent's colour, and it
-/// listens, thinks and speaks.
+/// The Siri-style orb at the head of the pill: the agent's nature palette
+/// (lagoon, forest, dusk…), and it listens, thinks and speaks.
 ///
 /// Built from SwiftUI's own gradients, no animation library. It only moves
 /// while it has something to show and is on screen: idle or hidden, its
@@ -18,6 +18,9 @@ final class OrbModel: ObservableObject {
     /// 0…1: the microphone while listening.
     @Published var level: Double = 0
     @Published var tint = NSColor(srgbRed: 0.078, green: 0.722, blue: 0.651, alpha: 1)
+    /// The agent's palette, five stops deep to light, from the daemon.
+    /// Nil: shades of `tint` (an error, held notifications, an older daemon).
+    @Published var colors: [NSColor]?
     /// The pill is on screen. Off, nothing moves.
     @Published var onScreen = false
     @Published var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -43,8 +46,8 @@ struct PillOrbView: View {
         let paused = model.paused
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
             OrbBody(t: paused ? 0 : context.date.timeIntervalSinceReferenceDate,
-                    phase: model.phase, level: model.level, tint: model.tint, still: model.still,
-                    ringWidth: 5)
+                    phase: model.phase, level: model.level, tint: model.tint, colors: model.colors,
+                    still: model.still, ringWidth: 5)
                 .frame(width: Self.designSize, height: Self.designSize)
                 .scaleEffect(diameter / Self.designSize)
         }
@@ -89,11 +92,12 @@ final class PillOrb: NSHostingView<PillOrbView> {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Show `phase` in `tint`. Cheap to call on every render: SwiftUI only
-    /// redraws what changed.
-    func show(_ phase: OrbModel.Phase, tint: NSColor) {
+    /// Show `phase` in `colors`, or in shades of `tint` without them.
+    /// Cheap to call on every render: SwiftUI only redraws what changed.
+    func show(_ phase: OrbModel.Phase, tint: NSColor, colors: [NSColor]?) {
         let model = driver.model
         if model.tint != tint { model.tint = tint }
+        if model.colors != colors { model.colors = colors }
         if model.phase != phase {
             model.phase = phase
             if phase != .listening { model.level = 0 }
@@ -160,6 +164,8 @@ struct OrbBody: View {
     let phase: OrbModel.Phase
     let level: Double
     let tint: NSColor
+    /// The agent's palette, deep to light; nil for shades of `tint`.
+    var colors: [NSColor]? = nil
     /// Reduce Motion: a still orb, sized and shaded by state alone.
     let still: Bool
     /// The thinking ring's stroke at the 96-point design size. The pill
@@ -190,11 +196,16 @@ struct OrbBody: View {
         let scale = 0.78 + 0.22 * energy
         ZStack {
             Circle()
-                .fill(Color(nsColor: tint).opacity(0.28 + 0.32 * energy))
+                .fill(glow.opacity(0.28 + 0.32 * energy))
                 .blur(radius: 10 + 12 * energy)
                 .scaleEffect(scale * 1.08)
             fill
                 .clipShape(Circle())
+                .scaleEffect(scale)
+            // Glass: a soft light from the top left, as on a marble.
+            Circle()
+                .fill(RadialGradient(colors: [.white.opacity(0.42), .white.opacity(0)],
+                                     center: UnitPoint(x: 0.34, y: 0.26), startRadius: 0, endRadius: 34))
                 .scaleEffect(scale)
             // Thinking reads as a slow ring going round; the other states
             // as a soft rim.
@@ -247,9 +258,25 @@ struct OrbBody: View {
         ]
     }
 
+    /// The halo's colour: the palette's middle stop, or the tint.
+    private var glow: Color {
+        if let colors, colors.count == 5 { return Color(nsColor: colors[2]) }
+        return Color(nsColor: tint)
+    }
+
+    /// Five colours for the mesh: the agent's palette when it has one,
+    /// with its light stop brightening into a core as the voice grows.
+    private var palette: [Color] {
+        guard let colors, colors.count == 5 else { return shades }
+        let core = CGFloat(0.1 + 0.35 * energy)
+        let light = colors[4].blended(withFraction: core, of: .white) ?? colors[4]
+        // Spread so neighbouring mesh points differ: deep beside light.
+        return [colors[1], colors[3], colors[0], colors[2], light].map { Color(nsColor: $0) }
+    }
+
     /// Five shades around the agent's colour: lighter, deeper and two
     /// neighbouring hues, and a bright core that grows with the voice.
-    private var palette: [Color] {
+    private var shades: [Color] {
         let base = tint.usingColorSpace(.sRGB) ?? tint
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)

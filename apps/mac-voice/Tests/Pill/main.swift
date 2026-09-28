@@ -1,5 +1,5 @@
-// Tests for PillPlacement: where the pill is put back, and which side the
-// answer card opens on. Run with ../../test.sh.
+// Tests for PillPlacement: where the pill is put back, and how it grows
+// into its answer. Run with ../../test.sh.
 import CoreGraphics
 import Foundation
 
@@ -46,30 +46,40 @@ check(underDock == CGPoint(x: 200, y: 80), "under the Dock: lifted above it, sam
 let straddle = PillPlacement.clamp(saved: CGPoint(x: 1450, y: 400), size: pill, screens: [laptop, monitor], fallback: laptop)
 check(straddle == CGPoint(x: 1512, y: 400), "straddling two screens: onto the one it overlaps most")
 
-// --- The answer card ---
+// --- Growing into the answer ---
 
-let card = CGSize(width: 380, height: 260)
+let grown = CGSize(width: 360, height: 300)
 let low = CGRect(origin: corner, size: pill)
-let placed = PillPlacement.card(size: card, pill: low, visible: laptop)
-check(placed.above, "a pill at the bottom opens the card above it")
-check(placed.origin == CGPoint(x: low.maxX - 380, y: low.maxY + 8), "above, right edges aligned, 8 points apart")
+let up = PillPlacement.expanded(size: grown, pill: low, visible: laptop)
+check(up.above && up.alignRight, "a pill in the bottom-right corner grows up and to the left")
+check(up.frame == CGRect(x: low.maxX - 360, y: low.minY, width: 360, height: 300),
+      "its row stays put: same bottom edge, same right edge")
+check(PillPlacement.collapsed(from: up.frame, size: pill, above: true, alignRight: true) == low,
+      "collapsing puts the pill back exactly where it was")
 
 let high = CGRect(x: 600, y: 860, width: 264, height: 54)
-let below = PillPlacement.card(size: card, pill: high, visible: laptop)
-check(!below.above, "a pill near the top opens the card below it")
-check(below.origin == CGPoint(x: high.maxX - 380, y: high.minY - 8 - 260), "below, right edges aligned")
+let down = PillPlacement.expanded(size: grown, pill: high, visible: laptop)
+check(!down.above, "a pill near the top grows down")
+check(down.frame.maxY == high.maxY && down.frame.maxX == high.maxX, "keeping its top and right edges")
+check(PillPlacement.collapsed(from: down.frame, size: pill, above: false, alignRight: true) == high,
+      "and collapses back to the same place")
 
 let middle = CGRect(x: 600, y: laptop.midY - 27, width: 264, height: 54)
-check(PillPlacement.card(size: card, pill: middle, visible: laptop).above, "equal room either side: above")
+check(PillPlacement.expanded(size: grown, pill: middle, visible: laptop).above, "equal room either side: grows up")
 
-let leftEdge = CGRect(x: 0, y: 104, width: 264, height: 54)
-check(PillPlacement.card(size: card, pill: leftEdge, visible: laptop).origin.x == 0,
-      "at the left edge the card is kept on screen")
+let leftEdge = CGRect(x: 10, y: 104, width: 264, height: 54)
+let right = PillPlacement.expanded(size: grown, pill: leftEdge, visible: laptop)
+check(!right.alignRight && right.frame.minX == 10, "near the left edge it grows to the right instead")
+check(PillPlacement.collapsed(from: right.frame, size: pill, above: true, alignRight: false) == leftEdge,
+      "and collapses back to its left edge")
 
-let tall = CGSize(width: 380, height: 700)
-let squeezed = PillPlacement.card(size: tall, pill: low, visible: laptop)
-check(squeezed.origin.y + 700 <= laptop.maxY && squeezed.origin.y >= laptop.minY,
-      "a card taller than the room left still fits on screen")
+let tall = CGSize(width: 360, height: 2000)
+let squeezed = PillPlacement.expanded(size: tall, pill: low, visible: laptop)
+check(squeezed.frame.maxY == laptop.maxY, "taller than the screen: its top stays in view")
+
+let moved = up.frame.offsetBy(dx: -300, dy: 200)
+check(PillPlacement.collapsed(from: moved, size: pill, above: true, alignRight: true)
+        == low.offsetBy(dx: -300, dy: 200), "dragged while open: the pill collapses where it was dragged")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

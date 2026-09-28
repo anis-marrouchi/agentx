@@ -18,7 +18,6 @@ import Carbon.HIToolbox
 final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
     private let statusMenu = StatusMenu()
-    private let card = ResultCard()
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()
@@ -155,6 +154,9 @@ final class App: NSObject, NSApplicationDelegate {
     /// Settings from the daemon: shortcuts now, the rest on next use.
     private func apply(_ saved: VoiceSettings) {
         settings = saved
+        let card = saved.general.card ?? .standard
+        panel.cardTimeout = card.timeout
+        panel.cardMaxHeight = card.maxHeight
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
         statusMenu.refresh()
@@ -168,6 +170,14 @@ final class App: NSObject, NSApplicationDelegate {
         if let forcedAgent, recorder.isRecording { return forcedAgent }
         if let asideSpeaker { return asideSpeaker }
         return busy && !turnAgent.isEmpty ? turnAgent : Config.effectiveAgentID
+    }
+
+    /// The answer's "Open in chat": the agent's page in the dashboard, with
+    /// its chat open.
+    private func openChat() {
+        let who = shownAgent
+        guard !who.isEmpty, let url = URL(string: "\(Config.dashboardURL)/admin/agents/\(who)#chat") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Close, Esc or "Hide pill": the pill goes and the voice stops, the
@@ -246,8 +256,11 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orb.setAnimated(Config.animatedOrb)
         panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
-        panel.onMove = { [weak self] in self?.card.follow() }
-        card.anchor = { [weak self] in self?.panel.frame ?? .zero }
+        panel.agentPalette = { [weak self] in
+            guard let self else { return nil }
+            return self.statusMenu.palette(of: self.shownAgent)
+        }
+        panel.answer.onOpenChat = { [weak self] in self?.openChat() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
         statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
@@ -566,10 +579,10 @@ final class App: NSObject, NSApplicationDelegate {
             switch result {
             case .success(let answer):
                 Log.info("aside answer (\(answer.agentID ?? agent)): \(answer.text)")
-                if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
+                if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
                                              buttons: answer.buttons, imageURL: answer.imageURL) {
-                    card.show(spoken: answer.text, written: answer.written,
-                              buttons: answer.buttons, imageURL: answer.imageURL)
+                    panel.showAnswer(spoken: answer.text, written: answer.written,
+                                     buttons: answer.buttons, imageURL: answer.imageURL)
                 }
                 // Nothing else on screen: the pill shows this answer, its
                 // orb in this agent's colour, while it is spoken.
@@ -631,12 +644,12 @@ final class App: NSObject, NSApplicationDelegate {
             // the speech cannot deliver — a link, an image, or more
             // text than was read aloud. A card that opens on every
             // "Ok." teaches you to ignore it.
-            if ResultCard.isWorthShowing(spoken: answer.text, written: answer.written,
+            if AnswerView.isWorthShowing(spoken: answer.text, written: answer.written,
                                          buttons: answer.buttons, imageURL: answer.imageURL) {
-                card.show(spoken: answer.text, written: answer.written,
-                          buttons: answer.buttons, imageURL: answer.imageURL)
+                panel.showAnswer(spoken: answer.text, written: answer.written,
+                                 buttons: answer.buttons, imageURL: answer.imageURL)
             } else {
-                card.orderOut(nil)
+                panel.collapse()
             }
             // Stopped while it was thinking: the answer is not spoken.
             if silenced { silenced = false; panel.render(.idle); busy = false; return }
