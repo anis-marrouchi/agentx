@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.69.0](https://github.com/anis-marrouchi/agentx/compare/v0.68.1...v0.69.0) (2026-09-28)
+
+
+### Features
+
+* **activity-map:** true origins, full A2A hop chains and clickable cards ([#290](https://github.com/anis-marrouchi/agentx/issues/290)) ([0eb31a4](https://github.com/anis-marrouchi/agentx/commit/0eb31a4e8e1015d5589706f00368d18767aeb52b))
+* **memory:** fact ledger with provenance, overwrite safety and verify-or-ask ([#288](https://github.com/anis-marrouchi/agentx/issues/288)) ([47f7068](https://github.com/anis-marrouchi/agentx/commit/47f70689916551bb38d00f6247b08b91ee8cec3c))
+
 ## [0.68.1](https://github.com/anis-marrouchi/agentx/compare/v0.68.0...v0.68.1) (2026-09-28)
 
 
