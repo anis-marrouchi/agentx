@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { readFileSync } from "fs"
+import { createRequire } from "module"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
@@ -31,7 +33,7 @@ import {
 // Bearer header instead. Deliberately no `?token=` fallback: URLs end up in
 // history and proxy logs.
 //
-// Manifest, icons, service worker and the pair page stay public. They hold
+// Manifest, icons, service worker, the QR decoder and the pair page stay public. They hold
 // no data, and browsers fetch manifests and icons without cookies. So does
 // POST /api/app/pair-code: it trades a one-time code from `agentx app pair`
 // for the same cookie, for the installed app that can't see Safari's cookie
@@ -80,6 +82,10 @@ export async function handleAppRequest(
     if (path === "/app/icon-192.png") return send(res, 200, "image/png", appIconPng(192), "public, max-age=86400")
     if (path === "/app/icon-512.png") return send(res, 200, "image/png", appIconPng(512), "public, max-age=86400")
     if (path === "/app/pair") return send(res, 200, "text/html; charset=utf-8", renderAppPairPage())
+    if (path === "/app/qr.js") {
+      const js = qrDecoderJs()
+      return js ? send(res, 200, "text/javascript; charset=utf-8", js, "public, max-age=2592000") : sendJson(res, 404, { error: "not found" })
+    }
   }
 
   // Trade a device token for the session cookie. The token arrives in the
@@ -127,6 +133,29 @@ export async function handleAppRequest(
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
   return sendJson(res, 404, { error: "not found" })
+}
+
+/** The QR decoder the locked page loads when the owner taps Scan and the
+ *  browser has no BarcodeDetector (iOS Safari). It is jsQR
+ *  (https://github.com/cozmo/jsQR, by Cosmo Wolfe and contributors), the
+ *  `jsqr` dependency's dist file served unmodified under the Apache
+ *  License 2.0 (node_modules/jsqr/LICENSE); a notice naming it and its
+ *  licence is prepended. Public like the icons: it is a library, holds no
+ *  data, and the unpaired page needs it. Read once from the installed
+ *  package, so it is not bundled into dist/. */
+let qrJs: Buffer | null | undefined
+export function qrDecoderJs(): Buffer | null {
+  if (qrJs !== undefined) return qrJs
+  try {
+    const req = createRequire(import.meta.url)
+    const { version } = req("jsqr/package.json") as { version: string }
+    const notice = `/*! jsQR ${version} | Apache-2.0 | https://github.com/cozmo/jsQR */\n`
+    qrJs = Buffer.concat([Buffer.from(notice), readFileSync(req.resolve("jsqr"))])
+  } catch (e: any) {
+    console.error(`[app] QR decoder unavailable (install the jsqr package): ${e.message}`)
+    qrJs = null
+  }
+  return qrJs
 }
 
 /** Returns the record for an active token carrying the `app` scope, else null. */

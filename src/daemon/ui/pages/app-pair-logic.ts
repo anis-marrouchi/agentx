@@ -27,3 +27,51 @@ export function afterUnauthorized(probeStatus: number): "retry" | "lock" | "keep
 export function mayBounce(lastBounceAt: number | null, now: number): boolean {
   return !lastBounceAt || now - lastBounceAt >= 30000 || lastBounceAt > now
 }
+
+/** The pairing-code field as the owner types or pastes (#234): capitals,
+ *  only symbols a code can hold (CODE_ALPHABET in pair-codes.ts), and the
+ *  dash after the fourth. `caret` is where the cursor was in `raw`; the
+ *  result keeps it after the same symbol, so editing mid-code still works.
+ *  "abcdefgh" → "ABCD-EFGH". */
+export function formatPairInput(raw: string, caret: number): { value: string; caret: number } {
+  const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+  const upper = String(raw || "").toUpperCase()
+  const at = Math.max(0, Math.min(Number(caret) || 0, upper.length))
+  let out = ""
+  let before = 0
+  for (let i = 0; i < upper.length && out.length < 8; i++) {
+    if (alphabet.indexOf(upper.charAt(i)) < 0) continue
+    out += upper.charAt(i)
+    if (i < at) before++
+  }
+  const value = out.length > 4 ? out.slice(0, 4) + "-" + out.slice(4) : out
+  return { value, caret: Math.min(before > 4 ? before + 1 : before, value.length) }
+}
+
+export type PairScan =
+  | { kind: "token"; token: string }
+  | { kind: "code"; code: string }
+  | { kind: "none" }
+
+/** What a scanned QR code holds. The QR from `agentx app pair` is a link
+ *  `<address>/app/pair#token=agx_live_…`; that address may differ from the
+ *  one the app was opened on (another Tailscale name, `--url`), so any
+ *  http(s) origin is accepted and only the token is used. A bare code
+ *  `XXXX-XXXX` also counts. Anything else is "none". */
+export function parsePairScan(text: string): PairScan {
+  const s = String(text || "").trim()
+  const link = /^https?:[/][/][^/#?]+[/]app[/]pair[/]?#(.*)$/i.exec(s)
+  if (link) {
+    const parts = link[1].split("&")
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf("token=") !== 0) continue
+      let token = ""
+      try { token = decodeURIComponent(parts[i].slice(6)) } catch (e) { return { kind: "none" } }
+      return /^agx_live_[0-9a-f]{64}$/.test(token) ? { kind: "token", token } : { kind: "none" }
+    }
+    return { kind: "none" }
+  }
+  const up = s.toUpperCase()
+  if (/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(up)) return { kind: "code", code: up.slice(0, 4) + "-" + up.slice(-4) }
+  return { kind: "none" }
+}

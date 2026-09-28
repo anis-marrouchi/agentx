@@ -197,7 +197,7 @@ describe("locked page", () => {
 
   it("scripts parse and hold no template-literal hazards", () => {
     const scripts = [...renderAppLockedPage().matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    expect(scripts.length).toBe(3) // theme boot, injected helpers, page
+    expect(scripts.length).toBe(4) // theme boot, injected helpers, page, scanner
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
     // The hand-written script is a TS template literal; the injected
     // helpers are compiled code interpolated at runtime, so they may not.
