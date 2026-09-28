@@ -103,6 +103,7 @@ import { setVoiceLog } from "@/voice/system-voices"
 import { siriSayScript } from "@/voice/speaker"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
+import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { addressedAgent } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
@@ -2534,6 +2535,22 @@ export class AgentXDaemon {
         const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
         // With wait, the client may have given up; the line still plays.
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // Past voice exchanges, read back from the voice channel's task
+      // traces; a replay goes through the queue above. Gated by
+      // isMeshGatedPath before this point.
+      if (isVoiceHistoryPath(path)) {
+        const agents = this.config?.agents ?? {}
+        const reply = handleVoiceHistory({
+          db: this.db,
+          speech: this.voiceTalk.speech,
+          voiceOf: (id) => agents[id]
+            ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
+            : this.voiceMesh.voices.speaker(id, false)?.voice ?? null,
+          speakable: toSpeakable,
+        }, req.method || "GET", path, url.searchParams)
+        this.json(res, reply.status, reply.body)
         return
       }
 
@@ -5555,6 +5572,8 @@ export class AgentXDaemon {
               "POST /agents/:id/selftest { message? }  — canary probe; runs a fresh-session task and reports {ok, durationMs, tokens, billedModel}",
               "GET  /traces[?agentId=&channel=&chatId=&workflowRunId=&status=&since=&until=&limit=]",
               "GET  /traces/:taskId  — full per-task execution trace (steps + tokens)",
+              "GET  /voice/history[?agent=&limit=&before=]  — past voice exchanges, bounded summaries",
+              "GET  /voice/history/:id  — one voice exchange in full; POST /voice/history/:id/replay",
               "GET  /api/processes  — live persistent claude processes (JSON)",
               "POST /api/processes/kill { agentId, channel, chatId, reason? }",
               "GET  /api/actions/builtin  — list shipped built-in typed actions",

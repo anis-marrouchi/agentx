@@ -43,7 +43,10 @@ export function isMeshGatedPath(path: string): boolean {
     // Recent events name agents, chats and errors across the node.
     path === "/events/recent" || /^\/agents\/[^/]+\/events$/.test(path) ||
     // Traces carry each task's full prompt and final answer.
-    path === "/traces" || path.startsWith("/traces/")
+    path === "/traces" || path.startsWith("/traces/") ||
+    // Past voice exchanges: what was asked and answered out loud. A
+    // replay under it makes this host speak.
+    path === "/voice/history" || path.startsWith("/voice/history/")
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
