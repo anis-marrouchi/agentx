@@ -38,16 +38,18 @@ enum Speech {
     // MARK: Speech to text
 
     /// `engine` is agentx.json's `voice.stt`: "auto" and "elevenlabs" use
-    /// ElevenLabs when there is a key, falling back to mlx-whisper; "local"
-    /// never sends audio off the Mac.
-    static func transcribe(wav: Data, engine: String = "auto") async throws -> String {
+    /// ElevenLabs when there is a key, falling back to the local engine;
+    /// "local" never sends audio off the Mac. `local` is `voice.localStt`:
+    /// "mlx-whisper" or "parakeet".
+    static func transcribe(wav: Data, engine: String = "auto", local: String = "mlx-whisper") async throws -> String {
         if engine == "elevenlabs" && Config.elevenLabsKey == nil {
-            Log.warn("speech to text is set to ElevenLabs but no key is set; using mlx-whisper")
+            Log.warn("speech to text is set to ElevenLabs but no key is set; using \(local)")
         }
         if engine != "local", let key = Config.elevenLabsKey {
             do { return try await elevenLabsSTT(wav: wav, key: key) }
-            catch { Log.warn("ElevenLabs STT failed (\(error.localizedDescription)); falling back to mlx-whisper") }
+            catch { Log.warn("ElevenLabs STT failed (\(error.localizedDescription)); falling back to \(local)") }
         }
+        if local == "parakeet", let text = await LocalSTT.parakeet(wav: wav) { return text }
         return try await mlxWhisper(wav: wav)
     }
 

@@ -18,8 +18,17 @@ rm -rf build && mkdir -p "$BIN" "$APP/Contents/Resources"
 swiftc -O \
   -o "$BIN/AgentXVoice" \
   Sources/AgentXVoice/*.swift \
-  -framework AppKit -framework AVFoundation -framework Carbon -framework SwiftUI \
+  -framework AppKit -framework AVFoundation -framework Carbon -framework CoreML -framework SwiftUI \
   -target arm64-apple-macosx14.0
+
+# The on-device models from a terminal: fetch them, transcribe a file, see
+# where a turn would end. Same sources as the app; the models themselves
+# are downloaded on first use into ~/.agentx/models, never bundled.
+swiftc -O \
+  -o "$BIN/agentx-voice-local" \
+  Sources/AgentXVoice/ModelStore.swift Sources/AgentXVoice/SileroVAD.swift \
+  Sources/AgentXVoice/Parakeet.swift Sources/AgentXVoice/TurnEnd.swift Tools/LocalSTT/main.swift \
+  -framework CoreML -target arm64-apple-macosx14.0
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 

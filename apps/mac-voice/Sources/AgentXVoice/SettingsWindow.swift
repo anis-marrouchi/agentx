@@ -365,7 +365,15 @@ private struct GeneralTab: View {
                     Picker("Speech to text", selection: binding(\.stt)) {
                         Text("Automatic").tag("auto")
                         Text("ElevenLabs").tag("elevenlabs")
-                        Text("On this Mac (Whisper)").tag("local")
+                        Text("On this Mac").tag("local")
+                    }
+                    Picker("On-this-Mac engine", selection: binding(\.localStt)) {
+                        Text("Whisper (mlx-whisper)").tag("mlx-whisper")
+                        Text("Parakeet (downloads 483 MB)").tag("parakeet")
+                    }
+                    Picker("End of a hands-free turn", selection: binding(\.endOfTurn)) {
+                        Text("Voice detection (Silero)").tag("vad")
+                        Text("Volume").tag("volume")
                     }
                     Picker("Default voice provider", selection: binding(\.provider)) {
                         Text("Mac voices (free)").tag("system")
@@ -374,7 +382,7 @@ private struct GeneralTab: View {
                 } header: {
                     Text("Speech")
                 } footer: {
-                    Text("Automatic uses ElevenLabs when a key is set, and Whisper on this Mac otherwise. The default provider is for agents that don't choose their own. Both apply to the next question.")
+                    Text("Automatic uses ElevenLabs when a key is set, and the engine on this Mac otherwise. Parakeet has no Arabic; until its model has downloaded, Whisper answers instead. Voice detection ends a turn when you stop talking, not when the room goes quiet. The default provider is for agents that don't choose their own. All apply to the next question.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {

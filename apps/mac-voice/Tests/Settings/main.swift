@@ -57,6 +57,15 @@ check(writer?["rate"] as? Double == 1.1 && writer?["hotkey"] as? String == "ctrl
 check(writer?["narrate"] == nil, "unchanged agent fields are not")
 check(agents?["researcher"]?["color"] is NSNull && agents?["researcher"]?.count == 1, "Use default clears the colour")
 
+check(saved.general.localStt == "mlx-whisper" && saved.general.endOfTurn == "vad",
+      "a daemon that sends no engine or end-of-turn gets the defaults")
+var engine = saved
+engine.general.localStt = "parakeet"
+engine.general.endOfTurn = "volume"
+let enginePatch = engine.patch(from: saved)["general"] as? [String: Any]
+check(enginePatch?["localStt"] as? String == "parakeet" && enginePatch?["endOfTurn"] as? String == "volume"
+      && enginePatch?.count == 2, "the local engine and the end of a turn are sent when changed")
+
 let preview = saved.previewVoice(for: "researcher")
 check(preview["system"] == nil && preview["rate"] as? Double == 1.2, "a preview leaves a per-language voice alone")
 check(saved.previewVoice(for: "writer")["system"] as? String == "Ava", "and sends a single voice")

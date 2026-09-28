@@ -18,3 +18,9 @@ swiftc -O -o "$out/pill-tests" Sources/AgentXVoice/PillPlacement.swift Tests/Pil
 swiftc -O -o "$out/history-tests" Sources/AgentXVoice/HistoryModel.swift Tests/History/main.swift \
   -target arm64-apple-macosx14.0
 "$out/history-tests"
+swiftc -O -o "$out/turn-end-tests" Sources/AgentXVoice/TurnEnd.swift Tests/TurnEnd/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/turn-end-tests"
+swiftc -O -o "$out/local-model-tests" Sources/AgentXVoice/ModelStore.swift Sources/AgentXVoice/Parakeet.swift \
+  Tests/LocalModels/main.swift -framework CoreML -target arm64-apple-macosx14.0
+"$out/local-model-tests"

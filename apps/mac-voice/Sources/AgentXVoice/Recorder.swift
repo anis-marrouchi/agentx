@@ -29,6 +29,27 @@ final class Recorder {
     /// between two adjacent 100ms windows — which changes nothing.
     private(set) var level: Float = 0
 
+    /// How a hands-free turn's end is heard: "vad" (Silero VAD, once its
+    /// model is downloaded; the volume threshold until then) or "volume".
+    /// agentx.json's `voice.endOfTurn`, set before each `start()`.
+    var endOfTurn = "vad"
+    /// True while this recording's turn is judged by Silero VAD.
+    private(set) var usingVAD = false
+    private var vad: SileroVAD?
+    private var turn = TurnEnd(.level)
+    private let turnLock = NSLock()
+    /// Bumped by every start, so VAD work queued for an earlier recording
+    /// never lands in this one.
+    private var generation = 0
+    private let vadQueue = DispatchQueue(label: "tn.acme.agentx.voice.vad")
+
+    /// Where the hands-free turn stands: nothing said, talking (a pause
+    /// included), or over. Read from the main thread.
+    var turnState: TurnEnd.State {
+        turnLock.lock(); defer { turnLock.unlock() }
+        return turn.state
+    }
+
     /// 16 kHz mono int16 — the format both ElevenLabs and whisper prefer,
     /// and small enough that a 30-second utterance is under 1 MB.
     private let target = AVAudioFormat(
@@ -58,6 +79,7 @@ final class Recorder {
         level = 0
         guard !isRecording else { return }
         lock.lock(); pcm.removeAll(keepingCapacity: true); lock.unlock()
+        prepareTurn()
 
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)
@@ -110,9 +132,8 @@ final class Recorder {
             sum += sample * sample
         }
         let rms = (sum / Float(max(Int(out.frameLength), 1))).squareRoot()
-        // Attack fast, release slow: a level that drops instantly makes a
-        // pause between words look like the end of a sentence.
-        level = rms > level ? rms : level * 0.82 + rms * 0.18
+        level = TurnEnd.smooth(level: level, rms: rms)
+        hearTurn(channel, count: Int(out.frameLength))
 
         let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
         lock.lock()
@@ -120,6 +141,60 @@ final class Recorder {
             Data(bytes: $0.baseAddress!, count: bytes)
         })
         lock.unlock()
+    }
+
+    /// A fresh turn for a new recording, judged by Silero VAD when its
+    /// model is installed and loads; otherwise by the volume threshold,
+    /// with the model downloading in the background for next time.
+    private func prepareTurn() {
+        var detector: SileroVAD?
+        if endOfTurn != "volume" {
+            do {
+                if let model = try SileroVAD.loadModel() {
+                    detector = try SileroVAD(model: model)
+                } else {
+                    ModelStore.installInBackground(ModelStore.vad) { Log.info($0) }
+                }
+            } catch {
+                Log.warn("Silero VAD would not load (\(error.localizedDescription)); using the volume threshold")
+            }
+        }
+        turnLock.lock()
+        generation += 1
+        vad = detector
+        usingVAD = detector != nil
+        turn = TurnEnd(detector != nil ? .vad : .level)
+        turnLock.unlock()
+    }
+
+    /// One converted buffer: to the VAD off the audio thread, or straight
+    /// to the volume check.
+    private func hearTurn(_ channel: UnsafePointer<Int16>, count: Int) {
+        turnLock.lock()
+        let detector = vad, gen = generation
+        if detector == nil {
+            turn.feed(level: level, duration: Double(count) / target.sampleRate)
+        }
+        turnLock.unlock()
+        guard let detector else { return }
+        var samples = [Float](repeating: 0, count: count)
+        for i in 0..<count { samples[i] = Float(channel[i]) / 32768.0 }
+        vadQueue.async { [weak self] in
+            guard let self else { return }
+            let probabilities: [Float]
+            do { probabilities = try detector.process(samples) } catch {
+                Log.warn("Silero VAD failed (\(error.localizedDescription)); using the volume threshold")
+                self.turnLock.lock()
+                if self.generation == gen { self.vad = nil; self.usingVAD = false; self.turn = TurnEnd(.level) }
+                self.turnLock.unlock()
+                return
+            }
+            self.turnLock.lock()
+            if self.generation == gen {
+                for p in probabilities { self.turn.feed(probability: p, duration: SileroVAD.frameDuration) }
+            }
+            self.turnLock.unlock()
+        }
     }
 
     /// Minimal RIFF/WAVE header for 16-bit mono PCM.

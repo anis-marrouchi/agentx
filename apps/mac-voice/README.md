@@ -27,7 +27,8 @@ places deciding how an agent sounds is how they drift apart.
 
 ```
 ⌥Space held  →  mic capture (16 kHz mono WAV)
-             →  STT   ElevenLabs Scribe, falling back to on-device mlx-whisper
+             →  STT   ElevenLabs Scribe, falling back to on-device mlx-whisper,
+                      or Parakeet (Core ML) when voice.localStt says so
              →  POST /ask  { message, agent }      [loopback: no token needed]
              →  TTS   the agent's macOS voice via `say`; ElevenLabs when the
                       daemon says the agent uses it, falling back to `say`
@@ -61,6 +62,7 @@ All optional; every one has a working default.
 | `ELEVENLABS_API_KEY` | `~/.elevenlabs/key` | STT, and TTS for `elevenlabs` agents; absent → local fallbacks |
 | `AGENTX_VOICE_ID` | Rachel | ElevenLabs voice for an `elevenlabs` agent with no `voice.elevenlabsVoiceId` |
 | `AGENTX_VOICE_PROVIDER` | `system` | engine for lines spoken before the daemon names one |
+| `AGENTX_MODELS_DIR` | `~/.agentx/models` | where Silero VAD and Parakeet are downloaded |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper` | offline STT |
 
 The ElevenLabs key is read from the environment first, then key files: an app launched from
@@ -103,6 +105,28 @@ after a click, and "Hide pill" hide it and stop speech until the next talk
 key. The answer card opens above or below the pill, whichever has more
 room, and follows it. `PillPlacement.swift` holds that geometry, tested in
 `Tests/Pill`. The panel is non-activating and only becomes key when clicked.
+
+## On-device models
+
+Core ML only, no package dependency, nothing bundled. `ModelStore.swift`
+pins each model to a Hugging Face revision and every file to a SHA-256,
+downloads into `~/.agentx/models` on first use, and stamps a model
+installed only after every file checked out.
+
+- **Silero VAD** (`SileroVAD.swift`, 0.9 MB, MIT): scores each 32 ms of the
+  microphone. `TurnEnd.swift` turns the scores into "speaking" and
+  "ended" (1.2 s of non-speech after at least 0.25 s of speech, with
+  hysteresis), so a noisy room neither ends a turn nor holds it open.
+  Without the model, the same struct runs the old volume threshold.
+- **Parakeet TDT 0.6B v3** (`Parakeet.swift`, 483 MB, CC-BY-4.0):
+  preprocessor, encoder, decoder and joint models from FluidInference's
+  Core ML export, decoded greedily in Swift. 25 European languages; no
+  Arabic. `LocalSTT.swift` never makes a turn wait for the download or the
+  first load (about 30 s, cached by Core ML); mlx-whisper answers meanwhile.
+
+`agentx-voice-local` (built next to the app from the same sources) fetches
+the models, transcribes WAVs and shows where a turn would end;
+`scripts/voice-stt-bench` uses it to compare engines.
 
 ## Permissions
 
