@@ -123,6 +123,12 @@ describe("isMeshGatedPath — routes gated for every method", () => {
     expect(isMeshGatedPath("/api/memory/no-mock-db")).toBe(true)
   })
 
+  it("gates task traces, which carry full prompts and answers", () => {
+    expect(isMeshGatedPath("/traces")).toBe(true)
+    expect(isMeshGatedPath("/traces/t-1")).toBe(true)
+    expect(isMeshGatedPath("/tracesx")).toBe(false)
+  })
+
   it("does not gate look-alike or unrelated paths", () => {
     expect(isMeshGatedPath("/api/memoryx")).toBe(false)
     expect(isMeshGatedPath("/api/mesh")).toBe(false)

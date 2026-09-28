@@ -20,7 +20,7 @@ curl http://127.0.0.1:18800/mesh/task \
   -d '{"peer":"work-machine","agent":"helper","message":"Reply with a short hello"}'
 ```
 
-Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. The daemon's `/mesh/task` endpoint also supports `stream: true`. Asynchronous delivery requires an originating `context.channel` and `context.chatId` so the result has a return destination.
+Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. Reads that expose task content are protected the same way: task traces (`/traces`, `/traces/<id>`), which hold each task's full prompt and answer, recent events and agent memory. On the daemon's own machine they need no token. The daemon's `/mesh/task` endpoint also supports `stream: true`. Asynchronous delivery requires an originating `context.channel` and `context.chatId` so the result has a return destination.
 
 ## Serve the standalone A2A protocol
 

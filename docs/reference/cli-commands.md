@@ -112,7 +112,9 @@ No flags.
 
 ### `agentx app pair`
 
-Pair a phone — prints a QR code to scan with the phone's camera.
+Pair a phone — prints a QR code to scan and a one-time code to type in the installed app.
+
+The pairing code has 8 characters (shown as `XXXX-XXXX`), works once and expires after 10 minutes. It pairs the same device as the QR code.
 
 Refuses to run while `tailscale serve` shares the whole dashboard (for example after `tailscale serve --bg 4202`) rather than only `/app` and `/api/app`.
 

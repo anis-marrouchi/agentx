@@ -4,11 +4,16 @@
  *  soon as it is online), cache-first for icons and the manifest, and never
  *  anything under /api/. Bump CACHE when the precached list changes.
  *
+ *  The locked page ("This phone isn't paired") is kept too, under its own
+ *  key, so an unpaired app opened offline still shows the pairing form and
+ *  says it needs a connection instead of a browser error. A cached paired
+ *  shell always wins over it.
+ *
  *  It also shows Web Push notifications (payload from channels/push.ts) and
  *  opens their link on tap: app links in an open app window, web links in
  *  the browser. */
 export const APP_SERVICE_WORKER = `
-var CACHE = 'agentx-app-v2';
+var CACHE = 'agentx-app-v3';
 var STATIC = ['/app/manifest.webmanifest', '/app/icon-192.png', '/app/icon-512.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(STATIC); }).then(function () { return self.skipWaiting(); }));
@@ -26,10 +31,14 @@ self.addEventListener('fetch', function (e) {
   if (req.mode === 'navigate' && url.pathname === '/app') {
     e.respondWith(fetch(req).then(function (res) {
       var copy = res.clone();
-      caches.open(CACHE).then(function (c) { return res.ok ? c.put('/app', copy) : res.status === 401 ? c.delete('/app') : null; });
+      caches.open(CACHE).then(function (c) {
+        if (res.ok) return Promise.all([c.put('/app', copy), c.delete('/app/locked')]);
+        if (res.status === 401) return Promise.all([c.put('/app/locked', copy), c.delete('/app')]);
+        return null;
+      });
       return res;
     }).catch(function () {
-      return caches.match('/app').then(function (hit) { return hit || Response.error(); });
+      return caches.match('/app').then(function (hit) { return hit || caches.match('/app/locked'); }).then(function (hit) { return hit || Response.error(); });
     }));
     return;
   }

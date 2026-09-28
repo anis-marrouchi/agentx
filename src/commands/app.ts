@@ -1,7 +1,9 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
+import { existsSync } from "fs"
 import { TokenStore } from "@/daemon/token-store"
+import { CODE_TTL_MS, PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { loadDaemonConfig } from "@/daemon/config"
 import { DEFAULT_PUSH_KEYS_FILE, pushKeysPath, readPushKeys, writePushKeys } from "@/channels/push-keys"
 
@@ -17,7 +19,7 @@ export const appCmd = new Command()
 
 appCmd
   .command("pair")
-  .description("pair a phone — prints a QR code to scan with the phone's camera")
+  .description("pair a phone — prints a QR code to scan and a one-time code to type in the installed app")
   .option("--name <name>", "name for this phone (shown in `agentx app devices`)", "Phone")
   .option("--url <origin>", "address the phone opens, e.g. https://my-mac.tailnet-name.ts.net (default: this machine's Tailscale name)")
   .action(async (opts) => {
@@ -35,16 +37,17 @@ appCmd
       const origin = (opts.url ? String(opts.url) : tailscaleOrigin()).replace(/\/+$/, "")
       if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error(`--url must be an origin like https://host.example.ts.net, got: ${origin}`)
       const { token: secret, record } = new TokenStore().create({ name: String(opts.name), scopes: ["app"] })
+      // The code redeems this same device token, so the QR link (browser)
+      // and the code (installed app) end up as one device.
+      const { code } = new PairCodeStore().create({ token: secret, tokenId: record.id, name: record.name })
       const link = `${origin}/app/pair#token=${secret}`
       // @ts-ignore - no type declarations for qrcode-terminal
       const { default: qrcode } = await import("qrcode-terminal") as any
       console.log()
       qrcode.generate(link, { small: true }, (qr: string) => console.log(qr))
-      console.log(`  Scan with the phone's camera, then open the link.`)
-      console.log(`  Device ${chalk.cyan(record.id)} (${record.name}) paired to ${origin}.`)
-      console.log(chalk.yellow(`  ⚠ Anyone who scans this code can use the app. Clear the terminal when done.`))
-      if (!origin.startsWith("https://")) {
-        console.log(chalk.yellow(`  ⚠ ${origin} is not HTTPS: the phone can't install the app or keep the session from there.`))
+      for (const line of pairingLines({ code, origin, deviceId: record.id, deviceName: record.name })) console.log(line)
+      if (!existsSync("agentx.json") && !existsSync(".agentx/config.json")) {
+        console.log(chalk.yellow(`  ⚠ No agentx.json here. The dashboard only accepts phones paired from the folder that holds agentx.json.`))
       }
       console.log()
     } catch (e: any) {
@@ -106,6 +109,22 @@ appCmd
     if (existing) console.log(chalk.yellow(`  ⚠ Old keys replaced: open Alerts on each phone and turn notifications on again.`))
     console.log(chalk.dim(`  Restart the daemon so it picks up the keys.\n`))
   })
+
+/** What `agentx app pair` prints under the QR code. */
+export function pairingLines(p: { code: string; origin: string; deviceId: string; deviceName: string }): string[] {
+  const minutes = Math.round(CODE_TTL_MS / 60000)
+  const lines = [
+    `  Pairing code: ${chalk.bold.cyan(formatCode(p.code))}`,
+    chalk.dim(`  Open the app from the phone's home screen and type this code. It works once, for ${minutes} minutes.`),
+    `  Or scan the QR code with the phone's camera and open the link.`,
+    `  Device ${chalk.cyan(p.deviceId)} (${p.deviceName}) paired to ${p.origin}.`,
+    chalk.yellow(`  ⚠ Anyone who scans the QR code or types the code can use the app. Clear the terminal when done.`),
+  ]
+  if (!p.origin.startsWith("https://")) {
+    lines.push(chalk.yellow(`  ⚠ ${p.origin} is not HTTPS: the phone can't install the app or keep the session from there.`))
+  }
+  return lines
+}
 
 /** https://<this machine's MagicDNS name>, the address `tailscale serve` uses. */
 function tailscaleOrigin(): string {
