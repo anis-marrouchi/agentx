@@ -40,7 +40,9 @@ agentx desktop start
 
 The AgentX icon in the menu bar shows what the assistant is doing: a waveform when idle, a microphone while listening, dots while the agent thinks, and a speaker while it answers. Its menu lists your agents and what each one is doing: **thinking** on your question, **speaking**, **working** on something else, **queued 2** when it has two answers waiting to be spoken, or **idle**. A number next to the icon counts every line waiting in the [speaking queue](#one-queue-for-everything-spoken).
 
-![The AgentX menu: three agents with Writer ticked, then Stop speaking, Hold notifications, Show floating pill, Settings…, History… and Quit](/screenshots/voice/menu-bar.png)
+![The AgentX menu: three agents with Writer ticked and each one's state, the Recent questions to replay, then Stop speaking, Hold notifications, Show floating pill, Animated orb, Hide pill, Reset position, Settings…, Dashboard…, History… and Quit AgentX Voice](/screenshots/voice/menu-bar.png)
+
+![The same menu in dark mode](/screenshots/voice/menu-bar-dark.png)
 
 1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
 2. **Mac:** choose an agent, or press its number (**1** to **9**).
@@ -257,7 +259,7 @@ To hear a voice before you keep it:
 
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can stand alone), so it never takes a key away from your typing. Two actions can't share one shortcut: the window says which ones clash.
 
-![A refused save: the message at the bottom says the smart paste shortcut is already used to ask an agent](/screenshots/voice/settings-error.png)
+![A refused save on the General tab: Smart paste is set to Control–Option–2, and the red message next to Revert and Save says that shortcut is used for both smart paste and asking Researcher](/screenshots/voice/settings-error.png)
 
 In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for example `"opt+space"`, `"cmd+opt+period"` or `"ctrl+opt+1"`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`; keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `return` or `tab`.
 
@@ -535,7 +537,7 @@ The window shows 30 questions at a time. Choose **Load older** at the bottom of 
 
 The AgentX menu lists your last three questions under **Recent · click to replay**, with the agent that answered each one. Click one to hear its answer again, through the speaking queue like any other answer. A question with no answer is greyed out. Point at a row to see the start of its answer.
 
-<!-- Screenshot needed: the AgentX menu's Recent section (native macOS menu). Not captured: a menu-bar menu only renders while it is open on a real screen, and opening one on the owner's Mac would show a live fleet instead of a demo instance. -->
+![The Recent section of the AgentX menu: three past questions, each with the agent that answered](/screenshots/voice/menu-bar.png)
 
 ### History for scripts
 
