@@ -4,6 +4,8 @@ import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
+import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
+import { PairCodeStore } from "./pair-codes"
 import {
   APP_SERVICE_WORKER,
   renderAppLockedPage,
@@ -28,7 +30,10 @@ import {
 // history and proxy logs.
 //
 // Manifest, icons, service worker and the pair page stay public. They hold
-// no data, and browsers fetch manifests and icons without cookies.
+// no data, and browsers fetch manifests and icons without cookies. So does
+// POST /api/app/pair-code: it trades a one-time code from `agentx app pair`
+// for the same cookie, for the installed app that can't see Safari's cookie
+// (see app-pair-code.ts for its guessing limits).
 
 export const APP_COOKIE = "agentx_app"
 const COOKIE_MAX_AGE = 400 * 86400 // the longest browsers honour
@@ -39,7 +44,14 @@ export interface AppRouteCtx {
   fleet?: AppFleetDeps
   push?: AppPushDeps
   chat?: AppChatDeps
+  pairCodes?: PairCodeStore
+  pairLimiter?: PairAttemptLimiter
+  /** Minimum duration of a pair-code attempt (tests shorten it). */
+  pairMinMs?: number
 }
+
+/** One limiter per dashboard process: the global cap must span requests. */
+const defaultPairLimiter = new PairAttemptLimiter()
 
 /** Handles the request and returns true if `path` belongs to the phone app. */
 export async function handleAppRequest(
@@ -71,8 +83,21 @@ export async function handleAppRequest(
     // Path=/ because one cookie must cover both /app and /api/app. Over the
     // path-scoped `tailscale serve` setup in the guide, no other dashboard
     // route is reachable from the phone anyway.
-    res.setHeader("Set-Cookie", `${APP_COOKIE}=${bearer(req)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`)
+    res.setHeader("Set-Cookie", sessionCookie(bearer(req)!))
     return sendJson(res, 200, { device: rec.name })
+  }
+
+  // Trade a one-time pairing code for the same cookie.
+  if (method === "POST" && path === "/api/app/pair-code") {
+    const result = await redeemPairCode(req, {
+      codes: ctx.pairCodes ?? new PairCodeStore(),
+      limiter: ctx.pairLimiter ?? defaultPairLimiter,
+      verify: (token) => verifyAppToken(token, tokens)?.name ?? null,
+      minMs: ctx.pairMinMs,
+    })
+    if (result.status === 200) res.setHeader("Set-Cookie", sessionCookie(result.token))
+    if (result.status === 429) res.setHeader("Retry-After", String(result.retryAfter))
+    return sendJson(res, result.status, result.body)
   }
 
   const rec = verifyAppToken(appToken(req), tokens)
@@ -96,6 +121,10 @@ export function verifyAppToken(token: string | null, tokens: TokenStore): TokenR
   if (!token) return null
   const rec = tokens.verify(token)
   return rec && recordHasScope(rec, "app") ? rec : null
+}
+
+function sessionCookie(token: string): string {
+  return `${APP_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`
 }
 
 function appToken(req: IncomingMessage): string | null {

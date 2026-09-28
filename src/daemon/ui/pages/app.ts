@@ -21,6 +21,7 @@ import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
 import { APP_CHAT_CSS } from "./app-chat.css"
+import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
 import { injectFns } from "../inject"
 import { markdownToHtml } from "@/utils/markdown-html"
 
@@ -101,17 +102,14 @@ export function renderAppPairPage(): string {
 </html>`
 }
 
-/** Served with 401 when /app is opened without a valid device token. */
+/** Served with 401 when /app is opened without a valid device token. Holds
+ *  the pairing-code form, which is how an installed app pairs itself. */
 export function renderAppLockedPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Not paired · AgentX")}</head>
-<body>
-<main class="card">
-  <h1>This phone isn't paired</h1>
-  <p>On the computer running AgentX, run <code>agentx app pair</code> and scan the QR code it shows with this phone's camera.</p>
-  <p class="muted">If this phone was paired before, it may have been removed with <code>agentx app revoke</code>.</p>
-</main>
+<head>${head("Not paired · AgentX")}<style>${LOCKED_CSS}</style></head>
+<body>${LOCKED_BODY}
+<script>${LOCKED_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -208,7 +206,7 @@ const PAIR_SCRIPT = `
   var msg = document.getElementById('msg');
   var m = /(?:^#|&)token=([^&]+)/.exec(location.hash);
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
-  if (!m) { msg.textContent = 'This link has no pairing code. Run agentx app pair again and scan the new QR code.'; return; }
+  if (!m) { msg.textContent = 'This link has no pairing key. Run agentx app pair again and scan the new QR code.'; return; }
   fetch('/api/app/session', {
     method: 'POST',
     credentials: 'same-origin',
@@ -216,7 +214,7 @@ const PAIR_SCRIPT = `
   }).then(function (r) {
     if (r.ok) { location.replace('/app'); return; }
     msg.textContent = r.status === 401
-      ? 'This pairing code is not valid any more. Run agentx app pair again and scan the new QR code.'
+      ? 'This pairing link is not valid any more. Run agentx app pair again and scan the new QR code.'
       : 'Pairing failed (HTTP ' + r.status + '). Try again.';
   }).catch(function () { msg.textContent = 'Could not reach AgentX. Check this phone is on your tailnet, then try again.'; });
 })();
