@@ -63,7 +63,7 @@ describe("app token gate (loopback is not trusted)", () => {
     expect(session.status).toBe(200)
     const setCookie = session.headers.get("set-cookie") || ""
     expect(setCookie).toMatch(new RegExp(`^${APP_COOKIE}=${token};`))
-    for (const attr of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) expect(setCookie).toContain(attr)
+    for (const attr of ["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) expect(setCookie).toContain(attr)
 
     const cookie = { Cookie: `other=1; ${APP_COOKIE}=${token}` }
     const page = await fetch(`${base}/app`, { headers: cookie })

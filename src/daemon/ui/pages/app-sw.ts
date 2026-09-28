@@ -9,6 +9,11 @@
  *  says it needs a connection instead of a browser error. A cached paired
  *  shell always wins over it.
  *
+ *  A 401 on the page load alone doesn't discard the paired shell: iOS
+ *  home-screen apps sometimes load a page without its cookie, then send it
+ *  on the next fetch (#234). So the worker asks GET /api/app/me first; if
+ *  that works, it serves the cached shell. Only a second 401 locks the app.
+ *
  *  It also shows Web Push notifications (payload from channels/push.ts) and
  *  opens their link on tap: app links in an open app window, web links in
  *  the browser. */
@@ -31,12 +36,18 @@ self.addEventListener('fetch', function (e) {
   if (req.mode === 'navigate' && url.pathname === '/app') {
     e.respondWith(fetch(req).then(function (res) {
       var copy = res.clone();
-      caches.open(CACHE).then(function (c) {
-        if (res.ok) return Promise.all([c.put('/app', copy), c.delete('/app/locked')]);
-        if (res.status === 401) return Promise.all([c.put('/app/locked', copy), c.delete('/app')]);
-        return null;
+      if (res.ok) {
+        caches.open(CACHE).then(function (c) { return Promise.all([c.put('/app', copy), c.delete('/app/locked')]); });
+        return res;
+      }
+      if (res.status !== 401) return res;
+      return fetch('/api/app/me', { credentials: 'same-origin', headers: { 'X-AgentX-Probe': 'locked' } }).then(function (me) {
+        return me.ok ? caches.match('/app') : null;
+      }).catch(function () { return null; }).then(function (shell) {
+        if (shell) return shell;
+        caches.open(CACHE).then(function (c) { return Promise.all([c.put('/app/locked', copy), c.delete('/app')]); });
+        return res;
       });
-      return res;
     }).catch(function () {
       return caches.match('/app').then(function (hit) { return hit || caches.match('/app/locked'); }).then(function (hit) { return hit || Response.error(); });
     }));

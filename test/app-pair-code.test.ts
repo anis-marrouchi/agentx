@@ -120,7 +120,7 @@ describe("POST /api/app/pair-code", () => {
     expect(r.status).toBe(200)
     expect(r.body).toEqual({ device: "My phone" })
     expect(r.cookie).toMatch(new RegExp(`^${APP_COOKIE}=${token};`))
-    for (const attr of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) expect(r.cookie).toContain(attr)
+    for (const attr of ["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) expect(r.cookie).toContain(attr)
     const page = await fetch(`${base}/app`, { headers: { Cookie: `${APP_COOKIE}=${token}` } })
     expect(page.status).toBe(200)
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining("[app] pair-code paired"))

@@ -31,8 +31,10 @@ The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/i
    - **iPhone (Safari):** tap **Share**, then **Add to Home Screen**, then **Add**.
    - **Android (Chrome):** tap the **⋮** menu, then **Install app** (or **Add to Home screen**), then **Install**.
 6. **Phone:** open **AgentX** from the home screen.
-7. **Phone:** if the app says **This phone isn't paired**, tap the **Pairing code** field, type the code from step 3, and tap **Pair**. Capitals, spaces and the dash don't matter. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing.
-   ![The pairing code field on the "This phone isn't paired" page](/screenshots/mobile-app/not-paired.png)
+7. **Phone:** if the app says **This phone isn't paired**, pair it in one of two ways. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing.
+   - Tap **Scan QR code**, allow the camera, and point it at the QR code from step 3. The app pairs as soon as it reads the code.
+   - Or tap the **Pairing code** field, type the code from step 3, and tap **Pair**. Capitals don't matter, and the dash appears on its own after the fourth character.
+   ![The pairing code field and the Scan QR code button on the "This phone isn't paired" page](/screenshots/mobile-app/not-paired.png)
 8. **Phone:** wait for the app to open. You'll see **AgentX** at the top with your phone's name under it.
 9. **Terminal (computer):** clear the terminal so nobody else can scan or read the codes:
    ```sh
@@ -43,7 +45,7 @@ Anyone who scans the QR code can use the app until you remove it, so treat it li
 
 ### Pair without the QR code
 
-You don't need the camera. On the phone, type the app's address (`https://<computer's Tailscale name>/app`) into the browser, add the app to the home screen as in step 5, open it, and type the pairing code.
+You don't need the camera. On the phone, type the app's address (`https://<computer's Tailscale name>/app`) into the browser, add the app to the home screen as in step 5, open it, and type the pairing code. You can also open the app first and tap **Scan QR code** there.
 
 ### Pair again after reinstalling the app
 
@@ -51,7 +53,7 @@ Removing the app from the home screen also removes its pairing.
 
 1. **Terminal (computer):** from the folder that holds `agentx.json`, run `agentx app pair --name "My phone"` again.
 2. **Phone:** add the app to the home screen again, as in steps 4 and 5 of [Install](#install).
-3. **Phone:** open the app from the home screen and type the new code.
+3. **Phone:** open the app from the home screen, then tap **Scan QR code** and scan the new QR code, or type the new code.
 4. **Terminal (computer):** remove the old entry for this phone, as in [Manage paired phones](#manage-paired-phones).
 
 ## Use it
@@ -81,7 +83,9 @@ The phone is locked out as soon as it next connects.
 
 The app and its data (`/app` and `/api/app/…`) always need the phone's key, even from the computer itself. That matters because `tailscale serve` passes every phone request through the computer, so the dashboard can't tell a phone from a local browser by address alone. The key only opens the phone app. The rest of the dashboard isn't shared on the tailnet at all: step 1 passes on only `/app` and `/api/app/…`, and every other address answers "404 page not found".
 
-The QR code carries the key after a `#` in the link, which browsers never send to the server, so it doesn't end up in logs. The phone then keeps it in a cookie that page scripts can't read.
+The QR code carries the key after a `#` in the link, which browsers never send to the server, so it doesn't end up in logs. The phone then keeps it in a cookie that page scripts can't read. The cookie is `SameSite=Lax`: iPhone home-screen apps sometimes open without sending a stricter cookie, which made paired phones ask for a code again. Changes still need a request from the app itself, because the dashboard refuses any change sent from another site.
+
+Before **This phone isn't paired** asks for anything, the app checks once more whether the phone is paired. If it is, the app opens. The dashboard's log says why it refused a phone, without the key itself: `[app] 401 GET /app: no cookie …` means the phone sent no key, and `cookie not valid` means the key was removed or is unknown. `[app] locked page recovered …` means that check found the phone paired.
 
 The pairing code gives the phone the same key. The computer keeps only a scrambled form of the code, so the file it sits in (`.agentx/pair-codes.json`) can't be used without the code itself. To stop guessing, the app refuses all codes for 5 minutes after too many wrong ones, and it answers every wrong, expired or used code in exactly the same way. Each attempt is written to the dashboard's log.
 
@@ -89,14 +93,16 @@ The pairing code gives the phone the same key. The computer keeps only a scrambl
 
 1. **Terminal (computer):** run `agentx app devices`. Your phone is listed as `active`.
 2. **Phone:** open the app from the home screen. Your phone's name and the computer's name show under **AgentX**.
-3. **Phone:** close the app completely and open it again from the home screen. It opens without asking for a code.
+3. **Phone:** close the app completely and open it again from the home screen. It opens without asking for a code. It still does after the computer restarts or AgentX is updated.
 4. **Phone:** open `https://<computer's Tailscale name>/` (the same address without `/app`). The page says `404 page not found`, so the rest of the dashboard isn't shared.
 
 ## If something is wrong
 
 - **"Could not read this machine's Tailscale name"** — Tailscale isn't running on the computer. Start it, or pass `--url https://<address>` to `agentx app pair`.
 - **The link doesn't open on the phone** — the phone isn't connected to your tailnet. Open the Tailscale app on the phone and turn it on.
-- **"This phone isn't paired" after pairing worked before** — the phone was removed with `agentx app revoke`, or the app was removed from the home screen and added again. Follow [Pair again after reinstalling the app](#pair-again-after-reinstalling-the-app).
+- **"This phone isn't paired" after pairing worked before** — the phone was removed with `agentx app revoke`, or the app was removed from the home screen and added again. Follow [Pair again after reinstalling the app](#pair-again-after-reinstalling-the-app). If neither happened, look for `[app] 401` lines in the dashboard's log from that time: they say whether the phone sent its key at all.
+- **"Camera access is off for AgentX"** — the camera was refused when you tapped **Scan QR code**. On iPhone, allow it in **Settings › Safari › Camera**, or type the code instead.
+- **"That QR code isn't from agentx app pair"** — the camera read another QR code. Scan the one `agentx app pair` shows in the terminal.
 - **"That code didn't work"** — the code was mistyped, is older than 10 minutes, or was already used. Check the code, or run `agentx app pair` again and type the new one.
 - **"That code didn't work" with a fresh code** — `agentx app pair` ran in a different folder from the dashboard. The terminal shows "No agentx.json here". Run it again from the folder that holds `agentx.json`.
 - **"Too many attempts. Wait 5 minutes, then try again."** — too many wrong codes were typed, on this phone or any other. Wait the time shown, then type the code again. If the code has expired meanwhile, run `agentx app pair` for a new one.

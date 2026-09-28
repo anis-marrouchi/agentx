@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { readFileSync } from "fs"
+import { createRequire } from "module"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
@@ -34,7 +36,8 @@ import {
 // no data, and browsers fetch manifests and icons without cookies. So does
 // POST /api/app/pair-code: it trades a one-time code from `agentx app pair`
 // for the same cookie, for the installed app that can't see Safari's cookie
-// (see app-pair-code.ts for its guessing limits).
+// (see app-pair-code.ts for its guessing limits). /app/qr.js is the jsQR
+// decoder (Apache-2.0) the locked page loads to scan that QR in-app.
 
 export const APP_COOKIE = "agentx_app"
 const COOKIE_MAX_AGE = 400 * 86400 // the longest browsers honour
@@ -50,6 +53,7 @@ export interface AppRouteCtx {
   pairLimiter?: PairAttemptLimiter
   /** Minimum duration of a pair-code attempt (tests shorten it). */
   pairMinMs?: number
+  log?: (line: string) => void
 }
 
 /** One limiter per dashboard process: the global cap must span requests. */
@@ -75,6 +79,7 @@ export async function handleAppRequest(
     if (path === "/app/icon-192.png") return send(res, 200, "image/png", appIconPng(192), "public, max-age=86400")
     if (path === "/app/icon-512.png") return send(res, 200, "image/png", appIconPng(512), "public, max-age=86400")
     if (path === "/app/pair") return send(res, 200, "text/html; charset=utf-8", renderAppPairPage())
+    if (path === "/app/qr.js") return send(res, 200, "text/javascript; charset=utf-8", qrDecoder(), "public, max-age=86400")
   }
 
   // Trade a device token for the session cookie. The token arrives in the
@@ -102,14 +107,19 @@ export async function handleAppRequest(
     return sendJson(res, result.status, result.body)
   }
 
+  const log = ctx.log ?? ((line: string) => console.log(line))
   const rec = verifyAppToken(appToken(req), tokens)
   if (!rec) {
+    log(`[app] 401 ${method} ${path}: ${missingCredential(req)}`)
     if (path === "/app") return send(res, 401, "text/html; charset=utf-8", renderAppLockedPage())
     return sendJson(res, 401, { error: "this device is not paired", hint: "run: agentx app pair" })
   }
 
   if (method === "GET" && path === "/app") return send(res, 200, "text/html; charset=utf-8", renderAppPage())
   if (method === "GET" && path === "/api/app/me") {
+    // The locked page probes here before asking for a code (app-locked.client.ts).
+    // Success means the cookie reached a fetch but not the page load before it.
+    if (req.headers["x-agentx-probe"] === "locked") log(`[app] locked page recovered ${rec.id} (${rec.name}): the cookie came back on a fetch`)
     return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
   }
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
@@ -126,8 +136,33 @@ export function verifyAppToken(token: string | null, tokens: TokenStore): TokenR
   return rec && recordHasScope(rec, "app") ? rec : null
 }
 
+// SameSite=Lax, not Strict: iOS home-screen apps can launch or resume
+// without sending Strict cookies on the page load, which locked paired
+// phones out (#234). Lax still keeps the cookie off cross-site subrequests
+// and POSTs; the only cross-site request that carries it is a top-level GET,
+// which a foreign page can't read. Writes are also refused for any request
+// from another origin (browser-origin.ts, checked before these routes), and
+// every /api/app write is a POST; the GET routes only read.
 function sessionCookie(token: string): string {
-  return `${APP_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`
+  return `${APP_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`
+}
+
+/** Why a request had no valid credential, for the trace log. Names only:
+ *  never a token or a cookie value. */
+function missingCredential(req: IncomingMessage): string {
+  const site = req.headers["sec-fetch-site"] || "-"
+  const mode = req.headers["sec-fetch-mode"] || "-"
+  const via = `(fetch-site ${site}, mode ${mode})`
+  if (bearer(req)) return `bearer token not valid ${via}`
+  if (cookie(req, APP_COOKIE)) return `cookie not valid: unknown, revoked or not an app token ${via}`
+  const others = (req.headers.cookie || "").split(";").filter((p) => p.includes("=")).length
+  return `no cookie (${others} other cookies) ${via}`
+}
+
+let qrSource: string | null = null
+function qrDecoder(): string {
+  qrSource ??= readFileSync(createRequire(import.meta.url).resolve("jsqr/dist/jsQR.js"), "utf8")
+  return qrSource
 }
 
 function appToken(req: IncomingMessage): string | null {
