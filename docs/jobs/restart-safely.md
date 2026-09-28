@@ -196,6 +196,18 @@ To check the dashboard button:
 2. The node shows `restart pending`, then `restarting…`, then `online` again.
 3. **Terminal:** on that node, `agentx daemon logs` shows `Restart when idle: no tasks running`, then `Shutdown: restart requested by restart-when-idle from the dashboard (…)`.
 
+To check which version is running after an update:
+
+1. **Terminal:** ask the daemon (use your `node.bind` address):
+   ```sh
+   curl -s http://127.0.0.1:18800/health
+   ```
+2. Read three values near the top of the answer:
+   - `version`: the AgentX version the daemon is running, for example `"0.61.0"`.
+   - `commit`: a short code that identifies the exact build, or `null` when AgentX was built outside a git folder or runs straight from source.
+   - `startedAt`: when this daemon started.
+3. These describe the program that is running, not the files on disk. If `version` is still the old one, or `startedAt` is older than your update, the daemon hasn't restarted yet: restart it as above.
+
 To check a plain stop:
 
 1. **Terminal:** while an agent is working on something, run `agentx daemon stop`.

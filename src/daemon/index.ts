@@ -31,6 +31,7 @@ import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
+import { buildInfo } from "@/utils/build-info"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
@@ -4005,6 +4006,10 @@ export class AgentXDaemon {
           this.json(res, 200, {
             status: "ok",
             node: this.config.node,
+            // The build this process loaded, fixed at start (#227).
+            version: buildInfo.version,
+            commit: buildInfo.commit,
+            startedAt: buildInfo.startedAt,
             uptime: process.uptime(),
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),

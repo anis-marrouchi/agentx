@@ -1,6 +1,18 @@
 import { defineConfig } from "tsup"
-import { cpSync, mkdirSync } from "fs"
+import { cpSync, mkdirSync, readFileSync } from "fs"
 import { resolve } from "path"
+import { execSync } from "child_process"
+
+// Baked into the bundle so GET /health reports the build the process
+// loaded, not what is on disk now (src/utils/build-info.ts).
+function gitCommit(): string | null {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || null
+  } catch {
+    return null // built outside a git checkout
+  }
+}
+const { version } = JSON.parse(readFileSync("package.json", "utf8"))
 
 export default defineConfig({
   clean: true,
@@ -11,6 +23,10 @@ export default defineConfig({
   minify: true,
   target: "esnext",
   outDir: "dist",
+  define: {
+    __AGENTX_VERSION__: JSON.stringify(version),
+    __AGENTX_COMMIT__: JSON.stringify(gitCommit()),
+  },
   // Copy the workflow templates into dist/ so the bundled CLI's
   // `agentx workflow init` can find them at the same relative path
   // resolved from import.meta.dirname. tsup tree-shakes non-imported
