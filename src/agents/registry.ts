@@ -51,6 +51,7 @@ import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { abortReason, untilAborted } from "./until-aborted"
 import { appAttachHint } from "@/utils/artifact-sentinel"
+import { prepareOutbox } from "@/utils/app-outbox"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -300,6 +301,15 @@ export function buildWikiContext(
  * row size — anything larger almost always exceeds operator attention.
  */
 export const TRACE_STEP_SUMMARY_BYTES = 8 * 1024
+/** A fresh phone chat: the outbox it names exists and old copies are gone
+ *  (utils/app-outbox.ts). The hint goes out whatever the disk says. */
+function withOutbox(workspace: string | undefined, hint: string): string {
+  if (workspace) {
+    try { prepareOutbox(workspace) } catch { /* the refusal still explains */ }
+  }
+  return hint
+}
+
 export function clipForTrace(s: string): string {
   if (s.length <= TRACE_STEP_SUMMARY_BYTES) return s
   const remaining = s.length - TRACE_STEP_SUMMARY_BYTES
@@ -2050,7 +2060,12 @@ export class AgentRegistry {
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
       // How to show a file on the phone: once, when the session starts.
-      attachHint: appAttachHint(channel, !resumeSessionId, state.def.richMessages),
+      // Sent only on a fresh app session with rich messages on (#259); the
+      // outbox is prepared only when the hint that names it goes out (#258).
+      attachHint: (() => {
+        const hint = appAttachHint(channel, !resumeSessionId, state.def.richMessages)
+        return hint ? withOutbox(state.def.workspace, hint) : undefined
+      })(),
       intent: intent
         ? {
             path: intent.path,
