@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
@@ -123,6 +123,25 @@ describe("meshTaskMode", () => {
     // Not allowed: an async:true without a chat still reaches the legacy
     // branch, which refuses it for having no route back.
     expect(meshTaskMode({ peer: "vps", agent: "builder", message: "x", async: true }, false)).toBe("legacy-async")
+  })
+})
+
+describe("gateAnswer — one answer for /task, /send/agent and /mesh/task (#282)", () => {
+  it("answers a refusal with 409 and its reason", () => {
+    expect(gateAnswer({ refused: "front cannot delegate to itself" })).toEqual({ status: 409, body: { error: "front cannot delegate to itself" } })
+  })
+
+  it("answers an accepted callback with 202 and its body", () => {
+    expect(gateAnswer({ accepted: { accepted: true, taskId: "dlg-1" } })).toEqual({ status: 202, body: { accepted: true, taskId: "dlg-1" } })
+  })
+
+  it("is what /mesh/task uses, so a refusal no longer falls through to the sync path", () => {
+    const src = readFileSync(join(__dirname, "../src/daemon/index.ts"), "utf-8")
+    const meshTask = src.slice(src.indexOf('case "POST /mesh/task"'), src.indexOf("// Async mode: answer the caller now"))
+    expect(meshTask).toMatch(/if \(!\("track" in gate\)\) \{\s*const a = gateAnswer\(gate\)/)
+    // The three gate call sites all settle through the helper.
+    expect(src.match(/gateAnswer\(gate\)/g)?.length).toBe(3)
+    expect(src).not.toMatch(/"(refused|accepted)" in gate/)
   })
 })
 
