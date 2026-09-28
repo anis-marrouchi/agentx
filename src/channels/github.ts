@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { markBody, ownEchoOf } from "./outbound-marker"
+import { agentHeader, forgeAuthorLabel, forgeSender, markBody, ownEchoOf } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -339,8 +339,8 @@ export class GitHubAdapter implements ChannelAdapter {
     // so we only add the agent header for PAT mode.
     const agentLabel = msg.agentId || "unknown"
     const usingApp = !!this.appPrivateKey
-    const agentHeader = usingApp ? "" : `> 🤖 **${agentLabel}** (via AgentX)\n\n`
-    const commentBody = markBody(`${agentHeader}${msg.text}`, agentLabel)
+    const header = usingApp ? "" : agentHeader(agentLabel)
+    const commentBody = markBody(`${header}${msg.text}`, agentLabel)
 
     // Resolve token: per-agent PAT > App installation token > global PAT.
     // Prefer the App token over forwarding to a peer — the App posts as the
@@ -501,12 +501,10 @@ export class GitHubAdapter implements ChannelAdapter {
       id: commentId,
       channel: "github",
       accountId: "default",
-      sender: {
-        id: chatId,
-        name: user.login,
-        username: user.login,
-      },
-      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${user.login} commented:\n${comment.body}`,
+      // Another agent's comment posted with the owner's token is the agent
+      // speaking, not the owner (#282).
+      sender: forgeSender(comment.body, { id: chatId, name: user.login, username: user.login }),
+      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${forgeAuthorLabel(comment.body, user.login)} commented:\n${comment.body}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -589,6 +587,9 @@ export class GitHubAdapter implements ChannelAdapter {
 
     if (this.isBotUser(review.user.login)) return
 
+    // Skip the agent's own signed review; other agents' reviews pass
+    if (review.body && ownEchoOf(review.body, this.resolveAgent(repo))) return
+
     // Only handle reviews with actual content
     if (review.state === "commented" && !review.body) return
 
@@ -600,12 +601,8 @@ export class GitHubAdapter implements ChannelAdapter {
       id: `review-${review.id}`,
       channel: "github",
       accountId: "default",
-      sender: {
-        id: chatId,
-        name: review.user.login,
-        username: review.user.login,
-      },
-      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${review.user.login} reviewed:\n${review.body || "(no body)"}`,
+      sender: forgeSender(review.body, { id: chatId, name: review.user.login, username: review.user.login }),
+      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${forgeAuthorLabel(review.body, review.user.login)} reviewed:\n${review.body || "(no body)"}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -634,12 +631,8 @@ export class GitHubAdapter implements ChannelAdapter {
       id: `review-comment-${comment.id}`,
       channel: "github",
       accountId: "default",
-      sender: {
-        id: chatId,
-        name: comment.user.login,
-        username: comment.user.login,
-      },
-      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${comment.user.login} commented on ${comment.path}:${comment.line}:\n${comment.body}`,
+      sender: forgeSender(comment.body, { id: chatId, name: comment.user.login, username: comment.user.login }),
+      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${forgeAuthorLabel(comment.body, comment.user.login)} commented on ${comment.path}:${comment.line}:\n${comment.body}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,

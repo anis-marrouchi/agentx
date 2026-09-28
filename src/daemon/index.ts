@@ -12,6 +12,7 @@ import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./confi
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
+import { markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -4496,7 +4497,9 @@ export class AgentXDaemon {
             const glRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
-              body: JSON.stringify({ body: text }),
+              // Signed here too, so a caller that forgot cannot post an
+              // agent note that later reads as a person's (#282).
+              body: JSON.stringify({ body: markBody(String(text ?? ""), agentId || UNKNOWN_AGENT) }),
             })
             const respBody = await glRes.text().catch(() => "")
             let noteId = ""
@@ -4569,7 +4572,7 @@ export class AgentXDaemon {
             const ghRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": "AgentX" },
-              body: JSON.stringify({ body: text }),
+              body: JSON.stringify({ body: markBody(String(text ?? ""), agentId || UNKNOWN_AGENT) }),
             })
             const respBody = await ghRes.text().catch(() => "")
             let commentId = ""
