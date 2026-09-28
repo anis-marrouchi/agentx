@@ -2,7 +2,7 @@
 
 First complete the [desktop prerequisites](../requirements.md#desktop-assistant), choose a [speech backend](../requirements.md#voice-input-and-spoken-replies), and review [macOS permissions](../requirements.md#macos-permissions). Each section includes setup steps and official help.
 
-AgentX Desktop is a menu-bar assistant with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small panel and is spoken aloud. The daemon and the selected agent do the work.
+AgentX Desktop is a menu-bar assistant with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small floating pill and is spoken aloud. The daemon and the selected agent do the work.
 
 ## Install and activate
 
@@ -44,7 +44,7 @@ The AgentX icon in the menu bar shows what the assistant is doing: a waveform wh
 
 1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
 2. **Mac:** choose an agent, or press its number (**1** to **9**).
-3. Hold **Option–Space** and speak. The panel names the agent while it listens and answers.
+3. Hold **Option–Space** and speak. The pill names the agent while it listens and answers.
 
 The app remembers your choice after a restart.
 
@@ -54,7 +54,7 @@ Start with an agent's name to send just that question to it. With Writer ticked,
 
 1. **Mac:** hold **Option–Space**.
 2. Say the agent's name first, then your question: "Researcher, what's the status?"
-3. Let go. The panel shows the named agent while it answers.
+3. Let go. The pill shows the named agent while it answers.
 
 The name can be the agent's id, its `name`, or any of its `mentions` from `agentx.json` without the `@`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" still goes to the ticked agent. If no agent matches, or more than one does, the ticked agent answers.
 
@@ -80,42 +80,63 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 |---|---|
 | **Stop speaking** | Silences every voice (see [Stop every voice at once](#stop-every-voice-at-once)) |
 | **Hold notifications** | Holds agent notifications until you turn it off |
-| **Show floating pill** | Keeps the small panel on screen when idle. Off by default: the panel appears only while listening or answering |
-| **Show orb** | Shows the [orb](#the-orb-while-you-talk) while the assistant listens, thinks and speaks. On by default. Turn it off to use the small panel for those moments instead |
+| **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering |
+| **Animated orb** | Lets the orb in the pill move with your voice and the answer. On by default. Turn it off for an orb that stands still |
+| **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** brings it back |
+| **Reset position** | Puts the pill back in the bottom-right corner of the screen |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
 | **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
 | **History…** | Opens the dashboard's [Activity](./activity.md) page |
 
-If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the panel opens the same menu.
+If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the pill opens the same menu.
 
-## The orb while you talk
+## The pill and its orb
 
-While the assistant listens, thinks or speaks, a round, glowing orb appears in the top-right corner of the screen, under the menu bar. It is tinted in the colour of the agent that is answering.
+The pill is the small floating bar that shows what the assistant is doing. It appears in the bottom-right corner of the screen while the assistant listens, thinks or speaks. At its left end is a small, glowing orb in the colour of the agent that is answering. Next to it, the pill names the agent and says what is happening.
 
-![The orb in its three states, light mode: Writer listening in teal, Researcher thinking with a ring going round, and Researcher speaking its answer](/screenshots/voice/orb-states-light.png)
+![The pill in four states, light mode: Writer listening, Researcher reading files for 12 seconds with a ring on its orb, Researcher saying its answer, and the idle pill reading HOLD ⌥SPACE](/screenshots/voice/pill-states-light.png)
 
 | What you see | What it means |
 |---|---|
-| The orb swells and shrinks with your voice, and "Listening…" shows under it | The microphone is on and hears you |
-| A white ring goes round the orb, and your words show under it with the step the agent is on | The agent is thinking on your question |
-| The orb pulses in a speaking rhythm, and the answer shows under it | The answer is being spoken |
+| The orb swells and shrinks with your voice, and the pill says **Listening** | The microphone is on and hears you |
+| A white ring goes round the orb, and the pill shows the step the agent is on and for how long | The agent is thinking on your question |
+| The orb pulses in a speaking rhythm, and the answer scrolls past in the pill | The answer is being spoken |
+| A still orb and **HOLD ⌥SPACE** | The assistant is idle. You only see this when **Show floating pill** is ticked |
 
-When an answer has a link, a picture, or more text than was read aloud, the answer card slides in under the orb. The orb goes away as soon as the assistant is idle again.
+When an answer has a link, a picture, or more text than was read aloud, the answer card opens next to the pill: above it when the pill sits low on the screen, below it when the pill sits high. The card moves with the pill.
 
-![The same three states in dark mode](/screenshots/voice/orb-states-dark.png)
+![The same four states in dark mode](/screenshots/voice/pill-states-dark.png)
+
+### Move the pill
+
+1. **Mac:** press anywhere on the pill (the orb and the words too) and drag it where you want it.
+2. Let go. The pill stays there, and it comes back to the same place the next time the app starts.
+
+If the pill was on a screen that is no longer connected, it comes back in the bottom-right corner of your main screen. To put it back in the corner yourself:
+
+1. **Mac:** click the AgentX icon in the menu bar.
+2. **Mac:** choose **Reset position**.
+
+### Hide the pill
+
+Hiding the pill also stops the voice that is speaking, the same as **Command–Option–.**. Use any of these:
+
+- **Mac:** move the pointer over the pill and click the **×** button that appears at its right end.
+- **Mac:** click the pill, then press **Esc**. (Clicking the pill also starts listening, the same as **Option–Space**.)
+- **Mac:** click the AgentX icon in the menu bar and choose **Hide pill**.
+
+![The pill with the pointer over it: the close button shows at its right end](/screenshots/voice/pill-hover.png)
+
+The pill stays hidden until you next hold **Option–Space** (or an agent's own shortcut). It then comes back where you left it.
 
 Good to know:
 
-- **Colour:** each agent's orb uses its `presence.color` from `agentx.json` (see [Presence on screen](#presence-on-screen)). Without one, the agent gets a colour from its id, the same colour as its on-screen pointer.
-- **Your typing is safe:** the orb never takes the keyboard from the app you are using, and clicks pass straight through it.
+- **Colour:** each agent's orb uses its `presence.color` from `agentx.json` (see [Presence on screen](#presence-on-screen)). Without one, the agent gets a colour from its id, the same colour as its on-screen pointer. The orb turns amber while notifications are held and red when something went wrong.
+- **Your typing is safe:** showing the pill never takes the keyboard from the app you are using. Only clicking the pill does, so that **Esc** can reach it.
 - **Reduce Motion:** with **System Settings › Accessibility › Display › Reduce motion** on, the orb stands still. It still changes between listening, thinking and speaking, but nothing moves on its own.
+- **A still orb:** to keep the orb still without changing the system setting, click the AgentX icon in the menu bar and choose **Animated orb** to remove its tick.
 - **Speaking rhythm:** the answer is played by the AgentX daemon, not by the app, so the orb pulses in a speaking rhythm rather than measuring the sound.
-- **No live words while you speak:** your words show under the orb once they have been turned into text, after you let go of **Option–Space**.
-
-To turn the orb off:
-
-1. **Mac:** click the AgentX icon in the menu bar.
-2. **Mac:** choose **Show orb** to remove its tick. The small panel shows listening, thinking and speaking instead.
+- **No battery drain when idle:** the orb only moves while the assistant listens, thinks or speaks. Idle or hidden, it stops completely.
 
 ## Settings window
 
@@ -144,7 +165,7 @@ Pick an agent on the left; its settings show on the right.
 | **Narration** | Short spoken updates while the agent works: **Off**, **On, except scheduled jobs**, or **On, scheduled jobs too** (see [Task narration](#task-narration)) | agent `voice.narrate` |
 | **Queue priority** | **High**: this agent's lines go ahead of lines already waiting in the [speaking queue](#one-queue-for-everything-spoken). **Low**: they go after them. **Normal**: in order of arrival | agent `voice.priority` |
 | **Ask with shortcut** | Hold this shortcut and speak to ask this agent, without changing the agent ticked in the menu. Click the field, then press the keys; **Escape** cancels, **Delete** or the clear button removes it | agent `voice.hotkey` |
-| **Orb colour** | The colour of this agent's [orb](#the-orb-while-you-talk) and on-screen pointer. **Use default** goes back to the colour picked from the agent's id | agent `presence.color` |
+| **Orb colour** | The colour of this agent's [orb](#the-pill-and-its-orb) and on-screen pointer. **Use default** goes back to the colour picked from the agent's id | agent `presence.color` |
 
 To hear a voice before you keep it:
 
@@ -421,7 +442,7 @@ To change how an agent's pointer looks:
 
 | Field | Meaning |
 |---|---|
-| `color` | The pointer's colour, also used for the [orb](#the-orb-while-you-talk). Default: a colour picked from the agent's id |
+| `color` | The pointer's colour, also used for the [orb](#the-pill-and-its-orb). Default: a colour picked from the agent's id |
 | `initial` | The letter on the pointer. Default: the first letter of the label |
 | `label` | The name shown. Default: the agent's `name`, else its id |
 | `allowActions` | `true` lets the agent click and type for you in `act` mode. Default `false` |
@@ -540,17 +561,19 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 1. **Terminal:** run `agentx desktop status`. It prints the login service's details. `Installed, but not running` or `Not installed` means it isn't running.
 2. **Mac:** click the AgentX icon in the menu bar. Your agents are listed and one is ticked.
 3. Hold **Option–Space**, ask "What can you do?", then release.
-4. The answer appears in the panel, under the ticked agent's name, and is spoken aloud.
+4. The answer appears in the pill, after the ticked agent's name, and is spoken aloud.
 5. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
 6. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
 7. **Terminal:** to check address by name, run `curl -s -X POST http://127.0.0.1:18800/voice/address -H 'Content-Type: application/json' -d '{"text": "<agent-name>, hello", "target": "<ticked-agent-id>"}'`. It prints the named agent's id.
 8. **Mac:** ask the ticked agent something that takes a while.
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
 10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
-11. **Mac:** hold **Option–Space**. The orb appears in the top-right corner in the ticked agent's colour and swells as you speak. Let go: a ring goes round it while the agent thinks, and it pulses while the answer is spoken.
-12. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
-13. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
-14. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+11. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's colour, and the orb swells as you speak. Let go: a ring goes round the orb while the agent thinks, and it pulses while the answer is spoken.
+12. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
+13. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
+14. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
+15. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
+16. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
 
 ## If something is wrong
 
@@ -568,9 +591,11 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A shortcut does nothing:** another app already uses it. The app log (`~/Library/Logs/agentx-desktop.err.log`) says `is taken by another app`. Pick another one in **Settings…**.
 - **A preview is silent:** another line is playing first, or the voice is ElevenLabs without a key. Check `curl -s http://127.0.0.1:18800/voice/queue`.
 - **Launch at login is greyed out:** `agentx desktop install` starts the app at login. **Terminal:** run `agentx desktop stop` to stop it.
-- **No orb appears:** open the AgentX menu and check that **Show orb** is ticked. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
+- **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
+- **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
+- **Esc does nothing:** the pill only hears **Esc** after you click it. Click the pill first, or use its **×** button.
 - **The orb is the wrong colour:** set `presence.color` for that agent in `agentx.json`, as `#RRGGBB`, then restart the daemon or reload its settings. The app reads colours when you open its menu.
-- **The orb doesn't move:** Reduce Motion is on (see above), or the microphone permission is missing, so there is no voice level to follow.
+- **The orb doesn't move:** Reduce Motion is on, **Animated orb** is unticked in the AgentX menu, or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
 - **`Unknown agent: …` from `POST /voice/queue`:** the `agentId` must be an agent on this computer or on a connected mesh computer. Check the id with `agentx agent list`.
