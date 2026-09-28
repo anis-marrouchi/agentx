@@ -15,6 +15,9 @@ swiftc -O -o "$out/settings-tests" Sources/AgentXVoice/HotkeySpec.swift Sources/
 swiftc -O -o "$out/pill-tests" Sources/AgentXVoice/PillPlacement.swift Tests/Pill/main.swift \
   -target arm64-apple-macosx14.0
 "$out/pill-tests"
+swiftc -O -o "$out/pill-busy-tests" Sources/AgentXVoice/PillBusy.swift Tests/PillBusy/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/pill-busy-tests"
 swiftc -O -o "$out/history-tests" Sources/AgentXVoice/HistoryModel.swift Tests/History/main.swift \
   -target arm64-apple-macosx14.0
 "$out/history-tests"

@@ -92,6 +92,37 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.thinking = counts
     }
 
+    /// Busy agents in the order their mini orbs first appeared.
+    private var busyOrder: [String] = []
+
+    /// The pill's mini orbs, one per busy agent (#266): questions in
+    /// flight or waiting here, answers waiting in or playing from the
+    /// daemon's speaking queue. Called when any of those change.
+    private func refreshBusy() {
+        let queue = statusMenu.queue
+        var snap = PillBusy.Snapshot()
+        snap.inFlight = inFlight
+        snap.waiting = waitingAsides.mapValues(\.count)
+        snap.playing = queue?.playing?.agentId
+        snap.toSpeak = queue?.waiting.compactMap(\.agentId) ?? []
+        let items = PillBusy.items(snap, order: busyOrder)
+        busyOrder = items.map(\.agentID)
+        let mainActive = recorder.isRecording || busy || asideSpeaker != nil
+        guard PillBusy.showsRow(items, mainAgent: shownAgent, mainActive: mainActive) else {
+            panel.showBusy([], more: 0)
+            return
+        }
+        let (count, more) = PillBusy.shown(items.count)
+        let orbs = items.prefix(count).map { item in
+            MiniOrbsModel.Orb(
+                agentID: item.agentID, activity: item.activity, queued: item.queued,
+                tint: statusMenu.color(of: item.agentID), colors: statusMenu.palette(of: item.agentID),
+                tooltip: PillBusy.tooltip(name: statusMenu.name(of: item.agentID),
+                                          node: statusMenu.node(of: item.agentID) ?? "this Mac", item: item))
+        }
+        panel.showBusy(Array(orbs), more: more)
+    }
+
     // --- Shortcuts ---
     //
     // Talk, stop and smart paste come from agentx.json (voice.hotkeys),
@@ -241,7 +272,12 @@ final class App: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
         retireOlderInstances()
-        panel.onRender = { [weak self] state in self?.statusMenu.show(state) }
+        panel.onRender = { [weak self] state in
+            self?.statusMenu.show(state)
+            // Who the main orb shows may have changed.
+            self?.refreshBusy()
+        }
+        statusMenu.onActivity = { [weak self] in self?.refreshBusy() }
         panel.contextMenu = { [weak self] in self?.statusMenu.menu ?? NSMenu() }
         panel.agentName = { [weak self] in
             guard let self else { return "" }
@@ -254,6 +290,7 @@ final class App: NSObject, NSApplicationDelegate {
         }
         panel.alwaysVisible = Config.showPill
         panel.orb.setAnimated(Config.animatedOrb)
+        panel.miniOrbs.setAnimated(Config.animatedOrb)
         panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
         panel.agentPalette = { [weak self] in
@@ -264,7 +301,10 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
         statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
-        statusMenu.onAnimatedOrbChanged = { [weak self] on in self?.panel.orb.setAnimated(on) }
+        statusMenu.onAnimatedOrbChanged = { [weak self] on in
+            self?.panel.orb.setAnimated(on)
+            self?.panel.miniOrbs.setAnimated(on)
+        }
         panel.render(.idle)
         statusMenu.onPillChanged = { [weak self] on in
             guard let self else { return }
@@ -500,7 +540,13 @@ final class App: NSObject, NSApplicationDelegate {
             // stays. An agent's own shortcut already said who.
             let agent: String
             if let forced { agent = forced }
-            else { agent = await AgentClient.address(heard, target: Config.effectiveAgentID) }
+            else {
+                // Any agent on the mesh, by name. One on another node is
+                // remembered, so the pill and the menu can name and colour it.
+                let addressed = await AgentClient.address(heard, target: Config.effectiveAgentID)
+                statusMenu.learn(addressed)
+                agent = addressed.agentID
+            }
             if midTurn {
                 // Another agent: ask it alongside ours rather than waiting.
                 if agent != turnAgent && !Self.isStop(heard) {

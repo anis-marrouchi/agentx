@@ -142,14 +142,35 @@ enum AgentClient {
         return try? JSONDecoder().decode(QueueState.self, from: data)
     }
 
-    /// The agent the words are addressed to ("Writer, …"), or `target`.
-    /// The daemon matches names, so the widget and config never disagree.
-    /// Never throws: no daemon means nobody else to address.
-    static func address(_ text: String, target: String) async -> String {
-        guard let (data, _) = try? await post("/voice/address", ["text": text, "target": target], timeout: 2) else { return target }
-        struct Reply: Decodable { let agentId: String? }
-        let id = (try? JSONDecoder().decode(Reply.self, from: data))?.agentId ?? ""
-        return id.isEmpty ? target : id
+    /// Who the words are for, from POST /voice/address: an agent on this
+    /// node or on a mesh peer, with how to show it. Older daemons send
+    /// only `agentId`.
+    struct Addressed: Decodable {
+        let agentID: String
+        let name: String?
+        /// "#RRGGBB"; without it the app derives the same one from the id.
+        let color: String?
+        let palette: AgentInfo.Palette?
+        /// The node it lives on: this node's id, or the peer's name.
+        let node: String?
+        /// On a mesh peer; /ask reaches it by the same id.
+        let remote: Bool?
+
+        enum CodingKeys: String, CodingKey { case agentID = "agentId", name, color, palette, node, remote }
+
+        var isRemote: Bool { remote ?? false }
+    }
+
+    /// The agent the words are addressed to ("Writer, …", or "Planner, …"
+    /// on another node), or `target`. The daemon matches names, so the
+    /// widget and config never disagree. Never throws: no daemon means
+    /// nobody else to address.
+    static func address(_ text: String, target: String) async -> Addressed {
+        let fallback = Addressed(agentID: target, name: nil, color: nil, palette: nil, node: nil, remote: nil)
+        guard let (data, _) = try? await post("/voice/address", ["text": text, "target": target], timeout: 2),
+              let reply = try? JSONDecoder().decode(Addressed.self, from: data),
+              !reply.agentID.isEmpty else { return fallback }
+        return reply
     }
 
     private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval) async throws -> (Data, URLResponse) {

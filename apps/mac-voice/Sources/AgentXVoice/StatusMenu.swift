@@ -21,14 +21,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Reopen the menu once the retry's answer is in.
     private var reopenAfterRefresh = false
     /// The daemon's speaking queue, polled while anything is in flight.
-    private var queue: AgentClient.QueueState?
+    private(set) var queue: AgentClient.QueueState?
+    /// Agents on other mesh nodes this widget has asked or been told
+    /// about by /voice/address: /agents lists only this node's.
+    private var remote: [String: AgentClient.Addressed] = [:]
+    /// Told when the thinking counts or the speaking queue change, so the
+    /// pill's mini orbs follow.
+    var onActivity: (() -> Void)?
     private var queuePoll: Timer?
     /// The last three voice exchanges, for a quick replay.
     private let recent = RecentExchanges()
 
     /// Questions this widget has in flight, per agent. Set by the app.
     var thinking: [String: Int] = [:] {
-        didSet { rebuild(); watchQueue(force: true) }
+        didSet { rebuild(); watchQueue(force: true); onActivity?() }
     }
 
     /// Set by the app.
@@ -54,17 +60,32 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         rebuild()
     }
 
+    /// What /voice/address said about an agent. Only agents on other
+    /// nodes are kept; this node's come from /agents.
+    func learn(_ agent: AgentClient.Addressed) {
+        guard agent.isRemote else { return }
+        remote[agent.agentID] = agent
+    }
+
+    private func local(_ id: String) -> AgentClient.AgentInfo? {
+        guard case .loaded(let agents) = roster else { return nil }
+        return agents.first { $0.id == id }
+    }
+
+    /// The node an agent on another node lives on; nil for this node's.
+    func node(of id: String) -> String? {
+        local(id) == nil ? remote[id]?.node : nil
+    }
+
     /// The agent's display name, or its id until /agents has answered.
     func name(of id: String) -> String {
-        guard case .loaded(let agents) = roster else { return id }
-        return agents.first { $0.id == id }?.label ?? id
+        local(id)?.label ?? remote[id]?.name ?? id
     }
 
     /// The agent's colour for the orb: what the daemon sent, else the
     /// one derived from its id, which is the same colour.
     func color(of id: String) -> NSColor {
-        var configured: String?
-        if case .loaded(let agents) = roster { configured = agents.first { $0.id == id }?.color }
+        let configured = local(id)?.color ?? remote[id]?.color
         let hex = OrbMath.colorHex(agentID: id, configured: configured)
         guard let c = OrbMath.parseHex(hex) else { return Brand.accent }
         return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
@@ -73,8 +94,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// The agent's orb palette, five colours deep to light, or nil when
     /// the daemon sent none.
     func palette(of id: String) -> [NSColor]? {
-        guard case .loaded(let agents) = roster,
-              let hexes = agents.first(where: { $0.id == id })?.palette?.colors, hexes.count == 5 else { return nil }
+        guard let hexes = local(id)?.palette?.colors ?? remote[id]?.palette?.colors, hexes.count == 5 else { return nil }
         let colors = hexes.compactMap(OrbMath.parseHex).map { NSColor(srgbRed: $0.r, green: $0.g, blue: $0.b, alpha: 1) }
         return colors.count == 5 ? colors : nil
     }
@@ -131,6 +151,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 self.queue = await AgentClient.queueState()
                 self.rebuild()
                 self.showBadge()
+                self.onActivity?()
                 self.watchQueue()
             }
         }
@@ -138,16 +159,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// "thinking", "speaking", "queued 2", or both, for one agent's row.
     private func state(of agent: AgentClient.AgentInfo) -> String {
+        state(of: agent.id, active: agent.active ?? 0)
+    }
+
+    private func state(of id: String, active: Int) -> String {
         var parts: [String] = []
         // Speaking one answer and thinking on the next are both true at once.
-        if queue?.playing?.agentId == agent.id { parts.append("speaking") }
-        let asked = thinking[agent.id, default: 0]
+        if queue?.playing?.agentId == id { parts.append("speaking") }
+        let asked = thinking[id, default: 0]
         if asked > 0 {
             // More than one: the rest wait for the answer in flight.
             parts.append(asked > 1 ? "thinking (+\(asked - 1) asked)" : "thinking")
         }
-        if parts.isEmpty && (agent.active ?? 0) > 0 { parts.append("working") }
-        let queued = queue?.waiting.filter { $0.agentId == agent.id }.count ?? 0
+        if parts.isEmpty && active > 0 { parts.append("working") }
+        let queued = queue?.waiting.filter { $0.agentId == id }.count ?? 0
         if queued > 0 { parts.append("queued \(queued)") }
         return parts.isEmpty ? "idle" : parts.joined(separator: " · ")
     }
@@ -183,6 +208,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                                  key: i < 9 ? "\(i + 1)" : "", modifiers: [])
                 row.representedObject = agent.id
                 row.state = agent.id == target ? .on : .off
+                row.isEnabled = !pinned
+                menu.addItem(row)
+            }
+            // Agents on other nodes, while asked, answering or the target:
+            // "Planner (server)  · thinking". /agents lists only this node's.
+            let localIDs = Set(agents.map(\.id))
+            var others = Set(thinking.keys)
+            if let p = queue?.playing?.agentId { others.insert(p) }
+            for item in queue?.waiting ?? [] { if let id = item.agentId { others.insert(id) } }
+            if !target.isEmpty { others.insert(target) }
+            for id in others.subtracting(localIDs).filter({ remote[$0] != nil || thinking[$0] != nil }).sorted() {
+                let node = remote[id]?.node ?? "mesh"
+                let row = action("\(name(of: id)) (\(node))  · " + state(of: id, active: 0), #selector(pick(_:)),
+                                 key: "", modifiers: [])
+                row.representedObject = id
+                row.state = id == target ? .on : .off
                 row.isEnabled = !pinned
                 menu.addItem(row)
             }
