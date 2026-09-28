@@ -7,6 +7,12 @@
 import type { FleetDispatch, FleetSnapshot } from "./api"
 import { refKey, refsOf, type ForgeRef } from "../../daemon/activity-graph-attribution"
 import type { ForgeItem } from "../../daemon/activity-graph-forge"
+import { askOf, chainOf, delegatorOf, hopsOf, originOf, returnHop, trainRoute, type Hop } from "./hops"
+
+import { agentLineOf, isAgentLine, lineOf } from "./transit-lines"
+
+export { delegatorOf, type Hop } from "./hops"
+export { agentLineOf, lineOf } from "./transit-lines"
 
 export type TrainState = "delayed" | "running" | "held" | "review" | "delivered" | "done"
 export type LineState = "delays" | "good" | "quiet"
@@ -29,9 +35,18 @@ export interface Train {
   label: string
   state: TrainState
   reason: string | null
+  /** Channel the work really came from (the root of its hop chain). */
   channel: string
+  /** Agent that handed it to `agentId`, if any (route[route.length - 2]). */
   delegator: string | null
   agentId: string
+  /** Agents from the origin to `agentId`, in hand-off order. */
+  route: string[]
+  /** Every hop behind this train's runs, oldest first; answers coming back
+   *  from a delegation are `return` hops. */
+  hops: Hop[]
+  /** The run the work started with, when it is in the window. */
+  originId: string | null
   startedBy: string
   startedAt: number
   lastAt: number
@@ -74,44 +89,7 @@ export function channelLabel(id: string): string {
   return CHANNELS.find((c) => c.id === id)?.label ?? id
 }
 
-/** Agent that handed this dispatch over, if it was a delegation. */
-export function delegatorOf(d: FleetDispatch): string | null {
-  if (d.initiatorKind !== "a2a") return null
-  if (!d.initiatorId || d.initiatorId.startsWith("__")) return null
-  return d.initiatorId
-}
-
-/** Work with no project runs on its agent's own line. */
-const AGENT_LINE = "agent:"
-const isAgentLine = (id: string) => id.startsWith(AGENT_LINE)
-
 const PALETTE = ["#2979FF", "#FFB300", "#22B573", "#F23A3A", "#8E5CF7", "#00A3A3", "#E8710A", "#D63384"]
-
-const word = (w: string) => (w.length <= 4 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))
-
-/** "acme/web" → web line; "globex/_mesh" → the client's own line. */
-export function lineOf(projectId: string): { id: string; name: string; code: string; project: string | null } {
-  const [head, ...rest] = projectId.split("/")
-  if (head === "unmapped" || !head) return { id: "unmapped", name: "Unassigned", code: "··", project: null }
-  const tail = rest.join("/")
-  const own = !tail || tail.startsWith("_")
-  const slug = own ? head : rest[rest.length - 1]
-  const words = slug.split(/[-_\s]+/).filter(Boolean)
-  const name = words.map(word).join(" ")
-  const version = words.length > 1 && /^v\d+$/i.test(words[words.length - 1]) ? words[words.length - 1].toUpperCase() : null
-  const consonant = slug.slice(1).match(/[bcdfghjklmnpqrstvwxz]/i)?.[0] ?? slug[1] ?? ""
-  const code = version ?? (words.length > 1 ? words[0][0] + words[1][0] : slug[0] + consonant).toUpperCase()
-  return { id: own ? `${head}/_` : projectId, name, code, project: own ? null : projectId }
-}
-
-/** The line for an agent's own work (voice chats, crons, A2A asks with no
- *  project): named from its org-chart role title, else its display name. */
-export function agentLineOf(agent: { id: string; name?: string; title?: string } | undefined, agentId: string): ReturnType<typeof lineOf> {
-  const name = agent?.title || agent?.name || agentId
-  const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean)
-  const code = (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? agentId).slice(0, 2)).toUpperCase()
-  return { id: AGENT_LINE + agentId, name, code, project: null }
-}
 
 const refLabel = (r: ForgeRef) => `${r.kind === "mr" ? "!" : "#"}${r.n}`
 
@@ -123,7 +101,7 @@ function refsTag(refs: ForgeRef[]): string {
 }
 
 /** First meaningful line of a dispatch: the webhook header is dropped. */
-function gist(d: FleetDispatch): string {
+export function gist(d: FleetDispatch): string {
   const text = d.inputPreview.replace(/^\s*\[[^\]]*\]:?\s*/, "").split("\n").find((l) => l.trim()) ?? ""
   const s = (text.trim() || d.subject).replace(/\s+/g, " ")
   return s.length > 72 ? s.slice(0, 71) + "…" : s
@@ -149,7 +127,7 @@ function itemStatus(f: ForgeItem | undefined): { label: string; tone: Tone } {
   return { label: "In review", tone: "muted" }
 }
 
-function runStatus(d: FleetDispatch): { label: string; tone: Tone } {
+export function runStatus(d: FleetDispatch): { label: string; tone: Tone } {
   if (d.active) return { label: "Running", tone: "live" }
   if (d.outcome === "error") return { label: "Errored", tone: "bad" }
   return { label: "Done", tone: "good" }
@@ -157,18 +135,26 @@ function runStatus(d: FleetDispatch): { label: string; tone: Tone } {
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`
 
-/** What reached an agent last before `at` from outside the fleet — the
- *  real origin of a hand-off ("Voice › Secretary › mtgl-v2"). */
-type OriginOf = (agentId: string, at: number) => FleetDispatch | undefined
+/** Chains resolve against every run in the window, so a filter (active
+ *  only, search) never cuts a train off from where it came from. */
+interface Ctx { pool: FleetDispatch[]; asks: Map<string, FleetDispatch> }
 
-function buildTrain(id: string, lineId: string, ds: FleetDispatch[], snap: FleetSnapshot, originOf: OriginOf): Train {
+function buildTrain(id: string, lineId: string, ds: FleetDispatch[], snap: FleetSnapshot, ctx: Ctx): Train {
   const byTime = [...ds].sort((a, b) => a.startedAt - b.startedAt)
   const first = byTime[0], last = byTime[byTime.length - 1]
-  const delegator = delegatorOf(last)
-  const origin = delegator ? originOf(delegator, first.startedAt) ?? first : first
+  // A callback turn is the answer coming home: it draws a return hop and
+  // leaves the route to the runs that asked.
+  const returns = byTime.filter((d) => ctx.asks.has(d.id))
+  const asked = byTime.filter((d) => !ctx.asks.has(d.id))
+  const chains = (asked.length ? asked : returns.map((d) => ctx.asks.get(d.id)!)).map((d) => chainOf(d, ctx.pool))
+  const from = originOf(chains[0])
+  const route = trainRoute(chains)
+  const hops = [...new Map([...chains.flatMap(hopsOf), ...returns.map(returnHop)].map((h) => [h.dispatchId ?? `root:${h.to}`, h])).values()]
+    .sort((a, b) => a.at - b.at)
+  const origin = from.dispatch ?? first
   const refs = refsOf(last).length ? refsOf(last) : refsOf(first)
   const forge = snap.forge ?? {}
-  const initiator = snap.initiators.find((i) => i.id === origin.initiatorId)
+  const initiator = from.dispatch ? snap.initiators.find((i) => i.id === origin.initiatorId) : undefined
   const isCron = !refs.length && (first.channelId === "cron" || first.initiatorKind === "cron")
 
   let items: TrainItem[]
@@ -209,7 +195,7 @@ function buildTrain(id: string, lineId: string, ds: FleetDispatch[], snap: Fleet
   const tag = refs.length ? refsTag(refs) : isCron ? "cron" : channelLabel(mapChannelId(first.channelId))
   const oneTitle = refs.length === 1 ? known[0]?.title || gist(last) : null
   const cronName = first.subject.replace(/^cron:/, "")
-  const who = initiator?.name || origin.initiatorId
+  const who = initiator?.name || from.sender || origin.initiatorId
   const chat = /^(chat:|dm:)/.test(gist(last)) ? `Chat with ${who}` : gist(last)
   const title = refs.length > 1 ? `MRs ${tag}` : refs.length ? `${tag} ${oneTitle}` : isCron ? cronName : chat
   const label = refs.length > 1 ? plural(refs.length, "MR") : refs.length ? oneTitle! : isCron ? cronName : chat
@@ -217,8 +203,9 @@ function buildTrain(id: string, lineId: string, ds: FleetDispatch[], snap: Fleet
 
   return {
     id, lineId, title, tag, label: label.length > 26 ? label.slice(0, 25) + "…" : label, state, reason,
-    channel: mapChannelId(origin.channelId), delegator, agentId: last.agentId,
-    startedBy: initiator?.name || origin.initiatorId, startedAt: first.startedAt,
+    channel: mapChannelId(from.channel), delegator: route.length > 1 ? route[route.length - 2] : null,
+    agentId: route[route.length - 1], route, hops, originId: from.dispatch?.id ?? null,
+    startedBy: who, startedAt: first.startedAt,
     lastAt: Math.max(...ds.map((d) => d.resolvedAt ?? d.startedAt)),
     items, dispatchIds: ds.map((d) => d.id), failedPipelines, link,
   }
@@ -248,11 +235,22 @@ export function buildTransit(snap: FleetSnapshot, dispatches: FleetDispatch[]): 
   const groups = new Map<string, { lineId: string; ds: FleetDispatch[] }>()
   const meta = new Map<string, ReturnType<typeof lineOf>>()
   const agentById = new Map(snap.agents.map((a) => [a.id, a]))
+  const pool = snap.dispatches.length ? snap.dispatches : dispatches
+  const asks = new Map<string, FleetDispatch>()
   for (const d of dispatches) {
-    let line = lineOf(d.projectId)
-    if (line.id === "unmapped") line = agentLineOf(agentById.get(d.agentId), d.agentId)
+    const ask = d.callback ? askOf(d, pool) : undefined
+    if (ask) asks.set(d.id, ask)
+  }
+  const lineFor = (d: FleetDispatch) => {
+    const line = lineOf(d.projectId)
+    return line.id === "unmapped" ? agentLineOf(agentById.get(d.agentId), d.agentId) : line
+  }
+  for (const d of dispatches) {
+    // An answer rides on the train of the run it answers.
+    const home = asks.get(d.id) ?? d
+    const line = lineFor(home)
     meta.set(line.id, line)
-    const key = trainKey(d, line.id, refsOf(d))
+    const key = trainKey(home, line.id, refsOf(home))
     const g = groups.get(key) ?? { lineId: line.id, ds: [] }
     g.ds.push(d)
     groups.set(key, g)
@@ -263,13 +261,17 @@ export function buildTransit(snap: FleetSnapshot, dispatches: FleetDispatch[]): 
     if (line.id !== "unmapped" && !meta.has(line.id)) meta.set(line.id, line)
   }
 
-  const inbound = dispatches.filter((d) => !delegatorOf(d)).sort((a, b) => b.startedAt - a.startedAt)
-  const originOf: OriginOf = (agentId, at) => inbound.find((d) => d.agentId === agentId && d.startedAt <= at)
-  const built = [...groups.entries()].map(([key, g]) => buildTrain(key, g.lineId, g.ds, snap, originOf))
-  // The chat that started a hand-off is already the head of that train's
-  // route ("Voice › Secretary › …"); don't also run it on the agent's own line.
-  const origins = new Set(built.flatMap((t) => (t.delegator ? [originOf(t.delegator, t.startedAt)?.id] : [])))
-  const trains = built.filter((t) => !isAgentLine(t.lineId) || !t.dispatchIds.every((id) => origins.has(id))).sort(byState)
+  const built = [...groups.entries()].map(([key, g]) => buildTrain(key, g.lineId, g.ds, snap, { pool, asks }))
+  // The chat that started a hand-off, and the middle hops of a chain, are
+  // already on the route of the train they led to ("Voice › Secretary › …").
+  // Don't run them again as trains of their own, unless they carry an issue
+  // or MR of their own.
+  const upstream = new Set(built.flatMap((t) => {
+    const mine = new Set(t.dispatchIds)
+    return t.hops.flatMap((h) => (h.dispatchId && h.kind === "ask" && !mine.has(h.dispatchId) ? [h.dispatchId] : []))
+  }))
+  const folded = (t: Train) => t.dispatchIds.every((id) => upstream.has(id)) && (isAgentLine(t.lineId) || !t.items.some((i) => i.ref))
+  const trains = built.filter((t) => !folded(t)).sort(byState)
   // Projects take the first colours; agent lines follow.
   const ids = [...meta.keys()].sort((a, b) => Number(isAgentLine(a)) - Number(isAgentLine(b)) || a.localeCompare(b))
   const lines: Line[] = [...meta.values()].map((m) => {
@@ -293,12 +295,8 @@ export function headline(lines: Line[]): string {
   return running ? "Good service on all lines" : "All lines quiet"
 }
 
-/** Route chips for a train: channel › delegator › agent › line code. */
+/** Route chips for a train: channel › every hop agent › line code. */
 export function routeOf(t: Train, line: Line | undefined, agentName: (id: string) => string): string[] {
-  const out = [channelLabel(t.channel)]
-  if (t.delegator) out.push(agentName(t.delegator))
-  out.push(agentName(t.agentId))
-  out.push(line?.code ?? t.lineId)
-  return out
+  return [channelLabel(t.channel), ...t.route.map(agentName), line?.code ?? t.lineId]
 }
 

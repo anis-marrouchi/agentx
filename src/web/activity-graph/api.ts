@@ -38,6 +38,10 @@ export interface FleetDispatch {
   system: boolean
   /** Set in fleet mode: which mesh node produced this row. */
   nodeId?: string
+  /** Where this run's A2A chain really started (context.initiator). */
+  root?: { kind: "human" | "agent"; channel: string; sender?: string; agentId?: string }
+  /** A delegation's callback turn: the answer `from` brings back. */
+  callback?: { from: string; peer?: string; status: string }
 }
 
 export interface FleetDispatchDetail {

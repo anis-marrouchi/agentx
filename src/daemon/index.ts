@@ -136,6 +136,7 @@ import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
+import { rootInitiatorOf } from "@/a2a/initiator"
 import type { DelegationManager } from "@/a2a/delegation"
 import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -458,6 +459,8 @@ export class AgentXDaemon {
       mesh: () => this.mesh,
       log: this.log,
       replies: this.callbackReplies,
+      recordDispatch: (agentId, context, message, senderAgentId) =>
+        this.recordInboundDispatch(agentId, context, message, senderAgentId),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -2341,6 +2344,10 @@ export class AgentXDaemon {
     let runId: string | undefined
     return {
       track: {
+        // The ledger row for this hop names its chain's root, so the
+        // activity map can draw where the work really came from (#267).
+        // Only the ledger: the callee's own context is left as it was.
+        ...(caller ? { root: rootInitiatorOf(caller.context, caller.agentId) } : {}),
         onStart: (id) => {
           runId = id
           if (caller?.taskId) this.syncWaits.begin(caller.taskId, id)
@@ -2367,7 +2374,11 @@ export class AgentXDaemon {
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
         target.callee,
-        { channel: "a2a", sender: `agent:${caller.agentId}`, chatId: `a2a:${caller.agentId}:${target.callee}` },
+        {
+          channel: "a2a", sender: `agent:${caller.agentId}`, chatId: `a2a:${caller.agentId}:${target.callee}`,
+          // The same root delegations.start() stamps on the callee's turn.
+          initiator: rootInitiatorOf(caller.context, caller.agentId),
+        },
         target.message,
         caller.agentId,
       )
@@ -4719,7 +4730,7 @@ export class AgentXDaemon {
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(
                 targetAgent,
-                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}` },
+                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(gate.track.root ? { initiator: gate.track.root } : {}) },
                 text,
                 senderAgentId,
               )
@@ -4921,7 +4932,10 @@ export class AgentXDaemon {
           // each call records as its own event row (no per-event idempotency).
           // Wrapped in try/catch so a ledger failure cannot break /task —
           // legacy stays authoritative until 1c per-source promotion lands.
-          const intentRef = this.recordInboundDispatch(agentId, body.context as any, body.message, senderAgentId)
+          const ledgerContext = track.root && !(body.context as any)?.initiator
+            ? { ...((body.context as Record<string, unknown>) ?? {}), initiator: track.root }
+            : body.context as any
+          const intentRef = this.recordInboundDispatch(agentId, ledgerContext, body.message, senderAgentId)
           // A mesh peer sends the root its task belongs to; any other caller
           // starts a new one.
           const taskRoot = rootFromTaskBody(body)

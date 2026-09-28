@@ -3,9 +3,11 @@
 // Horizontal (desktop): channels | interchanges | stations | trains | terminals.
 // Vertical (phone line view): the same tiers top to bottom, for one line.
 
-import { CHANNELS, STATE_ORDER, type Line, type Train, type Transit } from "./transit"
+import { CHANNELS, STATE_ORDER, channelLabel, type Line, type Train, type Transit } from "./transit"
+import { drawnRoute, spread, type Orientation } from "./transit-geometry"
 
-export type Orientation = "horizontal" | "vertical"
+export { COLLAPSE_AT, drawnRoute, metroPath, spread, type Orientation } from "./transit-geometry"
+
 /** "trains", not "group": xyflow styles its built-in "group" node type. */
 export type NetKind = "channel" | "station" | "trains" | "terminal" | "district"
 
@@ -37,6 +39,13 @@ export interface NetEdge {
   kind: "feeder" | "track"
   color: string
   lineId?: string
+  /** A hand-off track (from → to), clickable for its hops. */
+  hop?: { from: string; to: string }
+  /** Collapsed middle hops on this track ("+2"), and the trains to expand. */
+  hidden?: number
+  trainIds?: string[]
+  /** Feeder: the channel it starts from. */
+  channel?: string
   /** Perpendicular shift so parallel lines on one track stay visible. */
   offset: number
   active: boolean
@@ -54,6 +63,8 @@ export interface LayoutOpts {
   lineId?: string
   /** Peer name(s) shown on the remote district. */
   districtName?: string
+  /** Trains whose long routes are drawn in full. */
+  expanded?: Set<string>
 }
 
 const SIZE = {
@@ -66,18 +77,8 @@ const SIZE = {
 export const MAX_PILLS = 3
 
 const COL = { horizontal: [0, 250, 480, 640, 960], vertical: [0, 90, 200, 330, 0] }
-
-/** Push positions apart to at least `gap`, keeping their order and mean. */
-export function spread(desired: number[], gap: number): number[] {
-  if (!desired.length) return []
-  const order = desired.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0])
-  const out = order.map(([v]) => v)
-  for (let i = 1; i < out.length; i++) out[i] = Math.max(out[i], out[i - 1] + gap)
-  const shift = (desired.reduce((a, b) => a + b, 0) - out.reduce((a, b) => a + b, 0)) / out.length
-  const res = new Array<number>(desired.length)
-  order.forEach(([, idx], k) => { res[idx] = out[k] + shift })
-  return res
-}
+/** Distance between hop columns (interchanges at depth 0, 1, …). */
+const HUB_STEP = { horizontal: 200, vertical: 110 }
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length)
 const code2 = (name: string) => {
@@ -124,8 +125,14 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
     return c
   })
 
-  const delegators = [...new Set(trains.map((t) => t.delegator).filter((d): d is string => !!d))]
-  const stationIds = [...new Set(groups.map((g) => g.agent))].filter((a) => !delegators.includes(a))
+  // Interchanges: agents that hand work on, one column per hop depth.
+  const drawn = new Map(trains.map((t) => [t.id, drawnRoute(t.route, !!opts.expanded?.has(t.id))]))
+  const depth = new Map<string, number>()
+  for (const { agents } of drawn.values()) agents.slice(0, -1).forEach((a, i) => depth.set(a, Math.max(depth.get(a) ?? 0, i)))
+  const delegators = [...depth.keys()]
+  const hubCols = delegators.length ? Math.max(...depth.values()) + 1 : 0
+  const next = (a: string) => [...drawn.values()].flatMap(({ agents }) => agents.flatMap((x, i) => (x === a && i < agents.length - 1 ? [agents[i + 1]] : [])))
+  const stationIds = [...new Set(groups.map((g) => g.agent))].filter((a) => !depth.has(a))
   const want = (agent: string) => mean(groups.flatMap((g, i) => (g.agent === agent ? [groupCross[i]] : [])))
   const gap = H ? 104 : 124
   const meshSt = stationIds.filter(isMesh), localSt = stationIds.filter((a) => !isMesh(a))
@@ -137,22 +144,16 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   const push = localPlaced.length ? Math.max(0, meshBottom - Math.min(...localPlaced)) : 0
   localSt.forEach((a, i) => stationCross.set(a, localPlaced[i] + push))
 
-  // Interchanges sit level with what they feed. One may feed another, so
-  // settle the ones whose downstream is known first.
-  const pending = new Set(delegators)
-  const want2 = new Map<string, number>()
-  for (let pass = 0; pass <= delegators.length && pending.size; pass++) {
-    for (const d of [...pending]) {
-      const down = trains.filter((t) => t.delegator === d).map((t) => t.agentId)
-      if (pass < delegators.length && down.some((a) => pending.has(a) && a !== d)) continue
-      want2.set(d, mean([
-        ...down.map((a) => stationCross.get(a) ?? want2.get(a) ?? want(a)).filter((v) => Number.isFinite(v)),
-        ...groups.flatMap((g, i) => (g.agent === d ? [groupCross[i]] : [])),
-      ]))
-      pending.delete(d)
-    }
+  // Interchanges sit level with what they feed, deepest column first so
+  // each one knows where its downstream landed.
+  for (let k = hubCols - 1; k >= 0; k--) {
+    const col = delegators.filter((d) => depth.get(d) === k)
+    const wantHub = (d: string) => mean([
+      ...next(d).map((a) => stationCross.get(a) ?? want(a)).filter((v) => Number.isFinite(v)),
+      ...groups.flatMap((g, i) => (g.agent === d ? [groupCross[i]] : [])),
+    ])
+    spread(col.map((d) => wantHub(d) || 0), gap).forEach((v, i) => stationCross.set(col[i], v))
   }
-  spread(delegators.map((d) => want2.get(d) ?? 0), gap).forEach((v, i) => stationCross.set(delegators[i], v))
 
   // Idle stations sit at the end of the station tier when asked for.
   const idle = opts.showIdle && !opts.lineId
@@ -164,17 +165,22 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   const termCross = spread(lines.map((l) => mean(groups.flatMap((g, i) => (g.line.id === l.id ? [groupCross[i]] : [])))), H ? 54 : 180)
 
   const used = new Set(trains.map((t) => t.channel))
-  const channels = opts.lineId ? CHANNELS.filter((c) => used.has(c.id)) : CHANNELS
+  // A channel outside the board's list (Slack, say) still gets its node.
+  const unlisted = [...used].filter((id) => !CHANNELS.some((c) => c.id === id)).map((id) => ({ id, label: channelLabel(id) }))
+  const channels = [...CHANNELS, ...unlisted].filter((c) => !opts.lineId || used.has(c.id))
   const centre = mean([...stationCross.values()].length ? [...stationCross.values()] : [0])
   const chStep = H ? 50 : 120
   const chCross = channels.map((_, i) => centre + (i - (channels.length - 1) / 2) * chStep)
 
   const cols = COL[opts.orientation]
-  const stationCol = delegators.length ? cols[2] : cols[1] + (H ? 60 : 0)
+  const extra = Math.max(0, hubCols - 1) * HUB_STEP[opts.orientation]
+  const shift = hubCols ? extra : H ? -60 : 0
   const main = {
-    channel: cols[0], interchange: cols[1], station: stationCol,
-    group: H ? cols[3] + (delegators.length ? 0 : -60) : cols[3],
-    terminal: H ? cols[4] + (delegators.length ? 0 : -60) : 0,
+    channel: cols[0],
+    hub: (a: string) => cols[1] + (depth.get(a) ?? 0) * HUB_STEP[opts.orientation],
+    station: hubCols ? cols[2] + extra : cols[1] + (H ? 60 : 0),
+    group: cols[3] + shift,
+    terminal: H ? cols[4] + shift : 0,
   }
   const at = (m: number, c: number, w: number, h: number) =>
     H ? { x: m, y: c - h / 2 } : { x: c - w / 2, y: m }
@@ -182,6 +188,7 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   const nodes: NetNode[] = []
   const edges: NetEdge[] = []
   const running = (ts: Train[]) => ts.some((t) => t.state === "running")
+  const through = (a: string) => trains.filter((t) => drawn.get(t.id)!.agents.includes(a))
 
   channels.forEach((c, i) => {
     const s = SIZE.channel
@@ -190,8 +197,8 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
 
   const stationSub = (a: string) => {
     const mine = trains.filter((t) => t.agentId === a)
-    if (delegators.includes(a)) {
-      const n = new Set(trains.filter((t) => t.delegator === a).map((t) => t.lineId)).size
+    if (depth.has(a)) {
+      const n = new Set(through(a).filter((t) => t.agentId !== a).map((t) => t.lineId)).size
       return `Interchange · ${n} ${n === 1 ? "line" : "lines"}`
     }
     if (!mine.length) return "idle"
@@ -201,11 +208,11 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   }
   for (const [a, c] of stationCross) {
     const s = SIZE.station
-    const mine = trains.filter((t) => t.agentId === a || t.delegator === a)
+    const mine = through(a)
     nodes.push({
-      id: `st:${a}`, kind: "station", ...at(delegators.includes(a) ? main.interchange : main.station, c, s.w, s.h), w: s.w, h: s.h,
+      id: `st:${a}`, kind: "station", ...at(depth.has(a) ? main.hub(a) : main.station, c, s.w, s.h), w: s.w, h: s.h,
       label: opts.agentName(a), code: code2(opts.agentName(a)), sub: stationSub(a),
-      mesh: isMesh(a), interchange: delegators.includes(a), idle: !mine.length,
+      mesh: isMesh(a), interchange: depth.has(a), idle: !mine.length,
       running: running(mine), delayed: mine.some((t) => t.state === "delayed"),
     })
   }
@@ -230,38 +237,44 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
     nodes.push({ id: `tm:${l.id}`, kind: "terminal", ...at(m, termCross[i], s.w, s.h), w: s.w, h: s.h, label: l.name, code: l.code, color: l.color, lineId: l.id, delayed: l.state === "delays" })
   })
 
-  // Hand-offs: interchange → station, one coloured track per line.
-  const handoffs = new Map<string, { from: string; to: string; line: Line; active: boolean }>()
+  // Hand-offs: one coloured track per line for each hop drawn; a collapsed
+  // route's first track carries its hidden hops ("+2").
+  const handoffs = new Map<string, NetEdge>()
   for (const t of trains) {
-    if (!t.delegator) continue
-    const key = `${t.delegator}|${t.agentId}|${t.lineId}`
-    const h = handoffs.get(key) ?? { from: t.delegator, to: t.agentId, line: lines[lineIdx.get(t.lineId)!], active: false }
-    h.active ||= t.state === "running"
-    handoffs.set(key, h)
+    const { agents, hidden } = drawn.get(t.id)!
+    const line = lines[lineIdx.get(t.lineId)!]
+    for (let i = 0; i < agents.length - 1; i++) {
+      const from = agents[i], to = agents[i + 1]
+      const id = `ho:${from}|${to}|${line.id}`
+      const e = handoffs.get(id) ?? { id, source: `st:${from}`, target: `st:${to}`, kind: "track" as const, color: line.color, lineId: line.id, hop: { from, to }, offset: 0, active: false }
+      e.active ||= t.state === "running"
+      if (i === 0 && hidden) {
+        e.hidden = Math.max(e.hidden ?? 0, hidden)
+        e.trainIds = [...(e.trainIds ?? []), t.id]
+      }
+      handoffs.set(id, e)
+    }
   }
-  const perPair = new Map<string, number>()
-  for (const h of handoffs.values()) {
-    const pair = `${h.from}|${h.to}`
-    const k = perPair.get(pair) ?? 0
-    perPair.set(pair, k + 1)
-    edges.push({ id: `ho:${h.from}|${h.to}|${h.line.id}`, source: `st:${h.from}`, target: `st:${h.to}`, kind: "track", color: h.line.color, lineId: h.line.id, offset: k * 8, active: h.active })
-  }
-  // Centre parallel tracks on their pair.
-  for (const e of edges) if (e.id.startsWith("ho:")) {
-    const n = perPair.get(e.id.slice(3).split("|").slice(0, 2).join("|"))!
-    e.offset -= ((n - 1) * 8) / 2
-  }
-
-  // Feeders: channel → the first station a train reaches.
+  // Feeders: the line's colour starts at the channel the work came from.
   const feeders = new Map<string, NetEdge>()
   for (const t of trains) {
-    const first = t.delegator ?? t.agentId
-    const id = `fd:${t.channel}|${first}`
-    const e = feeders.get(id) ?? { id, source: `ch:${t.channel}`, target: `st:${first}`, kind: "feeder" as const, color: "", offset: 0, active: false }
+    const first = drawn.get(t.id)!.agents[0]
+    const line = lines[lineIdx.get(t.lineId)!]
+    const id = `fd:${t.channel}|${first}|${line.id}`
+    const e = feeders.get(id) ?? { id, source: `ch:${t.channel}`, target: `st:${first}`, kind: "feeder" as const, color: line.color, lineId: line.id, channel: t.channel, offset: 0, active: false }
     e.active ||= t.state === "running"
     feeders.set(id, e)
   }
-  edges.push(...feeders.values())
+  // Parallel lines on one pair sit side by side, centred on the pair.
+  for (const set of [handoffs, feeders]) {
+    const perPair = new Map<string, Array<NetEdge>>()
+    for (const e of set.values()) {
+      const pair = `${e.source}|${e.target}`
+      perPair.set(pair, [...(perPair.get(pair) ?? []), e])
+    }
+    for (const es of perPair.values()) es.forEach((e, k) => { e.offset = k * 8 - ((es.length - 1) * 8) / 2 })
+    edges.push(...set.values())
+  }
 
   if (meshSt.length) {
     const ms = nodes.filter((n) => n.kind === "station" && n.mesh && !n.interchange)
@@ -272,19 +285,4 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   }
 
   return { nodes, edges }
-}
-
-/** SVG path for a metro segment: straight runs joined by one 45° leg. */
-export function metroPath(sx: number, sy: number, tx: number, ty: number, orientation: Orientation, offset = 0): string {
-  if (orientation === "vertical") {
-    const p = metroPath(sy, sx, ty, tx, "horizontal", offset)
-    return p.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, a, b) => `${b} ${a}`)
-  }
-  sy += offset; ty += offset
-  const dy = ty - sy, dx = tx - sx
-  if (Math.abs(dy) < 0.5) return `M ${sx} ${sy} L ${tx} ${ty}`
-  const lead = Math.min(18, Math.max(0, dx / 4))
-  const leg = Math.min(Math.abs(dy), Math.max(0, dx - 2 * lead))
-  const x1 = sx + lead, x2 = x1 + leg
-  return `M ${sx} ${sy} L ${x1} ${sy} L ${x2} ${ty} L ${tx} ${ty}`
 }
