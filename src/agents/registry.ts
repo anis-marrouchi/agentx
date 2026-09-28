@@ -2825,8 +2825,9 @@ export class AgentRegistry {
 
   /** A running turn of `agentId` and the context it started with, for
    *  A2A delegation (#277). With `taskId` it must be that run; with a
-   *  channel and chat it must be the run on that chat; with neither it is
-   *  the agent's only running turn (null when it has several). */
+   *  channel and chat it must be the only run on that chat. With neither
+   *  there is no answer: guessing "the agent's only turn" could attach a
+   *  same-host proxy's request to an unrelated conversation. */
   findRunningTurn(
     agentId: string,
     by: { taskId?: string; channel?: string; chatId?: string } = {},
@@ -2839,12 +2840,19 @@ export class AgentRegistry {
     } else if (by.channel && by.chatId) {
       const matches = state.runningTasks.filter((r) => r.channel === by.channel && r.chatId === by.chatId)
       run = matches.length === 1 ? matches[0] : undefined
-    } else if (state.runningTasks.length === 1) {
-      run = state.runningTasks[0]
     }
     if (!run) return null
     const context = this.runningContexts.get(run.id)
     return context ? { taskId: run.id, context } : null
+  }
+
+  /** Whether every slot of `agentId` is taken, and by which runs. Lets a
+   *  synchronous delegation refuse at once when the only slot is held by
+   *  the turn waiting on it (#277), instead of waiting 25 minutes. */
+  slotHolders(agentId: string): { full: boolean; runIds: string[] } | null {
+    const state = this.agents.get(agentId)
+    if (!state) return null
+    return { full: state.activeTasks >= state.def.maxConcurrent, runIds: state.runningTasks.map((r) => r.id) }
   }
 
   /** True while `agentId` has a turn running on this chat. */

@@ -22,7 +22,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import { randomBytes } from "crypto"
-import { isChainHop, isHumanFacingTurn, rootInitiatorOf, type RootInitiator } from "./initiator"
+import { isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 
 export type DelegationStatus = "done" | "error" | "timeout" | "lost"
 
@@ -112,7 +112,11 @@ export interface DelegationDeps {
 
 const REQUEST_CLIP = 500
 const RESULT_CLIP = 12_000
-const MAX_DONE_IDS = 2000
+/** Finished task ids remembered for duplicate suppression, in memory and
+ *  in the compacted log alike. */
+export const MAX_DONE_IDS = 2000
+/** Log lines appended between compactions while the daemon runs. */
+const COMPACT_EVERY = 500
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s
@@ -173,7 +177,9 @@ type LogLine =
 
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
-  private doneIds = new Set<string>()
+  /** Finished task id → how it ended, oldest first. */
+  private doneIds = new Map<string, DelegationStatus>()
+  private appendsSinceCompact = 0
   private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number }> = []
   /** One callback at a time per caller chat, in completion order. */
   private chains = new Map<string, Promise<void>>()
@@ -189,15 +195,15 @@ export class DelegationManager {
   /**
    * Decide whether a delegation from this caller turn goes the callback
    * way. `asyncFlag` is the request's own `async` field: false always
-   * keeps it synchronous, true asks for a callback even from an
-   * agent-started root turn, and absent means "only when a person started
-   * it". A delegated hop or a callback turn is always synchronous: the
-   * first has a caller waiting on its answer, and the second would chain
-   * callbacks with no depth limit.
+   * keeps it synchronous, true asks for a callback from a root turn that
+   * is not a person's (a cron, say), and absent means "only when a person
+   * started it". Inside a delegation nothing goes async, whatever the
+   * flag: a delegated hop has a caller waiting on its answer, and a
+   * callback turn must not start a chain of callbacks.
    */
   shouldCallback(caller: CallerTurn | null, asyncFlag?: boolean): boolean {
     if (asyncFlag === false || !caller) return false
-    if (isChainHop(caller.context)) return false
+    if (isInsideDelegation(caller.context)) return false
     if (!originOf(caller.context)) return false
     if (asyncFlag === true) return true
     if (this.deps.asyncWhenHuman === false) return false
@@ -287,7 +293,7 @@ export class DelegationManager {
       return false
     }
     this.pendingById.delete(id)
-    this.markDone(id)
+    this.markDone(id, result.status)
     const timer = this.timers.get(id)
     if (timer) clearTimeout(timer)
     this.timers.delete(id)
@@ -400,11 +406,13 @@ export class DelegationManager {
     if (this.recent.length > 200) this.recent.splice(0, this.recent.length - 200)
   }
 
-  private markDone(id: string): void {
-    this.doneIds.add(id)
-    if (this.doneIds.size > MAX_DONE_IDS) {
-      const first = this.doneIds.values().next().value
-      if (first !== undefined) this.doneIds.delete(first)
+  private markDone(id: string, status: DelegationStatus): void {
+    this.doneIds.delete(id)
+    this.doneIds.set(id, status)
+    while (this.doneIds.size > MAX_DONE_IDS) {
+      const first = this.doneIds.keys().next().value
+      if (first === undefined) break
+      this.doneIds.delete(first)
     }
   }
 
@@ -417,6 +425,8 @@ export class DelegationManager {
     } catch (e: any) {
       this.deps.log(`[delegation] could not write ${path}: ${e?.message ?? e}`)
     }
+    // Keep the file bounded while the daemon stays up, not only at boot.
+    if (++this.appendsSinceCompact >= COMPACT_EVERY) this.compact()
   }
 
   private load(path: string): void {
@@ -431,7 +441,7 @@ export class DelegationManager {
           if (!this.doneIds.has(rec.id)) this.pendingById.set(rec.id, rec as DelegationRecord)
         } else if (line.type === "done" && typeof line.id === "string") {
           this.pendingById.delete(line.id)
-          this.markDone(line.id)
+          this.markDone(line.id, typeof line.status === "string" ? line.status : "done")
         }
       }
     } catch (e: any) {
@@ -442,13 +452,14 @@ export class DelegationManager {
   /** Keep the log small: only unfinished starts and the recent done ids
    *  (for duplicate suppression) are rewritten. */
   private compact(): void {
+    this.appendsSinceCompact = 0
     const path = this.deps.logPath
     if (!path) return
     try {
       const ts = this.now()
       const lines: LogLine[] = [
         ...[...this.pendingById.values()].map((r) => ({ type: "start" as const, ts: r.startedAt, ...r })),
-        ...[...this.doneIds].slice(-500).map((id) => ({ type: "done" as const, id, status: "done" as DelegationStatus, ts })),
+        ...[...this.doneIds].map(([id, status]) => ({ type: "done" as const, id, status, ts })),
       ]
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + (lines.length ? "\n" : ""))

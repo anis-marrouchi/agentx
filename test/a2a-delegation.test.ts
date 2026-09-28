@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, MAX_DONE_IDS, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -15,6 +15,13 @@ const DELEGATED_TURN: CallerTurn = {
   agentId: "middle",
   taskId: "run-3",
   context: { channel: "a2a", chatId: "a2a:front:middle:x", sender: "agent:front", initiator: { kind: "human", channel: "telegram", chatId: "chat-1" } },
+}
+
+// The turn a callback runs as: the person's chat, marked as a callback.
+const CALLBACK_TURN: CallerTurn = {
+  agentId: "front",
+  taskId: "run-4",
+  context: { channel: "telegram", chatId: "chat-1", sender: "agent:worker", delegation: { taskId: "dlg-1", from: "worker", status: "done" } },
 }
 
 function deferred<T>() {
@@ -73,6 +80,24 @@ describe("when a delegation calls back", () => {
     expect(mgr.shouldCallback(DELEGATED_TURN)).toBe(false)
     expect(mgr.shouldCallback(null)).toBe(false)
     expect(mgr.shouldCallback(null, true)).toBe(false)
+  })
+
+  it("never goes async inside a delegation, even when asked to", () => {
+    const { mgr } = harness()
+    expect(mgr.shouldCallback(CALLBACK_TURN, true)).toBe(false)
+    expect(mgr.shouldCallback(DELEGATED_TURN, true)).toBe(false)
+    expect(mgr.shouldCallback(CALLBACK_TURN)).toBe(false)
+  })
+
+  it("does not let a callback turn start another callback", async () => {
+    const h = harness()
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    h.local.resolve({ content: "done" })
+    await flush()
+    // The caller, in its callback turn, asks again with async:true.
+    const callbackTurn: CallerTurn = { agentId: "front", taskId: "run-9", context: h.injected[0].context }
+    expect(h.mgr.shouldCallback(callbackTurn, true)).toBe(false)
+    expect(h.mgr.shouldCallback(callbackTurn)).toBe(false)
   })
 
   it("honours an explicit async flag either way", () => {
@@ -278,6 +303,38 @@ describe("errors, timeouts and duplicates", () => {
     expect(h.injected).toHaveLength(1)
     expect(h.injected[0].context.channel).toBe("cron")
     expect(h.delivered).toHaveLength(0)
+  })
+})
+
+describe("the log", () => {
+  it("keeps each outcome and stays bounded while the daemon runs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-dlg-"))
+    try {
+      const logPath = join(dir, "delegations.jsonl")
+      const h = harness({ logPath })
+      const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+      await h.mgr.complete(a.taskId, { status: "timeout", text: "slow" })
+      // Enough start/done pairs to trigger compaction more than once.
+      for (let i = 0; i < 600; i++) {
+        const t = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: `m${i}` })
+        await h.mgr.complete(t.taskId, { status: i % 2 ? "error" : "done", text: "x" })
+      }
+      const lines = readFileSync(logPath, "utf-8").trim().split("\n").map((l) => JSON.parse(l))
+      expect(lines.length).toBeLessThan(2 * 500 + 10)
+      // A compacted done line keeps how the delegation ended.
+      expect(lines.find((l) => l.id === a.taskId)).toMatchObject({ type: "done", status: "timeout" })
+      expect(new Set(lines.filter((l) => l.type === "done").map((l) => l.status))).toEqual(new Set(["timeout", "done", "error"]))
+
+      // A new process still suppresses the old ids.
+      const again = harness({ logPath })
+      expect(await again.mgr.complete(a.taskId, { status: "done", text: "late" })).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("remembers the same number of finished ids in memory and on disk", () => {
+    expect(MAX_DONE_IDS).toBe(2000)
   })
 })
 

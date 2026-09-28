@@ -53,7 +53,10 @@ export function callerHintFrom(req: HttpRequest, body: Record<string, unknown>):
 }
 
 /** The caller's running turn, or null when it cannot be named with
- *  certainty. Null means "delegate synchronously", today's behaviour. */
+ *  certainty. Null means "delegate synchronously", today's behaviour.
+ *  The turn must be named: by its task id, or by agent plus channel and
+ *  chat. An agent id alone is not enough, because a same-host proxy also
+ *  arrives over loopback and could be matched to an unrelated turn. */
 export function resolveCallerTurn(
   hint: CallerHint,
   registry: Pick<AgentRegistry, "findRunningTurn" | "runningTaskOwner">,
@@ -68,11 +71,80 @@ export function resolveCallerTurn(
     const turn = registry.findRunningTurn(agentId, { taskId: hint.callerTaskId })
     return turn ? { agentId, taskId: turn.taskId, context: turn.context as Record<string, unknown> } : null
   }
-  if (!agentId) return null
-  const turn = registry.findRunningTurn(agentId, hint.callerChannel && hint.callerChatId
-    ? { channel: hint.callerChannel, chatId: hint.callerChatId }
-    : {})
+  if (!agentId || !hint.callerChannel || !hint.callerChatId) return null
+  const turn = registry.findRunningTurn(agentId, { channel: hint.callerChannel, chatId: hint.callerChatId })
   return turn ? { agentId, taskId: turn.taskId, context: turn.context as Record<string, unknown> } : null
+}
+
+/**
+ * Synchronous delegations running on this node: which turn waits on which
+ * callee run. Used only to refuse a delegation that could never be
+ * answered (a cycle back into a turn that is itself waiting).
+ */
+export class SyncWaits {
+  /** callee run id → the caller turn waiting on it */
+  private waitingOn = new Map<string, string>()
+
+  begin(callerTaskId: string, calleeRunId: string): void {
+    this.waitingOn.set(calleeRunId, callerTaskId)
+  }
+
+  end(calleeRunId: string): void {
+    this.waitingOn.delete(calleeRunId)
+  }
+
+  /** Every turn waiting on `taskId`, directly or through a chain. */
+  waitersOf(taskId: string): Set<string> {
+    const out = new Set<string>()
+    let cur = this.waitingOn.get(taskId)
+    while (cur && !out.has(cur)) {
+      out.add(cur)
+      cur = this.waitingOn.get(cur)
+    }
+    return out
+  }
+}
+
+/**
+ * Why a synchronous delegation to `target` must be refused now, or null.
+ * An agent cannot ask itself. And when every slot of the target is held by
+ * a turn that is (through any chain) waiting on this caller, the request
+ * could never start: A -> B -> A with one slot each used to wait out the
+ * 25-minute slot limit before failing.
+ */
+export function cycleRefusal(
+  target: string,
+  hint: Pick<CallerHint, "senderAgentId" | "meshForwarded">,
+  caller: CallerTurn | null,
+  registry: Pick<AgentRegistry, "slotHolders">,
+  waits: SyncWaits,
+): string | null {
+  if (hint.meshForwarded) return null
+  const self = caller?.agentId ?? hint.senderAgentId
+  if (self && self === target) return `An agent cannot delegate to itself ("${target}"). Do the work in this turn instead.`
+  if (!caller?.taskId) return null
+  const slots = registry.slotHolders(target)
+  if (!slots?.full || slots.runIds.length === 0) return null
+  const waiting = waits.waitersOf(caller.taskId)
+  if (slots.runIds.every((id) => waiting.has(id))) {
+    return `Agent "${target}" is busy with the turn that is waiting on this request, so it could never answer. ` +
+      "Answer from what you have, or say what you need from it."
+  }
+  return null
+}
+
+/**
+ * What /mesh/task does with a request. A request whose own context names a
+ * chat (channel and chatId) keeps its behaviour from before #277: its
+ * `async: true` delivers the peer's raw answer to that chat, and without
+ * the flag it waits. Only a request with no chat of its own may become a
+ * callback into the calling turn.
+ */
+export function meshTaskMode(body: Record<string, unknown>, callbackAllowed: boolean): "callback" | "legacy-async" | "sync" {
+  const ctx = body.context as Record<string, unknown> | undefined
+  const ownChat = !!ctx && typeof ctx.channel === "string" && !!ctx.channel && typeof ctx.chatId === "string" && !!ctx.chatId
+  if (!ownChat && callbackAllowed && typeof body.agent === "string" && body.agent) return "callback"
+  return body.async === true ? "legacy-async" : "sync"
 }
 
 /** The 202 body a caller gets back; its `note` is written for the agent. */

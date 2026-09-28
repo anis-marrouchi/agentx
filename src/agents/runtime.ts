@@ -478,9 +478,11 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
 
 /** Export who is running and for which chat, so tools the agent launches
  *  (the agentx MCP server in particular) can identify the caller without
- *  trusting model-supplied arguments. Per-spawn processes get all of it;
- *  a persistent process is keyed per chat and gets the same fields minus
- *  the per-turn task id (persistentCallerEnv). */
+ *  trusting model-supplied arguments. This is the per-spawn version, with
+ *  the running task id. A warm persistent process is keyed by (agent,
+ *  channel, chatId) and gets the same agent and chat through
+ *  persistentCallerEnv (claude-process-factory.ts), but no task id, which
+ *  changes every turn. */
 export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
   // The running task, so a daemon endpoint the agent calls (agent memory)

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, callerHintFrom, createDelegations, resolveCallerTurn, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -44,9 +44,11 @@ describe("resolveCallerTurn", () => {
     expect(resolveCallerTurn(hint({ senderAgentId: "front", callerChannel: "cron", callerChatId: "daily" }), fakeRegistry as any)?.taskId).toBe("run-2")
   })
 
-  it("uses the agent's only running turn, and gives up when it has several", () => {
-    expect(resolveCallerTurn(hint({ senderAgentId: "solo" }), fakeRegistry as any)?.taskId).toBe("run-3")
-    expect(resolveCallerTurn(hint({ senderAgentId: "front" }), fakeRegistry as any)).toBeNull()
+  it("never guesses a turn from the agent id alone", () => {
+    // A same-host proxy also arrives over loopback: an agent with a single
+    // running turn must not be matched to its request.
+    expect(resolveCallerTurn(hint({ senderAgentId: "solo" }), fakeRegistry as any)).toBeNull()
+    expect(resolveCallerTurn(hint({ senderAgentId: "front", callerChannel: "telegram" }), fakeRegistry as any)).toBeNull()
   })
 
   it("never names a turn for a mesh-forwarded or remote request", () => {
@@ -68,6 +70,58 @@ describe("callerHintFrom", () => {
   it("marks peer forwards and remote callers", () => {
     expect(callerHintFrom(req("127.0.0.1"), { parentEventId: "evt" }).meshForwarded).toBe(true)
     expect(callerHintFrom(req("192.0.2.10"), {}).local).toBe(false)
+  })
+})
+
+describe("synchronous cycles", () => {
+  const slots = (held: Record<string, string[]>, full = true) => ({
+    slotHolders: (agent: string) => (held[agent] ? { full, runIds: held[agent] } : { full: false, runIds: [] }),
+  })
+
+  it("refuses an agent asking itself", () => {
+    const waits = new SyncWaits()
+    expect(cycleRefusal("front", { senderAgentId: "front", meshForwarded: false }, null, slots({}), waits)).toMatch(/itself/)
+    expect(cycleRefusal("front", { meshForwarded: false }, { agentId: "front", taskId: "t", context: {} }, slots({}), waits)).toMatch(/itself/)
+    // A peer's own agent of the same name is another agent.
+    expect(cycleRefusal("front", { senderAgentId: "front", meshForwarded: true }, null, slots({}), waits)).toBeNull()
+  })
+
+  it("fails fast on A -> B -> A when A's only slot waits on B", () => {
+    const waits = new SyncWaits()
+    waits.begin("run-a", "run-b") // A's turn waits on B's run
+    const b = { agentId: "worker", taskId: "run-b", context: {} }
+    expect(cycleRefusal("front", { meshForwarded: false }, b, slots({ front: ["run-a"] }), waits)).toMatch(/waiting on this request/)
+    // Longer chains too: A waits on B, B on C, C asks A.
+    waits.begin("run-b", "run-c")
+    expect(cycleRefusal("front", { meshForwarded: false }, { agentId: "helper", taskId: "run-c", context: {} }, slots({ front: ["run-a"] }), waits)).toMatch(/waiting/)
+  })
+
+  it("lets it wait when a slot is free or held by unrelated work", () => {
+    const waits = new SyncWaits()
+    waits.begin("run-a", "run-b")
+    const b = { agentId: "worker", taskId: "run-b", context: {} }
+    expect(cycleRefusal("front", { meshForwarded: false }, b, slots({ front: ["run-a"] }, false), waits)).toBeNull()
+    expect(cycleRefusal("front", { meshForwarded: false }, b, slots({ front: ["run-a", "run-other"] }), waits)).toBeNull()
+    waits.end("run-b")
+    expect(cycleRefusal("front", { meshForwarded: false }, b, slots({ front: ["run-a"] }), waits)).toBeNull()
+  })
+})
+
+describe("meshTaskMode", () => {
+  it("keeps the legacy async delivery for a request that names its own chat", () => {
+    const body = { peer: "vps", agent: "builder", message: "x", async: true, context: { channel: "telegram", chatId: "chat-1" } }
+    expect(meshTaskMode(body, true)).toBe("legacy-async")
+    expect(meshTaskMode({ ...body, async: undefined }, true)).toBe("sync")
+  })
+
+  it("calls back only for a request with no chat of its own", () => {
+    expect(meshTaskMode({ peer: "vps", agent: "builder", message: "x" }, true)).toBe("callback")
+    expect(meshTaskMode({ peer: "vps", agent: "builder", message: "x", context: { channel: "mcp" } }, true)).toBe("callback")
+    // No named agent: the peer picks its first one, so no callback.
+    expect(meshTaskMode({ peer: "vps", message: "x" }, true)).toBe("sync")
+    // Not allowed: an async:true without a chat still reaches the legacy
+    // branch, which refuses it for having no route back.
+    expect(meshTaskMode({ peer: "vps", agent: "builder", message: "x", async: true }, false)).toBe("legacy-async")
   })
 })
 

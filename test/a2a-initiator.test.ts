@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { classifyInitiator, isHumanFacingTurn, rootInitiatorOf } from "../src/a2a/initiator"
+import { classifyInitiator, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf } from "../src/a2a/initiator"
 
 describe("classifyInitiator", () => {
   it("treats chat, phone, voice and review channels as a person", () => {
@@ -65,5 +65,15 @@ describe("isHumanFacingTurn", () => {
     expect(isHumanFacingTurn({ channel: "telegram", chatId: "c1", sender: "Sam", delegation: { taskId: "t" } })).toBe(false)
     expect(isHumanFacingTurn({ channel: "cron", chatId: "daily" })).toBe(false)
     expect(isHumanFacingTurn(undefined)).toBe(false)
+  })
+})
+
+describe("isInsideDelegation", () => {
+  it("marks delegated hops and callback turns, not root turns", () => {
+    expect(isInsideDelegation({ channel: "a2a", initiator: { kind: "human", channel: "telegram" } })).toBe(true)
+    expect(isInsideDelegation({ channel: "telegram", delegation: { taskId: "t" } })).toBe(true)
+    expect(isInsideDelegation({ channel: "cron", chatId: "daily" })).toBe(false)
+    expect(isInsideDelegation({ channel: "cron", initiator: "junk" })).toBe(false)
+    expect(isInsideDelegation(undefined)).toBe(false)
   })
 })

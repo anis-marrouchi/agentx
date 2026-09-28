@@ -17,6 +17,7 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
 
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { cycleRefusal, SyncWaits } from "../src/daemon/delegation-wiring"
 
 let dir: string
 const prevCwd = process.cwd()
@@ -58,7 +59,8 @@ describe("finding the caller's running turn", () => {
 
     expect(r.findRunningTurn("front", { taskId: id })).toEqual({ taskId: id, context: ctx })
     expect(r.findRunningTurn("front", { channel: "telegram", chatId: "chat-1" })?.taskId).toBe(id)
-    expect(r.findRunningTurn("front")?.taskId).toBe(id)
+    // Named by neither: no guess.
+    expect(r.findRunningTurn("front")).toBeNull()
     expect(r.findRunningTurn("front", { taskId: "nope" })).toBeNull()
     expect(r.isChatBusy("front", "telegram", "chat-1")).toBe(true)
 
@@ -72,6 +74,27 @@ describe("finding the caller's running turn", () => {
     await Promise.all([t.run, t2.run])
     expect(r.findRunningTurn("front", { taskId: id })).toBeNull()
     expect(r.isChatBusy("front", "telegram", "chat-1")).toBe(false)
+  })
+
+  it("refuses A -> B -> A at once when A's only slot is the turn waiting on B", async () => {
+    const r = new AgentRegistry(config(), () => {})
+    const waits = new SyncWaits()
+    // worker (one slot) is mid-turn, synchronously waiting on front's run.
+    const w = start(r, "worker", { channel: "cron", chatId: "daily" })
+    const wId = await w.started
+    const f = start(r, "front", { channel: "a2a", chatId: "a2a:worker:front:1", sender: "agent:worker" })
+    const fId = await f.started
+    waits.begin(wId, fId)
+
+    // front now asks worker back: it could never start.
+    const caller = { agentId: "front", taskId: fId, context: {} }
+    expect(cycleRefusal("worker", { meshForwarded: false }, caller, r, waits)).toMatch(/waiting on this request/)
+    // front has a free slot, so worker asking front again is only a wait.
+    expect(cycleRefusal("front", { meshForwarded: false }, { agentId: "worker", taskId: wId, context: {} }, r, waits)).toBeNull()
+
+    r.cancelRunningTask(wId, "done")
+    r.cancelRunningTask(fId, "done")
+    await Promise.all([w.run, f.run])
   })
 
   it("makes a busy callee's a2a run wait for a slot instead of queueing it", async () => {
