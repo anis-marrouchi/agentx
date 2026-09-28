@@ -205,6 +205,7 @@ To check which version is running after an update:
 2. Read three values near the top of the answer:
    - `version`: the AgentX version the daemon is running, for example `"0.61.0"`.
    - `commit`: a short code that identifies the exact build, or `null` when AgentX was built outside a git folder or runs straight from source.
+     If it ends in `-dirty`, the build had local changes, so it doesn't match that commit exactly.
    - `startedAt`: when this daemon started.
 3. These describe the program that is running, not the files on disk. If `version` is still the old one, or `startedAt` is older than your update, the daemon hasn't restarted yet: restart it as above.
 

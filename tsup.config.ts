@@ -1,13 +1,20 @@
 import { defineConfig } from "tsup"
-import { cpSync, mkdirSync, readFileSync } from "fs"
+import { cpSync, mkdirSync, readFileSync, realpathSync } from "fs"
 import { resolve } from "path"
 import { execSync } from "child_process"
 
 // Baked into the bundle so GET /health reports the build the process
 // loaded, not what is on disk now (src/utils/build-info.ts).
+// AGENTX_BUILD_COMMIT wins, for deploy tools that know what they shipped.
+// Otherwise git is trusted only when this package is the repository root
+// (not a vendored copy or a stale .git), and a changed tree gets "-dirty".
 function gitCommit(): string | null {
+  if (process.env.AGENTX_BUILD_COMMIT) return process.env.AGENTX_BUILD_COMMIT
+  const git = (args: string) => execSync(`git ${args}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
   try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || null
+    if (realpathSync(git("rev-parse --show-toplevel")) !== realpathSync(process.cwd())) return null
+    const sha = git("rev-parse --short=7 HEAD")
+    return git("status --porcelain --untracked-files=no") ? `${sha}-dirty` : sha
   } catch {
     return null // built outside a git checkout
   }
