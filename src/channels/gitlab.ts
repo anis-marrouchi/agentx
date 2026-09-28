@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, See
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
-import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
+import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeBody, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
@@ -545,11 +545,11 @@ export class GitLabAdapter implements ChannelAdapter {
     if (event.issue) {
       noteableType = "issue"
       noteableIid = String(event.issue.iid)
-      noteableTitle = event.issue.title
+      noteableTitle = stripAgentxMarkers(event.issue.title)
     } else if (event.merge_request) {
       noteableType = "merge_request"
       noteableIid = String(event.merge_request.iid)
-      noteableTitle = event.merge_request.title
+      noteableTitle = stripAgentxMarkers(event.merge_request.title)
     }
 
     // Project-rule note filter — runs AFTER cascade-prevention so we don't
@@ -884,7 +884,7 @@ export class GitLabAdapter implements ChannelAdapter {
             name: event.user.name,
             username: event.user.username,
           },
-          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
+          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.postsAs(event.user.username))?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
           timestamp: new Date(),
           raw: event,
           resolvedAgent: d.agentId,
@@ -1014,8 +1014,8 @@ export class GitLabAdapter implements ChannelAdapter {
         // get the standard issue summary. Both end with the issue URL so the
         // agent can navigate to it.
         const text = t.trigger === "assignee-added"
-          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${attrs.title}]\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
-          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${forgeBody(attrs.description, this.postsAs(event.user.username))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
+          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.postsAs(event.user.username))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
           id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
@@ -1277,8 +1277,8 @@ export class GitLabAdapter implements ChannelAdapter {
 
         const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
         const text = isAssignmentTrigger
-          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${attrs.title}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
-          : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${stripAgentxMarkers(attrs.title)}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.postsAs(event.user.username))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
+          : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.postsAs(event.user.username))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
           id: `mr-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,

@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf } from "./outbound-marker"
+import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -535,7 +535,7 @@ export class GitHubAdapter implements ChannelAdapter {
       // Another agent's comment posted with the owner's token is the agent
       // speaking, not the owner (#282).
       sender: forgeSender(comment.body, { id: chatId, name: user.login, username: user.login }, trusted),
-      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${forgeAuthorLabel(comment.body, user.login, trusted)} commented:\n${forgeBody(comment.body, trusted)}`,
+      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${stripAgentxMarkers(event.issue.title)}]\n${forgeAuthorLabel(comment.body, user.login, trusted)} commented:\n${forgeBody(comment.body, trusted)}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -597,7 +597,7 @@ export class GitHubAdapter implements ChannelAdapter {
         name: pr.user.login,
         username: pr.user.login,
       },
-      text: `[GitHub PR #${pr.number} ${event.action}]: ${pr.title}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${pr.body?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
+      text: `[GitHub PR #${pr.number} ${event.action}]: ${stripAgentxMarkers(pr.title)}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${forgeBody(pr.body, this.postsAs(pr.user.login))?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -635,7 +635,7 @@ export class GitHubAdapter implements ChannelAdapter {
       channel: "github",
       accountId: "default",
       sender: forgeSender(review.body, { id: chatId, name: review.user.login, username: review.user.login }, reviewTrusted),
-      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${forgeAuthorLabel(review.body, review.user.login, reviewTrusted)} reviewed:\n${forgeBody(review.body, reviewTrusted) || "(no body)"}`,
+      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${stripAgentxMarkers(event.pull_request.title)}\n${forgeAuthorLabel(review.body, review.user.login, reviewTrusted)} reviewed:\n${forgeBody(review.body, reviewTrusted) || "(no body)"}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -667,7 +667,7 @@ export class GitHubAdapter implements ChannelAdapter {
       channel: "github",
       accountId: "default",
       sender: forgeSender(comment.body, { id: chatId, name: comment.user.login, username: comment.user.login }, commentTrusted),
-      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${forgeAuthorLabel(comment.body, comment.user.login, commentTrusted)} commented on ${comment.path}:${comment.line}:\n${forgeBody(comment.body, commentTrusted)}`,
+      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${stripAgentxMarkers(event.pull_request.title)}\n${forgeAuthorLabel(comment.body, comment.user.login, commentTrusted)} commented on ${comment.path}:${comment.line}:\n${forgeBody(comment.body, commentTrusted)}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -718,7 +718,7 @@ export class GitHubAdapter implements ChannelAdapter {
         name: issue.user.login,
         username: issue.user.login,
       },
-      text: `[GitHub Issue #${issue.number} ${event.action}]: ${issue.title}\n${issue.body?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
+      text: `[GitHub Issue #${issue.number} ${event.action}]: ${stripAgentxMarkers(issue.title)}\n${forgeBody(issue.body, this.postsAs(issue.user.login))?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
