@@ -97,7 +97,7 @@ You don't need to set anything up. When a conversation starts, the agent is told
 
 Any other place inside the workspace works too. A file outside it, such as one in `/tmp`, is refused: the phone gets nothing, and the daemon log names the file and says to copy it into `.agentx/outbox/` first.
 
-AgentX creates the outbox when a phone conversation starts. It deletes files in the outbox that are more than 7 days old, when a phone conversation starts and when the daemon starts, and never touches anything elsewhere in the workspace. An answer older than that shows a missing file. If the workspace is a git repository, add the outbox to its `.gitignore` so the copies are never committed:
+AgentX creates the outbox when a phone conversation starts. It deletes files that have been in the outbox for more than 7 days (counted from when a file arrived there, even if it was moved in with an older date), when a phone conversation starts and when the daemon starts, and never touches anything elsewhere in the workspace. An answer older than that shows a missing file. If the workspace is a git repository, add the outbox to its `.gitignore` so the copies are never committed:
 
 ```text
 .agentx/outbox/

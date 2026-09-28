@@ -43,14 +43,17 @@ export function prepareOutbox(workspace: string, opts: { cwd?: string; now?: num
   return prune(dir, (opts.now ?? Date.now()) - (opts.maxAgeMs ?? OUTBOX_MAX_AGE_MS))
 }
 
-/** Old files and links go, links never followed. Folders stay. */
+/** Old files and links go, links never followed. Folders stay.
+ *  A file's age counts from when it entered the outbox: `mv`, `cp -p` or
+ *  `tar x` keep an old mtime, but ctime is set when the file lands here. */
 function prune(dir: string, before: number): number {
   let removed = 0
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name)
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name)
     try {
-      if (entry.isDirectory()) removed += prune(path, before)
-      else if (lstatSync(path).mtimeMs < before) {
+      const st = lstatSync(path)
+      if (st.isDirectory()) removed += prune(path, before)
+      else if (Math.max(st.mtimeMs, st.ctimeMs) < before) {
         unlinkSync(path)
         removed++
       }
