@@ -46,7 +46,10 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/traces" || path.startsWith("/traces/") ||
     // Past voice exchanges: what was asked and answered out loud. A
     // replay under it makes this host speak.
-    path === "/voice/history" || path.startsWith("/voice/history/")
+    path === "/voice/history" || path.startsWith("/voice/history/") ||
+    // The phone app's voice: runs speech to text on this host and spends
+    // its ElevenLabs quota (voice-io-api.ts).
+    path === "/voice/transcribe" || path === "/voice/speak"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
