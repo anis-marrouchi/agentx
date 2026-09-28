@@ -1,5 +1,6 @@
 import type { FactRecord } from "../types"
 import { countryFromPhone } from "./wacli"
+import { isAgentSender } from "@/a2a/initiator"
 
 // Identifiers the entries already carry.
 //
@@ -44,6 +45,9 @@ export function recordsFromEntries(entries: SenderStampedEntry[]): FactRecord[] 
   for (const e of entries) {
     const name = str(e.meta?.sender)
     if (!name) continue
+    // An agent's post ("agent:<id>", even one made with a person's forge
+    // account) says nothing about how to reach a person.
+    if (isAgentSender(name)) continue
     const id = str(e.meta?.senderId)
     const username = str(e.meta?.senderUsername)
     const platform = platformOf(e.source)

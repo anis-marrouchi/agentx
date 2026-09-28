@@ -56,8 +56,9 @@ export interface CallbackReplyBody {
 
 export interface CallbackPullDeps {
   /** Delegation events from the primary daemon, oldest first. `since` is
-   *  the last event id seen; absent on the first read. Throws when down. */
-  recent: (since: string | undefined, limit: number) => Promise<CallbackEvent[]>
+   *  the last event id seen; absent on the first read. Throws when down.
+   *  `gap` is the feed's flag for a cursor that has left its ring. */
+  recent: (since: string | undefined, limit: number) => Promise<CallbackEvent[] | { events: CallbackEvent[]; gap?: boolean }>
   /** The daemon URL of the node that published an event, by its name. */
   nodeUrl: (node: string) => Promise<string | null>
   /** The daemon URL a conversation's agent runs on ("local" or a peer). */
@@ -71,6 +72,8 @@ export interface CallbackPullDeps {
   finishAlerts?: (deviceId: string) => boolean
   notifyFinish?: (push: FinishPush) => Promise<void>
   log?: (msg: string) => void
+  /** Warnings: replies a poll may have skipped. Falls back to `log`. */
+  warn?: (msg: string) => void
   now?: () => number
 }
 
@@ -102,11 +105,15 @@ export class AppCallbackPuller {
     this.running = true
     try {
       let events: CallbackEvent[]
+      let gap = false
       try {
-        events = await this.deps.recent(this.cursor, CALLBACK_EVENTS_LIMIT)
+        const page = await this.deps.recent(this.cursor, CALLBACK_EVENTS_LIMIT)
+        events = Array.isArray(page) ? page : page.events
+        gap = !Array.isArray(page) && page.gap === true
       } catch {
         return 0 // daemon down; the cursor stays, so nothing is skipped
       }
+      this.warnIfSkipped(events.length, gap)
       if (events.length) this.cursor = events[events.length - 1].id
       const todo = [...this.retry.values()].map((r) => r.event)
       for (const e of events) {
@@ -130,6 +137,25 @@ export class AppCallbackPuller {
       return filed
     } finally {
       this.running = false
+    }
+  }
+
+  /**
+   * The feed returns the NEWEST `limit` events after the cursor, and has
+   * only a bounded ring behind it. Either way, older replies can be passed
+   * over without an error: when the cursor has left the ring (the daemon
+   * restarted or this dashboard was away), or when a single poll hit the
+   * limit. Those replies stay in the agent's session, but the phone thread
+   * never gets them, so say so in the log.
+   */
+  private warnIfSkipped(count: number, gap: boolean): void {
+    const warn = this.deps.warn ?? this.deps.log
+    const at = this.cursor ? `after event ${this.cursor}` : "on the first read"
+    if (gap) {
+      warn?.(`[app] warning: callback event cursor ${this.cursor} is no longer in the daemon's event ring; replies published before the oldest kept event were skipped`)
+    }
+    if (count >= CALLBACK_EVENTS_LIMIT) {
+      warn?.(`[app] warning: one poll returned ${count} delegation events, the most it reads (${CALLBACK_EVENTS_LIMIT}); older replies ${at} may have been skipped`)
     }
   }
 

@@ -91,7 +91,10 @@ export interface IntentResolution {
   resultSummary: string | null
 }
 
-export type IntentResolutionStatus = "completed" | "failed" | "timed-out" | "canceled"
+/** `queued`: the agent was busy on that chat, so the message went into the
+ *  chat's queue. It was accepted and runs later, as a new turn with no
+ *  ledger reference of its own. */
+export type IntentResolutionStatus = "completed" | "failed" | "timed-out" | "canceled" | "queued"
 
 /** A recorded mismatch between a ledger decision and the legacy dispatch
  *  path's outcome, captured during shadow-mode operation (1b in the staged

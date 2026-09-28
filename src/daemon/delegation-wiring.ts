@@ -211,6 +211,26 @@ export function meshTaskMode(body: Record<string, unknown>, callbackAllowed: boo
   return body.async === true ? "legacy-async" : "sync"
 }
 
+/** What the daemon's delegation gate decided for one request. */
+export type DelegationGateResult =
+  | { refused: string }
+  | { accepted: Record<string, unknown> }
+  | { track: { onStart: (runId: string) => void; end: () => void } }
+
+/**
+ * The HTTP answer for a gate result that settles the request on its own:
+ * 409 for a refusal, 202 for an accepted callback. Call sites check
+ * `"track" in gate` first; anything else ends here. One place, so /task,
+ * /send/agent and /mesh/task answer a refusal the same way: /mesh/task
+ * used to drop a refusal and fall through to its synchronous path (#282).
+ */
+export function gateAnswer(
+  gate: Exclude<DelegationGateResult, { track: unknown }>,
+): { status: 409 | 202; body: Record<string, unknown> } {
+  if ("refused" in gate) return { status: 409, body: { error: gate.refused } }
+  return { status: 202, body: gate.accepted }
+}
+
 /** The 202 body a caller gets back; its `note` is written for the agent. */
 export function acceptedBody(taskId: string, callee: string, peer?: string): Record<string, unknown> {
   const who = peer ? `${callee} on ${peer}` : callee

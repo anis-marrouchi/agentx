@@ -40,13 +40,63 @@ export function detectAgentxMarker(body: string | undefined | null): string | nu
   return m ? m[1] : null
 }
 
+/** The signature markBody writes when the sender did not name an agent.
+ *  It is still our own post, so it is always an echo. */
+export const UNKNOWN_AGENT = "unknown"
+
 /** The signing agent when a comment is `handler`'s own reply echoed back
  *  by the webhook, else null. Without a resolved handler every signed
- *  comment counts as an echo, as before. */
+ *  comment counts as an echo, as before, and so does an unattributed one. */
 export function ownEchoOf(body: string, handler: string | undefined): string | null {
   const source = detectAgentxMarker(body)
   if (!source) return null
-  return !handler || source === handler ? source : null
+  return !handler || source === handler || source === UNKNOWN_AGENT ? source : null
+}
+
+// --- Agent comments posted under a person's account ---
+//
+// On a forge where agents have no account of their own, an agent's comment
+// is posted with the owner's token and arrives as the owner's comment. The
+// GitHub adapter's PAT mode opens every post with this header, and every
+// adapter post carries the marker. Either one means an agent wrote it, and
+// the inbound message must say so (sender `agent:<id>`): otherwise the #277
+// human-vs-agent check reads an agent's review as the owner starting work,
+// and anything keyed on the author treats it as the owner speaking (#282).
+
+/** The attribution line the GitHub adapter puts on PAT-mode posts. */
+export function agentHeader(agentId: string): string {
+  return `> 🤖 **${agentId}** (via AgentX)\n\n`
+}
+
+const HEADER_RE = /^\s*(?:>\s*)?🤖\s*\*\*([A-Za-z0-9][\w.-]*)\*\*\s*\(via AgentX\)/
+
+/** The agent that wrote `body`, from its marker or its header, or null
+ *  for a person's comment. An unattributed marker names no agent. */
+export function agentAuthorOf(body: string | undefined | null): string | null {
+  if (!body) return null
+  const marked = detectAgentxMarker(body)
+  if (marked && marked !== UNKNOWN_AGENT) return marked
+  const header = body.match(HEADER_RE)
+  return header ? header[1] : null
+}
+
+/** The inbound sender for a forge comment: the posting account for a
+ *  person, `agent:<id>` for an agent's own post. Channel code downstream
+ *  (the initiator check, bot policy, memory and wiki capture) reads the
+ *  `agent:` prefix, so this is the one place a forge post becomes an agent. */
+export function forgeSender(
+  body: string | undefined | null,
+  person: { id: string; name: string; username?: string },
+): { id: string; name: string; username?: string; isBot?: boolean } {
+  const agent = agentAuthorOf(body)
+  if (!agent) return person
+  return { id: person.id, name: `agent:${agent}`, isBot: true }
+}
+
+/** How a comment's author is named in the text the agent reads. */
+export function forgeAuthorLabel(body: string | undefined | null, account: string): string {
+  const agent = agentAuthorOf(body)
+  return agent ? `${agent} (an AgentX agent, posted with ${account}'s account)` : account
 }
 
 /** Strip every marker from a body — used when surfacing the body to the

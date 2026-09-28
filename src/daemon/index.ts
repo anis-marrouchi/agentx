@@ -11,6 +11,8 @@ import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
+import { parseQueued } from "@/agents/queued"
+import { markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -135,7 +137,7 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -2326,10 +2328,7 @@ export class AgentXDaemon {
     body: Record<string, unknown>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
     opts: { callback?: boolean } = {},
-  ):
-    | { refused: string }
-    | { accepted: Record<string, unknown> }
-    | { track: { onStart: (runId: string) => void; end: () => void } } {
+  ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
     if (!target.peer && this.registry.getAgent(target.callee)) {
@@ -4495,7 +4494,9 @@ export class AgentXDaemon {
             const glRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token },
-              body: JSON.stringify({ body: text }),
+              // Signed here too, so a caller that forgot cannot post an
+              // agent note that later reads as a person's (#282).
+              body: JSON.stringify({ body: markBody(String(text ?? ""), agentId || UNKNOWN_AGENT) }),
             })
             const respBody = await glRes.text().catch(() => "")
             let noteId = ""
@@ -4568,7 +4569,7 @@ export class AgentXDaemon {
             const ghRes = await fetch(ep, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": "AgentX" },
-              body: JSON.stringify({ body: text }),
+              body: JSON.stringify({ body: markBody(String(text ?? ""), agentId || UNKNOWN_AGENT) }),
             })
             const respBody = await ghRes.text().catch(() => "")
             let commentId = ""
@@ -4706,8 +4707,7 @@ export class AgentXDaemon {
           // #277 — same gate as /task: refuse a cycle, or call back when a
           // person started it.
           const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
-          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
-          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
+          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
           // Local agent? Dispatch directly through the registry.
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
@@ -4905,8 +4905,7 @@ export class AgentXDaemon {
             message: String(body.message),
             calleeContext: body.context as Record<string, unknown> | undefined,
           }, { callback: body.stream !== true && !String(req.headers["accept"] || "").includes("text/event-stream") })
-          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
-          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
+          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
           const track = gate.track
           // Per-task context strategy override. When absent, registry falls
           // back to config.session.contextStrategy. Used by the bench
@@ -5315,8 +5314,9 @@ export class AgentXDaemon {
           // didn't work" while the agent was in fact working on what the
           // person asked for thirty seconds earlier. The honest answer is
           // to say so, out loud, rather than to claim a failure.
-          if (response.error?.startsWith("__queued__")) {
-            const pending = Number(response.error.split(":")[2] || 1)
+          const queued = parseQueued(response.error)
+          if (queued) {
+            const pending = queued.pending
             this.json(res, 202, {
               ...speaker,
               text: pending > 1
@@ -5438,8 +5438,11 @@ export class AgentXDaemon {
               message: body.message as string,
               calleeContext: meshContext,
             })
-            if ("accepted" in gate) {
-              this.json(res, 202, gate.accepted)
+            // A refusal is final here too, as on /task and /send/agent: it
+            // used to fall through to the synchronous path below (#282).
+            if (!("track" in gate)) {
+              const a = gateAnswer(gate)
+              this.json(res, a.status, a.body)
               break
             }
           }

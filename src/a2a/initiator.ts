@@ -12,7 +12,9 @@
 //      across mesh peers (sendTask forwards the context verbatim).
 //   2. Machine channels (cron, workflow, a2a, mcp, mesh, api, ...) are agent.
 //   3. A machine-shaped sender ("agent:x", "cron:y", ...) is agent. This is
-//      how router bot-to-bot chains and callback turns are marked.
+//      how router bot-to-bot chains and callback turns are marked, and how
+//      the GitHub/GitLab adapters mark an agent's comment posted with a
+//      person's account (forgeSender in channels/outbound-marker.ts).
 //   4. Channels a person types or speaks on are human.
 //   5. Anything else is agent: unknown traffic keeps today's behaviour.
 

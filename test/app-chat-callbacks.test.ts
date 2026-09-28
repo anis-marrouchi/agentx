@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import Database from "better-sqlite3"
 import { AppChatStore } from "../src/daemon/app-chat-store"
 import { AppPresence, type FinishPush } from "../src/daemon/app-chat-active"
-import { AppCallbackPuller, CALLBACK_RETRIES, toAnswer, type CallbackEvent, type CallbackPullDeps, type CallbackReplyBody } from "../src/daemon/app-chat-callbacks"
+import { AppCallbackPuller, CALLBACK_EVENTS_LIMIT, CALLBACK_RETRIES, toAnswer, type CallbackEvent, type CallbackPullDeps, type CallbackReplyBody } from "../src/daemon/app-chat-callbacks"
 
 // A phone chat with "front" on this node; front delegated, and its callback
 // turn's reply now waits on the daemon (#277).
@@ -159,6 +159,43 @@ describe("filing a callback reply in the phone thread", () => {
     replies.set(`${PRIMARY}|dlg-1`, reply("dlg-1", { chatId: "app:cnotaconversation1" }))
     events.push(event("e1", "dlg-1"))
     expect(await puller().tick()).toBe(0)
+  })
+})
+
+describe("polls that may have skipped replies (#282)", () => {
+  it("warns when the cursor has left the daemon's ring", async () => {
+    const warnings: string[] = []
+    let gap = false
+    events.push(event("e1", "dlg-1"))
+    const p = puller({
+      recent: async () => ({ events: gap ? [] : events, gap }),
+      warn: (m) => { warnings.push(m) },
+    })
+    await p.tick()
+    expect(warnings).toEqual([])
+    gap = true
+    await p.tick()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("cursor e1 is no longer in the daemon's event ring")
+  })
+
+  it("warns when one poll hits the read limit, and not below it", async () => {
+    const warnings: string[] = []
+    for (let i = 0; i < CALLBACK_EVENTS_LIMIT - 1; i++) events.push({ id: `x${i}`, node: "node-a", kind: "delegation", type: "started" })
+    const p = puller({ recent: async () => events, warn: (m) => { warnings.push(m) } })
+    await p.tick()
+    expect(warnings).toEqual([])
+    events.push({ id: "last", node: "node-a", kind: "delegation", type: "started" })
+    await p.tick()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain(`${CALLBACK_EVENTS_LIMIT} delegation events`)
+  })
+
+  it("falls back to log without a warn sink", async () => {
+    const logs: string[] = []
+    const p = puller({ recent: async () => ({ events: [], gap: true }), log: (m) => { logs.push(m) } })
+    await p.tick()
+    expect(logs.some((m) => m.includes("warning"))).toBe(true)
   })
 })
 

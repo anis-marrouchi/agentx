@@ -24,7 +24,8 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin } from "./resume/origin"
-import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
+import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
+import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
 import { loadReferences, renderReferences } from "./references/loader"
@@ -970,14 +971,17 @@ export class AgentRegistry {
     if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
     if (task.intentRef) {
       try {
-        const status = response.error
-          ? (/timed out|timeout/i.test(response.error) ? "timed-out" : "failed")
-          : "completed"
+        // A queued answer is an accepted message, not a failure (#282).
+        const status = !response.error
+          ? "completed"
+          : isQueued(response.error)
+            ? "queued"
+            : (/timed out|timeout/i.test(response.error) ? "timed-out" : "failed")
         getDefaultLedger().recordResolution({
           decisionEventId: task.intentRef.eventId,
           decisionDecidedBy: task.intentRef.decidedBy,
           resolvedAt: Date.now(),
-          status: status as "completed" | "failed" | "timed-out",
+          status,
           durationMs: Date.now() - startedAt,
           resultSummary: response.error
             ? response.error.slice(0, 200)
@@ -1135,7 +1139,7 @@ export class AgentRegistry {
           this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           return {
             content: "",
-            error: `__queued__:${queued}:${pending}`,
+            error: queuedMarker(queued, pending),
           }
         }
       }
@@ -1379,8 +1383,12 @@ export class AgentRegistry {
               sender: qm.sender,
               chatId: qm.chatId,
             }
+            // A turn that waited long enough for its subject to change is
+            // told so (#282). Only flushed queued turns get the line, so a
+            // normal turn pays nothing for it.
+            const staleNote = staleQueueNote(qm.queuedAt ?? qm.timestamp)
             this.execute({
-              message: qm.text,
+              message: staleNote ? `${staleNote}\n${qm.text}` : qm.text,
               agentId: task.agentId,
               context: ctx,
             })
@@ -2802,7 +2810,7 @@ export class AgentRegistry {
     if (!channel || !chatId) return
     // Operator-cancelled / queued-marker — nothing to deliver
     if (resp.errorKind === "cancelled") return
-    if (resp.error?.startsWith("__queued__")) return
+    if (isQueued(resp.error)) return
     const text = resp.error
       ? `Error: ${resp.error}`
       : (resp.content || "").trim()
@@ -2996,7 +3004,7 @@ export class AgentRegistry {
           // Only reached first when the run never took a slot: it was queued
           // behind a busy slot (the flush dispatches it later), answered
           // without one (attached session, mesh forward), or refused.
-          if (resp.error?.startsWith("__queued__")) {
+          if (isQueued(resp.error)) {
             settle({ ok: true, agentId, channel, chatId, queued: true })
           } else if (!resp.error) {
             // Delivered and answered. Reporting a failure here would invite a
