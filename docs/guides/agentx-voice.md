@@ -39,7 +39,7 @@ Speech to text (turning your voice into words) runs through ElevenLabs if you ha
    ```sh
    agentx desktop install
    ```
-   This builds the app and puts it in the Applications folder of your home folder as **AgentX Desktop** (`~/Applications/AgentX Desktop.app`), with its helper, **AgentX Helper**, next to it. It starts both every time you log in. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
+   This builds the app and puts it in the Applications folder of your home folder as **AgentX Desktop** (`~/Applications/AgentX Desktop.app`), with its helper, **AgentX Helper**, next to it. It starts AgentX Desktop every time you log in; the helper starts when an agent needs it. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
 4. **Mac:** when macOS asks to let **AgentX Desktop** use the microphone, choose **Allow**.
 5. **Mac:** when the AgentX Helper asks, open **System Settings › Privacy & Security** and switch on **Accessibility** and **Screen Recording** for **AgentX Helper**. The helper lets agents point at things on your screen. See [macOS permissions](../requirements.md#macos-permissions).
 6. **Mac:** look for the AgentX icon (a small waveform) in the menu bar at the top of the screen.
@@ -124,7 +124,7 @@ You can also press **Esc** after clicking the pill, or choose **Hide pill** in t
 
 ## The menu-bar menu
 
-Click the AgentX icon in the menu bar, press **Command–Option–A** from any app, or right-click the pill: all three open the same menu. The icon itself also shows the state: a waveform when idle, a microphone while listening, dots while thinking, a speaker while answering, and a bell with a line through it while notifications are held. A number next to it counts the answers waiting to be spoken.
+Click the AgentX icon in the menu bar, press **Command–Option–A** from any app, or right-click the pill: all three open the same menu. The icon itself also shows the state: a waveform when idle, a microphone while listening, dots while thinking, a speaker while answering, a bell with a line through it when idle while notifications are held, and a warning triangle after an error. A number next to it counts the answers waiting to be spoken.
 
 ![The AgentX menu, light mode: Talk to with Writer ticked and queued 1, Researcher thinking and Ops speaking; three Recent questions to replay; then Stop speaking, Hold notifications, Show floating pill, Animated orb (ticked), Hide pill (greyed out), Reset position, Settings…, Dashboard…, History… and Quit AgentX Voice](/screenshots/voice/menu-bar.png)
 
@@ -170,16 +170,16 @@ Pick an agent on the left. Its settings show on the right.
 
 | Setting | What it does |
 |---|---|
-| **Voice provider** | **Mac voices (free)**, **ElevenLabs**, or **Default** (follows the General tab) |
+| **Voice provider** | **Mac voices (free)**, **ElevenLabs**, or **Default (Mac voices)** / **Default (ElevenLabs)**, which follows the General tab |
 | **Mac voice** | Which Mac voice this agent uses. **Assigned automatically** gives every agent a different one. **The Mac's default voice** uses the voice set in System Settings, including Siri voices. An agent with one voice per language in `agentx.json` shows that instead |
 | **ElevenLabs voice ID** | The ElevenLabs voice, when the provider is ElevenLabs |
 | **Preview** | Plays a sample line in the voice as set in the window, before you save. The line beside it names the saved voice |
 | **Speaking speed** | From 0.75× to 1.5×. **Normal** puts it back to 1×. ElevenLabs speaks between 0.7× and 1.2× at most |
 | **Narration** | Short spoken updates while the agent works on a task: **Off**, **On, except scheduled jobs**, or **On, scheduled jobs too** |
-| **Queue priority** | **High** answers go ahead of the ones waiting; **Low** ones go after; **Normal** keeps the order they arrive in |
+| **Queue priority** | **High: ahead of waiting lines**, **Low: after waiting lines**, or **Normal**, which keeps the order they arrive in |
 | **Ask with shortcut** | Hold this shortcut to ask this agent directly, without changing the ticked agent. Click the field and press the keys; **Esc** cancels, **Delete** or the **×** clears it |
 | **Orb colour** | The colour of this agent's on-screen pointer, which also picks its orb palette. **Use default** goes back to the colour taken from the agent's id |
-| **Orb palette** | The orb's colours: one of the seven palettes, or **Match the colour** for the one nearest the orb colour |
+| **Orb palette** | The orb's colours: one of the seven palettes, or **Match the colour**, shown with the name of the palette nearest the orb colour (for example **Match the colour: Forest**) |
 
 To try a voice before keeping it:
 
@@ -207,7 +207,7 @@ The General tab is longer than the window: scroll down for **Answer in the pill*
 | **Smart paste** | Reshapes what you copied for the app you are typing in, then pastes it. Default **Command–Option–V** |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it |
 | **Speech to text** | **Automatic** (ElevenLabs when a key is set, this Mac otherwise), **ElevenLabs**, or **On this Mac**, which keeps your voice on the Mac |
-| **On-this-Mac engine** | **Whisper (mlx-whisper)**, the default, knows every language including Arabic. **Parakeet** is much faster but has no Arabic, and downloads 483 MB the first time; Whisper answers until it is ready. See [Speech to text on this Mac](../dashboard/voice.md#speech-to-text-on-this-mac) |
+| **On-this-Mac engine** | **Whisper (mlx-whisper)**, the default, knows every language including Arabic. **Parakeet (downloads 483 MB)** is much faster but has no Arabic. It downloads the first time you pick it, and Whisper answers until it is ready. See [Speech to text on this Mac](../dashboard/voice.md#speech-to-text-on-this-mac) |
 | **End of a hands-free turn** | How the app hears that you have finished when you are not holding a key. **Voice detection (Silero)**, the default, tells your voice apart from background noise. **Volume** stops when the room goes quiet |
 | **Default voice provider** | The provider for agents set to **Default** |
 | **Keep the answer open** | How long an [answer in the pill](#read-the-answer-in-the-pill) stays open after it has been spoken: from 10 seconds to 5 minutes, or **Until I close it**. Default 30 seconds |
@@ -299,7 +299,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.gender` | not set | `"female"`, `"male"` or `"neutral"`; an assigned voice matches it |
 | `voice.style` | not set | A few words on manner, for example `"warm, calm"` |
 | `voice.intro` | not set | The one-line introduction the agent uses the first time it speaks |
-| `voice.rate` | `1` | Speaking speed, from `0.75` to `1.5` |
+| `voice.rate` | `1` | Speaking speed, from `0.75` to `1.5`. ElevenLabs is held to `0.7`–`1.2` |
 | `voice.narrate` | `"off"` | `"on"` (all tasks except scheduled jobs), `"all"`, or `"off"` |
 | `voice.priority` | `"normal"` | `"high"`, `"normal"` or `"low"` in the speaking queue |
 | `voice.hotkey` | none | A shortcut that asks this agent directly, for example `"ctrl+opt+1"` |
@@ -308,7 +308,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 
 Agents on other AgentX computers in your mesh can get a voice here too, under `meshVoices.<agent-id>`, with the same keys except `rate`, `priority` and `hotkey`, plus `name` (what to call the agent aloud).
 
-A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `leftbracket`, `rightbracket`, `backslash`, `grave`, `return` or `tab`. You can also type the character itself: `.` `,` `/` `;` `'` `-` `=` and `` ` ``, and `enter` for `return`.
+A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `leftbracket`, `rightbracket`, `backslash`, `grave`, `return` or `tab`. In `agentx.json`, use these names only. The settings window also accepts the character itself (`.` `,` `/` …) and saves it by name.
 
 ### Settings kept on the Mac only
 
@@ -375,7 +375,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Retry** in the menu.
 - **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Desktop**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
-- **Parakeet is picked but answers are still slow:** it is still downloading (483 MB) or loading for the first time; Whisper answers meanwhile. Arabic always goes to Whisper. See [Switch to Parakeet](../dashboard/voice.md#switch-to-parakeet).
+- **Parakeet is picked but answers are still slow:** it is still downloading (483 MB) or loading for the first time; Whisper answers meanwhile. Parakeet has no Arabic: for Arabic, set **On-this-Mac engine** back to Whisper. See [Switch to Parakeet](../dashboard/voice.md#switch-to-parakeet).
 - **No sound from the answer:** check the Mac's volume and output device. Then check an agent isn't waiting behind another: **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue`. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`. An ElevenLabs agent without a key uses a Mac voice, or stays silent when `voice.fallback` is `"none"`.
 - **The answer closes before you finish reading it:** keep the pointer over it, or raise **Keep the answer open** on the [General tab](#general-tab).
 - **The pill doesn't show:** it was closed with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. If it is off screen, choose **Reset position** in the menu.
@@ -383,5 +383,5 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **The menu can't switch agents:** the app was installed with `--agent`. **Terminal:** run `agentx desktop install` again without it.
 - **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`.
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
-- **Save in the settings window shows a red message:** fix the value it names (a shortcut used twice, a shortcut without **Control**, **Option** or **Command**, or a speed outside 0.75–1.5) and save again.
+- **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
 - **Anything else:** see [If something is wrong](../dashboard/voice.md#if-something-is-wrong) on the Desktop assistant page.
