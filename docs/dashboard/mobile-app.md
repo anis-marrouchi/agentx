@@ -1,6 +1,6 @@
 # Phone app
 
-The phone app is a small version of the dashboard that you install on an Android phone or an iPhone straight from the browser. There is no app store. It has four tabs: **Chat**, **Fleet**, **Activity** and **Alerts**. This page installs the app and pairs your phone. To talk to your agents from it, see [Chat on your phone](./mobile-chat.md). To watch and manage your computers from it, see [Fleet and Activity on your phone](./mobile-fleet.md). To get notifications on it, see [Notifications on your phone](./mobile-alerts.md).
+The phone app is a small version of the dashboard that you install on an Android phone or an iPhone straight from the browser. There is no app store. It has four tabs: **Chat**, **Fleet**, **Activity** and **Alerts**. This page installs the app and pairs your phone with a short pairing code. To talk to your agents from it, see [Chat on your phone](./mobile-chat.md). To watch and manage your computers from it, see [Fleet and Activity on your phone](./mobile-fleet.md). To get notifications on it, see [Notifications on your phone](./mobile-alerts.md).
 
 The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/install), a free private network (a *tailnet*) that links your own devices. Nothing is opened to the public internet.
 
@@ -20,22 +20,39 @@ The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/i
    tailscale serve --bg --set-path /api/app http://127.0.0.1:4202/api/app
    ```
    Don't run `tailscale serve --bg 4202`. That shares the whole dashboard with every device on your tailnet, and most of the dashboard trusts anything that arrives through the computer. If you ran it before, run `tailscale serve reset` first. `agentx app pair` refuses to run while the whole dashboard is shared. See [Tailscale Serve](https://tailscale.com/kb/1312/serve) for details.
-2. **Terminal (computer):** from the folder that holds `agentx.json`, pair the phone and give it a name you'll recognise:
+2. **Terminal (computer):** open a terminal in the folder that holds `agentx.json` (the same folder the dashboard runs from). The phone is only accepted by the dashboard of that folder.
+3. **Terminal (computer):** pair the phone and give it a name you'll recognise:
    ```sh
    agentx app pair --name "My phone"
    ```
-   A QR code appears. It uses this computer's Tailscale name. To use another address, add `--url https://<address>`.
-3. **Phone:** open the camera, point it at the QR code, and tap the link it shows.
-4. **Phone:** wait for the app to open. You'll see **AgentX** at the top with your phone's name under it.
+   A QR code appears, with a **pairing code** such as `7KQ4-M2XH` under it. The code works once, for 10 minutes. The QR code uses this computer's Tailscale name. To use another address, add `--url https://<address>`.
+4. **Phone:** open the camera, point it at the QR code, and tap the link it shows. The app opens in the browser.
 5. **Phone:** add the app to the home screen:
    - **iPhone (Safari):** tap **Share**, then **Add to Home Screen**, then **Add**.
    - **Android (Chrome):** tap the **⋮** menu, then **Install app** (or **Add to Home screen**), then **Install**.
-6. **Terminal (computer):** clear the terminal so nobody else can scan the code:
+6. **Phone:** open **AgentX** from the home screen.
+7. **Phone:** if the app says **This phone isn't paired**, tap the **Pairing code** field, type the code from step 3, and tap **Pair**. Capitals, spaces and the dash don't matter. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing.
+   ![The pairing code field on the "This phone isn't paired" page](/screenshots/mobile-app/not-paired.png)
+8. **Phone:** wait for the app to open. You'll see **AgentX** at the top with your phone's name under it.
+9. **Terminal (computer):** clear the terminal so nobody else can scan or read the codes:
    ```sh
    clear
    ```
 
-Anyone who scans the code can use the app until you remove it, so treat it like a password.
+Anyone who scans the QR code can use the app until you remove it, so treat it like a password. The pairing code stops working after one use or after 10 minutes, whichever comes first.
+
+### Pair without the QR code
+
+You don't need the camera. On the phone, type the app's address (`https://<computer's Tailscale name>/app`) into the browser, add the app to the home screen as in step 5, open it, and type the pairing code.
+
+### Pair again after reinstalling the app
+
+Removing the app from the home screen also removes its pairing.
+
+1. **Terminal (computer):** from the folder that holds `agentx.json`, run `agentx app pair --name "My phone"` again.
+2. **Phone:** add the app to the home screen again, as in steps 4 and 5 of [Install](#install).
+3. **Phone:** open the app from the home screen and type the new code.
+4. **Terminal (computer):** remove the old entry for this phone, as in [Manage paired phones](#manage-paired-phones).
 
 ## Use it
 
@@ -66,20 +83,26 @@ The app and its data (`/app` and `/api/app/…`) always need the phone's key, ev
 
 The QR code carries the key after a `#` in the link, which browsers never send to the server, so it doesn't end up in logs. The phone then keeps it in a cookie that page scripts can't read.
 
+The pairing code gives the phone the same key. The computer keeps only a scrambled form of the code, so the file it sits in (`.agentx/pair-codes.json`) can't be used without the code itself. To stop guessing, the app refuses all codes for 5 minutes after too many wrong ones, and it answers every wrong, expired or used code in exactly the same way. Each attempt is written to the dashboard's log.
+
 ## Check it worked
 
 1. **Terminal (computer):** run `agentx app devices`. Your phone is listed as `active`.
 2. **Phone:** open the app from the home screen. Your phone's name and the computer's name show under **AgentX**.
-3. **Phone:** open `https://<computer's Tailscale name>/` (the same address without `/app`). The page says `404 page not found`, so the rest of the dashboard isn't shared.
+3. **Phone:** close the app completely and open it again from the home screen. It opens without asking for a code.
+4. **Phone:** open `https://<computer's Tailscale name>/` (the same address without `/app`). The page says `404 page not found`, so the rest of the dashboard isn't shared.
 
 ## If something is wrong
 
 - **"Could not read this machine's Tailscale name"** — Tailscale isn't running on the computer. Start it, or pass `--url https://<address>` to `agentx app pair`.
 - **The link doesn't open on the phone** — the phone isn't connected to your tailnet. Open the Tailscale app on the phone and turn it on.
-- **"This phone isn't paired"** — the phone was removed, or the pairing code was used on another folder's AgentX. Run `agentx app pair` again from the folder that holds `agentx.json`.
-- **"This pairing code is not valid any more"** — the code was revoked. Run `agentx app pair` again and scan the new code.
+- **"This phone isn't paired" after pairing worked before** — the phone was removed with `agentx app revoke`, or the app was removed from the home screen and added again. Follow [Pair again after reinstalling the app](#pair-again-after-reinstalling-the-app).
+- **"That code didn't work"** — the code was mistyped, is older than 10 minutes, or was already used. Check the code, or run `agentx app pair` again and type the new one.
+- **"That code didn't work" with a fresh code** — `agentx app pair` ran in a different folder from the dashboard. The terminal shows "No agentx.json here". Run it again from the folder that holds `agentx.json`.
+- **"Too many attempts. Wait 5 minutes, then try again."** — too many wrong codes were typed, on this phone or any other. Wait the time shown, then type the code again. If the code has expired meanwhile, run `agentx app pair` for a new one.
+  ![The "Too many attempts" message on the pairing page](/screenshots/mobile-app/pair-code-too-many.png)
+- **"You're offline. Pairing needs a connection"** — the phone has no connection to your tailnet. Turn on Wi-Fi or mobile data, and turn on Tailscale in its app, then tap **Pair** again.
+- **"This pairing link is not valid any more"** — the phone was removed after the QR code was made. Run `agentx app pair` again and scan the new code.
 - **"tailscale serve publishes the whole dashboard"** — `agentx app pair` found an earlier `tailscale serve --bg 4202`. Run `tailscale serve reset`, then repeat step 1 of [Install](#install).
 - **The address without `/app` opens the dashboard** — the whole dashboard is shared on your tailnet. On the computer, run `tailscale serve reset`, then repeat step 1 of [Install](#install).
 - **No "Install app" or "Add to Home Screen" option** — the address isn't `https://`. Use the address from `tailscale serve`, not `http://127.0.0.1:4202`.
-
-![The page a phone sees when it isn't paired](/screenshots/mobile-app/not-paired.png)
