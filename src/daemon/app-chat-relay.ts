@@ -20,7 +20,14 @@ export interface TurnRequest {
   message: string
   /** Session key: the daemon resumes the same agent session per chat id. */
   chatId: string
+  /** The person said it (voice on the phone) rather than typed it. */
+  spoken?: boolean
 }
+
+/** Who starts every phone turn: the person holding the paired phone. Sent
+ *  as the task's sender, so the daemon that runs the agent (this one or a
+ *  mesh peer) records a person on the phone app, not agent-to-agent work. */
+export const APP_SENDER = "operator"
 
 export interface TurnOutcome {
   status: "done" | "error" | "stopped"
@@ -39,7 +46,9 @@ const MAX_REPLY = 500
 
 /** The upstream path and body for one turn. */
 export function upstreamRequest(t: TurnRequest): { path: string; body: Record<string, unknown> } {
-  const context = { channel: "app", chatId: t.chatId }
+  // A spoken turn keeps the typed turn's channel and chat id, so both stay
+  // in one agent session; `via` only records how it was said.
+  const context = { channel: "app", chatId: t.chatId, sender: APP_SENDER, ...(t.spoken ? { via: "voice" } : {}) }
   return t.node === "local"
     ? { path: "/task", body: { agent: t.agent, message: t.message, stream: true, context } }
     : { path: "/mesh/task", body: { peer: t.node, agent: t.agent, message: t.message, stream: true, context } }

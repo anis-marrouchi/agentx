@@ -43,6 +43,7 @@ function kindLabel(kind: string | undefined): string | undefined {
     case "github":   return "GitHub webhook"
     case "cron":     return "Cron job"
     case "workflow": return "Workflow"
+    case "app":      return "Phone app"
     case "a2a":      return "Agent → Agent"
     case "mesh":     return "Mesh"
     case "system":   return "System"

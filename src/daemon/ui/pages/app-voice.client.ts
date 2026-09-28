@@ -130,7 +130,7 @@ export const APP_VOICE_SCRIPT = `
       return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
     }).then(function (x) {
       if (!x) return;
-      if (x.ok && x.j.text) { C.send(x.j.text); idle(); return; }
+      if (x.ok && x.j.text) { C.send(x.j.text, { spoken: true }); idle(); return; }
       if (x.status === 503 && x.j.hint) { idle(x.j.error + ' ' + x.j.hint + ' You can type instead.', true); setTyping(true, false); return; }
       idle(x.j.error || ('Speech to text failed (HTTP ' + x.status + ').'), true);
     }).catch(function () { idle('Could not reach AgentX. Check the connection and try again.', true); });

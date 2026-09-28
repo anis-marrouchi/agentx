@@ -56,6 +56,7 @@ export interface Transit { lines: Line[]; trains: Train[] }
 /** The channels an operator expects on the left, in board order. */
 export const CHANNELS: Array<{ id: string; label: string }> = [
   { id: "voice", label: "Voice" },
+  { id: "app", label: "Phone app" },
   { id: "whatsapp", label: "WhatsApp" },
   { id: "telegram", label: "Telegram" },
   { id: "desktop", label: "Desktop" },

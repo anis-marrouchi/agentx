@@ -7,7 +7,7 @@ export type InitiatorKind =
   | "gitlab" | "github"
   | "cron" | "workflow"
   | "mesh" | "a2a"
-  | "voice" | "desktop"
+  | "voice" | "desktop" | "app"
   | "system"
 
 export interface FleetClient { id: string; name: string; color: string; projects: string[] }

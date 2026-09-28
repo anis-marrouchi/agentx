@@ -134,6 +134,9 @@ const CHANNEL_DEF: Record<string, { label: string; color: string }> = {
   mcp: { label: "Agent tools (MCP)", color: "#bf8700" },
   voice: { label: "Voice", color: "#e5534b" },
   desktop: { label: "Desktop assistant", color: "#8957e5" },
+  // Without its own entry a phone turn fell through to "mesh" and showed
+  // on the map as "Mesh (A2A)" (#276).
+  app: { label: "Phone app", color: "#0f9d8a" },
   opencode: { label: "OpenCode", color: "#57606a" },
 }
 
@@ -269,18 +272,12 @@ function initiatorFrom(source: string, intent: string, raw: any): { id: string; 
           return { id: aid, name: aid, avatar: initialsFor(aid), kind: "a2a" }
         }
       }
-      // 2. Channel-context A2A (telegram/gitlab/github routed through mesh).
+      // 2. A named sender on a channel (telegram/gitlab/github routed
+      // through mesh, voice, the phone app): the person, not an agent.
       const display = senderName || senderUsername || senderId
       if (display && !isSystemSender(senderUsername || senderName || "")) {
         const id = senderUsername || senderName || senderId!
-        const kind: InitiatorKind =
-          intent === "mesh.github" ? "github"
-          : intent === "mesh.gitlab" ? "gitlab"
-          : intent === "mesh.a2a" ? "a2a"
-          : intent === "mesh.voice" ? "voice"
-          : intent === "mesh.desktop" ? "desktop"
-          : "mesh"
-        return { id, name: senderName || senderUsername || id, avatar: initialsFor(display), kind }
+        return { id, name: senderName || senderUsername || id, avatar: initialsFor(display), kind: meshSenderKind(intent, ctx) }
       }
     }
     // 4. Bare A2A — no sender info but it IS an internal mesh dispatch.
@@ -400,8 +397,21 @@ export type InitiatorKind =
   | "gitlab" | "github"
   | "cron" | "workflow"
   | "mesh" | "a2a"
-  | "voice" | "desktop"
+  | "voice" | "desktop" | "app"
   | "system"
+
+/** Initiator kind per channel for a mesh-recorded dispatch with a named
+ *  sender. The intent is `mesh.<context.channel>` (intent/sources/mesh.ts). */
+const MESH_CHANNEL_KIND: Record<string, InitiatorKind> = {
+  github: "github", gitlab: "gitlab", a2a: "a2a", voice: "voice", desktop: "desktop", app: "app",
+}
+
+function meshSenderKind(intent: string, ctx: { via?: unknown }): InitiatorKind {
+  const kind = MESH_CHANNEL_KIND[intent.startsWith("mesh.") ? intent.slice(5) : ""] ?? "mesh"
+  // A person who said it rather than typed it (the phone app's voice mode
+  // sends `via: "voice"` on its usual channel, to keep one session).
+  return kind !== "a2a" && ctx.via === "voice" ? "voice" : kind
+}
 
 function chatKindFor(source: string): InitiatorKind {
   if (source === "telegram" || source === "whatsapp" || source === "slack" || source === "discord") {
@@ -490,7 +500,7 @@ function shortSubject(subject: string | null): string {
 // ---------------------------------------------------------------------------
 // Snapshot builder
 
-function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | null, windowH: number): FleetSnapshot {
+export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonConfig | null, windowH: number): FleetSnapshot {
   const now = Date.now()
   const sinceMs = now - windowH * 3600 * 1000
 
