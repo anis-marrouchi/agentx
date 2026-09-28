@@ -1,11 +1,18 @@
 // --- Phone app: Chat tab body ---
 //
-// Vanilla browser JS inlined into /app (app.ts), after APP_CHAT_VIEW_SCRIPT.
-// Pick an agent (GET /api/app/agents), then POST /api/app/chat streams the
-// reply as SSE (app-chat.ts). A message typed while the agent is answering
-// waits on the phone and goes as the next turn, so its answer streams here
-// too. The finished conversation is re-read from the server and kept in
-// IndexedDB, so History opens with no connection (read-only).
+// Vanilla browser JS inlined into /app (app.ts), after APP_CHAT_VIEW_SCRIPT,
+// APP_CHAT_LOG_SCRIPT and APP_CHAT_SHEETS_SCRIPT. Pick an agent (GET /api/app/agents), then
+// POST /api/app/chat streams the reply as SSE (app-chat.ts). A message typed
+// while the agent is answering waits on the phone and goes as the next turn,
+// so its answer streams here too. The finished conversation is re-read from
+// the server and kept in IndexedDB, so History opens with no connection
+// (read-only).
+//
+// Several conversations can run at once (#265). Switching away from one
+// that is answering only lets go of its stream: the computer keeps the turn
+// running, and follow-ups typed for it stay held on the phone until it is
+// done. The conversation strip (app-chat-strip.client.ts) switches through
+// window.AXChat.open, and a notification opens /app#chat=<id>.
 //
 // The voice bar (app-voice.client.ts) drives it through window.AXChat and
 // follows it through "ax-chat" events on document: target, busy, final.
@@ -17,7 +24,7 @@ export const APP_CHAT_SCRIPT = `
 (function () {
   var panel = document.getElementById('panel-chat');
   var V = window.AXChatView;
-  if (!panel || !V) return;
+  if (!panel || !V || !window.AXChatSheets || !window.AXChatLog) return;
   // The head (agent, History, New) and its two sheets stay pinned at the top
   // of a long conversation, as the composer stays at the bottom.
   panel.innerHTML = '<h2 class="cx-sr">Chat</h2><div class="cx"><div class="cx-top">' +
@@ -37,7 +44,11 @@ export const APP_CHAT_SCRIPT = `
   function $(id) { return document.getElementById(id); }
   var log = $('cx-log'), empty = $('cx-empty'), form = $('cx-form'), input = $('cx-input'), stopBtn = $('cx-stop');
   var pickBtn = $('cx-pick'), picker = $('cx-picker'), hist = $('cx-history'), histBtn = $('cx-history-btn'), newBtn = $('cx-new');
-  var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0 };
+  // flow: the stream this view follows; a stream from before a switch is ignored.
+  var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0, flow: 0, ac: null };
+  // Follow-ups typed for a conversation the phone switched away from, and
+  // the conversations sent from this phone (their answers are read out).
+  var held = {}, sentHere = {};
   var NOTES = { stopped: 'Stopped. What the agent wrote so far is kept.', error: 'The agent could not answer.',
     running: 'Still answering. The answer appears here when it is ready.',
     lost: 'Connection lost. The agent keeps answering; the answer appears here when the phone is back online.' };
@@ -55,65 +66,20 @@ export const APP_CHAT_SCRIPT = `
     return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: signal });
   }
 
-  // --- The log ---
-  function scrollDown() { var m = document.querySelector('main'); if (m) m.scrollTop = m.scrollHeight; }
-  function clearLog() { log.innerHTML = ''; empty.hidden = false; }
-  function bubble(cls) {
-    var el = document.createElement('div');
-    el.className = 'cx-msg ' + cls;
-    log.appendChild(el);
-    empty.hidden = true;
-    return el;
-  }
-  // A newer message ends the quick replies of the answers above it.
-  function userMsg(text) { V.retire(log); var el = bubble('cx-user'); el.textContent = text; return el; }
-  function agentMsg() {
-    V.retire(log);
-    var el = bubble('cx-agent');
-    el.innerHTML = '<div class="md cx-typing">Thinking…</div><div class="cx-files"></div><div class="cx-ui"></div><p class="cx-note" hidden></p>';
-    return el;
-  }
-  function setBody(el, text) { el.replaceChild(V.md(text), el.querySelector('.md')); }
-  function setNote(el, text, bad) {
-    var n = el.querySelector('.cx-note');
-    n.hidden = !text; n.textContent = text || ''; n.className = 'cx-note' + (bad ? ' cx-bad' : '');
-  }
-  function renderUi(el, ui) { V.renderUi(el.querySelector('.cx-ui'), ui, send); }
-  function renderFiles(el, files) { V.renderFiles(el.querySelector('.cx-files'), files); }
-  function renderConversation(conv) {
-    clearLog();
-    (conv.messages || []).forEach(function (m) {
-      if (m.role === 'user') { userMsg(m.content); return; }
-      var el = agentMsg();
-      setBody(el, m.content || '');
-      V.setTools(el, m.tools);
-      renderFiles(el, m.files);
-      renderUi(el, m.ui);
-      if (m.status && m.status !== 'done') setNote(el, m.error || NOTES[m.status] || '', m.status === 'error');
-    });
-    var live = null;
-    if (conv.running) {
-      // What the agent has written so far; the live stream carries on from it.
-      live = agentMsg();
-      if (conv.partial && conv.partial.text) setBody(live, V.preview(conv.partial.text, conv.partial.plain));
-      V.setTools(live, conv.partial && conv.partial.tools);
-      setNote(live, NOTES.running);
-    }
-    // Follow-ups typed while it answers stay below, waiting to be sent.
-    state.queue.forEach(function (x) { log.appendChild(x.el); });
-    scrollDown();
-    return live;
-  }
+  // --- The log (app-chat-log.client.ts) ---
+  var L = window.AXChatLog({ V: V, log: log, empty: empty, notes: NOTES, send: function (t) { return send(t); }, queue: function () { return state.queue; } });
+  var scrollDown = L.scrollDown, clearLog = L.clear, userMsg = L.userMsg, queuedMsg = L.queuedMsg, agentMsg = L.agentMsg;
+  var setBody = L.setBody, setNote = L.setNote, renderUi = L.renderUi, renderFiles = L.renderFiles, renderConversation = L.renderConversation, flash = L.flash;
 
   // --- Agent, conversation and the sheets ---
   function showTarget(t) {
     pickBtn.querySelector('.cx-pick-label').textContent = t ? (t.agentName || t.agent) : 'Choose an agent';
     pickBtn.querySelector('.cx-pick-sub').textContent = t ? 'on ' + t.nodeName : 'Tap to see the agents on your machines';
-    emit('target', { target: t });
+    emit('target', { target: t, conversationId: state.conv && state.conv.id });
   }
   function useConversation(conv) {
     state.conv = conv;
-    var color = state.target && state.target.agent === conv.agent ? state.target.color : undefined;
+    var color = conv.color || (state.target && state.target.agent === conv.agent ? state.target.color : undefined);
     state.target = { node: conv.node, nodeName: conv.nodeName, agent: conv.agent, agentName: conv.agentName, color: color };
     showTarget(state.target);
     remember('ax-chat-conv', conv.id);
@@ -125,35 +91,24 @@ export const APP_CHAT_SCRIPT = `
       p[0].hidden = !on; p[1].setAttribute('aria-expanded', on ? 'true' : 'false');
     });
   }
-  function loadPicker() {
-    picker.innerHTML = '<p class="cx-note">Looking for agents…</p>';
-    api('/api/app/agents').then(function (r) { return r.json(); }).then(function (data) {
-      var nodes = picker._data = data.nodes || [];
-      if (!nodes.length) { picker.innerHTML = '<p class="cx-note">No machines answered. Check that AgentX is running.</p>'; return; }
-      picker.innerHTML = nodes.map(function (n, i) {
-        var can = n.target && n.online;
-        var why = !n.target ? 'Not linked to this computer’s mesh' : n.online ? 'Online' : 'Offline';
-        var rows = n.agents.length ? n.agents.map(function (a, j) {
-          return '<li><button type="button" data-n="' + i + '" data-a="' + j + '"' + (can ? '' : ' disabled') + '>' +
-            '<span>' + V.esc(a.name) + '<span class="cx-sub">' + V.esc(a.id) + '</span></span>' +
-            '<span class="cx-state' + (a.busy ? ' cx-busy' : '') + '">' + (a.busy ? 'busy' + (a.running > 1 ? ' · ' + a.running : '') : 'idle') + '</span></button></li>';
-        }).join('') : '<li class="cx-note">No agents</li>';
-        return '<h3><span class="cx-dot' + (n.online ? ' cx-on' : '') + '"></span>' + V.esc(n.name) + ' <span class="cx-sub">' + V.esc(why) + '</span></h3><ul>' + rows + '</ul>';
-      }).join('');
-    }).catch(function () { picker.innerHTML = '<p class="cx-note cx-bad">Could not load agents. Check the connection and try again.</p>'; });
+  var sheets = window.AXChatSheets({ V: V, api: api, picker: picker, hist: hist,
+    onPick: function (t) { state.target = t; remember('ax-chat-target', t); startNew(); toggle(picker, false); input.focus(); },
+    onOpen: function (id) { toggle(hist, false); openConversation(id); } });
+
+  // Lets go of the stream being followed; the computer keeps the turn going.
+  // Follow-ups typed for it stay held until it is done.
+  function detach() {
+    if (!state.busy) return;
+    var id = state.conv && state.conv.id;
+    if (id && state.queue.length) held[id] = (held[id] || []).concat(state.queue.map(function (x) { return x.text; }));
+    state.queue = [];
+    state.flow++;
+    if (state.ac) { try { state.ac.abort(); } catch (e) {} }
+    setBusy(false);
+    if (id) emit('detached', { conversationId: id });
   }
-  picker.addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-a]');
-    if (!b || !picker._data) return;
-    var n = picker._data[+b.getAttribute('data-n')], a = n.agents[+b.getAttribute('data-a')];
-    state.target = { node: n.target, nodeName: n.name, agent: a.id, agentName: a.name, color: a.color };
-    remember('ax-chat-target', state.target);
-    startNew();
-    toggle(picker, false);
-    input.focus();
-  });
   function startNew() {
-    if (state.busy) return;
+    detach();
     state.view++;
     clearTimeout(pollTimer);
     state.conv = null;
@@ -162,34 +117,18 @@ export const APP_CHAT_SCRIPT = `
     clearLog();
     setBusy(false);
   }
-  function when(ms) { var d = new Date(ms); return isNaN(d.getTime()) ? '' : d.toLocaleString(); }
-  function loadHistory() {
-    hist.innerHTML = '<p class="cx-note">Loading…</p>';
-    api('/api/app/conversations').then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-      .then(function (d) { paintHistory(d.conversations || [], false); })
-      .catch(function () { V.cacheAll().then(function (all) { paintHistory(all, true); }); });
-  }
-  function paintHistory(list, offline) {
-    if (!list.length) { hist.innerHTML = '<p class="cx-note">' + (offline ? 'Offline, and nothing is saved on this phone yet.' : 'No conversations yet.') + '</p>'; return; }
-    hist.innerHTML = (offline ? '<p class="cx-note">Offline: showing the conversations saved on this phone.</p>' : '') + '<ul>' + list.map(function (c) {
-      return '<li><button type="button" data-c="' + V.esc(c.id) + '"><span>' + V.esc(c.title) +
-        '<span class="cx-sub">' + V.esc((c.agentName || c.agent) + ' · ' + c.nodeName + ' · ' + when(c.updatedAt)) + '</span></span></button></li>';
-    }).join('') + '</ul>';
-  }
-  hist.addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-c]');
-    if (!b) return;
-    toggle(hist, false);
-    openConversation(b.getAttribute('data-c'));
-  });
   var pollTimer = 0;
   function openConversation(id) {
-    if (state.busy) return;
+    if (state.busy && state.conv && state.conv.id === id) return;
+    detach();
     clearTimeout(pollTimer);
     // The phone's copy first, so it opens at once and offline; the server's
     // copy replaces it when it arrives. A load that finishes after the user
     // moved on (New, another conversation, a send) is dropped.
     var mine = ++state.view, fromServer = false;
+    // Held follow-ups come back as waiting bubbles.
+    state.queue = (held[id] || []).map(queuedMsg);
+    delete held[id];
     V.cacheGet(id).then(function (c) { if (c && !fromServer && mine === state.view) { useConversation(c); renderConversation(c); } });
     return api('/api/app/conversations/' + encodeURIComponent(id)).then(function (r) {
       if (mine !== state.view) return null;
@@ -200,9 +139,9 @@ export const APP_CHAT_SCRIPT = `
       fromServer = true;
       useConversation(c);
       var live = renderConversation(c);
-      if (!c.running) { V.cachePut(c); return; }
+      if (!c.running) { V.cachePut(c); sendQueued(); return; }
       // Still running: pick the live stream up where it is.
-      follow(api('/api/app/chat/attach?conversationId=' + encodeURIComponent(id)), live, c.partial || {});
+      follow(function (signal) { return api('/api/app/chat/attach?conversationId=' + encodeURIComponent(id), { signal: signal }); }, live, c.partial || {});
     }).catch(function () {});
   }
 
@@ -210,7 +149,6 @@ export const APP_CHAT_SCRIPT = `
   function setBusy(on) {
     state.busy = on;
     stopBtn.hidden = !on;
-    newBtn.disabled = on;
     log.setAttribute('aria-busy', on ? 'true' : 'false');
     emit('busy', { on: on });
   }
@@ -228,23 +166,27 @@ export const APP_CHAT_SCRIPT = `
     if (state.busy) {
       // A follow-up while the agent answers: shown now, sent as the next
       // turn so its answer streams here as well.
-      var q = userMsg(text);
-      q.classList.add('cx-queued');
-      state.queue.push({ text: text, el: q });
+      state.queue.push(queuedMsg(text));
       clearInput(text);
       scrollDown();
       return true;
     }
     if (!navigator.onLine) { flash('Offline. Messages can be sent once the phone is connected again.'); return false; }
-    if (!state.conv && !state.target) { toggle(picker, true); loadPicker(); return false; }
+    if (!state.conv && !state.target) { toggle(picker, true); sheets.loadPicker(); return false; }
     var body = state.conv
       ? { conversationId: state.conv.id, message: text }
       : { node: state.target.node, agent: state.target.agent, message: text };
     state.stopWanted = false;
     userMsg(text);
     clearInput(text);
-    follow(post('/api/app/chat', body), agentMsg(), null);
+    follow(function (signal) { return post('/api/app/chat', body, signal); }, agentMsg(), null);
     return true;
+  }
+  function sendQueued() {
+    if (!state.queue.length || state.busy) return;
+    var next = state.queue.splice(0);
+    next.forEach(function (x) { x.el.remove(); });
+    send(next.map(function (x) { return x.text; }).join(V.NL + V.NL));
   }
   // Streams one turn into the bubble el, from a send or from attaching
   // to a turn that is still running. The phone losing its connection does
@@ -252,8 +194,10 @@ export const APP_CHAT_SCRIPT = `
   function follow(request, el, partial) {
     clearTimeout(pollTimer);
     state.view++;
+    var flow = ++state.flow, ac = state.ac = window.AbortController ? new AbortController() : null;
     var raw = (partial && partial.text) || '', plain = !!(partial && partial.plain), tools = ((partial && partial.tools) || []).slice(), ended = false, frame = 0;
-    function paint() { frame = 0; if (!ended && raw) { setBody(el, V.preview(raw, plain)); scrollDown(); } }
+    function mine() { return flow === state.flow; }
+    function paint() { frame = 0; if (!ended && raw && mine()) { setBody(el, V.preview(raw, plain)); scrollDown(); } }
     function finish(content, note, bad, ui, files) {
       ended = true;
       setBody(el, content || '');
@@ -261,17 +205,19 @@ export const APP_CHAT_SCRIPT = `
       renderUi(el, ui);
       setNote(el, note, bad);
       scrollDown();
-      // own: a turn this phone sent now, not one it came back to.
-      emit('final', { own: !partial, ok: !note, content: content || '', conversationId: state.conv && state.conv.id });
+      var id = state.conv && state.conv.id;
+      // own: a turn sent from this phone, not one it only came back to.
+      emit('final', { own: !partial || !!sentHere[id], ok: !note, content: content || '', conversationId: id });
     }
     setBusy(true);
     scrollDown();
-    return request.then(function (r) {
+    return request(ac && ac.signal).then(function (r) {
       // Attaching just after the turn ended: reload the saved answer.
       if (r.status === 404 && partial) { ended = true; return; }
-      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { finish(raw, j.error || ('Failed (HTTP ' + r.status + ')'), true); });
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { if (mine()) finish(raw, j.error || ('Failed (HTTP ' + r.status + ')'), true); });
       return V.readStream(r.body, function (ev, d) {
-        if (ev === 'conversation') { useConversation(d); if (state.stopWanted) { state.stopWanted = false; stop(); } }
+        if (!mine()) return;
+        if (ev === 'conversation') { useConversation(d); if (!partial) sentHere[d.id] = 1; if (state.stopWanted) { state.stopWanted = false; stop(); } }
         else if (ev === 'start') plain = d.rich === false;
         else if (ev === 'resume') { raw = d.text || ''; plain = !!d.plain; tools = (d.tools || []).slice(); V.setTools(el, tools); setNote(el, ''); paint(); }
         else if (ev === 'text' && typeof d.text === 'string') { raw += d.text; if (!frame) frame = requestAnimationFrame(paint); }
@@ -280,6 +226,8 @@ export const APP_CHAT_SCRIPT = `
         else if (ev === 'final') finish(d.content, d.status === 'done' ? '' : (d.error || NOTES[d.status]), d.status === 'error', d.ui, d.files);
       });
     }).catch(function () {}).then(function () {
+      // Switched to another conversation: this stream is no longer shown.
+      if (!mine()) return;
       setBusy(false);
       if (!ended) {
         // The stream broke before the answer: the agent carries on.
@@ -287,11 +235,8 @@ export const APP_CHAT_SCRIPT = `
         if (state.conv) { var id = state.conv.id; pollTimer = setTimeout(function () { if (state.conv && state.conv.id === id) openConversation(id); }, 5000); }
         return;
       }
-      if (state.queue.length) {
-        var next = state.queue.splice(0);
-        next.forEach(function (x) { x.el.remove(); });
-        send(next.map(function (x) { return x.text; }).join(V.NL + V.NL));
-      } else if (state.conv) openConversation(state.conv.id);
+      if (state.queue.length) sendQueued();
+      else if (state.conv) openConversation(state.conv.id);
     });
   }
   function stop() {
@@ -299,11 +244,18 @@ export const APP_CHAT_SCRIPT = `
     if (!state.conv) { state.stopWanted = true; return; }
     post('/api/app/chat/stop', { conversationId: state.conv.id }).catch(function () {});
   }
-  function flash(text) {
-    var el = bubble('cx-agent');
-    el.innerHTML = '<p class="cx-note cx-bad"></p>';
-    el.firstChild.textContent = text;
-    scrollDown();
+  // Follow-ups held for a conversation that finished while the phone was
+  // elsewhere go as its next turn now; its answer shows up in the strip.
+  function flushHeld(id) {
+    var texts = held[id];
+    if (!texts || !texts.length || (state.conv && state.conv.id === id)) return;
+    delete held[id];
+    post('/api/app/chat', { conversationId: id, message: texts.join(V.NL + V.NL) }).then(function (r) {
+      if (r.status === 409) { held[id] = texts.concat(held[id] || []); return; }
+      sentHere[id] = 1;
+      // The computer keeps the turn going without the phone reading it.
+      if (r.body && r.body.cancel) r.body.cancel().catch(function () {});
+    }).catch(function () { held[id] = texts.concat(held[id] || []); });
   }
 
   form.addEventListener('submit', function (e) { e.preventDefault(); send(input.value); });
@@ -312,16 +264,27 @@ export const APP_CHAT_SCRIPT = `
   });
   input.addEventListener('input', function () { input.style.height = ''; input.style.height = Math.min(input.scrollHeight, 240) + 'px'; });
   stopBtn.addEventListener('click', stop);
-  pickBtn.addEventListener('click', function () { var open = picker.hidden; toggle(picker, open); if (open) loadPicker(); });
-  histBtn.addEventListener('click', function () { var open = hist.hidden; toggle(hist, open); if (open) loadHistory(); });
+  pickBtn.addEventListener('click', function () { var open = picker.hidden; toggle(picker, open); if (open) sheets.loadPicker(); });
+  histBtn.addEventListener('click', function () { var open = hist.hidden; toggle(hist, open); if (open) sheets.loadHistory(); });
   newBtn.addEventListener('click', function () { startNew(); input.focus(); });
 
+  // A notification opens /app#chat=<id>.
+  function fromHash() {
+    var m = /^#chat=(c[a-z0-9]{8,32})$/.exec(location.hash);
+    if (!m) return false;
+    try { history.replaceState(null, '', '#chat'); } catch (e) {}
+    openConversation(m[1]);
+    return true;
+  }
+  window.addEventListener('hashchange', fromHash);
   window.addEventListener('online', function () { if (state.conv && !state.busy) openConversation(state.conv.id); });
   window.AXChat = { send: send, busy: function () { return state.busy; }, target: function () { return state.target; },
-    pick: function () { toggle(picker, true); loadPicker(); } };
+    pick: function () { toggle(picker, true); sheets.loadPicker(); },
+    open: openConversation, current: function () { return state.conv && state.conv.id; },
+    held: function (id) { return (held[id] || []).length; }, flushHeld: flushHeld, sentHere: function (id) { return !!sentHere[id]; } };
   state.target = recall('ax-chat-target');
   showTarget(state.target);
   var last = recall('ax-chat-conv');
-  if (last) openConversation(last);
+  if (!fromHash() && last) openConversation(last);
 })();
 `

@@ -3,7 +3,9 @@
 // Vanilla browser JS inlined into /app (app.ts). Turns notifications on or
 // off for this phone (the browser's Push API, then /api/app/push/*) and
 // lists recent pushes from /api/app/alerts. Reuses the fx-* styles from
-// app-fleet.css.ts.
+// app-fleet.css.ts. With notifications on, a switch turns off the ones for
+// a chat answer that finishes while the phone looks elsewhere (#265); the
+// setting is kept on the computer, per phone (POST /api/app/push/prefs).
 //
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
@@ -16,6 +18,8 @@ export const APP_ALERTS_SCRIPT = `
     '<div class="fx-card"><div class="fx-row"><h3>Notifications on this phone</h3><span id="al-pill" class="fx-pill"></span></div>' +
     '<p id="al-text" class="fx-muted">Checking…</p>' +
     '<div class="fx-row fx-gap"><button type="button" id="al-btn" class="fx-btn fx-primary" hidden></button></div>' +
+    '<div id="al-finish" class="fx-row al-finish" hidden><p id="al-finish-l">When a chat answer finishes<small>Only for conversations you are not looking at</small></p>' +
+    '<button type="button" id="al-finish-sw" class="fx-switch" role="switch" aria-checked="true" aria-labelledby="al-finish-l"><span></span></button></div>' +
     '<p id="al-error" class="fx-error fx-bad" role="alert"></p></div>' +
     '<h3 class="fx-sub">Recent</h3><ul id="al-list" class="fx-list"></ul>';
   var pill = document.getElementById('al-pill');
@@ -23,6 +27,8 @@ export const APP_ALERTS_SCRIPT = `
   var btn = document.getElementById('al-btn');
   var err = document.getElementById('al-error');
   var list = document.getElementById('al-list');
+  var finishRow = document.getElementById('al-finish');
+  var finishSw = document.getElementById('al-finish-sw');
   var server = null;
   var busy = false;
 
@@ -82,6 +88,9 @@ export const APP_ALERTS_SCRIPT = `
     pill.className = 'fx-pill ' + (state === 'on' ? 'fx-on' : state === 'off' ? 'fx-warn' : 'fx-off');
     text.textContent = message;
     btn.hidden = !action;
+    // Settable before notifications are turned on, so it is ready then.
+    finishRow.hidden = state === 'na';
+    if (server) finishSw.setAttribute('aria-checked', server.chatFinish === false ? 'false' : 'true');
     if (action) { btn.textContent = action; btn.className = 'fx-btn ' + (action === 'Turn off' ? 'fx-danger-o' : 'fx-primary'); }
   }
 
@@ -145,14 +154,26 @@ export const APP_ALERTS_SCRIPT = `
       .then(function () { busy = false; btn.disabled = false; });
   });
 
+  finishSw.addEventListener('click', function () {
+    var on = finishSw.getAttribute('aria-checked') !== 'true';
+    finishSw.disabled = true;
+    err.textContent = '';
+    api('POST', '/api/app/push/prefs', { chatFinish: on }).then(function (b) {
+      if (server) server.chatFinish = b.chatFinish;
+      finishSw.setAttribute('aria-checked', b.chatFinish ? 'true' : 'false');
+    }).catch(function (e) { err.textContent = e.message; }).then(function () { finishSw.disabled = false; });
+  });
+
   function loadRecent() {
     return api('GET', '/api/app/alerts').then(function (b) {
       var items = b.items || [];
       if (!items.length) { list.innerHTML = '<li class="fx-muted">No notifications yet.</li>'; return; }
       list.innerHTML = items.map(function (it) {
         // Only web links: a button URL comes from an agent's message.
+        // A finished chat answer links back into the app (/app#chat=<id>).
         var link = /^https?:/i.test(it.url || '')
-          ? ' <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '';
+          ? ' <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Open</a>'
+          : /^[/]app#chat=c[a-z0-9]+$/.test(it.url || '') ? ' <a href="' + esc(it.url) + '">Open</a>' : '';
         return '<li><div class="fx-row"><strong>' + esc(it.title) + '</strong><span class="fx-muted">' + esc(ago(it.at)) + '</span></div>' +
           '<p>' + esc(it.body) + link + '</p></li>';
       }).join('');

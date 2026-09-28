@@ -12,6 +12,13 @@
 // The keyboard button shows the text box; the speaker button turns spoken
 // answers off. Both are remembered on this phone.
 //
+// Answers are said one at a time in the order they finished (#265): the
+// one on screen, and those from conversations in the background, which the
+// strip (app-chat-strip.client.ts) announces with a "background" event and
+// which start with the agent's name. Nothing is said over a recording or
+// over another answer. The queue rules are queueSpeech and nextSpeech
+// (app-speech-queue.ts); a tap on the orb stops and clears it.
+//
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
 
@@ -39,7 +46,9 @@ export const APP_VOICE_SCRIPT = `
 
   function recall(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v === '1'; } catch (e) { return d; } }
   function remember(k, on) { try { localStorage.setItem(k, on ? '1' : '0'); } catch (e) {} }
-  var v = { state: 'idle', rec: null, pressed: false, cancel: false, t0: 0, timer: 0, speakOn: recall('ax-voice-speaker', true), typing: recall('ax-voice-typing', false) };
+  var v = { state: 'idle', rec: null, pressed: false, cancel: false, t0: 0, timer: 0, speakOn: recall('ax-voice-speaker', true), typing: recall('ax-voice-typing', false), said: 0 };
+  // Answers waiting to be said, oldest first.
+  var speech = [], SPEECH_MAX = 5;
 
   var TEXT = {
     idle: 'Hold to talk', arming: 'Opening the microphone…', listening: 'Listening… let go to send, slide away to cancel',
@@ -55,7 +64,7 @@ export const APP_VOICE_SCRIPT = `
     status.classList.toggle('vx-bad', !!bad);
     orbBtn.querySelector('.cx-sr').textContent = state === 'speaking' ? 'Stop speaking' : 'Hold to talk';
   }
-  function idle(msg, bad) { show(C.busy() ? 'thinking' : 'idle', msg, bad); }
+  function idle(msg, bad) { show(C.busy() ? 'thinking' : 'idle', msg, bad); setTimeout(pump, 0); }
   function tint() { var t = C.target(); orb.tint(O.colorFor(t && t.agent, t && t.color)); }
   function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 
@@ -72,7 +81,7 @@ export const APP_VOICE_SCRIPT = `
     spkBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     spkBtn.setAttribute('aria-label', on ? 'Answers are read aloud. Tap to turn off.' : 'Answers are not read aloud. Tap to turn on.');
     spkBtn.classList.toggle('vx-off', !on);
-    if (!on && v.state === 'speaking') stopSpeaking();
+    if (!on) { speech = []; if (v.state === 'speaking') stopSpeaking(); }
   }
   keysBtn.addEventListener('click', function () { setTyping(!v.typing, true); });
   spkBtn.addEventListener('click', function () { IO.unlock(); setSpeaker(!v.speakOn); });
@@ -153,23 +162,51 @@ export const APP_VOICE_SCRIPT = `
   orbBtn.addEventListener('click', function (ev) { ev.preventDefault(); });
   document.addEventListener('visibilitychange', function () { if (document.hidden && v.rec) { v.cancel = true; release(false); } });
 
-  // --- Speaking the answer ---
-  function stopSpeaking() { IO.stop(); idle(); }
-  function speak(conversationId, text) {
+  // --- Speaking answers, one at a time ---
+  function stopSpeaking() { IO.stop(); speech = []; v.said++; idle(); }
+  function enqueue(item) {
+    if (!v.speakOn) return;
+    var r = queueSpeech(speech, item, SPEECH_MAX);
+    speech = r.queue;
+    if (r.dropped.length) {
+      var who = r.dropped.map(function (x) { return x.announce || 'this conversation'; }).join(', ');
+      status.textContent = (v.state === 'speaking' ? TEXT.speaking + ' ' : '') + 'Too many answers waiting: skipped the oldest (' + who + ').';
+    }
+    pump();
+  }
+  function pump() {
+    if (!v.speakOn) { speech = []; return; }
+    var r = nextSpeech(speech, v.state !== 'idle' && v.state !== 'thinking');
+    speech = r.queue;
+    if (r.item) speak(r.item);
+  }
+  function speak(item) {
+    var mine = ++v.said;
+    var live = function () { return v.state === 'speaking' && mine === v.said; };
     show('speaking', null, false, null);
-    var began = function (meter) { if (v.state === 'speaking') show('speaking', null, false, meter); };
-    var done = function () { if (v.state === 'speaking') idle(); };
+    var began = function (meter) { if (live()) show('speaking', null, false, meter); };
+    var done = function () { if (live()) idle(); };
     var fallback = function (t) { return IO.speakText(t, began).catch(function () {}); };
     fetch('/api/app/voice/speak', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversationId: conversationId, text: text }),
+      body: JSON.stringify({ conversationId: item.conversationId, text: item.text, announce: !!item.announce }),
     }).then(function (r) {
-      if (v.state !== 'speaking') return null;
+      if (!live()) return null;
       if (r.ok && (r.headers.get('content-type') || '').indexOf('audio/') === 0) {
-        return r.arrayBuffer().then(function (buf) { return v.state === 'speaking' ? IO.playAudio(buf, began) : null; });
+        return r.arrayBuffer().then(function (buf) { return live() ? IO.playAudio(buf, began) : null; });
       }
-      return r.json().catch(function () { return {}; }).then(function (j) { return j.text && v.state === 'speaking' ? fallback(j.text) : null; });
+      return r.json().catch(function () { return {}; }).then(function (j) { return j.text && live() ? fallback(j.text) : null; });
     }).catch(function () {}).then(done);
+  }
+  // A background answer: read the saved text without marking it read.
+  function background(d) {
+    if (!v.speakOn || !d.conversationId) return;
+    fetch('/api/app/conversations/' + encodeURIComponent(d.conversationId) + '?peek=1', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+        var last = c && (c.messages || []).filter(function (m) { return m.role === 'assistant'; }).pop();
+        if (!last || last.status !== 'done' || !last.content) return;
+        enqueue({ key: d.conversationId + ':' + last.at, conversationId: d.conversationId, text: last.content.slice(0, 8000), announce: d.agentName || c.agentName || c.agent });
+      }).catch(function () {});
   }
 
   document.addEventListener('ax-chat', function (ev) {
@@ -181,8 +218,8 @@ export const APP_VOICE_SCRIPT = `
     } else if (d.type === 'final') {
       // Answers to what this phone just sent, spoken or typed; not one it
       // came back to later.
-      if (d.own && d.ok && d.content && d.conversationId && v.speakOn && v.state !== 'listening' && v.state !== 'cancel') speak(d.conversationId, d.content);
-    }
+      if (d.own && d.ok && d.content && d.conversationId) enqueue({ key: d.conversationId + ':f' + Date.now(), conversationId: d.conversationId, text: d.content.slice(0, 8000) });
+    } else if (d.type === 'background') background(d);
   });
   // Any tap in Chat unlocks audio, so a typed message's answer can play too.
   panel.addEventListener('pointerdown', function () { IO.unlock(); });
@@ -191,6 +228,6 @@ export const APP_VOICE_SCRIPT = `
   setSpeaker(v.speakOn);
   tint();
   idle();
-  window.AXVoice = { show: show, orb: orb, state: function () { return v.state; } };
+  window.AXVoice = { show: show, orb: orb, state: function () { return v.state; }, queued: function () { return speech.length; } };
 })();
 `
