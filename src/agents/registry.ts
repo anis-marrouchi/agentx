@@ -1127,6 +1127,9 @@ export class AgentRegistry {
           channel: qChannel,
           chatId: qChatId,
           originalContext: task.context as Record<string, unknown>,
+          // A flushed message queued again keeps its first queue time, so
+          // its eventual note reports the whole wait.
+          queuedAt: task.queuedAt,
         })
 
         if (queued === "drop") {
@@ -1160,6 +1163,16 @@ export class AgentRegistry {
     if (!rateResult.ok) {
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
+    }
+
+    // A flushed queued message that waited long enough for its subject to
+    // change is told so (#282). Added here, when it really starts, and
+    // not in the flush: a message that has to queue again then carries
+    // its clean text and first queue time, and gets exactly one note.
+    if (task.queuedAt !== undefined) {
+      const staleNote = staleQueueNote(task.queuedAt)
+      if (staleNote) task.message = `${staleNote}\n${task.message}`
+      task.queuedAt = undefined
     }
 
     state.activeTasks++
@@ -1383,14 +1396,14 @@ export class AgentRegistry {
               sender: qm.sender,
               chatId: qm.chatId,
             }
-            // A turn that waited long enough for its subject to change is
-            // told so (#282). Only flushed queued turns get the line, so a
+            // queuedAt makes the run add the stale-state note when it
+            // starts (#282). Only flushed queued turns carry it, so a
             // normal turn pays nothing for it.
-            const staleNote = staleQueueNote(qm.queuedAt ?? qm.timestamp)
             this.execute({
-              message: staleNote ? `${staleNote}\n${qm.text}` : qm.text,
+              message: qm.text,
               agentId: task.agentId,
               context: ctx,
+              queuedAt: qm.queuedAt ?? qm.timestamp,
             })
               .then((resp) => this.postQueuedResponseToChannel(task.agentId, ctx, resp))
               .catch((e) => {
