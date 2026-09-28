@@ -62,6 +62,16 @@ Start with an agent's name to send just that question to it. With Writer ticked,
 
 The name can be the agent's id, its `name`, or any of its `mentions` from `agentx.json` without the `@`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" still goes to the ticked agent. If no agent matches, or more than one does, the ticked agent answers.
 
+#### Agents on other computers
+
+When this computer is linked to others running AgentX (a *mesh*, set up with `agentx mesh add`), their agents can be asked by name too. With Writer ticked on this Mac, "Planner, what's the status?" goes to the Planner agent on the other computer. Its answer is spoken here in a voice of its own (see [Agent voices](#agent-voices)), and Writer stays ticked.
+
+- Only computers that are online right now count. **Terminal:** run `agentx mesh list` to see which ones say `healthy`.
+- A remote agent answers to its id, its name, and the mentions its computer shares (up to four).
+- The same name on two computers, or on this Mac and another computer, is ambiguous: the ticked agent answers. Say the agent's id instead.
+- When a computer has an agent with the same id as one on this Mac, the name means the one on this Mac.
+- While a remote agent is working, the menu lists it under your agents with its computer's name in brackets, for example **Planner (server) · thinking**.
+
 ### Ask several agents at once
 
 You don't have to wait for one answer before asking another agent.
@@ -72,11 +82,32 @@ You don't have to wait for one answer before asking another agent.
 
 Each agent gets one question at a time from the assistant. Rules for asking the same agent again:
 
-- **Another agent's question is still being answered:** your new question waits for that answer, then goes. The menu shows it as **thinking (+1 asked)**.
+- **Another agent's question is still being answered:** your new question waits for that answer, then goes. The menu shows it as **thinking (+1 asked)**, and its small orb in the pill carries a **1**.
 - **The agent is still thinking on your main question:** your new words replace that question. The first answer is not spoken, and the agent answers the new words instead. Say "stop" to drop the question without asking anything else.
 - **The agent is busy with a question from somewhere else** (Siri or a phone shortcut): your question waits its turn. You no longer hear "I'm still working on your last request".
 
 While another agent's answer is still to come, the microphone does not reopen by itself after an answer. Hold **Option–Space** to talk.
+
+#### Small orbs in the pill
+
+While more than one agent is busy, the [pill](#the-pill-and-its-orb) shows a row of small orbs beside its words, one per busy agent in that agent's palette. The big orb keeps following the agent that is listening or speaking. The row also stays while a question is still out and the pill is otherwise idle, so the pill doesn't vanish while an agent is still working.
+
+![Three pills with small orbs, light mode: Writer drafting with a Writer and a Planner orb, each with a ring going round; Ops saying its answer, with an Ops orb, a Planner orb with a 1 badge and a Researcher orb with a steady ring; and the idle pill with one Planner orb still thinking](/screenshots/voice/pill-mini-orbs-light.png)
+
+![The same pills in dark mode](/screenshots/voice/pill-mini-orbs-dark.png)
+
+| Small orb | What it means |
+|---|---|
+| A ring goes round it | Thinking on your question |
+| A steady ring | Its answer is back and waits in the [speaking queue](#one-queue-for-everything-spoken) |
+| It pulses | Its answer is being spoken |
+| Smaller and paler | Only questions waiting for it; none asked yet |
+| A number on it | That many more questions wait for it |
+
+- Point at a small orb to see the agent's name, the computer it runs on (**this Mac** for your own agents), and what it is doing.
+- Clicks go through the small orbs to the pill, so clicking and dragging work as before, and they never take the keyboard.
+- More than four busy agents show as three orbs and **+n**.
+- The small orbs move only while the pill is on screen and an agent is thinking or speaking. With Reduce Motion on, or **Animated orb** off in the menu, they stand still.
 
 The rest of the menu works from the keyboard too: use the arrow keys and **Return**, or **Escape** to close it.
 
@@ -758,10 +789,10 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 4. The answer appears in the pill, after the ticked agent's name, and is spoken aloud.
 5. **Browser:** the question shows on the dashboard's [Live](./live.md) tab under your agent.
 6. **Terminal:** to check talk mode, run `agentx talk <first-agent-id> <second-agent-id> "say hello"`. Both agents speak, and the terminal prints their lines.
-7. **Terminal:** to check address by name, run `curl -s -X POST http://127.0.0.1:18800/voice/address -H 'Content-Type: application/json' -d '{"text": "<agent-name>, hello", "target": "<ticked-agent-id>"}'`. It prints the named agent's id.
+7. **Terminal:** to check address by name, run `curl -s -X POST http://127.0.0.1:18800/voice/address -H 'Content-Type: application/json' -d '{"text": "<agent-name>, hello", "target": "<ticked-agent-id>"}'`. It prints the named agent's `agentId`, `name`, `color` and `node`. With a mesh, try the name of an agent on another computer: `node` is that computer's name and `remote` is `true`.
 8. **Mac:** ask the ticked agent something that takes a while.
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
-10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
+10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon. The pill shows a small orb for each of the two agents until both are done.
 11. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's palette, and the orb swells as you speak. Let go: a ring goes round the orb while the agent thinks, and it pulses while the answer is spoken.
 12. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
 13. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
@@ -789,7 +820,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **Agent unavailable:** check the daemon address, then pick another agent from the menu. If the menu can't switch, the app is pinned to one agent: it was installed with `--agent`, or installed before the menu existed (older installs always pinned an agent). Run `agentx desktop install` again without `--agent`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status`, start the daemon, then choose **Retry**.
 - **A daemon on another machine refuses it:** the widget can't send a mesh token yet. Use a daemon on the same Mac.
-- **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked).
+- **A question you started with a name went to the ticked agent:** the name matched no agent, or more than one. Check the ids and `mentions` with `agentx agent list`, or try it with the curl in [Check it worked](#check-it-worked). For an agent on another computer, run `agentx mesh list`: that computer must say `healthy`. If two computers have an agent with that name, say its id.
+- **No small orbs while two agents work:** the row counts only questions asked from this Mac's assistant, and answers waiting in its speaking queue. A task an agent runs for someone else doesn't show.
 - **A second question to the same agent waits a long time:** it waits until that agent has finished answering the question before it. The assistant gives up after 10 minutes and says "Sorry, that didn't work" (or "Sorry, Researcher couldn't answer that" for a question asked by name).
 - **An answer by name was never spoken:** you said "stop", pressed **Command–Option–.** or chose **Stop speaking** before it arrived. Stopping drops every answer still to come. Ask again.
 - **The settings window says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then open **Settings…** again.

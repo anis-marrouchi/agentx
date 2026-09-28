@@ -112,7 +112,7 @@ import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { toSpeakable } from "@/voice/speakable"
-import { addressedAgent } from "@/voice/address"
+import { meshAddressables, resolveAddress } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
 import { agentPalette } from "@/voice/orb-palettes"
 import { previewLine, saveVoiceSettings, voiceSettingsView } from "@/daemon/voice-settings-api"
@@ -4987,9 +4987,23 @@ export class AgentXDaemon {
         // the same and only this one question goes elsewhere.
         case "POST /voice/address": {
           const body = await readBody(req)
+          // Agents on healthy mesh peers can be named too; /ask routes their
+          // plain id through VoiceMeshProxy. The reply names the node and
+          // colour, so the widget can show an agent /agents does not list.
           const target = String(body.target ?? "")
-          const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name, mentions: a.mentions }))
-          this.json(res, 200, { agentId: addressedAgent(String(body.text ?? ""), agents, target) })
+          const local = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name, mentions: a.mentions }))
+          const remote = meshAddressables(this.mesh?.directory() ?? [], (id) => !!this.config.agents[id])
+          this.json(res, 200, resolveAddress({
+            text: String(body.text ?? ""),
+            target,
+            local,
+            remote,
+            localNode: this.config.node.id,
+            localLook: (id) => {
+              const a = this.config.agents[id]
+              return a ? { color: presenceLook(id, a).color, palette: a.presence?.palette } : undefined
+            },
+          }))
           break
         }
 
@@ -5471,6 +5485,9 @@ export class AgentXDaemon {
                 name: a.name,
                 description: desc,
                 tags: [a.tier, ...mentions],
+                // Its on-screen colour, so a peer's voice widget shows it
+                // in the same one (#266). Extra field; A2A clients ignore it.
+                color: presenceLook(a.id, def).color,
               }
             }),
             // Channels this node hosts. Used by mesh peers to route

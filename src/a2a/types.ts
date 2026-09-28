@@ -22,6 +22,8 @@ export interface AgentSkill {
   description: string
   tags: string[]
   examples?: string[]
+  /** AgentX: the agent's on-screen colour ("#RRGGBB"), for peers' voice widgets. */
+  color?: string
 }
 
 // Task state machine

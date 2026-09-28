@@ -21,6 +21,10 @@ final class Panel: NSPanel {
 
     private let label = NSTextField(labelWithString: "")
     let orb = PillOrb(diameter: Panel.orbDiameter, frameSize: Panel.orbFrame)
+    /// One small orb per busy agent while more than one is (MiniOrbs.swift).
+    let miniOrbs = MiniOrbsHost()
+    /// Busy agents shown in the mini row; 0 hides it.
+    private(set) var busyCount = 0
     private let closeButton = NSButton()
     /// The orb, the words and the close button: the pill itself, which
     /// stays where it is while the widget grows into an answer.
@@ -241,6 +245,8 @@ final class Panel: NSPanel {
         closeButton.action = #selector(closeClicked)
         closeButton.isHidden = true
         row.addSubview(closeButton)
+        miniOrbs.isHidden = true
+        row.addSubview(miniOrbs)
         surface.layoutContent = { [weak self] bounds in self?.layoutContent(bounds) }
         MainActor.assumeIsolated { layoutContent(surface.bounds) }
         surface.addTrackingArea(NSTrackingArea(rect: .zero,
@@ -269,7 +275,11 @@ final class Panel: NSPanel {
         let above = growth.above
         row.frame = NSRect(x: 0, y: above ? 0 : answerHeight, width: bounds.width, height: h)
         closeButton.frame.origin.x = bounds.width - 28
-        let clipWidth = bounds.width - 88
+        // The mini orbs sit between the words and the close button, and
+        // the words give up that room while they show.
+        let miniWidth = busyCount > 0 ? MiniOrbsHost.width(busyCount) : 0
+        miniOrbs.frame = NSRect(x: bounds.width - 28 - miniWidth, y: (h - 24) / 2, width: miniWidth, height: 24)
+        let clipWidth = bounds.width - 88 - (miniWidth > 0 ? miniWidth + 4 : 0)
         if let clip, clip.frame.width != clipWidth {
             clip.frame.size.width = clipWidth
             // Text that scrolled may fit now, and the other way round.
@@ -340,6 +350,7 @@ final class Panel: NSPanel {
     @MainActor
     func show() {
         orb.setOnScreen(true)
+        miniOrbs.setOnScreen(!miniOrbs.isHidden)
         if !isVisible { orderFrontRegardless() }
     }
 
@@ -347,6 +358,7 @@ final class Panel: NSPanel {
     private func hide() {
         closeButton.isHidden = true
         orb.setOnScreen(false)
+        miniOrbs.setOnScreen(false)
         if isVisible { orderOut(nil) }
     }
 
@@ -414,10 +426,27 @@ final class Panel: NSPanel {
             setText(named(state))
         }
 
-        // Grown into an answer, it stays until it collapses, idle or not.
-        if dismissed || (state.isMeta && !alwaysVisible && !expanded) { hide() } else { show() }
+        // Grown into an answer, it stays until it collapses, idle or not;
+        // so does a pill with agents still busy in its mini orbs.
+        if dismissed || (state.isMeta && !alwaysVisible && !expanded && busyCount == 0) { hide() } else { show() }
         armCollapse()
         onRender?(state)
+    }
+
+    /// The mini orbs: one per busy agent, or none to hide the row. The
+    /// pill stays on screen while the row shows, even when idle.
+    @MainActor
+    func showBusy(_ orbs: [MiniOrbsModel.Orb], more: Int) {
+        let count = orbs.isEmpty ? 0 : orbs.count + more
+        miniOrbs.show(orbs, more: more)
+        miniOrbs.isHidden = count == 0
+        if count != busyCount {
+            busyCount = count
+            if let content = contentView { layoutContent(content.bounds) }
+            render(current)
+        } else {
+            miniOrbs.setOnScreen(isVisible && count > 0)
+        }
     }
 
     /// "Nadia · Listening": who is listening or answering. Errors are the
