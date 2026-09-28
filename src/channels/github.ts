@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { agentHeader, forgeAuthorLabel, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf } from "./outbound-marker"
+import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -491,8 +491,10 @@ export class GitHubAdapter implements ChannelAdapter {
 
     // Cascade prevention: skip an agent's own signed comment. A comment
     // signed by another agent (a review verdict) still reaches this repo's
-    // agent, which is how review-then-fix handoffs work.
-    const sourceAgent = ownEchoOf(comment.body, this.resolveAgent(repo))
+    // agent, which is how review-then-fix handoffs work. Only from an
+    // account we post with: anyone can type the signature (#287).
+    const trusted = this.postsAs(user.login)
+    const sourceAgent = trusted ? ownEchoOf(comment.body, this.resolveAgent(repo)) : null
     if (sourceAgent) {
       this.log(`AgentX comment from ${sourceAgent}, skipping its own echo (comment ${comment.id})`)
       return
@@ -504,9 +506,7 @@ export class GitHubAdapter implements ChannelAdapter {
       return
     }
 
-    // Our own post that named no agent. Only from an account we post with:
-    // anyone can type the signature.
-    const trusted = this.postsAs(user.login)
+    // Our own post that named no agent.
     if (isUnattributedEcho(comment.body, trusted)) {
       this.log(`AgentX comment with no agent from ${user.login}, skipping its own echo (comment ${comment.id})`)
       return
@@ -535,7 +535,7 @@ export class GitHubAdapter implements ChannelAdapter {
       // Another agent's comment posted with the owner's token is the agent
       // speaking, not the owner (#282).
       sender: forgeSender(comment.body, { id: chatId, name: user.login, username: user.login }, trusted),
-      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${forgeAuthorLabel(comment.body, user.login, trusted)} commented:\n${comment.body}`,
+      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${stripAgentxMarkers(event.issue.title)}]\n${forgeAuthorLabel(comment.body, user.login, trusted)} commented:\n${forgeBody(comment.body, trusted)}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -597,7 +597,7 @@ export class GitHubAdapter implements ChannelAdapter {
         name: pr.user.login,
         username: pr.user.login,
       },
-      text: `[GitHub PR #${pr.number} ${event.action}]: ${pr.title}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${pr.body?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
+      text: `[GitHub PR #${pr.number} ${event.action}]: ${stripAgentxMarkers(pr.title)}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${forgeBody(pr.body, this.postsAs(pr.user.login))?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -619,8 +619,8 @@ export class GitHubAdapter implements ChannelAdapter {
     if (this.isBotUser(review.user.login)) return
 
     // Skip the agent's own signed review; other agents' reviews pass
-    if (review.body && ownEchoOf(review.body, this.resolveAgent(repo))) return
     const reviewTrusted = this.postsAs(review.user.login)
+    if (reviewTrusted && review.body && ownEchoOf(review.body, this.resolveAgent(repo))) return
     if (isUnattributedEcho(review.body, reviewTrusted)) return
 
     // Only handle reviews with actual content
@@ -635,7 +635,7 @@ export class GitHubAdapter implements ChannelAdapter {
       channel: "github",
       accountId: "default",
       sender: forgeSender(review.body, { id: chatId, name: review.user.login, username: review.user.login }, reviewTrusted),
-      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${forgeAuthorLabel(review.body, review.user.login, reviewTrusted)} reviewed:\n${review.body || "(no body)"}`,
+      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${stripAgentxMarkers(event.pull_request.title)}\n${forgeAuthorLabel(review.body, review.user.login, reviewTrusted)} reviewed:\n${forgeBody(review.body, reviewTrusted) || "(no body)"}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -654,8 +654,8 @@ export class GitHubAdapter implements ChannelAdapter {
     if (this.isBotUser(comment.user.login)) return
 
     // Skip the agent's own signed comments; other agents' reviews pass
-    if (ownEchoOf(comment.body, this.resolveAgent(repo))) return
     const commentTrusted = this.postsAs(comment.user.login)
+    if (commentTrusted && ownEchoOf(comment.body, this.resolveAgent(repo))) return
     if (isUnattributedEcho(comment.body, commentTrusted)) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
@@ -667,7 +667,7 @@ export class GitHubAdapter implements ChannelAdapter {
       channel: "github",
       accountId: "default",
       sender: forgeSender(comment.body, { id: chatId, name: comment.user.login, username: comment.user.login }, commentTrusted),
-      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${forgeAuthorLabel(comment.body, comment.user.login, commentTrusted)} commented on ${comment.path}:${comment.line}:\n${comment.body}`,
+      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${stripAgentxMarkers(event.pull_request.title)}\n${forgeAuthorLabel(comment.body, comment.user.login, commentTrusted)} commented on ${comment.path}:${comment.line}:\n${forgeBody(comment.body, commentTrusted)}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -718,7 +718,7 @@ export class GitHubAdapter implements ChannelAdapter {
         name: issue.user.login,
         username: issue.user.login,
       },
-      text: `[GitHub Issue #${issue.number} ${event.action}]: ${issue.title}\n${issue.body?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
+      text: `[GitHub Issue #${issue.number} ${event.action}]: ${stripAgentxMarkers(issue.title)}\n${forgeBody(issue.body, this.postsAs(issue.user.login))?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,

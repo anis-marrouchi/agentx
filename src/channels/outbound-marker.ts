@@ -125,6 +125,13 @@ export function forgeAuthorLabel(body: string | undefined | null, account: strin
   return agent ? `${agent} (an AgentX agent, posted with ${account}'s account)` : account
 }
 
+/** A forge body as the agent reads it. Another account's signature is
+ *  removed: it names no agent, and left in place the pipeline's self-reply
+ *  guard would drop the comment as an agent's echo (#287). */
+export function forgeBody<T extends string | undefined | null>(body: T, trusted: boolean): T {
+  return trusted || !body ? body : stripAgentxMarkers(body) as T
+}
+
 /** Every configured forge username of `agentId`, or of all agents. The
  *  loop guard's "own bot identity" and the adapters' trusted posting
  *  accounts both come from here. */
@@ -139,7 +146,17 @@ export function mappedForgeUsernames(
 /** Strip every marker from a body — used when surfacing the body to the
  *  agent so it doesn't see its own bookkeeping. */
 export function stripAgentxMarkers(body: string): string {
-  return body.replace(/\n*<!--\s*agentx:[^>]*?\s*-->/g, "")
+  // Until nothing changes: one pass over a nested marker
+  // ("<!-<!-- agentx:x -->- agentx:id -->") joins into a working one.
+  let prev: string
+  do {
+    prev = body
+    body = body.replace(/\n*<!--\s*agentx:[^>]*?\s*-->/g, "")
+  } while (body !== prev)
+  // A marker can still form once detection drops inline code
+  // ("<!-`x`- agentx:id -->"). Then escape every "<": detection can remove
+  // characters but never add one, so no marker survives.
+  return detectAgentxMarker(body) ? body.replace(/</g, "&lt;") : body
 }
 
 /** Convenience for the Phase 2 self-reply-guard pipeline stage. */

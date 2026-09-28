@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, See
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
-import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
+import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeBody, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
@@ -78,10 +78,11 @@ interface GitLabNoteEvent {
 
 interface GitLabIssueEvent {
   object_kind: "issue"
-  user: { name: string; username: string }
+  user: { id?: number; name: string; username: string }
   project: { path_with_namespace: string }
   object_attributes: {
     iid: number
+    author_id?: number
     title: string
     description: string
     state: string
@@ -103,10 +104,11 @@ interface GitLabIssueEvent {
 
 interface GitLabMREvent {
   object_kind: "merge_request"
-  user: { name: string; username: string }
+  user: { id?: number; name: string; username: string }
   project: { path_with_namespace: string }
   object_attributes: {
     iid: number
+    author_id?: number
     title: string
     description: string
     state: string
@@ -499,8 +501,12 @@ export class GitLabAdapter implements ChannelAdapter {
     // PRIMARY CASCADE PREVENTION: Check for AgentX signature.
     // Every comment posted by AgentX has <!-- agentx:AGENT_ID --> appended.
     // This is the most reliable check — immune to race conditions and
-    // username misconfiguration.
-    const sourceAgent = detectAgentxMarker(note)
+    // username misconfiguration. Only from an account an agent posts with
+    // (a token owner, a configured or known bot username): anyone can type
+    // the signature, and it must not hide their note or relabel it (#287).
+    const sourceAgent = this.postsAs(user.username) || this.isBotUser(user.username)
+      ? detectAgentxMarker(note)
+      : null
     if (sourceAgent) {
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
       const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
@@ -541,11 +547,11 @@ export class GitLabAdapter implements ChannelAdapter {
     if (event.issue) {
       noteableType = "issue"
       noteableIid = String(event.issue.iid)
-      noteableTitle = event.issue.title
+      noteableTitle = stripAgentxMarkers(event.issue.title)
     } else if (event.merge_request) {
       noteableType = "merge_request"
       noteableIid = String(event.merge_request.iid)
-      noteableTitle = event.merge_request.title
+      noteableTitle = stripAgentxMarkers(event.merge_request.title)
     }
 
     // Project-rule note filter — runs AFTER cascade-prevention so we don't
@@ -880,7 +886,7 @@ export class GitLabAdapter implements ChannelAdapter {
             name: event.user.name,
             username: event.user.username,
           },
-          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
+          text: d.prompt || `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`,
           timestamp: new Date(),
           raw: event,
           resolvedAgent: d.agentId,
@@ -1010,8 +1016,8 @@ export class GitLabAdapter implements ChannelAdapter {
         // get the standard issue summary. Both end with the issue URL so the
         // agent can navigate to it.
         const text = t.trigger === "assignee-added"
-          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${attrs.title}]\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
-          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${attrs.title}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
+          : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
           id: `issue-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
@@ -1273,8 +1279,8 @@ export class GitLabAdapter implements ChannelAdapter {
 
         const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
         const text = isAssignmentTrigger
-          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${attrs.title}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
-          : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${attrs.title}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${attrs.description?.slice(0, 500) || ""}\nURL: ${attrs.url}`
+          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${stripAgentxMarkers(attrs.title)}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
+          : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
           id: `mr-${attrs.iid}-${attrs.action}-${t.agentId}-${t.trigger}`,
@@ -1523,6 +1529,23 @@ export class GitLabAdapter implements ChannelAdapter {
     }
   }
 
+  /** Is an issue/MR description ours to trust? The event's `user` is
+   *  whoever triggered it (an assign, an edit), not the author, so the
+   *  description keeps its marker only when an account AgentX posts with
+   *  both wrote it and triggered this event. */
+  private bodyTrusted(event: GitLabIssueEvent | GitLabMREvent): boolean {
+    const authorId = event.object_attributes.author_id
+    return event.user.id != null && authorId != null && event.user.id === authorId && this.postsAs(event.user.username)
+  }
+
+  /** True for a GitLab user AgentX posts as: the owner of one of its
+   *  tokens, or a configured gitlabUsernames entry (the loop guard's list). */
+  postsAs(username: string): boolean {
+    const lc = username.toLowerCase()
+    if (this.postingUsernames.has(lc)) return true
+    return mappedForgeUsernames(this.config.agentMappings, "gitlabUsernames").some((u) => u.toLowerCase() === lc)
+  }
+
   /**
    * Check if a username belongs to a known bot/agent user — local tokens,
    * configured usernames, auto-derived ids, OR an agent hosted on a mesh
@@ -1532,14 +1555,6 @@ export class GitLabAdapter implements ChannelAdapter {
    * look like human activity on the webhook node and re-dispatch agents
    * in a feedback loop.
    */
-  /** True for a GitLab user AgentX posts as: the owner of one of its
-   *  tokens, or a configured gitlabUsernames entry (the loop guard's list). */
-  postsAs(username: string): boolean {
-    const lc = username.toLowerCase()
-    if (this.postingUsernames.has(lc)) return true
-    return mappedForgeUsernames(this.config.agentMappings, "gitlabUsernames").some((u) => u.toLowerCase() === lc)
-  }
-
   private isBotUser(username: string): boolean {
     if (this.botUsernames.has(username)) return true
     if (!this.mesh) return false
