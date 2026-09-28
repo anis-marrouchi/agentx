@@ -51,7 +51,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `codegraph` | boolean | `false` | Adds the CodeGraph code index to the agent's workspace (tool server, permissions and instructions) and indexes the workspace in the background. For coding agents. |
 | `contextStrategy` | `"layered"` \| `"planner"` | — | Overrides `session.contextStrategy` for this agent. |
 | `contextReferences` | boolean | `false` | Adds a checked list of references from the workspace's `references/` registry to the agent's context. |
-| `richMessages` | boolean | `true` | Lets the agent send buttons, polls and media on chat channels, and also quick replies in the [phone app](../dashboard/mobile-chat.md), including replies relayed by mesh delegation or `/send`. `false` sends plain text only. |
+| `richMessages` | boolean | `true` | Lets the agent send buttons, polls and media on chat channels, and also quick replies in the [phone app](../dashboard/mobile-chat.md), including replies relayed by mesh delegation or `/send`. `false` sends plain text only: no buttons, polls, media or quick replies, and on the phone no pictures inside answers (they show as links) and no files (their names show as text). Speech is not affected. |
 | `maxConcurrent` | number | `1` | How many runs of this agent can happen at the same time. |
 | `maxExecutionMinutes` | number (1–240) | `20` | Time limit for one run; the process is stopped when it passes. |
 | `preSpawnTimeoutSec` | number (10–3600) | `300` | Time a run may spend getting ready before its agent process starts. When it passes, the run is stopped, its slot is freed and its record is marked `timeout` with the step it was stuck on. Applies to every run, whatever started it. See [Time limits and cancel](./config.md#time-limits-and-cancel). |

@@ -64,7 +64,7 @@ Some answers come with extras: link buttons, quick replies, a small poll, or a p
 
 ![An answer with the tools the agent used, a link button and a poll](/screenshots/mobile-app/chat.png)
 
-Agents add these on their own. To turn them off for one agent, set `richMessages` to `false` in its [agent settings](../reference/config-agents.md). The agent is then not told about them, and the phone shows none of them.
+Agents add these on their own. To turn them off for one agent, set `richMessages` to `false` in its [agent settings](../reference/config-agents.md). The agent is then not told about them, and the phone shows none of them. This also turns off the pictures and files described below: pictures show as links and files as their names.
 
 ### Quick replies
 

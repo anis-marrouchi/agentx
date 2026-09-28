@@ -54,6 +54,26 @@ export function extractArtifacts(text: string, max = Infinity, cutOff = false): 
   return { text: (cutOff ? clean.replace(DANGLING, "") : clean).trim(), artifacts }
 }
 
+/** An answer from an agent with rich messages off (#259): each sentinel
+ *  becomes its file's name as text, so nothing is silently lost, and a web
+ *  picture becomes an ordinary link. Code is left as written. `cutOff`
+ *  drops an unclosed tag, as in extractArtifacts. */
+export function plainAnswer(text: string, cutOff = false): string {
+  const raw = String(text ?? "")
+  let named = raw
+  if (/<agentx-artifact>/i.test(raw)) {
+    const replaced = raw.replace(SENTINEL, (_full, inner: string) => {
+      try {
+        const parsed = JSON.parse(inner.trim())
+        return parsed && typeof parsed.filename === "string" ? parsed.filename : ""
+      } catch { return "" }
+    })
+    named = (cutOff ? replaced.replace(DANGLING, "") : replaced).trim()
+  }
+  return named.replace(/```[\s\S]*?```|`[^`\n]*`|!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m: string, alt?: string, src?: string) =>
+    alt === undefined || src === undefined ? m : `[${alt || src}](${src})`)
+}
+
 /** What may be served, by extension. SVG is an image but can carry script,
  *  so it is only ever served as a download. */
 export const ARTIFACT_TYPES: Readonly<Record<string, { mime: string; kind: "image" | "audio" | "video" | "file" }>> = {
@@ -98,3 +118,9 @@ export const APP_ATTACH_HINT = [
   "The line is removed from the text. Images show in the reply, audio and video get a player, other files an Open link. Allowed: png, jpg, gif, webp, svg, pdf, txt, md, csv, json, mp3, m4a, wav, mp4, webm; up to 20 MB and 20 files per reply.",
   "A picture already on the web can go inline as ![what it shows](https://...).",
 ].join("\n")
+
+/** The attach note for one turn: on the phone app, when a session starts,
+ *  unless the agent has rich messages off (#259). */
+export function appAttachHint(channel: string, sessionStarts: boolean, richMessages: boolean | undefined): string | undefined {
+  return channel === "app" && sessionStarts && richMessages !== false ? APP_ATTACH_HINT : undefined
+}

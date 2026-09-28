@@ -95,7 +95,7 @@ export const APP_CHAT_SCRIPT = `
     if (conv.running) {
       // What the agent has written so far; the live stream carries on from it.
       live = agentMsg();
-      if (conv.partial && conv.partial.text) setBody(live, V.preview(conv.partial.text));
+      if (conv.partial && conv.partial.text) setBody(live, V.preview(conv.partial.text, conv.partial.plain));
       V.setTools(live, conv.partial && conv.partial.tools);
       setNote(live, NOTES.running);
     }
@@ -252,8 +252,8 @@ export const APP_CHAT_SCRIPT = `
   function follow(request, el, partial) {
     clearTimeout(pollTimer);
     state.view++;
-    var raw = (partial && partial.text) || '', tools = ((partial && partial.tools) || []).slice(), ended = false, frame = 0;
-    function paint() { frame = 0; if (!ended && raw) { setBody(el, V.preview(raw)); scrollDown(); } }
+    var raw = (partial && partial.text) || '', plain = !!(partial && partial.plain), tools = ((partial && partial.tools) || []).slice(), ended = false, frame = 0;
+    function paint() { frame = 0; if (!ended && raw) { setBody(el, V.preview(raw, plain)); scrollDown(); } }
     function finish(content, note, bad, ui, files) {
       ended = true;
       setBody(el, content || '');
@@ -272,7 +272,8 @@ export const APP_CHAT_SCRIPT = `
       if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { finish(raw, j.error || ('Failed (HTTP ' + r.status + ')'), true); });
       return V.readStream(r.body, function (ev, d) {
         if (ev === 'conversation') { useConversation(d); if (state.stopWanted) { state.stopWanted = false; stop(); } }
-        else if (ev === 'resume') { raw = d.text || ''; tools = (d.tools || []).slice(); V.setTools(el, tools); setNote(el, ''); paint(); }
+        else if (ev === 'start') plain = d.rich === false;
+        else if (ev === 'resume') { raw = d.text || ''; plain = !!d.plain; tools = (d.tools || []).slice(); V.setTools(el, tools); setNote(el, ''); paint(); }
         else if (ev === 'text' && typeof d.text === 'string') { raw += d.text; if (!frame) frame = requestAnimationFrame(paint); }
         else if (ev === 'tool' && d.status === 'start') { tools.push({ id: d.id, name: d.name, arg: d.arg }); V.setTools(el, tools); }
         else if (ev === 'tool' && d.error) { tools.forEach(function (t) { if (t.id === d.id) t.error = true; }); V.setTools(el, tools); }

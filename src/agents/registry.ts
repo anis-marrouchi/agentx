@@ -50,7 +50,7 @@ import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { abortReason, untilAborted } from "./until-aborted"
-import { APP_ATTACH_HINT } from "@/utils/artifact-sentinel"
+import { appAttachHint } from "@/utils/artifact-sentinel"
 import { prepareOutbox } from "@/utils/app-outbox"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
@@ -2060,7 +2060,12 @@ export class AgentRegistry {
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
       // How to show a file on the phone: once, when the session starts.
-      attachHint: channel === "app" && !resumeSessionId ? withOutbox(state.def.workspace, APP_ATTACH_HINT) : undefined,
+      // Sent only on a fresh app session with rich messages on (#259); the
+      // outbox is prepared only when the hint that names it goes out (#258).
+      attachHint: (() => {
+        const hint = appAttachHint(channel, !resumeSessionId, state.def.richMessages)
+        return hint ? withOutbox(state.def.workspace, hint) : undefined
+      })(),
       intent: intent
         ? {
             path: intent.path,

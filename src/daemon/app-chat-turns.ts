@@ -20,6 +20,8 @@ export class ChatTurn {
   /** What the agent has written so far, for a phone that attaches late. */
   text = ""
   tools: AppToolBadge[] = []
+  /** The agent has rich messages off: no pictures, even in the preview. */
+  plain = false
   /** Set when the orphan limit ended the turn. */
   orphaned = false
   private listeners = new Map<Listener, ServerResponse>()
@@ -30,6 +32,7 @@ export class ChatTurn {
 
   /** Hands one upstream event to every attached phone. */
   broadcast(event: string, data: any): void {
+    if (event === "start") this.plain = data?.rich === false
     if (event === "text" && typeof data?.text === "string") this.text += data.text
     if (event === "tool" && data?.status === "start" && this.tools.length < 50) {
       this.tools.push({ name: String(data.name || "tool"), ...(data.arg ? { arg: String(data.arg) } : {}) })

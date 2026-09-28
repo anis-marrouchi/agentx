@@ -20,6 +20,11 @@ window.AXChatView = (function () {
   // JSON never flashes; the finished reply arrives with it parsed.
   var PREVIEW_CUT = new RegExp('(^|' + NL + ')[ ' + TAB + ']*' + FENCE + '[ ' + TAB + ']*agentx:ui', 'i');
   var KEEP = 100;
+  // A fenced block, inline code, or a picture ![alt](src): the same pattern
+  // as plainAnswer (artifact-sentinel.ts), spelled with char codes.
+  var BS = String.fromCharCode(92), BT = String.fromCharCode(96);
+  var PLAIN_PICS = FENCE + '[' + BS + 's' + BS + 'S]*?' + FENCE + '|' + BT + '[^' + BT + BS + 'n]*' + BT +
+    '|!' + BS + '[([^' + BS + ']' + BS + 'n]*)' + BS + ']' + BS + '(([^)' + BS + 's]+)' + BS + ')';
   // Pictures shown inline in one answer; more stay links.
   var MAX_PICS = 8;
   var FILE_ID = /^[a-f0-9]{32}$/;
@@ -35,10 +40,14 @@ window.AXChatView = (function () {
     try { var x = new URL(String(u || ''), location.href); return x.protocol === 'https:' || x.protocol === 'http:' ? x.href : ''; } catch (e) { return ''; }
   }
   // Also cuts the file lines (<agentx-artifact>) the finished reply lists
-  // below it.
-  function preview(text) {
+  // below it. plain: the agent has rich messages off, so its pictures are
+  // links, as in its finished reply (plainAnswer, artifact-sentinel.ts).
+  function preview(text, plain) {
     var m = PREVIEW_CUT.exec(text), t = m ? text.slice(0, m.index) : text, k = t.indexOf('<agentx-artifact');
-    return k >= 0 ? t.slice(0, k) : t;
+    t = k >= 0 ? t.slice(0, k) : t;
+    return !plain ? t : t.replace(new RegExp(PLAIN_PICS, 'g'), function (s, alt, src) {
+      return src === undefined ? s : '[' + (alt || src) + '](' + src + ')';
+    });
   }
 
   // --- Full-screen pictures: one viewer, built once ---
