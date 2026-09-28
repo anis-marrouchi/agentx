@@ -2,6 +2,24 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.63.0](https://github.com/anis-marrouchi/agentx/compare/v0.62.0...v0.63.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** move speech engines to their own Settings tab ([#251](https://github.com/anis-marrouchi/agentx/issues/251)) ([036a6a3](https://github.com/anis-marrouchi/agentx/commit/036a6a3fe470f78a559824ec75675e77aa624dd6)), closes [#236](https://github.com/anis-marrouchi/agentx/issues/236)
+
+
+### Bug Fixes
+
+* **app:** keep the phone paired across updates; scan the pairing QR inside the app ([#248](https://github.com/anis-marrouchi/agentx/issues/248)) ([02deffe](https://github.com/anis-marrouchi/agentx/commit/02deffea116ec234f45de849ac3d12c88af7db01))
+* **app:** refuse phone recordings the daemon can't measure ([#246](https://github.com/anis-marrouchi/agentx/issues/246)) ([1e62863](https://github.com/anis-marrouchi/agentx/commit/1e62863a2b7fb71382b577485ff4e5af28e8e67f)), closes [#233](https://github.com/anis-marrouchi/agentx/issues/233)
+* **app:** renew the session cookie on each app load ([#252](https://github.com/anis-marrouchi/agentx/issues/252)) ([58c5c13](https://github.com/anis-marrouchi/agentx/commit/58c5c13c56adefd9b11c685a956b94f3808b4028)), closes [#234](https://github.com/anis-marrouchi/agentx/issues/234)
+* **crons:** read only the requested day's runs; slow extras don't hide a node ([#247](https://github.com/anis-marrouchi/agentx/issues/247)) ([329f84c](https://github.com/anis-marrouchi/agentx/commit/329f84c222560cc7414cbbeccdf286e2937912f1)), closes [#245](https://github.com/anis-marrouchi/agentx/issues/245)
+* **desktop:** adopt an existing voice login item instead of adding a second ([#249](https://github.com/anis-marrouchi/agentx/issues/249)) ([e8d1eb0](https://github.com/anis-marrouchi/agentx/commit/e8d1eb06650c6fb83875c6ae5470ef5a6c4016f0))
+* **mac-voice:** correct log path in install summary ([#240](https://github.com/anis-marrouchi/agentx/issues/240)) ([3766384](https://github.com/anis-marrouchi/agentx/commit/3766384f602d3b8fba8e512591270c1d9fab9247))
+* **procedures:** keep AI banned in the miner's word list ([#242](https://github.com/anis-marrouchi/agentx/issues/242)) ([b19dd37](https://github.com/anis-marrouchi/agentx/commit/b19dd3739c3025311ba0017e88798ebf933147aa))
+
 ## [0.62.0](https://github.com/anis-marrouchi/agentx/compare/v0.61.0...v0.62.0) (2026-09-28)
 
 
