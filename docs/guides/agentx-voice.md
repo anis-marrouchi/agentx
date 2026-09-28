@@ -85,7 +85,7 @@ Each agent has its own orb colours, taken from one of seven nature palettes (Sun
 2. Say your question.
 3. Stop talking. The app hears that you have finished and sends your words. To send sooner, click the pill again.
 
-If you say nothing for a few seconds, the microphone closes and the pill says **Didn't catch that**. How the app hears the end of your turn is set by **End of a hands-free turn** on the [General tab](#general-tab).
+If you say nothing for a few seconds, the microphone closes and the pill says **Didn't catch that**. How the app hears the end of your turn is set by **End of a hands-free turn** on the [Speech tab](#speech-tab).
 
 ### Read the answer in the pill
 
@@ -155,7 +155,7 @@ The settings window changes each agent's voice and the app's shortcuts without e
 
 1. **Mac:** click the AgentX icon in the menu bar.
 2. **Mac:** choose **Settings…**.
-3. **Mac:** change what you need on the **Agents** or **General** tab.
+3. **Mac:** change what you need on the **Agents**, **General** or **Speech** tab.
 4. **Mac:** choose **Save** (or press **Command–S**). **Revert** puts back what was saved.
 
 If a value is refused, a red message at the bottom says what to fix, and nothing is saved.
@@ -170,7 +170,7 @@ Pick an agent on the left. Its settings show on the right.
 
 | Setting | What it does |
 |---|---|
-| **Voice provider** | **Mac voices (free)**, **ElevenLabs**, or **Default (Mac voices)** / **Default (ElevenLabs)**, which follows the General tab |
+| **Voice provider** | **Mac voices (free)**, **ElevenLabs**, or **Default (Mac voices)** / **Default (ElevenLabs)**, which follows the Speech tab |
 | **Mac voice** | Which Mac voice this agent uses. **Assigned automatically** gives every agent a different one. **The Mac's default voice** uses the voice set in System Settings, including Siri voices. An agent with one voice per language in `agentx.json` shows that instead |
 | **ElevenLabs voice ID** | The ElevenLabs voice, when the provider is ElevenLabs |
 | **Preview** | Plays a sample line in the voice as set in the window, before you save. The line beside it names the saved voice |
@@ -190,15 +190,9 @@ To try a voice before keeping it:
 
 ### General tab
 
-The General tab is longer than the window: scroll down for **Answer in the pill** and **Launch at login**.
-
-![The top of the General tab, light mode: the Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, and the Speech section](/screenshots/voice/settings-general-light.png)
+![The General tab, light mode: the Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Answer in the pill with Keep the answer open at 30 seconds and Tallest answer at 320 points, and Launch at login](/screenshots/voice/settings-general-light.png)
 
 ![The General tab in dark mode](/screenshots/voice/settings-general.png)
-
-![The General tab scrolled down, light mode: the Speech section, Answer in the pill with Keep the answer open at 30 seconds and Tallest answer at 320 points, and Launch at login](/screenshots/voice/settings-general-bottom-light.png)
-
-![The same part in dark mode](/screenshots/voice/settings-general-bottom-dark.png)
 
 | Setting | What it does |
 |---|---|
@@ -206,10 +200,6 @@ The General tab is longer than the window: scroll down for **Answer in the pill*
 | **Stop every voice** | Silences everything. Default **Command–Option–.** |
 | **Smart paste** | Reshapes what you copied for the app you are typing in, then pastes it. Default **Command–Option–V** |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it |
-| **Speech to text** | **Automatic** (ElevenLabs when a key is set, this Mac otherwise), **ElevenLabs**, or **On this Mac**, which keeps your voice on the Mac |
-| **On-this-Mac engine** | **Whisper (mlx-whisper)**, the default, knows every language including Arabic. **Parakeet (downloads 483 MB)** is much faster but has no Arabic. It downloads the first time you pick it, and Whisper answers until it is ready. See [Speech to text on this Mac](../dashboard/voice.md#speech-to-text-on-this-mac) |
-| **End of a hands-free turn** | How the app hears that you have finished when you are not holding a key. **Voice detection (Silero)**, the default, tells your voice apart from background noise. **Volume** stops when the room goes quiet |
-| **Default voice provider** | The provider for agents set to **Default** |
 | **Keep the answer open** | How long an [answer in the pill](#read-the-answer-in-the-pill) stays open after it has been spoken: from 10 seconds to 5 minutes, or **Until I close it**. Default 30 seconds |
 | **Tallest answer** | How tall the answer grows before it scrolls, from 120 to 800 points. Default 320 |
 | **Launch at login** | Starts the app when you log in. Greyed out and on when `agentx desktop install` already does it |
@@ -217,6 +207,19 @@ The General tab is longer than the window: scroll down for **Answer in the pill*
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can be used alone). Two actions can't share one shortcut.
 
 ![A refused save on the General tab: Smart paste is set to Control–Option–2, and the red message next to Revert and Save says that shortcut is used for both smart paste and asking Researcher](/screenshots/voice/settings-error.png)
+
+### Speech tab
+
+![The Speech tab, light mode: Speech to text set to Automatic, the On-this-Mac engine set to Whisper, End of a hands-free turn set to Voice detection, and Default voice provider set to Mac voices](/screenshots/voice/settings-speech-light.png)
+
+![The Speech tab in dark mode](/screenshots/voice/settings-speech.png)
+
+| Setting | What it does |
+|---|---|
+| **Speech to text** | **Automatic** (ElevenLabs when a key is set, this Mac otherwise), **ElevenLabs**, or **On this Mac**, which keeps your voice on the Mac |
+| **On-this-Mac engine** | **Whisper (mlx-whisper)**, the default, knows every language including Arabic. **Parakeet (downloads 483 MB)** is much faster but has no Arabic. It downloads the first time you pick it, and Whisper answers until it is ready. See [Speech to text on this Mac](../dashboard/voice.md#speech-to-text-on-this-mac) |
+| **End of a hands-free turn** | How the app hears that you have finished when you are not holding a key. **Voice detection (Silero)**, the default, tells your voice apart from background noise. **Volume** stops when the room goes quiet |
+| **Default voice provider** | The provider for agents set to **Default** |
 
 ## Talking to agents
 
