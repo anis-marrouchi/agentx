@@ -23,6 +23,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname } from "path"
 import { randomBytes } from "crypto"
 import { isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
+import { isQueued } from "@/agents/queued"
 
 export type DelegationStatus = "done" | "error" | "timeout" | "lost"
 
@@ -379,7 +380,7 @@ export class DelegationManager {
     }
     // The registry queued it behind other work; its flush replies on the
     // channel itself.
-    if (resp.error?.startsWith("__queued__")) {
+    if (isQueued(resp.error)) {
       this.deps.log(`[delegation ${rec.id}] callback queued behind other work for ${rec.caller}`)
       return
     }

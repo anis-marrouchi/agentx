@@ -3,6 +3,7 @@ import type { AgentResponse, AgentTask } from "@/agents/runtime"
 import { ReminderPoller, type DispatchResult, type ReminderSettings } from "./poller"
 import { remindctlSource, type ReminderSource } from "./source"
 import { claimFile } from "./store"
+import { isQueued } from "@/agents/queued"
 import { splitContext } from "./trailer"
 
 // --- Daemon wiring for the reminders poller ---
@@ -98,7 +99,7 @@ export function startRemindersPoller(deps: RemindersDaemonDeps): (() => void) | 
         // __queued__ means the registry took the task; its answer comes back
         // through the queue, not here. The registry makes "reminder" wait for
         // a slot instead, so this is only a guard against dispatching twice.
-        if (res.error?.startsWith("__queued__")) return settle({ accepted: true })
+        if (isQueued(res.error)) return settle({ accepted: true })
         if (!settled) {
           settle(res.error ? { accepted: false, error: res.error } : { accepted: true })
           if (res.error) return

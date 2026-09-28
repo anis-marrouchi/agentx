@@ -1,5 +1,6 @@
 import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import type { AppToolBadge } from "./app-chat-store"
+import { isQueued } from "@/agents/queued"
 import { ARTIFACT_LIMITS, extractArtifacts, plainAnswer, type DeclaredArtifact } from "@/utils/artifact-sentinel"
 
 // --- Phone app chat: one turn, relayed from the daemon ---
@@ -130,7 +131,7 @@ function friendlyError(e: unknown): string {
   const s = String(e || "The agent could not answer.")
   // An older node queues a busy agent's message instead of waiting, and its
   // answer then has nowhere to go.
-  if (s.startsWith("__queued__")) return "The agent is busy with other work. Send the message again when it is free."
+  if (isQueued(s)) return "The agent is busy with other work. Send the message again when it is free."
   return s.slice(0, 500)
 }
 
