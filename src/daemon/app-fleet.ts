@@ -27,6 +27,7 @@ export interface SnapshotNode {
     id: string
     name: string
     tier?: string
+    color?: string
     active: number
     errors: number
     lastActive?: string

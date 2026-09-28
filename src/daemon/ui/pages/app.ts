@@ -11,7 +11,8 @@
 //
 // Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
 // by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Alerts
-// by app-alerts.client.ts. A tab without content yet says so plainly — no
+// by app-alerts.client.ts; Chat is voice first (app-voice.client.ts, with
+// the orb in app-orb.client.ts). A tab without content yet says so plainly — no
 // simulated data.
 
 import { AX_TOKENS_CSS } from "../tokens"
@@ -21,6 +22,10 @@ import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
 import { APP_CHAT_CSS } from "./app-chat.css"
+import { APP_ORB_SCRIPT } from "./app-orb.client"
+import { APP_VOICE_AUDIO_SCRIPT } from "./app-voice-audio.client"
+import { APP_VOICE_SCRIPT } from "./app-voice.client"
+import { APP_VOICE_CSS } from "./app-voice.css"
 import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
 import { injectFns } from "../inject"
 import { markdownToHtml } from "@/utils/markdown-html"
@@ -65,7 +70,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_VOICE_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -81,6 +86,7 @@ export function renderAppPage(): string {
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_SCRIPT}</script>
+<script>${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 </body>
 </html>`
 }
