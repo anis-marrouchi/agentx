@@ -7,6 +7,9 @@
 // too. The finished conversation is re-read from the server and kept in
 // IndexedDB, so History opens with no connection (read-only).
 //
+// The voice bar (app-voice.client.ts) drives it through window.AXChat and
+// follows it through "ax-chat" events on document: target, busy, final.
+//
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
 
@@ -41,6 +44,7 @@ export const APP_CHAT_SCRIPT = `
 
   function remember(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function recall(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+  function emit(type, detail) { document.dispatchEvent(new CustomEvent('ax-chat', { detail: Object.assign({ type: type }, detail || {}) })); }
   function api(path, opts) {
     return fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {})).then(function (r) {
       if (r.status === 401) { location.reload(); throw new Error('not paired'); }
@@ -101,10 +105,12 @@ export const APP_CHAT_SCRIPT = `
   function showTarget(t) {
     pickBtn.querySelector('.cx-pick-label').textContent = t ? (t.agentName || t.agent) : 'Choose an agent';
     pickBtn.querySelector('.cx-pick-sub').textContent = t ? 'on ' + t.nodeName : 'Tap to see the agents on your machines';
+    emit('target', { target: t });
   }
   function useConversation(conv) {
     state.conv = conv;
-    state.target = { node: conv.node, nodeName: conv.nodeName, agent: conv.agent, agentName: conv.agentName };
+    var color = state.target && state.target.agent === conv.agent ? state.target.color : undefined;
+    state.target = { node: conv.node, nodeName: conv.nodeName, agent: conv.agent, agentName: conv.agentName, color: color };
     showTarget(state.target);
     remember('ax-chat-conv', conv.id);
     remember('ax-chat-target', state.target);
@@ -136,7 +142,7 @@ export const APP_CHAT_SCRIPT = `
     var b = ev.target.closest('button[data-a]');
     if (!b || !picker._data) return;
     var n = picker._data[+b.getAttribute('data-n')], a = n.agents[+b.getAttribute('data-a')];
-    state.target = { node: n.target, nodeName: n.name, agent: a.id, agentName: a.name };
+    state.target = { node: n.target, nodeName: n.name, agent: a.id, agentName: a.name, color: a.color };
     remember('ax-chat-target', state.target);
     startNew();
     toggle(picker, false);
@@ -202,6 +208,7 @@ export const APP_CHAT_SCRIPT = `
     stopBtn.hidden = !on;
     newBtn.disabled = on;
     log.setAttribute('aria-busy', on ? 'true' : 'false');
+    emit('busy', { on: on });
   }
   function send(text) {
     text = String(text || '').trim();
@@ -240,6 +247,8 @@ export const APP_CHAT_SCRIPT = `
       renderUi(el, ui);
       setNote(el, note, bad);
       scrollDown();
+      // own: a turn this phone sent now, not one it came back to.
+      emit('final', { own: !partial, ok: !note, content: content || '', conversationId: state.conv && state.conv.id });
     }
     setBusy(true);
     scrollDown();
@@ -293,6 +302,8 @@ export const APP_CHAT_SCRIPT = `
   newBtn.addEventListener('click', function () { startNew(); input.focus(); });
 
   window.addEventListener('online', function () { if (state.conv && !state.busy) openConversation(state.conv.id); });
+  window.AXChat = { send: send, busy: function () { return state.busy; }, target: function () { return state.target; },
+    pick: function () { toggle(picker, true); loadPicker(); } };
   state.target = recall('ax-chat-target');
   showTarget(state.target);
   var last = recall('ax-chat-conv');

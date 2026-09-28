@@ -10,7 +10,7 @@ main { min-height: 0; }
 .cx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cx { display: flex; flex-direction: column; flex: 1; gap: 10px; }
 .cx-top {
-  position: sticky; top: -16px; z-index: 1; display: grid; gap: 8px;
+  position: sticky; top: -16px; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
   margin: -16px 0 0; padding: 16px 0 8px; background: var(--ax-bg);
 }
 .cx-head { display: flex; gap: 8px; align-items: stretch; }
