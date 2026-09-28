@@ -938,6 +938,31 @@ Show resolved governance flags (read-only; flags read once at startup).
 | `-o, --output <path>` | — | Write the script to this path (overrides default install path). |
 | `-y, --yes` | — | Skip confirmation prompts (non-interactive). |
 
+## contribute
+
+`agentx contribute`: Help you file a clear AgentX issue — check the model, find duplicates, build a pre-filled form link. See [Contribute to AgentX](../guides/contribute.md).
+
+### `agentx contribute check-model <model>`
+
+Check whether a model is on the recommended list (contrib/models.json).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--models <pathOrUrl>` | the list on GitHub | Model list to read. |
+
+### `agentx contribute search <words...>`
+
+List open issues that match, most-voted first — check for duplicates before drafting.
+
+### `agentx contribute draft <file>`
+
+Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form link; '-' reads stdin.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--model <model>` | **required** | The model that wrote the draft. |
+| `--models <pathOrUrl>` | the list on GitHub | Model list to read. |
+
 ## wiki (advanced)
 
 `agentx wiki`: Wiki knowledge base management. **Advanced.**
