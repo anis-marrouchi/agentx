@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.67.0](https://github.com/anis-marrouchi/agentx/compare/v0.66.0...v0.67.0) (2026-09-28)
+
+
+### Features
+
+* **memory:** flag stale volatile facts as unverified, verify-or-ask ([#273](https://github.com/anis-marrouchi/agentx/issues/273)) ([#274](https://github.com/anis-marrouchi/agentx/issues/274)) ([6164f5e](https://github.com/anis-marrouchi/agentx/commit/6164f5e094129258a413bca3a1bdcefdcb530deb))
+
+
+### Bug Fixes
+
+* **app:** record phone chats as the operator on the phone, not A2A ([#278](https://github.com/anis-marrouchi/agentx/issues/278)) ([5eaa1af](https://github.com/anis-marrouchi/agentx/commit/5eaa1af7cf2783338096792d4d850244f7e69503))
+
 ## [0.66.0](https://github.com/anis-marrouchi/agentx/compare/v0.65.0...v0.66.0) (2026-09-28)
 
 
