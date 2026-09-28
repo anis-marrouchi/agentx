@@ -1,27 +1,27 @@
-name: Feature
-description: Propose something AgentX cannot do today
-title: "Feat: <area> – <what it enables>"
-labels: ["enhancement"]
+name: Docs
+description: Something in the documentation is missing, wrong, or hard to follow
+title: "Docs: <page> – <what is missing or wrong>"
+labels: ["documentation"]
 body:
   - type: markdown
     attributes:
       value: |
         Thank you for taking the time to share this. Before you post, please look at the [open requests](https://github.com/anis-marrouchi/agentx/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) and give a 👍 to the ones you care about. It is an invitation, not a requirement. [How voting works](https://agentx-docs.pages.dev/guides/contribute).
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      description: A link to the page, or the topic if there is no page yet.
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
-      label: What problem does this solve?
-      description: Describe the scenario — what are you trying to run/operate, and where does agentx fall short today?
+      label: What is missing, wrong, or unclear?
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: suggestion
     attributes:
-      label: Proposed behavior
-      description: What would this look like? CLI, config, dashboard, mesh?
-    validations:
-      required: true
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Workarounds you've tried
+      label: What would have helped you?
+      description: Optional. A better wording, a missing step, or a screenshot.

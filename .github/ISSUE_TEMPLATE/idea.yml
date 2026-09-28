@@ -1,6 +1,6 @@
-name: Feature
-description: Propose something AgentX cannot do today
-title: "Feat: <area> – <what it enables>"
+name: Idea
+description: Share an early idea you would like to discuss
+title: "Idea: <short idea>"
 labels: ["enhancement"]
 body:
   - type: markdown
@@ -8,20 +8,16 @@ body:
       value: |
         Thank you for taking the time to share this. Before you post, please look at the [open requests](https://github.com/anis-marrouchi/agentx/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) and give a 👍 to the ones you care about. It is an invitation, not a requirement. [How voting works](https://agentx-docs.pages.dev/guides/contribute).
   - type: textarea
-    id: problem
+    id: idea
     attributes:
-      label: What problem does this solve?
-      description: Describe the scenario — what are you trying to run/operate, and where does agentx fall short today?
+      label: The idea
+      description: A few sentences are enough. It does not need to be fully worked out.
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: why
     attributes:
-      label: Proposed behavior
-      description: What would this look like? CLI, config, dashboard, mesh?
+      label: Why it matters to you
+      description: The situation that made you think of it.
     validations:
       required: true
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Workarounds you've tried

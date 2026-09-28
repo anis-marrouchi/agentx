@@ -1,0 +1,40 @@
+name: Integration
+description: Connect AgentX to a new channel, MCP server, skill, or model provider
+title: "Integration: <kind> – <name>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to share this. Before you post, please look at the [open requests](https://github.com/anis-marrouchi/agentx/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) and give a 👍 to the ones you care about. It is an invitation, not a requirement. [How voting works](https://agentx-docs.pages.dev/guides/contribute).
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of integration?
+      options:
+        - Channel (a place people send messages from)
+        - MCP server
+        - Skill
+        - Model provider
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Name and link
+      description: The service or project, with a link to its website or docs.
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What would you use it for?
+      description: A real task you want your agents to do with it.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else we should know?
+      description: Existing APIs or SDKs, pricing, limits, or a workaround you use today.
