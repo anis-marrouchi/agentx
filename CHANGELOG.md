@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.60.0](https://github.com/anis-marrouchi/agentx/compare/v0.59.0...v0.60.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** answer inside the pill, native look, nature orb palettes ([#211](https://github.com/anis-marrouchi/agentx/issues/211)) ([#220](https://github.com/anis-marrouchi/agentx/issues/220)) ([63efbd3](https://github.com/anis-marrouchi/agentx/commit/63efbd3498dd4c70d9480d3e626ee011ab067287))
+
 ## [0.59.0](https://github.com/anis-marrouchi/agentx/compare/v0.58.0...v0.59.0) (2026-09-28)
 
 
