@@ -62,6 +62,31 @@ main { min-height: 0; }
 .cx-tools li.cx-bad { background: var(--ax-red-t); color: var(--ax-red-ink); }
 .cx-note { margin: 6px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .cx-bad { color: var(--ax-red-ink); }
+.cx-msg .md img { max-width: 100%; }
+.cx-pic {
+  display: block; max-width: 100%; margin: 6px 0; padding: 0; border: 0; background: none; cursor: zoom-in;
+  border-radius: var(--ax-radius-sm); overflow: hidden;
+}
+.cx-pic img { display: block; max-width: 100%; max-height: 60vh; height: auto; border-radius: var(--ax-radius-sm); background: var(--ax-surface-3); }
+.cx-pic:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.cx-files { display: grid; gap: 8px; margin-top: 8px; }
+.cx-files:empty { display: none; }
+.cx-files figure { margin: 0; display: grid; gap: 4px; }
+.cx-files figcaption { font-size: var(--ax-fs-xs); color: var(--ax-text-2); overflow-wrap: anywhere; }
+.cx-files video { max-width: 100%; border-radius: var(--ax-radius-sm); }
+.cx-files audio { width: 100%; }
+.cx-file { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-viewer {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  padding: max(56px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); background: rgb(0 0 0 / 0.9);
+}
+.cx-viewer[hidden] { display: none; }
+.cx-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.cx-viewer-close {
+  position: absolute; top: max(8px, env(safe-area-inset-top)); right: 12px; min-height: 44px; min-width: 72px; padding: 0 14px;
+  font: inherit; font-weight: 700; cursor: pointer; border: 1px solid rgb(255 255 255 / 0.5); border-radius: var(--ax-radius-pill);
+  background: rgb(0 0 0 / 0.6); color: #fff;
+}
 .cx-ui { display: grid; gap: 8px; margin-top: 8px; }
 .cx-ui:empty { display: none; }
 .cx-ui img, .cx-ui video { max-width: 100%; border-radius: var(--ax-radius-sm); }

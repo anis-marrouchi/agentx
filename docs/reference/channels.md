@@ -17,6 +17,8 @@ A channel receives a message from another tool and routes it to an agent, then c
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 
+**Agents can attach files to answers in the phone app and the web chat.** The agent saves the file in its workspace and ends its answer with one line per file, `<agentx-artifact>{"filename":"charts/orders.png","mime":"image/png"}</agentx-artifact>`. The line is removed from the answer. The [phone app](../dashboard/mobile-chat.md#pictures-and-files-in-an-answer) shows the file under the answer; the daemon's web chat (`POST /chat`) returns it in `artifacts`. Agents in the phone app learn this at the start of each conversation.
+
 Keep channel credentials private. The dashboard stores only the *name* of the environment variable that holds a token; the token itself goes in the `.env` file next to `agentx.json`.
 
 ## Check it worked

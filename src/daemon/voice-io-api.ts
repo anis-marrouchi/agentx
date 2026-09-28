@@ -4,6 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { toSpeakable } from "@/voice/speakable"
+import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { elevenLabsSpeed, type VoiceRef } from "@/voice/speaker"
 import {
   AUDIO_LIMITS, audioExt, checkDurationHeader, elevenLabsScribe, localWhisper, measureSeconds, sttEngines, sttSetupHint,
@@ -164,9 +165,12 @@ async function speak(req: IncomingMessage, res: ServerResponse, deps: VoiceIoDep
   }
 }
 
-/** An answer as it is said: no agentx:ui block, no markdown, capped. */
+/** An answer as it is said: no agentx:ui block, no declared files, no
+ *  pictures, no markdown, capped. Pictures and files are only ever shown. */
 export function speakableAnswer(text: string): string {
-  return toSpeakable(extractUiDirective(text).cleanText, SPEAK_MAX_CHARS)
+  const clean = extractUiDirective(extractArtifacts(text).text).cleanText
+    .replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, "")
+  return toSpeakable(clean, SPEAK_MAX_CHARS)
 }
 
 /** One answer as mp3, in the agent's ElevenLabs voice. */

@@ -2262,6 +2262,7 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
       return r.ok ? (await r.json()) as AppMeshPeer[] : []
     },
     nodePost: (nodeUrl, path, body) => fleet.nodePost(nodeUrl, path, body),
+    tokenFor: (nodeUrl) => dashboardTokenForNode(config.dashboard, nodeUrl.replace(/\/+$/, "")),
   }
 }
 

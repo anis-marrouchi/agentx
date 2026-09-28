@@ -1,12 +1,14 @@
 // --- Phone app: Chat rendering and offline cache (window.AXChatView) ---
 //
 // Loaded before APP_CHAT_SCRIPT. Markdown bubbles (the shared escape-first
-// markdownToHtml, injected by app.ts), collapsed tool badges, the
-// `agentx:ui` extras (link buttons, a poll, media) and the IndexedDB copy of
-// each conversation, so History opens with no connection.
+// markdownToHtml, injected by app.ts, with its web pictures on), collapsed
+// tool badges, the files an answer declared, the `agentx:ui` extras (link
+// buttons, a poll, media), a full-screen picture viewer and the IndexedDB
+// copy of each conversation, so History opens with no connection.
 //
 // Everything an agent wrote is escaped or set as text; only http(s) links
-// survive, and they open outside the app.
+// and pictures survive, and links open outside the app. Declared files are
+// only ever addressed by their random id under /api/app/files/.
 //
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
@@ -18,6 +20,9 @@ window.AXChatView = (function () {
   // JSON never flashes; the finished reply arrives with it parsed.
   var PREVIEW_CUT = new RegExp('(^|' + NL + ')[ ' + TAB + ']*' + FENCE + '[ ' + TAB + ']*agentx:ui', 'i');
   var KEEP = 100;
+  // Pictures shown inline in one answer; more stay links.
+  var MAX_PICS = 8;
+  var FILE_ID = /^[a-f0-9]{32}$/;
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -27,18 +32,93 @@ window.AXChatView = (function () {
   function httpUrl(u) {
     try { var x = new URL(String(u || ''), location.href); return x.protocol === 'https:' || x.protocol === 'http:' ? x.href : ''; } catch (e) { return ''; }
   }
-  function preview(text) { var m = PREVIEW_CUT.exec(text); return m ? text.slice(0, m.index) : text; }
+  // Also cuts the file lines (<agentx-artifact>) the finished reply lists
+  // below it.
+  function preview(text) {
+    var m = PREVIEW_CUT.exec(text), t = m ? text.slice(0, m.index) : text, k = t.indexOf('<agentx-artifact');
+    return k >= 0 ? t.slice(0, k) : t;
+  }
+
+  // --- Full-screen pictures: one viewer, built once ---
+  var viewer = null, opener = null;
+  function closeViewer() {
+    if (!viewer || viewer.hidden) return;
+    viewer.hidden = true;
+    viewer.querySelector('img').removeAttribute('src');
+    if (opener && opener.focus) opener.focus();
+    opener = null;
+  }
+  function openViewer(src, alt, from) {
+    if (!viewer) {
+      viewer = document.createElement('div');
+      viewer.className = 'cx-viewer';
+      viewer.setAttribute('role', 'dialog');
+      viewer.setAttribute('aria-modal', 'true');
+      viewer.setAttribute('aria-label', 'Picture');
+      var pic = document.createElement('img'), shut = document.createElement('button');
+      pic.referrerPolicy = 'no-referrer';
+      shut.type = 'button'; shut.className = 'cx-viewer-close'; shut.textContent = 'Close';
+      shut.addEventListener('click', closeViewer);
+      viewer.addEventListener('click', function (ev) { if (ev.target === viewer) closeViewer(); });
+      document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeViewer(); });
+      viewer.appendChild(pic); viewer.appendChild(shut);
+      document.body.appendChild(viewer);
+    }
+    var img = viewer.querySelector('img');
+    img.src = src; img.alt = alt || '';
+    opener = from || null;
+    viewer.hidden = false;
+    viewer.querySelector('button').focus();
+  }
+  // A picture as a button that opens it full screen.
+  function picture(src, alt) {
+    var b = document.createElement('button'), img = document.createElement('img');
+    b.type = 'button'; b.className = 'cx-pic';
+    b.setAttribute('aria-label', 'Open picture full screen' + (alt ? ': ' + alt : ''));
+    img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.alt = alt || ''; img.src = src;
+    b.appendChild(img);
+    b.addEventListener('click', function () { openViewer(src, alt, b); });
+    return b;
+  }
 
   function md(text) {
     var d = document.createElement('div');
     d.className = 'md';
-    try { d.innerHTML = markdownToHtml(String(text || '')); } catch (e) { d.textContent = text; }
+    try { d.innerHTML = markdownToHtml(String(text || ''), { images: MAX_PICS }); } catch (e) { d.textContent = text; }
     Array.prototype.slice.call(d.querySelectorAll('a')).forEach(function (a) {
       var h = /^https?:/i.test(a.getAttribute('href') || '') ? httpUrl(a.getAttribute('href')) : '';
       if (h) { a.href = h; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
       else a.replaceWith(document.createTextNode(a.textContent));
     });
+    // Web pictures only, checked again here; each opens full screen.
+    Array.prototype.slice.call(d.querySelectorAll('img')).forEach(function (img) {
+      var raw = img.getAttribute('src') || '', src = /^https?:/i.test(raw) ? httpUrl(raw) : '', alt = img.getAttribute('alt') || '';
+      img.replaceWith(src ? picture(src, alt) : document.createTextNode(alt));
+    });
     return d;
+  }
+
+  // The files an answer declared: pictures inline, sound and video with a
+  // player, anything else as an Open link that downloads it.
+  function renderFiles(box, files) {
+    box.innerHTML = '';
+    (files || []).forEach(function (f) {
+      if (!f || !FILE_ID.test(String(f.id))) return;
+      var url = '/api/app/files/' + f.id, name = String(f.name || 'file'), node;
+      if (f.kind === 'image') node = picture(url, name);
+      else if (f.kind === 'audio' || f.kind === 'video') {
+        node = document.createElement('figure');
+        var player = document.createElement(f.kind), cap = document.createElement('figcaption');
+        player.controls = true; player.preload = 'metadata'; player.src = url;
+        if (f.kind === 'video') player.setAttribute('playsinline', '');
+        cap.textContent = name;
+        node.appendChild(player); node.appendChild(cap);
+      } else {
+        node = document.createElement('a');
+        node.className = 'cx-ui-btn cx-file'; node.href = url; node.download = name; node.textContent = 'Open ' + name;
+      }
+      box.appendChild(node);
+    });
   }
 
   function setTools(el, tools) {
@@ -169,7 +249,8 @@ window.AXChatView = (function () {
   function cacheGet(id) { return idb('readonly', function (s) { return s.get(id); }); }
   function cacheDrop(id) { return idb('readwrite', function (s) { s.delete(id); }); }
 
-  return { NL: NL, esc: esc, httpUrl: httpUrl, md: md, preview: preview, setTools: setTools, renderUi: renderUi, readStream: readStream,
+  return { NL: NL, esc: esc, httpUrl: httpUrl, md: md, preview: preview, setTools: setTools, renderUi: renderUi, renderFiles: renderFiles,
+    openViewer: openViewer, closeViewer: closeViewer, readStream: readStream,
     cachePut: cachePut, cacheGet: cacheGet, cacheAll: cacheAll, cacheDrop: cacheDrop };
 })();
 `

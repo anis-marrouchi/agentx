@@ -66,6 +66,51 @@ Some answers come with extras: link buttons, a small poll, or a picture, sound o
 
 Agents add these on their own. To turn them off for one agent, set `richMessages` to `false` in its [agent settings](../reference/config-agents.md).
 
+## Pictures and files in an answer
+
+An answer can show two more kinds of things:
+
+- **Pictures from the web.** Agents write their answers in *Markdown*, a plain-text format where `![what it shows](https://…)` means "show this picture here". The phone shows such pictures inside the answer, up to 8 per answer. Further pictures show as links. Only addresses that start with `https://` or `http://` are shown.
+- **Files the agent made.** A chart, a screenshot, a PDF or a recording that the agent saved on its computer. Pictures appear under the answer, sound and video get a player, and any other file gets an **Open** button that downloads it.
+
+![A chart the agent saved, shown under its answer, and a PDF to open](/screenshots/mobile-app/chat-media.png)
+
+To see a picture full screen:
+
+1. **Phone:** tap the picture. It opens over the whole screen.
+2. **Phone:** tap **Close** to go back. On a keyboard, press **Esc**.
+
+![A picture opened full screen, with its Close button](/screenshots/mobile-app/chat-media-viewer.png)
+
+Pictures and files are never read out loud.
+
+### How an agent attaches a file
+
+You don't need to set anything up. When a conversation starts, the agent is told how to attach files, once. If an agent writes about a file instead of showing it, ask it to attach the file. To attach a file, the agent:
+
+1. Saves the file inside its *workspace*, the folder on the computer it works in (`workspace` in its [agent settings](../reference/config-agents.md)).
+2. Ends its answer with one line per file, giving the file's place inside the workspace and its type:
+
+   ```text
+   <agentx-artifact>{"filename":"charts/orders.png","mime":"image/png"}</agentx-artifact>
+   ```
+
+The line is taken out of the answer before you see or hear it. It is the same line the daemon's web chat (`POST /chat`) uses, so one habit works in both places.
+
+### Limits
+
+| What | Limit |
+|---|---|
+| Pictures from the web in one answer | 8; the rest show as links |
+| Files in one answer | 20 |
+| Size of one file | 20 MB |
+| File types | Pictures: png, jpg, gif, webp. Sound: mp3, m4a, wav. Video: mp4, webm. To open: pdf, txt, md, csv, json, svg |
+| Where the file must be | Inside the agent's workspace. A path with `..`, or a link that leads out of the workspace, is refused |
+| Who can open it | Only the phone whose conversation it is in |
+| How long | As long as the message is kept (see [Go back to a conversation](#go-back-to-a-conversation)) |
+
+The phone never sees where a file is on the computer: each file gets its own random address when the answer is saved. The file stays on the computer that ran the agent. For an agent on another computer in your mesh, this computer fetches the file from it with the mesh token. An svg file only downloads, because an svg can carry code.
+
 ## Go back to a conversation
 
 1. **Phone:** tap **History**.
@@ -137,6 +182,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 3. **Phone:** pick an agent, hold the orb, say `hello`, and let go. Your words appear as your message, and the agent's answer appears under it.
 4. **Phone:** listen. The answer is read out loud while the orb pulses.
 5. **Phone:** tap **History**. The conversation is listed with the agent's name.
+6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
 
 ## If something is wrong
 
@@ -162,3 +208,12 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 - **"Stopped: the phone was away for more than 30 minutes"** — nobody opened the conversation while the agent answered, so it was stopped. Send the message again, and keep the conversation open or come back to it within 30 minutes.
 - **An answer keeps going after you close the app** — that is expected. To end it, open the conversation and tap **Stop**.
 - **"The database on this computer is unavailable"** — AgentX can't open `.agentx/db.sqlite`. On the computer, run `agentx doctor`.
+- **A picture from the web shows only its description** — its address doesn't start with `https://` or `http://`, or the answer already shows 8 pictures. A picture that stays blank was refused by the site that hosts it.
+- **The agent says it attached a file, but nothing shows** — the file type is not in the [list above](#limits), or the agent didn't end its answer with the `<agentx-artifact>` line. Ask it to attach the file as in [How an agent attaches a file](#how-an-agent-attaches-a-file).
+- **A file shows as a broken picture, or Open shows an error** — tap **Open**, or open the picture's address, to read the reason:
+  - **"the file is outside the agent's workspace"** or **"the path leaves the workspace"**: the agent saved it elsewhere, for example in a temporary folder. Ask it to save the file inside its workspace and attach it again.
+  - **"file not found"**: the file was moved or deleted on the computer after the answer.
+  - **"this type of file is not served"**: the file is of a type not in the list above.
+  - **"the file is larger than 20 MB"**: ask the agent for a smaller file.
+  - **"no such file"**: the conversation was removed from this phone's history, or it belongs to another phone.
+  - **"… is not linked to this computer's mesh any more"** or **"answered HTTP 404"**: the computer that ran the agent left the mesh, or runs an older AgentX. Link it again, or update AgentX there.

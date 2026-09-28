@@ -68,7 +68,7 @@ export const APP_CHAT_SCRIPT = `
   function userMsg(text) { var el = bubble('cx-user'); el.textContent = text; return el; }
   function agentMsg() {
     var el = bubble('cx-agent');
-    el.innerHTML = '<div class="md cx-typing">Thinking…</div><div class="cx-ui"></div><p class="cx-note" hidden></p>';
+    el.innerHTML = '<div class="md cx-typing">Thinking…</div><div class="cx-files"></div><div class="cx-ui"></div><p class="cx-note" hidden></p>';
     return el;
   }
   function setBody(el, text) { el.replaceChild(V.md(text), el.querySelector('.md')); }
@@ -77,6 +77,7 @@ export const APP_CHAT_SCRIPT = `
     n.hidden = !text; n.textContent = text || ''; n.className = 'cx-note' + (bad ? ' cx-bad' : '');
   }
   function renderUi(el, ui) { V.renderUi(el.querySelector('.cx-ui'), ui, send); }
+  function renderFiles(el, files) { V.renderFiles(el.querySelector('.cx-files'), files); }
   function renderConversation(conv) {
     clearLog();
     (conv.messages || []).forEach(function (m) {
@@ -84,6 +85,7 @@ export const APP_CHAT_SCRIPT = `
       var el = agentMsg();
       setBody(el, m.content || '');
       V.setTools(el, m.tools);
+      renderFiles(el, m.files);
       renderUi(el, m.ui);
       if (m.status && m.status !== 'done') setNote(el, m.error || NOTES[m.status] || '', m.status === 'error');
     });
@@ -241,9 +243,10 @@ export const APP_CHAT_SCRIPT = `
     state.view++;
     var raw = (partial && partial.text) || '', tools = ((partial && partial.tools) || []).slice(), ended = false, frame = 0;
     function paint() { frame = 0; if (!ended && raw) { setBody(el, V.preview(raw)); scrollDown(); } }
-    function finish(content, note, bad, ui) {
+    function finish(content, note, bad, ui, files) {
       ended = true;
       setBody(el, content || '');
+      renderFiles(el, files);
       renderUi(el, ui);
       setNote(el, note, bad);
       scrollDown();
@@ -262,7 +265,7 @@ export const APP_CHAT_SCRIPT = `
         else if (ev === 'text' && typeof d.text === 'string') { raw += d.text; if (!frame) frame = requestAnimationFrame(paint); }
         else if (ev === 'tool' && d.status === 'start') { tools.push({ id: d.id, name: d.name, arg: d.arg }); V.setTools(el, tools); }
         else if (ev === 'tool' && d.error) { tools.forEach(function (t) { if (t.id === d.id) t.error = true; }); V.setTools(el, tools); }
-        else if (ev === 'final') finish(d.content, d.status === 'done' ? '' : (d.error || NOTES[d.status]), d.status === 'error', d.ui);
+        else if (ev === 'final') finish(d.content, d.status === 'done' ? '' : (d.error || NOTES[d.status]), d.status === 'error', d.ui, d.files);
       });
     }).catch(function () {}).then(function () {
       setBusy(false);

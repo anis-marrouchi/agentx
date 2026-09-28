@@ -1,5 +1,6 @@
 import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import type { AppToolBadge } from "./app-chat-store"
+import { ARTIFACT_LIMITS, extractArtifacts, type DeclaredArtifact } from "@/utils/artifact-sentinel"
 
 // --- Phone app chat: one turn, relayed from the daemon ---
 //
@@ -23,9 +24,11 @@ export interface TurnRequest {
 
 export interface TurnOutcome {
   status: "done" | "error" | "stopped"
-  /** The reply without its agentx:ui block. */
+  /** The reply without its agentx:ui block and <agentx-artifact> lines. */
   text: string
   ui?: UiDirective
+  /** Files the reply declared, not yet checked or registered. */
+  files: DeclaredArtifact[]
   error?: string
   tools: AppToolBadge[]
 }
@@ -55,9 +58,12 @@ export async function relayTurn(
   const tools: AppToolBadge[] = []
   const byId = new Map<string, AppToolBadge>()
   const end = (status: TurnOutcome["status"], raw: string, error?: string): TurnOutcome => {
-    const { cleanText, ui } = status === "done" ? extractUiDirective(raw) : { cleanText: raw, ui: undefined }
+    // Declared files come out of every answer, even a stopped one, so a
+    // sentinel is never shown or read out.
+    const declared = extractArtifacts(raw, ARTIFACT_LIMITS.perMessage)
+    const { cleanText, ui } = status === "done" ? extractUiDirective(declared.text) : { cleanText: declared.text, ui: undefined }
     const safe = safeUi(ui)
-    return { status, text: cleanText, tools, ...(safe ? { ui: safe } : {}), ...(error ? { error } : {}) }
+    return { status, text: cleanText, tools, files: declared.artifacts, ...(safe ? { ui: safe } : {}), ...(error ? { error } : {}) }
   }
   try {
     const r = await fetch(daemon.url.replace(/\/+$/, "") + path, {

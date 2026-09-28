@@ -6,11 +6,16 @@
 // someone or something other than the person reading it.
 //
 // Deliberately small: headings, bold/italic, code, links, lists, tables,
-// blockquotes and rules. Anything it does not know stays as text.
+// blockquotes and rules, and pictures for a caller that asks. Anything it
+// does not know stays as text.
 
 export interface MarkdownOptions {
   /** Resolve [[wikilinks]]. Omitted, they render as their display text. */
   wikilink?: (target: string, display: string) => string
+  /** Render `![alt](https://…)` as a picture: `true` for up to 8, or the
+   *  most to show. Web addresses only; pictures past the limit become links.
+   *  Omitted, a picture stays a link, as it always was. */
+  images?: boolean | number
 }
 
 export function markdownToHtml(text: string, opts: MarkdownOptions = {}): string {
@@ -29,6 +34,26 @@ export function markdownToHtml(text: string, opts: MarkdownOptions = {}): string
 
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+  // Pictures, only for a caller that opts in. Code is left alone. Each
+  // picture waits as a placeholder of plain letters and digits until every
+  // other rule has run, so no later rule can take its markup apart; one
+  // that ends up inside a tag (say, a link's address) becomes its alt text.
+  // The text is escaped already, so the address and alt hold no quotes.
+  const pics: string[] = []
+  const alts: string[] = []
+  const mark = opts.images ? "axpic" + Math.random().toString(36).slice(2, 10) + "n" : ""
+  if (opts.images) {
+    const most = typeof opts.images === "number" ? opts.images : 8
+    html = html.replace(/<code[^>]*>[\s\S]*?<\/code>|!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m: string, alt?: string, src?: string) => {
+      if (alt === undefined || src === undefined) return m
+      if (!/^https?:\/\/[^\s]+$/i.test(src)) return alt
+      if (pics.length >= most) return `[${alt || src}](${src})`
+      pics.push(`<img src="${src}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer">`)
+      alts.push(alt)
+      return mark + (pics.length - 1) + "z"
+    })
+  }
 
   // Tables
   html = html.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)*)/gm, (_m, header, _sep, body) => {
@@ -111,6 +136,13 @@ export function markdownToHtml(text: string, opts: MarkdownOptions = {}): string
   html = html.replace(/<p>(<(?:h[1-4]|pre|table|ul|hr|div))/g, '$1')
   html = html.replace(/(<\/(?:h[1-4]|pre|table|ul|hr|div)>)<\/p>/g, '$1')
   html = html.replace(/<p>\s*<\/p>/g, '')
+
+  if (pics.length) {
+    const at = new RegExp(mark + "(\\d+)z", "g")
+    html = html.split(/(<[^>]*>)/).map((part) => part.charAt(0) === "<"
+      ? part.replace(at, (_m, i) => alts[Number(i)])
+      : part.replace(at, (_m, i) => pics[Number(i)])).join("")
+  }
 
   return html
 }
