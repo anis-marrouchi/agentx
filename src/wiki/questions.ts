@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname, resolve } from "path"
+import { assertPerson } from "./facts/person"
 
 // The gaps a lookup cannot close.
 //
@@ -135,6 +136,10 @@ export class QuestionStore {
     const f = this.load()
     const q = f.questions.find((x) => x.id === id || x.id.startsWith(id))
     if (!q) return null
+    // A fact disagreement is the owner's signal that an agent's check
+    // differs from a confirmed value: an agent may not close it, answered
+    // or dismissed.
+    if (q.kind === "contradiction") assertPerson(`${status === "dismissed" ? "dismiss" : "answer"} a fact disagreement`)
     q.status = status
     q.answered = new Date().toISOString()
     if (answer !== undefined) q.answer = answer

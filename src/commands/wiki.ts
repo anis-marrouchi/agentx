@@ -3044,8 +3044,14 @@ wiki
     const store = new QuestionStore(wikiDir(opts.dir))
 
     if (opts.dismiss) {
-      const q = store.resolve(id, "dismissed")
-      console.log(q ? chalk.dim(`  dismissed: ${q.question}`) : chalk.red(`  no question matching "${id}"`))
+      try {
+        const q = store.resolve(id, "dismissed")
+        console.log(q ? chalk.dim(`  dismissed: ${q.question}`) : chalk.red(`  no question matching "${id}"`))
+      } catch (e: any) {
+        console.log(chalk.red(`  ${e?.message ?? e}`))
+        console.log(chalk.yellow("  the question stays open."))
+        process.exitCode = 1
+      }
       return
     }
     if (!value) { console.log(chalk.red("  give a value, or pass --dismiss")); return }

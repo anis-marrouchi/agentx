@@ -76,10 +76,8 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim()
  * AGENTX_AGENT_ID (the runtime sets it for every agent), so a confirmation
  * from inside one is refused: an agent can't outrank a person, or itself.
  */
-export function assertPerson(action: string): void {
-  const agent = process.env.AGENTX_AGENT_ID?.trim()
-  if (agent) throw new Error(`only a person can ${action}; this is running as agent "${agent}". Ask the owner instead.`)
-}
+import { assertPerson } from "./person"
+export { assertPerson }
 
 /** Stable per subject and attribute, so a re-check lands on the same fact. */
 export function factId(subject: string, attribute: string): string {
@@ -242,7 +240,9 @@ function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput
   store.add([item])
   // Undefined when the queue could not take it (an unreadable file): the
   // old value still stands, and the caller says the question is missing.
-  return store.list().some((q) => q.id === id) ? id : undefined
+  // Only an open question is one the owner will see: an id that was
+  // answered or dismissed before is not a queued question for this claim.
+  return store.list("open").some((q) => q.id === id) ? id : undefined
 }
 
 /** Open fact contradictions, in the shape `wiki lint` reports. */
