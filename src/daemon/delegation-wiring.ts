@@ -20,6 +20,7 @@
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
 import { DelegationManager, type CallerTurn } from "@/a2a/delegation"
+import type { RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
@@ -215,7 +216,7 @@ export function meshTaskMode(body: Record<string, unknown>, callbackAllowed: boo
 export type DelegationGateResult =
   | { refused: string }
   | { accepted: Record<string, unknown> }
-  | { track: { onStart: (runId: string) => void; end: () => void } }
+  | { track: { onStart: (runId: string) => void; end: () => void; root?: RootInitiator } }
 
 /**
  * The HTTP answer for a gate result that settles the request on its own:
@@ -255,6 +256,10 @@ export interface DelegationWiring {
   /** Phone-app replies waiting for the dashboard (GET /a2a/delegations/<id>/reply). */
   replies: CallbackReplies
   baseDir?: string
+  /** Put a callback turn in the intent ledger, so the activity map can
+   *  draw it as the answer returning to the caller (#267). */
+  recordDispatch?: (agentId: string, context: Record<string, unknown>, message: string, senderAgentId: string) =>
+    { eventId: string; decidedBy: string } | undefined
 }
 
 export function createDelegations(w: DelegationWiring): DelegationManager {
@@ -284,7 +289,11 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       return mesh.sendTask(peer, message, callee, { context, senderAgentId: opts.senderAgentId, timeoutMs: opts.timeoutMs })
     },
     cancelLocal: (runId, reason) => { w.registry.cancelRunningTask(runId, reason) },
-    injectTurn: (turn) => w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any }),
+    injectTurn: (turn) => {
+      const from = (turn.context.delegation as { from?: unknown } | undefined)?.from
+      const intentRef = typeof from === "string" ? w.recordDispatch?.(turn.agentId, turn.context, turn.message, from) : undefined
+      return w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any, ...(intentRef ? { intentRef } : {}) })
+    },
     isChatBusy: (agentId, channel, chatId) => w.registry.isChatBusy(agentId, channel, chatId),
     canDeliver: (channel) => channel === "app" || route(channel) !== null,
     deliver: async (msg) => {

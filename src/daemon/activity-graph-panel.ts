@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
 import { inferProject, projectFromPreview } from "./activity-graph-attribution"
 import { fetchForgeStatus, refsToLookUp, type ForgeItem } from "./activity-graph-forge"
+import { lineageOf, type DispatchCallback, type DispatchRoot } from "./activity-graph-lineage"
 import type { DaemonConfig } from "./config"
 
 // --- /admin/activity-graph — Fleet activity perspective view ---
@@ -99,6 +100,11 @@ export interface FleetDispatch {
    *  single-node responses. The UI renders it as a small badge so two
    *  agents that share an id across nodes are still distinguishable. */
   nodeId?: string
+  /** Where the A2A chain this run belongs to really started (#267). Set
+   *  on delegated hops, which carry `context.initiator`. */
+  root?: DispatchRoot
+  /** Set on a delegation's callback turn: whose answer it carries back. */
+  callback?: DispatchCallback
 }
 export interface FleetSnapshot {
   now: number
@@ -564,6 +570,7 @@ export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonCo
     // Step 3 is computed per-decision below since it's agent-dependent.
     const contact = matchContact(ev.source, raw, contactMap)
     const inputPreview = inputPreviewFrom(ev.source, raw)
+    const lineage = lineageOf(raw)
     const project = ev.project ?? inferProject(raw, ev.subject, inputPreview)
     let baseClientId: string | null = null
     let baseProjectId: string | null = null
@@ -654,6 +661,7 @@ export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonCo
         tokens: 0,
         inputPreview,
         system: isSystemAgent(d.agent_id, daemonConfig),
+        ...lineage,
       })
     }
   }

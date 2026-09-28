@@ -71,6 +71,12 @@ function validRoot(v: unknown): RootInitiator | null {
   return root
 }
 
+/** The root a delegated hop carries in `context.initiator`, or null on a
+ *  turn that is itself a root (read-only views such as the activity map). */
+export function propagatedRootOf(ctx: InitiatorContext | undefined | null): RootInitiator | null {
+  return validRoot(ctx?.initiator)
+}
+
 /** True for senders that name software rather than a person. */
 export function isAgentSender(sender: unknown): boolean {
   if (typeof sender !== "string") return false
