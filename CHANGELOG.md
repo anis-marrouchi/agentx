@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.58.0](https://github.com/anis-marrouchi/agentx/compare/v0.57.0...v0.58.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** the orb lives in the floating pill — smaller, movable, dismissible ([#209](https://github.com/anis-marrouchi/agentx/issues/209)) ([25b8af5](https://github.com/anis-marrouchi/agentx/commit/25b8af54b93da3ea17960fa14b3b84a2e8d61f1e))
+
 ## [0.57.0](https://github.com/anis-marrouchi/agentx/compare/v0.56.0...v0.57.0) (2026-09-28)
 
 
