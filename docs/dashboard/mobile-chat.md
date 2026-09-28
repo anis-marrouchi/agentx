@@ -56,7 +56,49 @@ The phone remembers typing mode until you tap the keyboard button again. Answers
 
 If the agent is busy with other work, your message waits until the agent is free, then runs. For an agent on another computer, this needs the same AgentX version on that computer; an older one answers that the agent is busy instead.
 
-You can leave the app, lock the phone or lose the connection while the agent answers. The agent keeps going and the computer saves its answer. When you open the conversation again, the answer is there, or, if the agent is still writing, it carries on from where it is. An answer you come back to is not read out loud. An answer that nobody comes back to for 30 minutes is stopped, and what was written so far is kept.
+You can leave the app, lock the phone or lose the connection while the agent answers. The agent keeps going and the computer saves its answer. When you open the conversation again, the answer is there, or, if the agent is still writing, it carries on from where it is. An answer you come back to after closing the app is not read out loud. An answer that nobody comes back to for 30 minutes is stopped, and what was written so far is kept.
+
+## Talk to several agents at once
+
+You don't have to wait for one agent before asking another. Each conversation runs on its own on the computer, and different agents work at the same time.
+
+1. **Phone:** ask the first agent something, as above.
+2. **Phone:** while it answers, tap **Choose an agent** and pick another agent (or tap **New** to start over with the same one). The first agent keeps working.
+3. **Phone:** ask the second agent your question.
+
+A row of *chips*, small rounded buttons, appears at the top of Chat: one for each conversation that is still running or has an answer you haven't opened yet. Each chip has the agent's colour and name, and shows what it is doing:
+
+| Chip | Meaning |
+|---|---|
+| Slowly blinking dot | The agent is thinking |
+| Quickly blinking dot with a halo | The agent is writing its answer |
+| **New** | The answer is ready and you haven't opened it |
+| Hollow dot, highlighted chip | The conversation on screen |
+
+![Two conversations running at once: Builder in the background and CX on screen](/screenshots/mobile-app/chat-strip.png)
+
+- **Switch:** tap a chip. A conversation that is still running picks up where the agent is; a finished one shows its answer, and its **New** mark goes away.
+- **More chips than fit:** swipe the row sideways. It shows up to 12.
+- **Keyboard:** Tab reaches the row; the arrow keys move between chips, and Enter opens one.
+- **Follow-ups:** a message you add to a running conversation still waits for that agent (*Sent when the agent finishes*). If you switch away before the agent finishes, the phone keeps the message and sends it as soon as that answer is done.
+- The row only shows when there is more than the conversation on screen.
+
+### When an answer finishes out of sight
+
+When an agent finishes in a conversation you are not looking at:
+
+- **App open:** a banner slides in at the top with the agent's name and the first line of its answer. Tap it to open that conversation, or tap **×** to close it. It goes away by itself after about 6 seconds. When several answers finish together, their banners show one after another.
+- **App closed or in the background:** the phone gets a notification, if notifications are on. Tapping it opens that conversation. You can turn these off for one phone; see [Notifications when a chat answer finishes](./mobile-alerts.md#notifications-when-a-chat-answer-finishes).
+
+![A banner: Builder finished while CX is on screen](/screenshots/mobile-app/chat-finish-banner.png)
+
+### Answers read out one at a time
+
+With the speaker on and the app open, every answer is read out loud, one at a time, in the order the answers finished. An answer from a conversation you are not looking at starts with the agent's name, for example *"Builder: The release notes are ready…"*. The phone never speaks over another answer, or while you hold the orb to talk; the next answer waits its turn.
+
+- **Stop:** tap the orb while it speaks. This stops the answer being read and drops the ones waiting.
+- **Too many waiting:** at most 5 answers wait to be read. When a sixth finishes, the oldest waiting one is skipped, and the line under the orb says which.
+- **Speaker off:** tap the speaker button. Nothing is read, and nothing waits.
 
 ## Buttons, polls and pictures
 
@@ -204,6 +246,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 5. **Phone:** tap **History**. The conversation is listed with the agent's name.
 6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
 7. **Phone:** ask an agent: `ask me yes or no with quick replies`. **Yes** and **No** appear under the answer. Tap **Yes**: it shows as your message, both turn grey, and the agent answers.
+8. **Phone:** ask one agent something long, then pick a second agent and ask it something too. Two chips show at the top of Chat. When the first agent finishes, a banner with its name appears; tap it, and its answer opens.
 
 ## If something is wrong
 
@@ -228,6 +271,9 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 - **"Connection lost. The agent keeps answering"** — nothing to do. The answer appears in the conversation once the phone is back online.
 - **"Stopped: the phone was away for more than 30 minutes"** — nobody opened the conversation while the agent answered, so it was stopped. Send the message again, and keep the conversation open or come back to it within 30 minutes.
 - **An answer keeps going after you close the app** — that is expected. To end it, open the conversation and tap **Stop**.
+- **The row of chips doesn't show** — only running conversations and unopened answers get a chip, and the row stays hidden while the conversation on screen is the only one. Pull the app to the foreground: the row checks for updates every few seconds while Chat is open.
+- **No banner when an answer finishes** — the banner is only for a conversation you are not looking at, while the app is open. A conversation opened in the meantime from **History** counts as read and gets no banner.
+- **Two answers are not both read out** — the speaker was off when one finished, you tapped the orb (which drops the waiting answers), or more than 5 were waiting.
 - **"The database on this computer is unavailable"** — AgentX can't open `.agentx/db.sqlite`. On the computer, run `agentx doctor`.
 - **No quick replies appear** — the agent chose not to offer any; ask for them, as in [Check it worked](#check-it-worked). If they never appear, the agent has `richMessages` set to `false`, or the computer that runs it has an older AgentX.
 - **Tapping a quick reply does nothing** — it is grey because a newer message is already in the conversation, or the phone is offline and says so. Type the answer instead, or tap again once the phone is back online.
