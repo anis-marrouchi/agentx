@@ -1366,7 +1366,7 @@ Gaps waiting on a person.
 
 ### `agentx wiki answer <id> [value]`
 
-Answer a queued question; writes it into the article. For a disagreement between facts, the value is the true one and replaces the fact.
+Answer a queued question; writes it into the article. For a disagreement between facts, the value is the true one and replaces the fact. Only a person can answer or dismiss a disagreement; an agent is refused.
 
 | Flag | Default | What it does |
 |---|---|---|

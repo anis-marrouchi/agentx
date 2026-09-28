@@ -5,6 +5,7 @@ import { resolve } from "path"
 import { FactLedger, isStaleFact } from "../src/wiki/facts/ledger"
 import { LedgerCorruptError, takeOver, withLock } from "../src/wiki/facts/ledger-file"
 import { approveFactProposal, listFactProposals, proposeFacts, rejectFactProposal } from "../src/wiki/facts/fact-proposals"
+import { QuestionStore } from "../src/wiki/questions"
 import { wikiRefLine } from "../src/agents/memory-context"
 import { MemoryStore, type MemoryFact } from "../src/agents/memory-store"
 
@@ -12,7 +13,8 @@ const NOW = Date.parse("2026-09-28T12:00:00Z")
 const base = { subject: "vendor account", attribute: "billing status", source: "GET /v1/user", verifiedBy: "ops-agent" }
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(resolve(tmpdir(), "agentx-ledger-guards-")) })
+// Tests that need an agent stub it; the rest run as a person even when an agent runs the suite.
+beforeEach(() => { dir = mkdtempSync(resolve(tmpdir(), "agentx-ledger-guards-")); vi.stubEnv("AGENTX_AGENT_ID", "") })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 const confirm = (l: FactLedger) =>
@@ -31,6 +33,31 @@ describe("only a person confirms", () => {
     expect(listFactProposals(l, "pending")).toHaveLength(1)
     // An agent can still record what it checked; it just can't win.
     expect(l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW }).status).toBe("contradiction")
+  })
+})
+
+describe("only a person closes a contradiction", () => {
+  it("refuses a dismissal and an answer from inside an agent, and the question stays open", () => {
+    const l = new FactLedger(dir)
+    confirm(l)
+    const r = l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW })
+    expect(r.status).toBe("contradiction")
+    const store = new QuestionStore(dir)
+    vi.stubEnv("AGENTX_AGENT_ID", "ops-agent")
+    expect(() => store.resolve(r.questionId!, "dismissed")).toThrow(/only a person can dismiss/)
+    expect(() => store.resolve(r.questionId!, "answered", "past due")).toThrow(/only a person can answer/)
+    expect(store.list("open").map((q) => q.id)).toEqual([r.questionId])
+
+    vi.stubEnv("AGENTX_AGENT_ID", "")
+    expect(store.resolve(r.questionId!, "dismissed")?.status).toBe("dismissed")
+  })
+
+  it("still lets an agent close its own non-contradiction question", () => {
+    const store = new QuestionStore(dir)
+    store.add([{ kind: "article", agentId: "ops-agent", path: "", subject: "Vendor", question: "No article for Vendor" }])
+    vi.stubEnv("AGENTX_AGENT_ID", "ops-agent")
+    const [q] = store.list("open")
+    expect(store.resolve(q.id, "dismissed")?.status).toBe("dismissed")
   })
 })
 

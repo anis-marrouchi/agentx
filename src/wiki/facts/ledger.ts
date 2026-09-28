@@ -4,7 +4,9 @@ import { resolve } from "path"
 import { readLedger, withLock, writeLedger } from "./ledger-file"
 import { classifyAttribute, classifyFact, isFactClass, isPastTtl, type FactClass, type Provenance } from "@/agents/fact-freshness"
 import type { ContradictionIssue } from "../lint-contradictions"
-import { QuestionStore, questionId } from "../questions"
+import { assertPerson, QuestionStore, questionId } from "../questions"
+
+export { assertPerson }
 
 // --- The wiki fact ledger: durable facts with provenance (#273) ---
 //
@@ -71,15 +73,6 @@ export interface LedgerFile {
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim()
 
-/**
- * Confirming a fact is a person's act. A process an agent runs carries
- * AGENTX_AGENT_ID (the runtime sets it for every agent), so a confirmation
- * from inside one is refused: an agent can't outrank a person, or itself.
- */
-export function assertPerson(action: string): void {
-  const agent = process.env.AGENTX_AGENT_ID?.trim()
-  if (agent) throw new Error(`only a person can ${action}; this is running as agent "${agent}". Ask the owner instead.`)
-}
 
 /** Stable per subject and attribute, so a re-check lands on the same fact. */
 export function factId(subject: string, attribute: string): string {

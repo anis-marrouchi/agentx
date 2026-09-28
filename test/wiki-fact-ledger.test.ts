@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
@@ -8,6 +8,10 @@ import { QuestionStore } from "../src/wiki/questions"
 const DAY = 86_400_000
 const NOW = Date.parse("2026-09-28T12:00:00Z")
 const at = (daysAgo: number) => new Date(NOW - daysAgo * DAY).toISOString()
+
+// Confirming and answering are a person's acts; run as one even when an agent runs the suite.
+beforeEach(() => { vi.stubEnv("AGENTX_AGENT_ID", "") })
+afterEach(() => { vi.unstubAllEnvs() })
 
 const base = {
   subject: "vendor account", attribute: "billing status",

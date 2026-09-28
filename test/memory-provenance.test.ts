@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
@@ -15,8 +15,9 @@ const at = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString
 
 let root: string
 let wikiDir: string
-beforeEach(() => { root = mkdtempSync(resolve(tmpdir(), "agentx-prov-")); wikiDir = resolve(root, ".agentx/wiki") })
-afterEach(() => rmSync(root, { recursive: true, force: true }))
+// Approval is a person's act; run as one even when an agent runs the suite.
+beforeEach(() => { root = mkdtempSync(resolve(tmpdir(), "agentx-prov-")); wikiDir = resolve(root, ".agentx/wiki"); vi.stubEnv("AGENTX_AGENT_ID", "") })
+afterEach(() => { rmSync(root, { recursive: true, force: true }); vi.unstubAllEnvs() })
 
 function memory(store: MemoryStore, id: string, content: string, daysAgo: number, extra: Partial<MemoryFact> = {}): MemoryFact {
   store.getAll("a") // ensures the dir exists via constructor

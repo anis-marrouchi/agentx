@@ -14,8 +14,8 @@ const NOW = Date.parse("2026-09-28T12:00:00Z")
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(resolve(tmpdir(), "agentx-ledger-safety-")) })
-afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.restoreAllMocks() })
+beforeEach(() => { dir = mkdtempSync(resolve(tmpdir(), "agentx-ledger-safety-")); vi.stubEnv("AGENTX_AGENT_ID", "") })
+afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe("a corrupt ledger is never overwritten", () => {
   it("keeps both facts when a memo is routed onto a truncated file", () => {

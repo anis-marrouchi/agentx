@@ -65,6 +65,16 @@ export function questionId(kind: string, agentId: string, subject: string, field
     .slice(0, 12)
 }
 
+/**
+ * Confirming a fact is a person's act. A process an agent runs carries
+ * AGENTX_AGENT_ID (the runtime sets it for every agent), so a confirmation
+ * from inside one is refused: an agent can't outrank a person, or itself.
+ */
+export function assertPerson(action: string): void {
+  const agent = process.env.AGENTX_AGENT_ID?.trim()
+  if (agent) throw new Error(`only a person can ${action}; this is running as agent "${agent}". Ask the owner instead.`)
+}
+
 export class QuestionStore {
   private readonly file: string
 
@@ -135,6 +145,10 @@ export class QuestionStore {
     const f = this.load()
     const q = f.questions.find((x) => x.id === id || x.id.startsWith(id))
     if (!q) return null
+    // A contradiction is an agent's check disagreeing with the wiki. Only
+    // a person closes it, either way: an agent that could dismiss it
+    // could erase the one signal that it disagrees with the owner.
+    if (q.kind === "contradiction") assertPerson(status === "dismissed" ? "dismiss a fact contradiction" : "answer a fact contradiction")
     q.status = status
     q.answered = new Date().toISOString()
     if (answer !== undefined) q.answer = answer
