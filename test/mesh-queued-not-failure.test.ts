@@ -5,7 +5,7 @@ import path from "path"
 import { IntentLedger } from "../src/intent/ledger"
 import { setLedgerForTesting, resetLedgerForTesting } from "../src/intent/instance"
 import { recordGitLabTargetDispatch } from "../src/intent/sources/gitlab"
-import { MessageRouter } from "../src/channels/router"
+import { MessageRouter, cleanMeshError } from "../src/channels/router"
 import { isQueued, parseQueued, queuedMarker } from "../src/agents/queued"
 import type { IncomingMessage } from "../src/channels/types"
 
@@ -42,6 +42,14 @@ describe("parseQueued — the one place that knows the queued marker", () => {
     expect(isQueued("")).toBe(false)
     expect(isQueued(`Peer "${PEER}" /task error: 500: Claude Code timed out after 15m.`)).toBe(false)
     expect(isQueued("the registry returns __queued__:collect:1 when busy, see docs")).toBe(false)
+    // After the shared mesh peel the whole text must be the marker.
+    expect(isQueued("tool failed: __queued__")).toBe(false)
+    expect(isQueued(`Peer "${PEER}" /task error: 500: boom: __queued__:collect:1`)).toBe(false)
+    expect(isQueued("__queued__:collect")).toBe(false)
+  })
+
+  it("shares its peel with the failure notice", () => {
+    expect(cleanMeshError(`Peer "${PEER}" agent error: Claude Code timed out.`)).toBe("Claude Code timed out.")
   })
 })
 

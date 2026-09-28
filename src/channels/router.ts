@@ -28,6 +28,7 @@ import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/ro
 import type { LegacyOutcome } from "@/intent/divergence"
 import type { IntentResolutionStatus } from "@/intent/types"
 import { parseQueued, type QueuedAnswer } from "@/agents/queued"
+import { unwrapMeshError } from "@/a2a/mesh-errors"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 import type { Resumer } from "@/agents/resume/coordinator"
 
@@ -171,16 +172,7 @@ const TYPING_INTERVAL_MS = 4000
  * stay.
  */
 export function cleanMeshError(raw: string): string {
-  let out = (raw || "").trim()
-  for (let i = 0; i < 5; i++) {
-    const before = out
-    out = out
-      .replace(/^Peer\s+"[^"]*"\s+\/task error:\s*\d{3}:\s*/i, "")
-      .replace(/^mesh fallback failed:\s*/i, "")
-      .trim()
-    if (out === before) break
-  }
-  return out.replace(/\s*[—-]\s*AgentX will retry[^.]*\.?\s*$/i, "").trim()
+  return unwrapMeshError(raw).replace(/\s*[—-]\s*AgentX will retry[^.]*\.?\s*$/i, "").trim()
 }
 
 /** One inbound message held while its target mesh peer is unreachable.
