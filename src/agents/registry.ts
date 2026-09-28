@@ -24,7 +24,7 @@ import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin } from "./resume/origin"
-import { MessageQueue, type QueueMode, type QueuedMessage } from "./message-queue"
+import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
@@ -1383,8 +1383,12 @@ export class AgentRegistry {
               sender: qm.sender,
               chatId: qm.chatId,
             }
+            // A turn that waited long enough for its subject to change is
+            // told so (#282). Only flushed queued turns get the line, so a
+            // normal turn pays nothing for it.
+            const staleNote = staleQueueNote(qm.queuedAt ?? qm.timestamp)
             this.execute({
-              message: qm.text,
+              message: staleNote ? `${staleNote}\n${qm.text}` : qm.text,
               agentId: task.agentId,
               context: ctx,
             })
