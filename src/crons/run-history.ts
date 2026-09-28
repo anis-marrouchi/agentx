@@ -46,7 +46,62 @@ type JsonRecord = Record<string, unknown>;
  * Reads persisted cron attempts for one local calendar day. Invalid input,
  * missing directories, and corrupt entries are treated as an empty history.
  */
+// Run files are named after the moment they were written, e.g.
+// 2026-09-23T08-15-00-018Z.json. A day's history only needs the files
+// near that day, so names outside the window are skipped unread: with
+// thousands of runs on disk, reading every file on every dashboard poll
+// starved libuv's file-system pool and stalled every other route that
+// touches disk (#245).
+const RUN_NAME = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/;
+/** Widest UTC offset either side (UTC-12 … UTC+14), plus room for a long
+ *  run whose file is stamped at the end rather than the start. */
+const WINDOW_BEFORE_MS = 14 * 3_600_000 + 6 * 3_600_000;
+const WINDOW_AFTER_MS = 24 * 3_600_000 + 12 * 3_600_000 + 6 * 3_600_000;
+
+/** Epoch ms encoded in a run file name, or null for any other name. */
+export function runFileTime(name: string): number | null {
+  const m = RUN_NAME.exec(name);
+  if (!m) return null;
+  const t = Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`);
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Whether a run file may hold a run started on `date` in some time zone.
+ *  Names that don't carry a time are always read. */
+export function mayHoldDay(name: string, date: string): boolean {
+  const t = runFileTime(name);
+  if (t === null) return true;
+  const dayStart = Date.parse(`${date}T00:00:00.000Z`);
+  return t >= dayStart - WINDOW_BEFORE_MS && t < dayStart + WINDOW_AFTER_MS;
+}
+
+// Dashboards on several machines ask for the same day every few seconds.
+// One read serves every caller that arrives while it runs, and its result
+// is reused briefly after.
+const HISTORY_TTL_MS = 5_000;
+const historyCache = new Map<string, { at: number; value: Promise<CronRunHistoryItem[]> }>();
+
 export async function readCronRunHistory(
+  options: ReadCronRunHistoryOptions,
+): Promise<CronRunHistoryItem[]> {
+  const key = JSON.stringify([options.runsDir ?? process.cwd(), options.date, options.timezone ?? "UTC", options.jobId ?? ""]);
+  const now = Date.now();
+  const hit = historyCache.get(key);
+  if (hit && now - hit.at < HISTORY_TTL_MS) return hit.value;
+  const value = readCronRunHistoryUncached(options);
+  historyCache.set(key, { at: now, value });
+  // A failed read must not be served to later callers.
+  value.catch(() => historyCache.delete(key));
+  for (const [k, v] of historyCache) if (now - v.at >= HISTORY_TTL_MS) historyCache.delete(k);
+  return value;
+}
+
+/** Test hook: forget cached history reads. */
+export function clearCronRunHistoryCache(): void {
+  historyCache.clear();
+}
+
+async function readCronRunHistoryUncached(
   options: ReadCronRunHistoryOptions,
 ): Promise<CronRunHistoryItem[]> {
   const timezone = options.timezone ?? "UTC";
@@ -79,6 +134,7 @@ export async function readCronRunHistory(
 
     for (const runEntry of runEntries) {
       if (!runEntry.isFile() || !runEntry.name.endsWith(".json")) continue;
+      if (!mayHoldDay(runEntry.name, options.date)) continue;
 
       try {
         const contents = await readFile(
